@@ -65,6 +65,42 @@ The *static store* (`IStaticFeatureDefinitionStore`) builds the feature catalog 
 
 `FeatureValueStore` caches resolved feature values to avoid repeated database reads. The cache is backed by the registered `ICache` (or a named cache instance when `FeatureManagementOptions.FeatureValueCacheName` is set). When `IFeatureManager.SetAsync` writes a value, `FeatureValueStore` updates or evicts the affected cache entries directly through `ICache` (a distributed cache propagates the eviction across nodes via `CacheInvalidationMessage`). Direct `IFeatureValueRecordRepository` writes also evict the affected cache entry — the repository removes it after `SaveChangesAsync` — so a repository-level write bypassing the manager is still reflected on the next read. Only writes that bypass the repository entirely (raw SQL, direct `DbContext`) leave the cache stale.
 
+### Reacting to a change
+
+`FeatureManager` publishes `FeatureChangedMessage` over `IBus` after a successful `SetAsync` or `DeleteAsync`, so an instance holding a resolved value learns it is stale instead of polling for it. Consume it like any other message:
+
+```csharp
+public sealed class ReloadTenantFeatures(TenantFeatureCache cache) : IConsume<FeatureChangedMessage>
+{
+    public async ValueTask ConsumeAsync(ConsumeContext<FeatureChangedMessage> context, CancellationToken ct)
+    {
+        var message = context.Message;
+
+        // Scope matters: another tenant's override must not invalidate this tenant's snapshot.
+        if (
+            !string.Equals(message.ProviderName, FeatureValueProviderNames.Tenant, StringComparison.Ordinal)
+            || !string.Equals(message.ProviderKey, cache.TenantId, StringComparison.Ordinal)
+        )
+        {
+            return;
+        }
+
+        if (message.FeatureNames.Any(cache.Tracks))
+        {
+            await cache.ReloadAsync(ct);
+        }
+    }
+}
+```
+
+The message carries feature names and the scope where they changed, never values. Values would increase broker payloads and make delivery order load-bearing, so the message is only a re-read trigger. Re-reading is idempotent and order-free. `OriginInstanceId` names the process that wrote the change (`IHostIdentityAccessor.InstanceId`) for logs and telemetry. Do not filter on it. The writing process holds copies too, since the manager knows nothing about a value that a consumer copied into a field, so the origin must re-read like every other instance.
+
+`IBus` is optional. A host that never calls `AddHeadlessMessaging` writes feature values exactly as before and publishes nothing. A failed publish is logged and never fails the write that already succeeded. In both cases, a peer keeps its copy until it re-reads for its own reasons, so a consumer that must converge without a bus still needs a periodic refresh.
+
+The announcement follows the write but not the commit. The injected `IBus` never enlists in a transaction, so when `SetAsync` runs inside a caller's unit of work (`RunAsync(db, …)`) the message goes out before that unit commits. A peer that re-reads in that window loads the old value with no further signal. Call `SetAsync` outside a surrounding unit, or keep the backstop refresh above, when that window matters.
+
+This signal is separate from cache coherence, which `FeatureValueStore` already handles. A store-backed write updates or evicts its cache entry, and a distributed cache propagates the change through `CacheInvalidationMessage`. `FeatureChangedMessage` covers state that the framework cannot see, such as a value that a consumer copied into a field.
+
 ### Startup Initialization
 
 `FeaturesInitializationBackgroundService` runs after the application starts. It saves static feature definitions to the database (idempotent and guarded by a distributed lock), with up to 10 jittered exponential-back-off retries capped at 30 seconds, then pre-caches the dynamic feature definitions if `IsDynamicFeatureStoreEnabled` is true. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; other terminal failures surface through `WaitForInitializationAsync()`. Both tasks are skipped when their governing option flags are disabled — in that case the service signals completion immediately.

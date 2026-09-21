@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Exceptions;
 using Headless.Messaging;
 using Headless.Settings.Definitions;
@@ -9,21 +10,19 @@ using Headless.Settings.Resources;
 using Headless.Settings.ValueProviders;
 using Headless.Settings.Values;
 using Headless.Testing.Tests;
-using Microsoft.Extensions.Time.Testing;
+using NSubstitute.ExceptionExtensions;
 using Tests.Fakes;
 
 namespace Tests.Values;
 
 public sealed class SettingManagerTests : TestBase
 {
-    private static readonly DateTimeOffset _PublishedAt = new(2026, 9, 21, 12, 0, 0, TimeSpan.Zero);
-
     private readonly ISettingDefinitionManager _definitionManager;
     private readonly ISettingValueStore _valueStore;
     private readonly ISettingValueProviderManager _valueProviderManager;
     private readonly ISettingEncryptionService _encryptionService;
     private readonly IBus _bus;
-    private readonly FakeTimeProvider _timeProvider;
+    private readonly IHostIdentityAccessor _hostIdentity;
     private readonly SettingManager _sut;
 
     public SettingManagerTests()
@@ -34,7 +33,8 @@ public sealed class SettingManagerTests : TestBase
         _encryptionService = Substitute.For<ISettingEncryptionService>();
         ISettingErrorsDescriptor errorsDescriptor = new DefaultSettingErrorsDescriptor();
         _bus = Substitute.For<IBus>();
-        _timeProvider = new FakeTimeProvider(_PublishedAt);
+        _hostIdentity = Substitute.For<IHostIdentityAccessor>();
+        _hostIdentity.InstanceId.Returns("host-a:1");
 
         _sut = new SettingManager(
             _definitionManager,
@@ -42,7 +42,7 @@ public sealed class SettingManagerTests : TestBase
             _valueProviderManager,
             _encryptionService,
             errorsDescriptor,
-            _timeProvider,
+            _hostIdentity,
             _bus
         );
     }
@@ -664,7 +664,7 @@ public sealed class SettingManagerTests : TestBase
                     && m.SettingNames[0] == settingName
                     && m.ProviderName == "Provider1"
                     && m.ProviderKey == "key1"
-                    && m.Timestamp == _PublishedAt
+                    && m.OriginInstanceId == "host-a:1"
                 ),
                 Arg.Any<CancellationToken>()
             );
@@ -746,7 +746,7 @@ public sealed class SettingManagerTests : TestBase
             _valueProviderManager,
             _encryptionService,
             new DefaultSettingErrorsDescriptor(),
-            _timeProvider,
+            _hostIdentity,
             bus: null
         );
 
@@ -759,6 +759,56 @@ public sealed class SettingManagerTests : TestBase
 
         var stored = await provider.GetOrDefaultAsync(definition, providerKey: null, AbortToken);
         stored.Should().Be("value");
+    }
+
+    [Fact]
+    public async Task should_keep_the_write_when_the_announcement_fails()
+    {
+        // given a broker that rejects the publish
+        const string settingName = "TestSetting";
+        var definition = new SettingDefinition(settingName);
+        var provider = new FakeSettingValueProvider { Name = "Provider1" };
+
+        _definitionManager.FindAsync(settingName, AbortToken).Returns(definition);
+        _valueProviderManager.Providers.Returns([provider]);
+        _bus.PublishAsync(Arg.Any<SettingChangedMessage>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("broker down"));
+
+        // when
+        var act = async () =>
+            await _sut.SetAsync(settingName, "value", "Provider1", providerKey: null, cancellationToken: AbortToken);
+
+        // then the value the caller asked for is stored, and the announcement failure stays a log line
+        await act.Should().NotThrowAsync();
+
+        var stored = await provider.GetOrDefaultAsync(definition, providerKey: null, AbortToken);
+        stored.Should().Be("value");
+    }
+
+    [Fact]
+    public async Task should_propagate_cancellation_raised_by_the_announcement()
+    {
+        // given the caller cancelled while the publish was in flight
+        const string settingName = "TestSetting";
+        var definition = new SettingDefinition(settingName);
+        var provider = new FakeSettingValueProvider { Name = "Provider1" };
+        _definitionManager.FindAsync(settingName, Arg.Any<CancellationToken>()).Returns(definition);
+        _valueProviderManager.Providers.Returns([provider]);
+
+        using var cts = new CancellationTokenSource();
+        _bus.PublishAsync(Arg.Any<SettingChangedMessage>(), Arg.Any<CancellationToken>())
+            .Returns<Task<PublishReceipt>>(async _ =>
+            {
+                await cts.CancelAsync();
+                throw new OperationCanceledException(cts.Token);
+            });
+
+        // when
+        var act = async () =>
+            await _sut.SetAsync(settingName, "value", "Provider1", providerKey: null, cancellationToken: cts.Token);
+
+        // then a caller's cancellation is not a broker failure to swallow
+        await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
     #endregion

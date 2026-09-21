@@ -24,12 +24,6 @@ namespace Headless.Settings.Values;
 public sealed record SettingChangedMessage
 {
     /// <summary>
-    /// ID of the instance that originated this change. Receivers whose own instance ID matches skip the
-    /// message, because the writer already has the new value.
-    /// </summary>
-    public required string InstanceId { get; init; }
-
-    /// <summary>
     /// Names of the settings whose stored value changed. Never empty. A delete that clears a whole provider
     /// scope reports every name it removed rather than a wildcard, so a consumer can match on the names it
     /// holds without knowing the provider's contents.
@@ -52,8 +46,12 @@ public sealed record SettingChangedMessage
     public string? ProviderKey { get; init; }
 
     /// <summary>
-    /// UTC timestamp stamped by the originating instance at publish. A receiver comparing two messages for the
-    /// same name uses this rather than arrival order, which a broker does not guarantee.
+    /// <c>IHostIdentityAccessor.InstanceId</c> of the process that wrote the change, for logs and telemetry.
     /// </summary>
-    public DateTimeOffset? Timestamp { get; init; }
+    /// <remarks>
+    /// Do not filter on it. The writer's own process holds copies too — the manager that stored the value knows
+    /// nothing about the field some consumer copied it into — so the originating instance must re-read like
+    /// every other. That is the opposite of a cache invalidation, where the writer already updated its own tier.
+    /// </remarks>
+    public required string OriginInstanceId { get; init; }
 }

@@ -3,10 +3,13 @@
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Exceptions;
+using Headless.Messaging;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.Models;
 using Headless.Permissions.Repositories;
 using Headless.Permissions.Resources;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Headless.Permissions.Grants;
 
@@ -19,9 +22,14 @@ public sealed class PermissionManager(
     IPermissionDefinitionManager definitionManager,
     IPermissionGrantProviderManager grantProviderManager,
     IPermissionGrantRepository repository,
-    IPermissionErrorsDescriptor errorsDescriptor
+    IPermissionErrorsDescriptor errorsDescriptor,
+    IHostIdentityAccessor hostIdentity,
+    IBus? bus = null,
+    ILogger<PermissionManager>? logger = null
 ) : IPermissionManager
 {
+    private readonly ILogger _logger = logger ?? NullLogger<PermissionManager>.Instance;
+
     public async Task<GrantedPermissionResult> GetAsync(
         string permissionName,
         ICurrentUser currentUser,
@@ -128,6 +136,8 @@ public sealed class PermissionManager(
             ) ?? throw new ConflictException(errorsDescriptor.PermissionsProviderNotFound(providerName));
 
         await provider.SetAsync(permission, providerKey, isGranted, cancellationToken).ConfigureAwait(false);
+        await _PublishChangedAsync([permissionName], providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task SetAsync(
@@ -180,6 +190,9 @@ public sealed class PermissionManager(
             ) ?? throw new ConflictException(errorsDescriptor.PermissionsProviderNotFound(providerName));
 
         await provider.SetAsync(definedPermissions, providerKey, isGranted, cancellationToken).ConfigureAwait(false);
+
+        var changedNames = definedPermissions.Select(x => x.Name).ToArray();
+        await _PublishChangedAsync(changedNames, providerName, providerKey, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task DeleteAsync(
@@ -193,6 +206,63 @@ public sealed class PermissionManager(
             .ConfigureAwait(false);
 
         await repository.DeleteManyAsync(permissionGrants, cancellationToken).ConfigureAwait(false);
+
+        if (permissionGrants.Count != 0)
+        {
+            // Every removed name rather than a wildcard: a receiver should be able to match on the names it
+            // holds without knowing what else this provider scope contained.
+            var removedNames = permissionGrants.Select(x => x.Name).ToArray();
+
+            await _PublishChangedAsync(removedNames, providerName, providerKey, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Announces a completed write so every instance holding a copy of the grant, this one included, can re-read it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Published after the write, never before: a receiver that re-read on an announcement of a write that then
+    /// failed would cache the old grant and believe it fresh. The injected <c>IBus</c> never enlists in a
+    /// transaction, so when the caller runs <c>SetAsync</c> inside its own unit of work the announcement still goes
+    /// out before that unit commits; a peer that re-reads in that window sees the old grant. The consumer contract
+    /// in <c>docs/llms/permissions.md</c> names this window.
+    /// </para>
+    /// <para>
+    /// Best-effort by design — messaging is optional, and a failed announcement must not fail the write that
+    /// already succeeded, so publish failures are logged and swallowed. The cost of a lost message is that a peer
+    /// keeps a stale copy until its own refresh, which is the behavior of a deployment with no bus at all.
+    /// </para>
+    /// </remarks>
+    private async Task _PublishChangedAsync(
+        string[] permissionNames,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        if (bus is null || permissionNames.Length == 0)
+        {
+            return;
+        }
+
+        var message = new PermissionGrantChangedMessage
+        {
+            PermissionNames = permissionNames,
+            ProviderName = providerName,
+            ProviderKey = providerKey,
+            OriginInstanceId = hostIdentity.InstanceId,
+        };
+
+        try
+        {
+            await bus.PublishAsync(message, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogFailedToPublishPermissionGrantChanged(ex, providerName, providerKey, permissionNames.Length);
+        }
     }
 
     #region Helpers
@@ -292,4 +362,22 @@ public sealed class PermissionManager(
     }
 
     #endregion
+}
+
+/// <summary>Structured log helpers for <see cref="PermissionManager"/>.</summary>
+internal static partial class PermissionManagerLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "FailedToPublishPermissionGrantChanged",
+        Level = LogLevel.Warning,
+        Message = "Failed to announce a permission grant change for provider {ProviderName} (key={ProviderKey}, names={NameCount}); the write succeeded and peers keep their copies until they re-read"
+    )]
+    public static partial void LogFailedToPublishPermissionGrantChanged(
+        this ILogger logger,
+        Exception exception,
+        string providerName,
+        string providerKey,
+        int nameCount
+    );
 }

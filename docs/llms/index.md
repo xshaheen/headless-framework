@@ -48,6 +48,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | Store blobs in S3, Azure, R2, filesystem, Redis, or SFTP | [Blob Storage](blobs.md) |
 | Persist dynamic settings | [Settings](settings.md) |
 | Evaluate feature flags | [Features](features.md) |
+| React when a setting, feature, or permission grant changes instead of polling | [Settings](settings.md), [Features](features.md), [Permissions](permissions.md) — each has a "Reacting to a change" section |
 | Record entity changes or explicit audit events | [Audit Log](audit-log.md) |
 
 ### Distributed runtime

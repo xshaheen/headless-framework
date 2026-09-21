@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Exceptions;
 using Headless.Messaging;
@@ -8,6 +9,8 @@ using Headless.Settings.Helpers;
 using Headless.Settings.Models;
 using Headless.Settings.Resources;
 using Headless.Settings.ValueProviders;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Headless.Settings.Values;
 
@@ -18,15 +21,12 @@ public sealed class SettingManager(
     ISettingValueProviderManager valueProviderManager,
     ISettingEncryptionService encryptionService,
     ISettingErrorsDescriptor errorsDescriptor,
-    TimeProvider timeProvider,
-    IBus? bus = null
+    IHostIdentityAccessor hostIdentity,
+    IBus? bus = null,
+    ILogger<SettingManager>? logger = null
 ) : ISettingManager
 {
-    /// <summary>
-    /// Identifies this instance on published changes so a receiver can skip its own echo. A fresh value per
-    /// process is all the identity the signal needs: it is only ever compared for equality.
-    /// </summary>
-    private readonly string _instanceId = Guid.NewGuid().ToString("N");
+    private readonly ILogger _logger = logger ?? NullLogger<SettingManager>.Instance;
 
     /// <inheritdoc/>
     /// <exception cref="ArgumentNullException"><paramref name="settingName"/> is <see langword="null"/>.</exception>
@@ -424,36 +424,50 @@ public sealed class SettingManager(
     }
 
     /// <summary>
-    /// Announces a completed write so peer instances holding a copy of the value can re-read it.
+    /// Announces a completed write so every instance holding a copy of the value, this one included, can re-read it.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Published after the write, never before: a receiver that re-read on an announcement of a write that then
-    /// failed would cache the old value and believe it fresh. Best-effort by design — messaging is optional, and
-    /// a failed announcement must not fail the write that already succeeded. The cost of a lost message is that
-    /// a peer keeps a stale copy until its own refresh, which is the behavior of a deployment with no bus at all.
+    /// failed would cache the old value and believe it fresh. The injected <c>IBus</c> never enlists in a
+    /// transaction, so when the caller runs <c>SetAsync</c> inside its own unit of work the announcement still goes
+    /// out before that unit commits; a peer that re-reads in that window sees the old value. The consumer
+    /// contract in <c>docs/llms/settings.md</c> names this window.
+    /// </para>
+    /// <para>
+    /// Best-effort by design — messaging is optional, and a failed announcement must not fail the write that
+    /// already succeeded, so publish failures are logged and swallowed. The cost of a lost message is that a
+    /// peer keeps a stale copy until its own refresh, which is the behavior of a deployment with no bus at all.
+    /// </para>
     /// </remarks>
     private async Task _PublishChangedAsync(
-        IReadOnlyList<string> settingNames,
+        string[] settingNames,
         string providerName,
         string? providerKey,
         CancellationToken cancellationToken
     )
     {
-        if (bus is null || settingNames.Count == 0)
+        if (bus is null || settingNames.Length == 0)
         {
             return;
         }
 
         var message = new SettingChangedMessage
         {
-            InstanceId = _instanceId,
             SettingNames = settingNames,
             ProviderName = providerName,
             ProviderKey = providerKey,
-            Timestamp = timeProvider.GetUtcNow(),
+            OriginInstanceId = hostIdentity.InstanceId,
         };
 
-        await bus.PublishAsync(message, cancellationToken: cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await bus.PublishAsync(message, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogFailedToPublishSettingChanged(ex, providerName, providerKey, settingNames.Length);
+        }
     }
 
     /// <summary>Resolves a setting value by walking the provider chain, applying decryption when required, and attributing the resolving provider.</summary>
@@ -508,4 +522,22 @@ public sealed class SettingManager(
 
         return new SettingValue(settingName, Value: null, Provider: null);
     }
+}
+
+/// <summary>Structured log helpers for <see cref="SettingManager"/>.</summary>
+internal static partial class SettingManagerLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "FailedToPublishSettingChanged",
+        Level = LogLevel.Warning,
+        Message = "Failed to announce a setting change for provider {ProviderName} (key={ProviderKey}, names={NameCount}); the write succeeded and peers keep their copies until they re-read"
+    )]
+    public static partial void LogFailedToPublishSettingChanged(
+        this ILogger logger,
+        Exception exception,
+        string providerName,
+        string? providerKey,
+        int nameCount
+    );
 }
