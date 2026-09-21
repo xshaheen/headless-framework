@@ -108,4 +108,35 @@ public sealed class UnitOfWorkJobsAccessorTests : TestBase
             .ThrowAsync<InvalidOperationException>()
             .WithMessage("*requires the unit of work to carry a live relational resource*injected scheduler*");
     }
+
+    [Fact]
+    public async Task should_name_both_entity_types_when_the_accessor_asks_for_one_the_host_did_not_register()
+    {
+        // One facade per unit serves the host's entity pair; a receiver for another entity type cannot be bound
+        // to it, and the refusal names the registered and the requested types so the mismatch is obvious.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessJobs(options => options.DisableBackgroundServices());
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        await using var unitOfWork = await provider
+            .GetRequiredService<IUnitOfWorkFactory>()
+            .BeginAsync(cancellationToken: AbortToken);
+
+        var timeJobs = () => unitOfWork.TimeJobs<OtherTimeJob>();
+        var cronJobs = () => unitOfWork.CronJobs<OtherCronJob>();
+
+        timeJobs
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage($"*time-job entity '{nameof(TimeJobEntity)}', not '{nameof(OtherTimeJob)}'*");
+        cronJobs
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage($"*cron-job entity '{nameof(CronJobEntity)}', not '{nameof(OtherCronJob)}'*");
+        unitOfWork.State.Should().Be(UnitOfWorkState.Active, "a refused accessor leaves the unit as it was");
+    }
+
+    private sealed class OtherTimeJob : TimeJobEntity<OtherTimeJob>;
+
+    private sealed class OtherCronJob : CronJobEntity;
 }

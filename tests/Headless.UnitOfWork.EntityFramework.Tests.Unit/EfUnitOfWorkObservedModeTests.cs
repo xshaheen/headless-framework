@@ -2,6 +2,7 @@
 
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 
@@ -107,5 +108,41 @@ public sealed class EfUnitOfWorkObservedModeTests : TestBase
         await unitOfWork.DisposeAsync();
 
         session.Db.UnitOfWork().Should().BeNull("a terminal unit is evicted from the binding");
+    }
+
+    [Fact]
+    public async Task should_refuse_a_second_enlist_on_a_context_that_already_carries_a_live_unit()
+    {
+        // Two units observing one transaction is the same misuse as two owning it: the second enlist is refused
+        // with the join remedy, before it registers anything, and the first unit is left as it was.
+        await using var host = await EfUnitOfWorkHost.CreateAsync();
+        await using var session = host.CreateSession();
+        await using var transaction = await session.Db.Database.BeginTransactionAsync(AbortToken);
+        await using var first = session.Factory.Enlist(session.Db, transaction);
+
+        var act = () => session.Factory.Enlist(session.Db, transaction);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*DbContext already carries an active unit of work*RunAsync(db*db.UnitOfWork()*");
+        first.State.Should().Be(UnitOfWorkState.Active);
+        session.Db.UnitOfWork().Should().BeSameAs(first);
+    }
+
+    [Fact]
+    public async Task should_refuse_an_owning_begin_on_a_context_that_carries_an_observed_unit()
+    {
+        await using var host = await EfUnitOfWorkHost.CreateAsync();
+        await using var session = host.CreateSession();
+        await using var transaction = await session.Db.Database.BeginTransactionAsync(AbortToken);
+        await using var observed = session.Factory.Enlist(session.Db, transaction);
+
+        var act = () => session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken).AsTask();
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage(
+            "*DbContext already carries an active unit of work*RunAsync(db*"
+        );
+        observed.State.Should().Be(UnitOfWorkState.Active);
+        session.Db.Database.CurrentTransaction.Should().BeSameAs(transaction, "the refused begin opened nothing");
     }
 }

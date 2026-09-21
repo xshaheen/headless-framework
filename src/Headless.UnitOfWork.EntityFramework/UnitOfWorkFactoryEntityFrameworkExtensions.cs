@@ -22,12 +22,15 @@ namespace Headless.UnitOfWork;
 /// <remarks>
 /// Begin, enlist, and run bind the unit to the context — and to the connection beneath it — which is how the
 /// save pipeline, a domain-event handler, a raw-ADO helper, and anything else holding the context reach the
-/// unit that owns its transaction (<see cref="DbContextUnitOfWork.UnitOfWork" />). The binding hides terminal
-/// units automatically. <c>RunAsync(db, …)</c> on a context that already carries a live unit joins it: the
-/// block runs inside the owner's unit, outside any execution strategy of its own, and neither commits nor rolls
-/// back, so a service that wraps its own work in <c>RunAsync</c> composes under a caller that already opened
-/// the transaction. A second <c>BeginAsync</c> or <c>Enlist</c> on a bound context is refused instead, because
-/// an owning handle over someone else's transaction has no honest semantics.
+/// unit that owns its transaction (<see cref="HeadlessDbContextUnitOfWorkExtensions.UnitOfWork" />). The binding
+/// hides terminal units automatically, and evicts an owned unit whose transaction ended without going through the
+/// unit (a pooled context reset, a transaction disposed by hand). <c>RunAsync(db, …)</c> on a context that already
+/// carries a live unit joins it: the block runs inside the owner's unit, outside any execution strategy of its own,
+/// and neither commits nor rolls back, so a service that wraps its own work in <c>RunAsync</c> composes under a
+/// caller that already opened the transaction; a joined block that completes or rolls the unit back itself is
+/// refused once it returns. A second <c>BeginAsync</c> or <c>Enlist</c> on a bound context is refused instead,
+/// because an owning handle over someone else's transaction has no honest semantics, and so is any EF entry point
+/// on a context whose connection a raw-ADO unit owns, which an EF block cannot join.
 /// </remarks>
 [PublicAPI]
 public static class UnitOfWorkFactoryEntityFrameworkExtensions
@@ -67,6 +70,10 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
         /// <param name="db">The context owning <paramref name="transaction" />.</param>
         /// <param name="transaction">The open transaction the unit observes.</param>
         /// <returns>The enlisted unit of work.</returns>
+        /// <exception cref="InvalidOperationException">
+        /// The context already carries an active unit of work (join it with <c>RunAsync</c> or pass it along), or
+        /// its connection is owned by a raw-ADO unit that an EF unit cannot observe.
+        /// </exception>
         public IUnitOfWork Enlist(DbContext db, IDbContextTransaction transaction)
         {
             Argument.IsNotNull(db);
@@ -89,12 +96,20 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
         /// strategy so EF cannot replay a possibly-committed block. A drain fault after a durable commit is
         /// logged, never surfaced (the same policy as the Npgsql and SqlClient <c>RunAsync</c>). When the
         /// context already carries a live unit, the block joins it instead: it receives that unit, runs outside
-        /// any execution strategy of its own, and commit or rollback stay with the owner.
+        /// any execution strategy of its own, and commit or rollback stay with the owner; a block that ends the
+        /// unit itself is refused once it returns.
         /// </summary>
         /// <param name="db">The context to operate on.</param>
         /// <param name="operation">The block receiving the unit and the caller's cancellation token.</param>
-        /// <param name="isolation">Transaction isolation level. Defaults to <see cref="IsolationLevel.ReadCommitted" />.</param>
+        /// <param name="isolation">
+        /// Transaction isolation level for a unit this call begins. Defaults to <see cref="IsolationLevel.ReadCommitted" />.
+        /// Ignored when the call joins an already-bound unit: the block runs at the owner's isolation level.
+        /// </param>
         /// <param name="cancellationToken">Cancellation token forwarded to begin, commit, and the operation.</param>
+        /// <exception cref="InvalidOperationException">
+        /// The context's connection is owned by a raw-ADO unit (begin the EF unit first and join it from the ADO
+        /// side), or a joined block completed, rolled back, or disposed the owner's unit.
+        /// </exception>
         public Task RunAsync(
             DbContext db,
             Func<IUnitOfWork, CancellationToken, Task> operation,
@@ -126,8 +141,15 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
         /// <typeparam name="TResult">Type of the value returned by <paramref name="operation" />.</typeparam>
         /// <param name="db">The context to operate on.</param>
         /// <param name="operation">The block receiving the unit and the caller's cancellation token, returning a result.</param>
-        /// <param name="isolation">Transaction isolation level. Defaults to <see cref="IsolationLevel.ReadCommitted" />.</param>
+        /// <param name="isolation">
+        /// Transaction isolation level for a unit this call begins. Defaults to <see cref="IsolationLevel.ReadCommitted" />.
+        /// Ignored when the call joins an already-bound unit: the block runs at the owner's isolation level.
+        /// </param>
         /// <param name="cancellationToken">Cancellation token forwarded to begin, commit, and the operation.</param>
+        /// <exception cref="InvalidOperationException">
+        /// The context's connection is owned by a raw-ADO unit (begin the EF unit first and join it from the ADO
+        /// side), or a joined block completed, rolled back, or disposed the owner's unit.
+        /// </exception>
         public Task<TResult> RunAsync<TResult>(
             DbContext db,
             Func<IUnitOfWork, CancellationToken, Task<TResult>> operation,
@@ -202,12 +224,18 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
     {
         Argument.IsNotNull(db);
 
-        // A joined block belongs to the owner's unit and the owner's execution strategy: it runs inline, and a
-        // fault propagates to the owner's block, which is what unwinds the unit.
+        // A joined block belongs to the owner's unit and the owner's execution strategy: it runs inline, a fault
+        // propagates to the owner's block, which is what unwinds the unit, and a block that ends the unit itself
+        // is refused once it returns.
         if (DbContextUnitOfWorkBinding.TryGet(db, out var joined))
         {
-            return await operation(joined, cancellationToken).ConfigureAwait(false);
+            return await UnitOfWorkRunner.RunJoinedAsync(joined, operation, cancellationToken).ConfigureAwait(false);
         }
+
+        // Refused here, before the strategy, so the caller sees the EF-specific remedy: the connection-owned unit
+        // is a raw-ADO one, and an EF block cannot join it (the context would begin a second transaction on the
+        // connection the ADO unit already owns).
+        DbContextUnitOfWorkBinding.ThrowIfConnectionBound(db);
 
         var logger = UnitOfWorkRunner.LoggerFor(factory);
         var state = (Factory: factory, Operation: operation, Isolation: isolation, Context: db, Logger: logger);

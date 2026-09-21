@@ -4,7 +4,7 @@ Npgsql provider for Headless units of work.
 
 ## Why use this package
 
-Runs raw-ADO `NpgsqlConnection` work as a scoped unit of work, so outbox rows and job rows written inside the transaction commit with it, dispatch after it commits, and are discarded when it rolls back.
+Runs raw-ADO `NpgsqlConnection` work as a unit of work, so outbox rows and job rows written inside the transaction commit with it, dispatch after it commits, and are discarded when it rolls back.
 
 ## Install
 

@@ -1,19 +1,21 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data.Common;
 using Headless.Checks;
+using Headless.UnitOfWork;
 using Headless.UnitOfWork.Internal;
 
-namespace Headless.UnitOfWork;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace System.Data.Common;
 
 /// <summary>
 /// The <see cref="DbConnection" /> → <see cref="IUnitOfWork" /> binding that the raw-ADO <c>BeginAsync</c>,
 /// <c>Enlist</c>, and <c>RunAsync</c> record, and that the EF provider records for the connection beneath its
 /// context. With no ambient unit of work, the connection is how code that was handed only the connection — a
-/// Dapper repository, a raw-SQL helper — reaches the unit that owns its transaction.
+/// Dapper repository, a raw-SQL helper — reaches the unit that owns its transaction. Declared in the augmented
+/// type's namespace so the accessor is discoverable wherever a <see cref="DbConnection" /> is in scope.
 /// </summary>
 [PublicAPI]
-public static class DbConnectionUnitOfWork
+public static class HeadlessDbConnectionUnitOfWorkExtensions
 {
     extension(DbConnection connection)
     {

@@ -12,7 +12,8 @@ namespace Headless.UnitOfWork.Internal;
 /// </summary>
 /// <remarks>
 /// A joined block runs inside the owner's unit and neither commits nor rolls back: a fault propagates to the
-/// owner's block, which is what unwinds the unit. An owned operation fault rolls the unit back and propagates
+/// owner's block, which is what unwinds the unit, and a joined block that ends the unit itself is refused once it
+/// returns. An owned operation fault rolls the unit back and propagates
 /// the ORIGINAL exception; a rollback fault is logged and never replaces it. A commit fault propagates as-is (the unit is already <see cref="UnitOfWorkState.Failed" />).
 /// A drain fault after a durable commit — <see cref="IUnitOfWork.CompleteAsync" /> throwing while the unit is
 /// already <see cref="UnitOfWorkState.Completed" /> — is logged and the operation's result is returned: surfacing
@@ -21,6 +22,9 @@ namespace Headless.UnitOfWork.Internal;
 /// </remarks>
 internal static partial class UnitOfWorkRunner
 {
+    public const string JoinedBlockEndedUnitMessage =
+        "A block that joined a unit of work through RunAsync completed, rolled back, or disposed it. The owner of the unit decides its outcome: return normally to keep it open, or throw to fault it. If the joined code must decide the outcome itself, hand it the unit's owner instead of the unit.";
+
     /// <summary>
     /// The factory's logger keeps runner faults in the unit-of-work category; a foreign factory implementation
     /// has no logger to share, so the runner stays silent rather than guessing a category.
@@ -28,6 +32,27 @@ internal static partial class UnitOfWorkRunner
     public static ILogger LoggerFor(IUnitOfWorkFactory factory)
     {
         return factory is UnitOfWorkFactory owned ? owned.Logger : NullLogger.Instance;
+    }
+
+    /// <summary>
+    /// Runs a joined block on the owner's handle and refuses, after it returns, a block that ended the unit: the
+    /// owner's own completion would otherwise surface as a swallowed "already completed" drain fault and report
+    /// success for writes that ran outside the transaction.
+    /// </summary>
+    public static async Task<TResult> RunJoinedAsync<TResult>(
+        IUnitOfWork joined,
+        Func<IUnitOfWork, CancellationToken, Task<TResult>> operation,
+        CancellationToken cancellationToken
+    )
+    {
+        var result = await operation(joined, cancellationToken).ConfigureAwait(false);
+
+        if (joined.State != UnitOfWorkState.Active)
+        {
+            throw new InvalidOperationException(JoinedBlockEndedUnitMessage);
+        }
+
+        return result;
     }
 
     public static async Task<TResult> RunAsync<TResult>(
@@ -40,7 +65,7 @@ internal static partial class UnitOfWorkRunner
     {
         if (joined is not null)
         {
-            return await operation(joined, cancellationToken).ConfigureAwait(false);
+            return await RunJoinedAsync(joined, operation, cancellationToken).ConfigureAwait(false);
         }
 
         var unitOfWork = await begin(cancellationToken).ConfigureAwait(false);

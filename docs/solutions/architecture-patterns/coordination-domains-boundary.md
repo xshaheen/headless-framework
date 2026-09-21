@@ -83,9 +83,10 @@ relational work is provider-specific or provider-agnostic:
 - **`UnitOfWork` has no `Core.Database` either, but for a different reason: its three providers
   (`EntityFramework`, `PostgreSql`, `SqlServer`) are symmetric, not asymmetric.** Earlier this domain's
   design gave the EF provider the sole ability to observe a database commit/rollback edge, so the raw-ADO
-  providers needed an explicit-signal contract the EF one didn't. The current scoped design removes that
-  asymmetry: the transactional resource's owner (the scoped unit-of-work manager, in the provider-agnostic
-  base package `Headless.UnitOfWork`) owns the commit verb itself, so every provider ships the same
+  providers needed an explicit-signal contract the EF one didn't. The current handle design removes that
+  asymmetry: the transactional resource's owner (the singleton unit-of-work factory and the handle it
+  returns, in the provider-agnostic base package `Headless.UnitOfWork`) owns the commit verb itself, so
+  every provider ships the same
   `BeginAsync(resource)` / `Enlist(resource, transaction)` / `RunAsync(resource, ...)` trio over its own
   resource type (`DbContext`, `NpgsqlConnection`, `SqlConnection`), and `IUnitOfWork.CompleteAsync` is the
   one commit verb regardless of provider. No provider observes a database-native commit edge anymore, so
@@ -94,7 +95,8 @@ relational work is provider-specific or provider-agnostic:
 
 So this is **not** a coherence defect to refactor — the shapes encode a real implementation difference,
 though the *nature* of that difference changed when transaction-outcome orchestration moved from an
-ambient design (a stack-scoped object pushed onto async-flow state) to the current scoped design (a plain
-field on a scoped DI-resolved manager, begun and completed explicitly). The one thing that *was*
+ambient design (a stack-scoped object pushed onto async-flow state) to the current handle design (a unit
+begun explicitly from a singleton factory, with no ambient and no scoped slot, reached through the handle
+or the object it was begun on). The one thing that *was*
 normalized across all three domains: every relational provider uses the `PostgreSql` spelling (the lone
 `Postgres` outlier was renamed).

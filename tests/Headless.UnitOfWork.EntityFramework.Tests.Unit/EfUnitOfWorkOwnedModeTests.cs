@@ -2,6 +2,7 @@
 
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 

@@ -2,20 +2,19 @@
 
 using Headless.Checks;
 using Headless.UnitOfWork;
-using Microsoft.EntityFrameworkCore;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-
-namespace Headless.UnitOfWork;
+namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>
 /// The <see cref="DbContext" /> → <see cref="IUnitOfWork" /> binding that <c>BeginAsync(db)</c>,
 /// <c>Enlist(db, transaction)</c>, and <c>RunAsync(db, …)</c> record. With no ambient unit of work, the context
 /// is how code that was handed only the context — the save pipeline, a domain-event handler, a repository —
-/// reaches the unit that owns its transaction.
+/// reaches the unit that owns its transaction. Declared in the augmented type's namespace so the accessor is
+/// discoverable wherever a <see cref="DbContext" /> is in scope.
 /// </summary>
 [PublicAPI]
-public static class DbContextUnitOfWork
+public static class HeadlessDbContextUnitOfWorkExtensions
 {
     extension(DbContext db)
     {

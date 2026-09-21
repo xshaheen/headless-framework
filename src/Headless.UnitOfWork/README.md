@@ -1,6 +1,6 @@
 # Headless.UnitOfWork
 
-Scoped unit-of-work manager and engine for explicit transactional boundaries.
+Singleton unit-of-work factory and engine for explicit transactional boundaries.
 
 ## Why use this package
 
