@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Exceptions;
+using Headless.Messaging;
 using Headless.Settings.Definitions;
 using Headless.Settings.Helpers;
 using Headless.Settings.Models;
@@ -16,9 +17,17 @@ public sealed class SettingManager(
     ISettingValueStore valueStore,
     ISettingValueProviderManager valueProviderManager,
     ISettingEncryptionService encryptionService,
-    ISettingErrorsDescriptor errorsDescriptor
+    ISettingErrorsDescriptor errorsDescriptor,
+    TimeProvider timeProvider,
+    IBus? bus = null
 ) : ISettingManager
 {
+    /// <summary>
+    /// Identifies this instance on published changes so a receiver can skip its own echo. A fresh value per
+    /// process is all the identity the signal needs: it is only ever compared for equality.
+    /// </summary>
+    private readonly string _instanceId = Guid.NewGuid().ToString("N");
+
     /// <inheritdoc/>
     /// <exception cref="ArgumentNullException"><paramref name="settingName"/> is <see langword="null"/>.</exception>
     /// <exception cref="Headless.Exceptions.ConflictException">The setting named <paramref name="settingName"/> is not defined.</exception>
@@ -381,6 +390,8 @@ public sealed class SettingManager(
                 await p.SetAsync(setting, value, providerKey, cancellationToken).ConfigureAwait(false);
             }
         }
+
+        await _PublishChangedAsync([settingName], providerName, providerKey, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -400,6 +411,49 @@ public sealed class SettingManager(
                 .DeleteAsync(setting.Name, providerName, providerKey, cancellationToken)
                 .ConfigureAwait(false);
         }
+
+        if (settings.Count != 0)
+        {
+            // Every removed name rather than a wildcard: a receiver should be able to match on the names it
+            // holds without knowing what else this provider scope contained.
+            var removedNames = settings.Select(x => x.Name).ToArray();
+
+            await _PublishChangedAsync(removedNames, providerName, providerKey, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Announces a completed write so peer instances holding a copy of the value can re-read it.
+    /// </summary>
+    /// <remarks>
+    /// Published after the write, never before: a receiver that re-read on an announcement of a write that then
+    /// failed would cache the old value and believe it fresh. Best-effort by design — messaging is optional, and
+    /// a failed announcement must not fail the write that already succeeded. The cost of a lost message is that
+    /// a peer keeps a stale copy until its own refresh, which is the behavior of a deployment with no bus at all.
+    /// </remarks>
+    private async Task _PublishChangedAsync(
+        IReadOnlyList<string> settingNames,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        if (bus is null || settingNames.Count == 0)
+        {
+            return;
+        }
+
+        var message = new SettingChangedMessage
+        {
+            InstanceId = _instanceId,
+            SettingNames = settingNames,
+            ProviderName = providerName,
+            ProviderKey = providerKey,
+            Timestamp = timeProvider.GetUtcNow(),
+        };
+
+        await bus.PublishAsync(message, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Resolves a setting value by walking the provider chain, applying decryption when required, and attributing the resolving provider.</summary>
