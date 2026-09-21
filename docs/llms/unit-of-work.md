@@ -100,8 +100,8 @@ There is no leak detection at scope disposal, because no scope owns a unit. A un
 A bridge package can expose behavior on a unit of work that the unit-of-work packages know nothing about, without either side referencing the other. It registers a **singleton** service that implements the `IUnitOfWorkFeature` marker, and `IUnitOfWork.GetFeature<TFeature>()` resolves that type from the host container the factory was built in, returning `null` when the host registered none. The marker is the whole gate: only opted-in types resolve, so the unit is not a service locator.
 
 - A lookup, not a registration: `GetFeature` itself creates and caches nothing per unit, and a completed unit still resolves it. A feature therefore holds no unit; the handle it is used with arrives as an argument per call. A bridge that binds per-unit state (the outbox binding, the Jobs receivers) keeps it through `GetOrAdd`, so the first accessor read creates it and later reads return it — and a terminal unit refuses the accessor, since `GetOrAdd` is a registration.
-- Features are singletons by construction. The factory is a singleton, so a scoped feature would be a captive dependency; a bridge that needs per-operation state binds it to the handle (a feature method that takes the unit and returns a small bound facade — the shape `unit.Jobs` uses) rather than to a scope.
-- `GetFeature` throws `ObjectDisposedException` on a disposed handle and nothing else. A factory constructed outside DI resolves no features.
+- Features are singletons by contract, and the contract is enforced: `AddUnitOfWork()` records the collection it was called on, and `GetFeature` reads the feature's registered lifetime from it before resolving. A scoped or transient registration throws `InvalidOperationException` naming the type and the lifetime — in every environment, not only where `ValidateScopes` is on (the development default, off in production), and for transients, which scope validation never catches. A bridge that needs per-operation state binds it to the handle (a feature method that takes the unit and returns a small bound facade — the shape `unit.Jobs` uses) rather than to a scope.
+- `GetFeature` throws `ObjectDisposedException` on a disposed handle and the lifetime refusal above, nothing else. A factory constructed outside DI resolves no features and checks no lifetimes.
 
 The first-party features are Messaging's enlisted outbox (`AddHeadlessMessaging` registers `IUnitOfWorkOutbox`; `Headless.Messaging.Abstractions` surfaces it as `unit.Outbox`) and Jobs' enlisted receivers (`AddHeadlessJobs` registers `IUnitOfWorkJobs`; `Headless.Jobs.Abstractions` surfaces them as `unit.Jobs`, `unit.TimeJobs<T>()`, and `unit.CronJobs<T>()`).
 
@@ -223,12 +223,12 @@ Implements the singleton `UnitOfWorkFactory`, the in-process unit engine with th
 
 ### API and behavior
 
-- `AddUnitOfWork()`: idempotent `TryAddSingleton<IUnitOfWorkFactory, UnitOfWorkFactory>`; every consumer setup (`AddHeadlessMessaging`, `AddHeadlessJobs`, `AddHeadlessDbContextServices`, the three UnitOfWork provider setups) calls it, so exactly one registration exists regardless of which setup a host invokes first.
+- `AddUnitOfWork()`: idempotent `TryAddSingleton<IUnitOfWorkFactory>` (the factory captures the collection so `GetFeature` can check feature lifetimes); every consumer setup (`AddHeadlessMessaging`, `AddHeadlessJobs`, `AddHeadlessDbContextServices`, the three UnitOfWork provider setups) calls it, so exactly one registration exists regardless of which setup a host invokes first.
 - `connection.UnitOfWork()` (`HeadlessDbConnectionUnitOfWorkExtensions`, an extension on `DbConnection` declared in `System.Data.Common`, so it is in scope wherever the connection type is): the unit bound to a connection by any provider's `BeginAsync`/`Enlist`/`RunAsync` — including the connection beneath an EF context — while it is `Active`, or `null`.
 - Independent units: every `BeginAsync` returns a new unit; the factory holds no slot, so consecutive and concurrent begins never interact and a faulted resource begin propagates as-is with nothing to release.
 - `OnFailed` drain (log-and-continue) on rollback, abandon, and commit fault; `RollbackAsync` idempotent; a commit fault transitions to `Failed` before the exception propagates.
 - An observed unit disposed un-completed after its transaction finished logs the forgotten-completion warning.
-- `GetFeature<T>()` resolves an `IUnitOfWorkFeature` singleton from the host container the factory was registered in.
+- `GetFeature<T>()` resolves an `IUnitOfWorkFeature` singleton from the host container the factory was registered in, and throws `InvalidOperationException` naming the type when that registration is scoped or transient.
 
 ### Design constraints
 

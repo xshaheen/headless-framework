@@ -8,8 +8,9 @@ namespace Tests;
 
 /// <summary>
 /// <c>GetFeature</c> is a lookup into the host container, gated by the <see cref="IUnitOfWorkFeature" /> marker:
-/// nothing is created or cached per unit, every unit sees the same singleton instance, and a scoped registration
-/// is refused under scope validation rather than resolved from the root.
+/// nothing is created or cached per unit, every unit sees the same singleton instance, and a scoped or transient
+/// registration is refused from its recorded lifetime — with or without scope validation — rather than resolved
+/// from the root.
 /// </summary>
 public sealed class UnitOfWorkFeatureTests : TestBase
 {
@@ -25,18 +26,54 @@ public sealed class UnitOfWorkFeatureTests : TestBase
         second.GetFeature<ProbeFeature>().Should().BeSameAs(first.GetFeature<ProbeFeature>());
     }
 
-    [Fact]
-    public async Task should_refuse_a_scoped_feature_under_scope_validation()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_refuse_a_scoped_feature_whether_or_not_scopes_are_validated(bool validateScopes)
     {
         // A feature is a singleton by contract: the factory resolves from the root, so a scoped registration is
-        // a captive-dependency error that scope validation reports instead of a silently root-resolved instance.
-        await using var provider = _BuildProvider(services => services.AddScoped<ScopedProbeFeature>());
+        // a captive-dependency error. Scope validation is off in production by default, so the refusal comes
+        // from the recorded lifetime and names the type, before any instance is root-resolved.
+        await using var provider = _BuildProvider(services => services.AddScoped<ScopedProbeFeature>(), validateScopes);
         var factory = provider.GetRequiredService<IUnitOfWorkFactory>();
         await using var unit = await factory.BeginAsync(cancellationToken: AbortToken);
 
         var act = () => unit.GetFeature<ScopedProbeFeature>();
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*scoped*root*");
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage($"*'{typeof(ScopedProbeFeature).FullName}' is registered as Scoped*must be a singleton*");
+    }
+
+    [Fact]
+    public async Task should_refuse_a_transient_feature()
+    {
+        // Scope validation never catches a transient: the root would hand out a fresh, never-disposed instance
+        // per call, and two handles would no longer see the same feature.
+        await using var provider = _BuildProvider(
+            services => services.AddTransient<ScopedProbeFeature>(),
+            validateScopes: false
+        );
+        var factory = provider.GetRequiredService<IUnitOfWorkFactory>();
+        await using var unit = await factory.BeginAsync(cancellationToken: AbortToken);
+
+        var act = () => unit.GetFeature<ScopedProbeFeature>();
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*is registered as Transient*must be a singleton*");
+    }
+
+    [Fact]
+    public async Task should_resolve_the_last_registration_when_a_singleton_replaces_a_scoped_one()
+    {
+        // GetService returns the last registration of a type, so that is the lifetime the guard judges.
+        await using var provider = _BuildProvider(
+            services => services.AddScoped<ScopedProbeFeature>().AddSingleton<ScopedProbeFeature>(),
+            validateScopes: false
+        );
+        var factory = provider.GetRequiredService<IUnitOfWorkFactory>();
+        await using var unit = await factory.BeginAsync(cancellationToken: AbortToken);
+
+        unit.GetFeature<ScopedProbeFeature>().Should().BeSameAs(provider.GetRequiredService<ScopedProbeFeature>());
     }
 
     [Fact]
@@ -72,13 +109,13 @@ public sealed class UnitOfWorkFeatureTests : TestBase
         act.Should().Throw<ObjectDisposedException>();
     }
 
-    private static ServiceProvider _BuildProvider(Action<IServiceCollection> configure)
+    private static ServiceProvider _BuildProvider(Action<IServiceCollection> configure, bool validateScopes = true)
     {
         var services = new ServiceCollection();
         services.AddUnitOfWork();
         configure(services);
 
-        return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = validateScopes });
     }
 }
 
