@@ -36,7 +36,7 @@ public sealed class DynamicPermissionDefinitionStoreTests : TestBase
         _distributedLockProvider = Substitute.For<IDistributedLock>();
         _bus = Substitute.For<IBus>();
         var guidGenerator = Substitute.For<IGuidGenerator>();
-        var application = Substitute.For<IApplicationInformationAccessor>();
+        var application = Substitute.For<IHostIdentityAccessor>();
         _options = new PermissionManagementOptions { IsDynamicPermissionStoreEnabled = true };
         var providersOptions = new PermissionManagementProvidersOptions();
         _timeProvider = new FakeTimeProvider();

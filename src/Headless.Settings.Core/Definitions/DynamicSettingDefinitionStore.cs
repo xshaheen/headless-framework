@@ -50,7 +50,7 @@ public sealed class DynamicSettingDefinitionStore(
     ICache distributedCache,
     IDistributedLock distributedLockProvider,
     IGuidGenerator guidGenerator,
-    IApplicationInformationAccessor application,
+    IHostIdentityAccessor application,
     IOptions<SettingManagementOptions> optionsAccessor,
     IOptions<SettingManagementProvidersOptions> providersAccessor,
     TimeProvider timeProvider

@@ -49,7 +49,7 @@ public sealed class DynamicPermissionDefinitionStoreLifetimeTests : TestBase
         services.AddSingleton(Substitute.For<ICache>());
         services.AddSingleton(Substitute.For<IDistributedLock>());
         services.AddSingleton(Substitute.For<IGuidGenerator>());
-        services.AddSingleton(Substitute.For<IApplicationInformationAccessor>());
+        services.AddSingleton(Substitute.For<IHostIdentityAccessor>());
         services.AddSingleton(Options.Create(new PermissionManagementOptions()));
         services.AddSingleton(Options.Create(new PermissionManagementProvidersOptions()));
         services.AddSingleton(TimeProvider.System);

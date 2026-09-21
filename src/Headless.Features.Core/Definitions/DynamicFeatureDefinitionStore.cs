@@ -50,7 +50,7 @@ public sealed class DynamicFeatureDefinitionStore(
     ICache distributedCache,
     IDistributedLock distributedLockProvider,
     IGuidGenerator guidGenerator,
-    IApplicationInformationAccessor application,
+    IHostIdentityAccessor application,
     IOptions<FeatureManagementOptions> optionsAccessor,
     IOptions<FeatureManagementProvidersOptions> providersAccessor,
     TimeProvider timeProvider

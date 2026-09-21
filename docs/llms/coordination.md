@@ -161,7 +161,7 @@ Coordination owns the setting so the membership tables land in the same schema w
 
 ### Runtime behavior
 
-Registers `TimeProvider.System`, framework GUID generator defaults, `INodeIdProvider`, `INodeMembership`, `IMembershipEventSource`, and the heartbeat hosted service.
+Registers `TimeProvider.System`, framework GUID generator defaults, `IHostIdentityAccessor` (from `Headless.Core`), `INodeIdProvider`, `INodeMembership`, `IMembershipEventSource`, and the heartbeat hosted service. The default `INodeIdProvider` returns `CoordinationOptions.ConfiguredNodeId` when set and otherwise `IHostIdentityAccessor.HostName`, so the node a membership store sees is the same host name that stamps message origins and logs; the discovery order (`POD_NAMESPACE/POD_NAME`, machine name, generated) is documented in [core.md](core.md).
 
 ---
 

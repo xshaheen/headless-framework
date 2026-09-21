@@ -55,7 +55,7 @@ Core abstractions for building applications with multi-tenancy, user context, an
     - `IPasswordGenerator` - Configurable secure password generation; remaining character pools are required only when filler or extra unique characters are needed
     - `ICancellationTokenProvider` - Cancellation token access with fallback logic
     - `ITimezoneProvider` - Windows/IANA timezone conversion and listing
-    - `IApplicationInformationAccessor` / `IBuildInformationAccessor` - Application metadata and build info
+    - `IHostIdentityAccessor` / `IBuildInformationAccessor` - Process identity and build info. `AddHeadlessHostIdentity()` registers the accessor (`TryAdd`, so feature packages call it too and the host's own call wins); `ApplicationName` defaults to the entry assembly title, `HostName` to `POD_NAMESPACE/POD_NAME`, then the machine name, and `InstanceId` is `{HostName}:{random}` per start. Coordination's node id, the settings/features/permissions definition-store locks, and the change-announcement origin all read from it, so an override in `HostIdentityOptions` moves every subsystem at once.
     - `IEnumLocaleAccessor` - Localized enum display values
 
 - **Multi-tenancy implementations** (contracts live in `Headless.MultiTenancy.Abstractions`, namespace `Headless.MultiTenancy` — see [multi-tenancy.md](multi-tenancy.md)):

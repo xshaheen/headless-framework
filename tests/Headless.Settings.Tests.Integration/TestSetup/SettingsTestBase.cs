@@ -48,7 +48,7 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
         services.AddSingleton<ICancellationTokenProvider>(DefaultCancellationTokenProvider.Instance);
         services.AddSingleton(Substitute.For<ICurrentUser>());
         services.AddSingleton(Substitute.For<ICurrentTenant>());
-        services.AddSingleton(Substitute.For<IApplicationInformationAccessor>());
+        services.AddSingleton(Substitute.For<IHostIdentityAccessor>());
         services.AddHeadlessDomainEventDispatcher();
 
         // Cache

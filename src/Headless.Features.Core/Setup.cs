@@ -139,6 +139,10 @@ public static class SetupFeatures
         services._AddCoreValueProviders();
         services.AddInitializerHostedService<FeaturesInitializationBackgroundService>();
 
+        // The definition store keys its cross-instance lock on the application name and the manager stamps
+        // its change announcements with the instance id; a host that never registered an identity gets one.
+        services.AddHeadlessHostIdentity();
+
         services.AddSingleton<IFeatureErrorsDescriptor, DefaultFeatureErrorsDescriptor>();
 
         // Definition Services

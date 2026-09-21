@@ -61,7 +61,7 @@ public sealed class DynamicPermissionDefinitionStore(
     IDistributedLock distributedLockProvider,
     IBus messagePublisher,
     IGuidGenerator guidGenerator,
-    IApplicationInformationAccessor application,
+    IHostIdentityAccessor application,
     IOptions<PermissionManagementOptions> optionsAccessor,
     IOptions<PermissionManagementProvidersOptions> providersAccessor,
     TimeProvider timeProvider

@@ -7,13 +7,7 @@ namespace Headless.Coordination;
 
 internal static partial class LoggerExtensions
 {
-    [LoggerMessage(
-        EventId = 1,
-        EventName = "GeneratedFallbackNodeId",
-        Level = LogLevel.Warning,
-        Message = "Generated fallback coordination node id {NodeId}; recovery semantics are degraded because every start is a brand-new node."
-    )]
-    public static partial void GeneratedFallbackNodeId(this ILogger logger, string nodeId);
+    // EventId 1 was the generated-node-id warning; host-name discovery now lives in Headless.Core, which logs it.
 
     [LoggerMessage(
         EventId = 2,
