@@ -32,7 +32,6 @@ public abstract class JobsApplicationConfigurationConformanceTests<TFixture>(TFi
                 coordination =>
                 {
                     coordination.ClusterName = "application-dx";
-                    coordination.ConfiguredNodeId = "application-dx-node";
                 }
             );
             jobs.ConfigureJob<CoordinatedFacadeRequest>(new JobOptions { Enlistment = TransactionEnlistment.Required });

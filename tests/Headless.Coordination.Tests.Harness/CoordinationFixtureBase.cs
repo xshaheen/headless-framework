@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Coordination;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -94,6 +95,10 @@ public static class CoordinationFixtureExtensions
         var lifetime = new FakeHostApplicationLifetime();
         services.AddSingleton<IHostApplicationLifetime>(lifetime);
 
+        // Several nodes share one process here, so each container names its own host before Coordination
+        // (TryAdd) would discover the machine name.
+        services.AddHeadlessHostIdentity(options => options.HostName = nodeId);
+
         services.AddHeadlessCoordination(setup =>
         {
             fixture.ConfigureProvider(services, setup);
@@ -106,7 +111,6 @@ public static class CoordinationFixtureExtensions
             setup.Configure(options =>
             {
                 options.ClusterName = clusterName;
-                options.ConfiguredNodeId = nodeId;
                 options.HeartbeatInterval = HeartbeatInterval;
                 options.SuspicionThreshold = SuspicionThreshold;
                 options.DeadThreshold = DeadThreshold;

@@ -16,7 +16,6 @@ internal sealed partial class CoordinationOptionsValidator : AbstractValidator<C
             .Matches(ClusterNameRegex)
             .WithMessage("ClusterName may only contain letters, digits, '.', '_', ':', or '-'.");
 
-        RuleFor(x => x.ConfiguredNodeId).Must(x => x is null || !string.IsNullOrWhiteSpace(x));
         RuleFor(x => x.HeartbeatInterval).GreaterThan(TimeSpan.Zero).LessThan(x => x.SuspicionThreshold);
         RuleFor(x => x.SuspicionThreshold).LessThan(x => x.DeadThreshold);
         RuleFor(x => x.DeadThreshold).GreaterThan(TimeSpan.Zero);

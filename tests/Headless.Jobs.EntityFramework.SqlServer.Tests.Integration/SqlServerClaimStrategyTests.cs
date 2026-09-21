@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Data.Common;
 using System.Globalization;
 using System.Reflection;
+using Headless.Abstractions;
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;
@@ -558,13 +559,13 @@ public sealed class SqlServerClaimStrategyTests(SqlServerJobsCoordinationFixture
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
         builder.Logging.AddProvider(logs);
 
+        builder.Services.AddHeadlessHostIdentity(options => options.HostName = nodeId);
         builder.Services.AddHeadlessCoordination(setup =>
         {
             fixture.ConfigureCoordination(setup);
             setup.Configure(options =>
             {
                 options.ClusterName = JobsCoordinationFixtureExtensions.ClusterName;
-                options.ConfiguredNodeId = nodeId;
                 options.HeartbeatInterval = JobsCoordinationFixtureExtensions.HeartbeatInterval;
                 options.SuspicionThreshold = JobsCoordinationFixtureExtensions.SuspicionThreshold;
                 options.DeadThreshold = JobsCoordinationFixtureExtensions.DeadThreshold;
