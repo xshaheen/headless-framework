@@ -259,7 +259,7 @@ public sealed class FeatureManager(
             FeatureNames = featureNames,
             ProviderName = providerName,
             ProviderKey = providerKey,
-            OriginInstanceId = hostIdentity.InstanceId,
+            OriginHostName = hostIdentity.HostName,
         };
 
         try

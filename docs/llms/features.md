@@ -93,7 +93,7 @@ public sealed class ReloadTenantFeatures(TenantFeatureCache cache) : IConsume<Fe
 }
 ```
 
-The message carries feature names and the scope where they changed, never values. Values would increase broker payloads and make delivery order load-bearing, so the message is only a re-read trigger. Re-reading is idempotent and order-free. `OriginInstanceId` names the process that wrote the change (`IHostIdentityAccessor.InstanceId`) for logs and telemetry. Do not filter on it. The writing process holds copies too, since the manager knows nothing about a value that a consumer copied into a field, so the origin must re-read like every other instance.
+The message carries feature names and the scope where they changed, never values. Values would increase broker payloads and make delivery order load-bearing, so the message is only a re-read trigger. Re-reading is idempotent and order-free. `OriginHostName` names the host that wrote the change (`IHostIdentityAccessor.HostName`) for logs and telemetry. Do not filter on it. The writing process holds copies too, since the manager knows nothing about a value that a consumer copied into a field, so the origin must re-read like every other instance.
 
 `IBus` is optional. A host that never calls `AddHeadlessMessaging` writes feature values exactly as before and publishes nothing. A failed publish is logged and never fails the write that already succeeded. In both cases, a peer keeps its copy until it re-reads for its own reasons, so a consumer that must converge without a bus still needs a periodic refresh.
 

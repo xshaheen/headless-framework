@@ -30,7 +30,7 @@ public sealed class FeatureManagerTests : TestBase
         _valueProviderManager.ValueProviders.Returns([_provider]);
         _bus = Substitute.For<IBus>();
         _hostIdentity = Substitute.For<IHostIdentityAccessor>();
-        _hostIdentity.InstanceId.Returns("host-a:1");
+        _hostIdentity.HostName.Returns("prod/orders-7d");
 
         _sut = new FeatureManager(
             _definitionManager,
@@ -60,7 +60,7 @@ public sealed class FeatureManagerTests : TestBase
                     && m.FeatureNames[0] == featureName
                     && m.ProviderName == "Provider1"
                     && m.ProviderKey == "key1"
-                    && m.OriginInstanceId == "host-a:1"
+                    && m.OriginHostName == "prod/orders-7d"
                 ),
                 Arg.Any<CancellationToken>()
             );

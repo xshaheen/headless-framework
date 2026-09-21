@@ -252,7 +252,7 @@ public sealed class PermissionManager(
             PermissionNames = permissionNames,
             ProviderName = providerName,
             ProviderKey = providerKey,
-            OriginInstanceId = hostIdentity.InstanceId,
+            OriginHostName = hostIdentity.HostName,
         };
 
         try

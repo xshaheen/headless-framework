@@ -34,7 +34,7 @@ public sealed class PermissionManagerTests : TestBase
         _errorsDescriptor = Substitute.For<IPermissionErrorsDescriptor>();
         _bus = Substitute.For<IBus>();
         _hostIdentity = Substitute.For<IHostIdentityAccessor>();
-        _hostIdentity.InstanceId.Returns("host-a:1");
+        _hostIdentity.HostName.Returns("prod/orders-7d");
 
         _sut = new PermissionManager(
             _definitionManager,
@@ -541,7 +541,7 @@ public sealed class PermissionManagerTests : TestBase
                     && m.PermissionNames[0] == permissionName
                     && m.ProviderName == providerName
                     && m.ProviderKey == providerKey
-                    && m.OriginInstanceId == "host-a:1"
+                    && m.OriginHostName == "prod/orders-7d"
                 ),
                 Arg.Any<CancellationToken>()
             );

@@ -35,12 +35,12 @@ public sealed record PermissionGrantChangedMessage
     public required string ProviderKey { get; init; }
 
     /// <summary>
-    /// <c>IHostIdentityAccessor.InstanceId</c> of the process that wrote the change, for logs and telemetry.
+    /// <c>IHostIdentityAccessor.HostName</c> of the process that wrote the change, for logs and telemetry.
     /// </summary>
     /// <remarks>
     /// Do not filter on it. The writer's own process holds copies too — the manager that stored the grant knows
     /// nothing about the state some consumer copied it into — so the originating instance must re-read like every
     /// other. That is the opposite of a cache invalidation, where the writer already updated its own tier.
     /// </remarks>
-    public required string OriginInstanceId { get; init; }
+    public required string OriginHostName { get; init; }
 }

@@ -457,7 +457,7 @@ public sealed class SettingManager(
             SettingNames = settingNames,
             ProviderName = providerName,
             ProviderKey = providerKey,
-            OriginInstanceId = hostIdentity.InstanceId,
+            OriginHostName = hostIdentity.HostName,
         };
 
         try

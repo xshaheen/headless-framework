@@ -7,15 +7,15 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Headless.Abstractions;
 
 /// <summary>
-/// Identifies the running process: the application it belongs to, the host it runs on, and the process
-/// itself. One vocabulary for every subsystem that stamps an origin on shared state — cluster membership,
-/// change announcements, cache invalidation, log attribution.
+/// Identifies the running process: the application it belongs to and the host it runs on. One vocabulary for
+/// every subsystem that stamps an origin on shared state — cluster membership, change announcements, log
+/// attribution.
 /// </summary>
 /// <remarks>
 /// <see cref="HostName"/> is stable across restarts of the same host (a Kubernetes pod keeps its name when
-/// its container restarts), so a store can recognise a returning node. <see cref="InstanceId"/> changes on
-/// every start and embeds <see cref="HostName"/>, so a value read from a log or a message says both which
-/// host and which incarnation produced it.
+/// its container restarts), so a store can recognise a returning node. There is deliberately no per-start
+/// identity here: Coordination allocates one (<c>NodeIdentity</c>, <c>host@incarnation</c>) from its store on
+/// top of this same host name, and a second, locally minted one would only disagree with it.
 /// </remarks>
 [PublicAPI]
 public interface IHostIdentityAccessor
@@ -31,12 +31,6 @@ public interface IHostIdentityAccessor
     /// the <c>POD_NAMESPACE</c>/<c>POD_NAME</c> environment variables, and the machine name.
     /// </summary>
     string HostName { get; }
-
-    /// <summary>
-    /// Identifier of this process, unique per start: <c>{HostName}:{random}</c>. Compare for equality only; a
-    /// restarted process is a different instance and holds none of the state its predecessor announced.
-    /// </summary>
-    string InstanceId { get; }
 }
 
 /// <summary>Overrides for <see cref="IHostIdentityAccessor"/>. Unset members are discovered.</summary>
@@ -61,7 +55,7 @@ public sealed class HostIdentityAccessor : IHostIdentityAccessor
     /// </summary>
     /// <param name="options">Explicit overrides; every unset member is discovered.</param>
     /// <param name="buildInformation">Source of the entry assembly title used as the default application name.</param>
-    /// <param name="guidGenerator">Source of the per-start suffix on <see cref="InstanceId"/> and of the last-resort host name.</param>
+    /// <param name="guidGenerator">Source of the last-resort generated host name.</param>
     /// <param name="logger">Receives a warning when no stable host name could be discovered.</param>
     /// <exception cref="ArgumentException">An option is set to an empty or whitespace value.</exception>
     public HostIdentityAccessor(
@@ -111,7 +105,6 @@ public sealed class HostIdentityAccessor : IHostIdentityAccessor
                 guidGenerator,
                 logger ?? NullLogger<HostIdentityAccessor>.Instance
             );
-        InstanceId = $"{HostName}:{guidGenerator.Create():N}";
     }
 
     /// <inheritdoc/>
@@ -119,9 +112,6 @@ public sealed class HostIdentityAccessor : IHostIdentityAccessor
 
     /// <inheritdoc/>
     public string HostName { get; }
-
-    /// <inheritdoc/>
-    public string InstanceId { get; }
 
     private static string _DiscoverHostName(
         Func<string, string?> getEnvironmentVariable,

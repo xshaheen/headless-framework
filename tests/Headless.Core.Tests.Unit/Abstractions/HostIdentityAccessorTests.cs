@@ -63,16 +63,6 @@ public sealed class HostIdentityAccessorTests
     }
 
     [Fact]
-    public void should_embed_host_name_in_instance_id()
-    {
-        // given
-        var accessor = _Create(machineName: () => "host-a");
-
-        // then a value read from a log or a message names both the host and the incarnation
-        accessor.InstanceId.Should().Be("host-a:11111111111111111111111111111111");
-    }
-
-    [Fact]
     public void should_prefer_configured_application_name_over_assembly_title()
     {
         // given
@@ -109,7 +99,7 @@ public sealed class HostIdentityAccessorTests
     }
 
     [Fact]
-    public void should_register_a_single_instance_id_per_container()
+    public void should_register_a_single_accessor_per_container()
     {
         // given
         var services = new ServiceCollection();
@@ -121,10 +111,10 @@ public sealed class HostIdentityAccessorTests
         var first = provider.GetRequiredService<IHostIdentityAccessor>();
         var second = provider.GetRequiredService<IHostIdentityAccessor>();
 
-        // then every subsystem stamping an origin agrees on one instance
+        // then every subsystem stamping an origin reads the same host
         first.Should().BeSameAs(second);
         first.ApplicationName.Should().Be("Orders");
-        first.InstanceId.Should().StartWith(first.HostName + ":");
+        first.HostName.Should().NotBeNullOrWhiteSpace();
     }
 
     [Fact]

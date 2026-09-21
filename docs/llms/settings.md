@@ -96,7 +96,7 @@ public sealed class ReloadLimits(MyPolicyCache cache) : IConsume<SettingChangedM
 }
 ```
 
-The message carries setting names and the scope they were written at, never values. Values would put the plaintext of an `IsEncrypted` setting on the broker and make delivery order load-bearing, so a receiver re-reads instead, which is idempotent and order-free. `OriginInstanceId` names the process that wrote the change (`IHostIdentityAccessor.InstanceId`) for logs and telemetry; do not filter on it. The writing process holds copies too, since the manager knows nothing about the field a consumer copied a value into, so the origin must re-read like every other instance.
+The message carries setting names and the scope they were written at, never values. Values would put the plaintext of an `IsEncrypted` setting on the broker and make delivery order load-bearing, so a receiver re-reads instead, which is idempotent and order-free. `OriginHostName` names the host that wrote the change (`IHostIdentityAccessor.HostName`) for logs and telemetry; do not filter on it. The writing process holds copies too, since the manager knows nothing about the field a consumer copied a value into, so the origin must re-read like every other instance.
 
 `IBus` is optional. A host that never calls `AddHeadlessMessaging` writes settings exactly as before and publishes nothing, and a failed publish is logged and never fails the write that already succeeded. In both cases a peer keeps its copy until it re-reads for its own reasons, so a consumer that must converge without a bus still needs a periodic refresh.
 

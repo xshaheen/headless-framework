@@ -34,7 +34,7 @@ public sealed class SettingManagerTests : TestBase
         ISettingErrorsDescriptor errorsDescriptor = new DefaultSettingErrorsDescriptor();
         _bus = Substitute.For<IBus>();
         _hostIdentity = Substitute.For<IHostIdentityAccessor>();
-        _hostIdentity.InstanceId.Returns("host-a:1");
+        _hostIdentity.HostName.Returns("prod/orders-7d");
 
         _sut = new SettingManager(
             _definitionManager,
@@ -664,7 +664,7 @@ public sealed class SettingManagerTests : TestBase
                     && m.SettingNames[0] == settingName
                     && m.ProviderName == "Provider1"
                     && m.ProviderKey == "key1"
-                    && m.OriginInstanceId == "host-a:1"
+                    && m.OriginHostName == "prod/orders-7d"
                 ),
                 Arg.Any<CancellationToken>()
             );
