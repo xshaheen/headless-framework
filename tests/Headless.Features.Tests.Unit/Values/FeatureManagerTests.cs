@@ -96,6 +96,34 @@ public sealed class FeatureManagerTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_announce_a_feature_this_scope_never_stored_when_deleting()
+    {
+        // given a lower provider holds Feature2, this scope holds only Feature1
+        var feature1 = new FeatureDefinition("Feature1");
+        var feature2 = new FeatureDefinition("Feature2");
+        var fallbackProvider = Substitute.For<IFeatureValueProvider>();
+        fallbackProvider.Name.Returns("Default");
+        _valueProviderManager.ValueProviders.Returns([_provider, fallbackProvider]);
+        _definitionManager.GetFeaturesAsync(AbortToken).Returns([feature1, feature2]);
+        _definitionManager.FindAsync("Feature1", AbortToken).Returns(feature1);
+        _definitionManager.FindAsync("Feature2", AbortToken).Returns(feature2);
+        _provider.GetOrDefaultAsync(feature1, "key1", AbortToken).Returns("a");
+        _provider.GetOrDefaultAsync(feature2, "key1", AbortToken).Returns((string?)null);
+        fallbackProvider.GetOrDefaultAsync(feature2, null, AbortToken).Returns("default-b");
+
+        // when
+        await _sut.DeleteAsync("Provider1", "key1", AbortToken);
+
+        // then Feature2 is neither cleared nor announced: nothing changed for it
+        await _provider.DidNotReceive().ClearAsync(feature2, Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        await _bus.Received(1)
+            .PublishAsync(
+                Arg.Is<FeatureChangedMessage>(m => m.FeatureNames.Count == 1 && m.FeatureNames[0] == "Feature1"),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task should_not_publish_when_a_delete_removed_nothing()
     {
         // given

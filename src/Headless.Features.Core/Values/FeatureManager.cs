@@ -185,7 +185,14 @@ public sealed class FeatureManager(
         CancellationToken cancellationToken = default
     )
     {
-        var featureNameValues = await GetAllAsync(providerName, providerKey, cancellationToken: cancellationToken)
+        // Only the values this scope stores. With fallback, a feature whose value lives in a lower provider
+        // would be listed too, cleared as a no-op, and announced as changed when nothing changed for it.
+        var featureNameValues = await GetAllAsync(
+                providerName,
+                providerKey,
+                fallback: false,
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
 
         var providers = valueProviderManager.ValueProviders.SkipWhile(p =>
