@@ -28,5 +28,6 @@ internal sealed record MessageConsumerRegistration(
     string? ConsumerIdentity,
     ConsumerCircuitBreakerOptions? CircuitBreakerOverride,
     IReadOnlyDictionary<Type, object> ProviderConfigs,
-    TimeSpan? InboxRetention = null
+    TimeSpan? InboxRetention = null,
+    bool PerInstance = false
 );

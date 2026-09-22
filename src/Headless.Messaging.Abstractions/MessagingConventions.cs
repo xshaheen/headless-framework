@@ -197,6 +197,27 @@ public sealed class MessagingConventions
         return $"{declaringTypeName}|{methodName}|{messageName}";
     }
 
+    /// <summary>
+    /// Qualifies a resolved group name with an instance discriminator, so each process subscribes under a group
+    /// of its own and receives its own copy of every message instead of competing for one.
+    /// </summary>
+    /// <remarks>
+    /// A Bus subscription delivers one copy per group; replicas sharing a group compete. A consumer that keeps
+    /// per-process state — an in-memory cache tier, a resolved policy held in a field — needs every process to
+    /// receive the message, which is what this naming provides.
+    /// </remarks>
+    /// <param name="group">The resolved logical group name.</param>
+    /// <param name="instanceName">The instance identity, normally <c>IHostIdentityAccessor.HostName</c>.</param>
+    /// <returns>The group name this process subscribes under.</returns>
+    /// <exception cref="ArgumentException">Thrown when either argument is null or whitespace.</exception>
+    public static string GetPerInstanceGroupName(string group, string instanceName)
+    {
+        Argument.IsNotNullOrWhiteSpace(group);
+        Argument.IsNotNullOrWhiteSpace(instanceName);
+
+        return $"{group}.{NormalizeSegment(instanceName)}";
+    }
+
     internal static string NormalizeSegment(string value)
     {
         Argument.IsNotNullOrWhiteSpace(value, "Value cannot be null or whitespace.");

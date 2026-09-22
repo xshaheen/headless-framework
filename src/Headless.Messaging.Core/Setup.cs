@@ -109,6 +109,7 @@ public static class SetupMessaging
         services.TryAddSingleton(new MessagingMarkerService("Messaging"));
         MessagingBuilder.GetOrAddMiddlewareDescriptorRegistry(services);
         services.AddHeadlessGuidGenerator();
+        services.AddHeadlessHostIdentity();
         services.TryAddSingleton(TimeProvider.System);
         // Idempotent: registers the singleton IUnitOfWorkFactory exactly once regardless of registration order
         // with other consumer packages (Headless.EntityFramework, Headless.Jobs.Core).
@@ -335,7 +336,9 @@ public static class SetupMessaging
                         HandlerId: null,
                         ConsumerIdentity: contribution.ConsumerIdentity,
                         CircuitBreakerOverride: null,
-                        ProviderConfigs: new Dictionary<Type, object>()
+                        ProviderConfigs: new Dictionary<Type, object>(),
+                        InboxRetention: null,
+                        PerInstance: contribution.PerInstance
                     ),
                 ],
                 ContractVersion: contribution.MessageContractVersion
@@ -418,6 +421,7 @@ public static class SetupMessaging
                 {
                     ProviderConfigs = consumer.ProviderConfigs,
                     InboxRetention = consumer.InboxRetention ?? TimeSpan.FromDays(30),
+                    PerInstance = consumer.PerInstance,
                 };
 
                 var key = new ConsumerRegistrationKey(

@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
@@ -41,6 +42,12 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
 
     private readonly IRuntimeConsumerRegistry _runtimeConsumerRegistry =
         serviceProvider.GetService<IRuntimeConsumerRegistry>() ?? EmptyRuntimeConsumerRegistry.Instance;
+
+    // Lazy so a host that registers no per-instance consumer never needs the identity, which keeps manual and
+    // test hosts that bypass AddHeadlessMessaging working as before.
+    private readonly Lazy<string> _instanceName = new(() =>
+        serviceProvider.GetRequiredService<IHostIdentityAccessor>().HostName
+    );
 
     public void Invalidate()
     {
@@ -138,13 +145,21 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
 
     private string _GetGroupName(ConsumerMetadata metadata)
     {
+        string group;
+
         if (!string.IsNullOrWhiteSpace(metadata.Group))
         {
-            return metadata.Group;
+            group = metadata.Group;
+        }
+        else
+        {
+            _messagingOptions.Conventions.Version = _messagingOptions.Version;
+            group = _messagingOptions.Conventions.GetGroupName(metadata.ResolvedHandlerId);
         }
 
-        _messagingOptions.Conventions.Version = _messagingOptions.Version;
-        return _messagingOptions.Conventions.GetGroupName(metadata.ResolvedHandlerId);
+        // Qualifying the group is the whole mechanism: a Bus subscription delivers one copy per group, so giving
+        // each process a group of its own is what turns one delivery per deployment into one per instance.
+        return metadata.PerInstance ? MessagingConventions.GetPerInstanceGroupName(group, _instanceName.Value) : group;
     }
 
     private static List<ParameterDescriptor> _BuildParameters(MethodInfo method)

@@ -55,7 +55,29 @@ public interface IConsumerBuilderBase<TConsumer, out TBuilder>
 /// <typeparam name="TConsumer">The consumer type being configured.</typeparam>
 [PublicAPI]
 public interface IBusConsumerBuilder<TConsumer> : IConsumerBuilderBase<TConsumer, IBusConsumerBuilder<TConsumer>>
-    where TConsumer : class;
+    where TConsumer : class
+{
+    /// <summary>
+    /// Delivers a copy to every running instance instead of one copy to the group.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A Bus subscription delivers one copy per consumer group, and instances sharing a group compete for it.
+    /// That is right for work, and wrong for a consumer that maintains per-process state — an in-memory cache
+    /// tier, a resolved policy held in a field — because the instances that lose the race keep serving what they
+    /// already hold. This qualifies the group with the instance identity so every process gets its own copy.
+    /// </para>
+    /// <para>
+    /// The cost is one broker-side subscription per instance identity
+    /// (<c>IHostIdentityAccessor.HostName</c>: the pod name under Kubernetes, the machine name otherwise). Those
+    /// are not reaped when an instance goes away, so an environment that churns instance names — a Deployment
+    /// rollout, which renames pods — accumulates them until an operator removes them. Prefer it for signals that
+    /// refresh process-local state; never use it for work that must happen once.
+    /// </para>
+    /// </remarks>
+    /// <returns>The same builder instance for chaining.</returns>
+    IBusConsumerBuilder<TConsumer> PerInstance();
+}
 
 /// <summary>Configures a point-to-point queue consumer registration.</summary>
 /// <typeparam name="TConsumer">The consumer type being configured.</typeparam>
@@ -66,7 +88,14 @@ public interface IQueueConsumerBuilder<TConsumer> : IConsumerBuilderBase<TConsum
 internal sealed class BusConsumerBuilder<TConsumer>(MessageConsumerRegistrationBuilder registration)
     : ConsumerBuilderBase<TConsumer, IBusConsumerBuilder<TConsumer>>(registration),
         IBusConsumerBuilder<TConsumer>
-    where TConsumer : class;
+    where TConsumer : class
+{
+    public IBusConsumerBuilder<TConsumer> PerInstance()
+    {
+        Registration.SetPerInstance();
+        return this;
+    }
+}
 
 internal sealed class QueueConsumerBuilder<TConsumer>(MessageConsumerRegistrationBuilder registration)
     : ConsumerBuilderBase<TConsumer, IQueueConsumerBuilder<TConsumer>>(registration),
@@ -79,6 +108,10 @@ internal abstract class ConsumerBuilderBase<TConsumer, TBuilder>(MessageConsumer
     where TConsumer : class
     where TBuilder : class, IConsumerBuilderBase<TConsumer, TBuilder>
 {
+    /// <summary>The registration this builder mutates, exposed so lane-specific builders reuse it rather than
+    /// capturing the primary-constructor parameter a second time.</summary>
+    protected MessageConsumerRegistrationBuilder Registration => registration;
+
     public TBuilder Group(string group)
     {
         registration.SetGroup(group);
@@ -147,11 +180,18 @@ internal sealed class MessageConsumerRegistrationBuilder(
 
     public ConsumerCircuitBreakerOptions? CircuitBreakerOverride { get; private set; }
 
+    public bool PerInstance { get; private set; }
+
     public void SetGroup(string group)
     {
         Argument.IsNotNullOrWhiteSpace(group);
 
         Group = group;
+    }
+
+    public void SetPerInstance()
+    {
+        PerInstance = true;
     }
 
     public void SetConcurrency(byte maxConcurrent)
@@ -213,7 +253,8 @@ internal sealed class MessageConsumerRegistrationBuilder(
             ConsumerIdentity,
             CircuitBreakerOverride,
             _providerConfigs.BuildOverlay(messageProviderConfigs ?? new Dictionary<Type, object>()),
-            InboxRetention
+            InboxRetention,
+            PerInstance
         );
     }
 }

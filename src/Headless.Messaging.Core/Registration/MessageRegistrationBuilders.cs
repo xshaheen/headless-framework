@@ -166,7 +166,8 @@ internal sealed record FrameworkConsumerRegistrationContribution(
     string? Group,
     byte Concurrency,
     string ConsumerIdentity,
-    string MessageContractVersion
+    string MessageContractVersion,
+    bool PerInstance = false
 );
 
 internal static class FrameworkConsumerRegistrationExtensions
@@ -178,7 +179,8 @@ internal static class FrameworkConsumerRegistrationExtensions
         string messageContractVersion,
         string? messageName = null,
         string? group = null,
-        byte concurrency = 1
+        byte concurrency = 1,
+        bool perInstance = false
     )
         where TMessage : class
         where TConsumer : class, IConsume<TMessage>
@@ -210,7 +212,8 @@ internal static class FrameworkConsumerRegistrationExtensions
                 group,
                 concurrency,
                 consumerIdentity,
-                messageContractVersion
+                messageContractVersion,
+                perInstance
             )
         );
     }

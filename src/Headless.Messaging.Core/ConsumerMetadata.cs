@@ -37,6 +37,15 @@ public sealed record ConsumerMetadata(
     private static readonly IReadOnlyDictionary<Type, object> _EmptyProviderConfigs = new Dictionary<Type, object>();
 
     /// <summary>
+    /// Whether every instance receives its own copy, instead of one copy going to the group.
+    /// </summary>
+    /// <remarks>
+    /// Set by <c>PerInstance()</c> on a Bus registration. The group this consumer actually subscribes under is
+    /// then qualified with the instance identity, which is what turns one delivery per group into one per process.
+    /// </remarks>
+    public bool PerInstance { get; init; }
+
+    /// <summary>
     /// Gets the resolved handler identity used by the runtime when an explicit id is not supplied.
     /// </summary>
     public string ResolvedHandlerId =>

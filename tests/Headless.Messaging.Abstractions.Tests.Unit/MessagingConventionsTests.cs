@@ -225,6 +225,51 @@ public sealed class MessagingConventionsTests : TestBase
         // then
         conventions.MessageNaming.Should().Be(convention);
     }
+
+    [Fact]
+    public void should_qualify_a_group_with_the_instance_name_so_each_process_subscribes_separately()
+    {
+        // when
+        var group = MessagingConventions.GetPerInstanceGroupName("orders.handler.v1", "api-7");
+
+        // then
+        group.Should().Be("orders.handler.v1.api.7");
+    }
+
+    [Fact]
+    public void should_normalize_an_instance_name_that_is_not_a_legal_group_segment()
+    {
+        // A Kubernetes host name is "{namespace}/{pod}", and a raw slash is not a legal name on every broker.
+        // when
+        var group = MessagingConventions.GetPerInstanceGroupName("cache.invalidation", "prod/api-5f4c_9");
+
+        // then
+        group.Should().Be("cache.invalidation.prod.api.5f4c.9");
+    }
+
+    [Fact]
+    public void should_give_two_instances_different_groups_which_is_what_makes_each_receive_its_own_copy()
+    {
+        // when
+        var first = MessagingConventions.GetPerInstanceGroupName("cache.invalidation", "api-1");
+        var second = MessagingConventions.GetPerInstanceGroupName("cache.invalidation", "api-2");
+
+        // then
+        first.Should().NotBe(second);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void should_reject_a_blank_instance_name_rather_than_silently_sharing_one_group(string? instanceName)
+    {
+        // when
+        var act = () => MessagingConventions.GetPerInstanceGroupName("cache.invalidation", instanceName!);
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
 }
 
 // Test types for message-name generation
