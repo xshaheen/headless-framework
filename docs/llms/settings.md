@@ -71,6 +71,39 @@ The *static store* (`IStaticSettingDefinitionStore`) builds the setting catalog 
 
 `SettingValueStore` caches resolved setting values to avoid repeated database reads. The cache is backed by the registered `ICache`. When `ISettingManager.SetAsync` or `DeleteAsync` writes or removes a value, `SettingValueStore` updates or evicts the affected cache entries directly through `ICache` (a distributed cache propagates the eviction across nodes via `CacheInvalidationMessage`). Direct `ISettingValueRecordRepository` writes also evict the affected cache entry (removed after `SaveChangesAsync`), so a repository-level write is reflected on the next read. Only writes that bypass the repository entirely (raw SQL, direct `DbContext`) leave the cache stale.
 
+### Reacting to a change
+
+`SettingManager` publishes `SettingChangedMessage` over `IBus` after a successful `SetAsync` or `DeleteAsync`, so an instance holding a resolved value learns it is stale instead of polling for it. Consume it like any other message:
+
+```csharp
+public sealed class ReloadLimits(MyPolicyCache cache) : IConsume<SettingChangedMessage>
+{
+    public async ValueTask ConsumeAsync(ConsumeContext<SettingChangedMessage> context, CancellationToken ct)
+    {
+        var message = context.Message;
+
+        // Scope matters: a per-user override must not invalidate application-wide policy.
+        if (!string.Equals(message.ProviderName, SettingValueProviderNames.Global, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (message.SettingNames.Any(cache.Tracks))
+        {
+            await cache.ReloadAsync(ct);
+        }
+    }
+}
+```
+
+The message carries setting names and the scope they were written at, never values. Values would put the plaintext of an `IsEncrypted` setting on the broker and make delivery order load-bearing, so a receiver re-reads instead, which is idempotent and order-free. `OriginHostName` names the host that wrote the change (`IHostIdentityAccessor.HostName`) for logs and telemetry; do not filter on it. The writing process holds copies too, since the manager knows nothing about the field a consumer copied a value into, so the origin must re-read like every other instance.
+
+`IBus` is optional. A host that never calls `AddHeadlessMessaging` writes settings exactly as before and publishes nothing, and a failed publish is logged and never fails the write that already succeeded. In both cases a peer keeps its copy until it re-reads for its own reasons, so a consumer that must converge without a bus still needs a periodic refresh.
+
+The announcement follows the write but not the commit. The injected `IBus` never enlists in a transaction, so when `SetAsync` runs inside a caller's unit of work (`RunAsync(db, …)`) the message goes out before that unit commits, and a peer that re-reads in that window loads the old value with no further signal. Call `SetAsync` outside a surrounding unit, or keep the backstop refresh above, when that window matters.
+
+This is separate from cache coherence, which is already handled: a store-backed write evicts its own cache entry, and a hybrid cache broadcasts that eviction through `CacheInvalidationMessage`. The change signal exists for state the framework cannot see, such as a value a consumer copied into a field of its own.
+
 ### Startup Initialization
 
 `SettingsInitializationBackgroundService` runs after the application starts. It saves static setting definitions to the database (idempotent and guarded by a distributed lock), with up to 10 jittered exponential-back-off retries capped at 30 seconds, then pre-caches dynamic setting definitions when `IsDynamicSettingStoreEnabled` is true. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; other terminal failures surface through `WaitForInitializationAsync()`. Both tasks are skipped when their governing option flags are disabled — in that case the service signals completion immediately. If the host is stopped before initialization finishes, the background task and waiters are cancelled.

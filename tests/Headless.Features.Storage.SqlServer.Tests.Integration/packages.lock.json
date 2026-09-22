@@ -806,7 +806,9 @@
           "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
           "Headless.Domain": "[1.0.0, )",
           "Headless.Features.Abstractions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )"
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Messaging.Abstractions": "[1.0.0, )",
+          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )"
         }
       },
       "headless.features.storage.sqlserver": {
@@ -837,6 +839,19 @@
           "Microsoft.Extensions.Hosting": "[10.0.12, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.12, )",
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.12, )"
+        }
+      },
+      "headless.messaging.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.messaging.bus.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Messaging.Abstractions": "[1.0.0, )"
         }
       },
       "headless.multitenancy.abstractions": {
@@ -894,6 +909,9 @@
           "Testcontainers.XunitV3": "[4.15.0, )",
           "xunit.v3.extensibility.core": "[4.0.0, )"
         }
+      },
+      "headless.unitofwork.abstractions": {
+        "type": "Project"
       },
       "headless.urls": {
         "type": "Project",

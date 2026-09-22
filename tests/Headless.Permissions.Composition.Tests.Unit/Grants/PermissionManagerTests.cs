@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Exceptions;
+using Headless.Messaging;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.Entities;
 using Headless.Permissions.GrantProviders;
@@ -11,6 +12,7 @@ using Headless.Permissions.Repositories;
 using Headless.Permissions.Resources;
 using Headless.Primitives;
 using Headless.Testing.Tests;
+using NSubstitute.ExceptionExtensions;
 
 namespace Tests.Grants;
 
@@ -20,6 +22,8 @@ public sealed class PermissionManagerTests : TestBase
     private readonly IPermissionGrantProviderManager _grantProviderManager;
     private readonly IPermissionGrantRepository _repository;
     private readonly IPermissionErrorsDescriptor _errorsDescriptor;
+    private readonly IBus _bus;
+    private readonly IHostIdentityAccessor _hostIdentity;
     private readonly PermissionManager _sut;
 
     public PermissionManagerTests()
@@ -28,8 +32,18 @@ public sealed class PermissionManagerTests : TestBase
         _grantProviderManager = Substitute.For<IPermissionGrantProviderManager>();
         _repository = Substitute.For<IPermissionGrantRepository>();
         _errorsDescriptor = Substitute.For<IPermissionErrorsDescriptor>();
+        _bus = Substitute.For<IBus>();
+        _hostIdentity = Substitute.For<IHostIdentityAccessor>();
+        _hostIdentity.HostName.Returns("prod/orders-7d");
 
-        _sut = new PermissionManager(_definitionManager, _grantProviderManager, _repository, _errorsDescriptor);
+        _sut = new PermissionManager(
+            _definitionManager,
+            _grantProviderManager,
+            _repository,
+            _errorsDescriptor,
+            _hostIdentity,
+            _bus
+        );
     }
 
     #region GetAsync - Single Permission
@@ -496,6 +510,215 @@ public sealed class PermissionManagerTests : TestBase
 
         // then
         await _repository.Received(1).DeleteManyAsync(grants, AbortToken);
+    }
+
+    #endregion
+
+    #region Change signal
+
+    [Fact]
+    public async Task should_publish_the_changed_permission_name_and_scope_after_a_write()
+    {
+        // given
+        const string permissionName = "Users.Create";
+        const string providerName = "Role";
+        const string providerKey = "admin";
+        var permission = _CreatePermission(permissionName);
+        var provider = Substitute.For<IPermissionGrantProvider>();
+        provider.Name.Returns(providerName);
+
+        _definitionManager.FindAsync(permissionName, AbortToken).Returns(permission);
+        _grantProviderManager.ValueProviders.Returns([provider]);
+
+        // when
+        await _sut.SetAsync(permissionName, providerName, providerKey, true, AbortToken);
+
+        // then
+        await _bus.Received(1)
+            .PublishAsync(
+                Arg.Is<PermissionGrantChangedMessage>(m =>
+                    m.PermissionNames.Count == 1
+                    && m.PermissionNames[0] == permissionName
+                    && m.ProviderName == providerName
+                    && m.ProviderKey == providerKey
+                    && m.OriginHostName == "prod/orders-7d"
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_publish_every_permission_written_by_a_batch()
+    {
+        // given
+        string[] permissionNames = ["Users.Create", "Users.Update"];
+        const string providerName = "Role";
+        const string providerKey = "admin";
+        var permissions = permissionNames.Select(n => _CreatePermission(n)).ToList();
+        var provider = Substitute.For<IPermissionGrantProvider>();
+        provider.Name.Returns(providerName);
+
+        _definitionManager.GetPermissionsAsync(AbortToken).Returns(permissions);
+        _grantProviderManager.ValueProviders.Returns([provider]);
+
+        // when
+        await _sut.SetAsync(permissionNames, providerName, providerKey, true, AbortToken);
+
+        // then
+        await _bus.Received(1)
+            .PublishAsync(
+                Arg.Is<PermissionGrantChangedMessage>(m =>
+                    m.PermissionNames.Count == 2
+                    && m.PermissionNames.Contains("Users.Create")
+                    && m.PermissionNames.Contains("Users.Update")
+                    && m.ProviderName == providerName
+                    && m.ProviderKey == providerKey
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_not_publish_when_a_batch_fails_validation()
+    {
+        // given
+        string[] permissionNames = ["Users.Create", "NonExistent.Permission"];
+        var permission = _CreatePermission("Users.Create");
+        var errorDescriptor = new ErrorDescriptor("test", "Some permissions undefined");
+
+        _definitionManager.GetPermissionsAsync(AbortToken).Returns([permission]);
+        _errorsDescriptor.SomePermissionsAreNotDefined(Arg.Any<IReadOnlyCollection<string>>()).Returns(errorDescriptor);
+
+        // when
+        var act = () => _sut.SetAsync(permissionNames, "Role", "admin", true, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ConflictException>();
+        await _bus.DidNotReceive().PublishAsync(Arg.Any<PermissionGrantChangedMessage>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_publish_every_removed_permission_name_when_a_provider_scope_is_deleted()
+    {
+        // given
+        const string providerName = "Role";
+        const string providerKey = "admin";
+        List<PermissionGrantRecord> grants =
+        [
+            new(Guid.NewGuid(), "Users.Create", providerName, providerKey, true),
+            new(Guid.NewGuid(), "Users.Delete", providerName, providerKey, true),
+        ];
+
+        _repository.GetListAsync(providerName, providerKey, AbortToken).Returns(grants);
+
+        // when
+        await _sut.DeleteAsync(providerName, providerKey, AbortToken);
+
+        // then
+        await _bus.Received(1)
+            .PublishAsync(
+                Arg.Is<PermissionGrantChangedMessage>(m =>
+                    m.PermissionNames.Count == 2
+                    && m.PermissionNames.Contains("Users.Create")
+                    && m.PermissionNames.Contains("Users.Delete")
+                    && m.ProviderName == providerName
+                    && m.ProviderKey == providerKey
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_not_publish_when_a_delete_removed_nothing()
+    {
+        // given
+        _repository.GetListAsync("Role", "admin", AbortToken).Returns([]);
+
+        // when
+        await _sut.DeleteAsync("Role", "admin", AbortToken);
+
+        // then
+        await _bus.DidNotReceive().PublishAsync(Arg.Any<PermissionGrantChangedMessage>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_write_successfully_when_no_bus_is_registered()
+    {
+        // given
+        const string permissionName = "Users.Create";
+        const string providerName = "Role";
+        var permission = _CreatePermission(permissionName);
+        var provider = Substitute.For<IPermissionGrantProvider>();
+        provider.Name.Returns(providerName);
+
+        _definitionManager.FindAsync(permissionName, AbortToken).Returns(permission);
+        _grantProviderManager.ValueProviders.Returns([provider]);
+
+        var busless = new PermissionManager(
+            _definitionManager,
+            _grantProviderManager,
+            _repository,
+            _errorsDescriptor,
+            _hostIdentity,
+            bus: null
+        );
+
+        // when
+        var act = async () => await busless.SetAsync(permissionName, providerName, "admin", true, AbortToken);
+
+        // then
+        await act.Should().NotThrowAsync();
+        await provider.Received(1).SetAsync(permission, "admin", true, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_keep_the_write_when_the_announcement_fails()
+    {
+        // given
+        const string permissionName = "Users.Create";
+        const string providerName = "Role";
+        var permission = _CreatePermission(permissionName);
+        var provider = Substitute.For<IPermissionGrantProvider>();
+        provider.Name.Returns(providerName);
+
+        _definitionManager.FindAsync(permissionName, AbortToken).Returns(permission);
+        _grantProviderManager.ValueProviders.Returns([provider]);
+        _bus.PublishAsync(Arg.Any<PermissionGrantChangedMessage>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("broker down"));
+
+        // when
+        var act = async () => await _sut.SetAsync(permissionName, providerName, "admin", true, AbortToken);
+
+        // then
+        await act.Should().NotThrowAsync();
+        await provider.Received(1).SetAsync(permission, "admin", true, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_propagate_cancellation_raised_by_the_announcement()
+    {
+        // given
+        const string permissionName = "Users.Create";
+        const string providerName = "Role";
+        var permission = _CreatePermission(permissionName);
+        var provider = Substitute.For<IPermissionGrantProvider>();
+        provider.Name.Returns(providerName);
+        _definitionManager.FindAsync(permissionName, Arg.Any<CancellationToken>()).Returns(permission);
+        _grantProviderManager.ValueProviders.Returns([provider]);
+
+        using var cts = new CancellationTokenSource();
+        _bus.PublishAsync(Arg.Any<PermissionGrantChangedMessage>(), Arg.Any<CancellationToken>())
+            .Returns<Task<PublishReceipt>>(async _ =>
+            {
+                await cts.CancelAsync();
+                throw new OperationCanceledException(cts.Token);
+            });
+
+        // when
+        var act = async () => await _sut.SetAsync(permissionName, providerName, "admin", true, cts.Token);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
     #endregion

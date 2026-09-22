@@ -140,6 +140,11 @@ public static class SetupPermissions
     {
         services._AddCoreValueProvider();
         services.AddInitializerHostedService<PermissionsInitializationBackgroundService>();
+
+        // The definition store keys its cross-instance lock on the application name and the manager stamps
+        // its change announcements with the instance id; a host that never registered an identity gets one.
+        services.AddHeadlessHostIdentity();
+
         services.AddTransient<IGrantPermissionsSeedHelper, GrantPermissionsSeedHelper>();
 
         services.TryAddSingleton<IPermissionErrorsDescriptor, DefaultPermissionErrorsDescriptor>();

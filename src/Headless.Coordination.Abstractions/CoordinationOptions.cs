@@ -37,12 +37,6 @@ public sealed class CoordinationOptions
     public string ClusterName { get; set; } = DefaultClusterName;
 
     /// <summary>
-    /// Static node identifier to use instead of a runtime-generated one. When <see langword="null"/> the
-    /// registered <see cref="INodeIdProvider"/> is invoked. Must not be empty or whitespace when set.
-    /// </summary>
-    public string? ConfiguredNodeId { get; set; }
-
-    /// <summary>
     /// Optional role label for this node, written to the node descriptor on <see cref="INodeMembership.RegisterAsync"/>.
     /// Roles are informational; the system does not enforce topology based on them.
     /// </summary>

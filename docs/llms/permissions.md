@@ -96,6 +96,42 @@ Each provider returns one of three states per permission:
 
 `PermissionGrantStore` caches resolved grant statuses to avoid repeated database reads per request. The cache is backed by a tenant-scoped `ICache<PermissionGrantCacheItem>` keyed on the current tenant id. When `IPermissionManager.SetAsync` writes a grant, `PermissionGrantStore` evicts the affected cache entries directly through `ICache`. Direct `IPermissionGrantRepository` writes also evict the affected cache entry (removed after `SaveChangesAsync`), so a repository-level write is reflected on the next read. Only writes that bypass the repository entirely (raw SQL, direct `DbContext`) leave the cache stale.
 
+### Reacting to a change
+
+`PermissionManager` publishes `PermissionGrantChangedMessage` over `IBus` after a successful `SetAsync` or `DeleteAsync`. The message tells an instance that a copied grant decision is stale, so the instance can re-read instead of polling. Consume it like any other message:
+
+```csharp
+public sealed class ReloadRolePermissions(MyPolicyCache cache) : IConsume<PermissionGrantChangedMessage>
+{
+    public async ValueTask ConsumeAsync(ConsumeContext<PermissionGrantChangedMessage> context, CancellationToken ct)
+    {
+        var message = context.Message;
+
+        // Scope matters: another role's grant must not invalidate this role's policy.
+        if (
+            !string.Equals(message.ProviderName, PermissionGrantProviderNames.Role, StringComparison.Ordinal)
+            || !string.Equals(message.ProviderKey, cache.RoleId, StringComparison.Ordinal)
+        )
+        {
+            return;
+        }
+
+        if (message.PermissionNames.Any(cache.Tracks))
+        {
+            await cache.ReloadAsync(ct);
+        }
+    }
+}
+```
+
+The message carries permission names and the scope that changed, never grant values. Values would make delivery order load-bearing: two racing grant and revoke writes could leave a receiver holding the older state. A receiver re-reads instead, which is idempotent and order-free. `OriginHostName` names the host that wrote the change (`IHostIdentityAccessor.HostName`) for logs and telemetry. Do not filter on it. The writing process holds copies too, since the manager knows nothing about the state a consumer copied a grant into. The origin must re-read like every other instance.
+
+`IBus` is optional. A host that never calls `AddHeadlessMessaging` writes grants exactly as before and publishes nothing. A failed publish is logged and never fails the write that already succeeded. In both cases a peer keeps its copy until it re-reads for its own reasons, so a consumer that must converge without a bus still needs a periodic refresh.
+
+The announcement follows the write but not the commit. The injected `IBus` never enlists in a transaction, so when `SetAsync` runs inside a caller's unit of work (`RunAsync(db, …)`) the message goes out before that unit commits. A peer that re-reads in that window loads the old grant with no further signal. Call `SetAsync` outside a surrounding unit, or keep the backstop refresh above, when that window matters.
+
+This signal is separate from grant-cache coherence. A store-backed write evicts the affected cache entries directly. `PermissionGrantChangedMessage` exists for state the framework cannot see, such as a resolved grant decision that a consumer copied into a field of its own.
+
 ### Static vs. Dynamic Definition Store
 
 The *static store* (`IStaticPermissionDefinitionStore`) builds the permission catalog once at startup by invoking all registered `IPermissionDefinitionProvider` instances. It is thread-safe and lazily initialized on first access.

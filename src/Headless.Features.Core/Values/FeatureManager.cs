@@ -1,11 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Exceptions;
 using Headless.Features.Definitions;
 using Headless.Features.Models;
 using Headless.Features.Resources;
 using Headless.Features.ValueProviders;
+using Headless.Messaging;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Headless.Features.Values;
 
@@ -13,9 +17,14 @@ namespace Headless.Features.Values;
 public sealed class FeatureManager(
     IFeatureDefinitionManager definitionManager,
     IFeatureValueProviderManager valueProviderManager,
-    IFeatureErrorsDescriptor errorsDescriptor
+    IFeatureErrorsDescriptor errorsDescriptor,
+    IHostIdentityAccessor hostIdentity,
+    IBus? bus = null,
+    ILogger<FeatureManager>? logger = null
 ) : IFeatureManager
 {
+    private readonly ILogger _logger = logger ?? NullLogger<FeatureManager>.Instance;
+
     /// <inheritdoc/>
     /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>. Also thrown for <paramref name="providerName"/> when <paramref name="fallback"/> is <see langword="false"/>.</exception>
     /// <exception cref="ConflictException">The feature named <paramref name="name"/> is not defined.</exception>
@@ -141,6 +150,8 @@ public sealed class FeatureManager(
         // Getting list for case of there are more than one provider with the same providerName
         providers = [.. providers.TakeWhile(p => string.Equals(p.Name, providerName, StringComparison.Ordinal))];
 
+        var writeIssued = false;
+
         foreach (var provider in providers)
         {
             if (provider is not IFeatureValueProvider p)
@@ -156,6 +167,13 @@ public sealed class FeatureManager(
             {
                 await p.SetAsync(feature, value, providerKey, cancellationToken).ConfigureAwait(false);
             }
+
+            writeIssued = true;
+        }
+
+        if (writeIssued)
+        {
+            await _PublishChangedAsync([name], providerName, providerKey, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -167,7 +185,14 @@ public sealed class FeatureManager(
         CancellationToken cancellationToken = default
     )
     {
-        var featureNameValues = await GetAllAsync(providerName, providerKey, cancellationToken: cancellationToken)
+        // Only the values this scope stores. With fallback, a feature whose value lives in a lower provider
+        // would be listed too, cleared as a no-op, and announced as changed when nothing changed for it.
+        var featureNameValues = await GetAllAsync(
+                providerName,
+                providerKey,
+                fallback: false,
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
 
         var providers = valueProviderManager.ValueProviders.SkipWhile(p =>
@@ -184,6 +209,8 @@ public sealed class FeatureManager(
             return;
         }
 
+        var removedNames = new List<string>(featureNameValues.Count);
+
         foreach (var featureNameValue in featureNameValues)
         {
             var feature =
@@ -194,6 +221,61 @@ public sealed class FeatureManager(
             {
                 await provider.ClearAsync(feature, providerKey, cancellationToken).ConfigureAwait(false);
             }
+
+            removedNames.Add(featureNameValue.Name);
+        }
+
+        if (removedNames.Count != 0)
+        {
+            await _PublishChangedAsync([.. removedNames], providerName, providerKey, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Announces a completed write so every instance holding a copy of the value, this one included, can re-read it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Published after the write, never before: a receiver that re-read on an announcement of a write that then
+    /// failed would cache the old value and believe it fresh. The injected <c>IBus</c> never enlists in a
+    /// transaction, so when the caller runs <c>SetAsync</c> inside its own unit of work the announcement still goes
+    /// out before that unit commits; a peer that re-reads in that window sees the old value. The consumer
+    /// contract in <c>docs/llms/features.md</c> names this window.
+    /// </para>
+    /// <para>
+    /// Best-effort by design — messaging is optional, and a failed announcement must not fail the write that
+    /// already succeeded, so publish failures are logged and swallowed. The cost of a lost message is that a
+    /// peer keeps a stale copy until its own refresh, which is the behavior of a deployment with no bus at all.
+    /// </para>
+    /// </remarks>
+    private async Task _PublishChangedAsync(
+        string[] featureNames,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        if (bus is null || featureNames.Length == 0)
+        {
+            return;
+        }
+
+        var message = new FeatureChangedMessage
+        {
+            FeatureNames = featureNames,
+            ProviderName = providerName,
+            ProviderKey = providerKey,
+            OriginHostName = hostIdentity.HostName,
+        };
+
+        try
+        {
+            await bus.PublishAsync(message, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogFailedToPublishFeatureChanged(ex, providerName, providerKey, featureNames.Length);
         }
     }
 
@@ -241,4 +323,22 @@ public sealed class FeatureManager(
 
         return new(name, Value: null, Provider: null);
     }
+}
+
+/// <summary>Structured log helpers for <see cref="FeatureManager"/>.</summary>
+internal static partial class FeatureManagerLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "FailedToPublishFeatureChanged",
+        Level = LogLevel.Warning,
+        Message = "Failed to announce a feature change for provider {ProviderName} (key={ProviderKey}, names={NameCount}); the write succeeded and peers keep their copies until they re-read"
+    )]
+    public static partial void LogFailedToPublishFeatureChanged(
+        this ILogger logger,
+        Exception exception,
+        string providerName,
+        string? providerKey,
+        int nameCount
+    );
 }

@@ -228,13 +228,13 @@ public static class JobsCoordinationFixtureExtensions
 
         // IMPORTANT: Coordination must be registered before Jobs so the durable store's require-a-provider
         // check is satisfied at registration time.
+        builder.Services.AddHeadlessHostIdentity(options => options.HostName = nodeId);
         builder.Services.AddHeadlessCoordination(setup =>
         {
             fixture.ConfigureCoordination(setup);
             setup.Configure(options =>
             {
                 options.ClusterName = ClusterName;
-                options.ConfiguredNodeId = nodeId;
                 options.HeartbeatInterval = HeartbeatInterval;
                 options.SuspicionThreshold = SuspicionThreshold;
                 options.DeadThreshold = DeadThreshold;
@@ -371,13 +371,13 @@ public static class JobsCoordinationFixtureExtensions
         var builder = Host.CreateApplicationBuilder();
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
+        builder.Services.AddHeadlessHostIdentity(options => options.HostName = nodeId);
         builder.Services.AddHeadlessCoordination(setup =>
         {
             fixture.ConfigureCoordination(setup);
             setup.Configure(options =>
             {
                 options.ClusterName = ClusterName;
-                options.ConfiguredNodeId = nodeId;
                 options.HeartbeatInterval = HeartbeatInterval;
                 options.SuspicionThreshold = SuspicionThreshold;
                 options.DeadThreshold = DeadThreshold;

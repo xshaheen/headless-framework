@@ -463,7 +463,9 @@
           "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
           "Headless.Domain": "[1.0.0, )",
           "Headless.Features.Abstractions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )"
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Messaging.Abstractions": "[1.0.0, )",
+          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )"
         }
       },
       "headless.fluentvalidation": {
@@ -486,6 +488,19 @@
           "Microsoft.Extensions.Hosting": "[10.0.12, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.12, )",
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.12, )"
+        }
+      },
+      "headless.messaging.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.messaging.bus.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Messaging.Abstractions": "[1.0.0, )"
         }
       },
       "headless.multitenancy": {

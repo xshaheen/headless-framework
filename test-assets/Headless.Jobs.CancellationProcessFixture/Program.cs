@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Coordination;
 using Headless.Jobs.Base;
 using Headless.Jobs.DbContextFactory;
@@ -32,13 +33,13 @@ internal static class Program
 
         var builder = Host.CreateApplicationBuilder();
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
+        builder.Services.AddHeadlessHostIdentity(options => options.HostName = "cancellation-process-worker");
         builder.Services.AddHeadlessCoordination(setup =>
         {
             setup.UsePostgreSql(connectionString);
             setup.Configure(options =>
             {
                 options.ClusterName = "jobs-it";
-                options.ConfiguredNodeId = "cancellation-process-worker";
                 options.HeartbeatInterval = TimeSpan.FromMilliseconds(200);
                 options.SuspicionThreshold = TimeSpan.FromMilliseconds(600);
                 options.DeadThreshold = TimeSpan.FromMilliseconds(1200);

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Checks;
 using Headless.Hosting.Initialization;
@@ -140,6 +141,10 @@ public static class SetupSettings
         services._AddCoreValueProvider();
 
         services.AddInitializerHostedService<SettingsInitializationBackgroundService>();
+
+        // The definition store keys its cross-instance lock on the application name and the manager stamps
+        // its change announcements with the instance id; a host that never registered an identity gets one.
+        services.AddHeadlessHostIdentity();
 
         services.TryAddSingleton<ISettingErrorsDescriptor, DefaultSettingErrorsDescriptor>();
         services.TryAddSingleton<ISettingEncryptionService, SettingEncryptionService>();

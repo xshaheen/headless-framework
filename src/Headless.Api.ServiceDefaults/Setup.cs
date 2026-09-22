@@ -262,9 +262,8 @@ public static class SetupApi
             );
 
             builder.Services.AddHeadlessGuidGenerator();
+            builder.Services.AddHeadlessHostIdentity();
             builder.Services.TryAddSingleton<IEnumLocaleAccessor, DefaultEnumLocaleAccessor>();
-            builder.Services.TryAddSingleton<IBuildInformationAccessor, BuildInformationAccessor>();
-            builder.Services.TryAddSingleton<IApplicationInformationAccessor, ApplicationInformationAccessor>();
             builder.Services.TryAddSingleton<ICancellationTokenProvider, HttpContextCancellationTokenProvider>();
 
             builder.Services.TryAddSingleton<IPasswordGenerator, PasswordGenerator>();
@@ -337,10 +336,10 @@ public static class SetupApi
                     http.ConfigureHttpClient(
                         (serviceProvider, client) =>
                         {
-                            var appAccessor = serviceProvider.GetRequiredService<IApplicationInformationAccessor>();
+                            var hostIdentity = serviceProvider.GetRequiredService<IHostIdentityAccessor>();
                             var buildAccessor = serviceProvider.GetRequiredService<IBuildInformationAccessor>();
                             client.DefaultRequestHeaders.UserAgent.Add(
-                                new ProductInfoHeaderValue(appAccessor.ApplicationName, buildAccessor.GetVersion())
+                                new ProductInfoHeaderValue(hostIdentity.ApplicationName, buildAccessor.GetVersion())
                             );
                         }
                     );

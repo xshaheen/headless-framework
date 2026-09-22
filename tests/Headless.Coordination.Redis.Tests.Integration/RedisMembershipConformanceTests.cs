@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Coordination;
 using Headless.Coordination.Redis;
 using Microsoft.Extensions.DependencyInjection;
@@ -171,6 +172,7 @@ public sealed class RedisMembershipConformanceTests(RedisMembershipFixture fixtu
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IConnectionMultiplexer>(_fixture.ConnectionMultiplexer);
+        services.AddHeadlessHostIdentity(options => options.HostName = "node-a");
         services.AddHeadlessCoordination(setup =>
         {
             // Provider-default RedisKnownNodeRetention (7 days), not the fixture's 600ms override.
@@ -178,7 +180,6 @@ public sealed class RedisMembershipConformanceTests(RedisMembershipFixture fixtu
             setup.Configure(options =>
             {
                 options.ClusterName = cluster;
-                options.ConfiguredNodeId = "node-a";
                 // Mirror the harness thresholds (scaled by TimeScale) so this Redis-only test shares the same
                 // explicit wall-clock margins as the shared conformance suite.
                 options.HeartbeatInterval = CoordinationFixtureExtensions.HeartbeatInterval;

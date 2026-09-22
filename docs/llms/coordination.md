@@ -68,7 +68,7 @@ Coordination is fencing-safe, fail-stop, and fail-closed when backed by an autho
 - `NodeJoined`, `NodeSuspected`, `NodeRecovered`, `NodeLeft`, and `LocalMembershipLost` event contracts.
 - `IMembershipEventSource.WatchAsync(...)` for lifecycle events.
 - `IDeadOwnerReclaimer` — the per-domain reclaim sink driven by the shared dead-owner recovery bridge (carries `ReconcileInterval` and `ReclaimAsync(owners, ct)`, where `owners` is a single owner from the event path or the whole dead set from a reconcile tick so a consumer can collapse the reclaim into one batched write); implemented by each consumer (Jobs, Messaging).
-- `CoordinationOptions` for thresholds, cluster name, node id, role, metadata, and membership-loss behavior.
+- `CoordinationOptions` for thresholds, cluster name, role, metadata, and membership-loss behavior. The node id is not an option here; it is `IHostIdentityAccessor.HostName` from `Headless.Core`.
 
 ### Design constraints
 
@@ -161,7 +161,7 @@ Coordination owns the setting so the membership tables land in the same schema w
 
 ### Runtime behavior
 
-Registers `TimeProvider.System`, framework GUID generator defaults, `INodeIdProvider`, `INodeMembership`, `IMembershipEventSource`, and the heartbeat hosted service.
+Registers `TimeProvider.System`, framework GUID generator defaults, `IHostIdentityAccessor` (from `Headless.Core`), `INodeIdProvider`, `INodeMembership`, `IMembershipEventSource`, and the heartbeat hosted service. The default `INodeIdProvider` returns `IHostIdentityAccessor.HostName`, so the node a membership store sees is the same host name that stamps message origins and logs. To pin it, set `HostIdentityOptions.HostName` through `services.AddHeadlessHostIdentity(o => o.HostName = "orders-worker-0")` before any feature registration; the discovery order (`POD_NAMESPACE/POD_NAME`, machine name, generated) is documented in [core.md](core.md).
 
 ---
 
@@ -219,12 +219,14 @@ dotnet add package Headless.Coordination.PostgreSql
 ### Setup and use
 
 ```csharp
+// Optional: pin the node id instead of discovering it from POD_NAME or the machine name.
+services.AddHeadlessHostIdentity(options => options.HostName = "orders-worker-0");
+
 services.AddHeadlessCoordination(setup =>
 {
     setup.Configure(options =>
     {
         options.ClusterName = "orders";
-        options.ConfiguredNodeId = "orders-worker-0";
     });
 
     setup.UsePostgreSql(options =>
@@ -282,7 +284,6 @@ services.AddHeadlessCoordination(setup =>
     setup.Configure(options =>
     {
         options.ClusterName = "orders";
-        options.ConfiguredNodeId = "orders-worker-0";
     });
 
     setup.UseRedis(options =>
@@ -332,7 +333,6 @@ services.AddHeadlessCoordination(setup =>
     setup.Configure(options =>
     {
         options.ClusterName = "orders";
-        options.ConfiguredNodeId = "orders-worker-0";
     });
 
     setup.UseSqlServer(options =>

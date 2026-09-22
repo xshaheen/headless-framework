@@ -125,6 +125,7 @@ public static class SetupCoordinationCore
 
             services.TryAddSingleton(TimeProvider.System);
             services.AddHeadlessGuidGenerator();
+            services.AddHeadlessHostIdentity();
             services.TryAddSingleton<INodeIdProvider, DefaultNodeIdProvider>();
             services.TryAddSingleton<MembershipEventSource>();
             services.TryAddSingleton<IMembershipEventSource>(static sp =>

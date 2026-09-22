@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Exceptions;
+using Headless.Messaging;
 using Headless.Settings.Definitions;
 using Headless.Settings.Helpers;
 using Headless.Settings.Models;
@@ -8,6 +10,7 @@ using Headless.Settings.Resources;
 using Headless.Settings.ValueProviders;
 using Headless.Settings.Values;
 using Headless.Testing.Tests;
+using NSubstitute.ExceptionExtensions;
 using Tests.Fakes;
 
 namespace Tests.Values;
@@ -18,6 +21,8 @@ public sealed class SettingManagerTests : TestBase
     private readonly ISettingValueStore _valueStore;
     private readonly ISettingValueProviderManager _valueProviderManager;
     private readonly ISettingEncryptionService _encryptionService;
+    private readonly IBus _bus;
+    private readonly IHostIdentityAccessor _hostIdentity;
     private readonly SettingManager _sut;
 
     public SettingManagerTests()
@@ -27,13 +32,18 @@ public sealed class SettingManagerTests : TestBase
         _valueProviderManager = Substitute.For<ISettingValueProviderManager>();
         _encryptionService = Substitute.For<ISettingEncryptionService>();
         ISettingErrorsDescriptor errorsDescriptor = new DefaultSettingErrorsDescriptor();
+        _bus = Substitute.For<IBus>();
+        _hostIdentity = Substitute.For<IHostIdentityAccessor>();
+        _hostIdentity.HostName.Returns("prod/orders-7d");
 
         _sut = new SettingManager(
             _definitionManager,
             _valueStore,
             _valueProviderManager,
             _encryptionService,
-            errorsDescriptor
+            errorsDescriptor,
+            _hostIdentity,
+            _bus
         );
     }
 
@@ -626,6 +636,179 @@ public sealed class SettingManagerTests : TestBase
 
         // then
         await action.Should().ThrowExactlyAsync<ArgumentNullException>();
+    }
+
+    #endregion
+
+    #region Change signal
+
+    [Fact]
+    public async Task should_publish_the_changed_name_and_scope_after_a_write()
+    {
+        // given
+        const string settingName = "TestSetting";
+        var definition = new SettingDefinition(settingName);
+        var provider = new FakeSettingValueProvider { Name = "Provider1" };
+
+        _definitionManager.FindAsync(settingName, AbortToken).Returns(definition);
+        _valueProviderManager.Providers.Returns([provider]);
+
+        // when
+        await _sut.SetAsync(settingName, "value", "Provider1", "key1", cancellationToken: AbortToken);
+
+        // then
+        await _bus.Received(1)
+            .PublishAsync(
+                Arg.Is<SettingChangedMessage>(m =>
+                    m.SettingNames.Count == 1
+                    && m.SettingNames[0] == settingName
+                    && m.ProviderName == "Provider1"
+                    && m.ProviderKey == "key1"
+                    && m.OriginHostName == "prod/orders-7d"
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_not_publish_a_value_with_the_change_signal()
+    {
+        // given an encrypted setting, the case where a value payload would leak
+        const string settingName = "SecretSetting";
+        var definition = new SettingDefinition(settingName, isEncrypted: true);
+        var provider = new FakeSettingValueProvider { Name = "Provider1" };
+
+        _definitionManager.FindAsync(settingName, AbortToken).Returns(definition);
+        _valueProviderManager.Providers.Returns([provider]);
+        _encryptionService.Encrypt(definition, "plaintext").Returns("ciphertext");
+
+        // when
+        await _sut.SetAsync(settingName, "plaintext", "Provider1", providerKey: null, cancellationToken: AbortToken);
+
+        // then the signal names the setting and nothing else, so neither plaintext nor ciphertext reaches the bus
+        await _bus.Received(1)
+            .PublishAsync(
+                Arg.Is<SettingChangedMessage>(m => m.SettingNames.Count == 1 && m.SettingNames[0] == settingName),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_publish_every_removed_name_when_a_provider_scope_is_deleted()
+    {
+        // given
+        List<SettingValue> stored = [new("Setting1", "a"), new("Setting2", "b")];
+        _valueStore.GetAllProviderValuesAsync("Provider1", "key1", AbortToken).Returns(stored);
+
+        // when
+        await _sut.DeleteAsync("Provider1", "key1", AbortToken);
+
+        // then a receiver can match on the names it holds without knowing the scope's contents
+        await _bus.Received(1)
+            .PublishAsync(
+                Arg.Is<SettingChangedMessage>(m =>
+                    m.SettingNames.Count == 2
+                    && m.SettingNames.Contains("Setting1")
+                    && m.SettingNames.Contains("Setting2")
+                    && m.ProviderName == "Provider1"
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_not_publish_when_a_delete_removed_nothing()
+    {
+        // given
+        _valueStore.GetAllProviderValuesAsync("Provider1", "key1", AbortToken).Returns([]);
+
+        // when
+        await _sut.DeleteAsync("Provider1", "key1", AbortToken);
+
+        // then an empty announcement would wake every peer to re-read a value that did not change
+        await _bus.DidNotReceive().PublishAsync(Arg.Any<SettingChangedMessage>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_write_successfully_when_no_bus_is_registered()
+    {
+        // given a host with messaging never added
+        const string settingName = "TestSetting";
+        var definition = new SettingDefinition(settingName);
+        var provider = new FakeSettingValueProvider { Name = "Provider1" };
+
+        _definitionManager.FindAsync(settingName, AbortToken).Returns(definition);
+        _valueProviderManager.Providers.Returns([provider]);
+
+        var busless = new SettingManager(
+            _definitionManager,
+            _valueStore,
+            _valueProviderManager,
+            _encryptionService,
+            new DefaultSettingErrorsDescriptor(),
+            _hostIdentity,
+            bus: null
+        );
+
+        // when
+        var act = async () =>
+            await busless.SetAsync(settingName, "value", "Provider1", providerKey: null, cancellationToken: AbortToken);
+
+        // then the signal is an optional extra, never a precondition for storing a value
+        await act.Should().NotThrowAsync();
+
+        var stored = await provider.GetOrDefaultAsync(definition, providerKey: null, AbortToken);
+        stored.Should().Be("value");
+    }
+
+    [Fact]
+    public async Task should_keep_the_write_when_the_announcement_fails()
+    {
+        // given a broker that rejects the publish
+        const string settingName = "TestSetting";
+        var definition = new SettingDefinition(settingName);
+        var provider = new FakeSettingValueProvider { Name = "Provider1" };
+
+        _definitionManager.FindAsync(settingName, AbortToken).Returns(definition);
+        _valueProviderManager.Providers.Returns([provider]);
+        _bus.PublishAsync(Arg.Any<SettingChangedMessage>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("broker down"));
+
+        // when
+        var act = async () =>
+            await _sut.SetAsync(settingName, "value", "Provider1", providerKey: null, cancellationToken: AbortToken);
+
+        // then the value the caller asked for is stored, and the announcement failure stays a log line
+        await act.Should().NotThrowAsync();
+
+        var stored = await provider.GetOrDefaultAsync(definition, providerKey: null, AbortToken);
+        stored.Should().Be("value");
+    }
+
+    [Fact]
+    public async Task should_propagate_cancellation_raised_by_the_announcement()
+    {
+        // given the caller cancelled while the publish was in flight
+        const string settingName = "TestSetting";
+        var definition = new SettingDefinition(settingName);
+        var provider = new FakeSettingValueProvider { Name = "Provider1" };
+        _definitionManager.FindAsync(settingName, Arg.Any<CancellationToken>()).Returns(definition);
+        _valueProviderManager.Providers.Returns([provider]);
+
+        using var cts = new CancellationTokenSource();
+        _bus.PublishAsync(Arg.Any<SettingChangedMessage>(), Arg.Any<CancellationToken>())
+            .Returns<Task<PublishReceipt>>(async _ =>
+            {
+                await cts.CancelAsync();
+                throw new OperationCanceledException(cts.Token);
+            });
+
+        // when
+        var act = async () =>
+            await _sut.SetAsync(settingName, "value", "Provider1", providerKey: null, cancellationToken: cts.Token);
+
+        // then a caller's cancellation is not a broker failure to swallow
+        await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
     #endregion

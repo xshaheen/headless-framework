@@ -813,6 +813,19 @@
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.12, )"
         }
       },
+      "headless.messaging.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.messaging.bus.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Messaging.Abstractions": "[1.0.0, )"
+        }
+      },
       "headless.multitenancy.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -863,6 +876,8 @@
           "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
           "Headless.Domain": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
+          "Headless.Messaging.Abstractions": "[1.0.0, )",
+          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Security.Abstractions": "[1.0.0, )",
           "Headless.Settings.Abstractions": "[1.0.0, )"
         }
@@ -908,6 +923,9 @@
           "Testcontainers.XunitV3": "[4.15.0, )",
           "xunit.v3.extensibility.core": "[4.0.0, )"
         }
+      },
+      "headless.unitofwork.abstractions": {
+        "type": "Project"
       },
       "headless.urls": {
         "type": "Project",

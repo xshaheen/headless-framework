@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Coordination;
 using Headless.Hosting.Initialization;
 using Headless.Testing.Tests;
@@ -206,6 +207,7 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddHeadlessHostIdentity(options => options.HostName = "node-a");
         services.AddHeadlessCoordination(setup =>
         {
             setup.UsePostgreSql(options =>
@@ -218,7 +220,6 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
             setup.Configure(options =>
             {
                 options.ClusterName = _Cluster();
-                options.ConfiguredNodeId = "node-a";
             });
         });
 
