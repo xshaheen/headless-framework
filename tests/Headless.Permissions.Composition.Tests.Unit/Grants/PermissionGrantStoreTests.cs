@@ -10,6 +10,7 @@ using Headless.Permissions.Models;
 using Headless.Permissions.Repositories;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Tests.Grants;
 
@@ -40,6 +41,7 @@ public sealed class PermissionGrantStoreTests : TestBase
             _guidGenerator,
             _cache,
             _currentTenant,
+            Options.Create(new PermissionManagementOptions()),
             logger
         );
     }
@@ -88,6 +90,46 @@ public sealed class PermissionGrantStoreTests : TestBase
             .Received(1)
             .UpsertAllAsync(
                 Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(d => d.Count == 1),
+                Arg.Any<TimeSpan>(),
+                AbortToken
+            );
+    }
+
+    [Fact]
+    public async Task should_reload_every_grant_into_cache_on_refresh()
+    {
+        // given
+        var granted = _CreatePermission("Users.Create");
+        var revoked = _CreatePermission("Users.Delete");
+        var undefined = _CreatePermission("Users.Read");
+        _definitionManager.GetPermissionsAsync(AbortToken).Returns([granted, revoked, undefined]);
+        _repository
+            .GetListAsync(_ProviderName, _ProviderKey, AbortToken)
+            .Returns([
+                new PermissionGrantRecord(Guid.NewGuid(), granted.Name, _ProviderName, _ProviderKey, true),
+                new PermissionGrantRecord(Guid.NewGuid(), revoked.Name, _ProviderName, _ProviderKey, false),
+            ]);
+
+        // when
+        await _sut.RefreshAsync(_ProviderName, _ProviderKey, AbortToken);
+
+        // then
+        await _cache.DidNotReceive().GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _cache
+            .Received(1)
+            .UpsertAllAsync(
+                Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(d =>
+                    d.Count == 3
+                    && d[
+                        PermissionGrantCacheItem.CalculateCacheKey(granted.Name, _ProviderName, _ProviderKey)
+                    ].IsGranted == true
+                    && d[
+                        PermissionGrantCacheItem.CalculateCacheKey(revoked.Name, _ProviderName, _ProviderKey)
+                    ].IsGranted == false
+                    && d[
+                        PermissionGrantCacheItem.CalculateCacheKey(undefined.Name, _ProviderName, _ProviderKey)
+                    ].IsGranted == null
+                ),
                 Arg.Any<TimeSpan>(),
                 AbortToken
             );

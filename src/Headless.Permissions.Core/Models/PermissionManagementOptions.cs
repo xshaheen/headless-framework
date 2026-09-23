@@ -67,6 +67,14 @@ public sealed class PermissionManagementOptions
     /// distributed stamp. Lower values reduce staleness at the cost of more distributed-cache reads. Default: 30 seconds.
     /// </summary>
     public TimeSpan DynamicDefinitionsMemoryCacheExpiration { get; set; } = 30.Seconds();
+
+    /// <summary>
+    /// How long a resolved grant status stays in the distributed grant cache before the next check reloads it from
+    /// the store. Writes through <see cref="Grants.IPermissionManager"/> and the grant repository evict the affected
+    /// entries immediately, so this bounds staleness only for writes that bypass both; a long-lived consumer that
+    /// must observe those calls <see cref="Grants.IPermissionGrantStore.RefreshAsync"/>. Default: 5 hours.
+    /// </summary>
+    public TimeSpan GrantCacheExpiration { get; set; } = 5.Hours();
 }
 
 internal sealed class PermissionManagementOptionsValidator : AbstractValidator<PermissionManagementOptions>
@@ -81,5 +89,6 @@ internal sealed class PermissionManagementOptionsValidator : AbstractValidator<P
         RuleFor(x => x.PermissionsHashCacheExpiration).GreaterThan(TimeSpan.Zero);
         RuleFor(x => x.CommonPermissionsUpdatedStampCacheExpiration).GreaterThan(TimeSpan.Zero);
         RuleFor(x => x.CommonPermissionsUpdatedStampCacheKey).NotEmpty();
+        RuleFor(x => x.GrantCacheExpiration).GreaterThan(TimeSpan.Zero);
     }
 }
