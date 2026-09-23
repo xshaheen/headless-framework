@@ -733,7 +733,15 @@ internal sealed class AzureBlobStorage(
 
             userDelegationKey = response.Value;
         }
-        catch (RequestFailedException e)
+        // Azure.Core surfaces a single failed attempt as RequestFailedException and an exhausted retry sequence as an
+        // AggregateException of them (a host that never resolves fails every attempt), so both shapes mean the same
+        // thing here: the client cannot obtain a delegation key.
+        catch (Exception e)
+            when (e is RequestFailedException
+                || (
+                    e is AggregateException aggregate && aggregate.InnerExceptions.All(x => x is RequestFailedException)
+                )
+            )
         {
             throw new InvalidOperationException(
                 "Unable to generate a presigned URL. The BlobServiceClient cannot sign with an account key and "
