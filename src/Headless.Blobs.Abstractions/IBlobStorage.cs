@@ -49,6 +49,11 @@ public interface IBlobStorage : IAsyncDisposable
     /// streams is provider-specific (some buffer to memory, some stream through) and is not a uniform promise.
     /// </param>
     /// <param name="metadata">Optional key/value metadata to store alongside the blob (non-null values).</param>
+    /// <param name="contentType">
+    /// The media type to record for the blob, or <see langword="null"/> to derive it from the extension of
+    /// <see cref="BlobLocation.Path"/>. Providers that serve blobs over HTTP (S3, Azure) set it as the object's
+    /// <c>Content-Type</c>; providers with no HTTP surface (FileSystem, Redis, SFTP) ignore it.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <remarks>
     /// The top-level container must already exist; a missing container/bucket is an error, not auto-created. Use
@@ -60,6 +65,7 @@ public interface IBlobStorage : IAsyncDisposable
         BlobLocation location,
         Stream content,
         IReadOnlyDictionary<string, string>? metadata = null,
+        string? contentType = null,
         CancellationToken cancellationToken = default
     );
 

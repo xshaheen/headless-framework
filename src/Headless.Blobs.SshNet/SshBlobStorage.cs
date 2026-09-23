@@ -55,6 +55,7 @@ internal sealed partial class SshBlobStorage(
         BlobLocation location,
         Stream content,
         IReadOnlyDictionary<string, string>? metadata = null,
+        string? contentType = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -117,7 +118,7 @@ internal sealed partial class SshBlobStorage(
                 static blob => blob.Path,
                 async (location, blob, ct) =>
                 {
-                    await UploadAsync(location, blob.Stream, blob.Metadata, ct).ConfigureAwait(false);
+                    await UploadAsync(location, blob.Stream, blob.Metadata, blob.ContentType, ct).ConfigureAwait(false);
                     return true;
                 },
                 cancellationToken
