@@ -29,6 +29,21 @@ public sealed class HeadlessFeaturesSetupBuilder
 
     internal IList<IFeaturesStorageOptionsExtension> Extensions { get; } = [];
 
+    internal bool RegisterStartupInitializer { get; private set; } = true;
+
+    /// <summary>
+    /// Skips the hosted service that seeds static feature definitions into the store and pre-caches dynamic ones
+    /// at startup. Use it on hosts that must not touch the store at startup, such as test hosts and read-only
+    /// replicas; static definitions stay available in memory and every other registration is unchanged.
+    /// </summary>
+    /// <returns>The same builder for chaining.</returns>
+    public HeadlessFeaturesSetupBuilder DisableStartupInitialization()
+    {
+        RegisterStartupInitializer = false;
+
+        return this;
+    }
+
     /// <summary>Applies <paramref name="configure"/> to the shared <see cref="FeaturesStorageOptions"/> (schema names, table names, etc.).</summary>
     /// <param name="configure">A delegate that mutates the storage options.</param>
     /// <returns>This builder, to allow chaining.</returns>

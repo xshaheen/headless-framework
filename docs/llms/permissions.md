@@ -416,7 +416,7 @@ builder.Services.AddHeadlessPermissions(setup =>
 - Registers `IPermissionGrantProviderManager` as singleton
 - Registers `IStaticPermissionDefinitionStore`, `IDynamicPermissionDefinitionStore`, `IPermissionDefinitionManager` as singletons
 - Registers `RolePermissionGrantProvider`, `UserPermissionGrantProvider` as singletons
-- Starts `PermissionsInitializationBackgroundService` as a hosted service (`IInitializer`)
+- Starts `PermissionsInitializationBackgroundService` as a hosted service (`IInitializer`) unless `setup.DisableStartupInitialization()` was called
 - Registers `IGrantPermissionsSeedHelper` as transient
 - Registers `PermissionRequirementHandler` and `PermissionsRequirementHandler` as `IAuthorizationHandler` singletons
 - Registers a tenant-scoped `ICache<PermissionGrantCacheItem>` as singleton

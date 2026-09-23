@@ -22,6 +22,21 @@ public sealed class HeadlessSettingsSetupBuilder
 
     internal IList<ISettingsStorageOptionsExtension> Extensions { get; } = [];
 
+    internal bool RegisterStartupInitializer { get; private set; } = true;
+
+    /// <summary>
+    /// Skips the hosted service that seeds static setting definitions into the store and pre-caches dynamic ones
+    /// at startup. Use it on hosts that must not touch the store at startup, such as test hosts and read-only
+    /// replicas; static definitions stay available in memory and every other registration is unchanged.
+    /// </summary>
+    /// <returns>The same builder for chaining.</returns>
+    public HeadlessSettingsSetupBuilder DisableStartupInitialization()
+    {
+        RegisterStartupInitializer = false;
+
+        return this;
+    }
+
     /// <summary>Applies a configuration delegate to the shared <see cref="SettingsStorageOptions"/>.</summary>
     /// <param name="configure">The delegate that mutates <see cref="SettingsStorageOptions"/>.</param>
     /// <returns>The same builder instance to allow chaining.</returns>
