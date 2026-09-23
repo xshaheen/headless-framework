@@ -96,7 +96,7 @@ public static class ApiResultMvcExtensions
             ConflictError e => controller.Conflict(creator.Conflict(e.Errors)),
 
             // Default: treat as conflict
-            _ => controller.Conflict(creator.Conflict([new ErrorDescriptor(error.Code, error.Message)])),
+            _ => controller.Conflict(creator.Conflict([error.ToErrorDescriptor()])),
         };
     }
 }
