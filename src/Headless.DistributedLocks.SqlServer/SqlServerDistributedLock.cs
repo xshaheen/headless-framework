@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Checks;
 using Microsoft.Data.SqlClient;
 
@@ -15,6 +16,11 @@ namespace Headless.DistributedLocks.SqlServer;
 /// The resource encoding mirrors the session-provider's <c>KeyPrefix + resource</c> convention so both
 /// the DI-managed <see cref="IDistributedLock"/> and these static methods mutually exclude on the same
 /// logical resource name when using the same <see cref="SqlServerDistributedLockOptions.KeyPrefix"/>.
+/// <para>
+/// Every method has a <see cref="DbTransaction"/> overload for callers that hold the transaction through an
+/// abstraction, such as EF Core's <c>db.Database.CurrentTransaction.GetDbTransaction()</c>, and a synchronous
+/// variant for the places EF Core only exposes synchronously, such as a <c>SavingChanges</c> interceptor.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public static class SqlServerDistributedLock
@@ -151,5 +157,154 @@ public static class SqlServerDistributedLock
                 cancellationToken
             )
             .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc cref="AcquireWithTransactionAsync(string, SqlTransaction, TimeSpan?, TimeSpan?, string, CancellationToken)"/>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="transaction"/> is not a <see cref="SqlTransaction"/>.</exception>
+    public static ValueTask AcquireWithTransactionAsync(
+        string resource,
+        DbTransaction transaction,
+        TimeSpan? acquireTimeout = null,
+        TimeSpan? commandTimeout = null,
+        string keyPrefix = DistributedLockOptions.DefaultKeyPrefix,
+        CancellationToken cancellationToken = default
+    ) =>
+        AcquireWithTransactionAsync(
+            resource,
+            _RequireSqlTransaction(transaction),
+            acquireTimeout,
+            commandTimeout,
+            keyPrefix,
+            cancellationToken
+        );
+
+    /// <inheritdoc cref="TryAcquireWithTransactionAsync(string, SqlTransaction, TimeSpan?, TimeSpan?, string, CancellationToken)"/>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="transaction"/> is not a <see cref="SqlTransaction"/>.</exception>
+    public static ValueTask<bool> TryAcquireWithTransactionAsync(
+        string resource,
+        DbTransaction transaction,
+        TimeSpan? acquireTimeout = null,
+        TimeSpan? commandTimeout = null,
+        string keyPrefix = DistributedLockOptions.DefaultKeyPrefix,
+        CancellationToken cancellationToken = default
+    ) =>
+        TryAcquireWithTransactionAsync(
+            resource,
+            _RequireSqlTransaction(transaction),
+            acquireTimeout,
+            commandTimeout,
+            keyPrefix,
+            cancellationToken
+        );
+
+    /// <summary>
+    /// Synchronous form of <see cref="AcquireWithTransactionAsync(string, SqlTransaction, TimeSpan?, TimeSpan?, string, CancellationToken)"/>
+    /// for callers on a synchronous path, such as an EF Core <c>SavingChanges</c> interceptor. Blocks the calling
+    /// thread for up to <paramref name="acquireTimeout"/>.
+    /// </summary>
+    /// <param name="resource">Logical resource name. Must not be <see langword="null"/>, empty, or whitespace.</param>
+    /// <param name="transaction">Open SQL Server transaction that will own the lock.</param>
+    /// <param name="acquireTimeout">How long to wait for the lock; <see langword="null"/> uses the 30-second default.</param>
+    /// <param name="commandTimeout">ADO.NET command timeout; <see langword="null"/> uses the 30-second default.</param>
+    /// <param name="keyPrefix">Prefix prepended to <paramref name="resource"/> before encoding.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="resource"/> or <paramref name="transaction"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="resource"/> is empty or whitespace, or when SQL Server rejects the parameters.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the transaction has no open connection or SQL Server returns an unsupported result.</exception>
+    /// <exception cref="LockAcquisitionTimeoutException">Thrown when the lock is not acquired within <paramref name="acquireTimeout"/>.</exception>
+    /// <exception cref="DistributedLockDeadlockException">Thrown when SQL Server detects a deadlock.</exception>
+    public static void AcquireWithTransaction(
+        string resource,
+        SqlTransaction transaction,
+        TimeSpan? acquireTimeout = null,
+        TimeSpan? commandTimeout = null,
+        string keyPrefix = DistributedLockOptions.DefaultKeyPrefix
+    )
+    {
+        var effectiveAcquireTimeout = acquireTimeout ?? _DefaultAcquireTimeout;
+
+        if (!TryAcquireWithTransaction(resource, transaction, effectiveAcquireTimeout, commandTimeout, keyPrefix))
+        {
+            throw effectiveAcquireTimeout == TimeSpan.Zero
+                ? LockAcquisitionTimeoutException.ForTryOnceContention(resource)
+                : new LockAcquisitionTimeoutException(resource);
+        }
+    }
+
+    /// <inheritdoc cref="AcquireWithTransaction(string, SqlTransaction, TimeSpan?, TimeSpan?, string)"/>
+    public static void AcquireWithTransaction(
+        string resource,
+        DbTransaction transaction,
+        TimeSpan? acquireTimeout = null,
+        TimeSpan? commandTimeout = null,
+        string keyPrefix = DistributedLockOptions.DefaultKeyPrefix
+    ) =>
+        AcquireWithTransaction(
+            resource,
+            _RequireSqlTransaction(transaction),
+            acquireTimeout,
+            commandTimeout,
+            keyPrefix
+        );
+
+    /// <summary>
+    /// Synchronous form of <see cref="TryAcquireWithTransactionAsync(string, SqlTransaction, TimeSpan?, TimeSpan?, string, CancellationToken)"/>
+    /// for callers on a synchronous path, such as an EF Core <c>SavingChanges</c> interceptor.
+    /// </summary>
+    /// <param name="resource">Logical resource name. Must not be <see langword="null"/>, empty, or whitespace.</param>
+    /// <param name="transaction">Open SQL Server transaction that will own the lock.</param>
+    /// <param name="acquireTimeout">How long to wait for the lock; <see langword="null"/> uses the 30-second default.</param>
+    /// <param name="commandTimeout">ADO.NET command timeout; <see langword="null"/> uses the 30-second default.</param>
+    /// <param name="keyPrefix">Prefix prepended to <paramref name="resource"/> before encoding.</param>
+    /// <returns><see langword="true"/> if the lock was acquired; <see langword="false"/> on contention past the timeout.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="resource"/> or <paramref name="transaction"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="resource"/> is empty or whitespace, or when SQL Server rejects the parameters.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the transaction has no open connection or SQL Server returns an unsupported result.</exception>
+    /// <exception cref="DistributedLockDeadlockException">Thrown when SQL Server detects a deadlock.</exception>
+    public static bool TryAcquireWithTransaction(
+        string resource,
+        SqlTransaction transaction,
+        TimeSpan? acquireTimeout = null,
+        TimeSpan? commandTimeout = null,
+        string keyPrefix = DistributedLockOptions.DefaultKeyPrefix
+    )
+    {
+        Argument.IsNotNullOrWhiteSpace(resource);
+        Argument.IsNotNull(transaction);
+
+        return SqlServerApplicationLock.TryAcquireTransaction(
+            transaction,
+            SqlServerResourceName.Encode(keyPrefix + resource),
+            isShared: false,
+            acquireTimeout ?? _DefaultAcquireTimeout,
+            commandTimeout ?? _DefaultCommandTimeout
+        );
+    }
+
+    /// <inheritdoc cref="TryAcquireWithTransaction(string, SqlTransaction, TimeSpan?, TimeSpan?, string)"/>
+    public static bool TryAcquireWithTransaction(
+        string resource,
+        DbTransaction transaction,
+        TimeSpan? acquireTimeout = null,
+        TimeSpan? commandTimeout = null,
+        string keyPrefix = DistributedLockOptions.DefaultKeyPrefix
+    ) =>
+        TryAcquireWithTransaction(
+            resource,
+            _RequireSqlTransaction(transaction),
+            acquireTimeout,
+            commandTimeout,
+            keyPrefix
+        );
+
+    private static SqlTransaction _RequireSqlTransaction(DbTransaction transaction)
+    {
+        Argument.IsNotNull(transaction);
+
+        return transaction as SqlTransaction
+            ?? throw new ArgumentException(
+                $"The transaction must be a {nameof(SqlTransaction)}; got '{transaction.GetType().FullName}'. "
+                    + "EF Core callers pass db.Database.CurrentTransaction.GetDbTransaction() from a SQL Server-backed context.",
+                nameof(transaction)
+            );
     }
 }

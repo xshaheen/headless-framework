@@ -56,6 +56,31 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
     }
 
     [Fact]
+    public async Task should_acquire_and_release_synchronously_through_db_transaction()
+    {
+        // The synchronous DbTransaction overload is the shape an EF Core SavingChanges interceptor holds.
+        var resource = Faker.Random.AlphaNumeric(12);
+
+        await using var holderConnection = await _OpenAsync();
+        await using var holderTransaction = await holderConnection.BeginTransactionAsync(AbortToken);
+        SqlServerDistributedLock.AcquireWithTransaction(resource, holderTransaction);
+
+        await using var contenderConnection = await _OpenAsync();
+        await using var contenderTransaction = await contenderConnection.BeginTransactionAsync(AbortToken);
+        SqlServerDistributedLock
+            .TryAcquireWithTransaction(resource, contenderTransaction, TimeSpan.Zero)
+            .Should()
+            .BeFalse();
+
+        await holderTransaction.CommitAsync(AbortToken);
+
+        SqlServerDistributedLock
+            .TryAcquireWithTransaction(resource, contenderTransaction, TimeSpan.Zero)
+            .Should()
+            .BeTrue();
+    }
+
+    [Fact]
     public async Task should_release_transaction_lock_on_commit()
     {
         var resource = Faker.Random.AlphaNumeric(12);
