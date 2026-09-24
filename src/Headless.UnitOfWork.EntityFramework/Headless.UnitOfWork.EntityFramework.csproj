@@ -14,6 +14,7 @@
     <ProjectReference Include="..\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.EntityFramework" />
     <InternalsVisibleTo Include="Headless.UnitOfWork.EntityFramework.Tests.Unit" />
   </ItemGroup>
 </Project>

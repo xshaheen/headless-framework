@@ -64,6 +64,19 @@ internal static class DbContextUnitOfWorkBinding
     }
 
     /// <summary>
+    /// Whether <paramref name="db" /> reaches its unit only through the connection it shares with the context
+    /// the unit was bound to, rather than through a binding of its own. The save pipeline replays its own save
+    /// without re-running the handlers that saved through such a sibling, so it needs to tell the two apart.
+    /// Never adopts a transaction and never throws.
+    /// </summary>
+    public static bool IsJoinedThroughConnection(DbContext db)
+    {
+        return !_Binding.TryGet(db, out _)
+            && DbConnectionUnitOfWorkBinding.TryGet(db.Database.GetDbConnection(), out var connectionUnit)
+            && connectionUnit.Resource is EfUnitOfWorkResource;
+    }
+
+    /// <summary>
     /// Throws the catalogued refusal when <paramref name="db" />, or the connection beneath it, already carries
     /// a live unit: two units cannot own one transaction, and the callee is meant to join or be handed it. The
     /// cases carry different remedies, because only an EF unit can be joined from EF. Never adopts a transaction:

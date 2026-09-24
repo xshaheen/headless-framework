@@ -475,6 +475,13 @@ internal sealed class HeadlessSaveChangesPipeline(
                 // aggregate without its messages. End replay while the rows are still atomic with the save.
                 unitOfWork?.PreventRetry();
             }
+            else if (_WroteIntoObservedUnitThroughSibling(state.Context, unitOfWork, result))
+            {
+                // This context joined a unit another context's pipeline save enlisted, most likely from one of that
+                // save's domain-event handlers. The owning pipeline replays its own save without re-running those
+                // handlers, so the rows written here would roll back with the attempt and never be restored.
+                unitOfWork!.PreventRetry();
+            }
 
             _CompleteSuccessfulSave(state.Context, state.SaveContext, auditSave, state.AcceptAllChangesOnSuccess);
 
@@ -574,6 +581,12 @@ internal sealed class HeadlessSaveChangesPipeline(
                 // Same rule as the async twin: the caller's block replays this save, and the clear below leaves
                 // it nothing to dispatch, so end replay while the enlisted rows are still atomic with the save.
                 unitOfWork?.PreventRetry();
+            }
+            else if (_WroteIntoObservedUnitThroughSibling(state.Context, unitOfWork, result))
+            {
+                // Same rule as the async twin: the owning pipeline replays without re-running the handler that
+                // saved through this sibling, so its rows would be lost with the rolled-back attempt.
+                unitOfWork!.PreventRetry();
             }
 
             _CompleteSuccessfulSave(state.Context, state.SaveContext, auditSave, state.AcceptAllChangesOnSuccess);
@@ -702,6 +715,19 @@ internal sealed class HeadlessSaveChangesPipeline(
     private static bool _DispatchedOccurrences(HeadlessSaveEntryContext saveContext)
     {
         return saveContext.PendingDomainEvents.Count > 0 || saveContext.IntegrationEventEmitters.Count > 0;
+    }
+
+    /// <summary>
+    /// Whether a caller-owned save wrote rows into an observed unit that this context reached only through the
+    /// connection it shares with the unit's context. Owned units stay replayable because their block re-runs the
+    /// whole save, and the unit's own context stays replayable because its rows live in the tracker the owning
+    /// pipeline replays.
+    /// </summary>
+    private static bool _WroteIntoObservedUnitThroughSibling(DbContext context, IUnitOfWork? unitOfWork, int written)
+    {
+        return written > 0
+            && unitOfWork?.Resource is { IsOwned: false }
+            && DbContextUnitOfWorkBinding.IsJoinedThroughConnection(context);
     }
 
     private void _CompleteSuccessfulSave(
