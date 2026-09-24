@@ -23,7 +23,7 @@ namespace Headless.DistributedLocks.PostgreSql;
 internal sealed class PostgreSqlUnitOfWorkTransactionLocks(IOptions<PostgreSqlDistributedLockOptions> options)
     : IUnitOfWorkTransactionLocks
 {
-    private const string _ProviderName = "PostgreSQL";
+    private const string _Operation = "transaction-scoped PostgreSQL lock";
     private const string _LockNotAvailable = "55P03";
     private const string _Savepoint = "headless_txn_lock";
 
@@ -77,7 +77,7 @@ internal sealed class PostgreSqlUnitOfWorkTransactionLocks(IOptions<PostgreSqlDi
     {
         Argument.IsNotNullOrWhiteSpace(resource);
 
-        var transaction = UnitOfWorkTransactions.RequireTransaction<NpgsqlTransaction>(unitOfWork, _ProviderName);
+        var transaction = UnitOfWorkTransactions.RequireTransaction<NpgsqlTransaction>(unitOfWork, _Operation);
 
         // Same encoding as PostgresConnectionScopedLockStorage, so a session lock and a transaction lock on one
         // logical name derive the same advisory key and contend.

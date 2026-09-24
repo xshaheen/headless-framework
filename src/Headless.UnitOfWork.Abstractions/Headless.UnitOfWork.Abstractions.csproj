@@ -6,6 +6,9 @@
     <RootNamespace>Headless.UnitOfWork</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+  </ItemGroup>
+  <ItemGroup>
     <InternalsVisibleTo Include="Headless.UnitOfWork" />
     <InternalsVisibleTo Include="Headless.UnitOfWork.Tests.Harness" />
   </ItemGroup>
