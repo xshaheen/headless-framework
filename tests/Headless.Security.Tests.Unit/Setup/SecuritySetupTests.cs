@@ -62,4 +62,87 @@ public sealed class SecuritySetupTests
         hashOptions.DefaultSalt.Should().Be("FirstSalt");
         hashOptions.Iterations.Should().Be(700000);
     }
+
+    [Fact]
+    public void should_register_secret_hasher_from_configuration_and_keep_the_first_registration()
+    {
+        // given
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection([
+                new KeyValuePair<string, string?>("One:Algorithm", SecretHashAlgorithms.Pbkdf2Sha256),
+                new KeyValuePair<string, string?>("One:Pbkdf2Sha256:Iterations", "1000"),
+                new KeyValuePair<string, string?>("Two:Pbkdf2Sha256:Iterations", "2000"),
+            ])
+            .Build();
+
+        // when
+        services.AddSecretHasher(configuration.GetRequiredSection("One"));
+        services.AddSecretHasher(configuration.GetRequiredSection("Two"));
+
+        using var serviceProvider = services.BuildServiceProvider();
+        var hasher = serviceProvider.GetRequiredService<ISecretHasher>();
+        var encoded = hasher.Hash("pin");
+
+        // then
+        encoded.Should().StartWith("$pbkdf2-sha256$i=1000,l=32$");
+        hasher.Verify("pin", encoded).Succeeded.Should().BeTrue();
+        serviceProvider.GetServices<ISecretHashAlgorithm>().Should().ContainSingle();
+    }
+
+    [Fact]
+    public void should_register_secret_hasher_from_delegate()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddSecretHasher(options =>
+        {
+            options.Algorithm = SecretHashAlgorithms.Pbkdf2Sha256;
+            options.Pbkdf2Sha256.Iterations = 1_000;
+        });
+
+        using var serviceProvider = services.BuildServiceProvider();
+
+        // then
+        serviceProvider.GetRequiredService<ISecretHasher>().Hash("pin").Should().StartWith("$pbkdf2-sha256$i=1000,");
+    }
+
+    [Fact]
+    public void should_register_secret_hasher_from_service_provider_delegate()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddSecretHasher(
+            (options, _) =>
+            {
+                options.Algorithm = SecretHashAlgorithms.Pbkdf2Sha256;
+                options.Pbkdf2Sha256.Iterations = 1_000;
+            }
+        );
+
+        using var serviceProvider = services.BuildServiceProvider();
+
+        // then
+        serviceProvider.GetRequiredService<ISecretHasher>().Hash("pin").Should().StartWith("$pbkdf2-sha256$i=1000,");
+    }
+
+    [Fact]
+    public void should_reject_invalid_secret_hasher_options_on_resolution()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddSecretHasher(options => options.Pbkdf2Sha256.Iterations = 0);
+
+        using var serviceProvider = services.BuildServiceProvider();
+
+        // then
+        FluentActions
+            .Invoking(() => serviceProvider.GetRequiredService<IOptions<SecretHasherOptions>>().Value)
+            .Should()
+            .Throw<OptionsValidationException>();
+    }
 }

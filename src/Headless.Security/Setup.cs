@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Security;
 
-/// <summary>Registration helpers for the string encryption and hashing services.</summary>
+/// <summary>Registration helpers for the string encryption, string hashing, and secret hashing services.</summary>
 /// <remarks>
 /// All <c>Add*</c> members are idempotent: the first registration for a given service wins, and a later call with
 /// different options is silently ignored. Configure each service once.
@@ -112,6 +112,87 @@ public static class SetupSecurity
 
             return _AddHashCore(services, s => s.Configure<StringHashOptions, StringHashOptionsValidator>(configure));
         }
+
+        /// <summary>
+        /// Registers <see cref="ISecretHasher" /> as a singleton with the built-in PBKDF2-SHA256 algorithm, binding
+        /// <see cref="SecretHasherOptions" /> from the supplied configuration section.
+        /// </summary>
+        /// <remarks>
+        /// The default <see cref="SecretHasherOptions.Algorithm" /> is Argon2id, which also needs
+        /// <c>AddArgon2idSecretHashing()</c> from the <c>Headless.Security.Argon2</c> package; without it, host startup
+        /// fails with a message naming that package.
+        /// </remarks>
+        /// <param name="config">The configuration section that binds <see cref="SecretHasherOptions" />.</param>
+        /// <returns>The same <see cref="IServiceCollection" /> so calls can be chained.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="config" /> is <see langword="null" />.</exception>
+        public IServiceCollection AddSecretHasher(IConfiguration config)
+        {
+            Argument.IsNotNull(config);
+
+            return _AddSecretHasherCore(
+                services,
+                s => s.Configure<SecretHasherOptions, SecretHasherOptionsValidator>(config)
+            );
+        }
+
+        /// <summary>
+        /// Registers <see cref="ISecretHasher" /> as a singleton with the built-in PBKDF2-SHA256 algorithm, configuring
+        /// <see cref="SecretHasherOptions" /> with the supplied delegate.
+        /// </summary>
+        /// <remarks>
+        /// The default <see cref="SecretHasherOptions.Algorithm" /> is Argon2id, which also needs
+        /// <c>AddArgon2idSecretHashing()</c> from the <c>Headless.Security.Argon2</c> package; without it, host startup
+        /// fails with a message naming that package.
+        /// </remarks>
+        /// <param name="configure">Configures <see cref="SecretHasherOptions" />.</param>
+        /// <returns>The same <see cref="IServiceCollection" /> so calls can be chained.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
+        public IServiceCollection AddSecretHasher(Action<SecretHasherOptions> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            return _AddSecretHasherCore(
+                services,
+                s => s.Configure<SecretHasherOptions, SecretHasherOptionsValidator>(configure)
+            );
+        }
+
+        /// <summary>
+        /// Registers <see cref="ISecretHasher" /> as a singleton with the built-in PBKDF2-SHA256 algorithm, configuring
+        /// <see cref="SecretHasherOptions" /> with the supplied delegate that can resolve services from the
+        /// <see cref="IServiceProvider" />.
+        /// </summary>
+        /// <remarks>
+        /// The default <see cref="SecretHasherOptions.Algorithm" /> is Argon2id, which also needs
+        /// <c>AddArgon2idSecretHashing()</c> from the <c>Headless.Security.Argon2</c> package; without it, host startup
+        /// fails with a message naming that package.
+        /// </remarks>
+        /// <param name="configure">Configures <see cref="SecretHasherOptions" /> using resolved services.</param>
+        /// <returns>The same <see cref="IServiceCollection" /> so calls can be chained.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
+        public IServiceCollection AddSecretHasher(Action<SecretHasherOptions, IServiceProvider> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            return _AddSecretHasherCore(
+                services,
+                s => s.Configure<SecretHasherOptions, SecretHasherOptionsValidator>(configure)
+            );
+        }
+    }
+
+    private static IServiceCollection _AddSecretHasherCore(IServiceCollection services, Action<IServiceCollection> bind)
+    {
+        if (_IsRegistered<ISecretHasher>(services))
+        {
+            return services;
+        }
+
+        bind(services);
+        services.TryAddSingleton<ISecretHasher, SecretHasher>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ISecretHashAlgorithm, Pbkdf2Sha256SecretHashAlgorithm>());
+
+        return services;
     }
 
     private static IServiceCollection _AddEncryptionCore(IServiceCollection services, Action<IServiceCollection> bind)
