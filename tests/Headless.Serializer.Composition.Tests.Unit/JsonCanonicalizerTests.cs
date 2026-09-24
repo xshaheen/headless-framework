@@ -93,6 +93,45 @@ public sealed class JsonCanonicalizerTests
     }
 
     [Fact]
+    public void should_echo_only_the_start_of_the_literal_when_number_is_rejected()
+    {
+        var literal = new string('9', 10_000);
+
+        var act = () => JsonCanonicalizer.Canonicalize(Encoding.ASCII.GetBytes(literal));
+
+        act.Should().ThrowExactly<JsonException>().Which.Message.Length.Should().BeLessThan(200);
+    }
+
+    [Fact]
+    public void should_echo_only_the_start_of_the_name_when_member_is_duplicated()
+    {
+        var name = new string('a', 10_000);
+        using var document = JsonDocument.Parse($$$"""{"x":{"{{{name}}}":1,"{{{name}}}":2}}""");
+
+        var act = () => JsonCanonicalizer.Canonicalize(document.RootElement);
+
+        act.Should().ThrowExactly<JsonException>().Which.Message.Length.Should().BeLessThan(200);
+    }
+
+    [Fact]
+    public void should_accept_span_input_when_nested_1000_levels_deep()
+    {
+        var json = new string('[', 1000) + new string(']', 1000);
+
+        _Canonical(json).Should().Be(json);
+    }
+
+    [Fact]
+    public void should_throw_when_span_input_is_nested_deeper_than_1000_levels()
+    {
+        var json = new string('[', 1001) + new string(']', 1001);
+
+        var act = () => JsonCanonicalizer.Canonicalize(Encoding.UTF8.GetBytes(json));
+
+        act.Should().Throw<JsonException>();
+    }
+
+    [Fact]
     public void should_produce_same_output_when_member_order_and_whitespace_differ()
     {
         var first = """{"b":1,"a":[1,{"d":2,"c":3}],"e":{"g":true,"f":null}}"""u8;

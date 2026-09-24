@@ -165,7 +165,7 @@ System.Text.Json implementation of `IJsonSerializer` with opinionated defaults a
   - `DefaultPrettyJsonOptions` — `DefaultWebJsonOptions` with `WriteIndented = true`
   - `CreateWebJsonOptions()` / `CreateInternalJsonOptions(JsonNamingPolicy? namingPolicy = null)` / `CreatePrettyJsonOptions()` — return a fresh **mutable** instance with the matching preset applied
   - `ConfigureWebJsonOptions(JsonSerializerOptions)` / `ConfigureInternalJsonOptions(JsonSerializerOptions, JsonNamingPolicy? namingPolicy = null)` — apply settings to an existing instance
-  - The internal preset's `namingPolicy` (for example `JsonNamingPolicy.SnakeCaseLower`) renames property names and enum values; `null` keeps CLR property names and camelCase enum values. Dictionary keys are never renamed.
+  - The internal preset's `namingPolicy` (for example `JsonNamingPolicy.SnakeCaseLower`) renames property names and enum values; `null` keeps CLR property names and camelCase enum values. String dictionary keys are never renamed; enum dictionary keys follow the enum naming (`Dictionary<Status, int>` writes `{"pending_payment":1}` under snake_case).
 - `JsonCanonicalizer` — RFC 8785 (JSON Canonicalization Scheme) output and its SHA-256 hash:
   - `Canonicalize(JsonElement, IBufferWriter<byte>)` / `Canonicalize(ReadOnlySpan<byte>, IBufferWriter<byte>)` — write the canonical UTF-8 form
   - `Canonicalize(JsonElement)` / `Canonicalize(ReadOnlySpan<byte>)` — return it as `byte[]`
@@ -209,8 +209,9 @@ The internal preset rejects duplicate properties because parsers in other langua
 | Number outside the double range (`1e400`) | `JsonException` |
 | Duplicate member names, lone surrogates | `JsonException` |
 | `ReadOnlySpan<byte>` input with comments, trailing commas, or trailing content | `JsonException` |
+| `ReadOnlySpan<byte>` input nested deeper than 1,000 levels | `JsonException`. A `JsonElement` keeps the depth limit of the `JsonDocument` it came from, 64 by default |
 
-The integer rule matches the Python `rfc8785` package, so a Python producer and a .NET consumer accept and reject the same documents. The unit tests run the RFC 8785 reference test vectors.
+The number rules match the Python `rfc8785` package, so both sides accept and reject the same numbers. The package takes Python objects, not JSON text, so what it sees depends on the parser in front of it: Python's `json.loads` keeps the last of two duplicate members where `JsonCanonicalizer` rejects the document. The unit tests run the RFC 8785 reference test vectors.
 
 `DefaultWebJsonOptions` adds `JsonStringEnumConverter(CamelCase)` and `IpAddressJsonConverter` automatically. Creating a custom `IJsonOptionsProvider` that calls `JsonConstants.ConfigureWebJsonOptions` inherits these converters without duplication.
 

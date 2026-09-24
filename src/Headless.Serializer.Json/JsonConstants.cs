@@ -129,8 +129,9 @@ public static class JsonConstants
     /// <param name="options">The options instance to configure. Must not be read-only.</param>
     /// <param name="namingPolicy">
     /// The naming policy for property names and enum values, such as <see cref="JsonNamingPolicy.SnakeCaseLower"/>.
-    /// When <see langword="null"/>, property names keep their CLR casing and enum values are camelCase. Dictionary
-    /// keys are data, not member names, so they are never renamed.
+    /// When <see langword="null"/>, property names keep their CLR casing and enum values are camelCase. String
+    /// dictionary keys are data, not member names, so they are never renamed; enum dictionary keys are enum values and
+    /// follow the enum naming.
     /// </param>
     /// <returns>The same <paramref name="options"/> instance, to support a fluent call style.</returns>
     public static JsonSerializerOptions ConfigureInternalJsonOptions(

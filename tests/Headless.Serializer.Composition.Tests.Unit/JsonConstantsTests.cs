@@ -89,6 +89,18 @@ public sealed class JsonConstantsTests
         json.Should().Be("""{"OrderId":7,"Status":"pendingPayment"}""");
     }
 
+    [Fact]
+    public void should_apply_enum_naming_to_enum_dictionary_keys_when_internal_options_have_naming_policy()
+    {
+        var options = JsonConstants.CreateInternalJsonOptions(JsonNamingPolicy.SnakeCaseLower);
+        var counts = new Dictionary<WireOrderStatus, int> { [WireOrderStatus.PendingPayment] = 1 };
+
+        var json = JsonSerializer.Serialize(counts, options);
+
+        json.Should().Be("""{"pending_payment":1}""");
+        JsonSerializer.Deserialize<Dictionary<WireOrderStatus, int>>(json, options).Should().Equal(counts);
+    }
+
     [Theory]
     [InlineData("""{"order_id":7,"status":"paid","extra":1}""")]
     [InlineData("""{"orderId":7,"status":"paid"}""")]

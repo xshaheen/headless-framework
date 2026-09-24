@@ -48,11 +48,18 @@ public static class JsonCanonicalizer
     // Number.MAX_SAFE_INTEGER: every integer up to it has its own double; above it, neighbors collapse together.
     private const double _MaxSafeInteger = 9007199254740991;
 
+    // JsonDocument defaults to 64 levels, which rejects documents other languages' parsers accept.
+    private const int _MaxDepth = 1000;
+
+    // Error messages echo input, which has no size limit, so they carry only its start.
+    private const int _MaxEchoedLength = 64;
+
     private static readonly JsonDocumentOptions _ParseOptions = new()
     {
         AllowDuplicateProperties = false,
         AllowTrailingCommas = false,
         CommentHandling = JsonCommentHandling.Disallow,
+        MaxDepth = _MaxDepth,
     };
 
     /// <summary>Writes the RFC 8785 canonical form of <paramref name="element"/> to <paramref name="output"/>.</summary>
@@ -73,7 +80,9 @@ public static class JsonCanonicalizer
     }
 
     /// <summary>Parses <paramref name="utf8Json"/> and writes its RFC 8785 canonical form to <paramref name="output"/>.</summary>
-    /// <param name="utf8Json">One UTF-8 JSON value. Comments, trailing commas, and trailing content are rejected.</param>
+    /// <param name="utf8Json">
+    /// One UTF-8 JSON value, nested at most 1,000 levels deep. Comments, trailing commas, and trailing content are rejected.
+    /// </param>
     /// <param name="output">The UTF-8 destination.</param>
     /// <exception cref="JsonException">The input is not valid JSON or cannot be canonicalized without loss.</exception>
     public static void Canonicalize(ReadOnlySpan<byte> utf8Json, IBufferWriter<byte> output)
@@ -169,7 +178,11 @@ public static class JsonCanonicalizer
         SHA256.HashData(buffer.WrittenSpan, destination);
     }
 
-    private static void _WriteValue(JsonElement element, IBufferWriter<byte> output, List<object> path)
+    private static void _WriteValue(
+        JsonElement element,
+        IBufferWriter<byte> output,
+        List<(string? Name, int Index)> path
+    )
     {
         switch (element.ValueKind)
         {
@@ -199,7 +212,11 @@ public static class JsonCanonicalizer
         }
     }
 
-    private static void _WriteObject(JsonElement element, IBufferWriter<byte> output, List<object> path)
+    private static void _WriteObject(
+        JsonElement element,
+        IBufferWriter<byte> output,
+        List<(string? Name, int Index)> path
+    )
     {
         var members = new List<KeyValuePair<string, JsonElement>>();
 
@@ -233,13 +250,13 @@ public static class JsonCanonicalizer
             {
                 if (string.Equals(members[i - 1].Key, name, StringComparison.Ordinal))
                 {
-                    throw _Error(path, $"Duplicate member name '{name}'.");
+                    throw _Error(path, $"Duplicate member name '{_Echo(name)}'.");
                 }
 
                 _WriteByte((byte)',', output);
             }
 
-            path.Add(name);
+            path.Add((name, 0));
             _WriteString(name, output, path);
             _WriteByte((byte)':', output);
             _WriteValue(value, output, path);
@@ -249,7 +266,11 @@ public static class JsonCanonicalizer
         _WriteByte((byte)'}', output);
     }
 
-    private static void _WriteArray(JsonElement element, IBufferWriter<byte> output, List<object> path)
+    private static void _WriteArray(
+        JsonElement element,
+        IBufferWriter<byte> output,
+        List<(string? Name, int Index)> path
+    )
     {
         _WriteByte((byte)'[', output);
 
@@ -262,7 +283,7 @@ public static class JsonCanonicalizer
                 _WriteByte((byte)',', output);
             }
 
-            path.Add(index);
+            path.Add((null, index));
             _WriteValue(item, output, path);
             path.RemoveAt(path.Count - 1);
             index++;
@@ -271,7 +292,7 @@ public static class JsonCanonicalizer
         _WriteByte((byte)']', output);
     }
 
-    private static string _GetString(JsonElement element, List<object> path)
+    private static string _GetString(JsonElement element, List<(string? Name, int Index)> path)
     {
         try
         {
@@ -283,7 +304,7 @@ public static class JsonCanonicalizer
         }
     }
 
-    private static void _WriteString(string value, IBufferWriter<byte> output, List<object> path)
+    private static void _WriteString(string value, IBufferWriter<byte> output, List<(string? Name, int Index)> path)
     {
         _WriteByte((byte)'"', output);
 
@@ -338,7 +359,11 @@ public static class JsonCanonicalizer
         _WriteByte((byte)'"', output);
     }
 
-    private static void _WriteUtf8(ReadOnlySpan<char> chars, IBufferWriter<byte> output, List<object> path)
+    private static void _WriteUtf8(
+        ReadOnlySpan<char> chars,
+        IBufferWriter<byte> output,
+        List<(string? Name, int Index)> path
+    )
     {
         if (chars.IsEmpty)
         {
@@ -357,14 +382,18 @@ public static class JsonCanonicalizer
         }
     }
 
-    private static void _WriteNumber(ReadOnlySpan<byte> literal, IBufferWriter<byte> output, List<object> path)
+    private static void _WriteNumber(
+        ReadOnlySpan<byte> literal,
+        IBufferWriter<byte> output,
+        List<(string? Name, int Index)> path
+    )
     {
         if (
             !double.TryParse(literal, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
             || !double.IsFinite(value)
         )
         {
-            throw _Error(path, $"The number {Encoding.UTF8.GetString(literal)} is outside the IEEE-754 double range.");
+            throw _Error(path, $"The number {_Echo(literal)} is outside the IEEE-754 double range.");
         }
 
         // An integer literal above 2^53 - 1 is usually an identifier, and rounding it would give distinct identifiers
@@ -373,7 +402,7 @@ public static class JsonCanonicalizer
         {
             throw _Error(
                 path,
-                $"The integer {Encoding.UTF8.GetString(literal)} is outside ±(2^53 - 1), where a double cannot hold every integer; send it as a JSON string."
+                $"The integer {_Echo(literal)} is outside ±(2^53 - 1), where a double cannot hold every integer; send it as a JSON string."
             );
         }
 
@@ -391,7 +420,111 @@ public static class JsonCanonicalizer
         var formatted = value.TryFormat(shortest, out var written, "R", CultureInfo.InvariantCulture);
         Debug.Assert(formatted);
 
-        EcmaScriptNumber.FromRoundTrip(shortest[..written]).Write(output);
+        _WriteEcmaScriptNumber(shortest[..written], output);
+    }
+
+    /// <summary>
+    /// Rewrites a finite, non-zero double formatted with the .NET "R" format, such as <c>-1.5E-07</c> or
+    /// <c>123.45</c>, the way ECMAScript <c>Number.prototype.toString</c> writes it (ECMA-262, Number::toString).
+    /// </summary>
+    private static void _WriteEcmaScriptNumber(ReadOnlySpan<byte> roundTrip, IBufferWriter<byte> output)
+    {
+        var isNegative = roundTrip[0] == (byte)'-';
+        var i = isNegative ? 1 : 0;
+
+        // "R" writes at most 17 significant digits, plus up to four leading zeros before it switches to an exponent.
+        Span<byte> digitBuffer = stackalloc byte[32];
+        var digitCount = 0;
+        var integerDigits = 0;
+
+        for (; i < roundTrip.Length && char.IsAsciiDigit((char)roundTrip[i]); i++)
+        {
+            digitBuffer[digitCount++] = roundTrip[i];
+            integerDigits++;
+        }
+
+        if (i < roundTrip.Length && roundTrip[i] == (byte)'.')
+        {
+            for (i++; i < roundTrip.Length && char.IsAsciiDigit((char)roundTrip[i]); i++)
+            {
+                digitBuffer[digitCount++] = roundTrip[i];
+            }
+        }
+
+        var exponent = 0;
+
+        if (i < roundTrip.Length && roundTrip[i] == (byte)'E')
+        {
+            var parsed = int.TryParse(
+                roundTrip[(i + 1)..],
+                NumberStyles.AllowLeadingSign,
+                CultureInfo.InvariantCulture,
+                out exponent
+            );
+            Debug.Assert(parsed);
+        }
+
+        // With leading and trailing zeros removed, the value is 0.digits × 10^n.
+        ReadOnlySpan<byte> digits = digitBuffer[..digitCount];
+        var leading = digits.IndexOfAnyExcept((byte)'0');
+        var n = integerDigits - leading + exponent;
+        digits = digits[leading..(digits.LastIndexOfAnyExcept((byte)'0') + 1)];
+        var k = digits.Length;
+
+        // The longest form is "-0.00000" followed by 17 digits: 25 bytes.
+        var span = output.GetSpan(32);
+        var length = 0;
+
+        if (isNegative)
+        {
+            span[length++] = (byte)'-';
+        }
+
+        if (k <= n && n <= 21)
+        {
+            digits.CopyTo(span[length..]);
+            length += k;
+            span.Slice(length, n - k).Fill((byte)'0');
+            length += n - k;
+        }
+        else if (n is > 0 and <= 21)
+        {
+            digits[..n].CopyTo(span[length..]);
+            length += n;
+            span[length++] = (byte)'.';
+            digits[n..].CopyTo(span[length..]);
+            length += k - n;
+        }
+        else if (n is > -6 and <= 0)
+        {
+            span[length++] = (byte)'0';
+            span[length++] = (byte)'.';
+            span.Slice(length, -n).Fill((byte)'0');
+            length += -n;
+            digits.CopyTo(span[length..]);
+            length += k;
+        }
+        else
+        {
+            span[length++] = digits[0];
+
+            if (k > 1)
+            {
+                span[length++] = (byte)'.';
+                digits[1..].CopyTo(span[length..]);
+                length += k - 1;
+            }
+
+            var e = n - 1;
+            span[length++] = (byte)'e';
+            span[length++] = e < 0 ? (byte)'-' : (byte)'+';
+            var formattedExponent = Math.Abs(e)
+                .TryFormat(span[length..], out var exponentLength, provider: CultureInfo.InvariantCulture);
+            Debug.Assert(formattedExponent);
+            length += exponentLength;
+        }
+
+        output.Advance(length);
     }
 
     private static void _WriteByte(byte value, IBufferWriter<byte> output)
@@ -411,19 +544,19 @@ public static class JsonCanonicalizer
         return (byte)(nibble < 10 ? '0' + nibble : 'a' + nibble - 10);
     }
 
-    private static JsonException _Error(List<object> path, string message, Exception? inner = null)
+    private static JsonException _Error(List<(string? Name, int Index)> path, string message, Exception? inner = null)
     {
         var builder = new StringBuilder("$");
 
-        foreach (var segment in path)
+        foreach (var (name, index) in path)
         {
-            if (segment is int index)
+            if (name is null)
             {
                 builder.Append('[').Append(index.ToString(CultureInfo.InvariantCulture)).Append(']');
             }
             else
             {
-                builder.Append("['").Append((string)segment).Append("']");
+                builder.Append("['").Append(_Echo(name)).Append("']");
             }
         }
 
@@ -438,118 +571,24 @@ public static class JsonCanonicalizer
         );
     }
 
-    /// <summary>
-    /// A finite, non-zero double as sign, significant digits with no leading or trailing zeros, and the position of the
-    /// decimal point relative to the first digit: the value is <c>0.Digits × 10^PointPosition</c>.
-    /// </summary>
-    private readonly record struct EcmaScriptNumber(bool IsNegative, string Digits, int PointPosition)
+    private static string _Echo(string text)
     {
-        /// <summary>Parses a double formatted with the .NET "R" format, such as <c>-1.5E-07</c> or <c>123.45</c>.</summary>
-        public static EcmaScriptNumber FromRoundTrip(ReadOnlySpan<byte> text)
+        if (text.Length <= _MaxEchoedLength)
         {
-            var i = 0;
-            var isNegative = text[0] == (byte)'-';
-
-            if (isNegative)
-            {
-                i++;
-            }
-
-            var digits = new StringBuilder(text.Length);
-            var integerDigits = 0;
-
-            for (; i < text.Length && char.IsAsciiDigit((char)text[i]); i++)
-            {
-                digits.Append((char)text[i]);
-                integerDigits++;
-            }
-
-            if (i < text.Length && text[i] == (byte)'.')
-            {
-                for (i++; i < text.Length && char.IsAsciiDigit((char)text[i]); i++)
-                {
-                    digits.Append((char)text[i]);
-                }
-            }
-
-            var exponent = 0;
-
-            if (i < text.Length && text[i] == (byte)'E')
-            {
-                var parsed = int.TryParse(
-                    text[(i + 1)..],
-                    NumberStyles.AllowLeadingSign,
-                    CultureInfo.InvariantCulture,
-                    out exponent
-                );
-                Debug.Assert(parsed);
-            }
-
-            var leading = 0;
-
-            while (digits[leading] == '0')
-            {
-                leading++;
-            }
-
-            var trailing = digits.Length;
-
-            while (digits[trailing - 1] == '0')
-            {
-                trailing--;
-            }
-
-            return new EcmaScriptNumber(
-                isNegative,
-                digits.ToString(leading, trailing - leading),
-                integerDigits - leading + exponent
-            );
+            return text;
         }
 
-        /// <summary>Writes the value as ECMAScript <c>Number.prototype.toString</c> does (ECMA-262, Number::toString).</summary>
-        public void Write(IBufferWriter<byte> output)
-        {
-            var builder = new StringBuilder(32);
+        // Cut before a high surrogate so the excerpt never ends in half a character.
+        var cut = char.IsHighSurrogate(text[_MaxEchoedLength - 1]) ? _MaxEchoedLength - 1 : _MaxEchoedLength;
 
-            if (IsNegative)
-            {
-                builder.Append('-');
-            }
+        return $"{text.AsSpan(0, cut)}…";
+    }
 
-            var k = Digits.Length;
-            var n = PointPosition;
-
-            if (k <= n && n <= 21)
-            {
-                builder.Append(Digits).Append('0', n - k);
-            }
-            else if (n is > 0 and <= 21)
-            {
-                builder.Append(Digits, 0, n).Append('.').Append(Digits, n, k - n);
-            }
-            else if (n is > -6 and <= 0)
-            {
-                builder.Append("0.").Append('0', -n).Append(Digits);
-            }
-            else
-            {
-                builder.Append(Digits[0]);
-
-                if (k > 1)
-                {
-                    builder.Append('.').Append(Digits, 1, k - 1);
-                }
-
-                var exponent = n - 1;
-                builder
-                    .Append('e')
-                    .Append(exponent < 0 ? '-' : '+')
-                    .Append(Math.Abs(exponent).ToString(CultureInfo.InvariantCulture));
-            }
-
-            var text = builder.ToString();
-            var span = output.GetSpan(text.Length);
-            output.Advance(Encoding.ASCII.GetBytes(text, span));
-        }
+    private static string _Echo(ReadOnlySpan<byte> numberLiteral)
+    {
+        // A number literal is ASCII, so any byte boundary is a character boundary.
+        return numberLiteral.Length <= _MaxEchoedLength
+            ? Encoding.ASCII.GetString(numberLiteral)
+            : Encoding.ASCII.GetString(numberLiteral[.._MaxEchoedLength]) + "…";
     }
 }
