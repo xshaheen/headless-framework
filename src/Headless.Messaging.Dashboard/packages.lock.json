@@ -334,6 +334,7 @@
       "headless.serializer.json": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
           "Headless.Serializer.Abstractions": "[1.0.0, )"
         }
       },

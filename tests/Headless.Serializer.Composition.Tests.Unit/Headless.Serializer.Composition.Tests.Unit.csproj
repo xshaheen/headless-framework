@@ -13,4 +13,9 @@
     <ProjectReference Include="..\..\src\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
     <ProjectReference Include="..\..\src\Headless.Serializer.MessagePack\Headless.Serializer.MessagePack.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Update="TestData\Jcs\**\*.json;TestData\Jcs\numbers.csv">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>

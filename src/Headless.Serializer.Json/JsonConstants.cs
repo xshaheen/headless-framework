@@ -17,8 +17,11 @@ namespace Headless.Serializer;
 /// </para>
 /// <para>
 /// <see cref="DefaultInternalJsonOptions"/> — strict number handling, no naming policy (preserves property
-/// casing), unknown members disallowed, null values omitted. Intended for internal persistence or
-/// inter-service payloads where schema drift must surface immediately.
+/// casing), unknown members and duplicate properties disallowed, null values omitted, and a polymorphic type
+/// discriminator accepted in any position. Intended for internal persistence or inter-service payloads where schema
+/// drift must surface immediately. <see cref="CreateInternalJsonOptions"/> and
+/// <see cref="ConfigureInternalJsonOptions"/> take an optional naming policy, such as
+/// <see cref="JsonNamingPolicy.SnakeCaseLower"/>, for a contract shared with a non-.NET producer.
 /// </para>
 /// <para>
 /// <see cref="DefaultPrettyJsonOptions"/> — identical to <see cref="DefaultWebJsonOptions"/> with
@@ -26,9 +29,10 @@ namespace Headless.Serializer;
 /// diagnostics.
 /// </para>
 /// <para>
-/// All three presets include <see cref="System.Text.Json.Serialization.JsonStringEnumConverter"/> (camelCase,
-/// integer values disallowed) and <see cref="Converters.IpAddressJsonConverter"/> via the shared
-/// <see cref="ConfigureWebJsonOptions"/> / <see cref="ConfigureInternalJsonOptions"/> helpers.
+/// All three presets include <see cref="System.Text.Json.Serialization.JsonStringEnumConverter"/> (camelCase unless
+/// an internal naming policy is given, integer values disallowed) and
+/// <see cref="Converters.IpAddressJsonConverter"/> via the shared <see cref="ConfigureWebJsonOptions"/> /
+/// <see cref="ConfigureInternalJsonOptions"/> helpers.
 /// </para>
 /// <para>
 /// The three shared presets are frozen (<see cref="JsonSerializerOptions.IsReadOnly"/> is <see langword="true"/>)
@@ -80,10 +84,14 @@ public static class JsonConstants
     }
 
     /// <summary>Creates a new <see cref="JsonSerializerOptions"/> instance configured for internal serialization.</summary>
+    /// <param name="namingPolicy">
+    /// The naming policy for property names and enum values, such as <see cref="JsonNamingPolicy.SnakeCaseLower"/>.
+    /// When <see langword="null"/>, property names keep their CLR casing and enum values are camelCase.
+    /// </param>
     /// <returns>A new, mutable options instance with the internal preset applied.</returns>
-    public static JsonSerializerOptions CreateInternalJsonOptions()
+    public static JsonSerializerOptions CreateInternalJsonOptions(JsonNamingPolicy? namingPolicy = null)
     {
-        return ConfigureInternalJsonOptions(new JsonSerializerOptions());
+        return ConfigureInternalJsonOptions(new JsonSerializerOptions(), namingPolicy);
     }
 
     /// <summary>
@@ -110,7 +118,7 @@ public static class JsonConstants
         options.AllowTrailingCommas = true;
         options.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         options.DictionaryKeyPolicy = JsonNamingPolicy.CamelCase;
-        _AddDefaultConverters(options);
+        _AddDefaultConverters(options, JsonNamingPolicy.CamelCase);
 
         return options;
     }
@@ -119,8 +127,16 @@ public static class JsonConstants
     /// Applies the internal-serialization preset to an existing <paramref name="options"/> instance.
     /// </summary>
     /// <param name="options">The options instance to configure. Must not be read-only.</param>
+    /// <param name="namingPolicy">
+    /// The naming policy for property names and enum values, such as <see cref="JsonNamingPolicy.SnakeCaseLower"/>.
+    /// When <see langword="null"/>, property names keep their CLR casing and enum values are camelCase. Dictionary
+    /// keys are data, not member names, so they are never renamed.
+    /// </param>
     /// <returns>The same <paramref name="options"/> instance, to support a fluent call style.</returns>
-    public static JsonSerializerOptions ConfigureInternalJsonOptions(JsonSerializerOptions options)
+    public static JsonSerializerOptions ConfigureInternalJsonOptions(
+        JsonSerializerOptions options,
+        JsonNamingPolicy? namingPolicy = null
+    )
     {
         options.Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
         options.NumberHandling = JsonNumberHandling.Strict;
@@ -130,7 +146,11 @@ public static class JsonConstants
         options.PreferredObjectCreationHandling = JsonObjectCreationHandling.Replace;
         options.UnknownTypeHandling = JsonUnknownTypeHandling.JsonNode;
         options.UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow;
-        options.PropertyNamingPolicy = null;
+        // Parsers in other languages disagree on which duplicate wins, so a strict contract refuses the ambiguity.
+        options.AllowDuplicateProperties = false;
+        // PostgreSQL jsonb reorders keys, which can move a polymorphic type discriminator after ordinary properties.
+        options.AllowOutOfOrderMetadataProperties = true;
+        options.PropertyNamingPolicy = namingPolicy;
         options.DictionaryKeyPolicy = null;
         options.PropertyNameCaseInsensitive = false;
         options.IgnoreReadOnlyProperties = false;
@@ -141,7 +161,7 @@ public static class JsonConstants
         options.RespectRequiredConstructorParameters = true;
         options.AllowTrailingCommas = false;
         options.ReferenceHandler = null;
-        _AddDefaultConverters(options);
+        _AddDefaultConverters(options, namingPolicy ?? JsonNamingPolicy.CamelCase);
 
         return options;
     }
@@ -170,7 +190,7 @@ public static class JsonConstants
         "IL3050:RequiresDynamicCode",
         Justification = "JsonStringEnumConverter is used for serialization options and consumers should use source generation for AOT scenarios."
     )]
-    private static void _AddDefaultConverters(JsonSerializerOptions options)
+    private static void _AddDefaultConverters(JsonSerializerOptions options, JsonNamingPolicy enumNamingPolicy)
     {
         var enumConverter = options.Converters.FirstOrDefault(x => x is JsonStringEnumConverter);
 
@@ -179,7 +199,7 @@ public static class JsonConstants
             options.Converters.Remove(enumConverter);
         }
 
-        options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false));
+        options.Converters.Add(new JsonStringEnumConverter(enumNamingPolicy, allowIntegerValues: false));
         options.Converters.Add(new IpAddressJsonConverter());
     }
 }

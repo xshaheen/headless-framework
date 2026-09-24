@@ -199,12 +199,16 @@
         "resolved": "4.7.0",
         "contentHash": "VybpaOQQhqE6siHppMktjfGBw1GCwvCqiufqmP8F1nj7fTUNtW35LOEt3UZTEsECfo+ELAl/9o9nJx3U91i7vA=="
       },
+      "headless.checks": {
+        "type": "Project"
+      },
       "headless.serializer.abstractions": {
         "type": "Project"
       },
       "headless.serializer.json": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
           "Headless.Serializer.Abstractions": "[1.0.0, )"
         }
       },
