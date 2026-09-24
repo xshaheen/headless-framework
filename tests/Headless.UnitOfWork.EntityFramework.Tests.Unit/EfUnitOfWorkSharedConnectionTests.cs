@@ -143,6 +143,52 @@ public sealed class EfUnitOfWorkSharedConnectionTests : TestBase
     }
 
     [Fact]
+    public async Task should_commit_the_unit_when_a_sibling_that_joined_it_is_disposed_first()
+    {
+        await using var host = await EfUnitOfWorkHost.CreateAsync();
+        await using var owner = host.CreateSession();
+        await using var unit = await owner.Factory.BeginAsync(owner.Db, cancellationToken: AbortToken);
+
+        // A sibling resolved from a shorter-lived scope (a module's request-scoped service) joins, writes, and is
+        // disposed while the owner's unit is still open.
+        await using (var sibling = host.CreateSession())
+        {
+            sibling.Db.UnitOfWork().Should().BeSameAs(unit);
+            await sibling.Db.Probes.AddAsync(new ProbeRow { Name = "sibling" }, AbortToken);
+            await sibling.Db.SaveChangesAsync(AbortToken);
+        }
+
+        // when
+        await unit.CompleteAsync(AbortToken);
+
+        // then — the release skips the disposed sibling, and disposing it did not end the shared transaction
+        unit.State.Should().Be(UnitOfWorkState.Completed);
+        (await host.CountProbeRowsAsync()).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_roll_back_the_unit_when_a_sibling_that_joined_it_is_disposed_first()
+    {
+        await using var host = await EfUnitOfWorkHost.CreateAsync();
+        await using var owner = host.CreateSession();
+        await using var unit = await owner.Factory.BeginAsync(owner.Db, cancellationToken: AbortToken);
+
+        await using (var sibling = host.CreateSession())
+        {
+            sibling.Db.UnitOfWork().Should().BeSameAs(unit);
+            await sibling.Db.Probes.AddAsync(new ProbeRow { Name = "sibling" }, AbortToken);
+            await sibling.Db.SaveChangesAsync(AbortToken);
+        }
+
+        // when
+        await unit.RollbackAsync();
+
+        // then
+        unit.State.Should().Be(UnitOfWorkState.Failed, "a rollback ends the unit as failed");
+        (await host.CountProbeRowsAsync()).Should().Be(0);
+    }
+
+    [Fact]
     public async Task should_refuse_begin_on_a_sibling_context_without_adopting_the_transaction()
     {
         await using var host = await EfUnitOfWorkHost.CreateAsync();
