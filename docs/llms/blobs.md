@@ -24,7 +24,7 @@ The default store registers as a plain (unkeyed) `IBlobStorage` singleton; named
 ## Agent Rules
 
 - Always depend on `IBlobStorage` from `Headless.Blobs.Abstractions` — never reference `AwsBlobStorage`, `AzureBlobStorage`, or other concrete types in service code.
-- Register all stores through `AddHeadlessBlobs(...)` from `Headless.Blobs.Core`. Choose a default with `Use{Provider}(...)` and add named stores with `AddNamed(name, i => i.Use{Provider}(...))`. Use `UseFileSystem` for local development and testing; `UseAws`, `UseAzure`, or `UseCloudflareR2` for production.
+- Register all stores through `AddHeadlessBlobs(...)` from `Headless.Blobs.Core`. Choose a default with `Use{Provider}(...)` and add named stores with `AddNamed(name, i => i.Use{Provider}(...))`. Use `UseFileSystem` for local development and testing; `UseAws`, `UseAzure`, or `UseCloudflareR2` for production. For MinIO or another self-hosted S3-compatible server, use `UseS3Compatible` from `Headless.Blobs.Aws` rather than hand-tuning `UseAws` with `AWSOptions`.
 - Address every blob with `BlobLocation(container, path)`. The constructor validates path security (traversal, control characters, absolute paths, and any path segment ending in the reserved sidecar suffix) once, so pass the value through — do not pre-normalize. The `params ReadOnlySpan<string>` convenience constructor joins segments with `/`: `new BlobLocation("uploads", "images", fileName)` is the key `images/<fileName>` in container `uploads`. A segments-only overload treats the first element as the container: `new BlobLocation(["uploads", "images", fileName])` is the same location (requires at least two segments). `Move`/`Copy` take a source and a destination `BlobLocation`.
 - Normalization is two-tier and applied by the **provider's** resolve step, not by you: `BlobLocation.Container` is the backend bucket/container/root (strict backend rules — lowercase, length, allowed characters) and `BlobLocation.Path` is the lenient object key (validated, not rewritten). The value type validates security; the provider's `IBlobNamingNormalizer` applies backend naming when it resolves the location.
 - `UploadAsync` does **not** create a missing top-level container — that is an error. Provision the container first via `IBlobContainerManager.EnsureContainerAsync` or out-of-band (IaC). Filesystem-like providers (FileSystem, SFTP) still create the intermediate path directories inherent to writing a blob.
@@ -135,6 +135,7 @@ Pick one provider per store (default or named) based on where the bytes must liv
 | --- | --- | --- | --- |
 | `Headless.Blobs.FileSystem` | Local dev, testing, or single-node on-prem with no cloud dependency | Multi-node or horizontally-scaled deployments (no shared storage) | Not distributed; metadata kept in sidecar companion files; paging is emulated re-scan |
 | `Headless.Blobs.Aws` | Production on AWS; need presigned URLs and bulk operations | Not on AWS, or egress cost is a concern | Ties you to S3 pricing and the AWS SDK |
+| `Headless.Blobs.Aws` via `UseS3Compatible` | MinIO, Ceph RGW, Garage, or another self-hosted S3-compatible server, including local MinIO in development | The server is Cloudflare R2 (use `Headless.Blobs.CloudflareR2`) or needs SDK settings the helper fixes | Path-style addressing, no ACLs, and a buffered signed upload body are fixed; drop to `UseAws` + `AWSOptions` for anything else |
 | `Headless.Blobs.CloudflareR2` | S3-compatible storage with low egress cost and private buckets | You need public serving via ACLs, or in-app bucket provisioning | No ACL concept; no container-manager capability — buckets are provisioned out-of-band (IaC/dashboard) |
 | `Headless.Blobs.Azure` | Production on Azure; want Entra ID auth and SAS presigned URLs | Not on Azure | Requires a `BlobServiceClient`; extra SAS rules for AAD clients |
 | `Headless.Blobs.SshNet` | Files must land on a remote SFTP/SSH server or legacy system | High-throughput or presigned-URL workloads | Slower; no presigned URLs; sidecar metadata costs a second round-trip; opens live SSH connections |
@@ -374,6 +375,7 @@ AWS S3 implementation of `IBlobStorage` for storing files in Amazon S3.
 - Presigned download/upload URLs over a `BlobLocation` via `IPresignedUrlBlobStorage` (named stores only; feature-detect via cast for the default store).
 - Bucket lifecycle via a dedicated `AwsBlobContainerManager` resolved from DI (`EnsureContainerAsync` keeps a per-instance ensured-bucket cache). `UploadAsync` no longer auto-creates a missing bucket — that is an error.
 - Per-store `IAmazonS3` constructed via `S3ClientFactory`; optional `AWSOptions` to override the SDK credential/region chain.
+- `UseS3Compatible` targets MinIO and other S3-compatible servers with an explicit endpoint and static credentials.
 
 ### Install
 
@@ -431,6 +433,52 @@ if (storage is IPresignedUrlBlobStorage presigned)
 }
 ```
 
+#### MinIO and other S3-compatible servers
+
+`UseS3Compatible` builds the client from an endpoint URL and static credentials, and sets the SDK combination those servers accept:
+
+- Path-style addressing (`ForcePathStyle = true`), because self-hosted servers rarely have wildcard DNS for bucket subdomains.
+- `AuthenticationRegion` defaults to `us-east-1`, the region MinIO assumes when none is configured on the server.
+- Request checksums and response validation only when an operation requires them (`WHEN_REQUIRED`), instead of the SDK v4 default CRC headers and trailers.
+- No canned ACL, and a buffered, signed upload body without `aws-chunked` streaming. Payload signing stays on because the SDK refuses unsigned payloads over `http://`.
+- A plaintext `http://` endpoint fails options validation at startup unless `AllowInsecureHttp = true`. Set it only for local development.
+
+The container manager is registered like `UseAws`, so `EnsureContainerAsync` creates buckets on MinIO. Presigned URLs keep the endpoint's scheme, so a local `http://` MinIO returns `http://` URLs.
+
+```csharp
+// Local MinIO (for example the minio/minio container with its default root credentials).
+builder.Services.AddHeadlessBlobs(blobs =>
+    blobs.UseS3Compatible(
+        "http://localhost:9000",
+        "minioadmin",
+        "minioadmin",
+        options => options.AllowInsecureHttp = true
+    )
+);
+
+// Bind from configuration, and add a named store on a second endpoint.
+builder.Services.AddHeadlessBlobs(blobs =>
+{
+    blobs.UseS3Compatible(builder.Configuration.GetSection("Minio"));
+    blobs.AddNamed("archive", instance => instance.UseS3Compatible(builder.Configuration.GetSection("MinioArchive")));
+});
+```
+
+```json
+{
+  "Minio": {
+    "ServiceUrl": "https://minio.internal:9000",
+    "AccessKeyId": "your-access-key",
+    "SecretAccessKey": "your-secret-key",
+    "AuthenticationRegion": "us-east-1",
+    "AllowInsecureHttp": false,
+    "MaxBulkParallelism": 10
+  }
+}
+```
+
+`ServiceUrl`, `AccessKeyId`, and `SecretAccessKey` are required, and `ServiceUrl` must be an absolute `http` or `https` URL. When a server needs a setting the helper fixes, register it with `UseAws(options => { ... }, awsOptions)` and configure the SDK yourself.
+
 ### Configuration
 
 #### appsettings.json
@@ -460,6 +508,7 @@ Registered via `AddHeadlessBlobs(b => b.UseAws(...))` or `AddNamed("name", i => 
 
 - Default (`UseAws`): registers `IBlobStorage` as unkeyed singleton and `IBlobContainerManager` as unkeyed singleton (`AwsBlobContainerManager`). The per-store `IAmazonS3` is constructed inline; it is not registered in the DI container.
 - Named (`AddNamed ... UseAws`): registers `IBlobStorage`, `IPresignedUrlBlobStorage` (forwarded from the keyed `IBlobStorage`), and `IBlobContainerManager` each as keyed singleton (`name`). The per-store `IAmazonS3` is constructed inline.
+- `UseS3Compatible` registers the same services as `UseAws` for the default and named forms. `S3CompatibleBlobStorageOptions` is validated at startup.
 
 ---
 

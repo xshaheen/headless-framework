@@ -92,6 +92,176 @@ public static class SetupAwsS3
 
             return setup;
         }
+
+        /// <summary>
+        /// Uses an S3-compatible endpoint (MinIO, Ceph RGW, Garage, and similar) as the default (unkeyed)
+        /// <see cref="IBlobStorage"/>, with path-style addressing and the SDK checksum, ACL, and payload-signing
+        /// behavior those servers accept.
+        /// </summary>
+        /// <param name="serviceUrl">Absolute endpoint URL. A plaintext <c>http://</c> URL also needs <see cref="S3CompatibleBlobStorageOptions.AllowInsecureHttp"/>.</param>
+        /// <param name="accessKeyId">The access key id.</param>
+        /// <param name="secretAccessKey">The secret access key.</param>
+        /// <param name="configure">Optionally adjusts the remaining options, such as <see cref="S3CompatibleBlobStorageOptions.AllowInsecureHttp"/>.</param>
+        public HeadlessBlobsSetupBuilder UseS3Compatible(
+            string serviceUrl,
+            string accessKeyId,
+            string secretAccessKey,
+            Action<S3CompatibleBlobStorageOptions>? configure = null
+        )
+        {
+            return setup.UseS3Compatible(S3CompatibleSetup(serviceUrl, accessKeyId, secretAccessKey, configure));
+        }
+
+        /// <summary>Uses an S3-compatible endpoint as the default (unkeyed) <see cref="IBlobStorage"/>.</summary>
+        /// <param name="setupAction">Configures the endpoint, credentials, and options.</param>
+        public HeadlessBlobsSetupBuilder UseS3Compatible(Action<S3CompatibleBlobStorageOptions> setupAction)
+        {
+            Argument.IsNotNull(setupAction);
+
+            setup.RegisterDefaultProvider(services =>
+            {
+                services.Configure<S3CompatibleBlobStorageOptions, S3CompatibleBlobStorageOptionsValidator>(
+                    setupAction
+                );
+                _AddS3CompatibleDefaultCore(services);
+            });
+
+            return setup;
+        }
+
+        /// <summary>
+        /// Uses an S3-compatible endpoint as the default (unkeyed) <see cref="IBlobStorage"/> with service
+        /// provider-aware configuration.
+        /// </summary>
+        /// <param name="setupAction">Configures the endpoint, credentials, and options using the service provider.</param>
+        public HeadlessBlobsSetupBuilder UseS3Compatible(
+            Action<S3CompatibleBlobStorageOptions, IServiceProvider> setupAction
+        )
+        {
+            Argument.IsNotNull(setupAction);
+
+            setup.RegisterDefaultProvider(services =>
+            {
+                services.Configure<S3CompatibleBlobStorageOptions, S3CompatibleBlobStorageOptionsValidator>(
+                    setupAction
+                );
+                _AddS3CompatibleDefaultCore(services);
+            });
+
+            return setup;
+        }
+
+        /// <summary>
+        /// Uses an S3-compatible endpoint as the default (unkeyed) <see cref="IBlobStorage"/>, binding
+        /// <see cref="S3CompatibleBlobStorageOptions"/> from configuration.
+        /// </summary>
+        /// <param name="configuration">The configuration section to bind <see cref="S3CompatibleBlobStorageOptions"/> from.</param>
+        public HeadlessBlobsSetupBuilder UseS3Compatible(IConfiguration configuration)
+        {
+            Argument.IsNotNull(configuration);
+
+            setup.RegisterDefaultProvider(services =>
+            {
+                services.Configure<S3CompatibleBlobStorageOptions, S3CompatibleBlobStorageOptionsValidator>(
+                    configuration
+                );
+                _AddS3CompatibleDefaultCore(services);
+            });
+
+            return setup;
+        }
+    }
+
+    internal static Action<S3CompatibleBlobStorageOptions> S3CompatibleSetup(
+        string serviceUrl,
+        string accessKeyId,
+        string secretAccessKey,
+        Action<S3CompatibleBlobStorageOptions>? configure
+    )
+    {
+        Argument.IsNotNullOrWhiteSpace(serviceUrl);
+        Argument.IsNotNullOrWhiteSpace(accessKeyId);
+        Argument.IsNotNullOrWhiteSpace(secretAccessKey);
+
+        return options =>
+        {
+            options.ServiceUrl = serviceUrl;
+            options.AccessKeyId = accessKeyId;
+            options.SecretAccessKey = secretAccessKey;
+            configure?.Invoke(options);
+        };
+    }
+
+    private static IServiceCollection _AddS3CompatibleDefaultCore(IServiceCollection services)
+    {
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<IBlobStorage>(serviceProvider =>
+            _CreateS3CompatibleStorage(
+                serviceProvider,
+                serviceProvider.GetRequiredService<IOptions<S3CompatibleBlobStorageOptions>>().Value
+            )
+        );
+
+        // S3-compatible servers generally support bucket create/delete, so the capability is registered like AWS.
+        services.AddSingleton<IBlobContainerManager>(serviceProvider => new AwsBlobContainerManager(
+            S3ClientFactory.CreateS3Compatible(
+                serviceProvider.GetRequiredService<IOptions<S3CompatibleBlobStorageOptions>>().Value
+            ),
+            new AwsBlobNamingNormalizer()
+        ));
+
+        return services;
+    }
+
+    internal static IServiceCollection AddS3CompatibleNamedCore(IServiceCollection services, string name)
+    {
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddKeyedSingleton<IBlobStorage>(
+            name,
+            (serviceProvider, _) =>
+                _CreateS3CompatibleStorage(
+                    serviceProvider,
+                    serviceProvider.GetRequiredService<IOptionsMonitor<S3CompatibleBlobStorageOptions>>().Get(name)
+                )
+        );
+
+        services.AddKeyedSingleton<IPresignedUrlBlobStorage>(
+            name,
+            (serviceProvider, _) =>
+                (IPresignedUrlBlobStorage)serviceProvider.GetRequiredKeyedService<IBlobStorage>(name)
+        );
+
+        services.AddKeyedSingleton<IBlobContainerManager>(
+            name,
+            (serviceProvider, _) =>
+                new AwsBlobContainerManager(
+                    S3ClientFactory.CreateS3Compatible(
+                        serviceProvider.GetRequiredService<IOptionsMonitor<S3CompatibleBlobStorageOptions>>().Get(name)
+                    ),
+                    new AwsBlobNamingNormalizer()
+                )
+        );
+
+        return services;
+    }
+
+    private static AwsBlobStorage _CreateS3CompatibleStorage(
+        IServiceProvider serviceProvider,
+        S3CompatibleBlobStorageOptions options
+    )
+    {
+        var storageOptions = new AwsBlobStorageOptions();
+        S3ClientFactory.ApplyS3CompatibleDefaults(storageOptions, options);
+        var mimeTypeProvider = serviceProvider.GetRequiredService<IMimeTypeProvider>();
+        var timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
+        var logger = serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance;
+        var wrappedOptions = Options.Create(storageOptions);
+        var normalizer = new AwsBlobNamingNormalizer();
+#pragma warning disable CA2000 // False positive: ownership transfers to AwsBlobStorage, which disposes the client.
+        var s3Client = S3ClientFactory.CreateS3Compatible(options);
+#pragma warning restore CA2000
+
+        return new AwsBlobStorage(s3Client, mimeTypeProvider, timeProvider, wrappedOptions, normalizer, logger);
     }
 
     private static IServiceCollection _AddBlobsDefaultCore(IServiceCollection services, AWSOptions? awsOptions)
@@ -254,6 +424,91 @@ public static class SetupAwsS3Named
             {
                 services.Configure<AwsBlobStorageOptions, AwsBlobStorageOptionsValidator>(configuration, name);
                 SetupAwsS3.AddBlobsNamedCore(services, name, awsOptions);
+            });
+
+            return instance;
+        }
+
+        /// <summary>
+        /// Uses an S3-compatible endpoint (MinIO, Ceph RGW, Garage, and similar) for this named instance,
+        /// resolvable as a keyed <see cref="IBlobStorage"/> or through <see cref="IBlobStorageProvider"/>.
+        /// </summary>
+        /// <param name="serviceUrl">Absolute endpoint URL. A plaintext <c>http://</c> URL also needs <see cref="S3CompatibleBlobStorageOptions.AllowInsecureHttp"/>.</param>
+        /// <param name="accessKeyId">The access key id.</param>
+        /// <param name="secretAccessKey">The secret access key.</param>
+        /// <param name="configure">Optionally adjusts the remaining options, such as <see cref="S3CompatibleBlobStorageOptions.AllowInsecureHttp"/>.</param>
+        public HeadlessBlobInstanceBuilder UseS3Compatible(
+            string serviceUrl,
+            string accessKeyId,
+            string secretAccessKey,
+            Action<S3CompatibleBlobStorageOptions>? configure = null
+        )
+        {
+            return instance.UseS3Compatible(
+                SetupAwsS3.S3CompatibleSetup(serviceUrl, accessKeyId, secretAccessKey, configure)
+            );
+        }
+
+        /// <summary>Uses an S3-compatible endpoint for this named instance.</summary>
+        /// <param name="setupAction">Configures the endpoint, credentials, and options.</param>
+        public HeadlessBlobInstanceBuilder UseS3Compatible(Action<S3CompatibleBlobStorageOptions> setupAction)
+        {
+            Argument.IsNotNull(setupAction);
+
+            var name = instance.Name;
+
+            instance.RegisterProvider(services =>
+            {
+                services.Configure<S3CompatibleBlobStorageOptions, S3CompatibleBlobStorageOptionsValidator>(
+                    setupAction,
+                    name
+                );
+                SetupAwsS3.AddS3CompatibleNamedCore(services, name);
+            });
+
+            return instance;
+        }
+
+        /// <summary>Uses an S3-compatible endpoint for this named instance with service provider-aware configuration.</summary>
+        /// <param name="setupAction">Configures the endpoint, credentials, and options using the service provider.</param>
+        public HeadlessBlobInstanceBuilder UseS3Compatible(
+            Action<S3CompatibleBlobStorageOptions, IServiceProvider> setupAction
+        )
+        {
+            Argument.IsNotNull(setupAction);
+
+            var name = instance.Name;
+
+            instance.RegisterProvider(services =>
+            {
+                services.Configure<S3CompatibleBlobStorageOptions, S3CompatibleBlobStorageOptionsValidator>(
+                    setupAction,
+                    name
+                );
+                SetupAwsS3.AddS3CompatibleNamedCore(services, name);
+            });
+
+            return instance;
+        }
+
+        /// <summary>
+        /// Uses an S3-compatible endpoint for this named instance, binding
+        /// <see cref="S3CompatibleBlobStorageOptions"/> from configuration.
+        /// </summary>
+        /// <param name="configuration">The configuration section to bind <see cref="S3CompatibleBlobStorageOptions"/> from.</param>
+        public HeadlessBlobInstanceBuilder UseS3Compatible(IConfiguration configuration)
+        {
+            Argument.IsNotNull(configuration);
+
+            var name = instance.Name;
+
+            instance.RegisterProvider(services =>
+            {
+                services.Configure<S3CompatibleBlobStorageOptions, S3CompatibleBlobStorageOptionsValidator>(
+                    configuration,
+                    name
+                );
+                SetupAwsS3.AddS3CompatibleNamedCore(services, name);
             });
 
             return instance;
