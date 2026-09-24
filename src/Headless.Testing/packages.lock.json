@@ -292,6 +292,12 @@
           "libphonenumber-csharp": "[9.0.39, )"
         }
       },
+      "headless.security.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
+      },
       "headless.serializer.abstractions": {
         "type": "Project"
       },
