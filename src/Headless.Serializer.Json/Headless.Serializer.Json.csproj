@@ -6,6 +6,7 @@
     <RootNamespace>Headless.Serializer</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
     <ProjectReference Include="..\Headless.Serializer.Abstractions\Headless.Serializer.Abstractions.csproj" />
   </ItemGroup>
 </Project>

@@ -31,6 +31,8 @@ Neither provider registers itself into DI automatically — you must call `servi
 - `SerializeToString` on a binary serializer (e.g., MessagePack) returns a Base64 string; on a text serializer it returns UTF-8. `Deserialize<T>(string?)` reverses this automatically.
 - Built-in JSON converters in `Headless.Serializer.Json` — add them to your `IJsonOptionsProvider` when needed: `UnixTimeJsonConverter`, `IpAddressJsonConverter` (included in default options), `EmptyStringAsNullJsonConverter<T>`, `StringToGuidJsonConverter`, `NullableStringToGuidJsonConverter`, `StringToBooleanJsonConverter`, `SingleOrListJsonConverter<TItem>`, `SingleOrHashsetJsonConverter<TItem>`, `ObjectToInferredTypesJsonConverter`, `CollectionItemJsonConverter<TDatatype, TConverterType>`.
 - The `DefaultWebJsonOptions` used by `DefaultJsonOptionsProvider` include `IpAddressJsonConverter` and `JsonStringEnumConverter(CamelCase)` automatically. Do not add them again in a custom provider — duplicate converters cause unexpected behavior.
+- For a wire contract shared with a non-.NET producer (for example a Python service using snake_case), build options with `JsonConstants.CreateInternalJsonOptions(JsonNamingPolicy.SnakeCaseLower)`. The naming policy covers property names and enum values together; do not set `PropertyNamingPolicy` on your own copy and forget the enum converter.
+- For a fingerprint, idempotency key, or signature over JSON, use `JsonCanonicalizer.Hash` (RFC 8785). Never hash `JsonSerializer` output or a hand-sorted `Utf8JsonWriter` copy: their escaping is .NET-specific, so no other language reproduces the bytes.
 - None of the serializer packages auto-register services — all DI wiring is explicit.
 
 ## Core Concepts
@@ -159,10 +161,16 @@ System.Text.Json implementation of `IJsonSerializer` with opinionated defaults a
 - `IJsonOptionsProvider` / `DefaultJsonOptionsProvider` — injectable options split into separate serialize and deserialize `JsonSerializerOptions`
 - `JsonConstants` — shared, pre-configured, **read-only** (frozen) option sets. Customize by copying via a `Create*JsonOptions()` factory rather than mutating a preset:
   - `DefaultWebJsonOptions` — camelCase, case-insensitive read, enum-as-camelCase-string, `IpAddressJsonConverter`, nullable-annotations respected, trailing commas allowed, cycles ignored
-  - `DefaultInternalJsonOptions` — strict (no case-insensitive read, no trailing commas, `WhenWritingNull`)
+  - `DefaultInternalJsonOptions` — strict (no case-insensitive read, no trailing commas, unknown members and duplicate properties rejected, `WhenWritingNull`); a polymorphic `$type` discriminator is accepted in any position
   - `DefaultPrettyJsonOptions` — `DefaultWebJsonOptions` with `WriteIndented = true`
-  - `CreateWebJsonOptions()` / `CreateInternalJsonOptions()` / `CreatePrettyJsonOptions()` — return a fresh **mutable** instance with the matching preset applied
-  - `ConfigureWebJsonOptions(JsonSerializerOptions)` / `ConfigureInternalJsonOptions(JsonSerializerOptions)` — apply settings to an existing instance
+  - `CreateWebJsonOptions()` / `CreateInternalJsonOptions(JsonNamingPolicy? namingPolicy = null)` / `CreatePrettyJsonOptions()` — return a fresh **mutable** instance with the matching preset applied
+  - `ConfigureWebJsonOptions(JsonSerializerOptions)` / `ConfigureInternalJsonOptions(JsonSerializerOptions, JsonNamingPolicy? namingPolicy = null)` — apply settings to an existing instance
+  - The internal preset's `namingPolicy` (for example `JsonNamingPolicy.SnakeCaseLower`) renames property names and enum values; `null` keeps CLR property names and camelCase enum values. String dictionary keys are never renamed; enum dictionary keys follow the enum naming (`Dictionary<Status, int>` writes `{"pending_payment":1}` under snake_case).
+- `JsonCanonicalizer` — RFC 8785 (JSON Canonicalization Scheme) output and its SHA-256 hash:
+  - `Canonicalize(JsonElement, IBufferWriter<byte>)` / `Canonicalize(ReadOnlySpan<byte>, IBufferWriter<byte>)` — write the canonical UTF-8 form
+  - `Canonicalize(JsonElement)` / `Canonicalize(ReadOnlySpan<byte>)` — return it as `byte[]`
+  - `Hash(JsonElement)` / `Hash(ReadOnlySpan<byte>)` — return the 32-byte SHA-256 of the canonical form; `Hash(..., Span<byte> destination)` writes it instead
+  - `HashSizeInBytes` — 32
 - Built-in converters (all in namespace `Headless.Serializer.Converters`):
   - `UnixTimeJsonConverter` — `DateTimeOffset` ↔ Unix epoch seconds (reads number or string)
   - `IpAddressJsonConverter` — `IPAddress?` ↔ string (included in default options)
@@ -186,6 +194,24 @@ System.Text.Json implementation of `IJsonSerializer` with opinionated defaults a
 `SystemJsonSerializer` is annotated `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]` because it uses reflection-based STJ APIs. This means it is **not AOT-safe** out of the box. The annotation propagates to call sites — you will see trim warnings in NativeAOT or PublishTrimmed builds. For AOT scenarios, write a source-generated `IJsonSerializer` wrapper using `JsonSerializerContext` and register it instead.
 
 The three `JsonConstants` presets (`DefaultWebJsonOptions`, `DefaultInternalJsonOptions`, `DefaultPrettyJsonOptions`) are frozen (`JsonSerializerOptions.IsReadOnly == true`) at initialization so they can be shared process-wide without a caller silently reconfiguring framework serialization. Mutating a preset throws `InvalidOperationException` — start from a fresh mutable copy via `CreateWebJsonOptions()` / `CreateInternalJsonOptions()` / `CreatePrettyJsonOptions()` instead.
+
+The internal preset rejects duplicate properties because parsers in other languages disagree on which duplicate wins, and accepts the `$type` discriminator after ordinary properties because PostgreSQL `jsonb` reorders keys. Both settings apply everywhere the preset is used, including EF Core JSON columns, blob metadata, and settings and feature values.
+
+`JsonCanonicalizer` exists so another language can reproduce the same hash. Hash the JSON as sent or stored: serializing an object first makes the hash depend on naming policy and converters. Its behavior at the edges:
+
+| Input | Behavior |
+|---|---|
+| Object members | Sorted by UTF-16 code units (ordinal), as RFC 8785 requires |
+| Whitespace | Removed |
+| Strings | Only `"`, `\`, and U+0000–U+001F are escaped (`\b \t \n \f \r`, otherwise lowercase `\u00xx`); everything else, including non-ASCII, `<`, `+`, and emoji, is literal UTF-8 |
+| Numbers | ECMAScript `Number.prototype.toString` of the IEEE-754 double: `1.0` → `1`, `1e21` → `1e+21`, `-0` → `0`, `0.10000000000000001` → `0.1` |
+| Integer literal outside ±(2^53 − 1) | `JsonException`; rounding would give distinct identifiers one hash. Send such values as strings |
+| Number outside the double range (`1e400`) | `JsonException` |
+| Duplicate member names, lone surrogates | `JsonException` |
+| `ReadOnlySpan<byte>` input with comments, trailing commas, or trailing content | `JsonException` |
+| `ReadOnlySpan<byte>` input nested deeper than 1,000 levels | `JsonException`. A `JsonElement` keeps the depth limit of the `JsonDocument` it came from, 64 by default |
+
+The number rules match the Python `rfc8785` package, so both sides accept and reject the same numbers. The package takes Python objects, not JSON text, so what it sees depends on the parser in front of it: Python's `json.loads` keeps the last of two duplicate members where `JsonCanonicalizer` rejects the document. The unit tests run the RFC 8785 reference test vectors.
 
 `DefaultWebJsonOptions` adds `JsonStringEnumConverter(CamelCase)` and `IpAddressJsonConverter` automatically. Creating a custom `IJsonOptionsProvider` that calls `JsonConstants.ConfigureWebJsonOptions` inherits these converters without duplication.
 
@@ -235,6 +261,34 @@ public sealed class MyJsonOptionsProvider : IJsonOptionsProvider
 
     public JsonSerializerOptions GetDeserializeOptions() => JsonConstants.CreateWebJsonOptions();
 }
+```
+
+A snake_case contract shared with a non-.NET producer, optionally backed by a source-generated context:
+
+```csharp
+public static class OrderWireJson
+{
+    public static JsonSerializerOptions Options { get; } = _Create();
+
+    private static JsonSerializerOptions _Create()
+    {
+        var options = JsonConstants.ConfigureInternalJsonOptions(
+            new JsonSerializerOptions { TypeInfoResolver = OrderJsonContext.Default },
+            JsonNamingPolicy.SnakeCaseLower
+        );
+        options.MakeReadOnly();
+
+        return options;
+    }
+}
+```
+
+`JsonStringEnumConverter` requires dynamic code, so a NativeAOT build needs `JsonStringEnumConverter<TEnum>` per enum instead. A `[JsonExtensionData]` member absorbs unknown properties, so `UnmappedMemberHandling.Disallow` never fires on a type that has one.
+
+Hash a document so another language can reproduce the value:
+
+```csharp
+var key = Convert.ToHexStringLower(JsonCanonicalizer.Hash(requestBodyUtf8));
 ```
 
 Use type info modifiers to exclude a property without touching the model:

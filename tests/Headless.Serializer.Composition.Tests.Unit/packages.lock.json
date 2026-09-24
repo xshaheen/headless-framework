@@ -1158,12 +1158,16 @@
         "resolved": "18.1.0",
         "contentHash": "5K+9KFg2TdTl7VXv88Qzi/0lqK6JFoNP3lRuImPYGRV7K/QYklDyTrj4+A+KAki1JsQi6qKY+hDyY7d6WRqjrw=="
       },
+      "headless.checks": {
+        "type": "Project"
+      },
       "headless.serializer.abstractions": {
         "type": "Project"
       },
       "headless.serializer.json": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
           "Headless.Serializer.Abstractions": "[1.0.0, )"
         }
       },
