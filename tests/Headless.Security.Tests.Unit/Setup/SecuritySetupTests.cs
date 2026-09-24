@@ -3,6 +3,7 @@
 using Headless.Security;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace Tests.Setup;
@@ -128,6 +129,23 @@ public sealed class SecuritySetupTests
 
         // then
         serviceProvider.GetRequiredService<ISecretHasher>().Hash("pin").Should().StartWith("$pbkdf2-sha256$i=1000,");
+    }
+
+    [Fact]
+    public void should_register_the_startup_check_once()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddSecretHasher(_ => { });
+        services.AddSecretHasher(_ => { });
+
+        // then
+        services
+            .Where(d => d.ServiceType == typeof(IHostedService))
+            .Should()
+            .ContainSingle(d => d.ImplementationType == typeof(SecretHasherStartupValidationService));
     }
 
     [Fact]

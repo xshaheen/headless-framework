@@ -2,6 +2,7 @@
 
 using System.Security.Cryptography;
 using Headless.Security;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Tests.SecretHashing;
@@ -30,6 +31,44 @@ internal static class SecretHashingTestKit
         var wrapped = Options.Create(options);
 
         return new SecretHasher(wrapped, [new Pbkdf2Sha256SecretHashAlgorithm(wrapped), .. extra]);
+    }
+}
+
+/// <summary>Collects formatted log entries so tests can assert on warnings.</summary>
+internal sealed class RecordingLoggerProvider : ILoggerProvider
+{
+    public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+    public ILogger CreateLogger(string categoryName)
+    {
+        return new RecordingLogger(Entries);
+    }
+
+    public void Dispose() { }
+
+    private sealed class RecordingLogger(List<(LogLevel Level, string Message)> entries) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+        {
+            return null;
+        }
+
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            entries.Add((logLevel, formatter(state, exception)));
+        }
     }
 }
 

@@ -4,6 +4,7 @@ using Headless.Checks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 
 namespace Headless.Security;
 
@@ -191,6 +192,7 @@ public static class SetupSecurity
         bind(services);
         services.TryAddSingleton<ISecretHasher, SecretHasher>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ISecretHashAlgorithm, Pbkdf2Sha256SecretHashAlgorithm>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, SecretHasherStartupValidationService>());
 
         return services;
     }
