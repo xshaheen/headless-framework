@@ -116,10 +116,14 @@ public abstract class JobsNativeCronClaimConformanceTests<TFixture>(TFixture fix
                     ct
                 );
 
-            capture.Commands.Clear();
-            var claims = await provider
-                .QueueCronJobOccurrencesAsync((executionTime, [.. dispatches]), ct)
-                .ToArrayAsync(ct);
+            CronJobOccurrenceEntity<CronJobEntity>[] claims;
+            using (capture.Window())
+            {
+                claims = await provider
+                    .QueueCronJobOccurrencesAsync((executionTime, [.. dispatches]), ct)
+                    .ToArrayAsync(ct);
+            }
+
             // Native lock/write commands bypass EF interception. These are precisely the EF reads that used
             // to grow per item: one optional definition batch and one joined occurrence readback.
             capture.Commands.Should().HaveCount(existingCount == batchSize ? 1 : 2);
@@ -213,9 +217,25 @@ public abstract class JobsNativeCronClaimConformanceTests<TFixture>(TFixture fix
         public override DateTimeOffset GetUtcNow() => DateTimeOffset.UtcNow.Add(offset);
     }
 
+    /// <summary>
+    /// Records the EF reads issued inside a <see cref="Window" />. The started host's time and cron pollers share
+    /// this interceptor and query on their own schedule, so the window is keyed on the test's async flow rather
+    /// than on time: a poller's flow began before the window opened and never sees it.
+    /// </summary>
     private sealed class ClaimReadCapture : DbCommandInterceptor
     {
+        private readonly AsyncLocal<bool> _capturing = new();
+
         public ConcurrentQueue<string> Commands { get; } = new();
+
+        /// <summary>Clears the recorded commands and records this flow's reads until the window is disposed.</summary>
+        public IDisposable Window()
+        {
+            Commands.Clear();
+            _capturing.Value = true;
+
+            return new CaptureWindow(this);
+        }
 
         public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
             DbCommand command,
@@ -224,8 +244,17 @@ public abstract class JobsNativeCronClaimConformanceTests<TFixture>(TFixture fix
             CancellationToken cancellationToken = default
         )
         {
-            Commands.Enqueue(command.CommandText);
+            if (_capturing.Value)
+            {
+                Commands.Enqueue(command.CommandText);
+            }
+
             return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        private sealed class CaptureWindow(ClaimReadCapture capture) : IDisposable
+        {
+            public void Dispose() => capture._capturing.Value = false;
         }
     }
 }
