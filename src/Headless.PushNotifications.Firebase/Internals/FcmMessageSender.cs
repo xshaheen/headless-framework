@@ -168,8 +168,8 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
             Fid = fid,
             Data = content.Data,
             Notification = new Notification { Title = content.Title, Body = content.Body },
-            Android = new AndroidConfig { Priority = Priority.High },
-            Apns = new ApnsConfig { Aps = new Aps { Badge = _ApnsBadge } },
+            Android = new AndroidConfig { Priority = Priority.High, CollapseKey = content.CollapseKey },
+            Apns = _BuildApnsConfig(content),
         };
     }
 
@@ -180,8 +180,19 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
             Fids = [.. fids],
             Data = content.Data,
             Notification = new Notification { Title = content.Title, Body = content.Body },
-            Android = new AndroidConfig { Priority = Priority.High },
-            Apns = new ApnsConfig { Aps = new Aps { Badge = _ApnsBadge } },
+            Android = new AndroidConfig { Priority = Priority.High, CollapseKey = content.CollapseKey },
+            Apns = _BuildApnsConfig(content),
+        };
+    }
+
+    private static ApnsConfig _BuildApnsConfig(FcmMessageContent content)
+    {
+        return new ApnsConfig
+        {
+            Aps = new Aps { Badge = _ApnsBadge },
+            Headers = content.CollapseKey is null
+                ? null
+                : new Dictionary<string, string>(StringComparer.Ordinal) { ["apns-collapse-id"] = content.CollapseKey },
         };
     }
 

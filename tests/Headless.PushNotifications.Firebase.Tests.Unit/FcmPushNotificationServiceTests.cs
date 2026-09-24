@@ -34,6 +34,89 @@ public sealed class FcmPushNotificationServiceTests : TestBase
         message.Fids.Should().Equal("fid-1", "fid-2");
     }
 
+    [Fact]
+    public void should_set_collapse_key_for_android_and_apns_on_single_send()
+    {
+        // when
+        var message = FcmMessageSender.BuildMessage(
+            new FcmMessageContent("title", "body", null, CollapseKey: "order-42"),
+            "fid-1"
+        );
+
+        // then
+        message.Android.CollapseKey.Should().Be("order-42");
+        message.Apns.Headers.Should().Contain("apns-collapse-id", "order-42");
+    }
+
+    [Fact]
+    public void should_set_collapse_key_for_android_and_apns_on_multicast_send()
+    {
+        // when
+        var message = FcmMessageSender.BuildMulticastMessage(
+            new FcmMessageContent("title", "body", null, CollapseKey: "order-42"),
+            ["fid-1", "fid-2"]
+        );
+
+        // then
+        message.Android.CollapseKey.Should().Be("order-42");
+        message.Apns.Headers.Should().Contain("apns-collapse-id", "order-42");
+    }
+
+    [Fact]
+    public void should_leave_collapse_key_unset_when_request_has_none()
+    {
+        // when
+        var single = FcmMessageSender.BuildMessage(new FcmMessageContent("title", "body", null), "fid-1");
+        var multicast = FcmMessageSender.BuildMulticastMessage(new FcmMessageContent("title", "body", null), ["fid-1"]);
+
+        // then
+        single.Android.CollapseKey.Should().BeNull();
+        single.Apns.Headers.Should().BeNull();
+        multicast.Android.CollapseKey.Should().BeNull();
+        multicast.Apns.Headers.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_throw_when_collapse_key_exceeds_64_utf8_bytes()
+    {
+        // given 33 two-byte characters = 66 UTF-8 bytes, though only 33 chars
+        var request = _Request() with
+        {
+            CollapseKey = new string('é', 33),
+        };
+
+        // when
+        var action = async () => await _CreateService().SendToDeviceAsync("fid", request, AbortToken);
+
+        // then
+        await action.Should().ThrowAsync<ArgumentException>();
+        await _sender
+            .DidNotReceive()
+            .SendAsync(Arg.Any<FcmMessageContent>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_pass_collapse_key_to_sender()
+    {
+        // given
+        _sender
+            .SendAsync(Arg.Any<FcmMessageContent>(), "fid", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(PushNotificationResponse.Succeeded("fid", "msg-1")));
+        var request = _Request() with { CollapseKey = "order-42" };
+
+        // when
+        await _CreateService().SendToDeviceAsync("fid", request, AbortToken);
+
+        // then
+        await _sender
+            .Received(1)
+            .SendAsync(
+                Arg.Is<FcmMessageContent>(c => c.CollapseKey == "order-42"),
+                "fid",
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     private FcmPushNotificationService _CreateService()
     {
         return new(_sender);
