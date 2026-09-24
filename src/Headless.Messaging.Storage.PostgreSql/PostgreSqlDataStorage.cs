@@ -101,10 +101,7 @@ internal sealed partial class PostgreSqlDataStorage(
         }
 
         using var configuredConnection = postgreSqlOptions.Value.CreateConnection();
-        if (
-            !string.Equals(configuredConnection.DataSource, connection.DataSource, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(configuredConnection.Database, connection.Database, StringComparison.Ordinal)
-        )
+        if (!RelationalDatabaseIdentity.IsSameDatabase(configuredConnection, connection))
         {
             return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.Database);
         }
