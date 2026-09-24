@@ -46,6 +46,13 @@ public static class TestImages
         "localstack/localstack:4.4.0@sha256:b52c16663c70b7234f217cb993a339b46686e30a1a5d9279cb5feeb2202f837c";
 
     /// <summary>
+    /// MinIO (S3-compatible object storage) image tag.
+    /// Pinned to a dated release tag rather than the rolling <c>latest</c> so a fresh pull cannot change server behavior.
+    /// </summary>
+    public const string Minio =
+        "minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e";
+
+    /// <summary>
     /// SQL Server 2022 image tag (used on x86_64 hosts).
     /// Pinned to an immutable CU tag rather than the rolling <c>2022-latest</c> so Docker does not
     /// re-check the registry on every run and so a fresh pull cannot silently change the SQL Server build.

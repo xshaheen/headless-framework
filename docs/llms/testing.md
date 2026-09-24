@@ -370,6 +370,7 @@ Testcontainers fixtures for integration testing.
   - `HeadlessPulsarFixture`
   - `HeadlessAzuriteFixture`
   - `HeadlessLocalStackFixture`
+  - `HeadlessMinioFixture`
   - `HeadlessSqlServerFixture` (architecture-aware: SQL Server 2022 on x86_64, Azure SQL Edge on ARM64)
 - `TestContextMessageSink` — xUnit v3 diagnostic-message forwarder
 - Automatic container lifecycle management via `Testcontainers.Xunit`
