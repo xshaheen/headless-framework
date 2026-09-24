@@ -59,10 +59,6 @@ internal sealed class UserAgentParser : IUserAgentParser, IDisposable
         return _memo.GetOrCreate<UserAgentInfo?>(normalized, _ => _parser(normalized), _entryOptions);
     }
 
-    // Not the interface's default implementation: that would re-probe the memo through a second virtual call for
-    // what is one dictionary lookup here.
-    public string? GetDeviceInfo(string? userAgent) => Parse(userAgent)?.Summary;
-
     public void Dispose() => _memo.Dispose();
 
     private static UserAgentInfo? _Parse(string userAgent)
@@ -81,9 +77,9 @@ internal sealed class UserAgentParser : IUserAgentParser, IDisposable
         var os = detector.GetOs();
         var client = detector.GetClient();
         var bot = isBot ? detector.GetBot() : null;
-        var device = isBot ? DeviceType.Bot : _MapDevice(detector.GetDeviceName());
-        var brand = _Clean(detector.GetBrandName());
-        var model = _Clean(detector.GetModel());
+        var device = isBot ? DeviceType.Bot : MapDevice(detector.GetDeviceName());
+        var brand = detector.GetBrandName().NullIfWhiteSpace();
+        var model = detector.GetModel().NullIfWhiteSpace();
 
         // IsParsed only says the detector ran, not that it recognised anything: it is true for arbitrary junk,
         // which would otherwise yield a record whose every field is null. Report that as "not identified".
@@ -99,24 +95,22 @@ internal sealed class UserAgentParser : IUserAgentParser, IDisposable
             Device = device,
             DeviceBrand = brand,
             DeviceModel = model,
-            OsName = os.Success ? _Clean(os.Match?.Name) : null,
-            OsVersion = os.Success ? _Clean(os.Match?.Version) : null,
-            OsPlatform = os.Success ? _Clean(os.Match?.Platform) : null,
-            ClientName = client.Success ? _Clean(client.Match?.Name) : null,
-            ClientVersion = client.Success ? _Clean(client.Match?.Version) : null,
-            ClientType = client.Success ? _Clean(client.Match?.Type) : null,
+            OsName = os.Success ? os.Match?.Name.NullIfWhiteSpace() : null,
+            OsVersion = os.Success ? os.Match?.Version.NullIfWhiteSpace() : null,
+            OsPlatform = os.Success ? os.Match?.Platform.NullIfWhiteSpace() : null,
+            ClientName = client.Success ? client.Match?.Name.NullIfWhiteSpace() : null,
+            ClientVersion = client.Success ? client.Match?.Version.NullIfWhiteSpace() : null,
+            ClientType = client.Success ? client.Match?.Type.NullIfWhiteSpace() : null,
             ClientEngine = client.Success
-                ? _Clean((client.Match as DeviceDetectorNET.Results.Client.BrowserMatchResult)?.Engine)
+                ? (client.Match as DeviceDetectorNET.Results.Client.BrowserMatchResult)?.Engine.NullIfWhiteSpace()
                 : null,
-            BotName = _Clean(bot?.Match?.Name),
-            BotCategory = _Clean(bot?.Match?.Category),
+            BotName = bot?.Match?.Name.NullIfWhiteSpace(),
+            BotCategory = bot?.Match?.Category.NullIfWhiteSpace(),
         };
     }
 
-    // The detector returns "" rather than null for an unidentified field; the contract says null.
-    private static string? _Clean(string? value) => value.IsNullOrWhiteSpace() ? null : value;
-
-    private static DeviceType _MapDevice(string? deviceName)
+    // Internal for tests: the exotic device classes have no practical real-world User-Agent to drive through Parse.
+    internal static DeviceType MapDevice(string? deviceName)
     {
         return deviceName?.ToLowerInvariant() switch
         {

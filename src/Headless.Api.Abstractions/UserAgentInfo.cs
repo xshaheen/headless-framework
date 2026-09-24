@@ -60,8 +60,9 @@ public enum DeviceType
 /// authorization or security input.
 /// </para>
 /// <para>
-/// Bot fields are populated only when <see cref="IsBot"/> is <see langword="true"/>, and a bot rarely reports a
-/// device, an operating system, or a client version — expect those to be <see langword="null"/> for one.
+/// Bot fields are populated only when <see cref="IsBot"/> is <see langword="true"/>, and a bot rarely reports an
+/// operating system or a client version — expect those to be <see langword="null"/> for one;
+/// <see cref="Device"/> is always <see cref="DeviceType.Bot"/>.
 /// </para>
 /// </remarks>
 [PublicAPI]

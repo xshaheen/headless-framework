@@ -15,7 +15,35 @@ public sealed class UserAgentParserTests : TestBase
     private const string _SafariOnIphone =
         "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
 
+    private const string _InstagramOnIphone =
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 285.0.0.22.85 iPhone";
+
+    private const string _SafariOnIpad =
+        "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
+
+    private const string _TizenBrowserOnSmartTv =
+        "Mozilla/5.0 (SMART-TV; Linux; Tizen 7.0) AppleWebKit/537.36 (KHTML, like Gecko) Version/7.0 TV Safari/537.36";
+
+    private const string _NetFrontOnPlayStation5 =
+        "Mozilla/5.0 (PlayStation; PlayStation 5/8.00) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
+
     private const string _Googlebot = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)";
+
+    private readonly List<IDisposable> _suts = [];
+
+    protected override ValueTask DisposeAsyncCore()
+    {
+        // The parser is not IDisposable through the interface, so every created instance is disposed here rather
+        // than with a per-test `using`.
+        foreach (var sut in _suts)
+        {
+            sut.Dispose();
+        }
+
+        _suts.Clear();
+
+        return base.DisposeAsyncCore();
+    }
 
     [Theory]
     [InlineData(null)]
@@ -23,7 +51,7 @@ public sealed class UserAgentParserTests : TestBase
     [InlineData("   ")]
     public void should_return_null_for_blank_user_agent(string? userAgent)
     {
-        using var sut = _CreateSut();
+        var sut = _CreateSut();
 
         sut.GetDeviceInfo(userAgent).Should().BeNull();
         sut.Parse(userAgent).Should().BeNull();
@@ -32,7 +60,7 @@ public sealed class UserAgentParserTests : TestBase
     [Fact]
     public void should_parse_os_and_client_from_a_known_user_agent()
     {
-        using var sut = _CreateSut();
+        var sut = _CreateSut();
 
         var result = sut.GetDeviceInfo(_ChromeOnWindows);
 
@@ -44,7 +72,7 @@ public sealed class UserAgentParserTests : TestBase
     [Fact]
     public void should_return_null_for_an_unidentifiable_user_agent()
     {
-        using var sut = _CreateSut();
+        var sut = _CreateSut();
 
         sut.GetDeviceInfo("!!!not-a-user-agent!!!").Should().BeNull();
         sut.Parse("!!!not-a-user-agent!!!").Should().BeNull();
@@ -53,7 +81,7 @@ public sealed class UserAgentParserTests : TestBase
     [Fact]
     public void should_expose_the_individual_fields_a_summary_cannot_carry()
     {
-        using var sut = _CreateSut();
+        var sut = _CreateSut();
 
         var info = sut.Parse(_ChromeOnWindows);
 
@@ -63,6 +91,7 @@ public sealed class UserAgentParserTests : TestBase
         info.Device.Should().Be(DeviceType.Desktop);
         info.OsName.Should().Be("Windows");
         info.ClientName.Should().Be("Chrome");
+        info.ClientEngine.Should().Be("Blink");
         info.ClientVersion.Should().NotBeNullOrWhiteSpace();
         info.ClientType.Should().NotBeNullOrWhiteSpace();
     }
@@ -70,7 +99,7 @@ public sealed class UserAgentParserTests : TestBase
     [Fact]
     public void should_identify_a_phone_and_its_brand()
     {
-        using var sut = _CreateSut();
+        var sut = _CreateSut();
 
         var info = sut.Parse(_SafariOnIphone);
 
@@ -82,9 +111,25 @@ public sealed class UserAgentParserTests : TestBase
     }
 
     [Fact]
+    public void should_identify_an_in_app_browser_as_an_app_client_without_an_engine()
+    {
+        var sut = _CreateSut();
+
+        var info = sut.Parse(_InstagramOnIphone);
+
+        info.Should().NotBeNull();
+        info!.Device.Should().Be(DeviceType.Phone);
+        info.IsBot.Should().BeFalse();
+        // In-app webviews are app clients, not browsers: no rendering engine is reported.
+        info.ClientName.Should().Be("Instagram");
+        info.ClientType.Should().Be("mobile app");
+        info.ClientEngine.Should().BeNull();
+    }
+
+    [Fact]
     public void should_identify_a_bot_and_report_it_as_one()
     {
-        using var sut = _CreateSut();
+        var sut = _CreateSut();
 
         var info = sut.Parse(_Googlebot);
 
@@ -98,7 +143,7 @@ public sealed class UserAgentParserTests : TestBase
     [Fact]
     public void should_return_the_same_text_from_both_entry_points()
     {
-        using var sut = _CreateSut();
+        var sut = _CreateSut();
 
         sut.GetDeviceInfo(_ChromeOnWindows).Should().Be(sut.Parse(_ChromeOnWindows)!.Summary);
     }
@@ -107,7 +152,7 @@ public sealed class UserAgentParserTests : TestBase
     public void should_parse_once_no_matter_which_entry_point_is_used()
     {
         var parseCalls = 0;
-        using var sut = _CreateSut(parser: _ =>
+        var sut = _CreateSut(parser: _ =>
         {
             ++parseCalls;
             return _Info("Windows", "Chrome");
@@ -125,7 +170,7 @@ public sealed class UserAgentParserTests : TestBase
     public void should_memoize_a_negative_result_for_subsequent_calls()
     {
         var parseCalls = 0;
-        using var sut = _CreateSut(parser: _ =>
+        var sut = _CreateSut(parser: _ =>
         {
             ++parseCalls;
             return null;
@@ -140,7 +185,7 @@ public sealed class UserAgentParserTests : TestBase
     public void should_collapse_user_agents_that_share_a_truncated_prefix()
     {
         var parseCalls = 0;
-        using var sut = _CreateSut(
+        var sut = _CreateSut(
             maxUserAgentLength: 64,
             parser: userAgent =>
             {
@@ -160,7 +205,7 @@ public sealed class UserAgentParserTests : TestBase
     [Fact]
     public void should_cap_the_user_agent_it_reports_back()
     {
-        using var sut = _CreateSut(maxUserAgentLength: 64);
+        var sut = _CreateSut(maxUserAgentLength: 64);
 
         var info = sut.Parse(_ChromeOnWindows + new string('a', 200));
 
@@ -174,7 +219,7 @@ public sealed class UserAgentParserTests : TestBase
     public void should_not_cache_entries_beyond_the_configured_capacity()
     {
         var parseCalls = 0;
-        using var sut = _CreateSut(
+        var sut = _CreateSut(
             maxEntries: 1,
             parser: userAgent =>
             {
@@ -191,6 +236,42 @@ public sealed class UserAgentParserTests : TestBase
         parseCalls.Should().Be(3);
     }
 
+    [Theory]
+    [InlineData("desktop", DeviceType.Desktop)]
+    [InlineData("smartphone", DeviceType.Phone)]
+    [InlineData("feature phone", DeviceType.Phone)]
+    [InlineData("tablet", DeviceType.Tablet)]
+    [InlineData("phablet", DeviceType.Tablet)]
+    [InlineData("console", DeviceType.Console)]
+    [InlineData("tv", DeviceType.Tv)]
+    [InlineData("car browser", DeviceType.CarBrowser)]
+    [InlineData("smart display", DeviceType.SmartDisplay)]
+    [InlineData("smart speaker", DeviceType.SmartSpeaker)]
+    [InlineData("wearable", DeviceType.Wearable)]
+    [InlineData("camera", DeviceType.Camera)]
+    [InlineData("portable media player", DeviceType.PortableMediaPlayer)]
+    [InlineData("fridge", DeviceType.Unknown)]
+    [InlineData("", DeviceType.Unknown)]
+    [InlineData(null, DeviceType.Unknown)]
+    public void should_map_every_device_name_the_detector_reports(string? deviceName, DeviceType expected)
+    {
+        UserAgentParser.MapDevice(deviceName).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(_SafariOnIpad, DeviceType.Tablet)]
+    [InlineData(_TizenBrowserOnSmartTv, DeviceType.Tv)]
+    [InlineData(_NetFrontOnPlayStation5, DeviceType.Console)]
+    public void should_classify_real_devices_through_the_full_parse(string userAgent, DeviceType expected)
+    {
+        var sut = _CreateSut();
+
+        var info = sut.Parse(userAgent);
+
+        info.Should().NotBeNull();
+        info!.Device.Should().Be(expected);
+    }
+
     private static UserAgentInfo _Info(string? os, string? client)
     {
         return new UserAgentInfo
@@ -203,7 +284,7 @@ public sealed class UserAgentParserTests : TestBase
         };
     }
 
-    private static UserAgentParser _CreateSut(
+    private IUserAgentParser _CreateSut(
         int maxUserAgentLength = 512,
         int maxEntries = 1_000,
         Func<string, UserAgentInfo?>? parser = null
@@ -213,7 +294,13 @@ public sealed class UserAgentParserTests : TestBase
             new UserAgentParserOptions { MaxEntries = maxEntries, MaxUserAgentLength = maxUserAgentLength }
         );
 
-        return parser is null ? new UserAgentParser(options) : new UserAgentParser(options, parser);
+        UserAgentParser sut = parser is null ? new UserAgentParser(options) : new UserAgentParser(options, parser);
+
+        // GetDeviceInfo lives in the interface's default implementation, invisible on the concrete type, and the
+        // interface itself is not IDisposable — so tests see the interface and disposal is centralized above.
+        _suts.Add(sut);
+
+        return sut;
     }
 }
 

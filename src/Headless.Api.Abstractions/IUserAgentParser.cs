@@ -31,6 +31,8 @@ public interface IUserAgentParser
     /// <remarks>
     /// A display-only shorthand for <see cref="UserAgentInfo.Summary"/>. Call <see cref="Parse"/> instead when any
     /// individual field is wanted, so the fields are not re-derived by string-splitting this.
+    /// Earlier versions could return an empty string when a match's name was empty; empty and whitespace-only
+    /// names now normalize to <see langword="null"/> — an intentional narrowing.
     /// </remarks>
     string? GetDeviceInfo(string? userAgent) => Parse(userAgent)?.Summary;
 }
