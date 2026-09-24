@@ -8,10 +8,10 @@ namespace Headless.Security;
 /// </summary>
 /// <remarks>
 /// The hash is deterministic: the same value and salt always produce the same output, and the output carries no
-/// embedded salt or parameters. This service is therefore <b>not suitable for password storage</b> — it has no
-/// per-record random salt and no verification primitive. For passwords use a dedicated password hasher
-/// (for example ASP.NET Core's <c>PasswordHasher&lt;T&gt;</c>). To compare a value against a stored hash, recompute
-/// the hash with the same salt and options and compare the results.
+/// embedded salt or parameters. This service is therefore <b>not suitable for storing secrets</b> — it has no
+/// per-record random salt and no verification primitive. To store a PIN, password, API-key secret, or recovery code
+/// that is only ever checked, use <see cref="ISecretHasher" />. To compare a value against a stored lookup hash,
+/// recompute the hash with the same salt and options and compare the results.
 /// </remarks>
 [PublicAPI]
 public interface IStringHashService

@@ -17,4 +17,4 @@ dotnet add package Headless.Security.Abstractions
 ## Documentation
 
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
-- [Core guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/core.md#headlesssecurityabstractions)
+- [Security guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/security.md#headlesssecurityabstractions)
