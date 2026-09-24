@@ -70,6 +70,48 @@ public sealed class ConfigureManagementTests
         act.Should().Throw<OptionsValidationException>();
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void should_reject_policy_name_prefix_when_empty_or_whitespace(string prefix)
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddHeadlessPermissions(setup =>
+        {
+            setup.ConfigureManagement(options => options.PolicyNamePrefix = prefix);
+            setup.UseEntityFramework<OptionsTestDbContext>();
+        });
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var act = () => provider.GetRequiredService<IOptions<PermissionManagementOptions>>().Value;
+
+        // then
+        act.Should().Throw<OptionsValidationException>();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("permission:")]
+    public void should_accept_policy_name_prefix_when_unset_or_non_blank(string? prefix)
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddHeadlessPermissions(setup =>
+        {
+            setup.ConfigureManagement(options => options.PolicyNamePrefix = prefix);
+            setup.UseEntityFramework<OptionsTestDbContext>();
+        });
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var options = provider.GetRequiredService<IOptions<PermissionManagementOptions>>().Value;
+
+        // then
+        options.PolicyNamePrefix.Should().Be(prefix);
+    }
+
     [Fact]
     public void should_register_startup_initializer_by_default()
     {

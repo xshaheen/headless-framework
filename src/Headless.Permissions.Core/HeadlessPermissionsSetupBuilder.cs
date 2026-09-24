@@ -29,6 +29,8 @@ public sealed class HeadlessPermissionsSetupBuilder
 
     internal bool RegisterStartupInitializer { get; private set; } = true;
 
+    internal bool RegisterPermissionNamePolicies { get; private set; } = true;
+
     /// <summary>
     /// Skips the hosted service that seeds static permission definitions into the store and pre-caches dynamic
     /// ones at startup. Use it on hosts that must not touch the store at startup, such as test hosts and
@@ -38,6 +40,20 @@ public sealed class HeadlessPermissionsSetupBuilder
     public HeadlessPermissionsSetupBuilder DisableStartupInitialization()
     {
         RegisterStartupInitializer = false;
+
+        return this;
+    }
+
+    /// <summary>
+    /// Skips registering <see cref="Requirements.PermissionPolicyProvider"/>, so a defined permission name no
+    /// longer resolves as an authorization policy by itself; the host's own or ASP.NET Core's default
+    /// <see cref="Microsoft.AspNetCore.Authorization.IAuthorizationPolicyProvider"/> stays in place. Use it on hosts
+    /// that own policy resolution or want every policy registered explicitly.
+    /// </summary>
+    /// <returns>The same builder for chaining.</returns>
+    public HeadlessPermissionsSetupBuilder DisablePermissionNamePolicies()
+    {
+        RegisterPermissionNamePolicies = false;
 
         return this;
     }

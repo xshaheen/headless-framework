@@ -75,6 +75,15 @@ public sealed class PermissionManagementOptions
     /// must observe those calls <see cref="Grants.IPermissionGrantStore.RefreshAsync"/>. Default: 5 hours.
     /// </summary>
     public TimeSpan GrantCacheExpiration { get; set; } = 5.Hours();
+
+    /// <summary>
+    /// Optional prefix that marks an authorization policy name as a permission name. When set, only policy names
+    /// starting with it (ordinal comparison) resolve to a permission policy, with the prefix stripped before the
+    /// lookup, e.g. <c>[Authorize("permission:Orders.Edit")]</c>; unprefixed names are not resolved. When
+    /// <see langword="null"/> (the default), any policy name that is a defined permission resolves. Must not be empty
+    /// or whitespace when set.
+    /// </summary>
+    public string? PolicyNamePrefix { get; set; }
 }
 
 internal sealed class PermissionManagementOptionsValidator : AbstractValidator<PermissionManagementOptions>
@@ -90,5 +99,6 @@ internal sealed class PermissionManagementOptionsValidator : AbstractValidator<P
         RuleFor(x => x.CommonPermissionsUpdatedStampCacheExpiration).GreaterThan(TimeSpan.Zero);
         RuleFor(x => x.CommonPermissionsUpdatedStampCacheKey).NotEmpty();
         RuleFor(x => x.GrantCacheExpiration).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.PolicyNamePrefix).NotEmpty().When(x => x.PolicyNamePrefix is not null);
     }
 }

@@ -115,7 +115,7 @@ public static class SetupPermissions
         if (!serviceCollection.Any(static s => s.ServiceType == typeof(IPermissionGrantStore)))
         {
             serviceCollection.Configure<PermissionManagementOptions, PermissionManagementOptionsValidator>(_ => { });
-            _AddCore(serviceCollection, setup.RegisterStartupInitializer);
+            _AddCore(serviceCollection, setup);
         }
 
         serviceCollection.GuardSingleStorageProvider(
@@ -136,11 +136,11 @@ public static class SetupPermissions
         return new HeadlessPermissionsBuilder(serviceCollection);
     }
 
-    private static IServiceCollection _AddCore(IServiceCollection services, bool registerStartupInitializer)
+    private static IServiceCollection _AddCore(IServiceCollection services, HeadlessPermissionsSetupBuilder setup)
     {
         services._AddCoreValueProvider();
 
-        if (registerStartupInitializer)
+        if (setup.RegisterStartupInitializer)
         {
             services.AddInitializerHostedService<PermissionsInitializationBackgroundService>();
         }
@@ -187,6 +187,17 @@ public static class SetupPermissions
 
         services.AddSingleton<IAuthorizationHandler, PermissionRequirementHandler>();
         services.AddSingleton<IAuthorizationHandler, PermissionsRequirementHandler>();
+
+        if (setup.RegisterPermissionNamePolicies)
+        {
+            // Swap only ASP.NET Core's own default provider, in either registration order: AddAuthorization
+            // adds it with TryAdd, so a later call skips once ours is present. A host-registered provider stays.
+            services.AddOrReplaceFallbackSingleton<
+                IAuthorizationPolicyProvider,
+                DefaultAuthorizationPolicyProvider,
+                PermissionPolicyProvider
+            >();
+        }
 
         return services;
     }
