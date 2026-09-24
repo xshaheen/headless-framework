@@ -77,7 +77,9 @@ public interface IHeadlessSaveChangesPipeline
 /// <para>
 /// Unit of work: the unit bound to the context by <c>IUnitOfWorkFactory.BeginAsync(db)</c> /
 /// <c>Enlist(db, tx)</c> / <c>RunAsync(db, …)</c> is the one a caller-owned save enlists in; a pipeline-owned
-/// save enlists its own transaction and binds that unit to the context for the save's duration. The unit
+/// save enlists its own transaction and binds that unit to the context for the save's duration. A context built
+/// over the connection of a sibling context that carries a unit adopts that unit before the save, so its save is
+/// a caller-owned save inside the sibling's transaction. The unit
 /// travels explicitly: the outbox dispatcher receives it as an argument, and a domain-event handler reads it
 /// from the context it was handed (<c>db.UnitOfWork()</c>). A save inside a caller-owned transaction that
 /// carries integration events requires a unit that owns that transaction; otherwise it fails before any
@@ -145,6 +147,10 @@ internal sealed class HeadlessSaveChangesPipeline(
             cancellationToken
         );
 
+        // Adopts the unit a sibling context began over this context's connection, so the save runs inside that
+        // unit's transaction instead of beginning a second one on a connection that already has one.
+        _ = context.UnitOfWork();
+
         if (context.Database.CurrentTransaction is not null)
         {
             _EnsureUnitOfWorkOwnsCallerTransaction(context, saveContext);
@@ -183,6 +189,9 @@ internal sealed class HeadlessSaveChangesPipeline(
             baseSaveChanges,
             new StrongBox<bool>()
         );
+
+        // Same adoption as the async path.
+        _ = context.UnitOfWork();
 
         if (context.Database.CurrentTransaction is not null)
         {

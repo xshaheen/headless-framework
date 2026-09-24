@@ -28,9 +28,12 @@ namespace Headless.UnitOfWork;
 /// carries a live unit joins it: the block runs inside the owner's unit, outside any execution strategy of its own,
 /// and neither commits nor rolls back, so a service that wraps its own work in <c>RunAsync</c> composes under a
 /// caller that already opened the transaction; a joined block that completes or rolls the unit back itself is
-/// refused once it returns. A second <c>BeginAsync</c> or <c>Enlist</c> on a bound context is refused instead,
-/// because an owning handle over someone else's transaction has no honest semantics, and so is any EF entry point
-/// on a context whose connection a raw-ADO unit owns, which an EF block cannot join.
+/// refused once it returns. A second context built over the same connection joins the same way: it adopts the
+/// unit's transaction on its first lookup, so two <see cref="DbContext" /> types over one database commit
+/// atomically in one unit. A second <c>BeginAsync</c> or <c>Enlist</c> on a bound context, or on one whose
+/// connection carries a live unit, is refused instead, because an owning handle over someone else's transaction
+/// has no honest semantics, and so is any EF entry point on a context whose connection a raw-ADO unit owns, which
+/// an EF block cannot join.
 /// </remarks>
 [PublicAPI]
 public static class UnitOfWorkFactoryEntityFrameworkExtensions
@@ -71,8 +74,8 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
         /// <param name="transaction">The open transaction the unit observes.</param>
         /// <returns>The enlisted unit of work.</returns>
         /// <exception cref="InvalidOperationException">
-        /// The context already carries an active unit of work (join it with <c>RunAsync</c> or pass it along), or
-        /// its connection is owned by a raw-ADO unit that an EF unit cannot observe.
+        /// The context or its connection already carries an active unit of work (join it with <c>RunAsync</c> or
+        /// pass it along), or its connection is owned by a raw-ADO unit that an EF unit cannot observe.
         /// </exception>
         public IUnitOfWork Enlist(DbContext db, IDbContextTransaction transaction)
         {
@@ -97,7 +100,8 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
         /// logged, never surfaced (the same policy as the Npgsql and SqlClient <c>RunAsync</c>). When the
         /// context already carries a live unit, the block joins it instead: it receives that unit, runs outside
         /// any execution strategy of its own, and commit or rollback stay with the owner; a block that ends the
-        /// unit itself is refused once it returns.
+        /// unit itself is refused once it returns. A context built over the connection of another context that
+        /// carries a live unit joins that unit the same way, adopting its transaction.
         /// </summary>
         /// <param name="db">The context to operate on.</param>
         /// <param name="operation">The block receiving the unit and the caller's cancellation token.</param>
@@ -108,7 +112,8 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
         /// <param name="cancellationToken">Cancellation token forwarded to begin, commit, and the operation.</param>
         /// <exception cref="InvalidOperationException">
         /// The context's connection is owned by a raw-ADO unit (begin the EF unit first and join it from the ADO
-        /// side), or a joined block completed, rolled back, or disposed the owner's unit.
+        /// side), the context uses a transaction other than the unit's on that connection, or a joined block
+        /// completed, rolled back, or disposed the owner's unit.
         /// </exception>
         public Task RunAsync(
             DbContext db,
@@ -148,7 +153,8 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
         /// <param name="cancellationToken">Cancellation token forwarded to begin, commit, and the operation.</param>
         /// <exception cref="InvalidOperationException">
         /// The context's connection is owned by a raw-ADO unit (begin the EF unit first and join it from the ADO
-        /// side), or a joined block completed, rolled back, or disposed the owner's unit.
+        /// side), the context uses a transaction other than the unit's on that connection, or a joined block
+        /// completed, rolled back, or disposed the owner's unit.
         /// </exception>
         public Task<TResult> RunAsync<TResult>(
             DbContext db,
