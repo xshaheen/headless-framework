@@ -54,6 +54,7 @@ internal sealed class AzureBlobStorage(
         BlobLocation location,
         Stream content,
         IReadOnlyDictionary<string, string>? metadata = null,
+        string? contentType = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -64,7 +65,8 @@ internal sealed class AzureBlobStorage(
 
         var httpHeader = new BlobHttpHeaders
         {
-            ContentType = mimeTypeProvider.GetMimeType(location.Path),
+            // Azure serves the blob with this Content-Type, so a caller's explicit type wins over the extension guess.
+            ContentType = contentType ?? mimeTypeProvider.GetMimeType(location.Path),
             CacheControl = _option.CacheControl,
         };
 
@@ -110,7 +112,7 @@ internal sealed class AzureBlobStorage(
                 static blob => blob.Path,
                 async (location, blob, ct) =>
                 {
-                    await UploadAsync(location, blob.Stream, blob.Metadata, ct).ConfigureAwait(false);
+                    await UploadAsync(location, blob.Stream, blob.Metadata, blob.ContentType, ct).ConfigureAwait(false);
                     return true;
                 },
                 cancellationToken

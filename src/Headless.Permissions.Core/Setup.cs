@@ -115,7 +115,7 @@ public static class SetupPermissions
         if (!serviceCollection.Any(static s => s.ServiceType == typeof(IPermissionGrantStore)))
         {
             serviceCollection.Configure<PermissionManagementOptions, PermissionManagementOptionsValidator>(_ => { });
-            _AddCore(serviceCollection);
+            _AddCore(serviceCollection, setup.RegisterStartupInitializer);
         }
 
         serviceCollection.GuardSingleStorageProvider(
@@ -136,10 +136,14 @@ public static class SetupPermissions
         return new HeadlessPermissionsBuilder(serviceCollection);
     }
 
-    private static IServiceCollection _AddCore(IServiceCollection services)
+    private static IServiceCollection _AddCore(IServiceCollection services, bool registerStartupInitializer)
     {
         services._AddCoreValueProvider();
-        services.AddInitializerHostedService<PermissionsInitializationBackgroundService>();
+
+        if (registerStartupInitializer)
+        {
+            services.AddInitializerHostedService<PermissionsInitializationBackgroundService>();
+        }
 
         // The definition store keys its cross-instance lock on the application name and the manager stamps
         // its change announcements with the instance id; a host that never registered an identity gets one.

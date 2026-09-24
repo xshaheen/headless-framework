@@ -7,9 +7,14 @@ namespace Headless.Blobs;
 /// <param name="Path">The container-relative object key for the blob.</param>
 /// <param name="Stream">The content to upload.</param>
 /// <param name="Metadata">Optional key/value metadata to store alongside the blob.</param>
+/// <param name="ContentType">
+/// The media type to record for the blob, or <see langword="null"/> to derive it from the extension of
+/// <paramref name="Path"/>. See <see cref="IBlobStorage.UploadAsync"/>.
+/// </param>
 [PublicAPI]
 public sealed record BlobUploadRequest(
     string Path,
     Stream Stream,
-    IReadOnlyDictionary<string, string>? Metadata = null
+    IReadOnlyDictionary<string, string>? Metadata = null,
+    string? ContentType = null
 );

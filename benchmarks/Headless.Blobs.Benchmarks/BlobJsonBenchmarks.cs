@@ -81,6 +81,7 @@ internal sealed class BenchmarkBlobStorage(byte[] bytes) : IBlobStorage
         BlobLocation location,
         Stream content,
         IReadOnlyDictionary<string, string>? metadata = null,
+        string? contentType = null,
         CancellationToken cancellationToken = default
     ) => throw new NotSupportedException();
 

@@ -38,6 +38,7 @@ public sealed class DataProtectionStartupValidationTests : TestBase
                 Arg.Is<BlobLocation>(l => l.Path != BlobStorageDataProtectionXmlRepository.WriteProbeBlobName),
                 Arg.Any<Stream>(),
                 Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
             );
         await storage
@@ -46,6 +47,7 @@ public sealed class DataProtectionStartupValidationTests : TestBase
                 Arg.Is<BlobLocation>(l => l.Path == BlobStorageDataProtectionXmlRepository.WriteProbeBlobName),
                 Arg.Any<Stream>(),
                 Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
             );
         await storage
@@ -127,7 +129,7 @@ public sealed class DataProtectionStartupValidationTests : TestBase
         // then: the read-only GetAllKeys probe exercised the repository read path and passed (keys present),
         // and the protect path was never taken (no key generated, nothing uploaded).
         await storage.Received(1).ListAsync(Arg.Any<BlobQuery>(), Arg.Any<CancellationToken>());
-        await storage.DidNotReceiveWithAnyArgs().UploadAsync(default, null!, null, CancellationToken.None);
+        await storage.DidNotReceiveWithAnyArgs().UploadAsync(default, null!, null, null, CancellationToken.None);
     }
 
     [Fact]
@@ -187,6 +189,7 @@ public sealed class DataProtectionStartupValidationTests : TestBase
                 Arg.Is<BlobLocation>(l => l.Path == BlobStorageDataProtectionXmlRepository.WriteProbeBlobName),
                 Arg.Any<Stream>(),
                 Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -239,6 +242,7 @@ public sealed class DataProtectionStartupValidationTests : TestBase
                 Arg.Is<BlobLocation>(l => l.Path == BlobStorageDataProtectionXmlRepository.WriteProbeBlobName),
                 Arg.Any<Stream>(),
                 Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
             );
         await storage.DidNotReceiveWithAnyArgs().DeleteAsync(default, CancellationToken.None);
@@ -372,6 +376,7 @@ public sealed class DataProtectionStartupValidationTests : TestBase
                 Arg.Any<BlobLocation>(),
                 Arg.Any<Stream>(),
                 Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(call => new ValueTask(captureAsync(call.Arg<BlobLocation>(), call.Arg<Stream>())));
@@ -404,6 +409,7 @@ public sealed class DataProtectionStartupValidationTests : TestBase
                 Arg.Any<BlobLocation>(),
                 Arg.Any<Stream>(),
                 Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_ => throw new NotSupportedException("Simulated lost write access"));
@@ -460,6 +466,7 @@ public sealed class DataProtectionStartupValidationTests : TestBase
                 Arg.Any<BlobLocation>(),
                 Arg.Any<Stream>(),
                 Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_ => throw new NotSupportedException("Simulated fresh-deployment write failure"));

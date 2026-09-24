@@ -115,7 +115,9 @@ public sealed class ApiExtraInformationOperationProcessor : IOperationProcessor
 
             parameter.Description ??= description.ModelMetadata.Description;
 
-            if (parameter.Schema.Default is null && description.DefaultValue is not null)
+            // NSwag hands a Minimal API parameter without a default through as DBNull.Value, which is not null but
+            // has no serializable shape; treating it as a default throws and takes the whole document offline.
+            if (parameter.Schema.Default is null && description.DefaultValue is not (null or DBNull))
             {
                 parameter.Schema.Default =
                     description.DefaultValue is string

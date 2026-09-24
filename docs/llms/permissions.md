@@ -94,7 +94,7 @@ Each provider returns one of three states per permission:
 
 ### Grant Store and Caching
 
-`PermissionGrantStore` caches resolved grant statuses to avoid repeated database reads per request. The cache is backed by a tenant-scoped `ICache<PermissionGrantCacheItem>` keyed on the current tenant id. When `IPermissionManager.SetAsync` writes a grant, `PermissionGrantStore` evicts the affected cache entries directly through `ICache`. Direct `IPermissionGrantRepository` writes also evict the affected cache entry (removed after `SaveChangesAsync`), so a repository-level write is reflected on the next read. Only writes that bypass the repository entirely (raw SQL, direct `DbContext`) leave the cache stale.
+`PermissionGrantStore` caches resolved grant statuses to avoid repeated database reads per request. The cache is backed by a tenant-scoped `ICache<PermissionGrantCacheItem>` keyed on the current tenant id. When `IPermissionManager.SetAsync` writes a grant, `PermissionGrantStore` evicts the affected cache entries directly through `ICache`. Direct `IPermissionGrantRepository` writes also evict the affected cache entry (removed after `SaveChangesAsync`), so a repository-level write is reflected on the next read. Only writes that bypass the repository entirely (raw SQL, direct `DbContext`) leave the cache stale, and they stay stale for `PermissionManagementOptions.GrantCacheExpiration` (default 5 hours). A long-lived consumer that must observe such a write sooner, for example a streaming connection whose credential is checked once per event, calls `IPermissionGrantStore.RefreshAsync(providerName, providerKey)`, which reloads every grant for that target from the repository and replaces the cached statuses.
 
 ### Reacting to a change
 
@@ -416,7 +416,7 @@ builder.Services.AddHeadlessPermissions(setup =>
 - Registers `IPermissionGrantProviderManager` as singleton
 - Registers `IStaticPermissionDefinitionStore`, `IDynamicPermissionDefinitionStore`, `IPermissionDefinitionManager` as singletons
 - Registers `RolePermissionGrantProvider`, `UserPermissionGrantProvider` as singletons
-- Starts `PermissionsInitializationBackgroundService` as a hosted service (`IInitializer`)
+- Starts `PermissionsInitializationBackgroundService` as a hosted service (`IInitializer`) unless `setup.DisableStartupInitialization()` was called
 - Registers `IGrantPermissionsSeedHelper` as transient
 - Registers `PermissionRequirementHandler` and `PermissionsRequirementHandler` as `IAuthorizationHandler` singletons
 - Registers a tenant-scoped `ICache<PermissionGrantCacheItem>` as singleton

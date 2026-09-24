@@ -69,6 +69,43 @@ public sealed class AwsBlobStorageEngineTests : TestBase
     }
 
     [Fact]
+    public async Task upload_prefers_explicit_content_type_over_key_extension()
+    {
+        PutObjectRequest? captured = null;
+        _s3.PutObjectAsync(Arg.Do<PutObjectRequest>(r => captured = r), Arg.Any<CancellationToken>())
+            .Returns(new PutObjectResponse { HttpStatusCode = HttpStatusCode.OK });
+
+        var sut = _CreateSut();
+
+        await using var stream = new MemoryStream("{}"u8.ToArray());
+        await sut.UploadAsync(
+            new BlobLocation("bucket", "reports", "q1"),
+            stream,
+            contentType: "application/json",
+            cancellationToken: AbortToken
+        );
+
+        captured.Should().NotBeNull();
+        captured!.ContentType.Should().Be("application/json");
+    }
+
+    [Fact]
+    public async Task upload_derives_content_type_from_key_extension_when_not_given()
+    {
+        PutObjectRequest? captured = null;
+        _s3.PutObjectAsync(Arg.Do<PutObjectRequest>(r => captured = r), Arg.Any<CancellationToken>())
+            .Returns(new PutObjectResponse { HttpStatusCode = HttpStatusCode.OK });
+
+        var sut = _CreateSut();
+
+        await using var stream = new MemoryStream("%PDF"u8.ToArray());
+        await sut.UploadAsync(new BlobLocation("bucket", "reports", "q1.pdf"), stream, cancellationToken: AbortToken);
+
+        captured.Should().NotBeNull();
+        captured!.ContentType.Should().Be("application/pdf");
+    }
+
+    [Fact]
     public async Task bulk_upload_returns_results_aligned_to_input_blob_order_under_failures()
     {
         // Blobs at even indices are configured to fail, odd indices to succeed. results[i] must describe

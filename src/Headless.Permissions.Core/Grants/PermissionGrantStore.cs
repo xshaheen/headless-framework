@@ -10,13 +10,15 @@ using Headless.Permissions.Models;
 using Headless.Permissions.Repositories;
 using Humanizer;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Permissions.Grants;
 
 /// <summary>
 /// Caching read/write layer over the permission grant repository. Reads are served from a
-/// tenant-scoped cache (5-hour TTL) and populated on first miss by loading all grants for the
-/// provider in a single repository call. Writes update both the repository and the cache atomically.
+/// tenant-scoped cache (<see cref="PermissionManagementOptions.GrantCacheExpiration"/>, 5 hours by default) and
+/// populated on first miss by loading all grants for the provider in a single repository call. Writes update both
+/// the repository and the cache atomically.
 /// <para>
 /// An explicit <c>Revoke</c> writes a denial record (<c>IsGranted = false</c>) — it does NOT delete
 /// the row — so the cache can distinguish <c>Prohibited</c> from <c>Undefined</c>.
@@ -100,6 +102,13 @@ public interface IPermissionGrantStore
         string providerKey,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    /// Reloads every grant for the provider target from the repository and replaces the cached statuses, so a
+    /// long-lived consumer can observe a change made outside <see cref="IPermissionManager"/> and the repository
+    /// before <see cref="PermissionManagementOptions.GrantCacheExpiration"/> elapses.
+    /// </summary>
+    Task RefreshAsync(string providerName, string providerKey, CancellationToken cancellationToken = default);
 }
 
 public sealed class PermissionGrantStore(
@@ -108,10 +117,11 @@ public sealed class PermissionGrantStore(
     IGuidGenerator guidGenerator,
     ICache<PermissionGrantCacheItem> cache,
     ICurrentTenant currentTenant,
+    IOptions<PermissionManagementOptions> managementOptions,
     ILogger<PermissionGrantStore> logger
 ) : IPermissionGrantStore
 {
-    private readonly TimeSpan _cacheExpiration = 5.Hours();
+    private readonly TimeSpan _cacheExpiration = managementOptions.Value.GrantCacheExpiration;
 
     public async Task<PermissionGrantStatus> IsGrantedAsync(
         string name,
@@ -530,6 +540,35 @@ public sealed class PermissionGrantStore(
         CancellationToken cancellationToken
     )
     {
+        var statuses = await _CacheAllAsync(providerName, providerKey, cancellationToken).ConfigureAwait(false);
+
+        return statuses.TryGetValue(permissionToFind, out var isGranted)
+            ? PermissionGrantStatus.From(isGranted)
+            : PermissionGrantStatus.Undefined;
+    }
+
+    public async Task RefreshAsync(
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrWhiteSpace(providerName);
+        Argument.IsNotNullOrWhiteSpace(providerKey);
+
+        await _CacheAllAsync(providerName, providerKey, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Loads every grant for the provider target, writes one cache entry per known definition (a missing row caches
+    /// as undefined), and returns the per-name grant value so callers can answer a lookup from the same load.
+    /// </summary>
+    private async Task<Dictionary<string, bool?>> _CacheAllAsync(
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken
+    )
+    {
         var definitions = await permissionDefinitionManager
             .GetPermissionsAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -544,29 +583,23 @@ public sealed class PermissionGrantStore(
         logger.LogSettingCacheItemsForDefinitions(definitions.Count);
 
         Dictionary<string, PermissionGrantCacheItem> cacheItems = new(StringComparer.Ordinal);
-        var permissionIsGranted = PermissionGrantStatus.Undefined;
+        Dictionary<string, bool?> statuses = new(StringComparer.Ordinal);
 
         foreach (var permission in definitions)
         {
             var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(permission.Name, providerName, providerKey);
 
-            // If there's a record in DB, use its IsGranted value (true or false)
-            // If no record, it's undefined (null)
+            // A row decides granted or prohibited; no row is undefined, and the cache stores that distinction.
             bool? isGranted = grantsLookup.TryGetValue(permission.Name, out var granted) ? granted : null;
-            var cacheItem = new PermissionGrantCacheItem(isGranted);
-            cacheItems[cacheKey] = cacheItem;
-
-            if (string.Equals(permission.Name, permissionToFind, StringComparison.Ordinal))
-            {
-                permissionIsGranted = PermissionGrantStatus.From(isGranted);
-            }
+            cacheItems[cacheKey] = new PermissionGrantCacheItem(isGranted);
+            statuses[permission.Name] = isGranted;
         }
 
         await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken).ConfigureAwait(false);
 
         logger.LogFinishedSettingCacheItemsForDefinitions(definitions.Count);
 
-        return permissionIsGranted;
+        return statuses;
     }
 
     private async Task<PermissionDefinition[]> _GetDbPermissionsDefinitionsAsync(

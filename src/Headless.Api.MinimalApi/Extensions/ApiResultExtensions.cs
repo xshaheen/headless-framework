@@ -78,7 +78,7 @@ public static class ApiResultExtensions
             ConflictError e => TypedResults.Problem(creator.Conflict(e.Errors)),
 
             // Default: treat as conflict
-            _ => TypedResults.Problem(creator.Conflict([new ErrorDescriptor(error.Code, error.Message)])),
+            _ => TypedResults.Problem(creator.Conflict([error.ToErrorDescriptor()])),
         };
     }
 }

@@ -111,7 +111,7 @@ public static class SetupFeatures
         if (!serviceCollection.Any(static s => s.ServiceType == typeof(IFeatureManager)))
         {
             serviceCollection.Configure<FeatureManagementOptions, FeatureManagementOptionsValidator>(_ => { });
-            _AddCore(serviceCollection);
+            _AddCore(serviceCollection, setup.RegisterStartupInitializer);
         }
 
         serviceCollection.GuardSingleStorageProvider(
@@ -134,10 +134,14 @@ public static class SetupFeatures
 
     private sealed record FeaturesStorageProviderRegistration(string Provider);
 
-    private static IServiceCollection _AddCore(IServiceCollection services)
+    private static IServiceCollection _AddCore(IServiceCollection services, bool registerStartupInitializer)
     {
         services._AddCoreValueProviders();
-        services.AddInitializerHostedService<FeaturesInitializationBackgroundService>();
+
+        if (registerStartupInitializer)
+        {
+            services.AddInitializerHostedService<FeaturesInitializationBackgroundService>();
+        }
 
         // The definition store keys its cross-instance lock on the application name and the manager stamps
         // its change announcements with the instance id; a host that never registered an identity gets one.

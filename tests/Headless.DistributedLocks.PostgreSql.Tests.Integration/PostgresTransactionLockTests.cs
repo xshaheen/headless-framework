@@ -103,6 +103,44 @@ public sealed class PostgresTransactionLockTests(PostgreSqlDistributedLockFixtur
     }
 
     [Fact]
+    public async Task should_acquire_and_release_synchronously_through_db_transaction()
+    {
+        // The synchronous DbTransaction overload is the shape an EF Core SavingChanges interceptor holds.
+        var key = new PostgreSqlAdvisoryLockKey(Faker.Random.Long());
+
+        await using var connection = await _OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+        DbTransaction abstractTransaction = transaction;
+
+        PostgreSqlDistributedLock.AcquireWithTransaction(key, abstractTransaction);
+
+        (await _CountAdvisoryLocksAsync(key)).Should().BePositive();
+
+        await using var contenderConnection = await _OpenAsync();
+        await using var contenderTransaction = await contenderConnection.BeginTransactionAsync(AbortToken);
+        PostgreSqlDistributedLock
+            .TryAcquireWithTransaction(key, (DbTransaction)contenderTransaction)
+            .Should()
+            .BeFalse();
+
+        await transaction.CommitAsync(AbortToken);
+
+        (await _CountAdvisoryLocksAsync(key)).Should().Be(0);
+        PostgreSqlDistributedLock.TryAcquireWithTransaction(key, contenderTransaction).Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_reject_a_db_transaction_that_is_not_npgsql()
+    {
+        var key = new PostgreSqlAdvisoryLockKey(Faker.Random.Long());
+        var foreign = Substitute.For<DbTransaction>();
+
+        var act = () => PostgreSqlDistributedLock.AcquireWithTransaction(key, foreign);
+
+        act.Should().Throw<ArgumentException>().WithParameterName("transaction");
+    }
+
+    [Fact]
     public async Task should_restore_timeout_settings_when_strategy_uses_visible_transaction()
     {
         var resourceName = _CreateResourceName();

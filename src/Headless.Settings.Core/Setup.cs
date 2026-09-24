@@ -104,7 +104,7 @@ public static class SetupSettings
         if (!serviceCollection.Any(static s => s.ServiceType == typeof(ISettingManager)))
         {
             serviceCollection.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(_ => { });
-            _AddCore(serviceCollection);
+            _AddCore(serviceCollection, setup.RegisterStartupInitializer);
         }
 
         serviceCollection.GuardSingleStorageProvider(
@@ -127,7 +127,7 @@ public static class SetupSettings
 
     /// <summary>Registers all core settings services. Guards against missing <c>IStringEncryptionService</c> and is idempotent when called multiple times via the <c>ISettingManager</c> guard in the caller.</summary>
     /// <exception cref="InvalidOperationException"><see cref="Headless.Security.IStringEncryptionService"/> is not registered in <paramref name="services"/>.</exception>
-    private static IServiceCollection _AddCore(IServiceCollection services)
+    private static IServiceCollection _AddCore(IServiceCollection services, bool registerStartupInitializer)
     {
         if (!services.Any(s => s.ServiceType == typeof(IStringEncryptionService)))
         {
@@ -140,7 +140,10 @@ public static class SetupSettings
 
         services._AddCoreValueProvider();
 
-        services.AddInitializerHostedService<SettingsInitializationBackgroundService>();
+        if (registerStartupInitializer)
+        {
+            services.AddInitializerHostedService<SettingsInitializationBackgroundService>();
+        }
 
         // The definition store keys its cross-instance lock on the application name and the manager stamps
         // its change announcements with the instance id; a host that never registered an identity gets one.

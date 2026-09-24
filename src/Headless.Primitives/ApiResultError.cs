@@ -37,6 +37,27 @@ public abstract record ApiResultError
         return new SimpleError(code, message);
     }
 
+    /// <summary>
+    /// Projects this error to an <see cref="ErrorDescriptor"/> carrying <see cref="Code"/>, <see cref="Message"/> and
+    /// every <see cref="Metadata"/> entry as a descriptor parameter, so custom errors keep their structured data on the
+    /// ProblemDetails wire.
+    /// </summary>
+    /// <returns>A new descriptor for this error.</returns>
+    public ErrorDescriptor ToErrorDescriptor()
+    {
+        var descriptor = new ErrorDescriptor(Code, Message);
+
+        if (Metadata is { Count: > 0 } metadata)
+        {
+            foreach (var (key, value) in metadata)
+            {
+                descriptor.WithParam(key, value);
+            }
+        }
+
+        return descriptor;
+    }
+
     private sealed record SimpleError(string Code, string Message) : ApiResultError
     {
         public override string Code { get; } = Code;
@@ -187,7 +208,7 @@ public sealed record AggregateError : ApiResultError
 
                 break;
             default:
-                descriptors.Add(new ErrorDescriptor(error.Code, error.Message));
+                descriptors.Add(error.ToErrorDescriptor());
                 break;
         }
     }
