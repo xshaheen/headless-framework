@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Caching;
 using Headless.Hosting.Initialization;
 using Headless.Security;
 using Headless.Settings;
@@ -97,6 +98,8 @@ public sealed class SqlServerSettingsFailureModesTests(SqlServerSettingsFixture 
         builder.Services.AddStringEncryptionService(
             builder.Configuration.GetRequiredSection("Headless:StringEncryption")
         );
+        // The value store caches every read, and the host refuses to start without a registered cache.
+        builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
         builder.Services.AddHeadlessSettings(setup =>
         {
             setup.ConfigureStorage(options => options.Schema = schema);

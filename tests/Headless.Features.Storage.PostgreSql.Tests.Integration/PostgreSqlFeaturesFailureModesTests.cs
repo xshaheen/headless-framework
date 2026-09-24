@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Caching;
 using Headless.Features;
 using Headless.Hosting.Initialization;
 using Headless.Testing.Tests;
@@ -87,6 +88,8 @@ public sealed class PostgreSqlFeaturesFailureModesTests(PostgreSqlFeaturesFixtur
         var builder = Host.CreateApplicationBuilder();
         // unify: management-core deps
         builder.Services.AddSingleton(TimeProvider.System);
+        // The value store caches every read, and the host refuses to start without a registered cache.
+        builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
         builder.Services.AddHeadlessFeatures(setup =>
         {
             setup.ConfigureStorage(options => options.Schema = schema);
