@@ -916,6 +916,7 @@
           "Testcontainers.Azurite": "[4.15.0, )",
           "Testcontainers.Kafka": "[4.15.0, )",
           "Testcontainers.LocalStack": "[4.15.0, )",
+          "Testcontainers.Minio": "[4.15.0, )",
           "Testcontainers.MsSql": "[4.15.0, )",
           "Testcontainers.Nats": "[4.15.0, )",
           "Testcontainers.PostgreSql": "[4.15.0, )",
@@ -1268,6 +1269,15 @@
         "requested": "[4.15.0, )",
         "resolved": "4.15.0",
         "contentHash": "mWg3bhY0Hf3iawJy2lQ0cIgKpsDx3knHDGmRRGcvmpzw/B5uc8KaIJ9B9FVRAUvt+Vhql9jUDt5goHsFuO1Y/Q==",
+        "dependencies": {
+          "Testcontainers": "4.15.0"
+        }
+      },
+      "Testcontainers.Minio": {
+        "type": "CentralTransitive",
+        "requested": "[4.15.0, )",
+        "resolved": "4.15.0",
+        "contentHash": "ta6o0i463GqP/X+J1homJq0p/hGfOiYFoZ+vxAj2y6qDy593DBJIREt33fUaaxpIkDuAmnj+Xa/DKrgTOBHHmg==",
         "dependencies": {
           "Testcontainers": "4.15.0"
         }

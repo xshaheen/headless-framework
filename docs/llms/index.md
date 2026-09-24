@@ -45,7 +45,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | Open and enlist an explicit transaction across EF, messaging, or jobs | [Unit of Work](unit-of-work.md) |
 | Use provider-neutral SQL connections | [SQL](sql.md) |
 | Cache data in memory, Redis, or hybrid L1/L2; use output cache or factory locks | [Caching](caching.md) |
-| Store blobs in S3, Azure, R2, filesystem, Redis, or SFTP | [Blob Storage](blobs.md) |
+| Store blobs in S3, MinIO or another S3-compatible server, Azure, R2, filesystem, Redis, or SFTP | [Blob Storage](blobs.md) |
 | Persist dynamic settings | [Settings](settings.md) |
 | Evaluate feature flags | [Features](features.md) |
 | React when a setting, feature, or permission grant changes instead of polling | [Settings](settings.md), [Features](features.md), [Permissions](permissions.md) — each has a "Reacting to a change" section |
