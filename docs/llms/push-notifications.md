@@ -1,11 +1,11 @@
 ---
 domain: Push Notifications
-packages: PushNotifications.Abstractions, PushNotifications.Core, PushNotifications.Dev, PushNotifications.Firebase
+packages: PushNotifications.Abstractions, PushNotifications.Core, PushNotifications.Dev, PushNotifications.Firebase, PushNotifications.Apns
 ---
 
 # Push Notifications
 
-> Provider-agnostic push notification API with Firebase Cloud Messaging for production and a no-op implementation for development, supporting an optional default service plus any number of named (keyed) instances.
+> Provider-agnostic push notification API with Firebase Cloud Messaging and Apple Push Notification service (APNs) for production and a no-op implementation for development, supporting an optional default service plus any number of named (keyed) instances.
 
 ## Orientation
 
@@ -14,6 +14,9 @@ Install `Headless.PushNotifications.Abstractions` plus one provider package. Reg
 ```csharp
 // Production — Firebase Cloud Messaging (default)
 builder.Services.AddHeadlessPushNotifications(setup => setup.UseFirebase(builder.Configuration.GetSection("Firebase")));
+
+// Production — iOS only, straight to Apple Push Notification service (no Firebase project)
+builder.Services.AddHeadlessPushNotifications(setup => setup.UseApns(builder.Configuration.GetSection("Apns")));
 
 // Development / testing — no-op, always succeeds
 builder.Services.AddHeadlessPushNotifications(setup => setup.UseNoop());
@@ -25,6 +28,13 @@ builder.Services.AddHeadlessPushNotifications(setup =>
     setup.AddNamed("driver-app", i => i.UseFirebase(builder.Configuration.GetSection("Firebase:Driver")));
     setup.AddNamed("rider-app", i => i.UseFirebase(builder.Configuration.GetSection("Firebase:Rider")));
 });
+
+// Firebase for Android and Web, APNs direct for iOS:
+builder.Services.AddHeadlessPushNotifications(setup =>
+{
+    setup.UseFirebase(builder.Configuration.GetSection("Firebase"));                      // default
+    setup.AddNamed("ios", i => i.UseApns(builder.Configuration.GetSection("Apns")));
+});
 ```
 
 `Headless.PushNotifications.Core` owns registration (`AddHeadlessPushNotifications`, `HeadlessPushNotificationsSetupBuilder`, `HeadlessPushNotificationsInstanceBuilder`) and the `IPushNotificationServiceProvider` implementation over keyed DI. Providers pull it transitively — you rarely install it directly. `Headless.PushNotifications.Abstractions` holds contracts only (`IPushNotificationService`, `IPushNotificationServiceProvider`, response types).
@@ -33,22 +43,31 @@ Use `IPushNotificationService.SendToDeviceAsync` for single-device delivery and 
 
 ## Agent Rules
 
-- Register at most one **default** provider per container: `services.AddHeadlessPushNotifications(setup => setup.Use…())`. The default is optional — zero defaults is allowed (a named-only host). Multiple default providers in one delegate, or a repeated `AddHeadlessPushNotifications` on the same `IServiceCollection`, throws `InvalidOperationException` at registration time. The available default `Use*` calls are `UseFirebase` and `UseNoop` — the same set is available on each named instance.
+- Register at most one **default** provider per container: `services.AddHeadlessPushNotifications(setup => setup.Use…())`. The default is optional — zero defaults is allowed (a named-only host). Multiple default providers in one delegate, or a repeated `AddHeadlessPushNotifications` on the same `IServiceCollection`, throws `InvalidOperationException` at registration time. The available default `Use*` calls are `UseFirebase`, `UseApns`, and `UseNoop` — the same set is available on each named instance.
 - Add **named** services in the same call: `setup.AddNamed("name", i => i.Use…())`. Names must be non-whitespace and ordinal-unique within the call, and each named instance must select exactly one provider — a duplicate name, whitespace name, or zero/multiple providers throws at registration time. The default is optional; a named-only host (no default) is supported — the unkeyed `IPushNotificationService` is simply not registered when no default is configured.
 - Resolve a named service with `IPushNotificationServiceProvider.GetService("name")` (throws `InvalidOperationException` naming `AddNamed` when unregistered) / `GetServiceOrNull("name")` (returns `null`), or raw keyed DI (`[FromKeyedServices("name")] IPushNotificationService`, `GetRequiredKeyedService<IPushNotificationService>(name)`). Both `GetService` and `GetServiceOrNull` throw `ArgumentException` on a null/whitespace name. The default (unkeyed) `IPushNotificationService` is **not** exposed through `IPushNotificationServiceProvider`. To validate an externally supplied name before resolving, check `IPushNotificationServiceProvider.RegisteredNames` (the registered named-instance names, an `IReadOnlySet<string>`; the default is excluded) instead of probing `GetServiceOrNull` and handling `null`.
 - Registration is deferred: provider contributions are queued and nothing touches the `IServiceCollection` until the gates pass, so a setup that throws leaves the collection unchanged. The same provider can back two different names with fully independent options.
 - Each named Firebase instance isolates its own options (validated per name via FluentValidation + `ValidateOnStart`), its own retry pipeline (keyed `Headless:FcmRetry:{name}`), and its own lazily-created `FirebaseApp`. Keyed DI does not cascade the key to constructor dependencies, so named services never read the default configuration (a keyed sender reads `IOptionsMonitor.Get(name)`, never `CurrentValue`).
-- Always code against `IPushNotificationService` from `Headless.PushNotifications.Abstractions`. Never reference `FcmPushNotificationService` or other concrete types in application code.
+- Each named APNs instance likewise owns its options (validated per name at startup), its own HTTP client and resilience pipeline (named `Headless:Apns:{name}`), and its keyed service. It shares only the provider-token cache, which is keyed by team id and key id.
+- Always code against `IPushNotificationService` from `Headless.PushNotifications.Abstractions`. Never reference `FcmPushNotificationService`, `ApnsPushNotificationService`, or other concrete types in application code.
 - Use `Headless.PushNotifications.Dev` (`UseNoop()`) in development and testing environments to avoid sending real notifications. Switch on `builder.Environment.IsDevelopment()`.
 - Do NOT call the Firebase Admin SDK (`FirebaseAdmin`, `FirebaseMessaging`) directly. Route all sends through `IPushNotificationService`.
 - After every send, check `PushNotificationResponse.Status`. Three distinct states exist — `Success`, `Failure`, and `Unregistered` — and `IsSucceeded()` / `IsFailed()` both return `false` for an unregistered token. Use `IsUnregistered()` explicitly and remove that token from your store.
 - FCM enforces content limits: **title ≤ 100 characters**, **body ≤ 4 000 characters**. `FcmPushNotificationService` throws `ArgumentException` if either limit is exceeded.
 - FCM data payload keys `from`, `notification`, `message_type`, and any key starting with `google` or `gcm` are reserved. Passing a reserved key throws `ArgumentException` from `SendToDeviceAsync` / `SendMulticastAsync` before any network call.
-- Multicast sends are transparently chunked into batches of at most 500 tokens (the FCM hard limit). A single `SendMulticastAsync` call handles any number of tokens.
+- A single `SendMulticastAsync` call handles any number of tokens. Firebase chunks them into batches of at most 500 (the FCM hard limit); APNs has no batch endpoint, so it sends one request per token with at most `ApnsOptions.MaxConcurrency` in flight.
 - Firebase retries transient errors (HTTP 429 `QuotaExceeded`, 503 `Unavailable`, 500 `Internal`, network errors, non-user timeouts) automatically with exponential backoff. Do not wrap calls in your own retry for these errors.
-- Permanent errors (`Unregistered`, `InvalidArgument`, `SenderIdMismatch`, `ThirdPartyAuthError`) are not retried. `Unregistered` is returned as `PushNotificationResponseStatus.Unregistered`, not as a failure.
-- Do not disable retry in production (`MaxAttempts = 0`) unless you have your own resilience infrastructure. Default is 5 attempts with exponential backoff and jitter.
+- Firebase does not retry permanent errors (`Unregistered`, `InvalidArgument`, `SenderIdMismatch`, `ThirdPartyAuthError`). `Unregistered` is returned as `PushNotificationResponseStatus.Unregistered`, not as a failure.
+- Do not disable Firebase retry in production (`MaxAttempts = 0`) unless you have your own resilience infrastructure. Default is 5 attempts with exponential backoff and jitter.
 - `FirebaseOptions.Json` contains sensitive private-key material. Do not log it, serialize it, or store it in configuration as plain text in production. The `ToString()` override on `FirebaseOptions` redacts it.
+- `PushNotificationRequest.CollapseKey` is limited to 64 UTF-8 bytes by both production providers, because Apple caps the `apns-collapse-id` header at 64 bytes. A longer key throws `ArgumentException` before any network call.
+- APNs reports a token as `Unregistered` only on HTTP 410. `BadDeviceToken` (HTTP 400) is a `Failure` by default, because Apple returns it both for a malformed token and for a valid token sent to the wrong environment. A host pointed at the wrong `ApnsOptions.Environment` would discard every valid token it holds if that rejection meant unregistered. Set `TreatBadDeviceTokenAsUnregistered = true` only when the environment is known to be right.
+- APNs payloads are limited to 4096 bytes (5120 bytes when `PushType = ApnsPushType.Voip`), measured on the JSON the provider writes, including `Data`. An oversized payload throws `ArgumentException` before any network call.
+- APNs reserves the top-level `aps` key. A `Data` entry named `aps` throws `ArgumentException`. Every other `Data` key is written at the top level of the payload, beside `aps`.
+- Load `ApnsOptions.PrivateKey` (the `.p8` PEM text) from a secret store or an environment variable, never from committed configuration. The appsettings sample in this guide uses a placeholder. `ToString()` redacts the key and `[JsonIgnore]` keeps it out of serialized options.
+- Rotating the APNs signing key requires a process restart: the provider caches the imported key and its provider token per `(team id, key id)` for the life of the container. Two option sets with the same team id and key id but different key text are refused, and every send through the second one returns `Failure`.
+- Every process that signs with the same APNs key mints its own provider token, and Apple rejects token updates for one key more often than once every 20 minutes with `TooManyProviderTokenUpdates`. Within one container the provider shares one token per key. Across many processes or hosts, prefer a separate key per environment or deployment.
+- APNs retries in-process only transport faults, HTTP 500, and HTTP 503, at most twice. Apple asks senders to wait about 15 minutes before retrying a 5xx, so retry a `Failure` later from your own queue or job rather than in a tight loop. Never retry an HTTP 429 `TooManyRequests` immediately: it throttles that one device token.
 
 ## Core Concepts
 
@@ -76,11 +95,11 @@ Every send returns a `PushNotificationResponse` with one of three mutually exclu
 
 | `Status` | `IsSucceeded()` | `IsFailed()` | `IsUnregistered()` | Meaning |
 |---|---|---|---|---|
-| `Success` | `true` | `false` | `false` | Accepted by FCM; `MessageId` is non-null |
+| `Success` | `true` | `false` | `false` | Accepted by the provider; `MessageId` is non-null |
 | `Failure` | `false` | `true` | `false` | Provider rejected the message; `FailureError` is non-null |
 | `Unregistered` | `false` | `false` | `true` | Token is no longer valid; remove from your store |
 
-The `Unregistered` state is not a failure in the FCM model — it is a signal to clean up stale tokens. A simple `if (!response.IsSucceeded())` will miss the unregistered case.
+The `Unregistered` state is not a failure — it is a signal to clean up stale tokens. Firebase reports it for an FCM `Unregistered` error; APNs reports it for HTTP 410 (and, when opted in, for `BadDeviceToken`). A simple `if (!response.IsSucceeded())` will miss the unregistered case. In a `BatchPushNotificationResponse`, an unregistered token counts toward `FailureCount`, because that count is every response that did not succeed.
 
 ### Provider Selection Model
 
@@ -88,18 +107,21 @@ The `Unregistered` state is not a failure in the FCM model — it is a signal to
 
 ### Multicast and Batching
 
-`SendMulticastAsync` sends the same notification to many device tokens. The FCM implementation automatically chunks token lists into batches of ≤ 500 (the FCM limit) and aggregates results into a single `BatchPushNotificationResponse`. The `Responses` list has exactly one entry per input token, preserving order. A whole-batch transport failure after all retries is surfaced as a `Failure` outcome for every token in that batch rather than thrown, so earlier-batch results are never discarded.
+`SendMulticastAsync` sends the same notification to many device tokens and aggregates the results into a single `BatchPushNotificationResponse`. The `Responses` list has exactly one entry per input token, preserving input order. Providers surface transport failures that remain after retries as `Failure` outcomes rather than throwing, so results already collected are never discarded; only invalid input and caller cancellation throw.
+
+- **Firebase** chunks token lists into batches of ≤ 500 (the FCM limit). A whole-batch transport failure after all retries becomes a `Failure` for every token in that batch.
+- **APNs** has no batch endpoint. It sends one HTTP/2 request per token, with at most `ApnsOptions.MaxConcurrency` (default 100) in flight, and validates every token before the first send, so one blank token cannot cause a partial delivery. A transport failure affects only the token it hit.
 
 ## Choosing a Provider
 
-| | Firebase (`Headless.PushNotifications.Firebase`) | Dev no-op (`Headless.PushNotifications.Dev`) |
-|---|---|---|
-| **Use when** | Production mobile apps (Android, iOS via APNs bridge, Web) | Local development, test suites, CI |
-| **Avoid when** | Local development (real credentials, real sends) | Any production environment |
-| **Backend** | Firebase Cloud Messaging (FCM v1 API via `FirebaseAdmin`) | In-process stub |
-| **Credentials** | Firebase service account JSON (`FirebaseOptions.Json`) | None |
-| **Retry** | Automatic exponential backoff for transient FCM errors | N/A |
-| **Trade-off** | Requires a Firebase project and service account | Zero external dependencies; always succeeds |
+| | Firebase (`Headless.PushNotifications.Firebase`) | APNs (`Headless.PushNotifications.Apns`) | Dev no-op (`Headless.PushNotifications.Dev`) |
+|---|---|---|---|
+| **Use when** | Production mobile apps (Android, iOS via APNs bridge, Web) | Production iOS apps that should not depend on a Firebase project, or need VoIP pushes | Local development, test suites, CI |
+| **Avoid when** | Local development (real credentials, real sends) | Android or Web clients; background or live-activity pushes; local development | Any production environment |
+| **Backend** | Firebase Cloud Messaging (FCM v1 API via `FirebaseAdmin`) | Apple Push Notification service over HTTP/2, called directly | In-process stub |
+| **Credentials** | Firebase service account JSON (`FirebaseOptions.Json`) | APNs `.p8` signing key plus key id, team id, and bundle id | None |
+| **Retry** | Automatic exponential backoff for transient FCM errors | At most 2 short retries for transport faults, 500, and 503; long-delay retry is the caller's | N/A |
+| **Trade-off** | Requires a Firebase project and service account | iOS only; one request per token (no batch endpoint); key rotation needs a restart | Zero external dependencies; always succeeds |
 
 ---
 ## Headless.PushNotifications.Abstractions
@@ -111,7 +133,8 @@ Defines the unified interface and contract types for push notification services.
 - `IPushNotificationService` — core sending interface:
   - `SendToDeviceAsync(clientToken, request, ct)` — single-device delivery
   - `SendMulticastAsync(clientTokens, request, ct)` — batch delivery
-- `PushNotificationRequest` — the notification payload (`required Title`, `required Body`, optional `Data`). Both send methods take one request; add new delivery options as optional `init` properties rather than new overloads.
+- `PushNotificationRequest` — the notification payload (`required Title`, `required Body`, optional `Data`, optional `CollapseKey`). Both send methods take one request; add new delivery options as optional `init` properties rather than new overloads.
+  - `CollapseKey` groups notifications so a newer one replaces an older undelivered one with the same key on the device. `null` (the default) disables collapsing. Each provider maps and limits it: APNs sends it as the `apns-collapse-id` header, and Firebase sends it as the Android collapse key and as the same `apns-collapse-id` header through its iOS bridge. Both reject a key over 64 UTF-8 bytes with `ArgumentException`.
 - `IPushNotificationServiceProvider` — resolves named services by name: `GetService(name)` (throws when unregistered) and `GetServiceOrNull(name)` (returns `null`), plus `RegisteredNames` (`IReadOnlySet<string>`) listing the registered named instances (the default is excluded) so an externally supplied name can be validated before resolving. Backed by the container's keyed `IPushNotificationService` registrations; the concrete implementation lives in `Headless.PushNotifications.Core`.
 - `PushNotificationResponse` — single-device outcome with three states (`Success`, `Failure`, `Unregistered`); factory methods `Succeeded`, `Failed`, `Unregistered`; query methods `IsSucceeded()`, `IsFailed()`, `IsUnregistered()`; properties `Token`, `MessageId?`, `FailureError?`, `Status`
 - `PushNotificationResponseStatus` enum — `Success`, `Failure`, `Unregistered`
@@ -279,7 +302,8 @@ Firebase Cloud Messaging (FCM) implementation of `IPushNotificationService` for 
 - Single-device (`SendToDeviceAsync`) and multicast (`SendMulticastAsync`) delivery
 - Automatic chunking of multicast sends into batches of ≤ 500 tokens (FCM hard limit)
 - Custom data payload support (with reserved-key enforcement)
-- Input validation: title ≤ 100 characters, body ≤ 4 000 characters
+- Input validation: title ≤ 100 characters, body ≤ 4 000 characters, `CollapseKey` ≤ 64 UTF-8 bytes
+- `CollapseKey` is sent as the Android collapse key and as the `apns-collapse-id` header of the APNs bridge
 - **Automatic retry** for transient failures: exponential backoff with jitter, Retry-After header support for rate limits
 - Configurable retry policy (`FirebaseRetryOptions`): `MaxAttempts` (0–10), `MaxDelay`, `RateLimitDelay`, `UseJitter`
 - Structured logging and OpenTelemetry Activity events on retry
@@ -428,3 +452,169 @@ builder.Services.AddHeadlessPushNotifications(setup =>
 - Registers a `ResiliencePipeline` named `"Headless:FcmRetry"` (default) or `"Headless:FcmRetry:{name}"` (per named instance) via Polly
 - Registers `TimeProvider.System` as singleton (if not already registered)
 - The Firebase Admin SDK `FirebaseApp` is created lazily on first send; registration has no network side effects
+---
+## Headless.PushNotifications.Apns
+
+Apple Push Notification service (APNs) implementation of `IPushNotificationService` for iOS push notifications without a Firebase project.
+
+### API and behavior
+
+- APNs-backed `IPushNotificationService` implementation (`ApnsPushNotificationService`) using token-based (`.p8` key) authentication over HTTP/2
+- Selectable as the default (`setup.UseApns(…)`) or as a named instance (`setup.AddNamed("name", i => i.UseApns(…))`). Each slot has four overloads: `IConfiguration`, `Action<ApnsOptions>`, `Action<ApnsOptions, IServiceProvider>`, and a pre-built `ApnsOptions`. Every overload also takes an optional `configureClient` (`Action<HttpClient>`, run after the environment's `BaseAddress` is set, so it may replace it) and an optional `configureResilience` (`Action<HttpStandardResilienceOptions>`)
+- Single-device (`SendToDeviceAsync`) and multicast (`SendMulticastAsync`) delivery; a multicast sends one request per token with at most `MaxConcurrency` in flight and returns responses in input order
+- Payload shape: `{"aps":{"alert":{"title":…,"body":…}}, …}`, with each `Data` entry written as a top-level string field beside `aps`
+- `CollapseKey` is sent as the `apns-collapse-id` header
+- A success carries a client-generated UUID, sent as the `apns-id` header, as `MessageId`
+- Alert and VoIP push types, configurable priority, production and sandbox environments
+- Options validated at startup via FluentValidation and `ValidateOnStart`
+
+Input validation throws `ArgumentException` before any network call when:
+
+- the device token is null, empty, or whitespace, or any token in a multicast is (a multicast checks every token before the first send)
+- the multicast token list is null or empty
+- the request is null, or its title or body is blank
+- `Data` contains the reserved key `aps`
+- `CollapseKey` exceeds 64 UTF-8 bytes
+- the written JSON payload exceeds 4096 bytes (5120 bytes for `ApnsPushType.Voip`)
+
+### Design constraints
+
+- **Provider tokens are shared per key.** The provider signs one ES256 provider token per `(team id, key id)` for the whole container and refreshes it every 50 minutes. The default and every named instance that use the same key share that token, because Apple rejects token updates for one key more often than once every 20 minutes (`TooManyProviderTokenUpdates`). Two option sets with the same team id and key id but different `PrivateKey` text are refused: every send through the later one returns `Failure`. Separate processes cannot share the token, so many processes signing with one key can still hit `TooManyProviderTokenUpdates`; prefer a separate key per environment or deployment.
+- **Key rotation needs a restart.** The imported key and its token stay cached for the life of the container. A changed `PrivateKey` in reloaded configuration is refused as a different key for the same identity.
+- **HTTP/2 only.** Requests require HTTP/2 exactly (`HttpVersionPolicy.RequestVersionExact`). One long-lived connection pool serves each instance (6-hour connection lifetime, hourly keep-alive ping), because Apple asks senders to keep connections open instead of reconnecting per notification.
+- **Device tokens stay out of logs.** The `HttpClientFactory` request loggers are removed, because the request URI carries the raw device token. The provider's own log messages mask the token to its first 8 characters.
+- **HTTPS only, except loopback.** A non-HTTPS endpoint is refused unless its host is loopback, so a `configureClient` override cannot send the bearer token in cleartext over a network. The refusal surfaces as a `Failure` on each send.
+- **Environment must match the token.** A device token belongs to the environment the app was built for. `Sandbox` is for builds signed with a development profile; `Production` (the default) is for App Store, TestFlight, and ad hoc builds.
+- **Current limitations.** Only alert and VoIP push types are supported: background, live-activity, and other push types are not. Priority and push type are set per instance in `ApnsOptions`, not per message, and no expiration (`apns-expiration`) is sent or configurable. Certificate (`.p12`) authentication is not supported.
+
+### Install
+
+```bash
+dotnet add package Headless.PushNotifications.Apns
+```
+
+### Setup and use
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+// Bind from configuration so the options validator runs at startup.
+// Supply the key from a secret store, e.g. the Apns__PrivateKey environment variable.
+builder.Services.AddHeadlessPushNotifications(setup => setup.UseApns(builder.Configuration.GetSection("Apns")));
+
+// Firebase for Android and Web as the default, APNs direct for iOS:
+builder.Services.AddHeadlessPushNotifications(setup =>
+{
+    setup.UseFirebase(builder.Configuration.GetSection("Firebase"));
+    setup.AddNamed("ios", i => i.UseApns(builder.Configuration.GetSection("Apns")));
+});
+
+// A VoIP instance beside the alert instance, sharing one key and so one provider token:
+builder.Services.AddHeadlessPushNotifications(setup =>
+{
+    setup.UseApns(builder.Configuration.GetSection("Apns"));
+    setup.AddNamed(
+        "voip",
+        i => i.UseApns(options =>
+        {
+            builder.Configuration.GetSection("Apns").Bind(options);
+            options.PushType = ApnsPushType.Voip;
+        })
+    );
+});
+```
+
+Sending:
+
+```csharp
+var response = await pushService.SendToDeviceAsync(
+    deviceToken,
+    new PushNotificationRequest
+    {
+        Title = "Order shipped",
+        Body = "Your order #1234 is on its way.",
+        Data = new Dictionary<string, string> { ["orderId"] = "1234" },
+        CollapseKey = "order-1234",
+    },
+    ct
+);
+
+if (response.IsUnregistered())
+    await tokenStore.RemoveAsync(deviceToken, ct);
+```
+
+### Configuration
+
+#### appsettings.json
+
+```json
+{
+  "Apns": {
+    "KeyId": "ABC123DEFG",
+    "TeamId": "DEF123GHIJ",
+    "PrivateKey": "<set from a secret store, not committed configuration>",
+    "BundleId": "com.example.app",
+    "Environment": "Production",
+    "PushType": "Alert",
+    "Priority": "Immediate",
+    "TreatBadDeviceTokenAsUnregistered": false,
+    "MaxConcurrency": 100
+  }
+}
+```
+
+#### ApnsOptions
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `KeyId` | `string` | _(required)_ | 10-character key identifier (ASCII letters and digits) of the APNs signing key. |
+| `TeamId` | `string` | _(required)_ | 10-character Apple Developer team identifier that owns the key. |
+| `PrivateKey` | `string` | _(required)_ | PEM text of the `AuthKey_*.p8` file, a P-256 EC private key. `ToString()` redacts it and `[JsonIgnore]` excludes it from serialization. |
+| `BundleId` | `string` | _(required)_ | App bundle identifier, sent as the `apns-topic` header. VoIP pushes use `<BundleId>.voip`. |
+| `Environment` | `ApnsEnvironment` | `Production` | `Production` (`api.push.apple.com`) or `Sandbox` (`api.sandbox.push.apple.com`). |
+| `PushType` | `ApnsPushType` | `Alert` | `Alert` or `Voip`. `Voip` changes the topic to `<BundleId>.voip` and raises the payload limit to 5120 bytes. |
+| `Priority` | `ApnsPriority` | `Immediate` | `Immediate` (10), `PowerConsiderate` (5), or `PowerPrioritized` (1), sent as `apns-priority`. |
+| `TreatBadDeviceTokenAsUnregistered` | `bool` | `false` | Report HTTP 400 `BadDeviceToken` as `Unregistered` instead of `Failure`. Leave off unless the environment is known to be right. |
+| `MaxConcurrency` | `int` | `100` | Maximum requests in flight during one multicast. Range 1–1000. |
+
+#### Resilience overrides
+
+```csharp
+builder.Services.AddHeadlessPushNotifications(setup =>
+    setup.UseApns(
+        builder.Configuration.GetSection("Apns"),
+        configureResilience: options => options.Retry.MaxRetryAttempts = 1
+    )
+);
+```
+
+### Runtime behavior
+
+#### Status mapping
+
+| APNs answer | Result |
+|---|---|
+| HTTP 200 | `Success`; `MessageId` is the `apns-id` the provider generated |
+| HTTP 410 (any reason) | `Unregistered` |
+| HTTP 400 `BadDeviceToken` | `Failure`, or `Unregistered` when `TreatBadDeviceTokenAsUnregistered` is `true` |
+| HTTP 403 `ExpiredProviderToken` | One token re-mint and one retry of the send; the token is never re-minted within 20 minutes of the last mint. A second rejection is a `Failure` |
+| Any other rejection, including `DeviceTokenNotForTopic` | `Failure` with `FailureError` `"<reason> (HTTP <status>)"`, or `"APNs rejected the request (HTTP <status>)"` when the body has no reason |
+| Transport fault after retries, open circuit breaker, rate-limiter rejection, timeout, refused endpoint | `Failure` with `FailureError` `"<ExceptionType>: <message>"` |
+| Caller cancellation | Throws `OperationCanceledException` |
+
+#### Retry policy
+
+The provider registers the standard `Microsoft.Extensions.Http.Resilience` handler on its HTTP client (named `Headless:Apns`, or `Headless:Apns:{name}` for a named instance), with these changes:
+
+- Retries only `HttpRequestException`, HTTP 500, and HTTP 503, at most 2 times. Apple asks senders to wait about 15 minutes before retrying a 5xx, so in-process retry stays short and a longer retry belongs to the caller.
+- Never retries HTTP 429 `TooManyRequests`, which throttles one device token.
+- The circuit breaker counts the same outcomes plus attempt timeouts, not 429, so throttled tokens cannot open the breaker for the whole instance.
+- The concurrency limiter queues up to 10 000 requests, so concurrent multicasts wait for a slot instead of being rejected.
+
+Pass `configureResilience` to change any of these.
+
+#### Registrations
+
+- Registers `IPushNotificationService` as a singleton for the default, or a keyed singleton under the instance name for a named instance
+- Registers one container-wide provider-token cache, and `TimeProvider.System` as a singleton if not already registered
+- Registration has no network side effects; the signing key is loaded into the token cache and the first provider token minted on the first send
