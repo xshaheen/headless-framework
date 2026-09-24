@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Caching;
 using Headless.Features;
 using Headless.Features.Entities;
 using Headless.Features.Repositories;
@@ -164,11 +165,115 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
         (await _ColumnExistsAsync("FeatureValues", "DateUpdated")).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task should_save_a_value_batch_of_inserts_updates_and_deletes()
+    {
+        // given
+        await _DropSchemaAsync();
+        using var host = _CreateHost();
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
+        var kept = new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "old", "Tenant", "t1");
+        var removed = new FeatureValueRecord(Guid.NewGuid(), "Reports.Enabled", "old", "Tenant", "t1");
+        await repository.InsertAsync(kept, AbortToken);
+        await repository.InsertAsync(removed, AbortToken);
+        var added = new FeatureValueRecord(Guid.NewGuid(), "Export.Enabled", "new", "Tenant", "t1");
+        var changed = new FeatureValueRecord(kept.Id, "Checkout.Enabled", "new", "Tenant", "t1");
+
+        // when
+        await repository.SaveAsync([added], [changed], [removed], AbortToken);
+
+        // then
+        var stored = await repository.GetListAsync("Tenant", "t1", AbortToken);
+        stored
+            .Select(x => (x.Name, x.Value))
+            .Should()
+            .BeEquivalentTo([("Checkout.Enabled", "new"), ("Export.Enabled", "new")]);
+    }
+
+    [Fact]
+    public async Task should_read_only_the_requested_names_from_a_scope()
+    {
+        // given three values in one scope and a same-named value in another scope
+        await _DropSchemaAsync();
+        using var host = _CreateHost();
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
+        await repository.InsertAsync(
+            new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "a", "Tenant", "t1"),
+            AbortToken
+        );
+        await repository.InsertAsync(
+            new FeatureValueRecord(Guid.NewGuid(), "Reports.Enabled", "b", "Tenant", "t1"),
+            AbortToken
+        );
+        await repository.InsertAsync(
+            new FeatureValueRecord(Guid.NewGuid(), "Export.Enabled", "c", "Tenant", "t1"),
+            AbortToken
+        );
+        await repository.InsertAsync(
+            new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "other", "Tenant", "t2"),
+            AbortToken
+        );
+
+        // when
+        var stored = await repository.GetListAsync(
+            new HashSet<string>(StringComparer.Ordinal) { "Checkout.Enabled", "Export.Enabled" },
+            "Tenant",
+            "t1",
+            AbortToken
+        );
+
+        // then
+        stored
+            .Select(x => (x.Name, x.Value))
+            .Should()
+            .BeEquivalentTo([("Checkout.Enabled", "a"), ("Export.Enabled", "c")]);
+    }
+
+    [Fact]
+    public async Task should_leave_every_value_unchanged_when_a_write_in_the_batch_fails()
+    {
+        // given
+        await _DropSchemaAsync();
+        using var host = _CreateHost();
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
+        var first = new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "old", "Tenant", "t1");
+        var second = new FeatureValueRecord(Guid.NewGuid(), "Reports.Enabled", "old", "Tenant", "t1");
+        await repository.InsertAsync(first, AbortToken);
+        await repository.InsertAsync(second, AbortToken);
+        var added = new FeatureValueRecord(Guid.NewGuid(), "Export.Enabled", "new", "Tenant", "t1");
+        var validUpdate = new FeatureValueRecord(first.Id, "Checkout.Enabled", "new", "Tenant", "t1");
+
+        // the column rejects this value, so the batch fails after the insert and the first update already ran
+        var failingUpdate = new FeatureValueRecord(
+            second.Id,
+            "Reports.Enabled",
+            new string('x', FeatureValueRecordConstants.ValueMaxLength + 1),
+            "Tenant",
+            "t1"
+        );
+
+        // when
+        var act = async () => await repository.SaveAsync([added], [validUpdate, failingUpdate], [], AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<PostgresException>();
+        var stored = await repository.GetListAsync("Tenant", "t1", AbortToken);
+        stored
+            .Select(x => (x.Name, x.Value))
+            .Should()
+            .BeEquivalentTo([("Checkout.Enabled", "old"), ("Reports.Enabled", "old")]);
+    }
+
     private IHost _CreateHost()
     {
         var builder = Host.CreateApplicationBuilder();
         // unify: management-core deps
         builder.Services.AddSingleton(TimeProvider.System);
+        // The value store caches every read, and the host refuses to start without a registered cache.
+        builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
         builder.Services.AddHeadlessFeatures(setup =>
         {
             setup.ConfigureStorage(options => options.Schema = _Schema);

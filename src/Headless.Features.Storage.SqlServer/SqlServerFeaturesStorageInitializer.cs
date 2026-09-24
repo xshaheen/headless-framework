@@ -9,7 +9,7 @@ namespace Headless.Features.SqlServer;
 
 /// <summary>
 /// Hosted initializer that creates or ensures the SQL Server schema, tables, indexes, and
-/// table-valued type required by the features storage provider. Runs on startup when
+/// table-valued types required by the features storage provider. Runs on startup when
 /// <see cref="FeaturesStorageOptions.InitializeOnStartup"/> is <see langword="true"/>.
 /// Uses <c>sp_getapplock</c> to serialize concurrent-startup DDL across replicas.
 /// </summary>
@@ -23,7 +23,9 @@ internal sealed class SqlServerFeaturesStorageInitializer(
 
     /// <summary>
     /// Creates or ensures the SQL Server schema, tables, indexes, and
-    /// <c>HeadlessFeaturesIdList</c> table-valued type. The script acquires a session-scoped
+    /// <c>HeadlessFeaturesIdList</c> / <c>HeadlessFeaturesNameList</c> table-valued types. The name type is a heap
+    /// (no primary key) so names that collide under trailing-space or collation rules cannot raise a key violation.
+    /// The script acquires a session-scoped
     /// application lock, executes all DDL inside a single transaction, and releases the lock on
     /// success. On failure the transaction is rolled back and the lock is released before
     /// re-throwing.
@@ -191,6 +193,14 @@ internal sealed class SqlServerFeaturesStorageInitializer(
             BEGIN TRY
                 IF TYPE_ID(N'{options.Schema}.HeadlessFeaturesIdList') IS NULL
                     CREATE TYPE [{options.Schema}].[HeadlessFeaturesIdList] AS TABLE ([Id] uniqueidentifier NOT NULL PRIMARY KEY);
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
+            END CATCH;
+
+            BEGIN TRY
+                IF TYPE_ID(N'{options.Schema}.HeadlessFeaturesNameList') IS NULL
+                    CREATE TYPE [{options.Schema}].[HeadlessFeaturesNameList] AS TABLE ([Name] nvarchar({FeatureValueRecordConstants.NameMaxLength}) NOT NULL);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;

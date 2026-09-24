@@ -70,6 +70,24 @@ public interface ISettingValueStore
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Stores or clears several setting values under one provider scope in a single repository transaction:
+    /// either every value changes or none does.
+    /// </summary>
+    /// <param name="values">
+    /// The values keyed by setting name. A <see langword="null"/> value removes the stored entry for that setting.
+    /// </param>
+    /// <param name="providerName">The provider name.</param>
+    /// <param name="providerKey">The provider-scoped key, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="values"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
+    Task SetAllAsync(
+        IReadOnlyDictionary<string, string?> values,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Removes the stored value for a setting and invalidates its cache entry.</summary>
     /// <param name="name">The setting name.</param>
     /// <param name="providerName">The provider name.</param>
@@ -194,6 +212,76 @@ public sealed class SettingValueStore(
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task SetAllAsync(
+        IReadOnlyDictionary<string, string?> values,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(values);
+        Argument.IsNotNull(providerName);
+
+        if (values.Count == 0)
+        {
+            return;
+        }
+
+        var existingRecords = await valueRepository
+            .GetListAsync(values.Keys.ToHashSet(StringComparer.Ordinal), providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
+
+        var existingByName = existingRecords.ToDictionary(x => x.Name, StringComparer.Ordinal);
+        var inserted = new List<SettingValueRecord>();
+        var updated = new List<SettingValueRecord>();
+        var deleted = new List<SettingValueRecord>();
+        var cacheItems = new Dictionary<string, SettingValueCacheItem>(StringComparer.Ordinal);
+        var removedCacheKeys = new List<string>();
+
+        foreach (var (name, value) in values)
+        {
+            var cacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
+            existingByName.TryGetValue(name, out var existing);
+
+            if (value is null)
+            {
+                if (existing is not null)
+                {
+                    deleted.Add(existing);
+                }
+
+                removedCacheKeys.Add(cacheKey);
+
+                continue;
+            }
+
+            if (existing is null)
+            {
+                inserted.Add(new SettingValueRecord(guidGenerator.Create(), name, value, providerName, providerKey));
+            }
+            else
+            {
+                existing.Value = value;
+                updated.Add(existing);
+            }
+
+            cacheItems[cacheKey] = new SettingValueCacheItem(value);
+        }
+
+        await valueRepository.SaveAsync(inserted, updated, deleted, cancellationToken).ConfigureAwait(false);
+
+        if (cacheItems.Count != 0)
+        {
+            await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (removedCacheKeys.Count != 0)
+        {
+            await cache.RemoveAllAsync(removedCacheKeys, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>

@@ -80,4 +80,18 @@ public interface ISettingValueRecordRepository
     /// <param name="settings">The records to delete.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     Task DeleteAsync(IReadOnlyCollection<SettingValueRecord> settings, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Inserts, updates, and deletes the given records in one transaction: either every change persists or none does.
+    /// </summary>
+    /// <param name="inserted">The new records to insert.</param>
+    /// <param name="updated">The existing records whose values changed.</param>
+    /// <param name="deleted">The existing records to delete.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    Task SaveAsync(
+        IReadOnlyCollection<SettingValueRecord> inserted,
+        IReadOnlyCollection<SettingValueRecord> updated,
+        IReadOnlyCollection<SettingValueRecord> deleted,
+        CancellationToken cancellationToken = default
+    );
 }

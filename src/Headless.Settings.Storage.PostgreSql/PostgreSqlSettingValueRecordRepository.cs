@@ -115,7 +115,77 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
     }
 
     /// <inheritdoc/>
-    public async Task InsertAsync(SettingValueRecord setting, CancellationToken cancellationToken = default)
+    public Task InsertAsync(SettingValueRecord setting, CancellationToken cancellationToken = default)
+    {
+        var (sql, parameters) = _InsertStatement(setting);
+
+        return _ExecuteAsync(sql, cancellationToken, parameters);
+    }
+
+    /// <inheritdoc/>
+    public Task UpdateAsync(SettingValueRecord setting, CancellationToken cancellationToken = default)
+    {
+        var (sql, parameters) = _UpdateStatement(setting);
+
+        return _ExecuteAsync(sql, cancellationToken, parameters);
+    }
+
+    /// <inheritdoc/>
+    public Task DeleteAsync(
+        IReadOnlyCollection<SettingValueRecord> settings,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (settings.Count == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        var (sql, parameters) = _DeleteStatement(settings);
+
+        return _ExecuteAsync(sql, cancellationToken, parameters);
+    }
+
+    /// <inheritdoc/>
+    public async Task SaveAsync(
+        IReadOnlyCollection<SettingValueRecord> inserted,
+        IReadOnlyCollection<SettingValueRecord> updated,
+        IReadOnlyCollection<SettingValueRecord> deleted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var statements = new List<(string Sql, NpgsqlParameter[] Parameters)>(inserted.Count + updated.Count + 1);
+        statements.AddRange(inserted.Select(_InsertStatement));
+        statements.AddRange(updated.Select(_UpdateStatement));
+
+        if (deleted.Count != 0)
+        {
+            statements.Add(_DeleteStatement(deleted));
+        }
+
+        if (statements.Count == 0)
+        {
+            return;
+        }
+
+        await using var connection = providerOptions.Value.CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        foreach (var (sql, parameters) in statements)
+        {
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            command.CommandTimeout = _CommandTimeout();
+            command.Parameters.AddRange(parameters);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // Disposing an uncommitted transaction rolls it back, so a statement that throws above undoes every
+        // earlier one in the batch.
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private (string Sql, NpgsqlParameter[] Parameters) _InsertStatement(SettingValueRecord setting)
     {
         var sql =
             $"""INSERT INTO {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} ("Id","Name","Value","ProviderName","ProviderKey","CreatedAt") VALUES (@Id,@Name,@Value,@ProviderName,@ProviderKey,@CreatedAt);""";
@@ -126,21 +196,20 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
         // both depend on this round-trip.
         var createdAt = setting.CreatedAt == default ? timeProvider.GetUtcNow() : setting.CreatedAt;
 
-        await _ExecuteAsync(
-                sql,
-                cancellationToken,
+        return (
+            sql,
+            [
                 _Param("Id", setting.Id),
                 _Param("Name", setting.Name),
                 _Param("Value", setting.Value),
                 _Param("ProviderName", setting.ProviderName),
                 _Param("ProviderKey", setting.ProviderKey),
-                _Param("CreatedAt", createdAt)
-            )
-            .ConfigureAwait(false);
+                _Param("CreatedAt", createdAt),
+            ]
+        );
     }
 
-    /// <inheritdoc/>
-    public async Task UpdateAsync(SettingValueRecord setting, CancellationToken cancellationToken = default)
+    private (string Sql, NpgsqlParameter[] Parameters) _UpdateStatement(SettingValueRecord setting)
     {
         var sql =
             $"""UPDATE {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} SET "Value"=@Value,"UpdatedAt"=@UpdatedAt WHERE "Id"=@Id;""";
@@ -152,32 +221,17 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
                 ? timeProvider.GetUtcNow()
                 : setting.UpdatedAt.Value;
 
-        await _ExecuteAsync(
-                sql,
-                cancellationToken,
-                _Param("Id", setting.Id),
-                _Param("Value", setting.Value),
-                _Param("UpdatedAt", updatedAt)
-            )
-            .ConfigureAwait(false);
+        return (sql, [_Param("Id", setting.Id), _Param("Value", setting.Value), _Param("UpdatedAt", updatedAt)]);
     }
 
-    /// <inheritdoc/>
-    public async Task DeleteAsync(
-        IReadOnlyCollection<SettingValueRecord> settings,
-        CancellationToken cancellationToken = default
+    private (string Sql, NpgsqlParameter[] Parameters) _DeleteStatement(
+        IReadOnlyCollection<SettingValueRecord> settings
     )
     {
-        if (settings.Count == 0)
-        {
-            return;
-        }
-
         var sql =
             $"""DELETE FROM {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE "Id" = ANY(@Ids);""";
 
-        await _ExecuteAsync(sql, cancellationToken, _Param("Ids", settings.Select(x => x.Id).ToArray()))
-            .ConfigureAwait(false);
+        return (sql, [_Param("Ids", settings.Select(x => x.Id).ToArray())]);
     }
 
     /// <summary>Opens a new connection, executes <paramref name="sql"/> with <paramref name="parameters"/>, and maps each row to a <see cref="SettingValueRecord"/>.</summary>

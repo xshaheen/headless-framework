@@ -8,6 +8,7 @@ using Headless.Features.Models;
 using Headless.Features.Repositories;
 using Headless.Features.Values;
 using Headless.Testing.Tests;
+using NSubstitute.ExceptionExtensions;
 
 namespace Tests.Values;
 
@@ -180,6 +181,118 @@ public sealed class FeatureValueStoreTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 AbortToken
             );
+    }
+
+    #endregion
+
+    #region SetAllAsync
+
+    [Fact]
+    public async Task should_apply_a_batch_as_one_repository_change_set_and_refresh_the_cache()
+    {
+        // given the scope stores A and B; the batch updates A, clears B, adds C, and clears D which was never stored
+        const string providerName = "TestProvider";
+        const string providerKey = "tenant-1";
+        var existingA = new FeatureValueRecord(Guid.NewGuid(), "A", "old-a", providerName, providerKey);
+        var existingB = new FeatureValueRecord(Guid.NewGuid(), "B", "old-b", providerName, providerKey);
+        _repository
+            .GetListAsync(Arg.Any<HashSet<string>>(), providerName, providerKey, AbortToken)
+            .Returns([existingA, existingB]);
+        _guidGenerator.Create().Returns(Guid.NewGuid());
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["A"] = "new-a",
+            ["B"] = null,
+            ["C"] = "new-c",
+            ["D"] = null,
+        };
+
+        // when
+        await _sut.SetAllAsync(values, providerName, providerKey, AbortToken);
+
+        // then
+        await _repository
+            .Received(1)
+            .GetListAsync(
+                Arg.Is<HashSet<string>>(names => names.SetEquals(new[] { "A", "B", "C", "D" })),
+                providerName,
+                providerKey,
+                AbortToken
+            );
+        await _repository
+            .DidNotReceive()
+            .GetListAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        await _repository
+            .Received(1)
+            .SaveAsync(
+                Arg.Is<IReadOnlyCollection<FeatureValueRecord>>(inserted =>
+                    inserted.Count == 1 && inserted.Single().Name == "C" && inserted.Single().Value == "new-c"
+                ),
+                Arg.Is<IReadOnlyCollection<FeatureValueRecord>>(updated =>
+                    updated.Count == 1 && updated.Single() == existingA && existingA.Value == "new-a"
+                ),
+                Arg.Is<IReadOnlyCollection<FeatureValueRecord>>(deleted =>
+                    deleted.Count == 1 && deleted.Single() == existingB
+                ),
+                AbortToken
+            );
+        await _cache
+            .Received(1)
+            .UpsertAllAsync(
+                Arg.Is<IDictionary<string, FeatureValueCacheItem>>(items =>
+                    items.Count == 2
+                    && items[FeatureValueCacheItem.CalculateCacheKey("A", providerName, providerKey)].Value == "new-a"
+                    && items[FeatureValueCacheItem.CalculateCacheKey("C", providerName, providerKey)].Value == "new-c"
+                ),
+                Arg.Any<TimeSpan?>(),
+                AbortToken
+            );
+        await _cache
+            .Received(1)
+            .RemoveAllAsync(
+                Arg.Is<IEnumerable<string>>(keys =>
+                    keys.SequenceEqual(
+                        new[]
+                        {
+                            FeatureValueCacheItem.CalculateCacheKey("B", providerName, providerKey),
+                            FeatureValueCacheItem.CalculateCacheKey("D", providerName, providerKey),
+                        }
+                    )
+                ),
+                AbortToken
+            );
+    }
+
+    [Fact]
+    public async Task should_leave_the_cache_untouched_when_the_repository_rejects_the_batch()
+    {
+        // given
+        const string providerName = "TestProvider";
+        _repository.GetListAsync(Arg.Any<HashSet<string>>(), providerName, null, AbortToken).Returns([]);
+        _guidGenerator.Create().Returns(Guid.NewGuid());
+        _repository
+            .SaveAsync(
+                Arg.Any<IReadOnlyCollection<FeatureValueRecord>>(),
+                Arg.Any<IReadOnlyCollection<FeatureValueRecord>>(),
+                Arg.Any<IReadOnlyCollection<FeatureValueRecord>>(),
+                Arg.Any<CancellationToken>()
+            )
+            .ThrowsAsync(new InvalidOperationException("write failed"));
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal) { ["A"] = "a", ["B"] = null };
+
+        // when
+        var act = async () => await _sut.SetAllAsync(values, providerName, null, AbortToken);
+
+        // then a reader keeps seeing the values the store still holds
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        await _cache
+            .DidNotReceive()
+            .UpsertAllAsync(
+                Arg.Any<IDictionary<string, FeatureValueCacheItem>>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
+        await _cache.DidNotReceive().RemoveAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>());
     }
 
     #endregion

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Caching;
 using Headless.Features;
 using Headless.Hosting.Initialization;
 using Headless.Testing.Tests;
@@ -87,6 +88,8 @@ public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture 
         var builder = Host.CreateApplicationBuilder();
         // unify: management-core deps
         builder.Services.AddSingleton(TimeProvider.System);
+        // The value store caches every read, and the host refuses to start without a registered cache.
+        builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
         builder.Services.AddHeadlessFeatures(setup =>
         {
             setup.ConfigureStorage(options => options.Schema = schema);
@@ -106,6 +109,7 @@ public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture 
             IF OBJECT_ID(N'{schema}.FeatureDefinitions', N'U') IS NOT NULL DROP TABLE [{schema}].[FeatureDefinitions];
             IF OBJECT_ID(N'{schema}.FeatureGroupDefinitions', N'U') IS NOT NULL DROP TABLE [{schema}].[FeatureGroupDefinitions];
             IF TYPE_ID(N'{schema}.HeadlessFeaturesIdList') IS NOT NULL DROP TYPE [{schema}].[HeadlessFeaturesIdList];
+            IF TYPE_ID(N'{schema}.HeadlessFeaturesNameList') IS NOT NULL DROP TYPE [{schema}].[HeadlessFeaturesNameList];
             IF EXISTS (SELECT * FROM sys.schemas WHERE name = N'{schema}') EXEC(N'DROP SCHEMA [{schema}]');
             """,
             connection

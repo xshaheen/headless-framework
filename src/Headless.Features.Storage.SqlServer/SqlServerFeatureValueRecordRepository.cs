@@ -10,8 +10,8 @@ namespace Headless.Features.SqlServer;
 
 /// <summary>
 /// SQL Server implementation of <see cref="IFeatureValueRecordRepository"/> that reads and
-/// writes feature value records using raw ADO.NET. Bulk deletes use a table-valued parameter
-/// (<c>HeadlessFeaturesIdList</c>) to avoid the 2100-parameter ceiling.
+/// writes feature value records using raw ADO.NET. Bulk deletes and by-name reads use table-valued parameters
+/// (<c>HeadlessFeaturesIdList</c>, <c>HeadlessFeaturesNameList</c>) to avoid the 2100-parameter ceiling.
 /// </summary>
 internal sealed class SqlServerFeatureValueRecordRepository(
     IOptions<SqlServerFeaturesOptions> providerOptions,
@@ -78,6 +78,33 @@ internal sealed class SqlServerFeatureValueRecordRepository(
 
     /// <inheritdoc/>
     public Task<List<FeatureValueRecord>> GetListAsync(
+        HashSet<string> names,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (names.Count == 0)
+        {
+            return Task.FromResult(new List<FeatureValueRecord>());
+        }
+
+        // Pass the names through the HeadlessFeaturesNameList TVP: one cached plan regardless of count and
+        // no 2100-parameter ceiling, portable to older engines (no OPENJSON / compatibility level 130).
+        var sql =
+            $"SELECT {_ValueColumns} FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE [Name] IN (SELECT [Name] FROM @Names) AND [ProviderName]=@ProviderName AND (([ProviderKey] IS NULL AND @ProviderKey IS NULL) OR [ProviderKey]=@ProviderKey);";
+
+        return _ReadValuesAsync(
+            sql,
+            cancellationToken,
+            _BuildNameListTvpParameter(names),
+            _Param("ProviderName", providerName),
+            _Param("ProviderKey", providerKey)
+        );
+    }
+
+    /// <inheritdoc/>
+    public Task<List<FeatureValueRecord>> GetListAsync(
         string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
@@ -97,6 +124,76 @@ internal sealed class SqlServerFeatureValueRecordRepository(
     /// <inheritdoc/>
     public Task InsertAsync(FeatureValueRecord feature, CancellationToken cancellationToken = default)
     {
+        var (sql, parameters) = _InsertStatement(feature);
+
+        return _ExecuteAsync(sql, cancellationToken, parameters);
+    }
+
+    /// <inheritdoc/>
+    public Task UpdateAsync(FeatureValueRecord feature, CancellationToken cancellationToken = default)
+    {
+        var (sql, parameters) = _UpdateStatement(feature);
+
+        return _ExecuteAsync(sql, cancellationToken, parameters);
+    }
+
+    /// <inheritdoc/>
+    public Task DeleteAsync(
+        IReadOnlyCollection<FeatureValueRecord> features,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (features.Count == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        var (sql, parameters) = _DeleteStatement(features);
+
+        return _ExecuteAsync(sql, cancellationToken, parameters);
+    }
+
+    /// <inheritdoc/>
+    public async Task SaveAsync(
+        IReadOnlyCollection<FeatureValueRecord> inserted,
+        IReadOnlyCollection<FeatureValueRecord> updated,
+        IReadOnlyCollection<FeatureValueRecord> deleted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var statements = new List<(string Sql, SqlParameter[] Parameters)>(inserted.Count + updated.Count + 1);
+        statements.AddRange(inserted.Select(_InsertStatement));
+        statements.AddRange(updated.Select(_UpdateStatement));
+
+        if (deleted.Count != 0)
+        {
+            statements.Add(_DeleteStatement(deleted));
+        }
+
+        if (statements.Count == 0)
+        {
+            return;
+        }
+
+        await using var connection = providerOptions.Value.CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        foreach (var (sql, parameters) in statements)
+        {
+            await using var command = new SqlCommand(sql, connection, (SqlTransaction)transaction);
+            command.CommandTimeout = _CommandTimeout();
+            command.Parameters.AddRange(parameters);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // Disposing an uncommitted transaction rolls it back, so a statement that throws above undoes every
+        // earlier one in the batch.
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private (string Sql, SqlParameter[] Parameters) _InsertStatement(FeatureValueRecord feature)
+    {
         var sql =
             $"INSERT INTO {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} ([Id],[Name],[Value],[ProviderName],[ProviderKey],[CreatedAt]) VALUES (@Id,@Name,@Value,@ProviderName,@ProviderKey,@CreatedAt);";
 
@@ -104,20 +201,20 @@ internal sealed class SqlServerFeatureValueRecordRepository(
         // the TimeProvider when the caller left it at default.
         var createdAt = feature.CreatedAt == default ? timeProvider.GetUtcNow() : feature.CreatedAt;
 
-        return _ExecuteAsync(
+        return (
             sql,
-            cancellationToken,
-            _Param("Id", feature.Id),
-            _Param("Name", feature.Name),
-            _Param("Value", feature.Value),
-            _Param("ProviderName", feature.ProviderName),
-            _Param("ProviderKey", feature.ProviderKey),
-            _Param("CreatedAt", createdAt)
+            [
+                _Param("Id", feature.Id),
+                _Param("Name", feature.Name),
+                _Param("Value", feature.Value),
+                _Param("ProviderName", feature.ProviderName),
+                _Param("ProviderKey", feature.ProviderKey),
+                _Param("CreatedAt", createdAt),
+            ]
         );
     }
 
-    /// <inheritdoc/>
-    public async Task UpdateAsync(FeatureValueRecord feature, CancellationToken cancellationToken = default)
+    private (string Sql, SqlParameter[] Parameters) _UpdateStatement(FeatureValueRecord feature)
     {
         var sql =
             $"UPDATE {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} SET [Value]=@Value,[UpdatedAt]=@UpdatedAt WHERE [Id]=@Id;";
@@ -129,34 +226,17 @@ internal sealed class SqlServerFeatureValueRecordRepository(
                 ? timeProvider.GetUtcNow()
                 : feature.UpdatedAt.Value;
 
-        await _ExecuteAsync(
-                sql,
-                cancellationToken,
-                _Param("Id", feature.Id),
-                _Param("Value", feature.Value),
-                _Param("UpdatedAt", updatedAt)
-            )
-            .ConfigureAwait(false);
+        return (sql, [_Param("Id", feature.Id), _Param("Value", feature.Value), _Param("UpdatedAt", updatedAt)]);
     }
 
-    /// <inheritdoc/>
-    public async Task DeleteAsync(
-        IReadOnlyCollection<FeatureValueRecord> features,
-        CancellationToken cancellationToken = default
-    )
+    private (string Sql, SqlParameter[] Parameters) _DeleteStatement(IReadOnlyCollection<FeatureValueRecord> features)
     {
-        if (features.Count == 0)
-        {
-            return;
-        }
-
         // Pass ids through the HeadlessFeaturesIdList TVP: one cached plan regardless of count, no
         // 2100-parameter ceiling, portable to older engines (no OPENJSON / compatibility level 130).
         var sql =
             $"DELETE FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE [Id] IN (SELECT [Id] FROM @Ids);";
 
-        await _ExecuteAsync(sql, cancellationToken, _BuildIdListTvpParameter(features.Select(feature => feature.Id)))
-            .ConfigureAwait(false);
+        return (sql, [_BuildIdListTvpParameter(features.Select(feature => feature.Id))]);
     }
 
     private async Task<List<FeatureValueRecord>> _ReadValuesAsync(
@@ -221,6 +301,22 @@ internal sealed class SqlServerFeatureValueRecordRepository(
         {
             TypeName = $"[{storageOptions.Value.Schema}].[HeadlessFeaturesIdList]",
             Value = idsTable,
+        };
+    }
+
+    private SqlParameter _BuildNameListTvpParameter(IEnumerable<string> names)
+    {
+        var namesTable = new DataTable();
+        namesTable.Columns.Add("Name", typeof(string));
+        foreach (var name in names)
+        {
+            namesTable.Rows.Add(name);
+        }
+
+        return new SqlParameter("@Names", SqlDbType.Structured)
+        {
+            TypeName = $"[{storageOptions.Value.Schema}].[HeadlessFeaturesNameList]",
+            Value = namesTable,
         };
     }
 
