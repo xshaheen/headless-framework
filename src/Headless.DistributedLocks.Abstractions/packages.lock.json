@@ -211,6 +211,9 @@
           "libphonenumber-csharp": "[9.0.39, )"
         }
       },
+      "headless.unitofwork.abstractions": {
+        "type": "Project"
+      },
       "headless.urls": {
         "type": "Project",
         "dependencies": {

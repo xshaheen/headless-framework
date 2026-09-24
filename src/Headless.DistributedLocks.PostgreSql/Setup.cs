@@ -179,6 +179,9 @@ public static class SetupPostgreSqlDistributedLocks
         );
         services.TryAddSingleton<IReleaseSignal, PostgresReleaseSignal>();
         services.TryAddSingleton<IFencingTokenSource, PostgresFencingTokenSource>();
+        // The unit-of-work feature behind unit.AdvisoryLocks; resolved by GetFeature on a host that also registered
+        // a unit-of-work provider, inert otherwise.
+        services.TryAddSingleton<IUnitOfWorkAdvisoryLocks, PostgreSqlUnitOfWorkAdvisoryLocks>();
         // Resolve from IOptions so any configuration binding of DistributedLockOptions (the
         // shared guardrail knobs) flows through to the provider rather than constructor defaults.
         services.TryAddSingleton<DistributedLockOptions>(sp =>
