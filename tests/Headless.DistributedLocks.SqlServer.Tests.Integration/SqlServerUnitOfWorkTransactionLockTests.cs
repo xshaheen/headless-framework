@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.SqlServer;
 using Headless.Testing.Tests;
@@ -10,7 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Tests;
 
 [Collection<SqlServerDistributedLockFixture>]
-public sealed class SqlServerUnitOfWorkAdvisoryLockTests(SqlServerDistributedLockFixture fixture) : TestBase
+public sealed class SqlServerUnitOfWorkTransactionLockTests(SqlServerDistributedLockFixture fixture) : TestBase
 {
     [Fact]
     public async Task should_hold_the_lock_inside_the_unit_and_release_it_on_complete()
@@ -24,12 +25,11 @@ public sealed class SqlServerUnitOfWorkAdvisoryLockTests(SqlServerDistributedLoc
         await using var unit = await factory.BeginAsync(connection, cancellationToken: AbortToken);
 
         // when
-        await unit.AdvisoryLocks.AcquireAsync(resource, AbortToken);
+        var handle = await unit.TransactionLocks.AcquireAsync(resource, cancellationToken: AbortToken);
 
         // then — a transaction lock on another connection contends while the unit holds it
-        (await _TryContendAsync(resource))
-            .Should()
-            .BeFalse();
+        handle.Resource.Should().Be(resource);
+        (await _TryContendAsync(resource)).Should().BeFalse();
 
         await unit.CompleteAsync(AbortToken);
 
@@ -37,7 +37,7 @@ public sealed class SqlServerUnitOfWorkAdvisoryLockTests(SqlServerDistributedLoc
     }
 
     [Fact]
-    public async Task should_try_acquire_false_while_another_unit_holds_it_and_true_after_it_completes()
+    public async Task should_try_acquire_null_while_another_unit_holds_it_and_a_handle_after_it_completes()
     {
         // given
         await using var provider = _BuildProvider();
@@ -48,15 +48,45 @@ public sealed class SqlServerUnitOfWorkAdvisoryLockTests(SqlServerDistributedLoc
         await using var contenderConnection = new SqlConnection(fixture.ConnectionString);
 
         await using var holder = await factory.BeginAsync(holderConnection, cancellationToken: AbortToken);
-        await holder.AdvisoryLocks.AcquireAsync(resource, AbortToken);
+        await holder.TransactionLocks.AcquireAsync(resource, cancellationToken: AbortToken);
 
         // when / then
         await using var contender = await factory.BeginAsync(contenderConnection, cancellationToken: AbortToken);
-        (await contender.AdvisoryLocks.TryAcquireAsync(resource, AbortToken)).Should().BeFalse();
+        (await contender.TransactionLocks.TryAcquireAsync(resource, cancellationToken: AbortToken)).Should().BeNull();
 
         await holder.CompleteAsync(AbortToken);
 
-        (await contender.AdvisoryLocks.TryAcquireAsync(resource, AbortToken)).Should().BeTrue();
+        (await contender.TransactionLocks.TryAcquireAsync(resource, cancellationToken: AbortToken))
+            .Should()
+            .Be(new TransactionLockHandle(resource));
+    }
+
+    [Fact]
+    public async Task should_time_out_a_bounded_acquire_and_leave_the_unit_usable()
+    {
+        // given
+        await using var provider = _BuildProvider();
+        var factory = provider.GetRequiredService<IUnitOfWorkFactory>();
+        var resource = _CreateResourceName();
+
+        await using var holderConnection = new SqlConnection(fixture.ConnectionString);
+        await using var contenderConnection = new SqlConnection(fixture.ConnectionString);
+
+        await using var holder = await factory.BeginAsync(holderConnection, cancellationToken: AbortToken);
+        await holder.TransactionLocks.AcquireAsync(resource, cancellationToken: AbortToken);
+        await using var contender = await factory.BeginAsync(contenderConnection, cancellationToken: AbortToken);
+
+        // when
+        var stopwatch = Stopwatch.StartNew();
+        var act = async () =>
+            await contender.TransactionLocks.AcquireAsync(resource, TimeSpan.FromMilliseconds(300), AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<LockAcquisitionTimeoutException>();
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10));
+        (await contender.TransactionLocks.TryAcquireAsync(_CreateResourceName(), cancellationToken: AbortToken))
+            .Should()
+            .NotBeNull();
     }
 
     [Fact]
@@ -72,7 +102,7 @@ public sealed class SqlServerUnitOfWorkAdvisoryLockTests(SqlServerDistributedLoc
         // when — dispose without complete is an implicit rollback
         await using (var unit = await factory.BeginAsync(connection, cancellationToken: AbortToken))
         {
-            await unit.AdvisoryLocks.AcquireAsync(resource, AbortToken);
+            await unit.TransactionLocks.AcquireAsync(resource, cancellationToken: AbortToken);
             (await _TryContendAsync(resource)).Should().BeFalse();
         }
 
@@ -91,7 +121,8 @@ public sealed class SqlServerUnitOfWorkAdvisoryLockTests(SqlServerDistributedLoc
         await using var unit = await factory.BeginAsync(cancellationToken: AbortToken);
 
         // when
-        var act = async () => await unit.AdvisoryLocks.AcquireAsync(_CreateResourceName(), AbortToken);
+        var act = async () =>
+            await unit.TransactionLocks.AcquireAsync(_CreateResourceName(), cancellationToken: AbortToken);
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*no relational resource*");
@@ -109,7 +140,7 @@ public sealed class SqlServerUnitOfWorkAdvisoryLockTests(SqlServerDistributedLoc
 
     private static string _CreateResourceName()
     {
-        return "uow-advisory-lock-tests:" + Guid.NewGuid();
+        return "uow-transaction-lock-tests:" + Guid.NewGuid();
     }
 
     private async Task<bool> _TryContendAsync(string resource)

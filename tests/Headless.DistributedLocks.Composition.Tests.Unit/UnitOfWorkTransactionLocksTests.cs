@@ -7,17 +7,17 @@ using Headless.UnitOfWork;
 
 namespace Tests;
 
-public sealed class UnitOfWorkAdvisoryLocksTests : TestBase
+public sealed class UnitOfWorkTransactionLocksTests : TestBase
 {
     [Fact]
     public void should_name_the_capable_providers_when_no_feature_is_registered()
     {
         // given
         var unit = Substitute.For<IUnitOfWork>();
-        unit.GetFeature<IUnitOfWorkAdvisoryLocks>().Returns((IUnitOfWorkAdvisoryLocks?)null);
+        unit.GetFeature<IUnitOfWorkTransactionLocks>().Returns((IUnitOfWorkTransactionLocks?)null);
 
         // when
-        var act = () => unit.AdvisoryLocks;
+        var act = () => unit.TransactionLocks;
 
         // then
         act.Should().Throw<InvalidOperationException>().WithMessage("*UsePostgreSql*UseSqlServer*");
@@ -27,24 +27,25 @@ public sealed class UnitOfWorkAdvisoryLocksTests : TestBase
     public void should_bind_the_feature_once_per_unit_through_unit_local_state()
     {
         // given
-        var feature = Substitute.For<IUnitOfWorkAdvisoryLocks>();
+        var feature = Substitute.For<IUnitOfWorkTransactionLocks>();
         var unit = Substitute.For<IUnitOfWork>();
-        unit.GetFeature<IUnitOfWorkAdvisoryLocks>().Returns(feature);
+        unit.GetFeature<IUnitOfWorkTransactionLocks>().Returns(feature);
         unit.GetOrAdd(
-                Arg.Any<IUnitOfWorkAdvisoryLocks>(),
-                Arg.Any<Func<IUnitOfWork, IUnitOfWorkAdvisoryLocks, UnitOfWorkAdvisoryLocks>>()
+                Arg.Any<IUnitOfWorkTransactionLocks>(),
+                Arg.Any<Func<IUnitOfWork, IUnitOfWorkTransactionLocks, UnitOfWorkTransactionLocks>>()
             )
             .Returns(call =>
-                call.Arg<Func<IUnitOfWork, IUnitOfWorkAdvisoryLocks, UnitOfWorkAdvisoryLocks>>()(unit, feature)
+                call.Arg<Func<IUnitOfWork, IUnitOfWorkTransactionLocks, UnitOfWorkTransactionLocks>>()(unit, feature)
             );
+        var timeout = TimeSpan.FromSeconds(3);
 
         // when
-        var locks = unit.AdvisoryLocks;
-        _ = locks.TryAcquireAsync("orders:1", AbortToken);
+        var locks = unit.TransactionLocks;
+        _ = locks.TryAcquireAsync("orders:1", timeout, AbortToken);
 
-        // then — the binding forwards the handle it was created for
+        // then — the binding forwards the handle it was created for and every argument unchanged
         locks.Should().NotBeNull();
-        _ = feature.Received(1).TryAcquireAsync(unit, "orders:1", AbortToken);
+        _ = feature.Received(1).TryAcquireAsync(unit, "orders:1", timeout, AbortToken);
     }
 
     [Fact]
@@ -55,7 +56,7 @@ public sealed class UnitOfWorkAdvisoryLocksTests : TestBase
         unit.State.Returns(UnitOfWorkState.Completed);
 
         // when
-        var act = () => UnitOfWorkTransactionResolver.Require<DbTransaction>(unit, "Test");
+        var act = () => UnitOfWorkTransactions.RequireTransaction<DbTransaction>(unit, "Test");
 
         // then
         act.Should().Throw<InvalidOperationException>().WithMessage("*Completed*live transaction*");
@@ -70,7 +71,7 @@ public sealed class UnitOfWorkAdvisoryLocksTests : TestBase
         unit.Resource.Returns((IUnitOfWorkResource?)null);
 
         // when
-        var act = () => UnitOfWorkTransactionResolver.Require<DbTransaction>(unit, "Test");
+        var act = () => UnitOfWorkTransactions.RequireTransaction<DbTransaction>(unit, "Test");
 
         // then
         act.Should().Throw<InvalidOperationException>().WithMessage("*no relational resource*Test*");
@@ -87,7 +88,7 @@ public sealed class UnitOfWorkAdvisoryLocksTests : TestBase
         unit.Resource.Returns(resource);
 
         // when
-        var act = () => UnitOfWorkTransactionResolver.Require<DbTransaction>(unit, "Test");
+        var act = () => UnitOfWorkTransactions.RequireTransaction<DbTransaction>(unit, "Test");
 
         // then
         act.Should().Throw<InvalidOperationException>().WithMessage("*already completed*");
@@ -105,7 +106,7 @@ public sealed class UnitOfWorkAdvisoryLocksTests : TestBase
         unit.Resource.Returns(resource);
 
         // when
-        var act = () => UnitOfWorkTransactionResolver.Require<OtherProviderTransaction>(unit, "Test");
+        var act = () => UnitOfWorkTransactions.RequireTransaction<OtherProviderTransaction>(unit, "Test");
 
         // then
         act.Should().Throw<InvalidOperationException>().WithMessage("*cannot lock inside*");
@@ -124,10 +125,17 @@ public sealed class UnitOfWorkAdvisoryLocksTests : TestBase
         unit.Resource.Returns(resource);
 
         // when
-        var result = UnitOfWorkTransactionResolver.Require<DbTransaction>(unit, "Test");
+        var result = UnitOfWorkTransactions.RequireTransaction<DbTransaction>(unit, "Test");
 
         // then
         result.Should().BeSameAs(transaction);
+    }
+
+    [Fact]
+    public void should_compare_handles_by_resource()
+    {
+        new TransactionLockHandle("orders:1").Should().Be(new TransactionLockHandle("orders:1"));
+        new TransactionLockHandle("orders:1").Should().NotBe(new TransactionLockHandle("orders:2"));
     }
 
     private abstract class OtherProviderTransaction : DbTransaction;

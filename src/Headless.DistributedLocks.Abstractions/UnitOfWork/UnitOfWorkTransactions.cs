@@ -11,7 +11,7 @@ namespace Headless.DistributedLocks;
 /// Every refusal happens before any command runs and names what the caller must change.
 /// </summary>
 [PublicAPI]
-public static class UnitOfWorkTransactionResolver
+public static class UnitOfWorkTransactions
 {
     /// <summary>
     /// Returns the unit's live transaction as <typeparamref name="TTransaction" />, or throws when the unit cannot
@@ -26,7 +26,7 @@ public static class UnitOfWorkTransactionResolver
     /// The unit is no longer active, its transaction already completed, it exposes no relational resource, or the
     /// resource's transaction is not a <typeparamref name="TTransaction" />.
     /// </exception>
-    public static TTransaction Require<TTransaction>(IUnitOfWork unitOfWork, string providerName)
+    public static TTransaction RequireTransaction<TTransaction>(IUnitOfWork unitOfWork, string providerName)
         where TTransaction : DbTransaction
     {
         Argument.IsNotNull(unitOfWork);
@@ -43,8 +43,8 @@ public static class UnitOfWorkTransactionResolver
         if (unitOfWork.Resource is not IRelationalUnitOfWorkResource relational)
         {
             throw new InvalidOperationException(
-                $"The active unit of work exposes no relational resource for the {providerName} advisory lock to "
-                    + $"run on. Begin the unit of work over a {providerName} connection or DbContext, or take a "
+                $"The active unit of work exposes no relational resource for the {providerName} transaction lock "
+                    + $"to run on. Begin the unit of work over a {providerName} connection or DbContext, or take a "
                     + "session lock through IDistributedLock instead."
             );
         }

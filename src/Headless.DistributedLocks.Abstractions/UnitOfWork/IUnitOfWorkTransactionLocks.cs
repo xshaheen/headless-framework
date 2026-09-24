@@ -5,8 +5,8 @@ using Headless.UnitOfWork;
 namespace Headless.DistributedLocks;
 
 /// <summary>
-/// The enlisted advisory-lock surface behind <c>unit.AdvisoryLocks</c>: every call takes a transaction-scoped lock on
-/// the unit's own transaction, so the lock is released by that unit's commit or rollback and nothing else.
+/// The enlisted lock surface behind <c>unit.TransactionLocks</c>: every call takes a transaction-scoped lock on the
+/// unit's own transaction, so the engine releases it at that unit's commit or rollback and nothing else.
 /// </summary>
 /// <remarks>
 /// A singleton registered by a lock provider whose engine has transaction-scoped locks (PostgreSQL advisory
@@ -16,34 +16,50 @@ namespace Headless.DistributedLocks;
 /// <see cref="IDistributedLock" /> are a different contract and never enlist.
 /// </remarks>
 [PublicAPI]
-public interface IUnitOfWorkAdvisoryLocks : IUnitOfWorkFeature
+public interface IUnitOfWorkTransactionLocks : IUnitOfWorkFeature
 {
     /// <summary>
     /// Acquires an exclusive transaction-scoped lock on <paramref name="resource" /> inside
-    /// <paramref name="unitOfWork" />'s transaction, waiting until the engine grants it.
+    /// <paramref name="unitOfWork" />'s transaction, waiting up to <paramref name="acquireTimeout" />.
     /// </summary>
     /// <param name="unitOfWork">The unit whose transaction owns the lock.</param>
     /// <param name="resource">The logical resource name, encoded exactly as the provider's session locks encode it.</param>
+    /// <param name="acquireTimeout">
+    /// How long the engine waits for a contended lock. <see langword="null" /> uses the provider's default;
+    /// <see cref="Timeout.InfiniteTimeSpan" /> waits without bound; <see cref="TimeSpan.Zero" /> is one attempt.
+    /// </param>
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
+    /// <returns>The held lock.</returns>
+    /// <exception cref="LockAcquisitionTimeoutException">The lock was still held by another session when the wait elapsed.</exception>
     /// <exception cref="InvalidOperationException">
     /// The unit is no longer active, exposes no relational resource, or its transaction belongs to another provider.
     /// </exception>
-    ValueTask AcquireAsync(IUnitOfWork unitOfWork, string resource, CancellationToken cancellationToken = default);
+    ValueTask<TransactionLockHandle> AcquireAsync(
+        IUnitOfWork unitOfWork,
+        string resource,
+        TimeSpan? acquireTimeout = null,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Attempts to acquire an exclusive transaction-scoped lock on <paramref name="resource" /> inside
-    /// <paramref name="unitOfWork" />'s transaction without waiting.
+    /// <paramref name="unitOfWork" />'s transaction, waiting up to <paramref name="acquireTimeout" />.
     /// </summary>
     /// <param name="unitOfWork">The unit whose transaction owns the lock.</param>
     /// <param name="resource">The logical resource name, encoded exactly as the provider's session locks encode it.</param>
+    /// <param name="acquireTimeout">
+    /// How long the engine waits for a contended lock. <see langword="null" /> and <see cref="TimeSpan.Zero" /> are
+    /// one attempt; <see cref="Timeout.InfiniteTimeSpan" /> waits without bound.
+    /// </param>
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
-    /// <returns><see langword="true" /> when acquired; <see langword="false" /> when another session holds it.</returns>
+    /// <returns>The held lock, or <see langword="null" /> when another session still held it as the wait elapsed.</returns>
     /// <exception cref="InvalidOperationException">
     /// The unit is no longer active, exposes no relational resource, or its transaction belongs to another provider.
     /// </exception>
-    ValueTask<bool> TryAcquireAsync(
+    ValueTask<TransactionLockHandle?> TryAcquireAsync(
         IUnitOfWork unitOfWork,
         string resource,
+        TimeSpan? acquireTimeout = null,
         CancellationToken cancellationToken = default
     );
 }
