@@ -181,7 +181,7 @@ Jobs is the only consumer of that enum. Messaging used to resolve the same enum 
 | Receiver | `Optional` (default) | `Required` |
 |---|---|---|
 | `unit.Jobs` / `unit.TimeJobs<T>()` / `unit.CronJobs<T>()` over a unit with a live, same-database relational resource | enlist the row in the unit's transaction, side effects after commit | same |
-| `unit.Jobs` over a resource-less unit, or one whose resource is dead or on another database | throw | throw |
+| `unit.Jobs` over a resource-less unit, or one whose resource is dead or on another database (the shared check in [unit-of-work.md § Database identity](unit-of-work.md#database-identity-and-several-databases)) | throw | throw |
 | Injected `IJobScheduler` / managers | insert directly, side effects immediately | throw |
 
 Two unit-of-work behaviors are documented, not defects. `OnCompleted` callbacks are savepoint-blind: the post-commit signal registered for a job row written inside a savepoint that is later rolled back still runs when the outer transaction commits; for Jobs this is harmless, because the worker re-reads due rows from the store and finds nothing. Under EF's execution strategy, `IUnitOfWorkFactory.RunAsync(db, …)` replays the whole operation, job writes included, for a failure before the commit starts — the first attempt's rows roll back and the replayed block schedules again, so an enlisted Jobs write leaves an owned unit replayable. Only inside the `HeadlessDbContext` save pipeline's own save (observed mode, from a domain-event handler the pipeline does not re-run on replay) does the write call `IUnitOfWork.PreventRetry()` first, so that failure surfaces without replay instead of losing the row. See [Unit of Work](unit-of-work.md#orientation).

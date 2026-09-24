@@ -21,7 +21,8 @@ public static class HeadlessDbContextUnitOfWorkExtensions
         /// <summary>
         /// Gets the unit of work bound to this context while it is still <see cref="UnitOfWorkState.Active" />,
         /// or <see langword="null" /> when none is: no unit was begun on the context, or the bound unit reached a
-        /// terminal state and was evicted.
+        /// terminal state and was evicted. A context built over the connection of another context that carries a
+        /// live unit returns that unit, and adopts its transaction so its own saves run inside it.
         /// </summary>
         /// <remarks>
         /// This is the unit to enlist in from inside a save — <c>db.UnitOfWork()?.Outbox.PublishAsync(…)</c> in
@@ -32,6 +33,9 @@ public static class HeadlessDbContextUnitOfWorkExtensions
         /// </remarks>
         /// <returns>The active bound unit, or <see langword="null" />.</returns>
         /// <exception cref="ArgumentNullException">The context is <see langword="null" />.</exception>
+        /// <exception cref="InvalidOperationException">
+        /// The connection carries another context's unit, but this context already uses a different transaction.
+        /// </exception>
         public IUnitOfWork? UnitOfWork()
         {
             Argument.IsNotNull(db);

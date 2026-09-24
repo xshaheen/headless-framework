@@ -98,10 +98,7 @@ internal sealed partial class SqlServerDataStorage(
         }
 
         using var configuredConnection = new SqlConnection(options.Value.ConnectionString);
-        if (
-            !string.Equals(configuredConnection.DataSource, connection.DataSource, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(configuredConnection.Database, connection.Database, StringComparison.OrdinalIgnoreCase)
-        )
+        if (!RelationalDatabaseIdentity.IsSameDatabase(configuredConnection, connection))
         {
             return DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.Database);
         }

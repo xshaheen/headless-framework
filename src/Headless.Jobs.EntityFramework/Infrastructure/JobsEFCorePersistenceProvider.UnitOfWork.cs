@@ -49,14 +49,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         var context = _CreateContext(new CoordinatedJobsDbContextOptions<TDbContext>(_coordinatedWriteOptions));
         try
         {
-            var configured = context.Database.GetDbConnection();
-            if (
-                configured.GetType() != connection.GetType()
-                || string.IsNullOrEmpty(configured.DataSource)
-                || string.IsNullOrEmpty(configured.Database)
-                || !string.Equals(configured.DataSource, connection.DataSource, StringComparison.Ordinal)
-                || !string.Equals(configured.Database, connection.Database, StringComparison.Ordinal)
-            )
+            if (!RelationalDatabaseIdentity.IsSameDatabase(context.Database.GetDbConnection(), connection))
             {
                 throw new InvalidOperationException(
                     "The active unit of work's transaction belongs to another database, so this Jobs write cannot "
