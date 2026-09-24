@@ -809,6 +809,18 @@
           "Polly.Core": "[8.7.0, )"
         }
       },
+      "headless.pushnotifications.tests.harness": {
+        "type": "Project",
+        "dependencies": {
+          "AwesomeAssertions": "[9.6.0, )",
+          "AwesomeAssertions.Json": "[9.0.0, )",
+          "Bogus": "[35.6.5, )",
+          "DeepCloner": "[0.10.4, )",
+          "Headless.PushNotifications.Abstractions": "[1.0.0, )",
+          "Headless.Testing": "[1.0.0, )",
+          "NSubstitute": "[5.3.0, )"
+        }
+      },
       "headless.serializer.abstractions": {
         "type": "Project"
       },

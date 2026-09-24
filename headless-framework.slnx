@@ -445,6 +445,7 @@
         <Project Path="tests\Headless.PushNotifications.Composition.Tests.Unit\Headless.PushNotifications.Composition.Tests.Unit.csproj" />
         <Project Path="tests\Headless.PushNotifications.Dev.Tests.Unit\Headless.PushNotifications.Dev.Tests.Unit.csproj" />
         <Project Path="tests\Headless.PushNotifications.Firebase.Tests.Unit\Headless.PushNotifications.Firebase.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.PushNotifications.Tests.Harness\Headless.PushNotifications.Tests.Harness.csproj" />
     </Folder>
     <Folder Name="/Seo/">
         <Project Path="src\Headless.Sitemaps\Headless.Sitemaps.csproj" />
