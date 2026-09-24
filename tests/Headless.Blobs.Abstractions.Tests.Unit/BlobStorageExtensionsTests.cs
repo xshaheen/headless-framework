@@ -256,7 +256,7 @@ public sealed class BlobStorageExtensionsTests : TestBase
         await _storage.UploadContentAsync(location, contents, AbortToken);
 
         // Assert
-        await _storage.Received(1).UploadAsync(location, Arg.Any<Stream>(), null, AbortToken);
+        await _storage.Received(1).UploadAsync(location, Arg.Any<Stream>(), null, null, AbortToken);
     }
 
     [Fact]
@@ -270,7 +270,7 @@ public sealed class BlobStorageExtensionsTests : TestBase
         await _storage.UploadContentAsync(location, contents, AbortToken);
 
         // Assert
-        await _storage.Received(1).UploadAsync(location, Arg.Any<Stream>(), null, AbortToken);
+        await _storage.Received(1).UploadAsync(location, Arg.Any<Stream>(), null, null, AbortToken);
     }
 
     [Fact]
@@ -291,6 +291,7 @@ public sealed class BlobStorageExtensionsTests : TestBase
                 location,
                 Arg.Any<Stream>(),
                 Arg.Is<IReadOnlyDictionary<string, string>>(m => m["type"] == "text"),
+                Arg.Any<string?>(),
                 AbortToken
             );
     }
@@ -310,7 +311,7 @@ public sealed class BlobStorageExtensionsTests : TestBase
         await _storage.UploadContentAsync(location, contents, AbortToken);
 
         // Assert
-        await _storage.Received(1).UploadAsync(location, Arg.Any<Stream>(), null, AbortToken);
+        await _storage.Received(1).UploadAsync(location, Arg.Any<Stream>(), null, null, AbortToken);
     }
 
     [Fact]
@@ -324,7 +325,7 @@ public sealed class BlobStorageExtensionsTests : TestBase
         await _storage.UploadContentAsync(location, contents, AbortToken);
 
         // Assert
-        await _storage.Received(1).UploadAsync(location, Arg.Any<Stream>(), null, AbortToken);
+        await _storage.Received(1).UploadAsync(location, Arg.Any<Stream>(), null, null, AbortToken);
     }
 
     [Fact]
@@ -339,7 +340,7 @@ public sealed class BlobStorageExtensionsTests : TestBase
         await _storage.UploadContentAsync(location, contents, options, AbortToken);
 
         // Assert
-        await _storage.Received(1).UploadAsync(location, Arg.Any<Stream>(), null, AbortToken);
+        await _storage.Received(1).UploadAsync(location, Arg.Any<Stream>(), null, null, AbortToken);
     }
 
     [Fact]
@@ -353,7 +354,7 @@ public sealed class BlobStorageExtensionsTests : TestBase
         await _storage.UploadContentAsync(location, contents, TestDataJsonContext.Default.TestData, AbortToken);
 
         // Assert
-        await _storage.Received(1).UploadAsync(location, Arg.Any<Stream>(), null, AbortToken);
+        await _storage.Received(1).UploadAsync(location, Arg.Any<Stream>(), null, null, AbortToken);
     }
 
     #endregion
@@ -697,6 +698,7 @@ file sealed class InMemoryBlobStorage : IBlobStorage
         BlobLocation location,
         Stream content,
         IReadOnlyDictionary<string, string>? metadata = null,
+        string? contentType = null,
         CancellationToken cancellationToken = default
     )
     {

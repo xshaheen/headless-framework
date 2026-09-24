@@ -56,6 +56,32 @@ public sealed class ApiExtraInformationOperationProcessorTests
     }
 
     [Fact]
+    public void should_leave_default_unset_when_parameter_default_is_dbnull()
+    {
+        // given
+        var operation = new OpenApiOperation();
+        operation.Parameters.Add(new OpenApiParameter { Name = "limit", Schema = new NJsonSchema.JsonSchema() });
+
+        var apiDescription = new ApiDescription { ActionDescriptor = new ActionDescriptor() };
+        apiDescription.ParameterDescriptions.Add(
+            new ApiParameterDescription
+            {
+                Name = "limit",
+                DefaultValue = DBNull.Value,
+                ModelMetadata = _GetLimitMetadata(),
+            }
+        );
+        var context = _CreateContext(operation, apiDescription);
+
+        // when
+        var act = () => _sut.Process(context);
+
+        // then
+        act.Should().NotThrow();
+        operation.Parameters.Should().ContainSingle().Which.Schema.Default.Should().BeNull();
+    }
+
+    [Fact]
     public void should_preserve_existing_parameter_metadata_and_ignore_unknown_parameters()
     {
         // given

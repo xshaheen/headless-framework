@@ -252,6 +252,49 @@ internal static class SqlServerApplicationLock
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Synchronous form of <see cref="TryAcquireTransactionAsync"/> for callers on a synchronous path, such as an
+    /// EF Core <c>SavingChanges</c> interceptor. Same return codes and exceptions; no cancellation token, so the
+    /// wait is bounded only by <paramref name="acquireTimeout"/> and <paramref name="commandTimeout"/>.
+    /// </summary>
+    /// <param name="transaction">Open SQL Server transaction that will own the lock.</param>
+    /// <param name="resource">Encoded resource name.</param>
+    /// <param name="isShared"><see langword="true"/> for a shared lock; <see langword="false"/> for exclusive.</param>
+    /// <param name="acquireTimeout">Maximum time to wait for the lock; passed as <c>@LockTimeout</c>.</param>
+    /// <param name="commandTimeout">ADO.NET command timeout for the SQL command.</param>
+    /// <returns><see langword="true"/> if the lock was acquired; <see langword="false"/> on contention.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when the transaction has no open connection, on a re-entrant infinite wait (code 103), an unsupported mode (code 104), or an unexpected return code.</exception>
+    /// <exception cref="ArgumentException">Thrown when SQL Server rejects the parameters (<c>sp_getapplock</c> returns -999).</exception>
+    /// <exception cref="DistributedLockDeadlockException">Thrown when SQL Server detects a deadlock (<c>sp_getapplock</c> returns -3).</exception>
+    public static bool TryAcquireTransaction(
+        SqlTransaction transaction,
+        string resource,
+        bool isShared,
+        TimeSpan acquireTimeout,
+        TimeSpan commandTimeout
+    )
+    {
+        var connection =
+            transaction.Connection
+            ?? throw new InvalidOperationException(
+                "The transaction has no associated open connection (already committed, rolled back, or disposed)."
+            );
+
+        using var command = _CreateAcquireCommand(
+            connection,
+            transaction,
+            resource,
+            isShared,
+            lockOwner: "Transaction",
+            acquireTimeout,
+            commandTimeout
+        );
+
+        var result = Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture);
+
+        return MapAcquireResult(resource, result, acquireTimeout, CancellationToken.None);
+    }
+
     private static async ValueTask<int> _ExecuteAcquireAsync(
         SqlConnection connection,
         SqlTransaction? transaction,
@@ -263,7 +306,33 @@ internal static class SqlServerApplicationLock
         CancellationToken cancellationToken
     )
     {
-        await using var command = connection.CreateCommand();
+        await using var command = _CreateAcquireCommand(
+            connection,
+            transaction,
+            resource,
+            isShared,
+            lockOwner,
+            acquireTimeout,
+            commandTimeout
+        );
+
+        return Convert.ToInt32(
+            await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+            CultureInfo.InvariantCulture
+        );
+    }
+
+    private static SqlCommand _CreateAcquireCommand(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        string resource,
+        bool isShared,
+        string lockOwner,
+        TimeSpan acquireTimeout,
+        TimeSpan commandTimeout
+    )
+    {
+        var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandTimeout = GetCommandTimeoutSeconds(acquireTimeout, commandTimeout);
         command.CommandText = $$"""
@@ -286,10 +355,7 @@ internal static class SqlServerApplicationLock
         command.Parameters.AddWithValue("lockMode", isShared ? SharedLockMode : ExclusiveLockMode);
         command.Parameters.AddWithValue("lockTimeout", _ToLockTimeoutMilliseconds(acquireTimeout));
 
-        return Convert.ToInt32(
-            await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
-            CultureInfo.InvariantCulture
-        );
+        return command;
     }
 
     /// <summary>

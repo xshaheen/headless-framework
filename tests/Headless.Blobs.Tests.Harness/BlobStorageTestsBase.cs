@@ -466,12 +466,12 @@ public abstract class BlobStorageTestsBase : TestBase
         // with them; GetBlobsListAsync must then return only the surviving blob (sidecars are never listed).
         await using (var dropB = new MemoryStream("b"u8.ToArray()))
         {
-            await storage.UploadAsync(_Loc("drop", "b.txt"), dropB, metadata, AbortToken);
+            await storage.UploadAsync(_Loc("drop", "b.txt"), dropB, metadata, cancellationToken: AbortToken);
         }
 
         await using (var dropC = new MemoryStream("c"u8.ToArray()))
         {
-            await storage.UploadAsync(_Loc("drop", "nested", "c.txt"), dropC, metadata, AbortToken);
+            await storage.UploadAsync(_Loc("drop", "nested", "c.txt"), dropC, metadata, cancellationToken: AbortToken);
         }
 
         (await storage.DeleteAllAsync(new BlobQuery(ContainerName, "drop/"), AbortToken)).Should().Be(2);
@@ -646,7 +646,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
         await using (var content = new MemoryStream("hello"u8.ToArray()))
         {
-            await storage.UploadAsync(location, content, metadata, AbortToken);
+            await storage.UploadAsync(location, content, metadata, cancellationToken: AbortToken);
         }
 
         // GetBlobInfoAsync surfaces the stored metadata.
@@ -680,7 +680,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
         await using (var content2 = new MemoryStream("world"u8.ToArray()))
         {
-            await storage.UploadAsync(location, content2, metadata: null, AbortToken);
+            await storage.UploadAsync(location, content2, metadata: null, cancellationToken: AbortToken);
         }
 
         var info2 = await storage.GetBlobInfoAsync(location, AbortToken);
@@ -700,7 +700,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
         await using (var content = new MemoryStream("payload"u8.ToArray()))
         {
-            await storage.UploadAsync(_Loc("doc.txt"), content, metadata, AbortToken);
+            await storage.UploadAsync(_Loc("doc.txt"), content, metadata, cancellationToken: AbortToken);
         }
 
         // A default listing omits per-object metadata uniformly across providers — it is not free on every backend.
@@ -718,7 +718,7 @@ public abstract class BlobStorageTestsBase : TestBase
         // continuation-token clone is exercised, and assert every page still carries metadata.
         await using (var content2 = new MemoryStream("payload2"u8.ToArray()))
         {
-            await storage.UploadAsync(_Loc("doc2.txt"), content2, metadata, AbortToken);
+            await storage.UploadAsync(_Loc("doc2.txt"), content2, metadata, cancellationToken: AbortToken);
         }
 
         var streamed = new List<BlobInfo>();
@@ -750,7 +750,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
         await using (var content = new MemoryStream("payload"u8.ToArray()))
         {
-            await storage.UploadAsync(source, content, metadata, AbortToken);
+            await storage.UploadAsync(source, content, metadata, cancellationToken: AbortToken);
         }
 
         (await storage.MoveAsync(source, destination, AbortToken)).Should().BeTrue();

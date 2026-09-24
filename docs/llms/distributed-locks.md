@@ -616,7 +616,7 @@ PostgreSQL advisory-lock provider for mutex and reader-writer distributed locks.
 - Session-scoped mutex locks use `pg_try_advisory_lock` and release with `pg_advisory_unlock`.
 - Reader-writer locks use PostgreSQL shared and exclusive advisory locks.
 - Mutex handles receive durable sequence-backed `FencingToken` values.
-- `PostgreSqlDistributedLock.AcquireWithTransactionAsync(...)` and `TryAcquireWithTransactionAsync(...)` use transaction-scoped `pg_advisory_xact_lock`.
+- `PostgreSqlDistributedLock.AcquireWithTransactionAsync(...)` and `TryAcquireWithTransactionAsync(...)` use transaction-scoped `pg_advisory_xact_lock`. Each has a `DbTransaction` overload and a synchronous form (`AcquireWithTransaction`, `TryAcquireWithTransaction`) for EF Core callers; see [EF Core transaction-scoped locks](#ef-core-transaction-scoped-locks).
 
 ### Design constraints
 
@@ -673,6 +673,28 @@ await PostgreSqlDistributedLock.AcquireWithTransactionAsync(
 // mutate protected rows, then commit or rollback to release the lock
 await transaction.CommitAsync(ct);
 ```
+
+#### EF Core transaction-scoped locks
+
+An EF Core caller holds the transaction as a `DbTransaction` through `db.Database.CurrentTransaction.GetDbTransaction()`. Both helpers accept it directly and refuse a transaction from another provider with an `ArgumentException`, so the calling project needs no Npgsql or SqlClient reference of its own. A `SavingChanges` interceptor runs synchronously; the synchronous forms exist for exactly that path and block the calling thread until the server answers.
+
+```csharp
+// Inside RunAsync(db, …) or after db.Database.BeginTransactionAsync(ct):
+var transaction = db.Database.CurrentTransaction!.GetDbTransaction();
+await PostgreSqlDistributedLock.AcquireWithTransactionAsync(
+    PostgreSqlAdvisoryLockKey.FromString("orders:123"),
+    transaction,
+    ct
+);
+
+// Inside a synchronous SaveChangesInterceptor.SavingChanges override:
+PostgreSqlDistributedLock.AcquireWithTransaction(
+    PostgreSqlAdvisoryLockKey.FromString("audit:chain"),
+    eventData.Context!.Database.CurrentTransaction!.GetDbTransaction()
+);
+```
+
+The SQL Server helper has the same four shapes with a string resource name.
 
 ### Configuration
 
@@ -767,7 +789,7 @@ SQL Server `sp_getapplock` provider for mutex and reader-writer distributed lock
 - Session-scoped mutex locks use `sp_getapplock` with `@LockMode = 'Exclusive'` and release with `sp_releaseapplock`.
 - Reader-writer locks use SQL Server `Shared` and `Exclusive` application-lock modes.
 - Mutex handles receive durable SQL `SEQUENCE`-backed `FencingToken` values when fencing is enabled.
-- `SqlServerDistributedLock.AcquireWithTransactionAsync(...)` and `TryAcquireWithTransactionAsync(...)` use transaction-owned application locks.
+- `SqlServerDistributedLock.AcquireWithTransactionAsync(...)` and `TryAcquireWithTransactionAsync(...)` use transaction-owned application locks. Each has a `DbTransaction` overload and a synchronous form (`AcquireWithTransaction`, `TryAcquireWithTransaction`) for EF Core callers; see [EF Core transaction-scoped locks](#ef-core-transaction-scoped-locks).
 - Resource names longer than SQL Server's 255-character `@Resource` limit are encoded as `sha256:<lowercase-hex>`.
 
 ### Design constraints

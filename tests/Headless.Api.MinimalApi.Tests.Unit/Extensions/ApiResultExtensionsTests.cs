@@ -294,6 +294,29 @@ public sealed class ApiResultExtensionsTests : TestBase
     }
 
     [Fact]
+    public void should_carry_custom_error_metadata_as_descriptor_params_on_conflict()
+    {
+        // given
+        var creator = _CreateProblemDetailsCreator();
+        var error = new OrderLockedError(OrderId: 42);
+
+        // when
+        _ = error.ToHttpResult(creator);
+
+        // then
+        creator
+            .Received(1)
+            .Conflict(
+                Arg.Is<IReadOnlyCollection<ErrorDescriptor>>(actual =>
+                    actual.Count == 1
+                    && actual.Single().Code == "order:locked"
+                    && actual.Single().Params != null
+                    && Equals(actual.Single().Params!["orderId"], 42)
+                )
+            );
+    }
+
+    [Fact]
     public void should_map_aggregate_of_validation_errors_to_422()
     {
         // given
@@ -540,4 +563,14 @@ public sealed class ApiResultExtensionsTests : TestBase
     private static ApiResultHttpResult _UnitEndpoint() => throw new NotSupportedException();
 
     #endregion
+
+    private sealed record OrderLockedError(int OrderId) : ApiResultError
+    {
+        public override string Code => "order:locked";
+
+        public override string Message => "The order is locked.";
+
+        public override IReadOnlyDictionary<string, object?> Metadata =>
+            new Dictionary<string, object?>(StringComparer.Ordinal) { ["orderId"] = OrderId };
+    }
 }

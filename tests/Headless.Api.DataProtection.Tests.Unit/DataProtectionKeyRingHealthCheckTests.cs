@@ -66,6 +66,7 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
                 Arg.Any<BlobLocation>(),
                 Arg.Any<Stream>(),
                 Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_ => throw new NotSupportedException("Simulated lost write access"));
@@ -171,6 +172,7 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
                 Arg.Any<BlobLocation>(),
                 Arg.Any<Stream>(),
                 Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_ => throw new NotSupportedException("Simulated lost write access"));
@@ -359,6 +361,7 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
                 Arg.Is<BlobLocation>(l => l.Path == BlobStorageDataProtectionXmlRepository.WriteProbeBlobName),
                 Arg.Any<Stream>(),
                 Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
             );
         await storage

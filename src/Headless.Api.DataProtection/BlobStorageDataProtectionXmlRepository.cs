@@ -295,7 +295,7 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
             memoryStream.Seek(0, SeekOrigin.Begin);
 
             await repository
-                ._storage.UploadAsync(location, memoryStream, metadata: null, cancellationToken)
+                ._storage.UploadAsync(location, memoryStream, metadata: null, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         }
     }
@@ -343,7 +343,7 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
 
             await using var memoryStream = new MemoryStream("<startupWriteProbe />"u8.ToArray());
             await repository
-                ._storage.UploadAsync(location, memoryStream, metadata: null, cancellationToken)
+                ._storage.UploadAsync(location, memoryStream, metadata: null, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
             _ = await repository._storage.DeleteAsync(location, cancellationToken).ConfigureAwait(false);

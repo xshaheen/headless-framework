@@ -50,6 +50,7 @@ internal sealed class AwsBlobStorage(
         BlobLocation location,
         Stream content,
         IReadOnlyDictionary<string, string>? metadata = null,
+        string? contentType = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -82,7 +83,9 @@ internal sealed class AwsBlobStorage(
             InputStream = inputStream,
             AutoCloseStream = ownsStream,
             AutoResetStreamPosition = false,
-            ContentType = mimeTypeProvider.GetMimeType(location.Path),
+            // S3 serves the object with this Content-Type on every GET and presigned URL, so a caller's explicit
+            // type must win over the key-extension guess (an extension-less key would otherwise serve octet-stream).
+            ContentType = contentType ?? mimeTypeProvider.GetMimeType(location.Path),
             UseChunkEncoding = _options.UseChunkEncoding,
             CannedACL = _options.CannedAcl,
             Headers = { CacheControl = _DefaultCacheControl },
@@ -124,7 +127,7 @@ internal sealed class AwsBlobStorage(
                 static blob => blob.Path,
                 async (location, blob, ct) =>
                 {
-                    await UploadAsync(location, blob.Stream, blob.Metadata, ct).ConfigureAwait(false);
+                    await UploadAsync(location, blob.Stream, blob.Metadata, blob.ContentType, ct).ConfigureAwait(false);
                     return true;
                 },
                 cancellationToken

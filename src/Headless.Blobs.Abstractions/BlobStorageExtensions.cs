@@ -160,7 +160,9 @@ public static class BlobStorageExtensions
             await memoryStream.WriteTextAsync(contents, cancellationToken).ConfigureAwait(false);
             memoryStream.ResetPosition();
 
-            await storage.UploadAsync(location, memoryStream, metadata, cancellationToken).ConfigureAwait(false);
+            await storage
+                .UploadAsync(location, memoryStream, metadata, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
         }
 
         /// <summary>
@@ -197,7 +199,9 @@ public static class BlobStorageExtensions
                 memoryStream.ResetPosition();
             }
 
-            await storage.UploadAsync(location, memoryStream, metadata: null, cancellationToken).ConfigureAwait(false);
+            await storage
+                .UploadAsync(location, memoryStream, metadata: null, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
         }
 
         /// <summary>
@@ -237,7 +241,9 @@ public static class BlobStorageExtensions
                 memoryStream.ResetPosition();
             }
 
-            await storage.UploadAsync(location, memoryStream, metadata: null, cancellationToken).ConfigureAwait(false);
+            await storage
+                .UploadAsync(location, memoryStream, metadata: null, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
         }
 
         /// <summary>
@@ -266,7 +272,9 @@ public static class BlobStorageExtensions
                 memoryStream.ResetPosition();
             }
 
-            await storage.UploadAsync(location, memoryStream, metadata: null, cancellationToken).ConfigureAwait(false);
+            await storage
+                .UploadAsync(location, memoryStream, metadata: null, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
         }
 
         /// <summary>

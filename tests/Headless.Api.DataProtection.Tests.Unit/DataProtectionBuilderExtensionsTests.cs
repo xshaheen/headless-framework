@@ -181,6 +181,7 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
                 new BlobLocation("DataProtection", "friendly.xml"),
                 Arg.Any<Stream>(),
                 metadata: null,
+                contentType: null,
                 Arg.Any<CancellationToken>()
             );
     }
