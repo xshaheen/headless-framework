@@ -23,7 +23,7 @@ internal sealed class KeyedServicePushNotificationServiceProvider(
         return serviceProvider.GetKeyedService<IPushNotificationService>(name)
             ?? throw new InvalidOperationException(
                 $"No push-notification service is registered under the name '{name}'. Register a named instance "
-                    + $"first — for example setup.AddNamed(\"{name}\", i => i.UseFirebase(…)) or i.UseNoop()."
+                    + $"first — for example setup.AddNamed(\"{name}\", i => i.UseApns(…)), i.UseFirebase(…), or i.UseNoop()."
             );
     }
 

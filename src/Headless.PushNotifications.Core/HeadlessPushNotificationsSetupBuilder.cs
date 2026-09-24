@@ -83,7 +83,7 @@ public sealed class HeadlessPushNotificationsSetupBuilder
         {
             throw new InvalidOperationException(
                 $"Named push-notification service '{name}' requires exactly one provider. "
-                    + "Call one of `UseFirebase` or `UseNoop`."
+                    + "Call one of `UseApns`, `UseFirebase`, or `UseNoop`."
             );
         }
 

@@ -791,6 +791,14 @@
           "Headless.Checks": "[1.0.0, )"
         }
       },
+      "headless.pushnotifications.apns": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.PushNotifications.Core": "[1.0.0, )",
+          "Microsoft.Extensions.Http.Resilience": "[10.10.0, )"
+        }
+      },
       "headless.pushnotifications.core": {
         "type": "Project",
         "dependencies": {

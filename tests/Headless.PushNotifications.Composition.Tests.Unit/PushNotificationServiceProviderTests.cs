@@ -60,7 +60,8 @@ public sealed class PushNotificationServiceProviderTests
             .Throw<InvalidOperationException>()
             .WithMessage("*No push-notification service is registered under the name 'nope'*")
             .WithMessage("*AddNamed*")
-            .WithMessage("*UseFirebase*");
+            .WithMessage("*UseFirebase*")
+            .WithMessage("*UseApns*");
     }
 
     [Fact]
