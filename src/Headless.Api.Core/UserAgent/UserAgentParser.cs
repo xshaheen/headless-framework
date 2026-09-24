@@ -21,12 +21,12 @@ internal sealed class UserAgentParser : IUserAgentParser, IDisposable
     private readonly MemoryCache _memo;
     private readonly MemoryCacheEntryOptions _entryOptions;
     private readonly int _maxUserAgentLength;
-    private readonly Func<string, string?> _parser;
+    private readonly Func<string, UserAgentInfo?> _parser;
 
     public UserAgentParser(IOptions<UserAgentParserOptions> options)
         : this(options, _Parse) { }
 
-    internal UserAgentParser(IOptions<UserAgentParserOptions> options, Func<string, string?> parser)
+    internal UserAgentParser(IOptions<UserAgentParserOptions> options, Func<string, UserAgentInfo?> parser)
     {
         var value = options.Value;
 
@@ -39,7 +39,7 @@ internal sealed class UserAgentParser : IUserAgentParser, IDisposable
         _parser = parser;
     }
 
-    public string? GetDeviceInfo(string? userAgent)
+    public UserAgentInfo? Parse(string? userAgent)
     {
         if (userAgent.IsNullOrWhiteSpace())
         {
@@ -51,17 +51,17 @@ internal sealed class UserAgentParser : IUserAgentParser, IDisposable
 
         // Probe before GetOrCreate: the factory lambda captures `normalized` and `this`, so a closure and a
         // delegate are allocated at the call site even when the entry is already cached — the common case.
-        if (_memo.TryGetValue<string?>(normalized, out var cached))
+        if (_memo.TryGetValue<UserAgentInfo?>(normalized, out var cached))
         {
             return cached;
         }
 
-        return _memo.GetOrCreate<string?>(normalized, _ => _parser(normalized), _entryOptions);
+        return _memo.GetOrCreate<UserAgentInfo?>(normalized, _ => _parser(normalized), _entryOptions);
     }
 
     public void Dispose() => _memo.Dispose();
 
-    private static string? _Parse(string userAgent)
+    private static UserAgentInfo? _Parse(string userAgent)
     {
         // A new DeviceDetector per parse keeps mutable detector state isolated between concurrent callers. The
         // allocation is amortized by the memo above.
@@ -73,24 +73,59 @@ internal sealed class UserAgentParser : IUserAgentParser, IDisposable
             return null;
         }
 
-        string? deviceInfo = null;
+        var isBot = detector.IsBot();
+        var os = detector.GetOs();
+        var client = detector.GetClient();
+        var bot = isBot ? detector.GetBot() : null;
+        var device = isBot ? DeviceType.Bot : MapDevice(detector.GetDeviceName());
+        var brand = detector.GetBrandName().NullIfWhiteSpace();
+        var model = detector.GetModel().NullIfWhiteSpace();
 
-        var osInfo = detector.GetOs();
-
-        if (osInfo.Success)
+        // IsParsed only says the detector ran, not that it recognised anything: it is true for arbitrary junk,
+        // which would otherwise yield a record whose every field is null. Report that as "not identified".
+        if (!isBot && device is DeviceType.Unknown && !os.Success && !client.Success && brand is null && model is null)
         {
-            deviceInfo = osInfo.Match.Name;
+            return null;
         }
 
-        var clientInfo = detector.GetClient();
-
-        if (clientInfo.Success)
+        return new UserAgentInfo
         {
-            deviceInfo = deviceInfo.IsNullOrWhiteSpace()
-                ? clientInfo.Match.Name
-                : deviceInfo + " " + clientInfo.Match.Name;
-        }
+            UserAgent = userAgent,
+            IsBot = isBot,
+            Device = device,
+            DeviceBrand = brand,
+            DeviceModel = model,
+            OsName = os.Success ? os.Match?.Name.NullIfWhiteSpace() : null,
+            OsVersion = os.Success ? os.Match?.Version.NullIfWhiteSpace() : null,
+            OsPlatform = os.Success ? os.Match?.Platform.NullIfWhiteSpace() : null,
+            ClientName = client.Success ? client.Match?.Name.NullIfWhiteSpace() : null,
+            ClientVersion = client.Success ? client.Match?.Version.NullIfWhiteSpace() : null,
+            ClientType = client.Success ? client.Match?.Type.NullIfWhiteSpace() : null,
+            ClientEngine = client.Success
+                ? (client.Match as DeviceDetectorNET.Results.Client.BrowserMatchResult)?.Engine.NullIfWhiteSpace()
+                : null,
+            BotName = bot?.Match?.Name.NullIfWhiteSpace(),
+            BotCategory = bot?.Match?.Category.NullIfWhiteSpace(),
+        };
+    }
 
-        return deviceInfo;
+    // Internal for tests: the exotic device classes have no practical real-world User-Agent to drive through Parse.
+    internal static DeviceType MapDevice(string? deviceName)
+    {
+        return deviceName?.ToLowerInvariant() switch
+        {
+            "desktop" => DeviceType.Desktop,
+            "smartphone" or "feature phone" => DeviceType.Phone,
+            "tablet" or "phablet" => DeviceType.Tablet,
+            "console" => DeviceType.Console,
+            "tv" => DeviceType.Tv,
+            "car browser" => DeviceType.CarBrowser,
+            "smart display" => DeviceType.SmartDisplay,
+            "smart speaker" => DeviceType.SmartSpeaker,
+            "wearable" => DeviceType.Wearable,
+            "camera" => DeviceType.Camera,
+            "portable media player" => DeviceType.PortableMediaPlayer,
+            _ => DeviceType.Unknown,
+        };
     }
 }

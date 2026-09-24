@@ -10,11 +10,29 @@ namespace Headless.Abstractions;
 /// </remarks>
 public interface IUserAgentParser
 {
-    /// <summary>Parses the operating system and browser/client name from a User-Agent string.</summary>
+    /// <summary>Parses everything identifiable out of a User-Agent string.</summary>
+    /// <param name="userAgent">The raw <c>User-Agent</c> header value.</param>
+    /// <returns>
+    /// The parsed result, or <see langword="null"/> when <paramref name="userAgent"/> is blank or nothing could be
+    /// identified from it.
+    /// </returns>
+    /// <remarks>
+    /// A User-Agent is self-reported and trivially forged. Use the result for diagnostics, session display, and
+    /// analytics; never as an authorization or security input.
+    /// </remarks>
+    UserAgentInfo? Parse(string? userAgent);
+
+    /// <summary>Parses the operating system and client name from a User-Agent string.</summary>
     /// <param name="userAgent">The raw <c>User-Agent</c> header value.</param>
     /// <returns>
     /// A human-readable string combining OS name and client name (e.g. <c>"Windows Chrome"</c>), or
     /// <see langword="null"/> when <paramref name="userAgent"/> is blank or the device cannot be identified.
     /// </returns>
-    string? GetDeviceInfo(string? userAgent);
+    /// <remarks>
+    /// A display-only shorthand for <see cref="UserAgentInfo.Summary"/>. Call <see cref="Parse"/> instead when any
+    /// individual field is wanted, so the fields are not re-derived by string-splitting this.
+    /// Earlier versions could return an empty string when a match's name was empty; empty and whitespace-only
+    /// names now normalize to <see langword="null"/> — an intentional narrowing.
+    /// </remarks>
+    string? GetDeviceInfo(string? userAgent) => Parse(userAgent)?.Summary;
 }
