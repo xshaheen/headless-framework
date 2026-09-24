@@ -130,6 +130,7 @@ Headless.PushNotifications.Firebase
 Headless.Redis
 Headless.Security
 Headless.Security.Abstractions
+Headless.Security.Argon2
 Headless.Serializer.Abstractions
 Headless.Serializer.Json
 Headless.Serializer.MessagePack

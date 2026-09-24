@@ -276,7 +276,8 @@ Foundational building blocks shared across the framework — domain primitives, 
 | [Headless.Extensions](src/Headless.Extensions/README.md) | Core primitives and utilities |
 | [Headless.Core](src/Headless.Core/README.md) | Domain-Driven Design building blocks |
 | [Headless.Security.Abstractions](src/Headless.Security.Abstractions/README.md) | Security contracts and options |
-| [Headless.Security](src/Headless.Security/README.md) | String encryption and hashing services |
+| [Headless.Security](src/Headless.Security/README.md) | String encryption, string hashing, and secret hashing (PBKDF2) services |
+| [Headless.Security.Argon2](src/Headless.Security.Argon2/README.md) | Argon2id secret hashing, the default `ISecretHasher` algorithm |
 | [Headless.Checks](src/Headless.Checks/README.md) | Guard clauses and argument validation |
 | [Headless.Domain](src/Headless.Domain/README.md) | Domain entities and events |
 | [Headless.Domain.LocalEventBus](src/Headless.Domain.LocalEventBus/README.md) | DI-based `ILocalEventBus` for in-process domain event publishing |
