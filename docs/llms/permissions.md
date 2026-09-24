@@ -38,7 +38,8 @@ Provider packages:
 - Resolution order (highest to lowest priority): **User** then **Role**. An explicit `Prohibited` from any provider denies access regardless of other grants. The default when no record exists is deny.
 - Do NOT call `IDynamicPermissionDefinitionStore.SaveAsync` directly — `PermissionsInitializationBackgroundService` handles it on startup.
 - Both `IPermissionManager` and direct `IPermissionGrantRepository` writes invalidate the affected cache entry (the repository removes it after `SaveChangesAsync`). Only writes that bypass the repository entirely (raw SQL, direct `DbContext`) leave the cache stale.
-- There is **no** `[HasPermission]` attribute in this framework. Use `PermissionRequirement` / `PermissionsRequirement` and wire them into ASP.NET Core authorization policies, or use `IPermissionManager` in-code.
+- Protect an endpoint with the permission name itself: `[Authorize("Orders.Edit")]` or `.RequireAuthorization("Orders.Edit")` works for any defined permission with no `AddPolicy` call. There is **no** `[HasPermission]` attribute. Build a `PermissionsRequirement` policy only for an any-of (OR) or all-of set under one name, and use `IPermissionManager` for in-code checks.
+- Policy names passed to `[Authorize]` must come from code, never from user input: an undefined name throws "policy not found", and permission names match case-sensitively.
 - `SetAsync` throws `ConflictException` when the permission is not defined, is disabled, restricts its providers and excludes the given `providerName`, or when no grant provider with that name is registered. Catch this for user-facing validation.
 - Batch writes via `SetAsync(IReadOnlyCollection<string>, ...)` are all-or-nothing — a single invalid name rejects the entire batch.
 - A batch grant converts existing `Prohibited` records to grants and inserts records for names that have none, exactly like the single-name path; names that are already granted are left untouched.
@@ -257,7 +258,8 @@ Core implementation of permission management with grant resolution, caching, bac
 - `PermissionsInitializationBackgroundService` — seeds static definitions with up to 10 jittered exponential-back-off retries capped at 30 seconds; pre-caches dynamic definitions when enabled; implements `IInitializer`
 - `PermissionManagementOptions` — all tuning options for lock keys/timeouts, cache expiry, dynamic store toggle
 - `PermissionsStorageOptions` — schema and table name configuration shared across all storage providers
-- `HeadlessPermissionsSetupBuilder` — fluent builder returned inside `AddHeadlessPermissions`; exposes `ConfigureManagement`, `ConfigureStorage`, `RegisterExtension` `ConfigureStorage` also accepts the `Headless:Permissions:Storage` configuration section.
+- `HeadlessPermissionsSetupBuilder` — fluent builder returned inside `AddHeadlessPermissions`; exposes `ConfigureManagement`, `ConfigureStorage`, `DisableStartupInitialization`, `DisablePermissionNamePolicies`, `RegisterExtension`. `ConfigureStorage` also accepts the `Headless:Permissions:Storage` configuration section.
+- `PermissionPolicyProvider` — `IAuthorizationPolicyProvider` that resolves a defined permission name as a policy holding one `PermissionRequirement`; registered by default in place of ASP.NET Core's default provider
 - `HeadlessPermissionsBuilder` — returned by `AddHeadlessPermissions`; exposes `Services` for post-registration additions
 - `services.AddPermissionDefinitionProvider<T>()` — registers a custom `IPermissionDefinitionProvider` as singleton
 - `services.AddPermissionGrantProvider<T>()` — registers an additional grant provider (last-registered = highest priority)
@@ -271,6 +273,11 @@ The always-allow test doubles (`AlwaysAllowPermissionManager` / `AlwaysAllowAuth
 
 - Grant providers are stored in registration order with last-registered = highest priority. The built-in registration is `Role` first, then `User`, making User the highest-priority built-in provider. Custom providers added via `AddPermissionGrantProvider<T>()` are appended after `User` and override both built-ins.
 - `AddHeadlessPermissions` is guarded on `IPermissionGrantStore` so calling it more than once is safe — the management core registers once. However, registering a second storage provider extension throws at host startup.
+- **Permission-name policies.** `PermissionPolicyProvider` asks ASP.NET Core's default provider first, so a policy registered with `AddPolicy` always wins. ASP.NET matches those names ignoring case, so a host policy `orders.edit` shadows the permission `Orders.Edit`. On a miss, the name is looked up as a permission (ordinal, case-sensitive): a defined permission — enabled or disabled — resolves to a policy whose only requirement is `PermissionRequirement`; anything else resolves to `null` and ASP.NET Core throws its usual "policy not found" `InvalidOperationException`. A disabled permission therefore still resolves, and its policy denies everyone.
+- **Provider registration order.** `AddHeadlessPermissions` replaces ASP.NET Core's `DefaultAuthorizationPolicyProvider` whether `AddAuthorization`/`AddControllers` ran before or after it. A host that registered its own `IAuthorizationPolicyProvider` before `AddHeadlessPermissions` keeps it and gets no permission-name resolution; such a provider can create `PermissionPolicyProvider` with `ActivatorUtilities.CreateInstance<PermissionPolicyProvider>(serviceProvider)` and consult it on its own misses. A provider registered afterwards with `TryAdd*` is skipped, and one registered afterwards with `AddSingleton` replaces ours. ASP.NET Core uses exactly one policy provider.
+- **Generated policies hold only the permission requirement**, the same as a hand-written `AddPolicy(name, p => p.Requirements.Add(new PermissionRequirement(name)))`. ASP.NET Core never merges `DefaultPolicy` into a named policy, so tenant enforcement added through `RequireTenant()` and any default authentication schemes do not apply to `[Authorize("Orders.Edit")]`.
+- **Caching.** A resolved name keeps its policy for the process lifetime, and the provider lets the authorization middleware cache the combined policy per endpoint. Misses are not cached, so a permission added later through the dynamic store resolves without a restart (after `DynamicDefinitionsMemoryCacheExpiration`); a permission deleted after first use keeps its policy, and `PermissionRequirementHandler` denies it because undefined permissions are never granted.
+- **Failures propagate.** A definition-store failure (cache, lock, or database) while resolving a policy surfaces as that exception, never as "policy not found", and is not cached. The provider contract has no cancellation token, so with the dynamic store enabled a first lookup during an outage can wait up to `CrossApplicationsCommonLockAcquireTimeout`.
 - The grant cache is tenant-scoped (`ScopedCache<PermissionGrantCacheItem>` keyed on `ICurrentTenant.Id`). A permission check for tenant A never returns a cached result for tenant B.
 - `PermissionsInitializationBackgroundService` implements `IInitializer`: anything awaiting `WaitForInitializationAsync()` blocks until both the save and pre-cache steps complete. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; other failures retain 10 retries, and the terminal exception is surfaced to every waiter. If the host stops before initialization finishes, the background task and waiters are cancelled.
 - `PermissionGrantRecord` implements `ICreateAudit` / `IUpdateAudit` and carries `CreatedAt` (non-null) and `UpdatedAt` (nullable) audit timestamps. Grants are insert-only — a revoke deletes the row and inserts a replacement rather than updating — so `UpdatedAt` is normally null. The EF provider stamps `CreatedAt` through the audit save-processor; the raw-SQL providers stamp it from the injected `TimeProvider`. Hydrate from storage with the `PermissionGrantRecord.FromStorage(...)` factory, which sets the audit fields.
@@ -300,16 +307,21 @@ builder.Services.AddHeadlessPermissions(setup => setup.UseEntityFramework<AppDbC
 
 #### ASP.NET Core Authorization Integration
 
-There is no `[HasPermission]` attribute. Wire permissions into ASP.NET Core policies using `PermissionRequirement` or `PermissionsRequirement`:
+Use a defined permission name directly as the policy name. `AddHeadlessPermissions` registers `PermissionPolicyProvider`, so no `AddPolicy` call is needed:
 
 ```csharp
-// Single-permission policy
-builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy("CanEditOrders", policy => policy.Requirements.Add(new PermissionRequirement("Orders.Edit")));
-});
+// Controllers
+[Authorize("Orders.Edit")]
+public IActionResult Edit(int id) => Ok();
 
-// Multi-permission policy (AND)
+// Minimal APIs
+app.MapPut("/orders/{id}", (int id) => Results.Ok()).RequireAuthorization("Orders.Edit");
+```
+
+Stacked attributes and several names in one `RequireAuthorization(...)` call are AND. For an any-of (OR) set, or an all-of set under one name, register a `PermissionsRequirement` policy:
+
+```csharp
+// Multi-permission policy (AND); requiresAll: false gives OR
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy(
@@ -324,6 +336,26 @@ Or check inline:
 
 ```csharp
 var isGranted = await permissionManager.IsGrantedAsync(currentUser, "Orders.Edit");
+```
+
+To make the namespace explicit, set a prefix; only prefixed names then resolve, with the prefix stripped before the lookup (`[Authorize("permission:Orders.Edit")]`):
+
+```csharp
+builder.Services.AddHeadlessPermissions(setup =>
+{
+    setup.ConfigureManagement(options => options.PolicyNamePrefix = "permission:");
+    setup.UseEntityFramework<AppDbContext>();
+});
+```
+
+Hosts that resolve policies themselves opt out, which leaves the existing `IAuthorizationPolicyProvider` untouched:
+
+```csharp
+builder.Services.AddHeadlessPermissions(setup =>
+{
+    setup.DisablePermissionNamePolicies();
+    setup.UseEntityFramework<AppDbContext>();
+});
 ```
 
 #### Seeding Permissions at Startup
@@ -381,6 +413,11 @@ builder.Services.AddHeadlessPermissions(setup =>
         // How long dynamic definitions stay in the in-process cache before
         // the distributed stamp is re-checked (default: 30 seconds)
         options.DynamicDefinitionsMemoryCacheExpiration = TimeSpan.FromSeconds(30);
+
+        // Only policy names with this prefix resolve as permissions (ordinal match,
+        // stripped before lookup). Null resolves any defined permission name;
+        // empty or whitespace fails validation (default: null)
+        options.PolicyNamePrefix = null;
     });
     setup.UseEntityFramework<AppDbContext>();
 });
@@ -419,6 +456,7 @@ builder.Services.AddHeadlessPermissions(setup =>
 - Starts `PermissionsInitializationBackgroundService` as a hosted service (`IInitializer`) unless `setup.DisableStartupInitialization()` was called
 - Registers `IGrantPermissionsSeedHelper` as transient
 - Registers `PermissionRequirementHandler` and `PermissionsRequirementHandler` as `IAuthorizationHandler` singletons
+- Registers `PermissionPolicyProvider` as the singleton `IAuthorizationPolicyProvider`, replacing ASP.NET Core's default provider and keeping a host-registered one, unless `setup.DisablePermissionNamePolicies()` was called
 - Registers a tenant-scoped `ICache<PermissionGrantCacheItem>` as singleton
 
 ---
@@ -655,3 +693,4 @@ None.
 
 - Replaces the registered `IPermissionManager` with `AlwaysAllowPermissionManager` (singleton)
 - Replaces the registered `IAuthorizationService` with `AlwaysAllowAuthorizationService` (singleton)
+- Does not touch policy resolution. On the endpoint (middleware) path, `[Authorize("<name>")]` still resolves the policy before calling the service, so an undefined name still throws "policy not found". Direct `IAuthorizationService.AuthorizeAsync(user, name)` calls succeed for any name, typos included.
