@@ -348,6 +348,7 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
         }
       },
@@ -406,6 +407,9 @@
           "Headless.Hosting": "[1.0.0, )",
           "tusdotnet": "[2.11.2, )"
         }
+      },
+      "headless.unitofwork.abstractions": {
+        "type": "Project"
       },
       "headless.urls": {
         "type": "Project",

@@ -617,6 +617,7 @@ PostgreSQL advisory-lock provider for mutex and reader-writer distributed locks.
 - Reader-writer locks use PostgreSQL shared and exclusive advisory locks.
 - Mutex handles receive durable sequence-backed `FencingToken` values.
 - `PostgreSqlDistributedLock.AcquireWithTransactionAsync(...)` and `TryAcquireWithTransactionAsync(...)` use transaction-scoped `pg_advisory_xact_lock`. Each has a `DbTransaction` overload and a synchronous form (`AcquireWithTransaction`, `TryAcquireWithTransaction`) for EF Core callers; see [EF Core transaction-scoped locks](#ef-core-transaction-scoped-locks).
+- `UsePostgreSql(...)` also registers the `unit.TransactionLocks` unit-of-work feature, which takes the same transaction-scoped lock on the unit's own Npgsql transaction. See [Locks inside a unit of work](#locks-inside-a-unit-of-work).
 
 ### Design constraints
 
@@ -695,6 +696,38 @@ PostgreSqlDistributedLock.AcquireWithTransaction(
 ```
 
 The SQL Server helper has the same four shapes with a string resource name.
+
+#### Locks inside a unit of work
+
+Inside a unit of work the transaction is the unit's, so the lock is taken through the unit rather than through a transaction object the caller has to dig out. `unit.TransactionLocks` is an accessor `Headless.DistributedLocks.Abstractions` adds to `IUnitOfWork`; `UsePostgreSql` and `UseSqlServer` register the feature behind it, and it needs no reference to the driver from the calling code.
+
+```csharp
+await factory.RunAsync(
+    connection, // or a DbContext through Headless.UnitOfWork.EntityFramework
+    async (unit, ct) =>
+    {
+        // Waits up to 30 s by default; released by the unit's commit or rollback.
+        TransactionLockHandle held = await unit.TransactionLocks.AcquireAsync("orders:123", cancellationToken: ct);
+
+        // One attempt; null while another session holds it.
+        TransactionLockHandle? mine = await unit.TransactionLocks.TryAcquireAsync("orders:124", cancellationToken: ct);
+
+        // Bounded wait on either call.
+        await unit.TransactionLocks.AcquireAsync("orders:125", TimeSpan.FromSeconds(5), ct);
+
+        // mutate protected rows
+    },
+    cancellationToken: ct
+);
+```
+
+- The resource encodes as `KeyPrefix + resource`, exactly as the provider's session locks do, so a session lock from `IDistributedLock` and a transaction lock on one logical name contend.
+- It refuses before any command runs, in the same shape as `unit.Outbox`: a unit that is no longer active, a unit with no relational resource (`IUnitOfWorkFactory.BeginAsync()` with no connection), a resource whose transaction already completed, or a transaction from another provider (a SQL Server unit under the PostgreSQL lock provider) each throw `InvalidOperationException` naming the condition. A host whose only lock provider is Redis or InMemory throws on the accessor itself.
+- `acquireTimeout` means the same on both engines. `AcquireAsync` defaults to 30 seconds and throws `LockAcquisitionTimeoutException` when the wait elapses; `TryAcquireAsync` defaults to one attempt and returns `null` instead. `Timeout.InfiniteTimeSpan` waits without bound on either call. PostgreSQL bounds the wait with a server-side `lock_timeout` applied inside a savepoint, so the setting never leaks to the rest of the unit and an expiry does not abort the transaction; SQL Server passes it as `sp_getapplock`'s `@LockTimeout`.
+- The returned `TransactionLockHandle` is identity only. There is nothing to release, so it is not disposable; it carries the resource name for logging and assertions, and two handles for one resource compare equal.
+- A replayed `RunAsync` block begins a fresh transaction, so the lock is taken again inside it; the feature never calls `PreventRetry()`.
+- There is no synchronous form on the unit. A `SavingChanges` interceptor holds no unit handle; it keeps using the static helpers above.
+- TTL leases from `IDistributedLock` are a different contract and never enlist: a lease taken inside the block is released by its own TTL or `DisposeAsync`, not by the unit's outcome.
 
 ### Configuration
 
@@ -790,6 +823,7 @@ SQL Server `sp_getapplock` provider for mutex and reader-writer distributed lock
 - Reader-writer locks use SQL Server `Shared` and `Exclusive` application-lock modes.
 - Mutex handles receive durable SQL `SEQUENCE`-backed `FencingToken` values when fencing is enabled.
 - `SqlServerDistributedLock.AcquireWithTransactionAsync(...)` and `TryAcquireWithTransactionAsync(...)` use transaction-owned application locks. Each has a `DbTransaction` overload and a synchronous form (`AcquireWithTransaction`, `TryAcquireWithTransaction`) for EF Core callers; see [EF Core transaction-scoped locks](#ef-core-transaction-scoped-locks).
+- `UseSqlServer(...)` also registers the `unit.TransactionLocks` unit-of-work feature, which takes the same transaction-owned lock on the unit's own `SqlTransaction`. See [Locks inside a unit of work](#locks-inside-a-unit-of-work).
 - Resource names longer than SQL Server's 255-character `@Resource` limit are encoded as `sha256:<lowercase-hex>`.
 
 ### Design constraints
