@@ -452,6 +452,18 @@
         <Project Path="tests\Headless.Sitemaps.Tests.Unit\Headless.Sitemaps.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Slugs.Tests.Unit\Headless.Slugs.Tests.Unit.csproj" />
     </Folder>
+    <Folder Name="/Sequences/">
+        <Project Path="src\Headless.Sequences.Abstractions\Headless.Sequences.Abstractions.csproj" />
+        <Project Path="src\Headless.Sequences.Core\Headless.Sequences.Core.csproj" />
+        <Project Path="src\Headless.Sequences.PostgreSql\Headless.Sequences.PostgreSql.csproj" />
+        <Project Path="src\Headless.Sequences.SqlServer\Headless.Sequences.SqlServer.csproj" />
+    </Folder>
+    <Folder Name="/Sequences/Tests/">
+        <Project Path="tests\Headless.Sequences.Core.Tests.Unit\Headless.Sequences.Core.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Sequences.PostgreSql.Tests.Integration\Headless.Sequences.PostgreSql.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Sequences.SqlServer.Tests.Integration\Headless.Sequences.SqlServer.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Sequences.Tests.Harness\Headless.Sequences.Tests.Harness.csproj" />
+    </Folder>
     <Folder Name="/Serializers/">
         <Project Path="src\Headless.Serializer.Abstractions\Headless.Serializer.Abstractions.csproj" />
         <Project Path="src\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />

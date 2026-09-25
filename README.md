@@ -162,6 +162,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Push notifications | `AddHeadlessPushNotifications` | `UseFirebase`, `UseNoop` |
 | Distributed locks | `AddHeadlessDistributedLocks` | `UseInMemory`, `UseRedis`, `UsePostgreSql`, `UseSqlServer` |
 | Node membership | `AddHeadlessCoordination` | `UseRedis`, `UsePostgreSql`, `UseSqlServer` |
+| Sequences | `AddHeadlessSequences` | `UsePostgreSql`, `UseSqlServer` |
 | Feature flags | `AddHeadlessFeatures` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
 | Dynamic settings | `AddHeadlessSettings` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
 | Permissions | `AddHeadlessPermissions` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
@@ -530,6 +531,17 @@ Cluster membership and liveness tracking. Know which nodes are alive across a di
 | [Headless.Coordination.PostgreSql](src/Headless.Coordination.PostgreSql/README.md) | PostgreSQL membership with server-clock liveness |
 | [Headless.Coordination.Redis](src/Headless.Coordination.Redis/README.md) | Redis membership via Lua scripts and server time |
 | [Headless.Coordination.SqlServer](src/Headless.Coordination.SqlServer/README.md) | SQL Server membership with guarded writes |
+
+### Sequences
+
+Per-tenant consecutive numbers for receipts, invoices, and case numbers. The fast mode takes a number in its own transaction; the gap-free mode takes it inside the unit of work, so a rollback returns it.
+
+| Package | Description |
+|---------|-------------|
+| [Headless.Sequences.Abstractions](src/Headless.Sequences.Abstractions/README.md) | `ISequenceGenerator`, `SequenceRange`, and the `unit.Sequences` accessor |
+| [Headless.Sequences.Core](src/Headless.Sequences.Core/README.md) | Registration, numbering policies, and tenant key resolution |
+| [Headless.Sequences.PostgreSql](src/Headless.Sequences.PostgreSql/README.md) | PostgreSQL counters with a single upsert-increment |
+| [Headless.Sequences.SqlServer](src/Headless.Sequences.SqlServer/README.md) | SQL Server counters with a range-locked upsert |
 
 ### Unit of Work
 
