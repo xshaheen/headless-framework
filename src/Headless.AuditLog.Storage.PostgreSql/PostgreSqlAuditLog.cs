@@ -14,8 +14,14 @@ internal sealed class PostgreSqlAuditLog<TContext>(
     ICorrelationIdProvider correlationIdProvider,
     TimeProvider timeProvider,
     IOptions<AuditLogOptions> options
-) : IAuditLog<TContext>
+) : IAuditLog<TContext>, IAuditLogWriter<TContext>
 {
+    // The raw-SQL writer commits on its own connection, so the enlisted and standalone contracts behave the same.
+    public Task WriteAsync(AuditLogWriteRequest request, CancellationToken cancellationToken = default)
+    {
+        return LogAsync(request, cancellationToken);
+    }
+
     public Task LogAsync(AuditLogWriteRequest request, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(request);

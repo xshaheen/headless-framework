@@ -95,31 +95,48 @@ internal sealed class SqlServerAuditLogStorageInitializer(
         // Index creation runs unconditionally on every startup — each CREATE INDEX is gated by its
         // own existence check so a previous partial-failure run that committed the table but missed
         // an index self-heals on the next start. This matches the PG initializer's per-statement
-        // `CREATE INDEX IF NOT EXISTS` behavior.
+        // `CREATE INDEX IF NOT EXISTS` behavior. Each index ends in (CreatedAt, Id), the keyset order of read
+        // paging, so a filtered page seeks straight to its continuation position instead of scanning.
         var createIndexes = string.Join(
             '\n',
             new[]
             {
-                _IndexStatement("ix_audit_log_tenant_time", table, objectName, "[TenantId] ASC, [CreatedAt] ASC"),
+                _IndexStatement(
+                    "ix_audit_log_tenant_time",
+                    table,
+                    objectName,
+                    "[TenantId] ASC, [CreatedAt] ASC, [Id] ASC"
+                ),
                 _IndexStatement(
                     "ix_audit_log_tenant_action_time",
                     table,
                     objectName,
-                    "[TenantId] ASC, [Action] ASC, [CreatedAt] ASC"
+                    "[TenantId] ASC, [Action] ASC, [CreatedAt] ASC, [Id] ASC"
                 ),
                 _IndexStatement(
                     "ix_audit_log_tenant_entity_time",
                     table,
                     objectName,
-                    "[TenantId] ASC, [EntityType] ASC, [EntityId] ASC, [CreatedAt] ASC"
+                    "[TenantId] ASC, [EntityType] ASC, [EntityId] ASC, [CreatedAt] ASC, [Id] ASC"
                 ),
                 _IndexStatement(
                     "ix_audit_log_tenant_actor_time",
                     table,
                     objectName,
-                    "[TenantId] ASC, [UserId] ASC, [CreatedAt] ASC"
+                    "[TenantId] ASC, [UserId] ASC, [CreatedAt] ASC, [Id] ASC"
                 ),
-                _IndexStatement("ix_audit_log_correlation", table, objectName, "[CorrelationId] ASC"),
+                _IndexStatement(
+                    "ix_audit_log_tenant_account_time",
+                    table,
+                    objectName,
+                    "[TenantId] ASC, [AccountId] ASC, [CreatedAt] ASC, [Id] ASC"
+                ),
+                _IndexStatement(
+                    "ix_audit_log_correlation",
+                    table,
+                    objectName,
+                    "[CorrelationId] ASC, [CreatedAt] ASC, [Id] ASC"
+                ),
             }
         );
 

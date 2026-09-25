@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Primitives;
+
 namespace Headless.AuditLog;
 
 /// <summary>
@@ -18,14 +20,19 @@ namespace Headless.AuditLog;
 public interface IReadAuditLog<TContext>
 {
     /// <summary>
-    /// Queries audit log entries matching the specified filters.
-    /// Unspecified filters are not applied.
+    /// Queries one page of audit log entries matching the specified filters, ordered by creation time and
+    /// then by entry ID in <see cref="AuditLogQuery.Direction"/>. Unspecified filters are not applied.
     /// </summary>
-    /// <param name="query">The filters and result limit to apply.</param>
+    /// <param name="query">The filters, direction, page size, and continuation token to apply.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// The page of entries. Its <see cref="ContinuationPage{T}.ContinuationToken"/> fetches the next page and is
+    /// <see langword="null"/> when no further entries match.
+    /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="query"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><see cref="AuditLogQuery.Limit"/> is less than one.</exception>
-    Task<IReadOnlyList<AuditLogEntryData>> QueryAsync(
+    /// <exception cref="ArgumentOutOfRangeException"><see cref="ContinuationPageRequest.Size"/> is less than one or equal to int.MaxValue.</exception>
+    /// <exception cref="ArgumentException"><see cref="ContinuationPageRequest.ContinuationToken"/> is not a token this API issued.</exception>
+    Task<ContinuationPage<AuditLogEntryData>> QueryAsync(
         AuditLogQuery query,
         CancellationToken cancellationToken = default
     );

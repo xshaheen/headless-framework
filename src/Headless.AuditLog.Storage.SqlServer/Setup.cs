@@ -148,6 +148,7 @@ public static class SetupAuditLogSqlServer
             services.TryAddSingleton<SqlServerAuditLogWriter>();
             services.TryAddScoped<IAuditLogStore, SqlServerAuditLogStore>();
             services.TryAddSingleton(typeof(IAuditLog<>), typeof(SqlServerAuditLog<>));
+            services.TryAddSingleton(typeof(IAuditLogWriter<>), typeof(SqlServerAuditLog<>));
             services.TryAddSingleton(typeof(IReadAuditLog<>), typeof(SqlServerReadAuditLog<>));
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<ICurrentTenant, NullCurrentTenant>();

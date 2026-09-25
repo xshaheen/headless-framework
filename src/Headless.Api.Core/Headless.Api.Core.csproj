@@ -30,6 +30,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Api.Abstractions\Headless.Api.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.AuditLog.Abstractions\Headless.AuditLog.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
     <ProjectReference Include="..\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
     <ProjectReference Include="..\Headless.Security\Headless.Security.csproj" />

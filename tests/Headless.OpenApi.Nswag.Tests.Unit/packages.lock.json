@@ -784,6 +784,7 @@
           "DeviceDetector.NET": "[6.5.2, )",
           "FluentValidation.DependencyInjectionExtensions": "[12.1.1, )",
           "Headless.Api.Abstractions": "[1.0.0, )",
+          "Headless.AuditLog.Abstractions": "[1.0.0, )",
           "Headless.Core": "[1.0.0, )",
           "Headless.FluentValidation": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
@@ -810,6 +811,12 @@
           "Asp.Versioning.Mvc.ApiExplorer": "[10.2.1, )",
           "Headless.Api.Core": "[1.0.0, )",
           "Mediator.Abstractions": "[3.0.2, )"
+        }
+      },
+      "headless.auditlog.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Extensions": "[1.0.0, )"
         }
       },
       "headless.caching.abstractions": {

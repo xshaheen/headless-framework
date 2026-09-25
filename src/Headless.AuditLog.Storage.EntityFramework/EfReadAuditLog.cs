@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Checks;
+using Headless.Primitives;
 using Microsoft.EntityFrameworkCore;
 
 namespace Headless.AuditLog;
@@ -9,13 +9,12 @@ internal sealed class EfReadAuditLog<TContext>(IDbContextFactory<TContext> dbFac
     where TContext : DbContext
 {
     /// <inheritdoc />
-    public async Task<IReadOnlyList<AuditLogEntryData>> QueryAsync(
+    public async Task<ContinuationPage<AuditLogEntryData>> QueryAsync(
         AuditLogQuery query,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(query);
-        Argument.IsPositive(query.Limit, "The query limit must be positive.", nameof(query));
+        var position = AuditLogPaging.Validate(query);
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         var entriesQuery = context.Set<AuditLogEntry>().AsNoTracking().AsQueryable();
 
@@ -39,9 +38,19 @@ internal sealed class EfReadAuditLog<TContext>(IDbContextFactory<TContext> dbFac
             entriesQuery = entriesQuery.Where(e => e.UserId == query.UserId);
         }
 
+        if (query.AccountId is not null)
+        {
+            entriesQuery = entriesQuery.Where(e => e.AccountId == query.AccountId);
+        }
+
         if (query.TenantId is not null)
         {
             entriesQuery = entriesQuery.Where(e => e.TenantId == query.TenantId);
+        }
+
+        if (query.CorrelationId is not null)
+        {
+            entriesQuery = entriesQuery.Where(e => e.CorrelationId == query.CorrelationId);
         }
 
         if (query.From is not null)
@@ -54,14 +63,32 @@ internal sealed class EfReadAuditLog<TContext>(IDbContextFactory<TContext> dbFac
             entriesQuery = entriesQuery.Where(e => e.CreatedAt < query.To.Value.UtcDateTime);
         }
 
-        var entries = await entriesQuery
-            .OrderByDescending(e => e.CreatedAt)
-            .ThenByDescending(e => e.Id)
-            .Take(query.Limit)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
+        var newestFirst = query.Direction == AuditLogSortDirection.NewestFirst;
 
-        return entries.ConvertAll(e => new AuditLogEntryData
+        if (position is { } after)
+        {
+            var (createdAt, id) = after;
+            entriesQuery = newestFirst
+                ? entriesQuery.Where(e => e.CreatedAt < createdAt || (e.CreatedAt == createdAt && e.Id < id))
+                : entriesQuery.Where(e => e.CreatedAt > createdAt || (e.CreatedAt == createdAt && e.Id > id));
+        }
+
+        var ordered = newestFirst
+            ? entriesQuery.OrderByDescending(e => e.CreatedAt).ThenByDescending(e => e.Id)
+            : entriesQuery.OrderBy(e => e.CreatedAt).ThenBy(e => e.Id);
+
+        // One extra row tells whether another page exists without a second count query.
+        var entries = await ordered.Take(query.Size + 1).ToListAsync(cancellationToken).ConfigureAwait(false);
+        string? continuationToken = null;
+
+        if (entries.Count > query.Size)
+        {
+            entries.RemoveAt(entries.Count - 1);
+            var last = entries[^1];
+            continuationToken = AuditLogPaging.Encode(last.CreatedAt, last.Id);
+        }
+
+        var items = entries.ConvertAll(e => new AuditLogEntryData
         {
             UserId = e.UserId,
             AccountId = e.AccountId,
@@ -80,5 +107,7 @@ internal sealed class EfReadAuditLog<TContext>(IDbContextFactory<TContext> dbFac
             ErrorCode = e.ErrorCode,
             CreatedAt = new DateTimeOffset(DateTime.SpecifyKind(e.CreatedAt, DateTimeKind.Utc)),
         });
+
+        return new ContinuationPage<AuditLogEntryData>(items, query.Size, continuationToken);
     }
 }
