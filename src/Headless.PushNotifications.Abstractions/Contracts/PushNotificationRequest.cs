@@ -65,7 +65,7 @@ public sealed record PushNotificationRequest
     public int? Badge { get; init; }
 
     /// <summary>
-    /// Optional sound to play: the name of a sound file bundled with the app, or <c>default</c> for the system
+    /// Optional sound to play: the name of a sound file bundled with the app, or <c>"default"</c> for the system
     /// sound. Defaults to <see langword="null"/> (silent). Not allowed on a data-only message.
     /// </summary>
     public string? Sound { get; init; }

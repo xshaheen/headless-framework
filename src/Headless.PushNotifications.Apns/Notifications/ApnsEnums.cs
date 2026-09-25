@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.PushNotifications.Apns;
 
 /// <summary>
@@ -24,7 +25,7 @@ public enum ApnsInterruptionLevel
 }
 
 /// <summary>
-/// The Live Activity lifecycle event a Live Activity push carries, sent as the <c>event</c> key.
+/// The Live Activity lifecycle event a Live Activity push carries, sent as the <c>"event"</c> key.
 /// </summary>
 [PublicAPI]
 public enum ApnsLiveActivityEvent

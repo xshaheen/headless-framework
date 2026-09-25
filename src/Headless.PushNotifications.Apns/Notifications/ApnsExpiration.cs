@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.PushNotifications.Apns;
 
 /// <summary>

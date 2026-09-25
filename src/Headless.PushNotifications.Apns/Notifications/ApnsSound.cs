@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.PushNotifications.Apns;
 
 /// <summary>
@@ -25,7 +26,7 @@ public sealed record ApnsSound
     /// <summary>The system's default notification sound.</summary>
     public static ApnsSound Default { get; } = new("default", isCritical: false, volume: null);
 
-    /// <summary>The name of a sound file in the app bundle or its <c>Library/Sounds</c> folder, or <c>default</c>.</summary>
+    /// <summary>The name of a sound file in the app bundle or its <c>Library/Sounds</c> folder, or <c>"default"</c>.</summary>
     public string Name { get; }
 
     /// <summary>Whether this is a critical sound, which plays even when the device is muted.</summary>
@@ -47,7 +48,7 @@ public sealed record ApnsSound
     /// Creates a critical sound. The app needs Apple's critical-alerts entitlement, or the device plays it as an
     /// ordinary sound.
     /// </summary>
-    /// <param name="name">The sound file name, or <c>default</c>.</param>
+    /// <param name="name">The sound file name, or <c>"default"</c>.</param>
     /// <param name="volume">The volume, from 0 (silent) to 1 (full).</param>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> is blank, or <paramref name="volume"/> is outside 0 to 1.

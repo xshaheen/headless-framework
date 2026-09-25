@@ -46,6 +46,7 @@ internal static class ApnsPayloadWriter
         var headers = ApnsRequestHeaders.Create(notification, options);
         var buffer = new ArrayBufferWriter<byte>(512);
 
+#pragma warning disable MA0045 // False positive: a synchronous in-memory JSON writer in a synchronous method; await using would add nothing.
         using (var writer = new Utf8JsonWriter(buffer))
         {
             switch (notification)
