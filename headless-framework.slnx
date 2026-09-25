@@ -200,6 +200,7 @@
     <Folder Name="/Features/Tests/">
         <Project Path="tests\Headless.Features.Storage.PostgreSql.Tests.Integration\Headless.Features.Storage.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Features.Storage.SqlServer.Tests.Integration\Headless.Features.Storage.SqlServer.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Features.Tests.Harness\Headless.Features.Tests.Harness.csproj" />
         <Project Path="tests\Headless.Features.Tests.Integration\Headless.Features.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Features.Tests.Unit\Headless.Features.Tests.Unit.csproj" />
     </Folder>
@@ -471,6 +472,7 @@
     <Folder Name="/Settings/Tests/">
         <Project Path="tests\Headless.Settings.Storage.PostgreSql.Tests.Integration\Headless.Settings.Storage.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Settings.Storage.SqlServer.Tests.Integration\Headless.Settings.Storage.SqlServer.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Settings.Tests.Harness\Headless.Settings.Tests.Harness.csproj" />
         <Project Path="tests\Headless.Settings.Tests.Integration\Headless.Settings.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Settings.Tests.Unit\Headless.Settings.Tests.Unit.csproj" />
     </Folder>

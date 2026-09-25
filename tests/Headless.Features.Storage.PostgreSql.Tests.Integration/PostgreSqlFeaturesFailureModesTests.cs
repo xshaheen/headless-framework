@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Caching;
-using Headless.Features;
 using Headless.Hosting.Initialization;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,7 +18,7 @@ public sealed class PostgreSqlFeaturesFailureModesTests(PostgreSqlFeaturesFixtur
         // Credentials are placeholders; we never reach the auth handshake because the TCP connect fails first.
         const string unreachable =
             "Host=127.0.0.1;Port=1;Database=missing;Username=postgres;Password=placeholder-never-used;Timeout=2";
-        using var host = _CreateHost(unreachable);
+        using var host = fixture.CreateHost("features_pg_failure", unreachable);
 
         // when / then — wrapped in HostFailedToStartException by the host pipeline; inner is NpgsqlException
         await FluentActions
@@ -45,12 +43,9 @@ public sealed class PostgreSqlFeaturesFailureModesTests(PostgreSqlFeaturesFixtur
     {
         // given — 5 hosts racing to create the same schema/tables; the initializer is
         // designed to be idempotent via CREATE IF NOT EXISTS + duplicate-error suppression.
-        await _DropSchemaAsync("features_pg_concurrent");
+        await fixture.DropSchemaAsync("features_pg_concurrent", AbortToken);
         const int hostCount = 5;
-        var hosts = Enumerable
-            .Range(0, hostCount)
-            .Select(_ => _CreateHost(fixture.ConnectionString, "features_pg_concurrent"))
-            .ToArray();
+        var hosts = Enumerable.Range(0, hostCount).Select(_ => fixture.CreateHost("features_pg_concurrent")).ToArray();
 
         try
         {
@@ -81,30 +76,6 @@ public sealed class PostgreSqlFeaturesFailureModesTests(PostgreSqlFeaturesFixtur
                 host.Dispose();
             }
         }
-    }
-
-    private static IHost _CreateHost(string connectionString, string schema = "features_pg_failure")
-    {
-        var builder = Host.CreateApplicationBuilder();
-        // unify: management-core deps
-        builder.Services.AddSingleton(TimeProvider.System);
-        // The value store caches every read, and the host refuses to start without a registered cache.
-        builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
-        builder.Services.AddHeadlessFeatures(setup =>
-        {
-            setup.ConfigureStorage(options => options.Schema = schema);
-            setup.UsePostgreSql(connectionString);
-        });
-
-        return builder.Build();
-    }
-
-    private async Task _DropSchemaAsync(string schema)
-    {
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        await using var command = new NpgsqlCommand($"""DROP SCHEMA IF EXISTS "{schema}" CASCADE;""", connection);
-        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private async Task<int> _CountTablesAsync(string schema, string table)

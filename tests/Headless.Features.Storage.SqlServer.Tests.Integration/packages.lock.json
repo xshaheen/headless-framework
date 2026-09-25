@@ -839,6 +839,19 @@
           "Microsoft.Data.SqlClient": "[7.0.2, )"
         }
       },
+      "headless.features.tests.harness": {
+        "type": "Project",
+        "dependencies": {
+          "AwesomeAssertions": "[9.6.0, )",
+          "AwesomeAssertions.Json": "[9.0.0, )",
+          "Bogus": "[35.6.5, )",
+          "DeepCloner": "[0.10.4, )",
+          "Headless.Caching.InMemory": "[1.0.0, )",
+          "Headless.Features.Core": "[1.0.0, )",
+          "Headless.Testing": "[1.0.0, )",
+          "NSubstitute": "[5.3.0, )"
+        }
+      },
       "headless.fluentvalidation": {
         "type": "Project",
         "dependencies": {

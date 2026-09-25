@@ -1,18 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using Headless.Abstractions;
-using Headless.Caching;
-using Headless.Features;
-using Headless.Features.Definitions;
 using Headless.Features.Entities;
 using Headless.Features.Repositories;
-using Headless.Features.Values;
-using Headless.Hosting.Initialization;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 
 namespace Tests;
 
@@ -22,52 +15,11 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
     private const string _Schema = "features_sql_raw";
 
     [Fact]
-    public async Task should_initialize_tables_and_round_trip_feature_value_and_definition()
-    {
-        // given
-        await _DropSchemaAsync();
-        using var host = _CreateHost();
-
-        // when
-        await host.StartAsync(AbortToken);
-        var initializer = host
-            .Services.GetRequiredService<IEnumerable<IInitializer>>()
-            .Single(x => x is IHostedLifecycleService);
-        var valueRepository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
-        var definitionRepository = host.Services.GetRequiredService<IFeatureDefinitionRecordRepository>();
-        var record = new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "true", "Edition", "pro");
-        var group = new FeatureGroupDefinitionRecord(Guid.NewGuid(), "Checkout", "Checkout");
-        var feature = new FeatureDefinitionRecord(
-            Guid.NewGuid(),
-            "Checkout",
-            "Checkout.Enabled",
-            null,
-            "Checkout enabled"
-        );
-
-        await valueRepository.InsertAsync(record, AbortToken);
-        await definitionRepository.SaveAsync([group], [], [], [feature], [], [], AbortToken);
-        var stored = await valueRepository.FindAsync("Checkout.Enabled", "Edition", "pro", AbortToken);
-        var storedGroups = await definitionRepository.GetGroupsListAsync(AbortToken);
-        var storedFeatures = await definitionRepository.GetFeaturesListAsync(AbortToken);
-
-        // then
-        initializer.IsInitialized.Should().BeTrue();
-        (await _TableExistsAsync("FeatureValues")).Should().BeTrue();
-        (await _TableExistsAsync("FeatureDefinitions")).Should().BeTrue();
-        (await _TableExistsAsync("FeatureGroupDefinitions")).Should().BeTrue();
-        stored.Should().NotBeNull();
-        stored!.Value.Should().Be("true");
-        storedGroups.Should().ContainSingle(x => x.Name == "Checkout");
-        storedFeatures.Should().ContainSingle(x => x.Name == "Checkout.Enabled");
-    }
-
-    [Fact]
     public async Task should_persist_all_definitions_across_multiple_chunks_when_batch_exceeds_chunk_size()
     {
         // given — chunk size is 100 rows; 150 forces two chunks
-        await _DropSchemaAsync();
-        using var host = _CreateHost();
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
         await host.StartAsync(AbortToken);
         var definitionRepository = host.Services.GetRequiredService<IFeatureDefinitionRecordRepository>();
 
@@ -104,9 +56,9 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
     public async Task should_create_missing_indexes_when_tables_already_exist()
     {
         // given
-        await _DropSchemaAsync();
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
         await _CreateTablesWithoutIndexesAsync();
-        using var host = _CreateHost();
+        using var host = fixture.CreateHost(_Schema);
 
         // when
         await host.StartAsync(AbortToken);
@@ -125,12 +77,12 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
     public async Task should_rename_legacy_timestamp_columns_without_losing_feature_value()
     {
         // given
-        await _DropSchemaAsync();
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
         var id = Guid.NewGuid();
         var createdAt = new DateTimeOffset(2026, 7, 25, 10, 0, 0, TimeSpan.Zero);
         var updatedAt = createdAt.AddMinutes(5);
         await _CreateLegacyValueTableAsync(id, createdAt, updatedAt);
-        using var host = _CreateHost();
+        using var host = fixture.CreateHost(_Schema);
 
         // when
         await host.StartAsync(AbortToken);
@@ -150,8 +102,8 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
     public async Task should_delete_feature_values_in_chunks_when_count_exceeds_sql_server_parameter_limit()
     {
         // given
-        await _DropSchemaAsync();
-        using var host = _CreateHost();
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
         await host.StartAsync(AbortToken);
         await _BulkInsertFeatureValuesAsync(totalRows: 2101);
         var valueRepository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
@@ -164,216 +116,6 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
         // then
         stored.Should().HaveCount(2101);
         remaining.Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task should_save_a_value_batch_of_inserts_updates_and_deletes()
-    {
-        // given
-        await _DropSchemaAsync();
-        using var host = _CreateHost();
-        await host.StartAsync(AbortToken);
-        var repository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
-        var kept = new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "old", "Tenant", "t1");
-        var removed = new FeatureValueRecord(Guid.NewGuid(), "Reports.Enabled", "old", "Tenant", "t1");
-        await repository.InsertAsync(kept, AbortToken);
-        await repository.InsertAsync(removed, AbortToken);
-        var added = new FeatureValueRecord(Guid.NewGuid(), "Export.Enabled", "new", "Tenant", "t1");
-        var changed = new FeatureValueRecord(kept.Id, "Checkout.Enabled", "new", "Tenant", "t1");
-
-        // when
-        await repository.SaveAsync([added], [changed], [removed], AbortToken);
-
-        // then
-        var stored = await repository.GetListAsync("Tenant", "t1", AbortToken);
-        stored
-            .Select(x => (x.Name, x.Value))
-            .Should()
-            .BeEquivalentTo([("Checkout.Enabled", "new"), ("Export.Enabled", "new")]);
-    }
-
-    [Fact]
-    public async Task should_read_only_the_requested_names_from_a_scope()
-    {
-        // given three values in one scope and a same-named value in another scope
-        await _DropSchemaAsync();
-        using var host = _CreateHost();
-        await host.StartAsync(AbortToken);
-        var repository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
-        await repository.InsertAsync(
-            new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "a", "Tenant", "t1"),
-            AbortToken
-        );
-        await repository.InsertAsync(
-            new FeatureValueRecord(Guid.NewGuid(), "Reports.Enabled", "b", "Tenant", "t1"),
-            AbortToken
-        );
-        await repository.InsertAsync(
-            new FeatureValueRecord(Guid.NewGuid(), "Export.Enabled", "c", "Tenant", "t1"),
-            AbortToken
-        );
-        await repository.InsertAsync(
-            new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "other", "Tenant", "t2"),
-            AbortToken
-        );
-
-        // when
-        var stored = await repository.GetListAsync(
-            new HashSet<string>(StringComparer.Ordinal) { "Checkout.Enabled", "Export.Enabled" },
-            "Tenant",
-            "t1",
-            AbortToken
-        );
-
-        // then
-        stored
-            .Select(x => (x.Name, x.Value))
-            .Should()
-            .BeEquivalentTo([("Checkout.Enabled", "a"), ("Export.Enabled", "c")]);
-    }
-
-    [Fact]
-    public async Task should_leave_every_value_unchanged_when_a_write_in_the_batch_fails()
-    {
-        // given
-        await _DropSchemaAsync();
-        using var host = _CreateHost();
-        await host.StartAsync(AbortToken);
-        var repository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
-        var first = new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "old", "Tenant", "t1");
-        var second = new FeatureValueRecord(Guid.NewGuid(), "Reports.Enabled", "old", "Tenant", "t1");
-        await repository.InsertAsync(first, AbortToken);
-        await repository.InsertAsync(second, AbortToken);
-        var added = new FeatureValueRecord(Guid.NewGuid(), "Export.Enabled", "new", "Tenant", "t1");
-        var validUpdate = new FeatureValueRecord(first.Id, "Checkout.Enabled", "new", "Tenant", "t1");
-
-        // the column rejects this value, so the batch fails after the insert and the first update already ran
-        var failingUpdate = new FeatureValueRecord(
-            second.Id,
-            "Reports.Enabled",
-            new string('x', FeatureValueRecordConstants.ValueMaxLength + 1),
-            "Tenant",
-            "t1"
-        );
-
-        // when
-        var act = async () => await repository.SaveAsync([added], [validUpdate, failingUpdate], [], AbortToken);
-
-        // then
-        await act.Should().ThrowAsync<SqlException>();
-        var stored = await repository.GetListAsync("Tenant", "t1", AbortToken);
-        stored
-            .Select(x => (x.Name, x.Value))
-            .Should()
-            .BeEquivalentTo([("Checkout.Enabled", "old"), ("Reports.Enabled", "old")]);
-    }
-
-    [Fact]
-    public async Task should_roll_back_the_batch_when_an_updated_row_was_deleted_by_another_writer()
-    {
-        // given
-        await _DropSchemaAsync();
-        using var host = _CreateHost();
-        await host.StartAsync(AbortToken);
-        var repository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
-        var added = new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "new", "Tenant", "t1");
-        var vanished = new FeatureValueRecord(Guid.NewGuid(), "Reports.Enabled", "new", "Tenant", "t1");
-
-        // when the batch updates a row nobody stored (another writer deleted it after it was read)
-        var act = async () => await repository.SaveAsync([added], [vanished], [], AbortToken);
-
-        // then the whole batch fails and the insert that ran before it is rolled back
-        await act.Should().ThrowAsync<DBConcurrencyException>();
-        (await repository.GetListAsync("Tenant", "t1", AbortToken)).Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task should_let_every_concurrent_writer_of_a_new_name_succeed()
-    {
-        // given
-        await _DropSchemaAsync();
-        using var host = _CreateHost();
-        await host.StartAsync(AbortToken);
-        // The store reads definitions only to warm its cache; the storage-only host does not register the
-        // definition manager's dependencies, so the store is built over the host's real repository and cache.
-        var store = new FeatureValueStore(
-            Substitute.For<IFeatureDefinitionManager>(),
-            host.Services.GetRequiredService<IFeatureValueRecordRepository>(),
-            new SequentialGuidGenerator(SequentialGuidType.Version7),
-            host.Services.GetRequiredService<ICache>()
-        );
-        var repository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
-
-        // when several writers set the same, not yet stored, name at once
-        var writes = Enumerable
-            .Range(0, 8)
-            .Select(i =>
-                store.SetAllAsync(
-                    new Dictionary<string, string?>(StringComparer.Ordinal) { ["Checkout.Enabled"] = $"v{i}" },
-                    "Tenant",
-                    "t1",
-                    AbortToken
-                )
-            );
-        await Task.WhenAll(writes);
-
-        // then every write succeeds and exactly one row holds one of their values
-        var stored = await repository.GetListAsync("Tenant", "t1", AbortToken);
-        stored.Should().ContainSingle().Which.Value.Should().MatchRegex("^v[0-7]$");
-    }
-
-    private IHost _CreateHost()
-    {
-        var builder = Host.CreateApplicationBuilder();
-        // unify: management-core deps
-        builder.Services.AddSingleton(TimeProvider.System);
-        // The value store caches every read, and the host refuses to start without a registered cache.
-        builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
-        builder.Services.AddHeadlessFeatures(setup =>
-        {
-            setup.ConfigureStorage(options => options.Schema = _Schema);
-            setup.UseSqlServer(fixture.ConnectionString);
-        });
-
-        return builder.Build();
-    }
-
-    private async Task _DropSchemaAsync()
-    {
-        await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        await using var command = new SqlCommand(
-            $"""
-            IF OBJECT_ID(N'{_Schema}.FeatureValues', N'U') IS NOT NULL DROP TABLE [{_Schema}].[FeatureValues];
-            IF OBJECT_ID(N'{_Schema}.FeatureDefinitions', N'U') IS NOT NULL DROP TABLE [{_Schema}].[FeatureDefinitions];
-            IF OBJECT_ID(N'{_Schema}.FeatureGroupDefinitions', N'U') IS NOT NULL DROP TABLE [{_Schema}].[FeatureGroupDefinitions];
-            IF TYPE_ID(N'{_Schema}.HeadlessFeaturesIdList') IS NOT NULL DROP TYPE [{_Schema}].[HeadlessFeaturesIdList];
-            IF TYPE_ID(N'{_Schema}.HeadlessFeaturesNameList') IS NOT NULL DROP TYPE [{_Schema}].[HeadlessFeaturesNameList];
-            IF EXISTS (SELECT * FROM sys.schemas WHERE name = N'{_Schema}') EXEC(N'DROP SCHEMA [{_Schema}]');
-            """,
-            connection
-        );
-        await command.ExecuteNonQueryAsync(AbortToken);
-    }
-
-    private async Task<bool> _TableExistsAsync(string tableName)
-    {
-        await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        await using var command = new SqlCommand(
-            """
-            SELECT CASE WHEN EXISTS (
-                SELECT 1
-                FROM information_schema.tables
-                WHERE table_schema = @schema AND table_name = @table
-            ) THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END
-            """,
-            connection
-        );
-        command.Parameters.AddWithValue("@schema", _Schema);
-        command.Parameters.AddWithValue("@table", tableName);
-
-        return (bool)await command.ExecuteScalarAsync(AbortToken);
     }
 
     private async Task<bool> _IndexExistsAsync(string tableName, string indexName)
