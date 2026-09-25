@@ -21,9 +21,13 @@ namespace Headless.Hosting.Validation;
 /// to turn them off. A diagnostic that probes a remote dependency or measures cost belongs in its own hosted service
 /// with a mode, not here.
 /// </para>
+/// <para>
+/// The <c>Headless</c> prefix keeps the name distinct from <c>Microsoft.Extensions.Options.IStartupValidator</c>, which
+/// most files that register services also import.
+/// </para>
 /// </remarks>
 [PublicAPI]
-public interface IStartupValidator
+public interface IHeadlessStartupValidator
 {
     /// <summary>Checks the configuration this validator owns and throws when it is wrong.</summary>
     /// <param name="cancellationToken">Cancelled when host startup is aborted.</param>

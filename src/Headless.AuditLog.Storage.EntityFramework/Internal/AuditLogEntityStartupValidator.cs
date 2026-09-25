@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Headless.AuditLog.Internal;
 
 internal sealed class AuditLogEntityStartupValidator<TContext>(IDbContextFactory<TContext> dbFactory)
-    : IStartupValidator
+    : IHeadlessStartupValidator
     where TContext : DbContext
 {
     public async Task ValidateAsync(CancellationToken cancellationToken)

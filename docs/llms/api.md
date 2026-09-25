@@ -553,7 +553,7 @@ Surface filtering runs before schema generation and is independent of API Explor
 - Registers OpenAPI services when `OpenApi.Enabled` is `true`.
 - Configures service discovery when `HttpClient.UseServiceDiscovery` is `true`.
 - Configures HttpClient defaults for standard resilience, service discovery, and application User-Agent.
-- Adds a startup validator (`IStartupValidator`) that fails host start, naming every missing call, when `UseHeadless()`, `UseStatusCodesRewriter()`, or `MapHeadlessEndpoints()` was not applied.
+- Adds a startup validator (`IHeadlessStartupValidator`) that fails host start, naming every missing call, when `UseHeadless()`, `UseStatusCodesRewriter()`, or `MapHeadlessEndpoints()` was not applied.
 
 ---
 

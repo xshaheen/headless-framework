@@ -3,7 +3,7 @@
 namespace Headless.Hosting.Validation;
 
 /// <summary>
-/// Thrown at host startup when two or more <see cref="IStartupValidator" /> instances fail. Each failure is one of
+/// Thrown at host startup when two or more <see cref="IHeadlessStartupValidator" /> instances fail. Each failure is one of
 /// the <see cref="AggregateException.InnerExceptions" />, with its original type.
 /// </summary>
 /// <remarks>

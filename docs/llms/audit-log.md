@@ -375,7 +375,7 @@ builder.HasKey(e => e.Id); // single-column PK for SQLite
 - Registers `IAuditLogStore` as scoped (`EfAuditLogStore`).
 - Registers `IAuditLog<TContext>` as scoped (`EfAuditLog<TContext>`).
 - Registers `IReadAuditLog<TContext>` as singleton (`EfReadAuditLog<TContext>`).
-- Registers `AuditLogEntityStartupValidator<TContext>` as an `IStartupValidator` (validates the model at startup).
+- Registers `AuditLogEntityStartupValidator<TContext>` as an `IHeadlessStartupValidator` (validates the model at startup).
 - Automatic `ChangeTracker` capture and the fluent model policy are supplied by `Headless.EntityFramework`; this package only selects EF-backed audit storage.
 
 ---

@@ -26,7 +26,7 @@ public sealed class SetupHeadlessTenancyTests
             .ContainSingle();
         builder
             .Services.Where(descriptor =>
-                descriptor.ServiceType == typeof(IStartupValidator)
+                descriptor.ServiceType == typeof(IHeadlessStartupValidator)
                 && string.Equals(
                     descriptor.ImplementationType?.Name,
                     "HeadlessTenancyStartupValidator",
@@ -68,9 +68,9 @@ public sealed class SetupHeadlessTenancyTests
         builder.AddHeadlessTenancy(tenancy => tenancy.RecordSeam("Http", TenantPostureStatus.Configured));
 
         await using var provider = builder.Services.BuildServiceProvider();
-        var hostedService = (IStartupValidator)
+        var hostedService = (IHeadlessStartupValidator)
             provider
-                .GetServices<IStartupValidator>()
+                .GetServices<IHeadlessStartupValidator>()
                 .Single(service =>
                     string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
                 );
@@ -99,9 +99,9 @@ public sealed class SetupHeadlessTenancyTests
         builder.AddHeadlessTenancy(tenancy => tenancy.RecordSeam("Http", TenantPostureStatus.Configured));
 
         await using var provider = builder.Services.BuildServiceProvider();
-        var hostedService = (IStartupValidator)
+        var hostedService = (IHeadlessStartupValidator)
             provider
-                .GetServices<IStartupValidator>()
+                .GetServices<IHeadlessStartupValidator>()
                 .Single(service =>
                     string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
                 );
@@ -219,9 +219,9 @@ public sealed class SetupHeadlessTenancyTests
         builder.AddHeadlessTenancy(tenancy => tenancy.RecordSeam("Http", TenantPostureStatus.Configured));
 
         await using var provider = builder.Services.BuildServiceProvider();
-        var hostedService = (IStartupValidator)
+        var hostedService = (IHeadlessStartupValidator)
             provider
-                .GetServices<IStartupValidator>()
+                .GetServices<IHeadlessStartupValidator>()
                 .Single(service =>
                     string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
                 );
@@ -247,9 +247,9 @@ public sealed class SetupHeadlessTenancyTests
         builder.AddHeadlessTenancy(tenancy => tenancy.RecordSeam("Http", TenantPostureStatus.Configured));
 
         await using var provider = builder.Services.BuildServiceProvider();
-        var hostedService = (IStartupValidator)
+        var hostedService = (IHeadlessStartupValidator)
             provider
-                .GetServices<IStartupValidator>()
+                .GetServices<IHeadlessStartupValidator>()
                 .Single(service =>
                     string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
                 );
@@ -272,9 +272,9 @@ public sealed class SetupHeadlessTenancyTests
         builder.AddHeadlessTenancy(_ => { });
 
         await using var provider = builder.Services.BuildServiceProvider();
-        var hostedService = (IStartupValidator)
+        var hostedService = (IHeadlessStartupValidator)
             provider
-                .GetServices<IStartupValidator>()
+                .GetServices<IHeadlessStartupValidator>()
                 .Single(service =>
                     string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
                 );
@@ -302,9 +302,9 @@ public sealed class SetupHeadlessTenancyTests
         builder.AddHeadlessTenancy(_ => { });
 
         await using var provider = builder.Services.BuildServiceProvider();
-        var hostedService = (IStartupValidator)
+        var hostedService = (IHeadlessStartupValidator)
             provider
-                .GetServices<IStartupValidator>()
+                .GetServices<IHeadlessStartupValidator>()
                 .Single(service =>
                     string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
                 );

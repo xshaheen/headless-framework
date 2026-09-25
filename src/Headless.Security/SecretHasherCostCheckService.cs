@@ -10,16 +10,10 @@ using Microsoft.Extensions.Options;
 namespace Headless.Security;
 
 /// <summary>
-/// Checks the secret-hasher configuration when the host starts: the selected algorithm must be registered, and its
-/// measured hash cost must fall inside <see cref="SecretHasherCostCheckOptions" />.
+/// Measures the selected secret-hash algorithm's cost when the host starts, and reports a duration outside
+/// <see cref="SecretHasherCostCheckOptions" />.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The setup builder already guarantees exactly one selected algorithm; the registration check catches a <c>Use*</c>
-/// extension that selected an id without registering a matching <see cref="ISecretHashAlgorithm" />. It is not
-/// governed by <see cref="SecretHasherCostCheckOptions.Mode" />: a hasher that cannot hash is always a startup failure,
-/// never a warning. It runs in <see cref="StartingAsync" />, before any other hosted service starts.
-/// </para>
 /// <para>
 /// The benchmark hashes once to warm up, then three more times, and judges the median so one scheduler hiccup cannot
 /// trip it. It measures with the registered <see cref="TimeProvider" />, once per service instance, because each
@@ -27,8 +21,13 @@ namespace Headless.Security;
 /// it runs in <see cref="StartingAsync" /> and blocks the host. <c>Warn</c> only logs, so it runs in the background
 /// from <see cref="StartedAsync" /> and never delays startup; stopping the host cancels it between samples.
 /// </para>
+/// <para>
+/// This is a diagnostic with a mode, so it is its own hosted service rather than an <c>IHeadlessStartupValidator</c>.
+/// <see cref="SecretHasherRegistrationValidator" /> fails startup when the selected algorithm is missing, before this
+/// service runs; this service skips the benchmark in that case instead of reporting the same problem twice.
+/// </para>
 /// </remarks>
-internal sealed class SecretHasherStartupValidationService(
+internal sealed class SecretHasherCostCheckService(
     IServiceProvider serviceProvider,
     IOptions<SecretHasherOptions> options
 ) : IHostedLifecycleService, IDisposable
@@ -49,8 +48,8 @@ internal sealed class SecretHasherStartupValidationService(
 
     /// <inheritdoc />
     /// <exception cref="InvalidOperationException">
-    /// The selected algorithm is not registered, or the measured cost is out of range and
-    /// <see cref="SecretHasherCostCheckOptions.Mode" /> is <see cref="SecretHasherCostCheckMode.Strict" />.
+    /// The measured cost is out of range and <see cref="SecretHasherCostCheckOptions.Mode" /> is
+    /// <see cref="SecretHasherCostCheckMode.Strict" />.
     /// </exception>
     public Task StartingAsync(CancellationToken cancellationToken)
     {
@@ -61,11 +60,15 @@ internal sealed class SecretHasherStartupValidationService(
 
         var costCheck = options.Value.CostCheck;
         var selected = serviceProvider.GetRequiredService<SecretHasherAlgorithmSelection>().AlgorithmId;
-        var algorithm =
-            serviceProvider
-                .GetServices<ISecretHashAlgorithm>()
-                .FirstOrDefault(a => string.Equals(a.Id, selected, StringComparison.Ordinal))
-            ?? throw new InvalidOperationException(SecretHasherErrors.AlgorithmNotRegistered(selected));
+        var algorithm = serviceProvider
+            .GetServices<ISecretHashAlgorithm>()
+            .FirstOrDefault(a => string.Equals(a.Id, selected, StringComparison.Ordinal));
+
+        if (algorithm is null || costCheck.Mode is SecretHasherCostCheckMode.Off)
+        {
+            // A missing algorithm is SecretHasherRegistrationValidator's failure to report.
+            return Task.CompletedTask;
+        }
 
         if (costCheck.Mode is SecretHasherCostCheckMode.Warn)
         {
@@ -208,7 +211,7 @@ internal sealed class SecretHasherStartupValidationService(
 
     private ILogger _CreateLogger()
     {
-        return serviceProvider.GetService<ILoggerFactory>()?.CreateLogger(typeof(SecretHasherStartupValidationService))
+        return serviceProvider.GetService<ILoggerFactory>()?.CreateLogger(typeof(SecretHasherCostCheckService))
             ?? NullLogger.Instance;
     }
 

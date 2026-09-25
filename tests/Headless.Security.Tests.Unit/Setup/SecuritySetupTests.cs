@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Validation;
 using Headless.Security;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -179,7 +180,7 @@ public sealed class SecuritySetupTests
     }
 
     [Fact]
-    public void should_register_the_startup_check()
+    public void should_register_the_registration_validator_and_the_cost_check()
     {
         // given
         var services = new ServiceCollection();
@@ -189,9 +190,39 @@ public sealed class SecuritySetupTests
 
         // then
         services
+            .Where(d => d.ServiceType == typeof(IHeadlessStartupValidator))
+            .Should()
+            .ContainSingle(d => d.ImplementationType == typeof(SecretHasherRegistrationValidator));
+        services
             .Where(d => d.ServiceType == typeof(IHostedService))
             .Should()
-            .ContainSingle(d => d.ImplementationType == typeof(SecretHasherStartupValidationService));
+            .Contain(d => d.ImplementationType == typeof(SecretHasherCostCheckService));
+    }
+
+    [Fact]
+    public async Task should_fail_host_start_when_the_selected_algorithm_is_not_registered()
+    {
+        // given — a custom Use* extension that selects an id but never registers the algorithm.
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddHeadlessSecretHasher(setup =>
+        {
+            setup.Configure(o => o.CostCheck.Mode = SecretHasherCostCheckMode.Off);
+            setup.RegisterExtension(new SelectOnlyExtension());
+        });
+        using var host = builder.Build();
+
+        // when
+        var act = () => host.StartAsync(CancellationToken.None);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*'custom'*no ISecretHashAlgorithm*");
+    }
+
+    private sealed class SelectOnlyExtension : ISecretHashAlgorithmOptionsExtension
+    {
+        public string AlgorithmId => "custom";
+
+        public void AddServices(IServiceCollection services) { }
     }
 
     [Fact]

@@ -468,7 +468,7 @@ The registration validates identifier names using cross-provider rules (SQL Serv
 - Registers `ISettingValueRecordRepository` (`EfSettingValueRecordRepository<TContext>`) as singleton
 - Registers `ISettingDefinitionRecordRepository` (`EfSettingDefinitionRecordRepository<TContext>`) as singleton
 - Registers validated `SettingsStorageOptions`
-- Registers `SettingsEntityStartupValidator<TContext>` as an `IStartupValidator`
+- Registers `SettingsEntityStartupValidator<TContext>` as an `IHeadlessStartupValidator`
 
 ---
 

@@ -8,23 +8,25 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.SecretHashing;
 
-public sealed class SecretHasherStartupValidationServiceTests
+public sealed class SecretHasherCostCheckServiceTests
 {
-    [Fact]
-    public async Task should_fail_startup_when_the_selected_algorithm_is_not_registered_even_with_the_cost_check_off()
+    [Theory]
+    [InlineData(SecretHasherCostCheckMode.Warn)]
+    [InlineData(SecretHasherCostCheckMode.Strict)]
+    public async Task should_leave_a_missing_algorithm_to_the_registration_validator(SecretHasherCostCheckMode mode)
     {
         // given — a faulty Use* extension selected an id but registered no matching algorithm.
         await using var provider = _BuildProvider(
-            o => o.CostCheck.Mode = SecretHasherCostCheckMode.Off,
+            o => o.CostCheck.Mode = mode,
             algorithm: null,
             selectedAlgorithm: SecretHashAlgorithms.Argon2id
         );
 
         // when
-        var act = () => _Service(provider).StartingAsync(CancellationToken.None);
+        var act = () => _StartAsync(_Service(provider));
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*'argon2id'*no ISecretHashAlgorithm*");
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]
@@ -156,7 +158,7 @@ public sealed class SecretHasherStartupValidationServiceTests
     public async Task should_stop_the_background_benchmark_between_samples_when_the_host_stops()
     {
         // given — the host starts stopping while the warm-up hash is running.
-        SecretHasherStartupValidationService? sut = null;
+        SecretHasherCostCheckService? sut = null;
         Task? stopping = null;
         var algorithm = new TimedAlgorithm
         {
@@ -257,19 +259,16 @@ public sealed class SecretHasherStartupValidationServiceTests
         return services.BuildServiceProvider();
     }
 
-    private static async Task _StartAsync(SecretHasherStartupValidationService sut)
+    private static async Task _StartAsync(SecretHasherCostCheckService sut)
     {
         await sut.StartingAsync(CancellationToken.None);
         await sut.StartedAsync(CancellationToken.None);
         await sut.BackgroundCheck;
     }
 
-    private static SecretHasherStartupValidationService _Service(IServiceProvider provider)
+    private static SecretHasherCostCheckService _Service(IServiceProvider provider)
     {
-        return new SecretHasherStartupValidationService(
-            provider,
-            provider.GetRequiredService<IOptions<SecretHasherOptions>>()
-        );
+        return new SecretHasherCostCheckService(provider, provider.GetRequiredService<IOptions<SecretHasherOptions>>());
     }
 
     /// <summary>An algorithm whose every hash advances a fake clock by a scripted cost.</summary>

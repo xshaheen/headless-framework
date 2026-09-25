@@ -7,7 +7,7 @@ namespace Headless.MultiTenancy;
 
 /// <summary>Validates configured tenant posture at host startup and logs non-PII diagnostics from all registered validators.</summary>
 /// <remarks>
-/// Registered as an <see cref="IStartupValidator"/> by the Headless tenancy root setup, so it runs before any hosted
+/// Registered as an <see cref="IHeadlessStartupValidator"/> by the Headless tenancy root setup, so it runs before any hosted
 /// service's <c>StartAsync</c>. Otherwise a misconfigured tenancy posture could allow downstream hosted services
 /// (background workers, messaging consumers, …) to begin processing under the wrong tenant assumptions before this
 /// validator failed the host.
@@ -21,7 +21,7 @@ internal sealed class HeadlessTenancyStartupValidator(
     IServiceProvider serviceProvider,
     TenantPostureManifest manifest,
     ILogger<HeadlessTenancyStartupValidator> logger
-) : IStartupValidator
+) : IHeadlessStartupValidator
 {
     /// <inheritdoc/>
     /// <remarks>

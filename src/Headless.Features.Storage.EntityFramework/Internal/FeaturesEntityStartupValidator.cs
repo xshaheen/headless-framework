@@ -14,7 +14,7 @@ namespace Headless.Features.Internal;
 /// <typeparam name="TContext">The <see cref="DbContext"/> type to validate.</typeparam>
 /// <param name="dbFactory">Factory used to obtain a <typeparamref name="TContext"/> for model inspection.</param>
 internal sealed class FeaturesEntityStartupValidator<TContext>(IDbContextFactory<TContext> dbFactory)
-    : IStartupValidator
+    : IHeadlessStartupValidator
     where TContext : DbContext
 {
     /// <summary>Validates that all required feature entity types are registered in the EF model.</summary>

@@ -94,7 +94,7 @@ public sealed class StartupValidatorTests : TestBase
 #pragma warning restore CA2263
 
         // then
-        services.Count(descriptor => descriptor.ServiceType == typeof(IStartupValidator)).Should().Be(1);
+        services.Count(descriptor => descriptor.ServiceType == typeof(IHeadlessStartupValidator)).Should().Be(1);
         services.Count(descriptor => descriptor.ServiceType == typeof(IHostedService)).Should().Be(1);
     }
 
@@ -109,7 +109,7 @@ public sealed class StartupValidatorTests : TestBase
         services.AddStartupValidator(_ => new ScriptedValidator());
 
         // then
-        services.Count(descriptor => descriptor.ServiceType == typeof(IStartupValidator)).Should().Be(2);
+        services.Count(descriptor => descriptor.ServiceType == typeof(IHeadlessStartupValidator)).Should().Be(2);
         services.Count(descriptor => descriptor.ServiceType == typeof(IHostedService)).Should().Be(1);
     }
 
@@ -123,7 +123,7 @@ public sealed class StartupValidatorTests : TestBase
         var act = () => services.AddStartupValidator(typeof(string));
 
         // then
-        act.Should().Throw<ArgumentException>().WithMessage("*IStartupValidator*");
+        act.Should().Throw<ArgumentException>().WithMessage("*IHeadlessStartupValidator*");
     }
 
     [Fact]
@@ -158,7 +158,7 @@ public sealed class StartupValidatorTests : TestBase
 
     private sealed class TypedStartupException(string message) : InvalidOperationException(message);
 
-    private sealed class ScriptedValidator : IStartupValidator
+    private sealed class ScriptedValidator : IHeadlessStartupValidator
     {
         public Exception? Failure { get; init; }
 
@@ -175,7 +175,7 @@ public sealed class StartupValidatorTests : TestBase
         }
     }
 
-    private sealed class PassingValidator : IStartupValidator
+    private sealed class PassingValidator : IHeadlessStartupValidator
     {
         public Task ValidateAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }

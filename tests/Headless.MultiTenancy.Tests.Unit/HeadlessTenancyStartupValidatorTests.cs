@@ -69,9 +69,9 @@ public sealed class HeadlessTenancyStartupValidatorTests : TestBase
         );
 
         await using var provider = builder.Services.BuildServiceProvider();
-        var hostedService = (IStartupValidator)
+        var hostedService = (IHeadlessStartupValidator)
             provider
-                .GetServices<IStartupValidator>()
+                .GetServices<IHeadlessStartupValidator>()
                 .Single(service =>
                     string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
                 );

@@ -177,7 +177,10 @@ public static class SetupSecurity
         services.AddOptions<SecretHasherOptions, SecretHasherOptionsValidator>();
         services.AddSingleton(new SecretHasherAlgorithmSelection(extension.AlgorithmId));
         services.TryAddSingleton<ISecretHasher, SecretHasher>();
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, SecretHasherStartupValidationService>());
+        // The validator goes first so the startup-validation runner, and with it the registration check, always runs
+        // before the cost check that relies on the algorithm being there.
+        services.AddStartupValidator<SecretHasherRegistrationValidator>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, SecretHasherCostCheckService>());
 
         // PBKDF2 always verifies, so a host that moved to another algorithm still accepts and upgrades old hashes.
         services.AddOptions<Pbkdf2Sha256HashOptions, Pbkdf2Sha256HashOptionsValidator>();

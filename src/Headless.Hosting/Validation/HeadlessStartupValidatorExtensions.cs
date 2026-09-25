@@ -8,7 +8,7 @@ using Microsoft.Extensions.Hosting;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
-/// <summary>Registers <see cref="IStartupValidator" /> checks that run before any hosted service starts.</summary>
+/// <summary>Registers <see cref="IHeadlessStartupValidator" /> checks that run before any hosted service starts.</summary>
 [PublicAPI]
 public static class HeadlessStartupValidatorExtensions
 {
@@ -19,33 +19,33 @@ public static class HeadlessStartupValidatorExtensions
         /// <returns>The same <see cref="IServiceCollection" /> for chaining.</returns>
         /// <remarks>Idempotent per validator type: a second call for the same type adds nothing.</remarks>
         public IServiceCollection AddStartupValidator<TValidator>()
-            where TValidator : class, IStartupValidator
+            where TValidator : class, IHeadlessStartupValidator
         {
             return services.AddStartupValidator(typeof(TValidator));
         }
 
         /// <summary>Registers <paramref name="validatorType" /> as a singleton startup check.</summary>
         /// <param name="validatorType">
-        /// A concrete type implementing <see cref="IStartupValidator" />, such as a closed generic built with
+        /// A concrete type implementing <see cref="IHeadlessStartupValidator" />, such as a closed generic built with
         /// <see cref="Type.MakeGenericType" /> for a consumer's <c>DbContext</c>.
         /// </param>
         /// <returns>The same <see cref="IServiceCollection" /> for chaining.</returns>
         /// <remarks>Idempotent per validator type: a second call for the same type adds nothing.</remarks>
-        /// <exception cref="ArgumentException"><paramref name="validatorType" /> does not implement <see cref="IStartupValidator" />.</exception>
+        /// <exception cref="ArgumentException"><paramref name="validatorType" /> does not implement <see cref="IHeadlessStartupValidator" />.</exception>
         public IServiceCollection AddStartupValidator(Type validatorType)
         {
             Argument.IsNotNull(services);
             Argument.IsNotNull(validatorType);
 
-            if (!typeof(IStartupValidator).IsAssignableFrom(validatorType))
+            if (!typeof(IHeadlessStartupValidator).IsAssignableFrom(validatorType))
             {
                 throw new ArgumentException(
-                    $"{validatorType.FullName} does not implement {nameof(IStartupValidator)}.",
+                    $"{validatorType.FullName} does not implement {nameof(IHeadlessStartupValidator)}.",
                     nameof(validatorType)
                 );
             }
 
-            services.TryAddEnumerable(ServiceDescriptor.Singleton(typeof(IStartupValidator), validatorType));
+            services.TryAddEnumerable(ServiceDescriptor.Singleton(typeof(IHeadlessStartupValidator), validatorType));
 
             return services._AddStartupValidationRunner();
         }
@@ -57,7 +57,7 @@ public static class HeadlessStartupValidatorExtensions
         /// Every call adds a validator, which suits one validator per named instance of a feature. Use the typed
         /// overloads when repeated registration calls must collapse to one check.
         /// </remarks>
-        public IServiceCollection AddStartupValidator(Func<IServiceProvider, IStartupValidator> factory)
+        public IServiceCollection AddStartupValidator(Func<IServiceProvider, IHeadlessStartupValidator> factory)
         {
             Argument.IsNotNull(services);
             Argument.IsNotNull(factory);

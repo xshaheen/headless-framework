@@ -10,12 +10,12 @@ namespace Headless.Hosting.DependencyInjection;
 /// <c>IServiceCollection.RequireRegisteredService&lt;T&gt;(…)</c> has no registration behind it.
 /// </summary>
 /// <remarks>
-/// Runs as an <see cref="IStartupValidator"/>, before any hosted service's <c>StartAsync</c>. Otherwise background
+/// Runs as an <see cref="IHeadlessStartupValidator"/>, before any hosted service's <c>StartAsync</c>. Otherwise background
 /// workers and message consumers would start under an assumption the container cannot honour, and the first symptom
 /// would be a resolve failure on a live request instead of a refused start.
 /// </remarks>
 internal sealed class RequiredServiceStartupValidator(RequiredServiceRegistry registry, IServiceProvider services)
-    : IStartupValidator
+    : IHeadlessStartupValidator
 {
     /// <inheritdoc/>
     /// <exception cref="MissingRequiredServiceException">One or more declared requirements are unregistered.</exception>

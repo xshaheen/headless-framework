@@ -199,7 +199,7 @@ Application order is tiers → default → named → cross-cutting, all deferred
 
 ### 6. Shared `HeadlessDbContext` + `*EntityStartupValidator<TContext>`
 
-When the EF provider is selected, the feature no longer owns a `DbContext`. The consumer's own `HeadlessDbContext` subclass is registered once via `AddHeadlessDbContext<TContext>` and opts into each feature's entities by calling `modelBuilder.AddHeadless{Feature}(storageOptions)` from `OnModelCreating`. A `*EntityStartupValidator<TContext>` (an `IStartupValidator`, registered automatically by the EF extension) hard-fails at host start if the consumer forgot, with a precise error naming the missing `modelBuilder.AddHeadless{Feature}` call.
+When the EF provider is selected, the feature no longer owns a `DbContext`. The consumer's own `HeadlessDbContext` subclass is registered once via `AddHeadlessDbContext<TContext>` and opts into each feature's entities by calling `modelBuilder.AddHeadless{Feature}(storageOptions)` from `OnModelCreating`. A `*EntityStartupValidator<TContext>` (an `IHeadlessStartupValidator`, registered automatically by the EF extension) hard-fails at host start if the consumer forgot, with a precise error naming the missing `modelBuilder.AddHeadless{Feature}` call.
 
 This replaces the predecessor pattern from PR #327, which used per-context `IModelCacheKeyFactory` implementations and a `ReplaceService<IModelCacheKeyFactory>` consumer recipe. The factory approach worked but added a surface that consumers had to learn and that did not isolate compiled models across distinct service-provider instances (an EF internal limitation). The startup-gate pattern is simpler, fails earlier, and produces a sharper diagnostic. (session history)
 

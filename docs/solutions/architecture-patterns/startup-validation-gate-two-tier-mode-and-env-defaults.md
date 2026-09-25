@@ -33,14 +33,14 @@ tags:
 > the former `CommitProbeMode` (commit-coordination abstractions, since removed) and its only consumer is the EF
 > `CommitInterceptorStartupGate<TContext>` (Tier-2 exception at the end of this document).
 
-> **Update (2026-09-25).** Tier-1 gates now share one mechanism: implement `IStartupValidator`
+> **Update (2026-09-25).** Tier-1 gates now share one mechanism: implement `IHeadlessStartupValidator`
 > (`Headless.Hosting.Validation`) and register it with `AddStartupValidator`. One runner executes every validator in
 > `StartingAsync`, runs all of them even after a failure, rethrows a single failure unwrapped, and wraps two or more in
 > a `StartupValidationException`. The EF entity validators, `RequiredServiceStartupValidator`,
 > `HeadlessTenancyStartupValidator`, `HeadlessServiceDefaultsStartupValidator`, and `HybridCacheBestPracticesAdvisor`
 > all run through it; the per-gate `IHostedLifecycleService` shapes described in the Context table below no longer
 > exist. Tier-2 diagnostics (the secret-hasher cost check, the data-protection key-ring probe) stay bespoke hosted
-> services because each needs its own mode and timing. See "Tier-1 gates are `IStartupValidator`s" under Guidance.
+> services because each needs its own mode and timing. See "Tier-1 gates are `IHeadlessStartupValidator`s" under Guidance.
 
 ## Context
 
@@ -74,9 +74,9 @@ This doc names the latent pattern across those instances and proposes the one mi
 
 The test for tier is **I/O at runtime, not object allocation.** `FeaturesEntityStartupValidator` opens a `DbContext` via `IDbContextFactory` but only reads `context.Model.FindEntityType(...)` — in-memory model metadata, no DB round-trip — so it is correctly Tier-1 despite "creating" a context.
 
-### Tier-1 gates are `IStartupValidator`s
+### Tier-1 gates are `IHeadlessStartupValidator`s
 
-A new Tier-1 gate implements `IStartupValidator` and calls `services.AddStartupValidator<T>()` (or the `Type` overload
+A new Tier-1 gate implements `IHeadlessStartupValidator` and calls `services.AddStartupValidator<T>()` (or the `Type` overload
 for a closed generic, or the factory overload for one validator per named instance). It does not implement
 `IHostedLifecycleService`, add a run-once guard, or write the five empty lifecycle members. The shared runner gives
 every Tier-1 gate the same ordering (before any `StartAsync`) and reports every failing gate in one start instead of
@@ -275,12 +275,12 @@ The only deltas from shipping code: `DiagnosticProbeMode` becomes `HeadlessValid
 
 So the tier taxonomy classifies by *cost/IO*, but the env-default is ultimately a function of **whether the check is correctness-adjacent**. Tier-2 gates whose signal has prod value (outbox atomicity here) may legitimately run `Warn`-everywhere; reserve `Off`-in-prod for purely dev/CI diagnostics. Do not "correct" this gate to `Off`-in-prod to match the generic Tier-2 rule.
 
-### Split a gate by tier, and run a Tier-2 `Warn` after startup (real, `SecretHasherStartupValidationService.cs`)
+### Split a gate by tier, and run a Tier-2 `Warn` after startup (real, `SecretHasherRegistrationValidator.cs` and `SecretHasherCostCheckService.cs`)
 
-The secret-hasher gate holds one check of each tier, so each tier follows its own rule:
+The secret hasher needs one check of each tier, so it ships two types that each follow their tier's rule:
 
-- **Registration (Tier-1).** The selected algorithm id must have a registered `ISecretHashAlgorithm`. It is an in-memory lookup, runs in `StartingAsync`, always throws, and has no switch; `CostCheck.Mode` does not govern it.
-- **Cost benchmark (Tier-2 by latency, not I/O).** One warm-up plus three timed hashes: CPU-bound, but up to four times the configured hash cost on the startup path. The mode is `SecretHasherCostCheckMode { Off, Warn, Strict }`.
+- **Registration (Tier-1), `SecretHasherRegistrationValidator`.** The selected algorithm id must have a registered `ISecretHashAlgorithm`. It is an in-memory lookup and an `IHeadlessStartupValidator`, so it always throws and has no switch; `CostCheck.Mode` does not govern it. The cost check skips a missing algorithm instead of reporting it twice.
+- **Cost benchmark (Tier-2 by latency, not I/O), `SecretHasherCostCheckService`.** Its own hosted service, because it has a mode and timing a validator cannot express. One warm-up plus three timed hashes: CPU-bound, but up to four times the configured hash cost on the startup path. The mode is `SecretHasherCostCheckMode { Off, Warn, Strict }`.
 
 Two choices differ from the generic Tier-2 rule:
 

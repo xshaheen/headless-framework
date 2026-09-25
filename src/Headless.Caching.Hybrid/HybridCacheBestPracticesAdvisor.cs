@@ -14,7 +14,7 @@ internal sealed class HybridCacheBestPracticesAdvisor(
     HybridCacheOptions options,
     ILogger<HybridCacheBestPracticesAdvisor> logger,
     string? instanceName = null
-) : IStartupValidator
+) : IHeadlessStartupValidator
 {
     // AutoRecoveryDelay above this threshold produces a graveyard-sized replay lag.
     private static readonly TimeSpan _AutoRecoveryDelayThreshold = TimeSpan.FromMinutes(5);

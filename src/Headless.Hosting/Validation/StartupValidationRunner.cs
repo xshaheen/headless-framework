@@ -5,14 +5,15 @@ using Microsoft.Extensions.Hosting;
 
 namespace Headless.Hosting.Validation;
 
-/// <summary>Runs every registered <see cref="IStartupValidator" /> before any hosted service starts.</summary>
+/// <summary>Runs every registered <see cref="IHeadlessStartupValidator" /> before any hosted service starts.</summary>
 /// <remarks>
 /// Registered as an <see cref="IHostedService" /> the first time a validator is added, so its
 /// <see cref="StartingAsync" /> runs at that registration's position among the lifecycle services and before every
 /// <see cref="IHostedService.StartAsync" />. Every validator runs even after one fails, so the host reports all
 /// misconfigurations at once.
 /// </remarks>
-internal sealed class StartupValidationRunner(IEnumerable<IStartupValidator> validators) : IHostedLifecycleService
+internal sealed class StartupValidationRunner(IEnumerable<IHeadlessStartupValidator> validators)
+    : IHostedLifecycleService
 {
     /// <inheritdoc />
     /// <exception cref="StartupValidationException">Two or more validators failed.</exception>

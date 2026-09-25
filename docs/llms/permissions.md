@@ -530,7 +530,7 @@ Identifier names are validated using cross-provider rules (SQL Server superset) 
 - Registers `IPermissionGrantRepository` (`EfPermissionGrantRepository<TContext>`) as singleton
 - Registers `IPermissionDefinitionRecordRepository` (`EfPermissionDefinitionRecordRepository<TContext>`) as singleton
 - Registers validated `PermissionsStorageOptions`
-- Registers `PermissionsEntityStartupValidator<TContext>` as an `IStartupValidator`
+- Registers `PermissionsEntityStartupValidator<TContext>` as an `IHeadlessStartupValidator`
 
 ---
 

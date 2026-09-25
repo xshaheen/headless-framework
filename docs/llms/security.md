@@ -101,10 +101,10 @@ The defaults follow the OWASP Password Storage Cheat Sheet:
 
 When raising cost, prefer memory for Argon2id. Measure on production hardware: a verification should take tens of milliseconds, not hundreds.
 
-At host start, `SecretHasherStartupValidationService` makes two checks:
+At host start, two checks run:
 
-1. It fails startup when the algorithm the builder selected has no registered implementation, which only a faulty custom `Use*` extension can cause. This check is cheap, runs in `StartingAsync` before other hosted services, and is not affected by `CostCheck.Mode`.
-2. It benchmarks the selected algorithm: one warm-up hash, then the median of three. It compares the median against `CostCheck.MinimumDuration` (default 5 ms) and `CostCheck.MaximumDuration` (default 1 s). `CostCheck.Mode` decides what happens:
+1. `SecretHasherRegistrationValidator`, an `IHeadlessStartupValidator`, fails startup when the algorithm the builder selected has no registered implementation, which only a faulty custom `Use*` extension can cause. It is cheap, runs before any hosted service starts, and is not affected by `CostCheck.Mode`.
+2. `SecretHasherCostCheckService` benchmarks the selected algorithm: one warm-up hash, then the median of three. It compares the median against `CostCheck.MinimumDuration` (default 5 ms) and `CostCheck.MaximumDuration` (default 1 s). `CostCheck.Mode` decides what happens:
     - `Warn` (the default): the benchmark runs in the background once the host has started, so it never delays startup, and an out-of-range result logs a warning. Stopping the host cancels it between samples.
     - `Strict`: the benchmark runs in `StartingAsync` and an out-of-range result fails startup. Every instance then waits for four hashes before it serves traffic, and one instance on a busy node can fail its start although the parameters are fine, so prefer `Strict` for a staging or CI smoke check over every production replica.
     - `Off`: nothing is measured.
@@ -254,7 +254,7 @@ FluentValidation checks every option type at startup (`ValidateOnStart`). The se
 ### Runtime behavior
 
 - Every service registers as a singleton.
-- `SecretHasherStartupValidationService` checks the registration in `IHostedLifecycleService.StartingAsync`, before other hosted services start, and only once per host. The cost benchmark runs there too under `Strict`, and in the background after startup under `Warn`. [Tuning and the startup cost check](#tuning-and-the-startup-cost-check) covers what it checks.
+- The registration check runs with the other startup validators, before any hosted service starts. `SecretHasherCostCheckService` runs the cost benchmark once per host: in `IHostedLifecycleService.StartingAsync` under `Strict`, and in the background after startup under `Warn`. [Tuning and the startup cost check](#tuning-and-the-startup-cost-check) covers what it checks.
 
 ---
 

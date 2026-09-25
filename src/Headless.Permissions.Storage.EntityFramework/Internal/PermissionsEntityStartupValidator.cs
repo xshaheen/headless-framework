@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Headless.Permissions.Internal;
 
 internal sealed class PermissionsEntityStartupValidator<TContext>(IDbContextFactory<TContext> dbFactory)
-    : IStartupValidator
+    : IHeadlessStartupValidator
     where TContext : DbContext
 {
     public async Task ValidateAsync(CancellationToken cancellationToken)

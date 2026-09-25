@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Headless.MultiTenancy.Internal;
 
 internal sealed class TenantCatalogEntityStartupValidator<TContext>(IDbContextFactory<TContext> dbFactory)
-    : IStartupValidator
+    : IHeadlessStartupValidator
     where TContext : DbContext
 {
     public async Task ValidateAsync(CancellationToken cancellationToken)

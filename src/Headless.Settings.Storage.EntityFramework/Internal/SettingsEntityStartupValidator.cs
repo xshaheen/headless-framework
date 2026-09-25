@@ -15,7 +15,7 @@ namespace Headless.Settings.Internal;
 /// <typeparam name="TContext">The <see cref="DbContext"/> type to inspect at startup.</typeparam>
 /// <param name="dbFactory">Factory used to obtain a <typeparamref name="TContext"/> for model inspection.</param>
 internal sealed class SettingsEntityStartupValidator<TContext>(IDbContextFactory<TContext> dbFactory)
-    : IStartupValidator
+    : IHeadlessStartupValidator
     where TContext : DbContext
 {
     /// <summary>

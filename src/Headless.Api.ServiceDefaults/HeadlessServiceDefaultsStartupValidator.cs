@@ -21,7 +21,7 @@ namespace Headless.Api.ServiceDefaults;
 internal sealed class HeadlessServiceDefaultsStartupValidator(
     HeadlessServiceDefaultsOptions options,
     HeadlessStartupState state
-) : IStartupValidator
+) : IHeadlessStartupValidator
 {
     /// <inheritdoc/>
     /// <exception cref="InvalidOperationException">One or more required pipeline calls were not made.</exception>
