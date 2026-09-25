@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Caching;
 using Headless.Features;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,6 +22,10 @@ public sealed class FeaturesEntityValidationStartupGateTests(FeaturesTestFixture
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddDbContextFactory<MissingFeaturesEntityDbContext>(options =>
             options.UseNpgsql(Fixture.SqlConnectionString)
+        );
+        // The value store caches every read, and the host refuses to start without a registered cache.
+        builder.Services.AddHeadlessCaching(setup =>
+            setup.UseRedis(options => options.ConnectionMultiplexer = Fixture.Multiplexer)
         );
         builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<MissingFeaturesEntityDbContext>());
         using var host = builder.Build();

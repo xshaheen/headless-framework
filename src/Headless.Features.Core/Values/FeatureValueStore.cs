@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Caching;
+using Headless.Checks;
 using Headless.Features.Definitions;
 using Headless.Features.Entities;
 using Headless.Features.Repositories;
@@ -45,6 +46,29 @@ public interface IFeatureValueStore
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Stores or clears several feature values under one provider scope in a single repository transaction:
+    /// either every value changes or none does.
+    /// </summary>
+    /// <remarks>
+    /// When another writer inserts or deletes one of these rows between the read and the save, the save fails as a
+    /// whole; the store then reads the rows again, plans the batch against them, and retries, up to three attempts.
+    /// The last writer's value wins. Any other failure is rethrown unchanged.
+    /// </remarks>
+    /// <param name="values">
+    /// The values keyed by feature name. A <see langword="null"/> value removes the stored entry for that feature.
+    /// </param>
+    /// <param name="providerName">The provider name.</param>
+    /// <param name="providerKey">An optional key that qualifies the provider scope.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="values"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
+    Task SetAllAsync(
+        IReadOnlyDictionary<string, string?> values,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Deletes all stored values for feature <paramref name="name"/> matching <paramref name="providerName"/>/<paramref name="providerKey"/>.</summary>
     /// <param name="name">The feature name.</param>
     /// <param name="providerName">The provider name.</param>
@@ -71,6 +95,9 @@ public sealed class FeatureValueStore(
 ) : IFeatureValueStore
 {
     private readonly TimeSpan _cacheExpiration = 5.Hours();
+
+    /// <summary>How many times a batch is planned and saved before a concurrent-writer collision is surfaced.</summary>
+    private const int _MaxSaveAttempts = 3;
 
     /// <inheritdoc/>
     public async Task<string?> GetOrDefaultAsync(
@@ -133,6 +160,131 @@ public sealed class FeatureValueStore(
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task SetAllAsync(
+        IReadOnlyDictionary<string, string?> values,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(values);
+        Argument.IsNotNull(providerName);
+
+        if (values.Count == 0)
+        {
+            return;
+        }
+
+        var names = values.Keys.ToHashSet(StringComparer.Ordinal);
+
+        for (var attempt = 1; ; attempt++)
+        {
+            var existingRecords = await repository
+                .GetListAsync(names, providerName, providerKey, cancellationToken)
+                .ConfigureAwait(false);
+
+            var readIds = existingRecords.Select(x => x.Id).ToHashSet();
+            var changes = _PlanChanges(values, existingRecords, providerName, providerKey);
+
+            try
+            {
+                await repository
+                    .SaveAsync(changes.Inserted, changes.Updated, changes.Deleted, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception) when (attempt < _MaxSaveAttempts && !cancellationToken.IsCancellationRequested)
+            {
+                // A concurrent writer that inserted or deleted one of these rows between the read and the save fails
+                // the whole batch (a unique-key violation, or an update that found no row). Only that collision is
+                // worth planning again; a failure against an unchanged scope is the caller's to see.
+                var currentRecords = await repository
+                    .GetListAsync(names, providerName, providerKey, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (currentRecords.Select(x => x.Id).ToHashSet().SetEquals(readIds))
+                {
+                    throw;
+                }
+
+                continue;
+            }
+
+            if (changes.CacheItems.Count != 0)
+            {
+                await cache
+                    .UpsertAllAsync(changes.CacheItems, _cacheExpiration, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (changes.RemovedCacheKeys.Count != 0)
+            {
+                await cache.RemoveAllAsync(changes.RemovedCacheKeys, cancellationToken).ConfigureAwait(false);
+            }
+
+            return;
+        }
+    }
+
+    /// <summary>Splits the requested values into the inserts, updates, and deletes that bring the stored rows to them.</summary>
+    private BatchChanges _PlanChanges(
+        IReadOnlyDictionary<string, string?> values,
+        List<FeatureValueRecord> existingRecords,
+        string providerName,
+        string? providerKey
+    )
+    {
+        var existingByName = existingRecords.ToDictionary(x => x.Name, StringComparer.Ordinal);
+        var changes = new BatchChanges();
+
+        foreach (var (name, value) in values)
+        {
+            var cacheKey = FeatureValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
+            existingByName.TryGetValue(name, out var existing);
+
+            if (value is null)
+            {
+                if (existing is not null)
+                {
+                    changes.Deleted.Add(existing);
+                }
+
+                changes.RemovedCacheKeys.Add(cacheKey);
+
+                continue;
+            }
+
+            if (existing is null)
+            {
+                changes.Inserted.Add(
+                    new FeatureValueRecord(guidGenerator.Create(), name, value, providerName, providerKey)
+                );
+            }
+            else
+            {
+                existing.Value = value;
+                changes.Updated.Add(existing);
+            }
+
+            changes.CacheItems[cacheKey] = new FeatureValueCacheItem(value);
+        }
+
+        return changes;
+    }
+
+    private sealed class BatchChanges
+    {
+        public List<FeatureValueRecord> Inserted { get; } = [];
+
+        public List<FeatureValueRecord> Updated { get; } = [];
+
+        public List<FeatureValueRecord> Deleted { get; } = [];
+
+        public Dictionary<string, FeatureValueCacheItem> CacheItems { get; } = new(StringComparer.Ordinal);
+
+        public List<string> RemovedCacheKeys { get; } = [];
     }
 
     /// <inheritdoc/>

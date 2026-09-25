@@ -68,4 +68,33 @@ public interface ISettingValueProvider : ISettingValueReadProvider
     /// <param name="providerKey">Optional scoping key (e.g. tenant or user identifier).</param>
     /// <param name="cancellationToken">The abort token.</param>
     Task ClearAsync(SettingDefinition setting, string? providerKey, CancellationToken cancellationToken = default);
+
+    /// <summary>Stores or clears several values scoped to <paramref name="providerKey"/> as one write.</summary>
+    /// <remarks>
+    /// <c>SettingManager</c> routes every write through this member. The default implementation calls
+    /// <see cref="SetAsync"/> and <see cref="ClearAsync"/> once per entry, so a failure part-way leaves the earlier
+    /// entries written; override it when the backing source can apply the whole batch atomically, as
+    /// <see cref="StoreSettingValueProvider"/> does.
+    /// </remarks>
+    /// <param name="values">The values to write, each paired with its definition. A <see langword="null"/> value clears the setting.</param>
+    /// <param name="providerKey">Optional scoping key (e.g. tenant or user identifier).</param>
+    /// <param name="cancellationToken">The abort token.</param>
+    async Task SetAllAsync(
+        IReadOnlyList<KeyValuePair<SettingDefinition, string?>> values,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        foreach (var (setting, value) in values)
+        {
+            if (value is null)
+            {
+                await ClearAsync(setting, providerKey, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await SetAsync(setting, value, providerKey, cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
 }

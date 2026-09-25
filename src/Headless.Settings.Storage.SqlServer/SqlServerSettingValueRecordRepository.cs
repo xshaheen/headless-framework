@@ -124,6 +124,87 @@ internal sealed class SqlServerSettingValueRecordRepository(
     /// <inheritdoc/>
     public Task InsertAsync(SettingValueRecord setting, CancellationToken cancellationToken = default)
     {
+        var (sql, parameters) = _InsertStatement(setting);
+
+        return _ExecuteAsync(sql, cancellationToken, parameters);
+    }
+
+    /// <inheritdoc/>
+    public Task UpdateAsync(SettingValueRecord setting, CancellationToken cancellationToken = default)
+    {
+        var (sql, parameters) = _UpdateStatement(setting);
+
+        return _ExecuteAsync(sql, cancellationToken, parameters);
+    }
+
+    /// <inheritdoc/>
+    public Task DeleteAsync(
+        IReadOnlyCollection<SettingValueRecord> settings,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (settings.Count == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        var (sql, parameters) = _DeleteStatement(settings);
+
+        return _ExecuteAsync(sql, cancellationToken, parameters);
+    }
+
+    /// <inheritdoc/>
+    public async Task SaveAsync(
+        IReadOnlyCollection<SettingValueRecord> inserted,
+        IReadOnlyCollection<SettingValueRecord> updated,
+        IReadOnlyCollection<SettingValueRecord> deleted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var statements = new List<(string Sql, SqlParameter[] Parameters)>(inserted.Count + updated.Count + 1);
+        statements.AddRange(inserted.Select(_InsertStatement));
+        statements.AddRange(updated.Select(_UpdateStatement));
+
+        if (deleted.Count != 0)
+        {
+            statements.Add(_DeleteStatement(deleted));
+        }
+
+        if (statements.Count == 0)
+        {
+            return;
+        }
+
+        await using var connection = providerOptions.Value.CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        var firstUpdate = inserted.Count;
+        var afterLastUpdate = firstUpdate + updated.Count;
+
+        for (var i = 0; i < statements.Count; i++)
+        {
+            var (sql, parameters) = statements[i];
+            await using var command = new SqlCommand(sql, connection, (SqlTransaction)transaction);
+            command.CommandTimeout = _CommandTimeout();
+            command.Parameters.AddRange(parameters);
+            var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+            // An update that matched no row means another writer deleted it after the caller read it. Failing rolls
+            // the batch back so the caller can re-read and retry, instead of silently dropping that value.
+            if (affected == 0 && i >= firstUpdate && i < afterLastUpdate)
+            {
+                throw new DBConcurrencyException("A value record in the batch was deleted by another writer.");
+            }
+        }
+
+        // Disposing an uncommitted transaction rolls it back, so a statement that throws above undoes every
+        // earlier one in the batch.
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private (string Sql, SqlParameter[] Parameters) _InsertStatement(SettingValueRecord setting)
+    {
         var sql =
             $"INSERT INTO {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} ([Id],[Name],[Value],[ProviderName],[ProviderKey],[CreatedAt]) VALUES (@Id,@Name,@Value,@ProviderName,@ProviderKey,@CreatedAt);";
 
@@ -131,20 +212,20 @@ internal sealed class SqlServerSettingValueRecordRepository(
         // the TimeProvider when the caller left it at default.
         var createdAt = setting.CreatedAt == default ? timeProvider.GetUtcNow() : setting.CreatedAt;
 
-        return _ExecuteAsync(
+        return (
             sql,
-            cancellationToken,
-            _Param("Id", setting.Id),
-            _Param("Name", setting.Name),
-            _Param("Value", setting.Value),
-            _Param("ProviderName", setting.ProviderName),
-            _Param("ProviderKey", setting.ProviderKey),
-            _Param("CreatedAt", createdAt)
+            [
+                _Param("Id", setting.Id),
+                _Param("Name", setting.Name),
+                _Param("Value", setting.Value),
+                _Param("ProviderName", setting.ProviderName),
+                _Param("ProviderKey", setting.ProviderKey),
+                _Param("CreatedAt", createdAt),
+            ]
         );
     }
 
-    /// <inheritdoc/>
-    public async Task UpdateAsync(SettingValueRecord setting, CancellationToken cancellationToken = default)
+    private (string Sql, SqlParameter[] Parameters) _UpdateStatement(SettingValueRecord setting)
     {
         var sql =
             $"UPDATE {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} SET [Value]=@Value,[UpdatedAt]=@UpdatedAt WHERE [Id]=@Id;";
@@ -156,34 +237,17 @@ internal sealed class SqlServerSettingValueRecordRepository(
                 ? timeProvider.GetUtcNow()
                 : setting.UpdatedAt.Value;
 
-        await _ExecuteAsync(
-                sql,
-                cancellationToken,
-                _Param("Id", setting.Id),
-                _Param("Value", setting.Value),
-                _Param("UpdatedAt", updatedAt)
-            )
-            .ConfigureAwait(false);
+        return (sql, [_Param("Id", setting.Id), _Param("Value", setting.Value), _Param("UpdatedAt", updatedAt)]);
     }
 
-    /// <inheritdoc/>
-    public async Task DeleteAsync(
-        IReadOnlyCollection<SettingValueRecord> settings,
-        CancellationToken cancellationToken = default
-    )
+    private (string Sql, SqlParameter[] Parameters) _DeleteStatement(IReadOnlyCollection<SettingValueRecord> settings)
     {
-        if (settings.Count == 0)
-        {
-            return;
-        }
-
         // Pass ids through the HeadlessSettingsIdList TVP: one cached plan regardless of count, no
         // 2100-parameter ceiling, portable to older engines (no OPENJSON / compatibility level 130).
         var sql =
             $"DELETE FROM {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE [Id] IN (SELECT [Id] FROM @Ids);";
 
-        await _ExecuteAsync(sql, cancellationToken, _BuildIdListTvpParameter(settings.Select(setting => setting.Id)))
-            .ConfigureAwait(false);
+        return (sql, [_BuildIdListTvpParameter(settings.Select(setting => setting.Id))]);
     }
 
     /// <summary>Opens a new connection, executes <paramref name="sql"/> with <paramref name="parameters"/>, and maps each row to a <see cref="SettingValueRecord"/>.</summary>

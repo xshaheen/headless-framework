@@ -58,6 +58,39 @@ public sealed class StoreSettingValueProviderTests : TestBase
     }
 
     [Fact]
+    public async Task should_write_a_batch_to_value_store_in_one_call()
+    {
+        // given
+        ISettingValueProvider sut = _sut;
+        var set = new SettingDefinition("set.setting");
+        var cleared = new SettingDefinition("cleared.setting");
+
+        // when
+        await sut.SetAllAsync([new(set, "new-value"), new(cleared, null)], providerKey: "key-1", AbortToken);
+
+        // then
+        await _store
+            .Received(1)
+            .SetAllAsync(
+                Arg.Is<IReadOnlyDictionary<string, string?>>(values =>
+                    values.Count == 2 && values["set.setting"] == "new-value" && values["cleared.setting"] == null
+                ),
+                "Test",
+                "key-1",
+                AbortToken
+            );
+        await _store
+            .DidNotReceive()
+            .SetAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task should_get_all_from_store()
     {
         // given
