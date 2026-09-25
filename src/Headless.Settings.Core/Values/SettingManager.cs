@@ -324,7 +324,7 @@ public sealed class SettingManager(
     /// <inheritdoc/>
     /// <exception cref="ArgumentNullException"><paramref name="settingName"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
     /// <exception cref="Headless.Exceptions.ConflictException">The setting named <paramref name="settingName"/> is not defined, the provider named <paramref name="providerName"/> is not registered, or the resolved provider does not support write operations.</exception>
-    public async Task SetAsync(
+    public Task SetAsync(
         string settingName,
         string? value,
         string providerName,
@@ -334,11 +334,43 @@ public sealed class SettingManager(
     )
     {
         Argument.IsNotNull(settingName);
+
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal) { [settingName] = value };
+
+        return SetAsync(values, providerName, providerKey, forceToSet, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="values"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
+    /// <exception cref="Headless.Exceptions.ConflictException">A setting in <paramref name="values"/> is not defined, the provider named <paramref name="providerName"/> is not registered, or the resolved provider does not support write operations.</exception>
+    public async Task SetAsync(
+        IReadOnlyDictionary<string, string?> values,
+        string providerName,
+        string? providerKey,
+        bool forceToSet = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(values);
         Argument.IsNotNull(providerName);
 
-        var setting =
-            await definitionManager.FindAsync(settingName, cancellationToken).ConfigureAwait(false)
-            ?? throw new ConflictException(errorsDescriptor.NotDefined(settingName));
+        if (values.Count == 0)
+        {
+            return;
+        }
+
+        var requested = new List<KeyValuePair<SettingDefinition, string?>>(values.Count);
+
+        foreach (var (settingName, value) in values)
+        {
+            Argument.IsNotNull(settingName);
+
+            var setting =
+                await definitionManager.FindAsync(settingName, cancellationToken).ConfigureAwait(false)
+                ?? throw new ConflictException(errorsDescriptor.NotDefined(settingName));
+
+            requested.Add(new(setting, value));
+        }
 
         var providers = valueProviderManager
             .Providers.SkipWhile(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal))
@@ -349,6 +381,52 @@ public sealed class SettingManager(
             throw new ConflictException(errorsDescriptor.ProviderNotFound(providerName));
         }
 
+        // Getting list for case of there are more than one provider with the same providerName
+        var writeProviders = new List<ISettingValueProvider>();
+
+        foreach (
+            var provider in providers.TakeWhile(p => string.Equals(p.Name, providerName, StringComparison.Ordinal))
+        )
+        {
+            // Rejected before anything is written: a read-only provider found half-way through the loop below
+            // would otherwise leave the providers ahead of it already written.
+            writeProviders.Add(
+                provider as ISettingValueProvider
+                    ?? throw new ConflictException(errorsDescriptor.ProviderIsReadonly(providerName))
+            );
+        }
+
+        var writes = new List<KeyValuePair<SettingDefinition, string?>>(requested.Count);
+
+        foreach (var (setting, value) in requested)
+        {
+            var storedValue = await _ResolveStoredValueAsync(setting, value, providers, forceToSet, cancellationToken)
+                .ConfigureAwait(false);
+
+            writes.Add(new(setting, storedValue));
+        }
+
+        foreach (var provider in writeProviders)
+        {
+            await provider.SetAllAsync(writes, providerKey, cancellationToken).ConfigureAwait(false);
+        }
+
+        await _PublishChangedAsync([.. values.Keys], providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Returns the value to store for <paramref name="setting"/>: encrypted when the definition asks for it, and
+    /// <see langword="null"/> when an inherited value equals what the next provider would supply anyway.
+    /// </summary>
+    private async Task<string?> _ResolveStoredValueAsync(
+        SettingDefinition setting,
+        string? value,
+        List<ISettingValueReadProvider> providers,
+        bool forceToSet,
+        CancellationToken cancellationToken
+    )
+    {
         if (setting.IsEncrypted)
         {
             value = encryptionService.Encrypt(setting, value);
@@ -357,41 +435,22 @@ public sealed class SettingManager(
         if (providers.Count > 1 && !forceToSet && setting.IsInherited && value is not null)
         {
             var fallbackValue = await _CoreGetOrDefaultAsync(
-                    settingName,
+                    setting,
                     providers[1].Name,
                     providerKey: null,
-                    cancellationToken: cancellationToken
+                    fallback: true,
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
 
             if (string.Equals(fallbackValue.Value, value, StringComparison.Ordinal))
             {
                 // Clear the value if it is same as it's fallback value
-                value = null;
+                return null;
             }
         }
 
-        // Getting list for case of there are more than one provider with the same providerName
-        providers = [.. providers.TakeWhile(p => string.Equals(p.Name, providerName, StringComparison.Ordinal))];
-
-        foreach (var provider in providers)
-        {
-            if (provider is not ISettingValueProvider p)
-            {
-                throw new ConflictException(errorsDescriptor.ProviderIsReadonly(providerName));
-            }
-
-            if (value is null)
-            {
-                await p.ClearAsync(setting, providerKey, cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                await p.SetAsync(setting, value, providerKey, cancellationToken).ConfigureAwait(false);
-            }
-        }
-
-        await _PublishChangedAsync([settingName], providerName, providerKey, cancellationToken).ConfigureAwait(false);
+        return value;
     }
 
     /// <inheritdoc/>
@@ -490,6 +549,20 @@ public sealed class SettingManager(
             await definitionManager.FindAsync(settingName, cancellationToken).ConfigureAwait(false)
             ?? throw new ConflictException(errorsDescriptor.NotDefined(settingName));
 
+        return await _CoreGetOrDefaultAsync(definition, providerName, providerKey, fallback, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>Walks the provider chain for an already resolved <paramref name="definition"/>.</summary>
+    private async Task<SettingValue> _CoreGetOrDefaultAsync(
+        SettingDefinition definition,
+        string? providerName,
+        string? providerKey,
+        bool fallback,
+        CancellationToken cancellationToken
+    )
+    {
+        var settingName = definition.Name;
         IEnumerable<ISettingValueReadProvider> providers = valueProviderManager.Providers;
 
         if (providerName is not null)

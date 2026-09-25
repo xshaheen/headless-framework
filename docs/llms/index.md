@@ -50,6 +50,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | Evaluate feature flags | [Features](features.md) |
 | React when a setting, feature, or permission grant changes instead of polling | [Settings](settings.md), [Features](features.md), [Permissions](permissions.md) — each has a "Reacting to a change" section |
 | Record entity changes or explicit audit events | [Audit Log](audit-log.md) |
+| Issue per-tenant consecutive numbers (receipts, invoices, case numbers), gap-free when audited | [Sequences](sequences.md) |
 
 ### Distributed runtime
 

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Caching;
 using Headless.Security;
 using Headless.Settings;
 using Microsoft.EntityFrameworkCore;
@@ -28,6 +29,10 @@ public sealed class SettingsEntityStartupValidatorTests(SettingsTestFixture fixt
         });
         builder.Services.AddDbContextFactory<MissingSettingsEntityDbContext>(options =>
             options.UseNpgsql(Fixture.SqlConnectionString)
+        );
+        // The value store caches every read, and the host refuses to start without a registered cache.
+        builder.Services.AddHeadlessCaching(setup =>
+            setup.UseRedis(options => options.ConnectionMultiplexer = Fixture.Multiplexer)
         );
         builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<MissingSettingsEntityDbContext>());
         using var host = builder.Build();

@@ -36,7 +36,7 @@ public interface IDynamicPermissionDefinitionStore
     /// Persists the current application's static permission definitions to the database so that other application
     /// instances can read them via the dynamic store. Uses a distributed lock scoped to this application name to
     /// prevent concurrent writes; if another instance holds the lock, the call returns without doing work.
-    /// Computes an MD5 hash of the serialized definitions and skips the write if nothing has changed since the last
+    /// Computes a SHA-256 hash of the serialized definitions and skips the write if nothing has changed since the last
     /// save. When groups or permissions change, publishes a <see cref="DynamicPermissionDefinitionsChanged"/> event
     /// and updates the cross-application distributed-cache stamp so other instances invalidate their in-memory caches.
     /// </summary>
@@ -474,7 +474,7 @@ public sealed class DynamicPermissionDefinitionStore(
         stringBuilder.Append("DeletedPermission:");
         stringBuilder.Append(deletedPermissions.JoinAsString(","));
 
-        return stringBuilder.ToString().ToMd5();
+        return stringBuilder.ToString().ToSha256();
     }
 
     private async Task<(

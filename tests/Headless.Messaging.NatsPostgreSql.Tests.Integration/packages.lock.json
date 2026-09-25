@@ -1144,7 +1144,10 @@
         }
       },
       "headless.unitofwork.abstractions": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
       },
       "headless.unitofwork.entityframework": {
         "type": "Project",

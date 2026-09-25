@@ -18,8 +18,8 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
-  <data name="features:provider-not-defined" xml:space="preserve">
-    <value>The feature '{0}' does not have a provider '{1}'.</value>
+  <data name="features:provider-not-found" xml:space="preserve">
+    <value>No feature value provider named '{0}' is registered.</value>
   </data>
   <data name="features:provider-readonly" xml:space="preserve">
     <value>Feature provider is readonly for provider key: {0} and can't be modified.</value>

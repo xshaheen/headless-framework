@@ -1,12 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Features;
 using Headless.Features.Entities;
 using Headless.Features.Repositories;
-using Headless.Hosting.Initialization;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Npgsql;
 
 namespace Tests;
@@ -17,52 +14,11 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
     private const string _Schema = "features_pg_raw";
 
     [Fact]
-    public async Task should_initialize_tables_and_round_trip_feature_value_and_definition()
-    {
-        // given
-        await _DropSchemaAsync();
-        using var host = _CreateHost();
-
-        // when
-        await host.StartAsync(AbortToken);
-        var initializer = host
-            .Services.GetRequiredService<IEnumerable<IInitializer>>()
-            .Single(x => x is IHostedLifecycleService);
-        var valueRepository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
-        var definitionRepository = host.Services.GetRequiredService<IFeatureDefinitionRecordRepository>();
-        var record = new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "true", "Edition", "pro");
-        var group = new FeatureGroupDefinitionRecord(Guid.NewGuid(), "Checkout", "Checkout");
-        var feature = new FeatureDefinitionRecord(
-            Guid.NewGuid(),
-            "Checkout",
-            "Checkout.Enabled",
-            null,
-            "Checkout enabled"
-        );
-
-        await valueRepository.InsertAsync(record, AbortToken);
-        await definitionRepository.SaveAsync([group], [], [], [feature], [], [], AbortToken);
-        var stored = await valueRepository.FindAsync("Checkout.Enabled", "Edition", "pro", AbortToken);
-        var storedGroups = await definitionRepository.GetGroupsListAsync(AbortToken);
-        var storedFeatures = await definitionRepository.GetFeaturesListAsync(AbortToken);
-
-        // then
-        initializer.IsInitialized.Should().BeTrue();
-        (await _TableExistsAsync("FeatureValues")).Should().BeTrue();
-        (await _TableExistsAsync("FeatureDefinitions")).Should().BeTrue();
-        (await _TableExistsAsync("FeatureGroupDefinitions")).Should().BeTrue();
-        stored.Should().NotBeNull();
-        stored!.Value.Should().Be("true");
-        storedGroups.Should().ContainSingle(x => x.Name == "Checkout");
-        storedFeatures.Should().ContainSingle(x => x.Name == "Checkout.Enabled");
-    }
-
-    [Fact]
     public async Task should_persist_all_definitions_across_multiple_chunks_when_batch_exceeds_chunk_size()
     {
         // given — chunk size is 500 rows; 550 forces two chunks
-        await _DropSchemaAsync();
-        using var host = _CreateHost();
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
         await host.StartAsync(AbortToken);
         var definitionRepository = host.Services.GetRequiredService<IFeatureDefinitionRecordRepository>();
 
@@ -99,8 +55,8 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
     public async Task should_reject_duplicate_feature_values_when_provider_key_is_null()
     {
         // given
-        await _DropSchemaAsync();
-        using var host = _CreateHost();
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
         await host.StartAsync(AbortToken);
         var valueRepository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
         var first = new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "true", "DefaultValue", null);
@@ -121,9 +77,9 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
     public async Task should_create_missing_indexes_when_tables_already_exist()
     {
         // given
-        await _DropSchemaAsync();
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
         await _CreateTablesWithoutIndexesAsync();
-        using var host = _CreateHost();
+        using var host = fixture.CreateHost(_Schema);
 
         // when
         await host.StartAsync(AbortToken);
@@ -143,12 +99,12 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
     public async Task should_rename_legacy_timestamp_columns_without_losing_feature_value()
     {
         // given
-        await _DropSchemaAsync();
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
         var id = Guid.NewGuid();
         var createdAt = new DateTimeOffset(2026, 7, 25, 10, 0, 0, TimeSpan.Zero);
         var updatedAt = createdAt.AddMinutes(5);
         await _CreateLegacyValueTableAsync(id, createdAt, updatedAt);
-        using var host = _CreateHost();
+        using var host = fixture.CreateHost(_Schema);
 
         // when
         await host.StartAsync(AbortToken);
@@ -162,48 +118,6 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
         stored.UpdatedAt.Should().Be(updatedAt);
         (await _ColumnExistsAsync("FeatureValues", "DateCreated")).Should().BeFalse();
         (await _ColumnExistsAsync("FeatureValues", "DateUpdated")).Should().BeFalse();
-    }
-
-    private IHost _CreateHost()
-    {
-        var builder = Host.CreateApplicationBuilder();
-        // unify: management-core deps
-        builder.Services.AddSingleton(TimeProvider.System);
-        builder.Services.AddHeadlessFeatures(setup =>
-        {
-            setup.ConfigureStorage(options => options.Schema = _Schema);
-            setup.UsePostgreSql(fixture.ConnectionString);
-        });
-
-        return builder.Build();
-    }
-
-    private async Task _DropSchemaAsync()
-    {
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        await using var command = new NpgsqlCommand($"""DROP SCHEMA IF EXISTS "{_Schema}" CASCADE;""", connection);
-        await command.ExecuteNonQueryAsync(AbortToken);
-    }
-
-    private async Task<bool> _TableExistsAsync(string tableName)
-    {
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        await using var command = new NpgsqlCommand(
-            """
-            SELECT EXISTS (
-                SELECT 1
-                FROM information_schema.tables
-                WHERE table_schema = @schema AND table_name = @table
-            )
-            """,
-            connection
-        );
-        command.Parameters.AddWithValue("schema", _Schema);
-        command.Parameters.AddWithValue("table", tableName);
-
-        return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
     }
 
     private async Task<bool> _IndexExistsAsync(string indexName)

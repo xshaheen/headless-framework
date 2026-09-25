@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.Exceptions;
 using Headless.Features.Definitions;
 using Headless.Features.Models;
 using Headless.Features.Resources;
@@ -164,7 +165,15 @@ public sealed class FeatureManagerTests : TestBase
 
         // then
         await act.Should().NotThrowAsync();
-        await _provider.Received(1).SetAsync(definition, "value", providerKey: null, AbortToken);
+        await _provider
+            .Received(1)
+            .SetAllAsync(
+                Arg.Is<IReadOnlyList<KeyValuePair<FeatureDefinition, string?>>>(writes =>
+                    writes.Count == 1 && writes[0].Key == definition && writes[0].Value == "value"
+                ),
+                providerKey: null,
+                AbortToken
+            );
     }
 
     [Fact]
@@ -190,7 +199,15 @@ public sealed class FeatureManagerTests : TestBase
 
         // then
         await act.Should().NotThrowAsync();
-        await _provider.Received(1).SetAsync(definition, "value", providerKey: null, AbortToken);
+        await _provider
+            .Received(1)
+            .SetAllAsync(
+                Arg.Is<IReadOnlyList<KeyValuePair<FeatureDefinition, string?>>>(writes =>
+                    writes.Count == 1 && writes[0].Key == definition && writes[0].Value == "value"
+                ),
+                providerKey: null,
+                AbortToken
+            );
     }
 
     [Fact]
@@ -222,5 +239,252 @@ public sealed class FeatureManagerTests : TestBase
 
         // then a caller's cancellation is not a broker failure to swallow
         await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task should_write_a_batch_in_one_provider_call_and_announce_every_name_once()
+    {
+        // given
+        var feature1 = new FeatureDefinition("Feature1");
+        var feature2 = new FeatureDefinition("Feature2");
+        _definitionManager.FindAsync("Feature1", AbortToken).Returns(feature1);
+        _definitionManager.FindAsync("Feature2", AbortToken).Returns(feature2);
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["Feature1"] = "a",
+            ["Feature2"] = null,
+        };
+
+        // when
+        await _sut.SetAsync(values, "Provider1", "key1", forceToSet: true, cancellationToken: AbortToken);
+
+        // then
+        await _provider
+            .Received(1)
+            .SetAllAsync(
+                Arg.Is<IReadOnlyList<KeyValuePair<FeatureDefinition, string?>>>(writes =>
+                    writes.Count == 2
+                    && writes[0].Key == feature1
+                    && writes[0].Value == "a"
+                    && writes[1].Key == feature2
+                    && writes[1].Value == null
+                ),
+                "key1",
+                AbortToken
+            );
+        await _bus.Received(1)
+            .PublishAsync(
+                Arg.Is<FeatureChangedMessage>(m =>
+                    m.FeatureNames.Count == 2
+                    && m.FeatureNames.Contains("Feature1")
+                    && m.FeatureNames.Contains("Feature2")
+                    && m.ProviderName == "Provider1"
+                    && m.ProviderKey == "key1"
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_write_nothing_when_a_name_in_the_batch_is_not_defined()
+    {
+        // given
+        var feature1 = new FeatureDefinition("Feature1");
+        _definitionManager.FindAsync("Feature1", AbortToken).Returns(feature1);
+        _definitionManager.FindAsync("Missing", AbortToken).Returns((FeatureDefinition?)null);
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal) { ["Feature1"] = "a", ["Missing"] = "b" };
+
+        // when
+        var act = async () =>
+            await _sut.SetAsync(values, "Provider1", "key1", forceToSet: true, cancellationToken: AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ConflictException>();
+        await _provider
+            .DidNotReceive()
+            .SetAllAsync(
+                Arg.Any<IReadOnlyList<KeyValuePair<FeatureDefinition, string?>>>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>()
+            );
+        await _bus.DidNotReceive().PublishAsync(Arg.Any<FeatureChangedMessage>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_write_nothing_when_a_same_named_provider_is_read_only()
+    {
+        // given the first "Provider1" is writable and a second one registered under the same name is not
+        var feature1 = new FeatureDefinition("Feature1");
+        _definitionManager.FindAsync("Feature1", AbortToken).Returns(feature1);
+        var readOnlyProvider = Substitute.For<IFeatureValueReadProvider>();
+        readOnlyProvider.Name.Returns("Provider1");
+        _valueProviderManager.ValueProviders.Returns([_provider, readOnlyProvider]);
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal) { ["Feature1"] = "a" };
+
+        // when
+        var act = async () =>
+            await _sut.SetAsync(values, "Provider1", "key1", forceToSet: true, cancellationToken: AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ConflictException>();
+        await _provider
+            .DidNotReceive()
+            .SetAllAsync(
+                Arg.Any<IReadOnlyList<KeyValuePair<FeatureDefinition, string?>>>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>()
+            );
+        await _bus.DidNotReceive().PublishAsync(Arg.Any<FeatureChangedMessage>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_clear_a_batch_value_that_equals_its_fallback()
+    {
+        // given
+        var feature1 = new FeatureDefinition("Feature1");
+        var feature2 = new FeatureDefinition("Feature2");
+        _definitionManager.FindAsync("Feature1", Arg.Any<CancellationToken>()).Returns(feature1);
+        _definitionManager.FindAsync("Feature2", Arg.Any<CancellationToken>()).Returns(feature2);
+        var fallbackProvider = Substitute.For<IFeatureValueReadProvider>();
+        fallbackProvider.Name.Returns("Default");
+        fallbackProvider.GetOrDefaultAsync(feature1, null, Arg.Any<CancellationToken>()).Returns("same");
+        fallbackProvider.GetOrDefaultAsync(feature2, null, Arg.Any<CancellationToken>()).Returns("other");
+        _provider
+            .HandleContextAsync("Provider1", "key1", Arg.Any<CancellationToken>())
+            .Returns(Substitute.For<IAsyncDisposable>());
+        _valueProviderManager.ValueProviders.Returns([_provider, fallbackProvider]);
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["Feature1"] = "same",
+            ["Feature2"] = "new",
+        };
+
+        // when
+        await _sut.SetAsync(values, "Provider1", "key1", cancellationToken: AbortToken);
+
+        // then the value equal to the fallback is cleared so it keeps inheriting; the other is stored
+        await _provider
+            .Received(1)
+            .SetAllAsync(
+                Arg.Is<IReadOnlyList<KeyValuePair<FeatureDefinition, string?>>>(writes =>
+                    writes.Count == 2 && writes[0].Value == null && writes[1].Value == "new"
+                ),
+                "key1",
+                AbortToken
+            );
+    }
+
+    [Fact]
+    public async Task should_write_and_announce_nothing_for_an_empty_batch()
+    {
+        // when
+        await _sut.SetAsync(
+            new Dictionary<string, string?>(StringComparer.Ordinal),
+            "Provider1",
+            "key1",
+            cancellationToken: AbortToken
+        );
+
+        // then
+        await _provider
+            .DidNotReceive()
+            .SetAllAsync(
+                Arg.Any<IReadOnlyList<KeyValuePair<FeatureDefinition, string?>>>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>()
+            );
+        await _bus.DidNotReceive().PublishAsync(Arg.Any<FeatureChangedMessage>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_report_the_missing_provider_without_naming_a_batch_feature()
+    {
+        // given
+        _definitionManager.FindAsync("Feature1", AbortToken).Returns(new FeatureDefinition("Feature1"));
+        _definitionManager.FindAsync("Feature2", AbortToken).Returns(new FeatureDefinition("Feature2"));
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal) { ["Feature1"] = "a", ["Feature2"] = "b" };
+
+        // when
+        var act = async () =>
+            await _sut.SetAsync(values, "Unregistered", "key1", forceToSet: true, cancellationToken: AbortToken);
+
+        // then the error is about the provider, not whichever feature happened to come first
+        var error = (await act.Should().ThrowAsync<ConflictException>()).Which.Errors.Should().ContainSingle().Which;
+        error.Code.Should().Be("features:provider-not-found");
+        error.Params.Should().NotBeNull();
+        error.Params!.Should().ContainKey("providerName").WhoseValue.Should().Be("Unregistered");
+        error.Params.Should().NotContainKey("featureName");
+    }
+
+    [Fact]
+    public async Task should_store_and_clear_a_batch_through_a_provider_without_its_own_batch_write()
+    {
+        // given a provider that only implements the per-value writes, so the manager uses the interface's default
+        var feature1 = new FeatureDefinition("Feature1");
+        var feature2 = new FeatureDefinition("Feature2");
+        var provider = new PerValueFeatureProvider();
+        provider.Values["Feature2"] = "old";
+        _definitionManager.FindAsync("Feature1", AbortToken).Returns(feature1);
+        _definitionManager.FindAsync("Feature2", AbortToken).Returns(feature2);
+        _valueProviderManager.ValueProviders.Returns([provider]);
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["Feature1"] = "a",
+            ["Feature2"] = null,
+        };
+
+        // when
+        await _sut.SetAsync(values, "PerValue", "key1", forceToSet: true, cancellationToken: AbortToken);
+
+        // then
+        provider.Values.Should().ContainSingle().Which.Should().Be(new KeyValuePair<string, string>("Feature1", "a"));
+    }
+
+    private sealed class PerValueFeatureProvider : IFeatureValueProvider
+    {
+        public Dictionary<string, string> Values { get; } = new(StringComparer.Ordinal);
+
+        public string Name => "PerValue";
+
+        public Task<IAsyncDisposable> HandleContextAsync(
+            string providerName,
+            string? providerKey,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return Task.FromResult(Substitute.For<IAsyncDisposable>());
+        }
+
+        public Task<string?> GetOrDefaultAsync(
+            FeatureDefinition feature,
+            string? providerKey,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return Task.FromResult(Values.GetValueOrDefault(feature.Name));
+        }
+
+        public Task SetAsync(
+            FeatureDefinition feature,
+            string value,
+            string? providerKey,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Values[feature.Name] = value;
+
+            return Task.CompletedTask;
+        }
+
+        public Task ClearAsync(
+            FeatureDefinition feature,
+            string? providerKey,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Values.Remove(feature.Name);
+
+            return Task.CompletedTask;
+        }
     }
 }

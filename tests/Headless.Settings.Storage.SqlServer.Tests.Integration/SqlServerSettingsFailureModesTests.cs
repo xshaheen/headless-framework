@@ -1,11 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting.Initialization;
-using Headless.Security;
-using Headless.Settings;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -21,7 +18,7 @@ public sealed class SqlServerSettingsFailureModesTests(SqlServerSettingsFixture 
         // Password is a placeholder; we never reach the auth handshake because the TCP connect fails first.
         const string unreachable =
             "Server=127.0.0.1,1;Database=missing;User Id=sa;Password=placeholder-never-used;Connect Timeout=2;TrustServerCertificate=true";
-        using var host = _CreateHost(unreachable);
+        using var host = fixture.CreateHost("settings_sql_failure", unreachable);
 
         // when & then — wrapped in HostFailedToStartException by the host pipeline; inner is SqlException
         await FluentActions
@@ -46,12 +43,9 @@ public sealed class SqlServerSettingsFailureModesTests(SqlServerSettingsFixture 
     {
         // given — 5 hosts racing to create the same schema/tables; the initializer is
         // designed to be idempotent via OBJECT_ID checks + duplicate-error suppression.
-        await _DropSchemaAsync("settings_sql_concurrent");
+        await fixture.DropSchemaAsync("settings_sql_concurrent", AbortToken);
         const int hostCount = 5;
-        var hosts = Enumerable
-            .Range(0, hostCount)
-            .Select(_ => _CreateHost(fixture.ConnectionString, "settings_sql_concurrent"))
-            .ToArray();
+        var hosts = Enumerable.Range(0, hostCount).Select(_ => fixture.CreateHost("settings_sql_concurrent")).ToArray();
 
         try
         {
@@ -81,46 +75,6 @@ public sealed class SqlServerSettingsFailureModesTests(SqlServerSettingsFixture 
                 host.Dispose();
             }
         }
-    }
-
-    private static IHost _CreateHost(string connectionString, string schema = "settings_sql_failure")
-    {
-        var builder = Host.CreateApplicationBuilder();
-        // unify: management-core deps
-        builder.Services.AddSingleton(TimeProvider.System);
-        // AddHeadlessSettings now registers the management core, which requires IStringEncryptionService.
-        builder.Configuration.AddInMemoryCollection([
-            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultPassPhrase", "TestPassPhrase123456"),
-            new KeyValuePair<string, string?>("Headless:StringEncryption:InitVectorBytes", "VGVzdElWMDEyMzQ1Njc4OQ=="),
-            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultSalt", "VGVzdFNhbHQ="),
-        ]);
-        builder.Services.AddStringEncryptionService(
-            builder.Configuration.GetRequiredSection("Headless:StringEncryption")
-        );
-        builder.Services.AddHeadlessSettings(setup =>
-        {
-            setup.ConfigureStorage(options => options.Schema = schema);
-            setup.UseSqlServer(connectionString);
-        });
-
-        return builder.Build();
-    }
-
-    private async Task _DropSchemaAsync(string schema)
-    {
-        await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        await using var command = new SqlCommand(
-            $"""
-            IF OBJECT_ID(N'{schema}.SettingValues', N'U') IS NOT NULL DROP TABLE [{schema}].[SettingValues];
-            IF OBJECT_ID(N'{schema}.SettingDefinitions', N'U') IS NOT NULL DROP TABLE [{schema}].[SettingDefinitions];
-            IF TYPE_ID(N'{schema}.HeadlessSettingsIdList') IS NOT NULL DROP TYPE [{schema}].[HeadlessSettingsIdList];
-            IF TYPE_ID(N'{schema}.HeadlessSettingsNameList') IS NOT NULL DROP TYPE [{schema}].[HeadlessSettingsNameList];
-            IF EXISTS (SELECT * FROM sys.schemas WHERE name = N'{schema}') EXEC(N'DROP SCHEMA [{schema}]');
-            """,
-            connection
-        );
-        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private async Task<int> _CountTablesAsync(string schema, string table)
