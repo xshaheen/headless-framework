@@ -21,7 +21,7 @@ public sealed class ClientSettingsConfigBuilderTests : TestBase
 
     public ClientSettingsConfigBuilderTests()
     {
-        _sut = new ClientSettingsConfigBuilder(_definitionManager, _settingManager, _principalAccessor, _currentTenant);
+        _sut = new ClientSettingsConfigBuilder(_definitionManager, _settingManager, _currentTenant, _principalAccessor);
     }
 
     [Fact]
@@ -100,6 +100,20 @@ public sealed class ClientSettingsConfigBuilderTests : TestBase
         tenantDuringRead.Should().Be("issued-tenant");
         _principalAccessor.Principal.Should().BeSameAs(ambient);
         _currentTenant.Id.Should().Be("ambient-tenant");
+    }
+
+    [Fact]
+    public async Task should_build_when_no_principal_accessor_is_registered()
+    {
+        // given — only Headless.Api.ServiceDefaults registers an accessor; a worker host has none.
+        var sut = new ClientSettingsConfigBuilder(_definitionManager, _settingManager, _currentTenant);
+        _definitionManager.GetAllAsync(AbortToken).Returns([new SettingDefinition("Smtp.Password")]);
+
+        // when
+        var config = await sut.BuildAsync(_Context("tenant-1"), AbortToken);
+
+        // then
+        config.Values.Should().BeEmpty();
     }
 
     private static ClientConfigContext _Context(string? tenantId)

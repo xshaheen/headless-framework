@@ -193,7 +193,12 @@ public static class SetupPermissions
         // worker host would otherwise lack. AddAuthorizationCore is TryAdd-only, so a host's own registrations win.
         services.AddAuthorizationCore();
 
-        services.TryAddSingleton<IAuthorizationPolicyCatalog, AuthorizationPolicyCatalog>();
+        // The grant cache and the client-config builder read ICurrentTenant. Same fallback as Messaging and Jobs: an
+        // AsyncLocal-backed tenant, whose Change the builder relies on, replaced by any real tenancy registration.
+        services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
+        services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
+
+        services.TryAddTransient<IAuthorizationPolicyCatalog, AuthorizationPolicyCatalog>();
         services.TryAddTransient<IClientAuthorizationConfigBuilder, ClientAuthorizationConfigBuilder>();
 
         if (setup.RegisterPermissionNamePolicies)

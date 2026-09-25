@@ -260,7 +260,7 @@ Core implementation of permission management with grant resolution, caching, bac
 - `PermissionsStorageOptions` — schema and table name configuration shared across all storage providers
 - `HeadlessPermissionsSetupBuilder` — fluent builder returned inside `AddHeadlessPermissions`; exposes `ConfigureManagement`, `ConfigureStorage`, `DisableStartupInitialization`, `DisablePermissionNamePolicies`, `RegisterExtension`. `ConfigureStorage` also accepts the `Headless:Permissions:Storage` configuration section.
 - `PermissionPolicyProvider` — `IAuthorizationPolicyProvider` that resolves a defined permission name as a policy holding one `PermissionRequirement`; registered by default in place of ASP.NET Core's default provider
-- `IAuthorizationPolicyCatalog` (`Headless.Permissions.Requirements`) — lists policy names: `GetRegisteredPolicyNamesAsync()` (policies added to `AuthorizationOptions`), `GetPermissionNamesAsync()` (defined permissions), and `GetPolicyNamesAsync()` (their union). Registered independently of `PermissionPolicyProvider`, so it works with `DisablePermissionNamePolicies()` or a host-owned provider
+- `IAuthorizationPolicyCatalog` (`Headless.Permissions.Requirements`) — lists names: `GetRegisteredPolicyNamesAsync()` (policies added to `AuthorizationOptions`), `GetPermissionNamesAsync()` (defined permission names, for grant checks), and `GetPolicyNamesAsync()` (every name that resolves to a policy through the active provider: the registered policies, plus the permissions with any `PolicyNamePrefix` applied when `PermissionPolicyProvider` is that provider). Every name `GetPolicyNamesAsync()` returns is safe to pass to `IAuthorizationService`, including under `DisablePermissionNamePolicies()` or a host-owned provider, where it returns the registered policies only
 - `IClientAuthorizationConfigBuilder` (`Headless.Permissions.ClientConfig`) — builds the authorization section of an application's client config: `BuildAsync(ClientConfigContext, policyNames, …)` returns `ClientAuthorizationConfig.GrantedPolicies`, every granted permission plus every listed policy the principal satisfies, each mapped to `true`
 - `ClientConfigContext(ClaimsPrincipal Principal, string? TenantId)` (`Headless.Abstractions`, in `Headless.Core`) — the principal and tenant every client-config section builder resolves for
 - `HeadlessPermissionsBuilder` — returned by `AddHeadlessPermissions`; exposes `Services` for post-registration additions
@@ -493,7 +493,8 @@ builder.Services.AddHeadlessPermissions(setup =>
 - Registers `IGrantPermissionsSeedHelper` as transient
 - Registers `PermissionRequirementHandler` and `PermissionsRequirementHandler` as `IAuthorizationHandler` singletons
 - Calls `AddAuthorizationCore()`, so `IAuthorizationService` resolves in a host that never called `AddAuthorization()` (a worker, for example); the call only adds what is missing, so a host's own authorization registrations win
-- Registers `IAuthorizationPolicyCatalog` as singleton and `IClientAuthorizationConfigBuilder` as transient
+- Registers `IAuthorizationPolicyCatalog` and `IClientAuthorizationConfigBuilder` as transient
+- Registers an `AsyncLocal`-backed `CurrentTenant` as the `ICurrentTenant` fallback (the same fallback Messaging and Jobs use); any real tenancy registration replaces it
 - Registers `PermissionPolicyProvider` as the singleton `IAuthorizationPolicyProvider`, replacing ASP.NET Core's default provider and keeping a host-registered one, unless `setup.DisablePermissionNamePolicies()` was called
 - Registers a tenant-scoped `ICache<PermissionGrantCacheItem>` as singleton
 

@@ -36,8 +36,10 @@ public sealed record ClientSettingsConfig(IReadOnlyDictionary<string, string?> V
 internal sealed class ClientSettingsConfigBuilder(
     ISettingDefinitionManager definitionManager,
     ISettingManager settingManager,
-    ICurrentPrincipalAccessor principalAccessor,
-    ICurrentTenant currentTenant
+    ICurrentTenant currentTenant,
+    // Optional: only Headless.Api.ServiceDefaults registers an accessor. A host without one has no ambient
+    // principal for the user value provider to read, so there is nothing to switch.
+    ICurrentPrincipalAccessor? principalAccessor = null
 ) : IClientSettingsConfigBuilder
 {
     public async Task<ClientSettingsConfig> BuildAsync(
@@ -48,7 +50,7 @@ internal sealed class ClientSettingsConfigBuilder(
         Argument.IsNotNull(context);
 
         // The user and tenant value providers read the ambient identity, so resolve under the context's identity.
-        using var principalScope = principalAccessor.Change(context.Principal);
+        using var principalScope = principalAccessor?.Change(context.Principal);
         using var tenantScope = currentTenant.Change(context.TenantId);
 
         var definitions = await definitionManager.GetAllAsync(cancellationToken).ConfigureAwait(false);

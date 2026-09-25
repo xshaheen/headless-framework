@@ -45,8 +45,10 @@ public sealed record ClientAuthorizationConfig(IReadOnlyDictionary<string, bool>
 internal sealed class ClientAuthorizationConfigBuilder(
     IPermissionManager permissionManager,
     IAuthorizationService authorizationService,
-    ICurrentPrincipalAccessor principalAccessor,
-    ICurrentTenant currentTenant
+    ICurrentTenant currentTenant,
+    // Optional: only Headless.Api.ServiceDefaults registers an accessor. The principal is passed explicitly to the
+    // grant check and to IAuthorizationService, so the switch matters only to handlers that read the ambient one.
+    ICurrentPrincipalAccessor? principalAccessor = null
 ) : IClientAuthorizationConfigBuilder
 {
     public async Task<ClientAuthorizationConfig> BuildAsync(
@@ -60,7 +62,7 @@ internal sealed class ClientAuthorizationConfigBuilder(
 
         // Grant caching and tenant requirements read the ambient tenant, and policy handlers may read the ambient
         // principal, so evaluate under the context's identity.
-        using var principalScope = principalAccessor.Change(context.Principal);
+        using var principalScope = principalAccessor?.Change(context.Principal);
         using var tenantScope = currentTenant.Change(context.TenantId);
 
         var granted = new Dictionary<string, bool>(StringComparer.Ordinal);

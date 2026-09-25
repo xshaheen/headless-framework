@@ -25,8 +25,8 @@ public sealed class ClientAuthorizationConfigBuilderTests : TestBase
         _sut = new ClientAuthorizationConfigBuilder(
             _permissionManager,
             _authorizationService,
-            _principalAccessor,
-            _currentTenant
+            _currentTenant,
+            _principalAccessor
         );
         _permissionManager
             .GetAllAsync(Arg.Any<ICurrentUser>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())

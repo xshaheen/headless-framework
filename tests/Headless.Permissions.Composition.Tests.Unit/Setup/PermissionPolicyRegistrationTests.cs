@@ -132,10 +132,9 @@ public sealed class PermissionPolicyRegistrationTests : TestBase
     [Fact]
     public void should_resolve_client_config_services_without_authorization_registration()
     {
-        // given — no AddAuthorization/AddAuthorizationCore: AddHeadlessPermissions registers authorization itself.
+        // given — a worker-style host: no AddAuthorization, no ICurrentPrincipalAccessor, no ICurrentTenant.
+        // AddHeadlessPermissions supplies authorization and a tenant fallback; the principal accessor is optional.
         var services = _CreateResolvableServices(Substitute.For<IPermissionManager>());
-        services.AddSingleton<ICurrentPrincipalAccessor, ThreadCurrentPrincipalAccessor>();
-        services.AddSingleton(Substitute.For<ICurrentTenant>());
 
         // when
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
@@ -143,6 +142,7 @@ public sealed class PermissionPolicyRegistrationTests : TestBase
         // then
         provider.GetRequiredService<IClientAuthorizationConfigBuilder>().Should().NotBeNull();
         provider.GetRequiredService<IAuthorizationPolicyCatalog>().Should().NotBeNull();
+        provider.GetRequiredService<ICurrentTenant>().Should().BeOfType<CurrentTenant>();
     }
 
     [Theory]
