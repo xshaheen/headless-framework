@@ -8,7 +8,9 @@ namespace Tests.SecretHashing;
 
 public sealed class Pbkdf2Sha256SecretHashAlgorithmTests
 {
-    private readonly Pbkdf2Sha256SecretHashAlgorithm _sut = new(Options.Create(SecretHashingTestKit.Pbkdf2Options()));
+    private readonly Pbkdf2Sha256SecretHashAlgorithm _sut = new(
+        Options.Create(SecretHashingTestKit.Pbkdf2Options().Pbkdf2)
+    );
 
     [Fact]
     public void should_match_the_bcl_pbkdf2_derivation()

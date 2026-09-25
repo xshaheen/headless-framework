@@ -24,7 +24,8 @@ public interface ISecretHasher
     /// valid UTF-16 (it contains a lone surrogate).
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// No implementation is registered for the configured <see cref="SecretHasherOptions.Algorithm" />.
+    /// The algorithm selected at registration has no registered implementation, which means its <c>Use*</c> extension
+    /// is faulty.
     /// </exception>
     string Hash(ReadOnlySpan<char> secret);
 
@@ -38,8 +39,8 @@ public interface ISecretHasher
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="encoded" /> is <see langword="null" />.</exception>
     /// <exception cref="InvalidOperationException">
-    /// Verification succeeded and needs an upgrade, but no implementation is registered for the configured
-    /// <see cref="SecretHasherOptions.Algorithm" />.
+    /// Verification succeeded and needs an upgrade, but the algorithm selected at registration has no registered
+    /// implementation.
     /// </exception>
     SecretVerification Verify(ReadOnlySpan<char> secret, string encoded);
 }

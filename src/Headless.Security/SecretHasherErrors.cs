@@ -6,12 +6,7 @@ internal static class SecretHasherErrors
 {
     public static string AlgorithmNotRegistered(string algorithm)
     {
-        var remedy = string.Equals(algorithm, SecretHashAlgorithms.Argon2id, StringComparison.Ordinal)
-            ? "Argon2id ships in the Headless.Security.Argon2 package: reference it and call "
-                + "services.AddArgon2idSecretHashing(), or set SecretHasherOptions.Algorithm to "
-                + $"'{SecretHashAlgorithms.Pbkdf2Sha256}'."
-            : "Register an ISecretHashAlgorithm with that id, or change SecretHasherOptions.Algorithm.";
-
-        return $"No secret-hashing algorithm is registered for the configured id '{algorithm}'. {remedy}";
+        return $"The secret hasher selected the algorithm '{algorithm}', but no ISecretHashAlgorithm with that id is "
+            + "registered. The Use* extension that selected it must register the algorithm in its AddServices.";
     }
 }

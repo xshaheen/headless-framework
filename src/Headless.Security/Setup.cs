@@ -10,8 +10,9 @@ namespace Headless.Security;
 
 /// <summary>Registration helpers for the string encryption, lookup hashing, and secret hashing services.</summary>
 /// <remarks>
-/// All <c>Add*</c> members are idempotent: the first registration for a given service wins, and a later call with
-/// different options is silently ignored. Configure each service once.
+/// <c>AddStringEncryptionService</c> and <c>AddLookupHasher</c> are idempotent: the first registration wins, and a
+/// later call with different options is silently ignored. <c>AddHeadlessSecretHasher</c> instead refuses a second
+/// call, because two calls could select two different algorithms for new hashes.
 /// </remarks>
 [PublicAPI]
 public static class SetupSecurity
@@ -124,84 +125,65 @@ public static class SetupSecurity
         }
 
         /// <summary>
-        /// Registers <see cref="ISecretHasher" /> as a singleton with the built-in PBKDF2-SHA256 algorithm, binding
-        /// <see cref="SecretHasherOptions" /> from the supplied configuration section.
+        /// Registers <see cref="ISecretHasher" /> as a singleton. The <paramref name="configure" /> callback binds the
+        /// shared <see cref="SecretHasherOptions" /> and must select exactly one algorithm for new hashes with a
+        /// <c>Use*</c> call: <c>UsePbkdf2Sha256</c> here, or <c>UseArgon2id</c> from <c>Headless.Security.Argon2</c>.
         /// </summary>
         /// <remarks>
-        /// The default <see cref="SecretHasherOptions.Algorithm" /> is Argon2id, which also needs
-        /// <c>AddArgon2idSecretHashing()</c> from the <c>Headless.Security.Argon2</c> package; without it, host startup
-        /// fails with a message naming that package.
+        /// PBKDF2-SHA256 is always registered for verification, whichever algorithm writes, so stored PBKDF2 hashes keep
+        /// verifying and are upgraded through <see cref="SecretVerification.Rehashed" />.
         /// </remarks>
-        /// <param name="config">The configuration section that binds <see cref="SecretHasherOptions" />.</param>
-        /// <returns>The same <see cref="IServiceCollection" /> so calls can be chained.</returns>
-        /// <exception cref="ArgumentNullException"><paramref name="config" /> is <see langword="null" />.</exception>
-        public IServiceCollection AddSecretHasher(IConfiguration config)
-        {
-            Argument.IsNotNull(config);
-
-            return _AddSecretHasherCore(
-                services,
-                s => s.Configure<SecretHasherOptions, SecretHasherOptionsValidator>(config)
-            );
-        }
-
-        /// <summary>
-        /// Registers <see cref="ISecretHasher" /> as a singleton with the built-in PBKDF2-SHA256 algorithm, configuring
-        /// <see cref="SecretHasherOptions" /> with the supplied delegate.
-        /// </summary>
-        /// <remarks>
-        /// The default <see cref="SecretHasherOptions.Algorithm" /> is Argon2id, which also needs
-        /// <c>AddArgon2idSecretHashing()</c> from the <c>Headless.Security.Argon2</c> package; without it, host startup
-        /// fails with a message naming that package.
-        /// </remarks>
-        /// <param name="configure">Configures <see cref="SecretHasherOptions" />.</param>
+        /// <param name="configure">Configures the shared options and selects the algorithm.</param>
         /// <returns>The same <see cref="IServiceCollection" /> so calls can be chained.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
-        public IServiceCollection AddSecretHasher(Action<SecretHasherOptions> configure)
+        /// <exception cref="InvalidOperationException">
+        /// No algorithm, or more than one, was selected, or the secret hasher is already registered.
+        /// </exception>
+        public IServiceCollection AddHeadlessSecretHasher(Action<HeadlessSecretHasherSetupBuilder> configure)
         {
             Argument.IsNotNull(configure);
 
-            return _AddSecretHasherCore(
-                services,
-                s => s.Configure<SecretHasherOptions, SecretHasherOptionsValidator>(configure)
-            );
-        }
+            var setup = new HeadlessSecretHasherSetupBuilder(services);
+            configure(setup);
 
-        /// <summary>
-        /// Registers <see cref="ISecretHasher" /> as a singleton with the built-in PBKDF2-SHA256 algorithm, configuring
-        /// <see cref="SecretHasherOptions" /> with the supplied delegate that can resolve services from the
-        /// <see cref="IServiceProvider" />.
-        /// </summary>
-        /// <remarks>
-        /// The default <see cref="SecretHasherOptions.Algorithm" /> is Argon2id, which also needs
-        /// <c>AddArgon2idSecretHashing()</c> from the <c>Headless.Security.Argon2</c> package; without it, host startup
-        /// fails with a message naming that package.
-        /// </remarks>
-        /// <param name="configure">Configures <see cref="SecretHasherOptions" /> using resolved services.</param>
-        /// <returns>The same <see cref="IServiceCollection" /> so calls can be chained.</returns>
-        /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
-        public IServiceCollection AddSecretHasher(Action<SecretHasherOptions, IServiceProvider> configure)
-        {
-            Argument.IsNotNull(configure);
-
-            return _AddSecretHasherCore(
-                services,
-                s => s.Configure<SecretHasherOptions, SecretHasherOptionsValidator>(configure)
-            );
+            return _AddSecretHasherCore(services, setup);
         }
     }
 
-    private static IServiceCollection _AddSecretHasherCore(IServiceCollection services, Action<IServiceCollection> bind)
+    private static IServiceCollection _AddSecretHasherCore(
+        IServiceCollection services,
+        HeadlessSecretHasherSetupBuilder setup
+    )
     {
-        if (_IsRegistered<ISecretHasher>(services))
+        if (setup.Extensions.Count != 1)
         {
-            return services;
+            throw new InvalidOperationException(
+                setup.Extensions.Count == 0
+                    ? "The secret hasher requires exactly one algorithm for new hashes. Call `UseArgon2id` (Headless.Security.Argon2) or `UsePbkdf2Sha256`."
+                    : "The secret hasher requires exactly one algorithm for new hashes. Multiple algorithms were selected."
+            );
         }
 
-        bind(services);
+        // A second registration would silently leave two competing algorithm selections; refuse it instead.
+        if (_IsRegistered<ISecretHasher>(services))
+        {
+            throw new InvalidOperationException(
+                "AddHeadlessSecretHasher was already called on this service collection."
+            );
+        }
+
+        var extension = setup.Extensions[0];
+
+        services.AddOptions<SecretHasherOptions, SecretHasherOptionsValidator>();
+        services.AddSingleton(new SecretHasherAlgorithmSelection(extension.AlgorithmId));
         services.TryAddSingleton<ISecretHasher, SecretHasher>();
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<ISecretHashAlgorithm, Pbkdf2Sha256SecretHashAlgorithm>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, SecretHasherStartupValidationService>());
+
+        // PBKDF2 always verifies, so a host that moved to another algorithm still accepts and upgrades old hashes.
+        services.AddOptions<Pbkdf2Sha256HashOptions, Pbkdf2Sha256HashOptionsValidator>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ISecretHashAlgorithm, Pbkdf2Sha256SecretHashAlgorithm>());
+
+        extension.AddServices(services);
 
         return services;
     }

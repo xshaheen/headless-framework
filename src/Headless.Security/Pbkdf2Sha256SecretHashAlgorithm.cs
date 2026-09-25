@@ -13,7 +13,7 @@ namespace Headless.Security;
 /// PHC defines no PBKDF2 identifier; this follows the RustCrypto/Auth0 convention, which is PHC-conformant (the passlib
 /// form uses a bare rounds field and a different base64 alphabet).
 /// </remarks>
-internal sealed class Pbkdf2Sha256SecretHashAlgorithm(IOptions<SecretHasherOptions> options) : ISecretHashAlgorithm
+internal sealed class Pbkdf2Sha256SecretHashAlgorithm(IOptions<Pbkdf2Sha256HashOptions> options) : ISecretHashAlgorithm
 {
     // Shared by the writer and the parser so the two cannot drift apart.
     private const string _IterationsName = "i";
@@ -23,7 +23,7 @@ internal sealed class Pbkdf2Sha256SecretHashAlgorithm(IOptions<SecretHasherOptio
 
     public string Hash(ReadOnlySpan<byte> secret)
     {
-        var parameters = options.Value.Pbkdf2Sha256;
+        var parameters = options.Value;
         Span<byte> salt = stackalloc byte[parameters.SaltSize];
         Span<byte> hash = stackalloc byte[parameters.HashSize];
         RandomNumberGenerator.Fill(salt);
@@ -59,7 +59,7 @@ internal sealed class Pbkdf2Sha256SecretHashAlgorithm(IOptions<SecretHasherOptio
 
     public bool NeedsRehash(PhcString encoded)
     {
-        var configured = options.Value.Pbkdf2Sha256;
+        var configured = options.Value;
 
         return !_TryReadIterations(encoded, out var iterations)
             || iterations < configured.Iterations

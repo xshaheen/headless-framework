@@ -65,21 +65,23 @@ public sealed class SecuritySetupTests
     }
 
     [Fact]
-    public void should_register_secret_hasher_from_configuration_and_keep_the_first_registration()
+    public void should_bind_shared_options_and_pbkdf2_options_from_configuration()
     {
         // given
         var services = new ServiceCollection();
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection([
-                new KeyValuePair<string, string?>("One:Algorithm", SecretHashAlgorithms.Pbkdf2Sha256),
-                new KeyValuePair<string, string?>("One:Pbkdf2Sha256:Iterations", "1000"),
-                new KeyValuePair<string, string?>("Two:Pbkdf2Sha256:Iterations", "2000"),
+                new KeyValuePair<string, string?>("SecretHasher:MaxSecretLength", "64"),
+                new KeyValuePair<string, string?>("SecretHasher:Pbkdf2:Iterations", "1000"),
             ])
             .Build();
 
         // when
-        services.AddSecretHasher(configuration.GetRequiredSection("One"));
-        services.AddSecretHasher(configuration.GetRequiredSection("Two"));
+        services.AddHeadlessSecretHasher(setup =>
+        {
+            setup.Configure(configuration.GetRequiredSection("SecretHasher"));
+            setup.UsePbkdf2Sha256(configuration.GetRequiredSection("SecretHasher:Pbkdf2"));
+        });
 
         using var serviceProvider = services.BuildServiceProvider();
         var hasher = serviceProvider.GetRequiredService<ISecretHasher>();
@@ -88,21 +90,33 @@ public sealed class SecuritySetupTests
         // then
         encoded.Should().StartWith("$pbkdf2-sha256$i=1000,l=32$");
         hasher.Verify("pin", encoded).Succeeded.Should().BeTrue();
+        serviceProvider.GetRequiredService<IOptions<SecretHasherOptions>>().Value.MaxSecretLength.Should().Be(64);
         serviceProvider.GetServices<ISecretHashAlgorithm>().Should().ContainSingle();
     }
 
     [Fact]
-    public void should_register_secret_hasher_from_delegate()
+    public void should_select_pbkdf2_with_defaults()
     {
         // given
         var services = new ServiceCollection();
 
         // when
-        services.AddSecretHasher(options =>
-        {
-            options.Algorithm = SecretHashAlgorithms.Pbkdf2Sha256;
-            options.Pbkdf2Sha256.Iterations = 1_000;
-        });
+        services.AddHeadlessSecretHasher(setup => setup.UsePbkdf2Sha256());
+
+        using var serviceProvider = services.BuildServiceProvider();
+
+        // then
+        serviceProvider.GetRequiredService<ISecretHasher>().Hash("pin").Should().StartWith("$pbkdf2-sha256$i=600000,");
+    }
+
+    [Fact]
+    public void should_select_pbkdf2_from_delegate()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessSecretHasher(setup => setup.UsePbkdf2Sha256(o => o.Iterations = 1_000));
 
         using var serviceProvider = services.BuildServiceProvider();
 
@@ -111,19 +125,13 @@ public sealed class SecuritySetupTests
     }
 
     [Fact]
-    public void should_register_secret_hasher_from_service_provider_delegate()
+    public void should_select_pbkdf2_from_service_provider_delegate()
     {
         // given
         var services = new ServiceCollection();
 
         // when
-        services.AddSecretHasher(
-            (options, _) =>
-            {
-                options.Algorithm = SecretHashAlgorithms.Pbkdf2Sha256;
-                options.Pbkdf2Sha256.Iterations = 1_000;
-            }
-        );
+        services.AddHeadlessSecretHasher(setup => setup.UsePbkdf2Sha256((o, _) => o.Iterations = 1_000));
 
         using var serviceProvider = services.BuildServiceProvider();
 
@@ -132,14 +140,52 @@ public sealed class SecuritySetupTests
     }
 
     [Fact]
-    public void should_register_the_startup_check_once()
+    public void should_refuse_registration_without_an_algorithm()
+    {
+        var services = new ServiceCollection();
+
+        FluentActions
+            .Invoking(() => services.AddHeadlessSecretHasher(setup => setup.Configure(_ => { })))
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*exactly one algorithm*UseArgon2id*UsePbkdf2Sha256*");
+    }
+
+    [Fact]
+    public void should_refuse_more_than_one_algorithm()
+    {
+        var services = new ServiceCollection();
+
+        FluentActions
+            .Invoking(() => services.AddHeadlessSecretHasher(setup => setup.UsePbkdf2Sha256().UsePbkdf2Sha256()))
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*Multiple algorithms*");
+    }
+
+    [Fact]
+    public void should_refuse_a_second_registration()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddHeadlessSecretHasher(setup => setup.UsePbkdf2Sha256());
+
+        // then
+        FluentActions
+            .Invoking(() => services.AddHeadlessSecretHasher(setup => setup.UsePbkdf2Sha256()))
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*already called*");
+    }
+
+    [Fact]
+    public void should_register_the_startup_check()
     {
         // given
         var services = new ServiceCollection();
 
         // when
-        services.AddSecretHasher(_ => { });
-        services.AddSecretHasher(_ => { });
+        services.AddHeadlessSecretHasher(setup => setup.UsePbkdf2Sha256());
 
         // then
         services
@@ -149,17 +195,33 @@ public sealed class SecuritySetupTests
     }
 
     [Fact]
-    public void should_reject_invalid_secret_hasher_options_on_resolution()
+    public void should_reject_invalid_shared_options_on_resolution()
     {
         // given
         var services = new ServiceCollection();
-        services.AddSecretHasher(options => options.Pbkdf2Sha256.Iterations = 0);
+        services.AddHeadlessSecretHasher(setup => setup.Configure(o => o.MaxSecretLength = 0).UsePbkdf2Sha256());
 
         using var serviceProvider = services.BuildServiceProvider();
 
         // then
         FluentActions
             .Invoking(() => serviceProvider.GetRequiredService<IOptions<SecretHasherOptions>>().Value)
+            .Should()
+            .Throw<OptionsValidationException>();
+    }
+
+    [Fact]
+    public void should_reject_invalid_pbkdf2_options_on_resolution()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddHeadlessSecretHasher(setup => setup.UsePbkdf2Sha256(o => o.Iterations = 0));
+
+        using var serviceProvider = services.BuildServiceProvider();
+
+        // then
+        FluentActions
+            .Invoking(() => serviceProvider.GetRequiredService<IOptions<Pbkdf2Sha256HashOptions>>().Value)
             .Should()
             .Throw<OptionsValidationException>();
     }

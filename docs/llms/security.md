@@ -13,8 +13,8 @@ packages: Security.Abstractions, Security, Security.Argon2
 - **`Headless.Security`**: the default implementations and the registration helpers.
   - `AddStringEncryptionService(...)` registers AES-GCM encryption.
   - `AddLookupHasher(...)` registers the deterministic PBKDF2 lookup digest.
-  - `AddSecretHasher(...)` registers `ISecretHasher` with the built-in PBKDF2-SHA256 algorithm and a startup check.
-- **`Headless.Security.Argon2`**: provides Argon2id through libsodium (NSec), registered with `AddArgon2idSecretHashing()`. Argon2id is the default `SecretHasherOptions.Algorithm`, so the default secret-hasher setup needs this package. It is a separate package because it carries a native library.
+  - `AddHeadlessSecretHasher(setup => …)` registers `ISecretHasher` and a startup check. The setup builder selects exactly one algorithm for new hashes, such as `setup.UsePbkdf2Sha256()`.
+- **`Headless.Security.Argon2`**: adds `setup.UseArgon2id()`, Argon2id through libsodium (NSec). It is a separate package because it carries a native library.
 
 Choose by what the stored value must do:
 
@@ -27,7 +27,8 @@ Choose by what the stored value must do:
 ## Agent Rules
 
 - Never store a secret with `ILookupHasher`. It is a deterministic digest with no per-record salt and no cost parameter in its output. Use `ISecretHasher` for anything that is only verified.
-- Register the secret hasher with both calls, `services.AddSecretHasher(...)` and `services.AddArgon2idSecretHashing()`. Without the Argon2 package the default configuration fails host startup, with a message naming the package. Set `SecretHasherOptions.Algorithm = SecretHashAlgorithms.Pbkdf2Sha256` only when a native dependency is unacceptable.
+- Register with `services.AddHeadlessSecretHasher(setup => setup.UseArgon2id())`. Choose `setup.UsePbkdf2Sha256()` instead only when a native dependency is unacceptable (FIPS-only hosts, platforms libsodium does not cover). The builder refuses zero or several `Use*` calls, and a second `AddHeadlessSecretHasher` call.
+- Configure cost parameters on the `Use*` call (`UseArgon2id(o => o.MemorySize = …)`), and the shared settings with `setup.Configure(...)`. Each algorithm owns its own options type.
 - Store the whole string `Hash` returns in one column. It carries the algorithm, cost, and salt, so do not add salt or version columns.
 - Always persist `SecretVerification.Rehashed` when it is non-null. That is how records move to a stronger algorithm or cost; nothing else migrates them.
 - Treat the stored hash column as untrusted input. `Verify` already bounds stored parameters, so do not wrap it in a catch-all. A malformed value fails verification and does not throw.
@@ -35,7 +36,7 @@ Choose by what the stored value must do:
 - A 6-digit PIN has only 10⁶ possibilities. No hash parameters protect it from an offline attacker, so pair PIN verification with rate limiting and lockout.
 - A high-entropy API key (at least 128 random bits) gains nothing from a slow hash, and hashing one on every request costs latency and CPU. Prefer an HMAC over such keys; use `ISecretHasher` for low-entropy secrets.
 - Register `IStringEncryptionService` before `AddHeadlessSettings(...)`: `Headless.Settings.Core` requires it. The recommended way is to bind `Headless:StringEncryption` with `AddStringEncryptionService(...)`.
-- Every `Add*` security registration is idempotent. The first call wins and later calls are ignored, so configure each service once.
+- `AddStringEncryptionService` and `AddLookupHasher` are idempotent: the first call wins and later calls are ignored, so configure each service once. `AddHeadlessSecretHasher` throws on a second call.
 
 ## Secret hashing
 
@@ -73,10 +74,10 @@ if (result.Rehashed is { } upgraded)
 }
 ```
 
-- `Verify` accepts every registered algorithm, whatever is configured. Switching `Algorithm` from PBKDF2 to Argon2id, or raising a cost, never locks anyone out. Records upgrade on their next successful sign-in.
+- `Verify` accepts every registered algorithm, whichever one writes. PBKDF2 is always registered for verification, so moving from `UsePbkdf2Sha256()` to `UseArgon2id()`, or raising a cost, never locks anyone out. Records upgrade on their next successful sign-in.
 - `Rehashed` is set only after a success, and only when the stored algorithm differs from the configured one or any stored parameter (cost, salt length, hash length) is below the configured value. A stored hash at or above every configured value is never downgraded.
 - The comparison is constant-time over the derived bytes. Verification always derives at the stored hash length, so the work does not depend on the length of the supplied secret.
-- Outside a host, the startup check never runs. There, a successful `Verify` that needs a rehash under an unregistered configured algorithm throws `InvalidOperationException` from the rehash step.
+- Outside a host, the startup check never runs. There, a successful `Verify` that needs a rehash under an unregistered selected algorithm throws `InvalidOperationException` from the rehash step.
 
 ### Untrusted stored parameters
 
@@ -102,8 +103,8 @@ When raising cost, prefer memory for Argon2id. Measure on production hardware: a
 
 At host start, `SecretHasherStartupValidationService` makes two checks:
 
-1. It fails startup when `SecretHasherOptions.Algorithm` has no registered implementation. This check is not affected by `CostCheck.Mode`.
-2. It benchmarks the configured algorithm: one warm-up hash, then the median of three. It compares the median against `CostCheck.MinimumDuration` (default 5 ms) and `CostCheck.MaximumDuration` (default 1 s). A result out of range logs a warning (`Warn`, the default), fails startup (`Strict`), or is not measured at all (`Off`).
+1. It fails startup when the algorithm the builder selected has no registered implementation, which only a faulty custom `Use*` extension can cause. This check is not affected by `CostCheck.Mode`.
+2. It benchmarks the selected algorithm: one warm-up hash, then the median of three. It compares the median against `CostCheck.MinimumDuration` (default 5 ms) and `CostCheck.MaximumDuration` (default 1 s). A result out of range logs a warning (`Warn`, the default), fails startup (`Strict`), or is not measured at all (`Off`).
 
 In tests, set low costs and `CostCheck.Mode = SecretHasherCostCheckMode.Off`. The default `Warn` mode would log a warning for test-grade parameters.
 
@@ -122,10 +123,10 @@ Security contracts and option models. There is no implementation and no DI coupl
     - `Create(string value, string? salt = null) → string` returns a Base64 PBKDF2 hash. It uses `LookupHasherOptions.DefaultSalt` when `salt` is omitted, and an empty salt when no default is configured.
     - It is not for secret storage; use `ISecretHasher` for that.
 - **`ISecretHasher`**: verify-capable secret hashing.
-    - `Hash(ReadOnlySpan<char> secret) → string` returns a new PHC encoding on every call. It throws `ArgumentException` for an empty secret, one longer than `MaxSecretLength`, or one that is invalid UTF-16 (a lone surrogate). It throws `InvalidOperationException` when the configured algorithm is not registered.
+    - `Hash(ReadOnlySpan<char> secret) → string` returns a new PHC encoding on every call. It throws `ArgumentException` for an empty secret, one longer than `MaxSecretLength`, or one that is invalid UTF-16 (a lone surrogate). It throws `InvalidOperationException` when the selected algorithm is not registered.
     - `Verify(ReadOnlySpan<char> secret, string encoded) → SecretVerification` never throws for malformed, unknown, or out-of-bounds encodings. It throws `ArgumentNullException` for a `null` `encoded`.
 - **`SecretVerification(bool Succeeded, string? Rehashed)`**: the result of `Verify`. `SecretVerification.Failed` is the failure value.
-- **`SecretHasherOptions`**: `Algorithm` (default `argon2id`), `MaxSecretLength` (default 1024), `Argon2id` (`MemorySize` KiB 19,456, `Iterations` 2, `HashSize` 32), `Pbkdf2Sha256` (`Iterations` 600,000, `SaltSize` 16, `HashSize` 32), and `CostCheck` (`Mode` `Warn`, `MinimumDuration` 5 ms, `MaximumDuration` 1 s).
+- **`SecretHasherOptions`**: the settings shared by every algorithm: `MaxSecretLength` (default 1024) and `CostCheck` (`Mode` `Warn`, `MinimumDuration` 5 ms, `MaximumDuration` 1 s). Cost parameters live on each algorithm's own options (`Pbkdf2Sha256HashOptions`, `Argon2idHashOptions`).
 - **`PhcString`**: the canonical PHC codec. `TryParse`, a constructor, `ToString`, `Id`, `Version`, `Parameters`, `Salt`, `Hash`, and `TryGetInt32(name, out value)`, which reads only canonical decimals.
 - **`SecretHashAlgorithms`**: the id constants `Argon2id` and `Pbkdf2Sha256`. **`SecretHashLimits`**: the accepted parameter ranges.
 - **`StringEncryptionOptions`**: `DefaultPassPhrase` (required), `DefaultSalt` (required `byte[]`), `KeySize` (128/192/256 bits; default 256), `Iterations` (default 600,000).
@@ -164,22 +165,26 @@ None.
 
 ## Headless.Security
 
-The default implementations of the Security contracts, the built-in PBKDF2-SHA256 secret-hashing algorithm, and the idempotent registration helpers.
+The default implementations of the Security contracts, the built-in PBKDF2-SHA256 secret-hashing algorithm, and the registration helpers.
 
 ### API and behavior
 
 - **`StringEncryptionService`** implements AES-GCM with PBKDF2-SHA256 key derivation. It derives the default key once at construction and re-derives per call only for pass-phrase or salt overrides. Output: `Base64(nonce[12] || tag[16] || cipherText)`.
 - **`LookupHasher`** uses `Rfc2898DeriveBytes.Pbkdf2`. Output: `Base64(hash[SizeInBytes])`.
-- **`ISecretHashAlgorithm`** is the extension point for secret-hashing algorithms: `Id`, `Hash(secret)`, `TryComputeHash(secret, encoded, destination)`, and `NeedsRehash(encoded)`. Register an implementation with `TryAddEnumerable` as a singleton. Read `IOptions<SecretHasherOptions>.Value` at call time, not in the constructor. `TryComputeHash` must refuse out-of-range encodings and never throw.
-- **`AddStringEncryptionService`**, **`AddLookupHasher`**, and **`AddSecretHasher`** each have three overloads: `IConfiguration`, `Action<TOptions>`, and `Action<TOptions, IServiceProvider>`. All are idempotent.
-- `AddSecretHasher` registers `ISecretHasher`, the PBKDF2-SHA256 algorithm, validated `SecretHasherOptions`, and the startup check.
+- **`AddStringEncryptionService`** and **`AddLookupHasher`** each have three overloads: `IConfiguration`, `Action<TOptions>`, and `Action<TOptions, IServiceProvider>`. Both are idempotent.
+- **`AddHeadlessSecretHasher(Action<HeadlessSecretHasherSetupBuilder>)`** registers `ISecretHasher`, validated `SecretHasherOptions`, the startup check, and PBKDF2-SHA256 for verification. The builder:
+    - `Configure(...)` (the same three overloads) binds `SecretHasherOptions`.
+    - `UsePbkdf2Sha256()`, plus `IConfiguration`, `Action<Pbkdf2Sha256HashOptions>`, and `Action<Pbkdf2Sha256HashOptions, IServiceProvider>` overloads, selects PBKDF2-SHA256 for new hashes.
+    - Exactly one `Use*` call is required; zero, several, or a second `AddHeadlessSecretHasher` throws `InvalidOperationException` at registration.
+- **`Pbkdf2Sha256HashOptions`**: `Iterations` (default 600,000), `SaltSize` (16), `HashSize` (32).
+- **Adding an algorithm.** Implement `ISecretHashAlgorithm` (`Id`, `Hash(secret)`, `TryComputeHash(secret, encoded, destination)`, `NeedsRehash(encoded)`) with its own options type, and an `ISecretHashAlgorithmOptionsExtension` whose `AddServices` registers the algorithm with `TryAddEnumerable` as a singleton plus its options. Expose it as a `Use{Algorithm}` extension on `HeadlessSecretHasherSetupBuilder` that calls `RegisterExtension`. Read `IOptions<TOptions>.Value` at call time, not in the constructor, and make `TryComputeHash` refuse out-of-range encodings and never throw.
 
 ### Design constraints
 
-- **Idempotency.** Every `Add*` member checks for a prior registration and uses `TryAdd*`, so a second call is silently ignored.
+- **Registration.** `AddStringEncryptionService` and `AddLookupHasher` check for a prior registration and use `TryAdd*`, so a second call is silently ignored. `AddHeadlessSecretHasher` refuses a second call instead, because two calls could select two different algorithms.
 - **AES-GCM nonce.** Every `Encrypt` call generates a fresh random 12-byte nonce.
 - **Secret handling.** `ISecretHasher` encodes the secret as strict UTF-8 into a stack or pooled buffer and zeroes that buffer when it is done. It zeroes derived bytes too.
-- **Algorithm dispatch.** Verification dispatches on the PHC id of the stored hash. It does not use the configured algorithm, which only decides new hashes and rehashes.
+- **Algorithm dispatch.** Verification dispatches on the PHC id of the stored hash. The selected algorithm only decides new hashes and rehashes. PBKDF2 always verifies; another algorithm verifies only while it is the selected one.
 
 ### Install
 
@@ -196,27 +201,28 @@ builder.Services.AddStringEncryptionService(builder.Configuration.GetSection("He
 // Deterministic lookup hash.
 builder.Services.AddLookupHasher(options => options.DefaultSalt = "global-app-salt");
 
-// Secret hashing (Argon2id default; needs Headless.Security.Argon2).
-builder.Services.AddSecretHasher(builder.Configuration.GetSection("Headless:SecretHasher"));
-builder.Services.AddArgon2idSecretHashing();
+// Secret hashing with Argon2id (needs Headless.Security.Argon2).
+builder.Services.AddHeadlessSecretHasher(setup =>
+{
+    setup.Configure(builder.Configuration.GetSection("Headless:SecretHasher"));
+    setup.UseArgon2id(builder.Configuration.GetSection("Headless:SecretHasher:Argon2id"));
+});
 
-// Or PBKDF2 only, with no native dependency.
-builder.Services.AddSecretHasher(options => options.Algorithm = SecretHashAlgorithms.Pbkdf2Sha256);
+// Or PBKDF2, with no native dependency.
+builder.Services.AddHeadlessSecretHasher(setup => setup.UsePbkdf2Sha256());
 ```
 
 ### Configuration
 
-`SecretHasherOptions`, for example bound from `Headless:SecretHasher`:
+`SecretHasherOptions` and the selected algorithm's options, for example:
 
 ```json
 {
   "Headless": {
     "SecretHasher": {
-      "Algorithm": "argon2id",
       "MaxSecretLength": 1024,
-      "Argon2id": { "MemorySize": 19456, "Iterations": 2, "HashSize": 32 },
-      "Pbkdf2Sha256": { "Iterations": 600000, "SaltSize": 16, "HashSize": 32 },
-      "CostCheck": { "Mode": "Warn", "MinimumDuration": "00:00:00.005", "MaximumDuration": "00:00:01" }
+      "CostCheck": { "Mode": "Warn", "MinimumDuration": "00:00:00.005", "MaximumDuration": "00:00:01" },
+      "Argon2id": { "MemorySize": 19456, "Iterations": 2, "HashSize": 32 }
     }
   }
 }
@@ -255,7 +261,8 @@ Argon2id (RFC 9106) for `ISecretHasher`, through libsodium via `NSec.Cryptograph
 
 ### API and behavior
 
-- **`AddArgon2idSecretHashing()`** registers the Argon2id `ISecretHashAlgorithm`. It is idempotent. Its parameters come from `SecretHasherOptions.Argon2id`.
+- **`UseArgon2id()`** on `HeadlessSecretHasherSetupBuilder`, plus `IConfiguration`, `Action<Argon2idHashOptions>`, and `Action<Argon2idHashOptions, IServiceProvider>` overloads, selects Argon2id for new hashes and registers it for verification.
+- **`Argon2idHashOptions`**: `MemorySize` in KiB (default 19,456), `Iterations` (2), `HashSize` (32).
 
 ### Design constraints
 
@@ -272,14 +279,13 @@ dotnet add package Headless.Security.Argon2
 ### Setup and use
 
 ```csharp
-builder.Services.AddSecretHasher(builder.Configuration.GetSection("Headless:SecretHasher"));
-builder.Services.AddArgon2idSecretHashing();
+builder.Services.AddHeadlessSecretHasher(setup => setup.UseArgon2id(o => o.MemorySize = 47_104));
 ```
 
 ### Configuration
 
-None of its own. Configure `SecretHasherOptions.Argon2id`.
+`Argon2idHashOptions`, bound through the `UseArgon2id(IConfiguration)` overload or set in the delegate overloads.
 
 ### Runtime behavior
 
-- Registers `ISecretHashAlgorithm` (Argon2id) as a singleton.
+- Registers the Argon2id `ISecretHashAlgorithm` and validated `Argon2idHashOptions` as singletons.

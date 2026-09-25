@@ -12,12 +12,11 @@ internal static class SecretHashingTestKit
     // Low enough to keep the suite fast; production cost is covered by the options defaults and the startup check.
     public const int LowIterations = 1_000;
 
-    public static SecretHasherOptions Pbkdf2Options(int iterations = LowIterations, int hashSize = 32)
+    public static TestHasherSpec Pbkdf2Options(int iterations = LowIterations, int hashSize = 32)
     {
-        return new SecretHasherOptions
+        return new TestHasherSpec
         {
-            Algorithm = SecretHashAlgorithms.Pbkdf2Sha256,
-            Pbkdf2Sha256 = new Pbkdf2HashParameters
+            Pbkdf2 = new Pbkdf2Sha256HashOptions
             {
                 Iterations = iterations,
                 SaltSize = 16,
@@ -26,12 +25,24 @@ internal static class SecretHashingTestKit
         };
     }
 
-    public static SecretHasher CreateHasher(SecretHasherOptions options, params ISecretHashAlgorithm[] extra)
+    public static SecretHasher CreateHasher(TestHasherSpec spec, params ISecretHashAlgorithm[] extra)
     {
-        var wrapped = Options.Create(options);
-
-        return new SecretHasher(wrapped, [new Pbkdf2Sha256SecretHashAlgorithm(wrapped), .. extra]);
+        return new SecretHasher(
+            Options.Create(new SecretHasherOptions { MaxSecretLength = spec.MaxSecretLength }),
+            [new Pbkdf2Sha256SecretHashAlgorithm(Options.Create(spec.Pbkdf2)), .. extra],
+            new SecretHasherAlgorithmSelection(spec.Algorithm)
+        );
     }
+}
+
+/// <summary>Everything a test varies when constructing a hasher directly, without the DI builder.</summary>
+internal sealed class TestHasherSpec
+{
+    public string Algorithm { get; set; } = SecretHashAlgorithms.Pbkdf2Sha256;
+
+    public int MaxSecretLength { get; set; } = 1024;
+
+    public Pbkdf2Sha256HashOptions Pbkdf2 { get; init; } = new();
 }
 
 /// <summary>Collects formatted log entries so tests can assert on warnings.</summary>

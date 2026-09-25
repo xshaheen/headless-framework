@@ -15,7 +15,7 @@ namespace Headless.Security;
 /// libsodium derives Argon2id with one lane and a 16-byte salt only, so encodings with <c>p≠1</c> or another salt
 /// length — for example hashes produced by another library with <c>p=4</c> — are refused rather than verified.
 /// </remarks>
-internal sealed class Argon2idSecretHashAlgorithm(IOptions<SecretHasherOptions> options) : ISecretHashAlgorithm
+internal sealed class Argon2idSecretHashAlgorithm(IOptions<Argon2idHashOptions> options) : ISecretHashAlgorithm
 {
     // The only version libsodium implements (0x13).
     private const int _Version = 19;
@@ -29,7 +29,7 @@ internal sealed class Argon2idSecretHashAlgorithm(IOptions<SecretHasherOptions> 
 
     public string Hash(ReadOnlySpan<byte> secret)
     {
-        var parameters = options.Value.Argon2id;
+        var parameters = options.Value;
         Span<byte> salt = stackalloc byte[SecretHashLimits.Argon2idSaltSize];
         Span<byte> hash = stackalloc byte[parameters.HashSize];
         RandomNumberGenerator.Fill(salt);
@@ -79,7 +79,7 @@ internal sealed class Argon2idSecretHashAlgorithm(IOptions<SecretHasherOptions> 
 
     public bool NeedsRehash(PhcString encoded)
     {
-        var configured = options.Value.Argon2id;
+        var configured = options.Value;
 
         return !_TryReadParameters(encoded, out var memorySize, out var iterations)
             || memorySize < configured.MemorySize

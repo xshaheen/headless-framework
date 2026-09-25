@@ -11,23 +11,20 @@ namespace Tests.SecretHashing;
 public sealed class SecretHasherStartupValidationServiceTests
 {
     [Fact]
-    public async Task should_fail_startup_naming_the_argon2_package_when_argon2id_is_configured_but_not_registered()
+    public async Task should_fail_startup_when_the_selected_algorithm_is_not_registered_even_with_the_cost_check_off()
     {
-        // given
+        // given — a faulty Use* extension selected an id but registered no matching algorithm.
         await using var provider = _BuildProvider(
-            o =>
-            {
-                o.Algorithm = SecretHashAlgorithms.Argon2id;
-                o.CostCheck.Mode = SecretHasherCostCheckMode.Off;
-            },
-            algorithm: null
+            o => o.CostCheck.Mode = SecretHasherCostCheckMode.Off,
+            algorithm: null,
+            selectedAlgorithm: SecretHashAlgorithms.Argon2id
         );
 
         // when
         var act = () => _Service(provider).StartingAsync(CancellationToken.None);
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Headless.Security.Argon2*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*'argon2id'*no ISecretHashAlgorithm*");
     }
 
     [Fact]
@@ -179,20 +176,16 @@ public sealed class SecretHasherStartupValidationServiceTests
     private static ServiceProvider _BuildProvider(
         Action<SecretHasherOptions> configure,
         TimedAlgorithm? algorithm,
-        RecordingLoggerProvider? logger = null
+        RecordingLoggerProvider? logger = null,
+        string selectedAlgorithm = "timed"
     )
     {
         var services = new ServiceCollection();
         var time = new FakeTimeProvider();
         services.AddSingleton<TimeProvider>(time);
         services.AddLogging(builder => builder.AddProvider(logger ?? new RecordingLoggerProvider()));
-        services
-            .AddOptions<SecretHasherOptions>()
-            .Configure(o =>
-            {
-                o.Algorithm = "timed";
-                configure(o);
-            });
+        services.AddOptions<SecretHasherOptions>().Configure(configure);
+        services.AddSingleton(new SecretHasherAlgorithmSelection(selectedAlgorithm));
 
         if (algorithm is not null)
         {

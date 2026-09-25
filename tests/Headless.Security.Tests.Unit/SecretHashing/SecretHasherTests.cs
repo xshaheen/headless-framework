@@ -223,7 +223,7 @@ public sealed class SecretHasherTests
     }
 
     [Fact]
-    public void should_throw_naming_the_argon2_package_when_configured_algorithm_is_not_registered()
+    public void should_throw_when_the_selected_algorithm_is_not_registered()
     {
         // given
         var options = SecretHashingTestKit.Pbkdf2Options();
@@ -235,13 +235,13 @@ public sealed class SecretHasherTests
             .Invoking(() => sut.Hash("pin"))
             .Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*Headless.Security.Argon2*");
+            .WithMessage("*'argon2id'*no ISecretHashAlgorithm*");
     }
 
     [Fact]
     public void should_throw_from_verify_when_a_successful_verification_needs_a_rehash_under_an_unregistered_algorithm()
     {
-        // given — a stored PBKDF2 hash, and a hasher configured for Argon2id without the Argon2 package registered.
+        // given — a stored PBKDF2 hash, and a hasher whose selected algorithm (Argon2id) has no registered implementation.
         var stored = SecretHashingTestKit.CreateHasher(SecretHashingTestKit.Pbkdf2Options()).Hash("pin");
         var options = SecretHashingTestKit.Pbkdf2Options();
         options.Algorithm = SecretHashAlgorithms.Argon2id;
@@ -252,7 +252,7 @@ public sealed class SecretHasherTests
             .Invoking(() => sut.Verify("pin", stored))
             .Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*Headless.Security.Argon2*");
+            .WithMessage("*'argon2id'*no ISecretHashAlgorithm*");
         sut.Verify("wrong", stored).Should().Be(SecretVerification.Failed);
     }
 

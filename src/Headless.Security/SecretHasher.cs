@@ -22,11 +22,17 @@ internal sealed class SecretHasher : ISecretHasher
     );
 
     private readonly IOptions<SecretHasherOptions> _options;
+    private readonly string _selectedAlgorithmId;
     private readonly Dictionary<string, ISecretHashAlgorithm> _algorithms = new(StringComparer.Ordinal);
 
-    public SecretHasher(IOptions<SecretHasherOptions> options, IEnumerable<ISecretHashAlgorithm> algorithms)
+    public SecretHasher(
+        IOptions<SecretHasherOptions> options,
+        IEnumerable<ISecretHashAlgorithm> algorithms,
+        SecretHasherAlgorithmSelection selection
+    )
     {
         _options = options;
+        _selectedAlgorithmId = selection.AlgorithmId;
 
         foreach (var algorithm in algorithms)
         {
@@ -49,7 +55,7 @@ internal sealed class SecretHasher : ISecretHasher
             );
         }
 
-        var algorithm = _GetConfiguredAlgorithm(options);
+        var algorithm = _GetSelectedAlgorithm();
 
         if (!_TryWithUtf8(secret, bytes => algorithm.Hash(bytes), out var encoded))
         {
@@ -78,17 +84,12 @@ internal sealed class SecretHasher : ISecretHasher
             return SecretVerification.Failed;
         }
 
-        return _TryWithUtf8(secret, bytes => _Verify(bytes, options, stored, algorithm), out var result)
+        return _TryWithUtf8(secret, bytes => _Verify(bytes, stored, algorithm), out var result)
             ? result
             : SecretVerification.Failed;
     }
 
-    private SecretVerification _Verify(
-        ReadOnlySpan<byte> secret,
-        SecretHasherOptions options,
-        PhcString stored,
-        ISecretHashAlgorithm algorithm
-    )
+    private SecretVerification _Verify(ReadOnlySpan<byte> secret, PhcString stored, ISecretHashAlgorithm algorithm)
     {
         // The derivation always runs at the stored hash length, and the comparison always covers the whole buffer,
         // so the work done does not depend on the secret the caller supplied.
@@ -117,19 +118,19 @@ internal sealed class SecretHasher : ISecretHasher
         }
 
         var upgrade =
-            !string.Equals(stored.Id, options.Algorithm, StringComparison.Ordinal) || algorithm.NeedsRehash(stored);
+            !string.Equals(stored.Id, _selectedAlgorithmId, StringComparison.Ordinal) || algorithm.NeedsRehash(stored);
 
-        return new SecretVerification(true, upgrade ? _GetConfiguredAlgorithm(options).Hash(secret) : null);
+        return new SecretVerification(true, upgrade ? _GetSelectedAlgorithm().Hash(secret) : null);
     }
 
-    private ISecretHashAlgorithm _GetConfiguredAlgorithm(SecretHasherOptions options)
+    private ISecretHashAlgorithm _GetSelectedAlgorithm()
     {
-        if (_algorithms.TryGetValue(options.Algorithm, out var algorithm))
+        if (_algorithms.TryGetValue(_selectedAlgorithmId, out var algorithm))
         {
             return algorithm;
         }
 
-        throw new InvalidOperationException(SecretHasherErrors.AlgorithmNotRegistered(options.Algorithm));
+        throw new InvalidOperationException(SecretHasherErrors.AlgorithmNotRegistered(_selectedAlgorithmId));
     }
 
     private delegate TResult Utf8Callback<out TResult>(ReadOnlySpan<byte> bytes);

@@ -15,10 +15,10 @@ namespace Headless.Security;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The registration check lives here rather than in the options validator because validators run while options are
-/// built, and resolving the algorithms from there would re-enter that construction (algorithms read options). It is
-/// not governed by <see cref="SecretHasherCostCheckOptions.Mode" />: a hasher that cannot hash is always a startup
-/// failure, never a warning.
+/// The setup builder already guarantees exactly one selected algorithm; the registration check catches a <c>Use*</c>
+/// extension that selected an id without registering a matching <see cref="ISecretHashAlgorithm" />. It is not
+/// governed by <see cref="SecretHasherCostCheckOptions.Mode" />: a hasher that cannot hash is always a startup failure,
+/// never a warning.
 /// </para>
 /// <para>
 /// The benchmark hashes once to warm up, then three more times, and judges the median so one scheduler hiccup cannot
@@ -40,7 +40,7 @@ internal sealed class SecretHasherStartupValidationService(
 
     /// <inheritdoc />
     /// <exception cref="InvalidOperationException">
-    /// The configured algorithm is not registered, or the measured cost is out of range and
+    /// The selected algorithm is not registered, or the measured cost is out of range and
     /// <see cref="SecretHasherCostCheckOptions.Mode" /> is <see cref="SecretHasherCostCheckMode.Strict" />.
     /// </exception>
     public Task StartingAsync(CancellationToken cancellationToken)
@@ -51,11 +51,12 @@ internal sealed class SecretHasherStartupValidationService(
         }
 
         var current = options.Value;
+        var selected = serviceProvider.GetRequiredService<SecretHasherAlgorithmSelection>().AlgorithmId;
         var algorithm =
             serviceProvider
                 .GetServices<ISecretHashAlgorithm>()
-                .FirstOrDefault(a => string.Equals(a.Id, current.Algorithm, StringComparison.Ordinal))
-            ?? throw new InvalidOperationException(SecretHasherErrors.AlgorithmNotRegistered(current.Algorithm));
+                .FirstOrDefault(a => string.Equals(a.Id, selected, StringComparison.Ordinal))
+            ?? throw new InvalidOperationException(SecretHasherErrors.AlgorithmNotRegistered(selected));
 
         if (current.CostCheck.Mode is SecretHasherCostCheckMode.Off)
         {

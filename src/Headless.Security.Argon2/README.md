@@ -1,6 +1,6 @@
 # Headless.Security.Argon2
 
-Argon2id for `ISecretHasher`, the algorithm `SecretHasherOptions` selects by default.
+Argon2id for `ISecretHasher`, selected with `UseArgon2id()` on the secret-hasher setup builder.
 
 ## Why use this package
 

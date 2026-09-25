@@ -2,6 +2,7 @@
 
 using Headless.Security;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -126,12 +127,13 @@ public sealed class Argon2idSecretHashAlgorithmTests : TestBase
     }
 
     [Fact]
-    public async Task should_start_a_host_with_default_options_when_argon2id_is_registered()
+    public async Task should_start_a_host_with_default_argon2id_options()
     {
         // given
         var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddSecretHasher(o => o.CostCheck.Mode = SecretHasherCostCheckMode.Off);
-        builder.Services.AddArgon2idSecretHashing();
+        builder.Services.AddHeadlessSecretHasher(setup =>
+            setup.Configure(o => o.CostCheck.Mode = SecretHasherCostCheckMode.Off).UseArgon2id()
+        );
         using var host = builder.Build();
 
         // when
@@ -146,40 +148,83 @@ public sealed class Argon2idSecretHashAlgorithmTests : TestBase
     }
 
     [Fact]
-    public void should_register_the_algorithm_once()
+    public void should_bind_argon2id_options_from_configuration()
+    {
+        // given
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection([
+                new KeyValuePair<string, string?>("Argon2id:MemorySize", "128"),
+                new KeyValuePair<string, string?>("Argon2id:Iterations", "3"),
+            ])
+            .Build();
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessSecretHasher(setup => setup.UseArgon2id(configuration.GetRequiredSection("Argon2id")));
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredService<ISecretHasher>().Hash("pin").Should().StartWith("$argon2id$v=19$m=128,t=3,p=1$");
+    }
+
+    [Fact]
+    public void should_keep_pbkdf2_registered_for_verification_when_argon2id_writes()
     {
         var services = new ServiceCollection();
 
-        services.AddArgon2idSecretHashing();
-        services.AddArgon2idSecretHashing();
+        services.AddHeadlessSecretHasher(setup => setup.UseArgon2id());
+        using var provider = services.BuildServiceProvider();
 
-        services.Where(d => d.ServiceType == typeof(ISecretHashAlgorithm)).Should().ContainSingle();
+        provider
+            .GetServices<ISecretHashAlgorithm>()
+            .Select(a => a.Id)
+            .Should()
+            .BeEquivalentTo(SecretHashAlgorithms.Argon2id, SecretHashAlgorithms.Pbkdf2Sha256);
     }
 
-    private static SecretHasherOptions _Options(int iterations = 1)
+    [Fact]
+    public void should_reject_invalid_argon2id_options_on_resolution()
     {
-        return new SecretHasherOptions
+        // given
+        var services = new ServiceCollection();
+        services.AddHeadlessSecretHasher(setup => setup.UseArgon2id(o => o.MemorySize = 1));
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        FluentActions
+            .Invoking(() => provider.GetRequiredService<IOptions<Argon2idHashOptions>>().Value)
+            .Should()
+            .Throw<OptionsValidationException>();
+    }
+
+    private static Argon2idHashOptions _Options(int iterations = 1)
+    {
+        return new Argon2idHashOptions
         {
-            Argon2id = new Argon2idHashParameters
-            {
-                MemorySize = _LowMemorySize,
-                Iterations = iterations,
-                HashSize = 32,
-            },
+            MemorySize = _LowMemorySize,
+            Iterations = iterations,
+            HashSize = 32,
         };
     }
 
     private static ServiceProvider _BuildProvider(int iterations = 1, string algorithm = SecretHashAlgorithms.Argon2id)
     {
         var services = new ServiceCollection();
-        services.AddSecretHasher(o =>
+        services.AddHeadlessSecretHasher(setup =>
         {
-            o.Algorithm = algorithm;
-            o.Argon2id.MemorySize = _LowMemorySize;
-            o.Argon2id.Iterations = iterations;
-            o.Pbkdf2Sha256.Iterations = 1_000;
+            if (string.Equals(algorithm, SecretHashAlgorithms.Pbkdf2Sha256, StringComparison.Ordinal))
+            {
+                setup.UsePbkdf2Sha256((Pbkdf2Sha256HashOptions o) => o.Iterations = 1_000);
+            }
+            else
+            {
+                setup.UseArgon2id(o =>
+                {
+                    o.MemorySize = _LowMemorySize;
+                    o.Iterations = iterations;
+                });
+            }
         });
-        services.AddArgon2idSecretHashing();
 
         return services.BuildServiceProvider();
     }
