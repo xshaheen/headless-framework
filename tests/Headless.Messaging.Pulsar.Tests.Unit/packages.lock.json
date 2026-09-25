@@ -261,8 +261,8 @@
       },
       "libsodium": {
         "type": "Transitive",
-        "resolved": "1.0.18.2",
-        "contentHash": "flArHoVdscSzyV8ZdPV+bqqY2TTFlaN+xZf/vIqsmHI51KVcD/mOdUPaK3n/k/wGKz8dppiktXUqSmf3AXFgig=="
+        "resolved": "1.0.22",
+        "contentHash": "KPD9SloJFclrsjnhABu7dzWrcyYkwPbvx5l1gRSPAX/0n+OBtSiVCKtGFv4n+ecWUHU0tCG9LSSwoZZx673zBQ=="
       },
       "Microsoft.ApplicationInsights": {
         "type": "Transitive",
@@ -565,14 +565,6 @@
         "resolved": "1.1.1",
         "contentHash": "CU0/Iuv5VDynK8I8pDLwkgF0rZhbQoZahtodfL0M3x2gFkpBRApKs8RyMyNlAi1mwExE4gsmqQXk4aFVvW9a4Q=="
       },
-      "NSec.Cryptography": {
-        "type": "Transitive",
-        "resolved": "22.4.0",
-        "contentHash": "lEntcPYd7h3aZ8xxi/y/4TML7o8w0GEGqd+w4L1omqFLbdCBmhxJAeO2YBmv/fXbJKgKCQLm7+TD4bR605PEUQ==",
-        "dependencies": {
-          "libsodium": "[1.0.18.2, 1.0.19)"
-        }
-      },
       "PemUtils": {
         "type": "Transitive",
         "resolved": "3.0.0.82",
@@ -848,6 +840,12 @@
           "libphonenumber-csharp": "[9.0.39, )"
         }
       },
+      "headless.security.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
+      },
       "headless.serializer.abstractions": {
         "type": "Project"
       },
@@ -865,6 +863,7 @@
           "Bogus": "[35.6.5, )",
           "Headless.Core": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
+          "Headless.Security.Abstractions": "[1.0.0, )",
           "Meziantou.Extensions.Logging.Xunit.v3": "[3.0.6, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging": "[10.0.12, )",
@@ -1131,6 +1130,15 @@
         "requested": "[2.5.0, )",
         "resolved": "2.5.0",
         "contentHash": "l0OuzZ2T/botMbOvPGY6yp3v+69aMrt+wzST/tFdGnHEFVXbbdOFxu3bfo9XH1N1H0LCQlA3RmFvlPO8zA+faw=="
+      },
+      "NSec.Cryptography": {
+        "type": "CentralTransitive",
+        "requested": "[26.4.0, )",
+        "resolved": "26.4.0",
+        "contentHash": "0vsCtY5f+YgQROiWNqzgWp+l2pddfk9FkWoGV/bEo0MuEYPKlJWuoA8aOfO6qp3f+EnObKE3zSJhn1PspJeJVg==",
+        "dependencies": {
+          "libsodium": "[1.0.22, 1.0.23)"
+        }
       },
       "OpenTelemetry.Api": {
         "type": "CentralTransitive",

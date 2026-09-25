@@ -215,7 +215,7 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
                 ["Headless:StringEncryption:DefaultPassPhrase"] = "TestPassPhrase123456",
                 ["Headless:StringEncryption:InitVectorBytes"] = "VGVzdElWMDEyMzQ1Njc4OQ==",
                 ["Headless:StringEncryption:DefaultSalt"] = "VGVzdFNhbHQ=",
-                ["Headless:StringHash:DefaultSalt"] = "TestSalt",
+                ["Headless:LookupHasher:DefaultSalt"] = "TestSalt",
             }
         );
 

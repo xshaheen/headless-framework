@@ -43,7 +43,7 @@ public static class SetupHeadlessTenancy
         Argument.IsNotNull(services);
 
         var manifest = services.GetOrAddTenantPostureManifest();
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, HeadlessTenancyStartupValidator>());
+        services.AddStartupValidator<HeadlessTenancyStartupValidator>();
 
         // Default no-op accessor: every read returns null until Catalog(...) replaces this
         // registration with the catalog-backed implementation.

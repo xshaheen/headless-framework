@@ -277,6 +277,7 @@
         <Project Path="src\Headless.Hosting\Headless.Hosting.csproj" />
         <Project Path="src\Headless.Security.Abstractions\Headless.Security.Abstractions.csproj" />
         <Project Path="src\Headless.Security\Headless.Security.csproj" />
+        <Project Path="src\Headless.Security.Argon2\Headless.Security.Argon2.csproj" />
         <Project Path="src\Headless.NetTopologySuite\Headless.NetTopologySuite.csproj" />
         <Project Path="src\Headless.Testing.AspNetCore\Headless.Testing.AspNetCore.csproj" />
         <Project Path="src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
@@ -292,6 +293,7 @@
         <Project Path="tests\Headless.Hosting.Tests.Unit\Headless.Hosting.Tests.Unit.csproj" />
         <Project Path="tests\Headless.NetTopologySuite.Tests.Unit\Headless.NetTopologySuite.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Security.Tests.Unit\Headless.Security.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Security.Argon2.Tests.Unit\Headless.Security.Argon2.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Testing.AspNetCore.Tests.TestHost\Headless.Testing.AspNetCore.Tests.TestHost.csproj" />
         <Project Path="tests\Headless.Testing.AspNetCore.Tests.Unit\Headless.Testing.AspNetCore.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Testing.Tests.Unit\Headless.Testing.Tests.Unit.csproj" />

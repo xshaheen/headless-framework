@@ -159,8 +159,7 @@ private sealed class EntityFrameworkSettingsOptionsExtension(Type dbContextType)
             typeof(EfSettingValueRecordRepository<>).MakeGenericType(dbContextType));
         services.TryAddSingleton(typeof(ISettingDefinitionRecordRepository),
             typeof(EfSettingDefinitionRecordRepository<>).MakeGenericType(dbContextType));
-        services.TryAddEnumerable(ServiceDescriptor.Singleton(typeof(IHostedService),
-            typeof(SettingsEntityValidationStartupGate<>).MakeGenericType(dbContextType)));
+        services.AddStartupValidator(typeof(SettingsEntityStartupValidator<>).MakeGenericType(dbContextType));
     }
 }
 ```
@@ -198,15 +197,15 @@ Application order is tiers → default → named → cross-cutting, all deferred
 
 **Captcha is the second per-slot instance** (`AddHeadlessCaptcha`, `src/Headless.Captcha.Abstractions/Setup.cs`) and adds two wrinkles Caching does not have. It keeps a **default slot** — at most one `UseTurnstile` / `UseReCaptchaV2` / `UseReCaptchaV3`, resolving unkeyed *and* aliased under its canonical `CaptchaConstants` key — plus an unlimited **named slot** (`Use{Provider}("name", …)`, keyed-only); both are deferred behind an "at least one provider" gate and the repeated-`AddHeadlessCaptcha` sentinel. The wrinkles: (1) **provider sub-interfaces** — the base `ICaptchaVerifier` stays strictly pass/fail, while `IReCaptchaV3Verifier` (Score) and `ITurnstileVerifier` (CData) carry provider-only data on derived result types, so a consumer that needs vendor data injects the concrete interface rather than leaking it onto the shared contract; and (2) a **public by-name resolver**, `ICaptchaProvider.GetVerifier(name)` over `GetKeyedService<ICaptchaVerifier>(name)`, shipped as package surface (Caching's `KeyedServiceCacheProvider` is the same mechanism, kept internal). Per-provider internal singletons — the named `HttpClient` and the language-code provider — are keyed by the slot name so reCAPTCHA and Turnstile cannot collide on a first-wins `TryAdd` (the shadowing trap in the linked keyed-DI doc). Conformance is verified by an HTTP-stub harness rather than Testcontainers (the providers' happy path needs a human-solved token); see the linked harness doc. The focused suites are `tests/Headless.Captcha.{Turnstile,ReCaptcha}.Tests.Unit` over the shared `tests/Headless.Captcha.Tests.Harness`.
 
-### 6. Shared `HeadlessDbContext` + `*EntityValidationStartupGate<TContext>`
+### 6. Shared `HeadlessDbContext` + `*EntityStartupValidator<TContext>`
 
-When the EF provider is selected, the feature no longer owns a `DbContext`. The consumer's own `HeadlessDbContext` subclass is registered once via `AddHeadlessDbContext<TContext>` and opts into each feature's entities by calling `modelBuilder.AddHeadless{Feature}(storageOptions)` from `OnModelCreating`. A `*EntityValidationStartupGate<TContext>` hosted service (registered automatically by the EF extension) hard-fails at host start if the consumer forgot, with a precise error naming the missing `modelBuilder.AddHeadless{Feature}` call.
+When the EF provider is selected, the feature no longer owns a `DbContext`. The consumer's own `HeadlessDbContext` subclass is registered once via `AddHeadlessDbContext<TContext>` and opts into each feature's entities by calling `modelBuilder.AddHeadless{Feature}(storageOptions)` from `OnModelCreating`. A `*EntityStartupValidator<TContext>` (an `IHeadlessStartupValidator`, registered automatically by the EF extension) hard-fails at host start if the consumer forgot, with a precise error naming the missing `modelBuilder.AddHeadless{Feature}` call.
 
 This replaces the predecessor pattern from PR #327, which used per-context `IModelCacheKeyFactory` implementations and a `ReplaceService<IModelCacheKeyFactory>` consumer recipe. The factory approach worked but added a surface that consumers had to learn and that did not isolate compiled models across distinct service-provider instances (an EF internal limitation). The startup-gate pattern is simpler, fails earlier, and produces a sharper diagnostic. (session history)
 
 ### 7. `IDbContextFactory<TDbContext>` registration alongside `AddHeadlessDbContext`
 
-`HeadlessDbContext` is intentionally non-poolable — it holds private per-request `HeadlessDbContextRuntime` state and uses a non-standard constructor — so `AddDbContextFactory` / `AddPooledDbContextFactory` cannot compose with it. EF readers (`EfReadAuditLog`, every `*EntityValidationStartupGate`) still need a factory, so `AddHeadlessDbContextServices` registers an internal `HeadlessDbContextFactory<TDbContext>` that wraps the scoped DI lifetime.
+`HeadlessDbContext` is intentionally non-poolable — it holds private per-request `HeadlessDbContextRuntime` state and uses a non-standard constructor — so `AddDbContextFactory` / `AddPooledDbContextFactory` cannot compose with it. EF readers (`EfReadAuditLog`, every `*EntityStartupValidator`) still need a factory, so `AddHeadlessDbContextServices` registers an internal `HeadlessDbContextFactory<TDbContext>` that wraps the scoped DI lifetime.
 
 ```csharp
 internal sealed class HeadlessDbContextFactory<TDbContext>(IServiceScopeFactory scopeFactory)
