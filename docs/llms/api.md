@@ -488,7 +488,7 @@ builder.AddHeadless(configureServices: options =>
     options.Validation.ValidateServiceProviderOnStartup = true;
     options.Validation.RequireUseHeadless = true;
     options.Validation.RequireMapHeadlessEndpoints = true;
-    options.Validation.RequireStatusCodesRewriter = true; // validated on IStartupFilter path only
+    options.Validation.RequireStatusCodesRewriter = true;
     // Antiforgery defaults to false. Set to true for cookie-auth apps; bearer-token APIs leave it off.
     options.Antiforgery.Enabled = false;
 });
@@ -553,7 +553,7 @@ Surface filtering runs before schema generation and is independent of API Explor
 - Registers OpenAPI services when `OpenApi.Enabled` is `true`.
 - Configures service discovery when `HttpClient.UseServiceDiscovery` is `true`.
 - Configures HttpClient defaults for standard resilience, service discovery, and application User-Agent.
-- Adds a startup filter that validates `UseHeadless()`, `UseStatusCodesRewriter()`, and `MapHeadlessEndpoints()` usage.
+- Adds a startup validator (`IStartupValidator`) that fails host start, naming every missing call, when `UseHeadless()`, `UseStatusCodesRewriter()`, or `MapHeadlessEndpoints()` was not applied.
 
 ---
 

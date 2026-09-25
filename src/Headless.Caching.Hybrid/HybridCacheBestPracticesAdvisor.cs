@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Microsoft.Extensions.Hosting;
+using Headless.Hosting.Validation;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Caching;
@@ -14,7 +14,7 @@ internal sealed class HybridCacheBestPracticesAdvisor(
     HybridCacheOptions options,
     ILogger<HybridCacheBestPracticesAdvisor> logger,
     string? instanceName = null
-) : IHostedLifecycleService
+) : IStartupValidator
 {
     // AutoRecoveryDelay above this threshold produces a graveyard-sized replay lag.
     private static readonly TimeSpan _AutoRecoveryDelayThreshold = TimeSpan.FromMinutes(5);
@@ -22,7 +22,7 @@ internal sealed class HybridCacheBestPracticesAdvisor(
     // EagerRefreshThreshold at or above this gives so little lead time it rarely fires before TTL.
     private const float _EagerRefreshThresholdLimit = 0.95f;
 
-    public Task StartingAsync(CancellationToken cancellationToken)
+    public Task ValidateAsync(CancellationToken cancellationToken)
     {
         // Named instances advise under a logging scope so an operator can tell which hybrid cache a warning is
         // about (the default/unnamed instance advises without the scope).
@@ -31,31 +31,6 @@ internal sealed class HybridCacheBestPracticesAdvisor(
             : logger.BeginScope("Named hybrid cache instance {CacheInstanceName}", instanceName);
 
         _Advise(options);
-        return Task.CompletedTask;
-    }
-
-    public Task StartAsync(CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
-    }
-
-    public Task StartedAsync(CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
-    }
-
-    public Task StoppingAsync(CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
-    }
-
-    public Task StopAsync(CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
-    }
-
-    public Task StoppedAsync(CancellationToken cancellationToken)
-    {
         return Task.CompletedTask;
     }
 

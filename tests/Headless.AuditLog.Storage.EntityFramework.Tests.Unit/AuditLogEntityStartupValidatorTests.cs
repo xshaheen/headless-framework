@@ -7,20 +7,20 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Tests;
 
-public sealed class AuditLogEntityValidationStartupGateTests : TestBase
+public sealed class AuditLogEntityStartupValidatorTests : TestBase
 {
     [Fact]
     public async Task should_reject_pre_registered_but_unconfigured_audit_log_entry()
     {
         // given
-        var gate = new AuditLogEntityValidationStartupGate<PreRegisteredAuditLogDbContext>(
+        var validator = new AuditLogEntityStartupValidator<PreRegisteredAuditLogDbContext>(
             new TestDbContextFactory<PreRegisteredAuditLogDbContext>(() =>
                 new PreRegisteredAuditLogDbContext(_Options<PreRegisteredAuditLogDbContext>())
             )
         );
 
         // when
-        var act = () => gate.StartingAsync(AbortToken);
+        var act = () => validator.ValidateAsync(AbortToken);
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*AddHeadlessAuditLog*");
@@ -30,14 +30,14 @@ public sealed class AuditLogEntityValidationStartupGateTests : TestBase
     public async Task should_accept_fully_configured_audit_log_entry()
     {
         // given
-        var gate = new AuditLogEntityValidationStartupGate<ConfiguredAuditLogDbContext>(
+        var validator = new AuditLogEntityStartupValidator<ConfiguredAuditLogDbContext>(
             new TestDbContextFactory<ConfiguredAuditLogDbContext>(() =>
                 new ConfiguredAuditLogDbContext(_Options<ConfiguredAuditLogDbContext>())
             )
         );
 
         // when
-        var act = () => gate.StartingAsync(AbortToken);
+        var act = () => validator.ValidateAsync(AbortToken);
 
         // then
         await act.Should().NotThrowAsync();

@@ -8,7 +8,7 @@ using Tests.TestSetup;
 
 namespace Tests;
 
-public sealed class FeaturesEntityValidationStartupGateTests(FeaturesTestFixture fixture) : FeaturesTestBase(fixture)
+public sealed class FeaturesEntityStartupValidatorTests(FeaturesTestFixture fixture) : FeaturesTestBase(fixture)
 {
     [Fact]
     public async Task should_fail_startup_when_shared_dbcontext_does_not_include_features_entities()
@@ -16,7 +16,7 @@ public sealed class FeaturesEntityValidationStartupGateTests(FeaturesTestFixture
         // given
         var builder = Host.CreateApplicationBuilder();
         // AddHeadlessFeatures auto-registers the management core, whose initialization hosted
-        // service requires TimeProvider — register it so startup reaches the entity-validation gate
+        // service requires TimeProvider — register it so startup reaches the entity startup validator
         // rather than failing to activate the hosted service first.
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddDbContextFactory<MissingFeaturesEntityDbContext>(options =>

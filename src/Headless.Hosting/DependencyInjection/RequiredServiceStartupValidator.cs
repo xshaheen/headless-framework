@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Validation;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 
 namespace Headless.Hosting.DependencyInjection;
 
@@ -10,43 +10,21 @@ namespace Headless.Hosting.DependencyInjection;
 /// <c>IServiceCollection.RequireRegisteredService&lt;T&gt;(…)</c> has no registration behind it.
 /// </summary>
 /// <remarks>
-/// Registered as an <see cref="IHostedService"/> and implemented as an <see cref="IHostedLifecycleService"/>
-/// so the check runs in <see cref="StartingAsync"/>, before any hosted service's
-/// <see cref="IHostedService.StartAsync"/>. Otherwise background workers and message consumers would start
-/// under an assumption the container cannot honour, and the first symptom would be a resolve failure on a
-/// live request instead of a refused start.
+/// Runs as an <see cref="IStartupValidator"/>, before any hosted service's <c>StartAsync</c>. Otherwise background
+/// workers and message consumers would start under an assumption the container cannot honour, and the first symptom
+/// would be a resolve failure on a live request instead of a refused start.
 /// </remarks>
 internal sealed class RequiredServiceStartupValidator(RequiredServiceRegistry registry, IServiceProvider services)
-    : IHostedLifecycleService
+    : IStartupValidator
 {
     /// <inheritdoc/>
     /// <exception cref="MissingRequiredServiceException">One or more declared requirements are unregistered.</exception>
-    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
-    public Task StartingAsync(CancellationToken cancellationToken)
+    public Task ValidateAsync(CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        // Synchronous by design: a throw here surfaces to the host the same way a faulted task would, and
-        // carries the typed exception with every unsatisfied requirement.
         _Validate();
 
         return Task.CompletedTask;
     }
-
-    /// <inheritdoc/>
-    public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    /// <inheritdoc/>
-    public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    /// <inheritdoc/>
-    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    /// <inheritdoc/>
-    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    /// <inheritdoc/>
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     private void _Validate()
     {

@@ -64,12 +64,7 @@ public static class SetupPermissionsEntityFramework
                 typeof(IPermissionDefinitionRecordRepository),
                 typeof(EfPermissionDefinitionRecordRepository<>).MakeGenericType(dbContextType)
             );
-            services.TryAddEnumerable(
-                ServiceDescriptor.Singleton(
-                    typeof(IHostedService),
-                    typeof(PermissionsEntityValidationStartupGate<>).MakeGenericType(dbContextType)
-                )
-            );
+            services.AddStartupValidator(typeof(PermissionsEntityStartupValidator<>).MakeGenericType(dbContextType));
         }
     }
 

@@ -390,7 +390,7 @@ The registration validates identifier names using cross-provider rules (SQL Serv
 - Registers `IFeatureDefinitionRecordRepository` (`EfFeatureDefinitionRecordRepository<TContext>`) as singleton
 - Registers `IFeatureValueRecordRepository` (`EfFeatureValueRecordRecordRepository<TContext>`) as singleton
 - Registers validated `FeaturesStorageOptions`
-- Registers `FeaturesEntityValidationStartupGate<TContext>` as `IHostedService`
+- Registers `FeaturesEntityStartupValidator<TContext>` as an `IStartupValidator`
 
 ---
 

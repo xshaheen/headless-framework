@@ -1,17 +1,16 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Microsoft.Extensions.Hosting;
+using Headless.Hosting.Validation;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.MultiTenancy;
 
 /// <summary>Validates configured tenant posture at host startup and logs non-PII diagnostics from all registered validators.</summary>
 /// <remarks>
-/// Registered as an <see cref="IHostedLifecycleService"/> by the Headless tenancy root setup so the
-/// validator's <see cref="StartingAsync"/> step runs synchronously BEFORE any other hosted service's
-/// <see cref="IHostedService.StartAsync"/>. Otherwise a misconfigured tenancy posture could allow
-/// downstream hosted services (background workers, messaging consumers, …) to begin processing under
-/// the wrong tenant assumptions before this validator failed the host.
+/// Registered as an <see cref="IStartupValidator"/> by the Headless tenancy root setup, so it runs before any hosted
+/// service's <c>StartAsync</c>. Otherwise a misconfigured tenancy posture could allow downstream hosted services
+/// (background workers, messaging consumers, …) to begin processing under the wrong tenant assumptions before this
+/// validator failed the host.
 /// Any diagnostic with <see cref="HeadlessTenancyDiagnosticSeverity.Error"/> throws and prevents the
 /// host from starting. A validator that throws during enumeration is reported as a synthetic
 /// <c>VALIDATOR_THREW</c> error diagnostic so a single buggy validator cannot mask issues from other
@@ -22,54 +21,22 @@ internal sealed class HeadlessTenancyStartupValidator(
     IServiceProvider serviceProvider,
     TenantPostureManifest manifest,
     ILogger<HeadlessTenancyStartupValidator> logger
-) : IHostedLifecycleService
+) : IStartupValidator
 {
     /// <inheritdoc/>
     /// <remarks>
-    /// Runs all registered validators synchronously before any other hosted service starts. The work is
-    /// synchronous, so a failure throws directly (the returned task is never observed in the failure case).
+    /// Runs all registered tenancy validators synchronously. The work is synchronous, so a failure throws directly.
     /// </remarks>
     /// <exception cref="HeadlessTenancyValidationException">
     /// One or more validators produced an <see cref="HeadlessTenancyDiagnosticSeverity.Error"/> diagnostic;
     /// the host is prevented from starting.
     /// </exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
-    public Task StartingAsync(CancellationToken cancellationToken)
+    public Task ValidateAsync(CancellationToken cancellationToken)
     {
-        // Validation is synchronous and must complete (or fail the host) before any other hosted
-        // service starts. A synchronous throw here surfaces to the host the same way a faulted task
-        // would; it carries the typed HeadlessTenancyValidationException with the failing diagnostics.
+        // A synchronous throw surfaces the same way a faulted task would, and carries the typed
+        // HeadlessTenancyValidationException with the failing diagnostics.
         _Validate(cancellationToken);
-        return Task.CompletedTask;
-    }
-
-    /// <inheritdoc/>
-    public Task StartedAsync(CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
-    }
-
-    /// <inheritdoc/>
-    public Task StoppingAsync(CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
-    }
-
-    /// <inheritdoc/>
-    public Task StoppedAsync(CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
-    }
-
-    /// <inheritdoc/>
-    public Task StartAsync(CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
-    }
-
-    /// <inheritdoc/>
-    public Task StopAsync(CancellationToken cancellationToken)
-    {
         return Task.CompletedTask;
     }
 

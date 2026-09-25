@@ -48,7 +48,7 @@ public static class SetupMessagingTenancy
         builder.Services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
 
         // Routes through the unified IHeadlessTenancyValidator collection aggregated by
-        // HeadlessTenancyStartupValidator (IHostedLifecycleService) — runs in StartingAsync before any
+        // HeadlessTenancyStartupValidator (an IStartupValidator) — runs before any
         // IHostedService.StartAsync so a misconfigured tenancy posture fails fast.
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHeadlessTenancyValidator, TenantPropagationStartupValidator>()

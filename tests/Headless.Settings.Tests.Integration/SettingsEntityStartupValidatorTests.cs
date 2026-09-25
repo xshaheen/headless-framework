@@ -9,7 +9,7 @@ using Tests.TestSetup;
 
 namespace Tests;
 
-public sealed class SettingsEntityValidationStartupGateTests(SettingsTestFixture fixture) : SettingsTestBase(fixture)
+public sealed class SettingsEntityStartupValidatorTests(SettingsTestFixture fixture) : SettingsTestBase(fixture)
 {
     [Fact]
     public async Task should_fail_startup_when_shared_dbcontext_does_not_include_settings_entities()
@@ -18,7 +18,7 @@ public sealed class SettingsEntityValidationStartupGateTests(SettingsTestFixture
         var builder = Host.CreateApplicationBuilder();
         // AddHeadlessSettings auto-registers the management core, which requires
         // IStringEncryptionService (its _AddCore guard) and TimeProvider (its initialization hosted
-        // service) — register both so startup reaches the entity-validation gate rather than throwing
+        // service) — register both so startup reaches the entity startup validator rather than throwing
         // a missing-dependency error first.
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddStringEncryptionService(options =>

@@ -249,7 +249,7 @@ EF Core storage provider for automatic audit entries and explicit event logging.
 - `AuditLogEntry` — EF entity excluded from automatic capture through EF model metadata, preventing recursion when `AuditByDefault` is enabled.
 - `AuditLogModelBuilderExtensions.AddHeadlessAuditLog(modelBuilder, options)` — registers and configures the `AuditLogEntry` entity type; idempotent.
 - Composite primary key `(CreatedAt, Id)` for partition-readiness; index set covers tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, and correlation ID.
-- Startup gate (`AuditLogEntityValidationStartupGate`) validates that `AuditLogEntry` was fully configured through `modelBuilder.AddHeadlessAuditLog` and throws with a clear message if the call was omitted, even when the entity was pre-registered.
+- A startup validator (`AuditLogEntityStartupValidator`) checks that `AuditLogEntry` was fully configured through `modelBuilder.AddHeadlessAuditLog` and throws with a clear message if the call was omitted, even when the entity was pre-registered.
 
 ### Design constraints
 
@@ -375,7 +375,7 @@ builder.HasKey(e => e.Id); // single-column PK for SQLite
 - Registers `IAuditLogStore` as scoped (`EfAuditLogStore`).
 - Registers `IAuditLog<TContext>` as scoped (`EfAuditLog<TContext>`).
 - Registers `IReadAuditLog<TContext>` as singleton (`EfReadAuditLog<TContext>`).
-- Registers `AuditLogEntityValidationStartupGate<TContext>` as a hosted service (validates model at startup).
+- Registers `AuditLogEntityStartupValidator<TContext>` as an `IStartupValidator` (validates the model at startup).
 - Automatic `ChangeTracker` capture and the fluent model policy are supplied by `Headless.EntityFramework`; this package only selects EF-backed audit storage.
 
 ---

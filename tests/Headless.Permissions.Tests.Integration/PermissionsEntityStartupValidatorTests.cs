@@ -8,7 +8,7 @@ using Tests.TestSetup;
 
 namespace Tests;
 
-public sealed class PermissionsEntityValidationStartupGateTests(PermissionsTestFixture fixture)
+public sealed class PermissionsEntityStartupValidatorTests(PermissionsTestFixture fixture)
     : PermissionsTestBase(fixture)
 {
     [Fact]
@@ -17,7 +17,7 @@ public sealed class PermissionsEntityValidationStartupGateTests(PermissionsTestF
         // given
         var builder = Host.CreateApplicationBuilder();
         // AddHeadlessPermissions auto-registers the management core, whose initialization hosted
-        // service requires TimeProvider — register it so startup reaches the entity-validation gate
+        // service requires TimeProvider — register it so startup reaches the entity startup validator
         // rather than failing to activate the hosted service first.
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddDbContextFactory<MissingPermissionsEntityDbContext>(options =>
