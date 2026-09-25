@@ -38,6 +38,9 @@ public sealed class PhcString
     private readonly byte[] _salt;
     private readonly byte[] _hash;
 
+    // The instance is immutable, and the constructor must format it anyway to enforce MaxLength.
+    private readonly string _encoded;
+
     /// <summary>Creates a PHC string from its parts.</summary>
     /// <param name="id">The algorithm identifier: 1 to 32 characters from <c>[a-z0-9-]</c>.</param>
     /// <param name="version">The optional algorithm version, emitted as <c>$v=&lt;version&gt;</c>.</param>
@@ -79,23 +82,17 @@ public sealed class PhcString
             }
         }
 
-        if (salt.IsEmpty)
-        {
-            throw new ArgumentException("The salt must not be empty.", nameof(salt));
-        }
-
-        if (hash.IsEmpty)
-        {
-            throw new ArgumentException("The hash must not be empty.", nameof(hash));
-        }
+        Argument.IsNotEmpty(salt, "The salt must not be empty.");
+        Argument.IsNotEmpty(hash, "The hash must not be empty.");
 
         Id = id;
         Version = version;
         Parameters = [.. parameters];
         _salt = salt.ToArray();
         _hash = hash.ToArray();
+        _encoded = _Format();
 
-        if (ToString().Length > MaxLength)
+        if (_encoded.Length > MaxLength)
         {
             throw new ArgumentException($"The encoded PHC string exceeds {MaxLength} characters.", nameof(hash));
         }
@@ -200,6 +197,11 @@ public sealed class PhcString
     /// <summary>Formats the PHC string in canonical form.</summary>
     /// <returns>The encoded value.</returns>
     public override string ToString()
+    {
+        return _encoded;
+    }
+
+    private string _Format()
     {
         var builder = new StringBuilder();
         builder.Append('$').Append(Id);

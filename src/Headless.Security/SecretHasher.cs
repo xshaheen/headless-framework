@@ -39,10 +39,7 @@ internal sealed class SecretHasher : ISecretHasher
     {
         var options = _options.Value;
 
-        if (secret.IsEmpty)
-        {
-            throw new ArgumentException("The secret must not be empty.", nameof(secret));
-        }
+        Argument.IsNotEmpty(secret, "The secret must not be empty.");
 
         if (secret.Length > options.MaxSecretLength)
         {

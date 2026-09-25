@@ -15,6 +15,10 @@ namespace Headless.Security;
 /// </remarks>
 internal sealed class Pbkdf2Sha256SecretHashAlgorithm(IOptions<SecretHasherOptions> options) : ISecretHashAlgorithm
 {
+    // Shared by the writer and the parser so the two cannot drift apart.
+    private const string _IterationsName = "i";
+    private const string _LengthName = "l";
+
     public string Id => SecretHashAlgorithms.Pbkdf2Sha256;
 
     public string Hash(ReadOnlySpan<byte> secret)
@@ -29,8 +33,8 @@ internal sealed class Pbkdf2Sha256SecretHashAlgorithm(IOptions<SecretHasherOptio
             Id,
             version: null,
             [
-                new PhcParameter("i", parameters.Iterations.ToString(CultureInfo.InvariantCulture)),
-                new PhcParameter("l", parameters.HashSize.ToString(CultureInfo.InvariantCulture)),
+                new PhcParameter(_IterationsName, parameters.Iterations.ToString(CultureInfo.InvariantCulture)),
+                new PhcParameter(_LengthName, parameters.HashSize.ToString(CultureInfo.InvariantCulture)),
             ],
             salt,
             hash
@@ -69,9 +73,9 @@ internal sealed class Pbkdf2Sha256SecretHashAlgorithm(IOptions<SecretHasherOptio
 
         // Exactly "i=<n>,l=<n>" in that order: one accepted spelling per hash, and no unknown parameter slips past.
         return encoded.Version is null
-            && encoded.Parameters is [{ Name: "i" }, { Name: "l" }]
-            && encoded.TryGetInt32("i", out iterations)
-            && encoded.TryGetInt32("l", out var length)
+            && encoded.Parameters is [{ Name: _IterationsName }, { Name: _LengthName }]
+            && encoded.TryGetInt32(_IterationsName, out iterations)
+            && encoded.TryGetInt32(_LengthName, out var length)
             && iterations is >= SecretHashLimits.MinPbkdf2Iterations and <= SecretHashLimits.MaxPbkdf2Iterations
             && length == encoded.Hash.Length
             && _IsSizeInBounds(encoded.Salt.Length)

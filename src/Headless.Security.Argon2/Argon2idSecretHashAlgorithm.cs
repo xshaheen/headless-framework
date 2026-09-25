@@ -20,6 +20,11 @@ internal sealed class Argon2idSecretHashAlgorithm(IOptions<SecretHasherOptions> 
     // The only version libsodium implements (0x13).
     private const int _Version = 19;
 
+    // Shared by the writer and the parser so the two cannot drift apart.
+    private const string _MemorySizeName = "m";
+    private const string _IterationsName = "t";
+    private const string _ParallelismName = "p";
+
     public string Id => SecretHashAlgorithms.Argon2id;
 
     public string Hash(ReadOnlySpan<byte> secret)
@@ -34,9 +39,9 @@ internal sealed class Argon2idSecretHashAlgorithm(IOptions<SecretHasherOptions> 
             Id,
             _Version,
             [
-                new PhcParameter("m", parameters.MemorySize.ToString(CultureInfo.InvariantCulture)),
-                new PhcParameter("t", parameters.Iterations.ToString(CultureInfo.InvariantCulture)),
-                new PhcParameter("p", "1"),
+                new PhcParameter(_MemorySizeName, parameters.MemorySize.ToString(CultureInfo.InvariantCulture)),
+                new PhcParameter(_IterationsName, parameters.Iterations.ToString(CultureInfo.InvariantCulture)),
+                new PhcParameter(_ParallelismName, "1"),
             ],
             salt,
             hash
@@ -111,9 +116,10 @@ internal sealed class Argon2idSecretHashAlgorithm(IOptions<SecretHasherOptions> 
         // Exactly "v=19$m=<n>,t=<n>,p=1" in that order. Every bound is checked here, before NSec sees the values: NSec
         // throws ArgumentException for parameters below libsodium's minimums, and a stored hash must not reach that.
         return encoded.Version == _Version
-            && encoded.Parameters is [{ Name: "m" }, { Name: "t" }, { Name: "p", Value: "1" }]
-            && encoded.TryGetInt32("m", out memorySize)
-            && encoded.TryGetInt32("t", out iterations)
+            && encoded.Parameters
+                is [{ Name: _MemorySizeName }, { Name: _IterationsName }, { Name: _ParallelismName, Value: "1" }]
+            && encoded.TryGetInt32(_MemorySizeName, out memorySize)
+            && encoded.TryGetInt32(_IterationsName, out iterations)
             && memorySize is >= SecretHashLimits.MinArgon2idMemorySize and <= SecretHashLimits.MaxArgon2idMemorySize
             && iterations is >= SecretHashLimits.MinArgon2idIterations and <= SecretHashLimits.MaxArgon2idIterations
             && encoded.Salt.Length == SecretHashLimits.Argon2idSaltSize
