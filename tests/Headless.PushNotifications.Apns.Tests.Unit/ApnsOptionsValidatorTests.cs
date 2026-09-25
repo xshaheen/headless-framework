@@ -254,6 +254,26 @@ public sealed class ApnsOptionsValidatorTests : TestBase
     }
 
     [Fact]
+    public void should_be_invalid_without_echoing_when_a_certificate_password_is_set_without_a_certificate()
+    {
+        // given
+        var options = new ApnsOptions { BundleId = "com.example.app", CertificatePassword = _CertificatePassword };
+
+        // when
+        var result = _Validator.Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result
+            .Errors.Should()
+            .Contain(e =>
+                e.PropertyName == nameof(ApnsOptions.Certificate)
+                && e.ErrorMessage.Contains("must be provided", StringComparison.Ordinal)
+            );
+        result.Errors.Should().NotContain(e => e.ErrorMessage.Contains(_CertificatePassword, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void should_be_valid_when_certificate_mode_is_configured()
     {
         // given

@@ -191,6 +191,19 @@ public sealed class ApnsPayloadWriterTests : TestBase
     }
 
     [Fact]
+    public void should_throw_when_the_alert_has_no_title_subtitle_or_body()
+    {
+        // given
+        var notification = new ApnsAlertNotification { Alert = new ApnsAlert() };
+
+        // when
+        var act = () => _Prepare(notification);
+
+        // then
+        act.Should().Throw<ArgumentException>().WithMessage("An APNs alert needs a title, a subtitle, or a body.*");
+    }
+
+    [Fact]
     public void should_write_badge_only_payload_when_alert_sets_only_a_badge()
     {
         // given
