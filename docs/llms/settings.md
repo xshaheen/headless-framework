@@ -225,8 +225,11 @@ Core implementation of dynamic settings management with hierarchical value provi
 - `HeadlessSettingsSetupBuilder` — fluent builder returned to `AddHeadlessSettings`; exposes `ConfigureManagement`, `ConfigureStorage`, and `RegisterExtension`
 - `services.AddSettingDefinitionProvider<T>()` — registers a custom `ISettingDefinitionProvider`
 - `services.AddSettingValueProvider<T>()` — registers a custom value provider (idempotent by type)
+- `IClientSettingsConfigBuilder` (`Headless.Settings.ClientConfig`) — builds the settings section of an application's client config: `BuildAsync(ClientConfigContext, …)` returns `ClientSettingsConfig.Values`, the value of every setting whose definition is `IsVisibleToClients`, keyed by name, through one `GetAllAsync(settingNames)` read. Headless ships no endpoint; the application composes this section into its own response (see the client-config recipe in `docs/llms/permissions.md`)
 
 ### Design constraints
+
+`IClientSettingsConfigBuilder` resolves for the principal and tenant in its `ClientConfigContext`, not the ambient ones: it switches `ICurrentPrincipalAccessor` and `ICurrentTenant` to the context for the duration of the build, so the `User` and `Tenant` providers read the context's user and tenant, and restores them afterwards. `IsVisibleToClients` defaults to `false`, and an encrypted setting marked visible is returned decrypted, so mark a secret visible only when the client is meant to read it.
 
 Value providers are registered with the last-added provider having the highest resolution priority. The built-in order (from setup) is `DefaultValue → Configuration → Global → Tenant → User` — User wins. Custom providers added via `AddSettingValueProvider<T>()` are appended after `User` and therefore have the highest priority of all. This matters when writing custom providers that must override built-in resolution. `ISettingValueProviderManager.Providers` exposes the reversed (highest priority first) list, which every read path — `GetAsync`, `GetAllAsync(settingNames)`, and `GetAllAsync(providerName)` — walks forward, taking the first non-null value.
 
@@ -384,7 +387,7 @@ services.AddHeadlessSettings(setup =>
 
 ### Runtime behavior
 
-- Registers `ISettingManager` as singleton
+- Registers `ISettingManager` and `IClientSettingsConfigBuilder` as singletons
 - Registers `ISettingDefinitionManager`, `IStaticSettingDefinitionStore`, `IDynamicSettingDefinitionStore`, `ISettingValueStore`, `ISettingValueProviderManager` as singletons
 - Registers `DefaultValueSettingValueProvider`, `ConfigurationSettingValueProvider`, `GlobalSettingValueProvider`, `TenantSettingValueProvider`, `UserSettingValueProvider` as singletons
 - Registers `SettingsInitializationBackgroundService` as hosted service
