@@ -57,7 +57,9 @@ internal sealed class PostgreSqlSequenceStore(IOptions<PostgreSqlSequencesOption
                 return value;
             }
             catch (PostgresException ex)
-                when (ex.SqlState == SqlErrorCodes.PostgreSql.DeadlockDetected && attempt < _MaxAttempts)
+                when (string.Equals(ex.SqlState, SqlErrorCodes.PostgreSql.DeadlockDetected, StringComparison.Ordinal)
+                    && attempt < _MaxAttempts
+                )
             {
                 // The deadlock victim's transaction is already rolled back and disposed above; the next attempt
                 // starts clean.

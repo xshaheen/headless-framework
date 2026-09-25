@@ -12,7 +12,7 @@ namespace Headless.Sequences;
 /// </summary>
 /// <remarks>
 /// A value rather than a list because a reserved block is always evenly spaced, so three numbers describe it
-/// completely. <c>foreach</c> over it uses a struct enumerator and allocates nothing.
+/// completely. <see langword="foreach" /> over it uses a struct enumerator and allocates nothing.
 /// </remarks>
 [PublicAPI]
 [StructLayout(LayoutKind.Auto)]

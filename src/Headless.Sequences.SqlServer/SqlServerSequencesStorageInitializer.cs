@@ -35,7 +35,7 @@ internal sealed class SqlServerSequencesStorageInitializer(IOptions<SqlServerSeq
     {
         var table = SqlServerSequencesSchema.Qualified(options);
         var objectName = $"{options.Schema}.{options.TableName}";
-        var collation = SqlServerSequencesSchema.KeyCollation;
+        const string collation = SqlServerSequencesSchema.KeyCollation;
 
         // The applock serializes this initializer across replicas. It is session-scoped, so the outer CATCH releases
         // it before re-throwing: a lock leaked past the throw would stay with the pooled connection and starve the

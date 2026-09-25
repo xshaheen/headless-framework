@@ -15,10 +15,12 @@ public sealed class SequenceRangeTests : TestBase
 
         // when
         var values = new List<long>();
+#pragma warning disable RCS1235 // Fix makes it worse: AddRange enumerates through IEnumerable<long>, bypassing the struct enumerator this test exercises.
         foreach (var value in range)
         {
             values.Add(value);
         }
+#pragma warning restore RCS1235
 
         // then
         values.Should().Equal(10, 15, 20);
