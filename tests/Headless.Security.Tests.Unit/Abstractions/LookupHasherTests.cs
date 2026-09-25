@@ -5,9 +5,9 @@ using Headless.Security;
 
 namespace Tests.Abstractions;
 
-public sealed class StringHashServiceTests
+public sealed class LookupHasherTests
 {
-    private static StringHashOptions _CreateValidOptions()
+    private static LookupHasherOptions _CreateValidOptions()
     {
         return new()
         {
@@ -22,7 +22,7 @@ public sealed class StringHashServiceTests
     public void should_use_default_salt_when_no_salt_is_provided()
     {
         // given
-        var sut = new StringHashService(_CreateValidOptions());
+        var sut = new LookupHasher(_CreateValidOptions());
 
         // when
         var hash1 = sut.Create("Hello");
@@ -36,7 +36,7 @@ public sealed class StringHashServiceTests
     public void should_use_custom_salt_when_provided()
     {
         // given
-        var sut = new StringHashService(_CreateValidOptions());
+        var sut = new LookupHasher(_CreateValidOptions());
 
         // when
         var customHash = sut.Create("Hello", "CustomSalt");
@@ -50,14 +50,14 @@ public sealed class StringHashServiceTests
     public void should_use_empty_salt_when_default_salt_is_missing()
     {
         // given
-        var options = new StringHashOptions
+        var options = new LookupHasherOptions
         {
             Iterations = 10_000,
             SizeInBytes = 32,
             Algorithm = HashAlgorithmName.SHA256,
         };
 
-        var sut = new StringHashService(options);
+        var sut = new LookupHasher(options);
 
         // when
         var hash1 = sut.Create("Hello");

@@ -5,10 +5,10 @@ using System.Security.Cryptography;
 namespace Headless.Security;
 
 /// <summary>
-/// Configures the default values used by <see cref="IStringHashService" />.
+/// Configures the default values used by <see cref="ILookupHasher" />.
 /// </summary>
 [PublicAPI]
-public sealed class StringHashOptions
+public sealed class LookupHasherOptions
 {
     /// <summary>
     /// Gets or sets the number of PBKDF2 iterations. Must be greater than zero. Defaults to 600,000.
@@ -27,7 +27,7 @@ public sealed class StringHashOptions
     public HashAlgorithmName Algorithm { get; set; } = HashAlgorithmName.SHA256;
 
     /// <summary>
-    /// Gets or sets the optional default salt applied when <see cref="IStringHashService.Create(string, string?)" />
+    /// Gets or sets the optional default salt applied when <see cref="ILookupHasher.Create(string, string?)" />
     /// is called without an explicit salt. When <see langword="null" />, an empty salt is used, producing a globally
     /// deterministic (unsalted) hash.
     /// </summary>

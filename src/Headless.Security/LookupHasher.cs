@@ -4,8 +4,8 @@ using System.Security.Cryptography;
 
 namespace Headless.Security;
 
-/// <summary>Creates deterministic, salted string hashes using configured PBKDF2 options.</summary>
-internal sealed class StringHashService(StringHashOptions options) : IStringHashService
+/// <summary>Creates deterministic, salted lookup hashes using configured PBKDF2 options.</summary>
+internal sealed class LookupHasher(LookupHasherOptions options) : ILookupHasher
 {
     /// <inheritdoc />
     public string Create(string value, string? salt = null)

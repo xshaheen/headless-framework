@@ -53,11 +53,11 @@ public sealed class SecuritySetupTests
             .Build();
 
         // when
-        services.AddStringHashService(configuration.GetRequiredSection("Security:One"));
-        services.AddStringHashService(configuration.GetRequiredSection("Security:Two"));
+        services.AddLookupHasher(configuration.GetRequiredSection("Security:One"));
+        services.AddLookupHasher(configuration.GetRequiredSection("Security:Two"));
 
         using var serviceProvider = services.BuildServiceProvider();
-        var hashOptions = serviceProvider.GetRequiredService<IOptions<StringHashOptions>>().Value;
+        var hashOptions = serviceProvider.GetRequiredService<IOptions<LookupHasherOptions>>().Value;
 
         // then
         hashOptions.DefaultSalt.Should().Be("FirstSalt");

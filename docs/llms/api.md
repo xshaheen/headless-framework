@@ -48,7 +48,7 @@ Additional packages:
 - Use `PersistKeysToBlobStorage()` from `Headless.Api.DataProtection` to persist Data Protection keys in distributed/containerized environments.
 - For Serilog enrichment, call `AddSerilogEnrichers()` on services and `UseSerilogEnrichers()` on the app — place the middleware early in the pipeline.
 - Inject `IRequestContext` (from Abstractions) for request-scoped user, tenant, locale, timezone, and correlation ID — never access `HttpContext` directly in service code.
-- `AddHeadless()` auto-binds `Headless:StringEncryption` and `Headless:StringHash` through `Headless.Security`, and also exposes explicit overloads for configuration sections and option callbacks when the defaults are not suitable. When the hash callback is omitted, it still binds `Headless:StringHash` by default.
+- `AddHeadless()` auto-binds `Headless:StringEncryption` and `Headless:LookupHasher` through `Headless.Security`, and also exposes explicit overloads for configuration sections and option callbacks when the defaults are not suitable. When the hash callback is omitted, it still binds `Headless:LookupHasher` by default.
 - Place `UseResponseCompression()` **before** `UseIdempotency()` in the pipeline. Compression middleware registered inside idempotency records compressed bytes in the cache; replaying those bytes without re-encoding them produces garbled or double-encoded responses.
 - `HeaderName` per-endpoint overrides via `.WithIdempotency()` are silently ignored — the middleware reads the request header before resolving endpoint metadata. Change the header name globally via `AddIdempotency(o => o.HeaderName = ...)` only.
 - `TenantRequirement` must be in `DefaultPolicy` or `FallbackPolicy` for framework-level enforcement; placing it in a named policy is not detected by the startup validator.
@@ -527,12 +527,12 @@ Surface filtering runs before schema generation and is independent of API Explor
 }
 ```
 
-#### String Hashing
+#### Lookup Hashing
 
 ```json
 {
     "Headless": {
-        "StringHash": {
+        "LookupHasher": {
             "Iterations": 600000,
             "Size": 128,
             "Algorithm": "SHA256",

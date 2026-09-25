@@ -1,6 +1,6 @@
 # Headless.Security
 
-Default implementations of `IStringEncryptionService`, `IStringHashService`, and `ISecretHasher`, plus idempotent DI registration helpers.
+Default implementations of `IStringEncryptionService`, `ILookupHasher`, and `ISecretHasher`, plus idempotent DI registration helpers.
 
 Contracts, options, implementations, and registration extensions all use the `Headless.Security` namespace.
 

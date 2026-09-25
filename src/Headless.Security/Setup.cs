@@ -8,7 +8,7 @@ using Microsoft.Extensions.Hosting;
 
 namespace Headless.Security;
 
-/// <summary>Registration helpers for the string encryption, string hashing, and secret hashing services.</summary>
+/// <summary>Registration helpers for the string encryption, lookup hashing, and secret hashing services.</summary>
 /// <remarks>
 /// All <c>Add*</c> members are idempotent: the first registration for a given service wins, and a later call with
 /// different options is silently ignored. Configure each service once.
@@ -73,45 +73,54 @@ public static class SetupSecurity
         }
 
         /// <summary>
-        /// Registers <see cref="IStringHashService" /> as a singleton, binding <see cref="StringHashOptions" /> from
+        /// Registers <see cref="ILookupHasher" /> as a singleton, binding <see cref="LookupHasherOptions" /> from
         /// the supplied configuration section.
         /// </summary>
-        /// <param name="config">The configuration section that binds <see cref="StringHashOptions" />.</param>
+        /// <param name="config">The configuration section that binds <see cref="LookupHasherOptions" />.</param>
         /// <returns>The same <see cref="IServiceCollection" /> so calls can be chained.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="config" /> is <see langword="null" />.</exception>
-        public IServiceCollection AddStringHashService(IConfiguration config)
+        public IServiceCollection AddLookupHasher(IConfiguration config)
         {
             Argument.IsNotNull(config);
 
-            return _AddHashCore(services, s => s.Configure<StringHashOptions, StringHashOptionsValidator>(config));
+            return _AddLookupHasherCore(
+                services,
+                s => s.Configure<LookupHasherOptions, LookupHasherOptionsValidator>(config)
+            );
         }
 
         /// <summary>
-        /// Registers <see cref="IStringHashService" /> as a singleton, configuring <see cref="StringHashOptions" />
+        /// Registers <see cref="ILookupHasher" /> as a singleton, configuring <see cref="LookupHasherOptions" />
         /// with the supplied delegate.
         /// </summary>
-        /// <param name="configure">Configures <see cref="StringHashOptions" />.</param>
+        /// <param name="configure">Configures <see cref="LookupHasherOptions" />.</param>
         /// <returns>The same <see cref="IServiceCollection" /> so calls can be chained.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
-        public IServiceCollection AddStringHashService(Action<StringHashOptions> configure)
+        public IServiceCollection AddLookupHasher(Action<LookupHasherOptions> configure)
         {
             Argument.IsNotNull(configure);
 
-            return _AddHashCore(services, s => s.Configure<StringHashOptions, StringHashOptionsValidator>(configure));
+            return _AddLookupHasherCore(
+                services,
+                s => s.Configure<LookupHasherOptions, LookupHasherOptionsValidator>(configure)
+            );
         }
 
         /// <summary>
-        /// Registers <see cref="IStringHashService" /> as a singleton, configuring <see cref="StringHashOptions" />
+        /// Registers <see cref="ILookupHasher" /> as a singleton, configuring <see cref="LookupHasherOptions" />
         /// with the supplied delegate that can resolve services from the <see cref="IServiceProvider" />.
         /// </summary>
-        /// <param name="configure">Configures <see cref="StringHashOptions" /> using resolved services.</param>
+        /// <param name="configure">Configures <see cref="LookupHasherOptions" /> using resolved services.</param>
         /// <returns>The same <see cref="IServiceCollection" /> so calls can be chained.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
-        public IServiceCollection AddStringHashService(Action<StringHashOptions, IServiceProvider> configure)
+        public IServiceCollection AddLookupHasher(Action<LookupHasherOptions, IServiceProvider> configure)
         {
             Argument.IsNotNull(configure);
 
-            return _AddHashCore(services, s => s.Configure<StringHashOptions, StringHashOptionsValidator>(configure));
+            return _AddLookupHasherCore(
+                services,
+                s => s.Configure<LookupHasherOptions, LookupHasherOptionsValidator>(configure)
+            );
         }
 
         /// <summary>
@@ -211,16 +220,16 @@ public static class SetupSecurity
         return services;
     }
 
-    private static IServiceCollection _AddHashCore(IServiceCollection services, Action<IServiceCollection> bind)
+    private static IServiceCollection _AddLookupHasherCore(IServiceCollection services, Action<IServiceCollection> bind)
     {
-        if (_IsRegistered<IStringHashService>(services))
+        if (_IsRegistered<ILookupHasher>(services))
         {
             return services;
         }
 
         bind(services);
-        services.AddSingletonOptionValue<StringHashOptions>();
-        services.TryAddSingleton<IStringHashService, StringHashService>();
+        services.AddSingletonOptionValue<LookupHasherOptions>();
+        services.TryAddSingleton<ILookupHasher, LookupHasher>();
 
         return services;
     }

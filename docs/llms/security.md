@@ -9,10 +9,10 @@ packages: Security.Abstractions, Security, Security.Argon2
 
 ## Orientation
 
-- **`Headless.Security.Abstractions`**: the contracts and options, all in the `Headless.Security` namespace. They are `IStringEncryptionService`, `IStringHashService`, `ISecretHasher`, `SecretVerification`, their option types, the `PhcString` codec, and the `SecretHashAlgorithms` and `SecretHashLimits` constants.
+- **`Headless.Security.Abstractions`**: the contracts and options, all in the `Headless.Security` namespace. They are `IStringEncryptionService`, `ILookupHasher`, `ISecretHasher`, `SecretVerification`, their option types, the `PhcString` codec, and the `SecretHashAlgorithms` and `SecretHashLimits` constants.
 - **`Headless.Security`**: the default implementations and the registration helpers.
   - `AddStringEncryptionService(...)` registers AES-GCM encryption.
-  - `AddStringHashService(...)` registers the deterministic PBKDF2 lookup digest.
+  - `AddLookupHasher(...)` registers the deterministic PBKDF2 lookup digest.
   - `AddSecretHasher(...)` registers `ISecretHasher` with the built-in PBKDF2-SHA256 algorithm and a startup check.
 - **`Headless.Security.Argon2`**: provides Argon2id through libsodium (NSec), registered with `AddArgon2idSecretHashing()`. Argon2id is the default `SecretHasherOptions.Algorithm`, so the default secret-hasher setup needs this package. It is a separate package because it carries a native library.
 
@@ -21,12 +21,12 @@ Choose by what the stored value must do:
 | You need to… | Use |
 | --- | --- |
 | Store a value and read it back later (tokens, connection strings, settings) | `IStringEncryptionService` |
-| Find a row by a value without storing the value (a blind index over an encrypted column) | `IStringHashService`, which is deterministic |
+| Find a row by a value without storing the value (a blind index over an encrypted column) | `ILookupHasher`, which is deterministic |
 | Store a secret you only ever check, never read back (PINs, API-key secrets, recovery codes, passwords outside ASP.NET Core Identity) | `ISecretHasher` |
 
 ## Agent Rules
 
-- Never store a secret with `IStringHashService`. It is a deterministic digest with no per-record salt and no cost parameter in its output. Use `ISecretHasher` for anything that is only verified.
+- Never store a secret with `ILookupHasher`. It is a deterministic digest with no per-record salt and no cost parameter in its output. Use `ISecretHasher` for anything that is only verified.
 - Register the secret hasher with both calls, `services.AddSecretHasher(...)` and `services.AddArgon2idSecretHashing()`. Without the Argon2 package the default configuration fails host startup, with a message naming the package. Set `SecretHasherOptions.Algorithm = SecretHashAlgorithms.Pbkdf2Sha256` only when a native dependency is unacceptable.
 - Store the whole string `Hash` returns in one column. It carries the algorithm, cost, and salt, so do not add salt or version columns.
 - Always persist `SecretVerification.Rehashed` when it is non-null. That is how records move to a stronger algorithm or cost; nothing else migrates them.
@@ -118,8 +118,8 @@ Security contracts and option models. There is no implementation and no DI coupl
 - **`IStringEncryptionService`**: an AES-GCM authenticated encryption contract.
     - `Encrypt(string? plainText, string? passPhrase = null, byte[]? salt = null) → string?` encrypts with the configured default pass phrase and salt, or with an explicit override. It returns `null` when `plainText` is `null`. Every call uses a fresh random nonce.
     - `Decrypt(string? cipherText, string? passPhrase = null, byte[]? salt = null) → string?` returns `null` for `null` or empty input. It throws `CryptographicException` when the cipher text is too short, has been tampered with, or the pass phrase or salt does not match.
-- **`IStringHashService`**: a deterministic PBKDF2 digest for lookups.
-    - `Create(string value, string? salt = null) → string` returns a Base64 PBKDF2 hash. It uses `StringHashOptions.DefaultSalt` when `salt` is omitted, and an empty salt when no default is configured.
+- **`ILookupHasher`**: a deterministic PBKDF2 digest for lookups.
+    - `Create(string value, string? salt = null) → string` returns a Base64 PBKDF2 hash. It uses `LookupHasherOptions.DefaultSalt` when `salt` is omitted, and an empty salt when no default is configured.
     - It is not for secret storage; use `ISecretHasher` for that.
 - **`ISecretHasher`**: verify-capable secret hashing.
     - `Hash(ReadOnlySpan<char> secret) → string` returns a new PHC encoding on every call. It throws `ArgumentException` for an empty secret, one longer than `MaxSecretLength`, or one that is invalid UTF-16 (a lone surrogate). It throws `InvalidOperationException` when the configured algorithm is not registered.
@@ -129,7 +129,7 @@ Security contracts and option models. There is no implementation and no DI coupl
 - **`PhcString`**: the canonical PHC codec. `TryParse`, a constructor, `ToString`, `Id`, `Version`, `Parameters`, `Salt`, `Hash`, and `TryGetInt32(name, out value)`, which reads only canonical decimals.
 - **`SecretHashAlgorithms`**: the id constants `Argon2id` and `Pbkdf2Sha256`. **`SecretHashLimits`**: the accepted parameter ranges.
 - **`StringEncryptionOptions`**: `DefaultPassPhrase` (required), `DefaultSalt` (required `byte[]`), `KeySize` (128/192/256 bits; default 256), `Iterations` (default 600,000).
-- **`StringHashOptions`**: `Algorithm` (SHA256/SHA384/SHA512; default SHA256), `SizeInBytes` (at least 16; default 32), `Iterations` (default 600,000), `DefaultSalt` (optional).
+- **`LookupHasherOptions`**: `Algorithm` (SHA256/SHA384/SHA512; default SHA256), `SizeInBytes` (at least 16; default 32), `Iterations` (default 600,000), `DefaultSalt` (optional).
 
 ### Install
 
@@ -142,7 +142,7 @@ dotnet add package Headless.Security.Abstractions
 ```csharp
 using Headless.Security;
 
-public sealed class AccountSecrets(IStringEncryptionService encryption, IStringHashService lookup, ISecretHasher secrets)
+public sealed class AccountSecrets(IStringEncryptionService encryption, ILookupHasher lookup, ISecretHasher secrets)
 {
     public string Protect(string value) => encryption.Encrypt(value)!;
 
@@ -169,9 +169,9 @@ The default implementations of the Security contracts, the built-in PBKDF2-SHA25
 ### API and behavior
 
 - **`StringEncryptionService`** implements AES-GCM with PBKDF2-SHA256 key derivation. It derives the default key once at construction and re-derives per call only for pass-phrase or salt overrides. Output: `Base64(nonce[12] || tag[16] || cipherText)`.
-- **`StringHashService`** uses `Rfc2898DeriveBytes.Pbkdf2`. Output: `Base64(hash[SizeInBytes])`.
+- **`LookupHasher`** uses `Rfc2898DeriveBytes.Pbkdf2`. Output: `Base64(hash[SizeInBytes])`.
 - **`ISecretHashAlgorithm`** is the extension point for secret-hashing algorithms: `Id`, `Hash(secret)`, `TryComputeHash(secret, encoded, destination)`, and `NeedsRehash(encoded)`. Register an implementation with `TryAddEnumerable` as a singleton. Read `IOptions<SecretHasherOptions>.Value` at call time, not in the constructor. `TryComputeHash` must refuse out-of-range encodings and never throw.
-- **`AddStringEncryptionService`**, **`AddStringHashService`**, and **`AddSecretHasher`** each have three overloads: `IConfiguration`, `Action<TOptions>`, and `Action<TOptions, IServiceProvider>`. All are idempotent.
+- **`AddStringEncryptionService`**, **`AddLookupHasher`**, and **`AddSecretHasher`** each have three overloads: `IConfiguration`, `Action<TOptions>`, and `Action<TOptions, IServiceProvider>`. All are idempotent.
 - `AddSecretHasher` registers `ISecretHasher`, the PBKDF2-SHA256 algorithm, validated `SecretHasherOptions`, and the startup check.
 
 ### Design constraints
@@ -194,7 +194,7 @@ dotnet add package Headless.Security
 builder.Services.AddStringEncryptionService(builder.Configuration.GetSection("Headless:StringEncryption"));
 
 // Deterministic lookup hash.
-builder.Services.AddStringHashService(options => options.DefaultSalt = "global-app-salt");
+builder.Services.AddLookupHasher(options => options.DefaultSalt = "global-app-salt");
 
 // Secret hashing (Argon2id default; needs Headless.Security.Argon2).
 builder.Services.AddSecretHasher(builder.Configuration.GetSection("Headless:SecretHasher"));
@@ -231,7 +231,7 @@ builder.Services.AddSecretHasher(options => options.Algorithm = SecretHashAlgori
 | `KeySize` | 256 | 128, 192, or 256 |
 | `Iterations` | 600 000 | > 0 |
 
-`StringHashOptions`:
+`LookupHasherOptions`:
 
 | Property | Default | Constraint |
 |---|---|---|

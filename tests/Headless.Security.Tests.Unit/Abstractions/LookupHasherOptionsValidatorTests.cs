@@ -5,9 +5,9 @@ using Headless.Security;
 
 namespace Tests.Abstractions;
 
-public sealed class StringHashOptionsValidatorTests
+public sealed class LookupHasherOptionsValidatorTests
 {
-    private static StringHashOptions _CreateValidOptions()
+    private static LookupHasherOptions _CreateValidOptions()
     {
         return new()
         {
@@ -23,7 +23,7 @@ public sealed class StringHashOptionsValidatorTests
     {
         // given
         var settings = _CreateValidOptions();
-        var validator = new StringHashOptionsValidator();
+        var validator = new LookupHasherOptionsValidator();
 
         // when
         var result = validator.Validate(settings);
@@ -38,14 +38,14 @@ public sealed class StringHashOptionsValidatorTests
         // given
         var settings = _CreateValidOptions();
         settings.Iterations = 0;
-        var validator = new StringHashOptionsValidator();
+        var validator = new LookupHasherOptionsValidator();
 
         // when
         var result = validator.Validate(settings);
 
         // then
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(x => x.PropertyName == nameof(StringHashOptions.Iterations));
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(LookupHasherOptions.Iterations));
     }
 
     [Theory]
@@ -56,14 +56,14 @@ public sealed class StringHashOptionsValidatorTests
         // given
         var settings = _CreateValidOptions();
         settings.SizeInBytes = sizeInBytes;
-        var validator = new StringHashOptionsValidator();
+        var validator = new LookupHasherOptionsValidator();
 
         // when
         var result = validator.Validate(settings);
 
         // then
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(x => x.PropertyName == nameof(StringHashOptions.SizeInBytes));
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(LookupHasherOptions.SizeInBytes));
     }
 
     [Fact]
@@ -72,14 +72,14 @@ public sealed class StringHashOptionsValidatorTests
         // given
         var settings = _CreateValidOptions();
         settings.Algorithm = default;
-        var validator = new StringHashOptionsValidator();
+        var validator = new LookupHasherOptionsValidator();
 
         // when
         var result = validator.Validate(settings);
 
         // then
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(x => x.PropertyName == nameof(StringHashOptions.Algorithm));
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(LookupHasherOptions.Algorithm));
     }
 
     [Fact]
@@ -88,14 +88,14 @@ public sealed class StringHashOptionsValidatorTests
         // given (MD5/SHA1 are not permitted for hashing)
         var settings = _CreateValidOptions();
         settings.Algorithm = HashAlgorithmName.SHA1;
-        var validator = new StringHashOptionsValidator();
+        var validator = new LookupHasherOptionsValidator();
 
         // when
         var result = validator.Validate(settings);
 
         // then
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(x => x.PropertyName == nameof(StringHashOptions.Algorithm));
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(LookupHasherOptions.Algorithm));
     }
 
     [Fact]
@@ -104,7 +104,7 @@ public sealed class StringHashOptionsValidatorTests
         // given
         var settings = _CreateValidOptions();
         settings.DefaultSalt = null;
-        var validator = new StringHashOptionsValidator();
+        var validator = new LookupHasherOptionsValidator();
 
         // when
         var result = validator.Validate(settings);

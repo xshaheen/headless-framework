@@ -14,7 +14,7 @@ namespace Headless.Security;
 /// recompute the hash with the same salt and options and compare the results.
 /// </remarks>
 [PublicAPI]
-public interface IStringHashService
+public interface ILookupHasher
 {
     /// <summary>Creates a hash for the specified value.</summary>
     /// <param name="value">The value to hash.</param>

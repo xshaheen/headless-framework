@@ -5,8 +5,8 @@ using FluentValidation;
 
 namespace Headless.Security;
 
-/// <summary>Validates <see cref="StringHashOptions" />.</summary>
-internal sealed class StringHashOptionsValidator : AbstractValidator<StringHashOptions>
+/// <summary>Validates <see cref="LookupHasherOptions" />.</summary>
+internal sealed class LookupHasherOptionsValidator : AbstractValidator<LookupHasherOptions>
 {
     private static readonly HashAlgorithmName[] _AllowedAlgorithms =
     [
@@ -15,7 +15,7 @@ internal sealed class StringHashOptionsValidator : AbstractValidator<StringHashO
         HashAlgorithmName.SHA512,
     ];
 
-    public StringHashOptionsValidator()
+    public LookupHasherOptionsValidator()
     {
         RuleFor(x => x.Iterations).GreaterThan(0);
         RuleFor(x => x.SizeInBytes).GreaterThanOrEqualTo(16);

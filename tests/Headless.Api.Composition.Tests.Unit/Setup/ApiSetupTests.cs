@@ -114,12 +114,12 @@ public sealed class SetupApiTests
         // when
         builder.AddHeadless(
             configuration.GetRequiredSection("Security:StringEncryption"),
-            configuration.GetRequiredSection("Security:StringHash")
+            configuration.GetRequiredSection("Security:LookupHasher")
         );
 
         using var serviceProvider = builder.Services.BuildServiceProvider();
         var encryptionOptions = serviceProvider.GetRequiredService<IOptions<StringEncryptionOptions>>().Value;
-        var hashOptions = serviceProvider.GetRequiredService<IOptions<StringHashOptions>>().Value;
+        var hashOptions = serviceProvider.GetRequiredService<IOptions<LookupHasherOptions>>().Value;
 
         // then
         encryptionOptions.DefaultPassPhrase.Should().Be("SectionPassPhrase123");
@@ -151,7 +151,7 @@ public sealed class SetupApiTests
 
         using var serviceProvider = builder.Services.BuildServiceProvider();
         var encryptionOptions = serviceProvider.GetRequiredService<IOptions<StringEncryptionOptions>>().Value;
-        var hashOptions = serviceProvider.GetRequiredService<IOptions<StringHashOptions>>().Value;
+        var hashOptions = serviceProvider.GetRequiredService<IOptions<LookupHasherOptions>>().Value;
 
         // then
         encryptionOptions.DefaultPassPhrase.Should().Be("ActionPassPhrase123");
@@ -176,7 +176,7 @@ public sealed class SetupApiTests
 
         using var serviceProvider = builder.Services.BuildServiceProvider();
         var encryptionOptions = serviceProvider.GetRequiredService<IOptions<StringEncryptionOptions>>().Value;
-        var hashOptions = serviceProvider.GetRequiredService<IOptions<StringHashOptions>>().Value;
+        var hashOptions = serviceProvider.GetRequiredService<IOptions<LookupHasherOptions>>().Value;
 
         // then
         encryptionOptions.DefaultPassPhrase.Should().Be("ActionPassPhrase123");
@@ -275,7 +275,7 @@ public sealed class SetupApiTests
 
         using var serviceProvider = builder.Services.BuildServiceProvider();
         var encryptionOptions = serviceProvider.GetRequiredService<IOptions<StringEncryptionOptions>>().Value;
-        var hashOptions = serviceProvider.GetRequiredService<IOptions<StringHashOptions>>().Value;
+        var hashOptions = serviceProvider.GetRequiredService<IOptions<LookupHasherOptions>>().Value;
 
         // then
         encryptionOptions.DefaultPassPhrase.Should().Be("ProviderPassPhrase123");
@@ -418,7 +418,7 @@ public sealed class SetupApiTests
             new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultPassPhrase", "TestPassPhrase123456"),
             new KeyValuePair<string, string?>("Headless:StringEncryption:InitVectorBytes", "VGVzdElWMDEyMzQ1Njc4OQ=="),
             new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultSalt", "VGVzdFNhbHQ="),
-            new KeyValuePair<string, string?>("Headless:StringHash:DefaultSalt", "TestSalt"),
+            new KeyValuePair<string, string?>("Headless:LookupHasher:DefaultSalt", "TestSalt"),
         ]);
     }
 
@@ -435,8 +435,8 @@ public sealed class SetupApiTests
                     "VGVzdElWMDEyMzQ1Njc4OQ=="
                 ),
                 new KeyValuePair<string, string?>("Security:StringEncryption:DefaultSalt", "U2VjdGlvblNhbHQ="),
-                new KeyValuePair<string, string?>("Security:StringHash:DefaultSalt", "SectionSalt"),
-                new KeyValuePair<string, string?>("Security:StringHash:Iterations", "700000"),
+                new KeyValuePair<string, string?>("Security:LookupHasher:DefaultSalt", "SectionSalt"),
+                new KeyValuePair<string, string?>("Security:LookupHasher:Iterations", "700000"),
             ])
             .Build();
     }
