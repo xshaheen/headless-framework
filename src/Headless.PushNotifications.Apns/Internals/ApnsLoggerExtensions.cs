@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.PushNotifications.Apns.Internals;
 
-// Every message takes a masked device token: the raw token is a stable device identifier.
+// Every device-token message takes a masked token: the raw token is a stable device identifier.
 internal static partial class ApnsLoggerExtensions
 {
     [LoggerMessage(
@@ -47,5 +47,18 @@ internal static partial class ApnsLoggerExtensions
         int statusCode,
         string reason,
         string deviceTokenPrefix
+    );
+
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "ApnsCertificateExpiringSoon",
+        Level = LogLevel.Warning,
+        Message = "APNs: The certificate of the '{Instance}' instance expires at {ExpiresAt} (in {DaysLeft} days). Renew it in the Apple Developer account."
+    )]
+    public static partial void LogCertificateExpiringSoon(
+        this ILogger logger,
+        string instance,
+        DateTimeOffset expiresAt,
+        int daysLeft
     );
 }

@@ -7,6 +7,7 @@ using Headless.PushNotifications.Apns.Internals;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -25,6 +26,10 @@ namespace Headless.PushNotifications;
 /// <para>
 /// Each instance owns its options and its own HTTP/2 client. Instances that share a team id and key id share one
 /// cached provider token, because Apple rejects a key whose tokens change more than once every 20 minutes.
+/// </para>
+/// <para>
+/// The options choose the authentication mode when the service is first resolved. A certificate-mode instance
+/// presents its provider certificate during the TLS handshake and is checked for expiry at host start.
 /// </para>
 /// <para>
 /// The default resilience pipeline retries transport faults, HTTP 500, and HTTP 503 at most twice, and never
@@ -171,19 +176,35 @@ public static class SetupApnsPushNotifications
     /// its own name (<c>IOptionsMonitor.Get(name)</c>), because keyed DI does not pass the key to constructor
     /// dependencies and <c>CurrentValue</c> would bind the default instance's options.
     /// </summary>
+    /// <param name="configurePrimaryHandler">
+    /// Runs last on the primary handler. Tests use it to trust a self-signed server certificate; no public overload
+    /// exposes it, so production certificate validation always stays on.
+    /// </param>
     internal static void AddApnsCore(
         IServiceCollection services,
         string? name,
         Action<IServiceCollection, string?> configureOptions,
         Action<HttpClient>? configureClient,
-        Action<HttpStandardResilienceOptions>? configureResilience
+        Action<HttpStandardResilienceOptions>? configureResilience,
+        Action<SocketsHttpHandler>? configurePrimaryHandler = null
     )
     {
         configureOptions(services, name);
         services.TryAddSingleton(TimeProvider.System);
 
         // One source for the container: instances that share a key must share its token (see the class remarks).
+        // Options bind at first resolution, so the mode is unknown here; only a token-mode service resolves it.
         services.TryAddSingleton<ApnsTokenSource>();
+
+        // Resolved only in certificate mode, by the primary handler and the expiry check.
+        ApnsCertificateHolder.Register(services, name);
+        services.AddSingleton<IHostedService>(serviceProvider => new ApnsCertificateExpiryCheck(
+            serviceProvider.GetRequiredService<IOptionsMonitor<ApnsOptions>>(),
+            name,
+            () => ApnsCertificateHolder.Get(serviceProvider, name),
+            serviceProvider.GetRequiredService<TimeProvider>(),
+            serviceProvider.GetRequiredService<ILogger<ApnsCertificateExpiryCheck>>()
+        ));
 
         var httpClientName = GetHttpClientName(name);
 
@@ -200,7 +221,9 @@ public static class SetupApnsPushNotifications
                     configureClient?.Invoke(client);
                 }
             )
-            .ConfigurePrimaryHttpMessageHandler(static () => _CreatePrimaryHandler())
+            .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
+                _CreatePrimaryHandler(serviceProvider, name, configurePrimaryHandler)
+            )
             // The factory's default 2-minute rotation would keep opening fresh connections, and APNs starts each
             // token-authenticated connection with a single stream until it has seen a valid token.
             .SetHandlerLifetime(Timeout.InfiniteTimeSpan)
@@ -262,6 +285,8 @@ public static class SetupApnsPushNotifications
                     target.KeyId = options.KeyId;
                     target.TeamId = options.TeamId;
                     target.PrivateKey = options.PrivateKey;
+                    target.Certificate = options.Certificate;
+                    target.CertificatePassword = options.CertificatePassword;
                     target.BundleId = options.BundleId;
                     target.Environment = options.Environment;
                     target.PushType = options.PushType;
@@ -279,10 +304,18 @@ public static class SetupApnsPushNotifications
         string? optionsName
     )
     {
+        // The mode is fixed when the service is built; certificate mode never resolves the shared token source.
+        IApnsAuthenticator authenticator = serviceProvider
+            .GetRequiredService<IOptionsMonitor<ApnsOptions>>()
+            .Get(optionsName)
+            .UsesCertificate
+            ? ApnsCertificateAuthenticator.Instance
+            : new ApnsTokenAuthenticator(serviceProvider.GetRequiredService<ApnsTokenSource>());
+
         return new ApnsPushNotificationService(
             serviceProvider.GetRequiredService<IHttpClientFactory>(),
             httpClientName,
-            serviceProvider.GetRequiredService<ApnsTokenSource>(),
+            authenticator,
             serviceProvider.GetRequiredService<IOptionsMonitor<ApnsOptions>>(),
             optionsName,
             serviceProvider.GetRequiredService<TimeProvider>(),
@@ -290,11 +323,15 @@ public static class SetupApnsPushNotifications
         );
     }
 
-    private static SocketsHttpHandler _CreatePrimaryHandler()
+    private static SocketsHttpHandler _CreatePrimaryHandler(
+        IServiceProvider serviceProvider,
+        string? name,
+        Action<SocketsHttpHandler>? configurePrimaryHandler
+    )
     {
         // Apple asks providers to keep connections open rather than reconnecting per notification, so the pool
         // holds connections for hours and pings hourly to keep idle ones alive through middleboxes.
-        return new SocketsHttpHandler
+        var handler = new SocketsHttpHandler
         {
             EnableMultipleHttp2Connections = true,
             PooledConnectionLifetime = TimeSpan.FromHours(6),
@@ -303,6 +340,17 @@ public static class SetupApnsPushNotifications
             KeepAlivePingTimeout = TimeSpan.FromSeconds(20),
             KeepAlivePingPolicy = HttpKeepAlivePingPolicy.Always,
         };
+
+        if (serviceProvider.GetRequiredService<IOptionsMonitor<ApnsOptions>>().Get(name).UsesCertificate)
+        {
+            // The holder owns the certificate and the container disposes it; the handler lives as long as the
+            // factory, since its lifetime is infinite.
+            handler.SslOptions.ClientCertificates = [ApnsCertificateHolder.Get(serviceProvider, name).Certificate];
+        }
+
+        configurePrimaryHandler?.Invoke(handler);
+
+        return handler;
     }
 
     private static bool _IsRetryable(Outcome<HttpResponseMessage> outcome)

@@ -10,8 +10,9 @@ using Microsoft.Extensions.Options;
 namespace Headless.PushNotifications.Apns;
 
 /// <summary>
-/// Apple Push Notification service (APNs) push notification service. Sends one HTTP/2 request per device token
-/// with a cached ES256 provider token and maps each APNs answer onto an <see cref="ApnsSendResult"/>.
+/// Apple Push Notification service (APNs) push notification service. Sends one HTTP/2 request per device token,
+/// authenticated with a cached ES256 provider token or with the provider certificate presented during the TLS
+/// handshake, and maps each APNs answer onto an <see cref="ApnsSendResult"/>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -28,7 +29,7 @@ namespace Headless.PushNotifications.Apns;
 internal sealed class ApnsPushNotificationService(
     IHttpClientFactory httpClientFactory,
     string httpClientName,
-    ApnsTokenSource tokenSource,
+    IApnsAuthenticator authenticator,
     IOptionsMonitor<ApnsOptions> optionsMonitor,
     string? optionsName,
     TimeProvider timeProvider,
@@ -50,7 +51,7 @@ internal sealed class ApnsPushNotificationService(
         Argument.IsNotNullOrWhiteSpace(deviceToken);
 
         var options = optionsMonitor.Get(optionsName);
-        var prepared = ApnsPayloadWriter.Prepare(notification, options, timeProvider);
+        var prepared = _Prepare(notification, options);
 
         return await _SendOneAsync(options, deviceToken, prepared, cancellationToken).ConfigureAwait(false);
     }
@@ -64,7 +65,7 @@ internal sealed class ApnsPushNotificationService(
         _EnsureTokens(deviceTokens, nameof(deviceTokens));
 
         var options = optionsMonitor.Get(optionsName);
-        var prepared = ApnsPayloadWriter.Prepare(notification, options, timeProvider);
+        var prepared = _Prepare(notification, options);
         var results = await _SendManyAsync(options, deviceTokens, prepared, cancellationToken).ConfigureAwait(false);
         var successCount = results.Count(static r => r.Response.IsSucceeded());
 
@@ -89,7 +90,7 @@ internal sealed class ApnsPushNotificationService(
         Argument.IsNotNullOrWhiteSpace(clientIdentifier);
 
         var options = optionsMonitor.Get(optionsName);
-        var prepared = ApnsPayloadWriter.Prepare(_Convert(request, options), options, timeProvider);
+        var prepared = _Prepare(_Convert(request, options), options);
         var result = await _SendOneAsync(options, clientIdentifier, prepared, cancellationToken).ConfigureAwait(false);
 
         return result.Response;
@@ -104,7 +105,7 @@ internal sealed class ApnsPushNotificationService(
         _EnsureTokens(clientIdentifiers, nameof(clientIdentifiers));
 
         var options = optionsMonitor.Get(optionsName);
-        var prepared = ApnsPayloadWriter.Prepare(_Convert(request, options), options, timeProvider);
+        var prepared = _Prepare(_Convert(request, options), options);
         var results = await _SendManyAsync(options, clientIdentifiers, prepared, cancellationToken)
             .ConfigureAwait(false);
         var responses = results.Select(static r => r.Response).ToArray();
@@ -116,6 +117,14 @@ internal sealed class ApnsPushNotificationService(
             FailureCount = responses.Length - successCount,
             Responses = responses,
         };
+    }
+
+    private ApnsPreparedNotification _Prepare(ApnsNotification notification, ApnsOptions options)
+    {
+        var prepared = ApnsPayloadWriter.Prepare(notification, options, timeProvider);
+        authenticator.EnsureSupported(prepared.Headers.PushType, nameof(notification));
+
+        return prepared;
     }
 
     /// <summary>Converts a validated shared request into the APNs notification it becomes on this instance.</summary>
@@ -233,8 +242,8 @@ internal sealed class ApnsPushNotificationService(
         {
             _EnsureSecureEndpoint(client.BaseAddress);
 
-            var token = await tokenSource.GetTokenAsync(options, cancellationToken).ConfigureAwait(false);
-            var answer = await _PostAsync(client, deviceToken, prepared, apnsId, token.Value, cancellationToken)
+            var credential = await authenticator.GetCredentialAsync(options, cancellationToken).ConfigureAwait(false);
+            var answer = await _PostAsync(client, deviceToken, prepared, apnsId, credential, cancellationToken)
                 .ConfigureAwait(false);
 
             if (
@@ -244,17 +253,14 @@ internal sealed class ApnsPushNotificationService(
                     ApnsResponseMapper.ExpiredProviderTokenReason,
                     StringComparison.Ordinal
                 )
+                && await authenticator.RenewExpiredAsync(options, credential, cancellationToken).ConfigureAwait(false)
+                    is { } retryCredential
             )
             {
-                // One retry only: the source re-mints once per rejected generation (and never sooner than Apple's
-                // 20-minute update limit), so a second rejection is a persistent problem, not a stale token.
-                var retryToken = await tokenSource
-                    .InvalidateAsync(options, token.Generation, cancellationToken)
-                    .ConfigureAwait(false);
+                // One retry only: a second rejection of a renewed token is a persistent problem, not a stale token.
+                logger.LogProviderTokenExpired(credential.Generation, retryCredential.Generation);
 
-                logger.LogProviderTokenExpired(token.Generation, retryToken.Generation);
-
-                answer = await _PostAsync(client, deviceToken, prepared, apnsId, retryToken.Value, cancellationToken)
+                answer = await _PostAsync(client, deviceToken, prepared, apnsId, retryCredential, cancellationToken)
                     .ConfigureAwait(false);
             }
 
@@ -312,7 +318,7 @@ internal sealed class ApnsPushNotificationService(
         string deviceToken,
         ApnsPreparedNotification prepared,
         string apnsId,
-        string providerToken,
+        ApnsCredential credential,
         CancellationToken cancellationToken
     )
     {
@@ -325,7 +331,7 @@ internal sealed class ApnsPushNotificationService(
         message.Version = HttpVersion.Version20;
         message.VersionPolicy = HttpVersionPolicy.RequestVersionExact;
 
-        message.Headers.Authorization = new AuthenticationHeaderValue("bearer", providerToken);
+        credential.Apply(message);
 
         foreach (var (name, value) in prepared.Headers.Enumerate())
         {
@@ -375,8 +381,8 @@ internal sealed class ApnsPushNotificationService(
             throw new InvalidOperationException("The APNs HttpClient has no BaseAddress.");
         }
 
-        // The request carries the bearer provider token and the payload, so cleartext is allowed only on loopback,
-        // where a local test double serves h2c.
+        // The request carries the payload and, in token mode, the bearer provider token, so cleartext is allowed
+        // only on loopback, where a local test double serves h2c.
         if (
             !string.Equals(baseAddress.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
             && !_IsLoopbackHost(baseAddress.Host)

@@ -46,6 +46,9 @@ internal sealed class ApnsTokenSource(TimeProvider timeProvider) : IDisposable
     private volatile bool _disposed;
 
     /// <summary>Returns the current token for the options' key identity, minting one when none is fresh.</summary>
+    /// <exception cref="ArgumentException">
+    /// The options lack a team id, key id, or private key, so they do not configure token mode.
+    /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Another option set already uses the same team id and key id with a different private key.
     /// </exception>
@@ -72,6 +75,9 @@ internal sealed class ApnsTokenSource(TimeProvider timeProvider) : IDisposable
     /// Only the first caller for a generation re-mints; later callers get the newer token. A token younger than
     /// 20 minutes is kept, because Apple would reject a faster update.
     /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// The options lack a team id, key id, or private key, so they do not configure token mode.
+    /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Another option set already uses the same team id and key id with a different private key.
     /// </exception>
@@ -110,7 +116,11 @@ internal sealed class ApnsTokenSource(TimeProvider timeProvider) : IDisposable
     {
         Ensure.NotDisposed(_disposed, this);
 
-        var identity = (options.TeamId, options.KeyId);
+        // Optional on the options because certificate mode leaves them unset; token mode requires all three.
+        var teamId = Argument.IsNotNullOrWhiteSpace(options.TeamId);
+        var keyId = Argument.IsNotNullOrWhiteSpace(options.KeyId);
+        var privateKey = Argument.IsNotNullOrWhiteSpace(options.PrivateKey);
+        var identity = (teamId, keyId);
 
         if (!_entries.TryGetValue(identity, out var entry))
         {
@@ -122,17 +132,17 @@ internal sealed class ApnsTokenSource(TimeProvider timeProvider) : IDisposable
 
                 if (!_entries.TryGetValue(identity, out entry))
                 {
-                    entry = new KeyEntry(options.TeamId, options.KeyId, options.PrivateKey);
+                    entry = new KeyEntry(teamId, keyId, privateKey);
                     _entries[identity] = entry;
                 }
             }
         }
 
-        if (!string.Equals(entry.PrivateKeyText, options.PrivateKey, StringComparison.Ordinal))
+        if (!string.Equals(entry.PrivateKeyText, privateKey, StringComparison.Ordinal))
         {
             // Signing with whichever key loaded first would hide the misconfiguration until APNs rejects the token.
             throw new InvalidOperationException(
-                $"APNs key id '{options.KeyId}' for team '{options.TeamId}' is already configured with a different private key. Option sets that share a team id and key id must use the same private key."
+                $"APNs key id '{keyId}' for team '{teamId}' is already configured with a different private key. Option sets that share a team id and key id must use the same private key."
             );
         }
 
