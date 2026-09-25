@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Settings.Entities;
 using Headless.Settings.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.TestSetup;
 
@@ -38,7 +40,14 @@ public sealed class SettingValueRecordRepositoryTests(SettingsTestFixture fixtur
     {
         // given
         await Fixture.ResetAsync();
-        using var host = CreateHost();
+        var interceptor = new FailingWriteInterceptor(failOnCommand: 3);
+        using var host = CreateHost(builder =>
+            // One statement per command makes each write a separate round trip, so the first two have run on the
+            // server before the third fails. Only a transaction spanning all three can undo them.
+            builder.Services.ConfigureDbContext<SettingsTestDbContext>(options =>
+                options.UseNpgsql(npgsql => npgsql.MaxBatchSize(1)).AddInterceptors(interceptor)
+            )
+        );
         await using var scope = host.Services.CreateAsyncScope();
         var repository = scope.ServiceProvider.GetRequiredService<ISettingValueRecordRepository>();
         var first = new SettingValueRecord(Guid.NewGuid(), "Theme", "old", "Tenant", "t1");
@@ -46,23 +55,97 @@ public sealed class SettingValueRecordRepositoryTests(SettingsTestFixture fixtur
         await repository.InsertAsync(first, AbortToken);
         await repository.InsertAsync(second, AbortToken);
         var added = new SettingValueRecord(Guid.NewGuid(), "Locale", "new", "Tenant", "t1");
-        var validUpdate = new SettingValueRecord(first.Id, "Theme", "new", "Tenant", "t1");
-
-        // the column rejects this value, so the batch fails after the insert and the first update already ran
-        var failingUpdate = new SettingValueRecord(
-            second.Id,
-            "Font",
-            new string('x', SettingValueRecordConstants.ValueMaxLength + 1),
-            "Tenant",
-            "t1"
-        );
+        var firstUpdate = new SettingValueRecord(first.Id, "Theme", "new", "Tenant", "t1");
+        var secondUpdate = new SettingValueRecord(second.Id, "Font", "new", "Tenant", "t1");
 
         // when
-        var act = async () => await repository.SaveAsync([added], [validUpdate, failingUpdate], [], AbortToken);
+        interceptor.Arm();
+        var act = async () => await repository.SaveAsync([added], [firstUpdate, secondUpdate], [], AbortToken);
 
         // then
-        await act.Should().ThrowAsync<DbUpdateException>();
+        await act.Should().ThrowAsync<DbUpdateException>().WithInnerException(typeof(InvalidOperationException));
+        interceptor.Disarm();
+        interceptor.SucceededCommands.Should().BeGreaterThanOrEqualTo(2);
         var stored = await repository.GetListAsync("Tenant", "t1", AbortToken);
         stored.Select(x => (x.Name, x.Value)).Should().BeEquivalentTo([("Theme", "old"), ("Font", "old")]);
+    }
+
+    /// <summary>Counts commands that complete while armed and throws on the chosen one.</summary>
+    private sealed class FailingWriteInterceptor(int failOnCommand) : DbCommandInterceptor
+    {
+        private int _started;
+        private int _succeeded;
+        private volatile bool _armed;
+
+        public int SucceededCommands => Volatile.Read(ref _succeeded);
+
+        public void Arm()
+        {
+            Interlocked.Exchange(ref _started, 0);
+            Interlocked.Exchange(ref _succeeded, 0);
+            _armed = true;
+        }
+
+        public void Disarm() => _armed = false;
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            _FailIfChosen();
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        public override ValueTask<DbDataReader> ReaderExecutedAsync(
+            DbCommand command,
+            CommandExecutedEventData eventData,
+            DbDataReader result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            _CountSuccess();
+            return base.ReaderExecutedAsync(command, eventData, result, cancellationToken);
+        }
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            _FailIfChosen();
+            return base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        public override ValueTask<int> NonQueryExecutedAsync(
+            DbCommand command,
+            CommandExecutedEventData eventData,
+            int result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            _CountSuccess();
+            return base.NonQueryExecutedAsync(command, eventData, result, cancellationToken);
+        }
+
+        private void _FailIfChosen()
+        {
+            if (_armed && Interlocked.Increment(ref _started) == failOnCommand)
+            {
+                throw new InvalidOperationException($"Simulated failure of write command {failOnCommand}.");
+            }
+        }
+
+        private void _CountSuccess()
+        {
+            if (_armed)
+            {
+                Interlocked.Increment(ref _succeeded);
+            }
+        }
     }
 }
