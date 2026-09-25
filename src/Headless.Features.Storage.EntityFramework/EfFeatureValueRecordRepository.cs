@@ -66,6 +66,23 @@ internal sealed class EfFeatureValueRecordRepository<TContext>(IDbContextFactory
 
     /// <inheritdoc/>
     public async Task<List<FeatureValueRecord>> GetListAsync(
+        HashSet<string> names,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+
+        return await db.Set<FeatureValueRecord>()
+            .AsNoTracking()
+            .Where(s => names.Contains(s.Name) && s.ProviderName == providerName && s.ProviderKey == providerKey)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task<List<FeatureValueRecord>> GetListAsync(
         string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
@@ -108,6 +125,34 @@ internal sealed class EfFeatureValueRecordRepository<TContext>(IDbContextFactory
         db.Set<FeatureValueRecord>().RemoveRange(featureValues);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await cache.RemoveAllAsync(featureValues.Select(_CacheKey), cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task SaveAsync(
+        IReadOnlyCollection<FeatureValueRecord> inserted,
+        IReadOnlyCollection<FeatureValueRecord> updated,
+        IReadOnlyCollection<FeatureValueRecord> deleted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (inserted.Count == 0 && updated.Count == 0 && deleted.Count == 0)
+        {
+            return;
+        }
+
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+
+        var set = db.Set<FeatureValueRecord>();
+        set.AddRange(inserted);
+        set.UpdateRange(updated);
+        set.RemoveRange(deleted);
+
+        // One SaveChanges runs every statement in the transaction EF opens for it, so a failing row rolls back
+        // the whole batch.
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await cache
+            .RemoveAllAsync(inserted.Concat(updated).Concat(deleted).Select(_CacheKey), cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static string _CacheKey(FeatureValueRecord featureValue)

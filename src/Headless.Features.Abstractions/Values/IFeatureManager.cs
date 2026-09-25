@@ -103,6 +103,40 @@ public interface IFeatureManager
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Sets several feature values for the given provider and key and announces them in one
+    /// <see cref="FeatureChangedMessage"/>.
+    /// </summary>
+    /// <param name="values">
+    /// The values keyed by feature name. A <see langword="null"/> value clears that feature. An empty dictionary
+    /// writes nothing and announces nothing.
+    /// </param>
+    /// <param name="providerName">The provider to write the values to.</param>
+    /// <param name="providerKey">Provider-specific key (e.g., tenant ID or edition ID).</param>
+    /// <param name="forceToSet">
+    /// When <see langword="false"/>, a value that matches its fallback value is cleared instead of stored.
+    /// When <see langword="true"/>, every value is written as given.
+    /// </param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <remarks>
+    /// Every name, the provider, and its writability are checked before anything is written, so a rejected batch
+    /// changes nothing. The built-in store providers then write the whole batch in one transaction: a failed write
+    /// leaves every value as it was, and no announcement goes out. A custom provider that does not override
+    /// <c>IFeatureValueProvider.SetAllAsync</c> writes one value at a time and gives no such guarantee.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="values"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
+    /// <exception cref="Headless.Exceptions.ConflictException">
+    /// A feature in <paramref name="values"/> is not defined, the specified provider is not registered, or the
+    /// provider is read-only.
+    /// </exception>
+    Task SetAsync(
+        IReadOnlyDictionary<string, string?> values,
+        string providerName,
+        string? providerKey,
+        bool forceToSet = false,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Deletes all feature values for the given provider and key.</summary>
     /// <param name="providerName">The provider whose values should be deleted.</param>
     /// <param name="providerKey">The provider-specific key identifying the scope to clear (e.g., a tenant ID).</param>

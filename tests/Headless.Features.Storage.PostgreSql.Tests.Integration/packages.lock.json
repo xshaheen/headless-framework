@@ -743,6 +743,25 @@
           "Headless.Extensions": "[1.0.0, )"
         }
       },
+      "headless.caching.core": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Caching.Abstractions": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Serializer.Abstractions": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
+          "OpenTelemetry.Api": "[1.18.0, )"
+        }
+      },
+      "headless.caching.inmemory": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Caching.Abstractions": "[1.0.0, )",
+          "Headless.Caching.Core": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )"
+        }
+      },
       "headless.checks": {
         "type": "Project"
       },
@@ -819,6 +838,19 @@
           "Headless.Features.Core": "[1.0.0, )",
           "Headless.Serializer.Json": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"
+        }
+      },
+      "headless.features.tests.harness": {
+        "type": "Project",
+        "dependencies": {
+          "AwesomeAssertions": "[9.6.0, )",
+          "AwesomeAssertions.Json": "[9.0.0, )",
+          "Bogus": "[35.6.5, )",
+          "DeepCloner": "[0.10.4, )",
+          "Headless.Caching.InMemory": "[1.0.0, )",
+          "Headless.Features.Core": "[1.0.0, )",
+          "Headless.Testing": "[1.0.0, )",
+          "NSubstitute": "[5.3.0, )"
         }
       },
       "headless.fluentvalidation": {
@@ -1194,6 +1226,12 @@
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "10.0.0"
         }
+      },
+      "OpenTelemetry.Api": {
+        "type": "CentralTransitive",
+        "requested": "[1.18.0, )",
+        "resolved": "1.18.0",
+        "contentHash": "Dhzm5oughIY9EWckt2J1yXcEbXpki5WCL2q7prJoYxzH6C7jdkfGtPMTkUVZZ4AhjJKzQnlC+kLSIlmIVwC4Vw=="
       },
       "Polly.Core": {
         "type": "CentralTransitive",

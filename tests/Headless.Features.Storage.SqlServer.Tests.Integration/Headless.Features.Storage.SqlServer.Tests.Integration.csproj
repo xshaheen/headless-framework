@@ -10,5 +10,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Features.Storage.SqlServer\Headless.Features.Storage.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
+    <ProjectReference Include="..\Headless.Features.Tests.Harness\Headless.Features.Tests.Harness.csproj" />
   </ItemGroup>
 </Project>

@@ -134,6 +134,34 @@ internal sealed class EfSettingValueRecordRepository<TContext>(
         await cache.RemoveAllAsync(settings.Select(_CacheKey), cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc/>
+    public async Task SaveAsync(
+        IReadOnlyCollection<SettingValueRecord> inserted,
+        IReadOnlyCollection<SettingValueRecord> updated,
+        IReadOnlyCollection<SettingValueRecord> deleted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (inserted.Count == 0 && updated.Count == 0 && deleted.Count == 0)
+        {
+            return;
+        }
+
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+
+        var set = db.Set<SettingValueRecord>();
+        set.AddRange(inserted);
+        set.UpdateRange(updated);
+        set.RemoveRange(deleted);
+
+        // One SaveChanges runs every statement in the transaction EF opens for it, so a failing row rolls back
+        // the whole batch.
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await cache
+            .RemoveAllAsync(inserted.Concat(updated).Concat(deleted).Select(_CacheKey), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     private static string _CacheKey(SettingValueRecord setting)
     {
         return SettingValueCacheItem.CalculateCacheKey(setting.Name, setting.ProviderName, setting.ProviderKey);

@@ -56,4 +56,33 @@ public interface IFeatureValueProvider : IFeatureValueReadProvider
     /// <param name="providerKey">An optional key that qualifies the scope.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     Task ClearAsync(FeatureDefinition feature, string? providerKey, CancellationToken cancellationToken = default);
+
+    /// <summary>Stores or clears several values for <paramref name="providerKey"/> as one write.</summary>
+    /// <remarks>
+    /// <c>FeatureManager.SetAsync</c> routes every write through this member. The default implementation calls
+    /// <see cref="SetAsync"/> and <see cref="ClearAsync"/> once per entry, so a failure part-way leaves the earlier
+    /// entries written; override it when the backing source can apply the whole batch atomically, as
+    /// <see cref="StoreFeatureValueProvider"/> does.
+    /// </remarks>
+    /// <param name="values">The values to write, each paired with its definition. A <see langword="null"/> value clears the feature.</param>
+    /// <param name="providerKey">An optional key that qualifies the scope (e.g. tenant or edition identifier).</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    async Task SetAllAsync(
+        IReadOnlyList<KeyValuePair<FeatureDefinition, string?>> values,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        foreach (var (feature, value) in values)
+        {
+            if (value is null)
+            {
+                await ClearAsync(feature, providerKey, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await SetAsync(feature, value, providerKey, cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
 }
