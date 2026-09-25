@@ -51,7 +51,7 @@ $pbkdf2-sha256$i=600000,l=32$<salt>$<hash>
 
 - Argon2id always has `p=1` and a 16-byte salt. libsodium derives only that shape, so Argon2 hashes produced elsewhere with `p>1`, and Argon2i/Argon2d hashes, fail verification.
 - The PBKDF2 identifier follows the RustCrypto/Auth0 convention. PHC defines none, and passlib's `$pbkdf2-sha256$` form is a different, non-PHC encoding that this parser rejects.
-- `PhcString.TryParse` accepts only canonical encodings: no padding, no non-zero unused base64 bits, no leading-zero decimals, no duplicate parameters, and at most 512 characters.
+- `PhcString.TryParse` accepts only canonical encodings: no padding, no non-zero unused base64 bits, no leading-zero decimals, no duplicate parameters, no parameter named `v` (reserved for the version segment, so no encoding is ambiguous), and at most 512 characters. The constructor refuses the same.
 
 ### Verification and rotation
 

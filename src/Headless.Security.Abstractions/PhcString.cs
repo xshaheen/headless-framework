@@ -19,7 +19,8 @@ public readonly record struct PhcParameter(string Name, string Value);
 /// <remarks>
 /// <para>
 /// Salt and hash use standard base64 without padding. Parsing accepts only the canonical form — no padding, no
-/// non-zero unused bits, no empty segments, no duplicate parameter names — so every accepted value has exactly one
+/// non-zero unused bits, no empty segments, no duplicate parameter names, no parameter named <c>v</c> (reserved for the
+/// version) — so every accepted value has exactly one
 /// encoding and round-trips byte for byte.
 /// </para>
 /// <para>
@@ -34,6 +35,10 @@ public sealed class PhcString
     public const int MaxLength = 512;
 
     private const int _MaxNameLength = 32;
+
+    // A parameter named "v" would, when it came first, read back as the version segment, so the name is reserved for
+    // the version and no encoding can be ambiguous.
+    private const string _VersionName = "v";
 
     private readonly byte[] _salt;
     private readonly byte[] _hash;
@@ -73,10 +78,10 @@ public sealed class PhcString
 
         foreach (var parameter in parameters)
         {
-            if (!_IsName(parameter.Name) || !_IsValue(parameter.Value) || !seen.Add(parameter.Name))
+            if (!_IsParameter(parameter.Name, parameter.Value) || !seen.Add(parameter.Name))
             {
                 throw new ArgumentException(
-                    "Each PHC parameter needs a unique [a-z0-9-] name and a non-empty [a-zA-Z0-9/+.-] value.",
+                    "Each PHC parameter needs a unique [a-z0-9-] name other than 'v' and a non-empty [a-zA-Z0-9/+.-] value.",
                     nameof(parameters)
                 );
             }
@@ -248,7 +253,7 @@ public sealed class PhcString
             var name = pair[..separator];
             var parameterValue = pair[(separator + 1)..];
 
-            if (!_IsName(name) || !_IsValue(parameterValue) || !seen.Add(name))
+            if (!_IsParameter(name, parameterValue) || !seen.Add(name))
             {
                 return false;
             }
@@ -257,6 +262,11 @@ public sealed class PhcString
         }
 
         return true;
+    }
+
+    private static bool _IsParameter(string name, string value)
+    {
+        return _IsName(name) && !string.Equals(name, _VersionName, StringComparison.Ordinal) && _IsValue(value);
     }
 
     private static bool _TryParseDecimal(ReadOnlySpan<char> text, out int value)

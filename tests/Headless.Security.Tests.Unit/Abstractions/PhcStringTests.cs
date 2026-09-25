@@ -60,6 +60,7 @@ public sealed class PhcStringTests
     [InlineData($"$argon2id$v=19$m=1,t=2,p=1${_Salt}$aGFzaGhhc2hoYXNoaGFzaGhhc2hoYXNoaGFzaGhhc2h")] // non-zero unused bits
     [InlineData($"$argon2id$v=19$m=1,t=2,p=1$c29tZXNhbHRz-21lc2FsdA${_Hash}")] // url-safe alphabet
     [InlineData($"$argon2id$v=19$m=1,m=2${_Salt}${_Hash}")] // duplicate parameter
+    [InlineData($"$argon2id$m=1,v=19${_Salt}${_Hash}")] // reserved parameter name
     [InlineData($"$argon2id$v=019$m=1${_Salt}${_Hash}")] // leading-zero version
     [InlineData($"argon2id$v=19$m=1${_Salt}${_Hash}")] // missing leading '$'
     [InlineData($"$$v=19$m=1${_Salt}${_Hash}")] // empty id
@@ -130,5 +131,9 @@ public sealed class PhcStringTests
             .Throw<ArgumentException>();
         FluentActions.Invoking(() => new PhcString("x", null, [], [], hash)).Should().Throw<ArgumentException>();
         FluentActions.Invoking(() => new PhcString("x", -1, [], salt, hash)).Should().Throw<ArgumentException>();
+        FluentActions
+            .Invoking(() => new PhcString("x", null, [new("v", "1")], salt, hash))
+            .Should()
+            .Throw<ArgumentException>();
     }
 }
