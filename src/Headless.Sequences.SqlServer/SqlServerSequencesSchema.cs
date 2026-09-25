@@ -12,8 +12,10 @@ internal static class SqlServerSequencesSchema
     public const string CreatedAt = "[created_at]";
     public const string UpdatedAt = "[updated_at]";
 
-    // Binary code-point order, so counter names, partitions, and tenant ids match ordinally (case- and
-    // accent-sensitive) whatever the database's default collation is, the same as the PostgreSQL provider.
+    // Binary code-point order, so counter names, partitions, and tenant ids match case- and accent-sensitively
+    // whatever the database's default collation is. It does not stop SQL Server padding trailing spaces before
+    // comparing, so 'a' and 'a ' still collide here; key parts are refused when they start or end with
+    // whitespace, which is what makes matching ordinal, the same as the PostgreSQL provider.
     public const string KeyCollation = "Latin1_General_100_BIN2";
 
     public static string Qualified(SqlServerSequencesOptions options)
