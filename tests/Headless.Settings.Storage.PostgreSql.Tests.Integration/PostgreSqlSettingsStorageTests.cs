@@ -1,15 +1,21 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
+using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Hosting.Initialization;
 using Headless.Security;
 using Headless.Settings;
+using Headless.Settings.Definitions;
 using Headless.Settings.Entities;
+using Headless.Settings.Models;
 using Headless.Settings.Repositories;
+using Headless.Settings.Values;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace Tests;
@@ -173,6 +179,61 @@ public sealed class PostgreSqlSettingsStorageTests(PostgreSqlSettingsFixture fix
         await act.Should().ThrowAsync<PostgresException>();
         var stored = await repository.GetListAsync("Tenant", "t1", AbortToken);
         stored.Select(x => (x.Name, x.Value)).Should().BeEquivalentTo([("Theme", "old"), ("Font", "old")]);
+    }
+
+    [Fact]
+    public async Task should_roll_back_the_batch_when_an_updated_row_was_deleted_by_another_writer()
+    {
+        // given
+        await _DropSchemaAsync();
+        using var host = _CreateHost();
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<ISettingValueRecordRepository>();
+        var added = new SettingValueRecord(Guid.NewGuid(), "Theme", "new", "Tenant", "t1");
+        var vanished = new SettingValueRecord(Guid.NewGuid(), "Font", "new", "Tenant", "t1");
+
+        // when the batch updates a row nobody stored (another writer deleted it after it was read)
+        var act = async () => await repository.SaveAsync([added], [vanished], [], AbortToken);
+
+        // then the whole batch fails and the insert that ran before it is rolled back
+        await act.Should().ThrowAsync<DBConcurrencyException>();
+        (await repository.GetListAsync("Tenant", "t1", AbortToken)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_let_every_concurrent_writer_of_a_new_name_succeed()
+    {
+        // given
+        await _DropSchemaAsync();
+        using var host = _CreateHost();
+        await host.StartAsync(AbortToken);
+        // The store reads definitions only to warm its cache; the storage-only host does not register the
+        // definition manager's dependencies, so the store is built over the host's real repository and cache.
+        var store = new SettingValueStore(
+            host.Services.GetRequiredService<ISettingValueRecordRepository>(),
+            Substitute.For<ISettingDefinitionManager>(),
+            new SequentialGuidGenerator(SequentialGuidType.Version7),
+            host.Services.GetRequiredService<ICache<SettingValueCacheItem>>(),
+            Options.Create(new SettingManagementOptions())
+        );
+        var repository = host.Services.GetRequiredService<ISettingValueRecordRepository>();
+
+        // when several writers set the same, not yet stored, name at once
+        var writes = Enumerable
+            .Range(0, 8)
+            .Select(i =>
+                store.SetAllAsync(
+                    new Dictionary<string, string?>(StringComparer.Ordinal) { ["Theme"] = $"v{i}" },
+                    "Tenant",
+                    "t1",
+                    AbortToken
+                )
+            );
+        await Task.WhenAll(writes);
+
+        // then every write succeeds and exactly one row holds one of their values
+        var stored = await repository.GetListAsync("Tenant", "t1", AbortToken);
+        stored.Should().ContainSingle().Which.Value.Should().MatchRegex("^v[0-7]$");
     }
 
     private IHost _CreateHost()

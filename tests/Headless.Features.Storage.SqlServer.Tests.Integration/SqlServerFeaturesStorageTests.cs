@@ -1,10 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
+using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Features;
+using Headless.Features.Definitions;
 using Headless.Features.Entities;
 using Headless.Features.Repositories;
+using Headless.Features.Values;
 using Headless.Hosting.Initialization;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
@@ -263,6 +266,60 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
             .Select(x => (x.Name, x.Value))
             .Should()
             .BeEquivalentTo([("Checkout.Enabled", "old"), ("Reports.Enabled", "old")]);
+    }
+
+    [Fact]
+    public async Task should_roll_back_the_batch_when_an_updated_row_was_deleted_by_another_writer()
+    {
+        // given
+        await _DropSchemaAsync();
+        using var host = _CreateHost();
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
+        var added = new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "new", "Tenant", "t1");
+        var vanished = new FeatureValueRecord(Guid.NewGuid(), "Reports.Enabled", "new", "Tenant", "t1");
+
+        // when the batch updates a row nobody stored (another writer deleted it after it was read)
+        var act = async () => await repository.SaveAsync([added], [vanished], [], AbortToken);
+
+        // then the whole batch fails and the insert that ran before it is rolled back
+        await act.Should().ThrowAsync<DBConcurrencyException>();
+        (await repository.GetListAsync("Tenant", "t1", AbortToken)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_let_every_concurrent_writer_of_a_new_name_succeed()
+    {
+        // given
+        await _DropSchemaAsync();
+        using var host = _CreateHost();
+        await host.StartAsync(AbortToken);
+        // The store reads definitions only to warm its cache; the storage-only host does not register the
+        // definition manager's dependencies, so the store is built over the host's real repository and cache.
+        var store = new FeatureValueStore(
+            Substitute.For<IFeatureDefinitionManager>(),
+            host.Services.GetRequiredService<IFeatureValueRecordRepository>(),
+            new SequentialGuidGenerator(SequentialGuidType.Version7),
+            host.Services.GetRequiredService<ICache>()
+        );
+        var repository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
+
+        // when several writers set the same, not yet stored, name at once
+        var writes = Enumerable
+            .Range(0, 8)
+            .Select(i =>
+                store.SetAllAsync(
+                    new Dictionary<string, string?>(StringComparer.Ordinal) { ["Checkout.Enabled"] = $"v{i}" },
+                    "Tenant",
+                    "t1",
+                    AbortToken
+                )
+            );
+        await Task.WhenAll(writes);
+
+        // then every write succeeds and exactly one row holds one of their values
+        var stored = await repository.GetListAsync("Tenant", "t1", AbortToken);
+        stored.Should().ContainSingle().Which.Value.Should().MatchRegex("^v[0-7]$");
     }
 
     private IHost _CreateHost()

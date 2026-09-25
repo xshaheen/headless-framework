@@ -179,12 +179,23 @@ internal sealed class SqlServerFeatureValueRecordRepository(
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-        foreach (var (sql, parameters) in statements)
+        var firstUpdate = inserted.Count;
+        var afterLastUpdate = firstUpdate + updated.Count;
+
+        for (var i = 0; i < statements.Count; i++)
         {
+            var (sql, parameters) = statements[i];
             await using var command = new SqlCommand(sql, connection, (SqlTransaction)transaction);
             command.CommandTimeout = _CommandTimeout();
             command.Parameters.AddRange(parameters);
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+            // An update that matched no row means another writer deleted it after the caller read it. Failing rolls
+            // the batch back so the caller can re-read and retry, instead of silently dropping that value.
+            if (affected == 0 && i >= firstUpdate && i < afterLastUpdate)
+            {
+                throw new DBConcurrencyException("A value record in the batch was deleted by another writer.");
+            }
         }
 
         // Disposing an uncommitted transaction rolls it back, so a statement that throws above undoes every

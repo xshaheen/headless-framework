@@ -295,6 +295,80 @@ public sealed class FeatureValueStoreTests : TestBase
         await _cache.DidNotReceive().RemoveAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task should_plan_again_and_update_when_a_concurrent_writer_inserted_the_row()
+    {
+        // given the first read finds nothing, but another writer inserts the row before this batch saves
+        const string providerName = "TestProvider";
+        const string providerKey = "tenant-1";
+        var concurrent = new FeatureValueRecord(Guid.NewGuid(), "A", "theirs", providerName, providerKey);
+        _repository
+            .GetListAsync(Arg.Any<HashSet<string>>(), providerName, providerKey, AbortToken)
+            .Returns([], [concurrent], [concurrent]);
+        _guidGenerator.Create().Returns(Guid.NewGuid());
+        var saves = new List<(int Inserted, int Updated)>();
+        _repository
+            .SaveAsync(
+                Arg.Any<IReadOnlyCollection<FeatureValueRecord>>(),
+                Arg.Any<IReadOnlyCollection<FeatureValueRecord>>(),
+                Arg.Any<IReadOnlyCollection<FeatureValueRecord>>(),
+                AbortToken
+            )
+            .Returns(call =>
+            {
+                saves.Add(
+                    (
+                        call.ArgAt<IReadOnlyCollection<FeatureValueRecord>>(0).Count,
+                        call.ArgAt<IReadOnlyCollection<FeatureValueRecord>>(1).Count
+                    )
+                );
+
+                return saves.Count == 1
+                    ? Task.FromException(new InvalidOperationException("duplicate key"))
+                    : Task.CompletedTask;
+            });
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal) { ["A"] = "ours" };
+
+        // when
+        await _sut.SetAllAsync(values, providerName, providerKey, AbortToken);
+
+        // then the retry updates the row the other writer created, and the last writer's value wins
+        saves.Should().Equal((1, 0), (0, 1));
+        concurrent.Value.Should().Be("ours");
+    }
+
+    [Fact]
+    public async Task should_rethrow_a_save_failure_when_no_other_writer_changed_the_rows()
+    {
+        // given
+        const string providerName = "TestProvider";
+        _repository.GetListAsync(Arg.Any<HashSet<string>>(), providerName, null, AbortToken).Returns([]);
+        _guidGenerator.Create().Returns(Guid.NewGuid());
+        _repository
+            .SaveAsync(
+                Arg.Any<IReadOnlyCollection<FeatureValueRecord>>(),
+                Arg.Any<IReadOnlyCollection<FeatureValueRecord>>(),
+                Arg.Any<IReadOnlyCollection<FeatureValueRecord>>(),
+                Arg.Any<CancellationToken>()
+            )
+            .ThrowsAsync(new InvalidOperationException("value too long"));
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal) { ["A"] = "a" };
+
+        // when
+        var act = async () => await _sut.SetAllAsync(values, providerName, null, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("value too long");
+        await _repository
+            .Received(1)
+            .SaveAsync(
+                Arg.Any<IReadOnlyCollection<FeatureValueRecord>>(),
+                Arg.Any<IReadOnlyCollection<FeatureValueRecord>>(),
+                Arg.Any<IReadOnlyCollection<FeatureValueRecord>>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     #endregion
 
     #region DeleteAsync
