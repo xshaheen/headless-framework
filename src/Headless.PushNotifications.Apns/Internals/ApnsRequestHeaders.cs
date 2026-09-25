@@ -59,6 +59,42 @@ internal sealed record ApnsRequestHeaders(
                 $"{options.BundleId}.push-type.liveactivity",
                 _LiveActivityPriority(liveActivity.Priority)
             ),
+            ApnsLocationNotification location => _NotVoip(
+                options,
+                "location",
+                $"{options.BundleId}.location-query",
+                _NichePriority(location.Priority)
+            ),
+            ApnsPushToTalkNotification => _NotVoip(
+                options,
+                "pushtotalk",
+                $"{options.BundleId}.voip-ptt",
+                ApnsPriority.Immediate
+            ),
+            ApnsWidgetsNotification widgets => _NotVoip(
+                options,
+                "widgets",
+                $"{options.BundleId}.push-type.widgets",
+                _NichePriority(widgets.Priority)
+            ),
+            ApnsControlsNotification controls => _NotVoip(
+                options,
+                "controls",
+                $"{options.BundleId}.push-type.controls",
+                _NichePriority(controls.Priority)
+            ),
+            ApnsComplicationNotification complication => _NotVoip(
+                options,
+                "complication",
+                $"{options.BundleId}.complication",
+                _NichePriority(complication.Priority)
+            ),
+            ApnsFileProviderNotification fileProvider => _NotVoip(
+                options,
+                "fileprovider",
+                $"{options.BundleId}.pushkit.fileprovider",
+                _NichePriority(fileProvider.Priority)
+            ),
             _ => throw new ArgumentException(
                 $"Unsupported APNs notification type '{notification.GetType().Name}'.",
                 nameof(notification)
@@ -77,7 +113,11 @@ internal sealed record ApnsRequestHeaders(
             );
         }
 
-        var expiration = notification.Expiration switch
+        // Apple advises against delivering a stale push-to-talk push, so it defaults to deliver-once.
+        var requested =
+            notification.Expiration ?? (notification is ApnsPushToTalkNotification ? ApnsExpiration.DeliverOnce : null);
+
+        var expiration = requested switch
         {
             null => (long?)null,
             { ExpiresAt: { } expiresAt } => expiresAt.ToUnixTimeSeconds(),
@@ -122,6 +162,21 @@ internal sealed record ApnsRequestHeaders(
         }
 
         return (pushType, topic, priority);
+    }
+
+    private static ApnsPriority _NichePriority(ApnsPriority? priority)
+    {
+        // These push types are not power-managed alerts, so priority 1 is refused; 10 matches APNs's own default when
+        // the header is absent.
+        if (priority == ApnsPriority.PowerPrioritized)
+        {
+            throw new ArgumentException(
+                "This APNs push type cannot use priority 1 (PowerPrioritized); use 5 or 10.",
+                nameof(priority)
+            );
+        }
+
+        return priority ?? ApnsPriority.Immediate;
     }
 
     private static ApnsPriority _LiveActivityPriority(ApnsPriority? priority)

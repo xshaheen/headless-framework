@@ -62,7 +62,22 @@ internal static class ApnsPayloadWriter
                     _WriteLiveActivityNotification(writer, liveActivity, timeProvider);
                     break;
                 case ApnsVoipDataNotification voipData:
-                    _WriteVoipDataNotification(writer, voipData);
+                    _WriteEmptyApsWithData(writer, voipData.Data);
+                    break;
+                case ApnsLocationNotification location:
+                    _WriteEmptyApsWithData(writer, location.Data);
+                    break;
+                case ApnsPushToTalkNotification pushToTalk:
+                    _WriteEmptyApsWithData(writer, pushToTalk.Data);
+                    break;
+                case ApnsComplicationNotification complication:
+                    _WriteEmptyApsWithData(writer, complication.Data);
+                    break;
+                case ApnsWidgetsNotification or ApnsControlsNotification:
+                    _WriteContentChanged(writer);
+                    break;
+                case ApnsFileProviderNotification fileProvider:
+                    _WriteFileProviderNotification(writer, fileProvider);
                     break;
                 default:
                     throw new ArgumentException(
@@ -222,17 +237,40 @@ internal static class ApnsPayloadWriter
 
     #endregion
 
-    #region VoIP data
+    #region Data-only push types
 
-    private static void _WriteVoipDataNotification(Utf8JsonWriter writer, ApnsVoipDataNotification notification)
+    private static void _WriteEmptyApsWithData(Utf8JsonWriter writer, IReadOnlyDictionary<string, string>? data)
     {
-        _EnsureNoReservedKey(notification.Data, nameof(notification));
+        _EnsureNoReservedKey(data, "notification");
 
-        // PushKit hands the whole payload to the app, but APNs still expects the aps dictionary to be present.
+        // VoIP, location, push-to-talk, and complication pushes hand the whole payload to the app, but APNs still
+        // expects the aps dictionary to be present.
         writer.WriteStartObject();
         writer.WriteStartObject(_ApsKey);
         writer.WriteEndObject();
-        _WriteData(writer, notification.Data);
+        _WriteData(writer, data);
+        writer.WriteEndObject();
+    }
+
+    private static void _WriteContentChanged(Utf8JsonWriter writer)
+    {
+        // Widget and control pushes carry no content of their own: the system reloads the timeline or the control.
+        writer.WriteStartObject();
+        writer.WriteStartObject(_ApsKey);
+        writer.WriteBoolean("content-changed", value: true);
+        writer.WriteEndObject();
+        writer.WriteEndObject();
+    }
+
+    private static void _WriteFileProviderNotification(Utf8JsonWriter writer, ApnsFileProviderNotification notification)
+    {
+        Argument.IsNotNullOrWhiteSpace(notification.ContainerIdentifier, paramName: nameof(notification));
+        Argument.IsNotNullOrWhiteSpace(notification.Domain, paramName: nameof(notification));
+
+        // Apple's File Provider payload is these two top-level keys and no aps dictionary.
+        writer.WriteStartObject();
+        writer.WriteString("container-identifier", notification.ContainerIdentifier);
+        writer.WriteString("domain", notification.Domain);
         writer.WriteEndObject();
     }
 

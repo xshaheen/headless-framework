@@ -656,6 +656,334 @@ public sealed class ApnsPayloadWriterTests : TestBase
 
     #endregion
 
+    #region Niche push types
+
+    public static TheoryData<string, ApnsNotification, string, string[]> NichePushTypes =>
+        new()
+        {
+            {
+                "location",
+                new ApnsLocationNotification { Data = _KeyValue() },
+                """{"aps":{},"k":"v"}""",
+                ["apns-push-type: location", $"apns-topic: {_BundleId}.location-query", "apns-priority: 10"]
+            },
+            {
+                "push-to-talk",
+                new ApnsPushToTalkNotification { Data = _KeyValue() },
+                """{"aps":{},"k":"v"}""",
+                [
+                    "apns-push-type: pushtotalk",
+                    $"apns-topic: {_BundleId}.voip-ptt",
+                    "apns-priority: 10",
+                    "apns-expiration: 0",
+                ]
+            },
+            {
+                "widgets",
+                new ApnsWidgetsNotification(),
+                """{"aps":{"content-changed":true}}""",
+                ["apns-push-type: widgets", $"apns-topic: {_BundleId}.push-type.widgets", "apns-priority: 10"]
+            },
+            {
+                "controls",
+                new ApnsControlsNotification(),
+                """{"aps":{"content-changed":true}}""",
+                ["apns-push-type: controls", $"apns-topic: {_BundleId}.push-type.controls", "apns-priority: 10"]
+            },
+            {
+                "complication",
+                new ApnsComplicationNotification { Data = _KeyValue() },
+                """{"aps":{},"k":"v"}""",
+                ["apns-push-type: complication", $"apns-topic: {_BundleId}.complication", "apns-priority: 10"]
+            },
+            {
+                "file provider",
+                new ApnsFileProviderNotification { ContainerIdentifier = "c", Domain = "d" },
+                """{"container-identifier":"c","domain":"d"}""",
+                ["apns-push-type: fileprovider", $"apns-topic: {_BundleId}.pushkit.fileprovider", "apns-priority: 10"]
+            },
+        };
+
+    [Theory]
+    [MemberData(nameof(NichePushTypes))]
+    public void should_write_the_exact_headers_and_payload_of_each_niche_push_type(
+        string scenario,
+        ApnsNotification notification,
+        string expectedJson,
+        string[] expectedHeaders
+    )
+    {
+        // when: the options priority must not leak into push types whose default Apple fixes.
+        var prepared = _Prepare(notification, o => o.Priority = ApnsPriority.PowerConsiderate);
+
+        // then
+        _Json(prepared).Should().Be(expectedJson, scenario);
+        _Lines(prepared.Headers).Should().Equal(expectedHeaders, scenario);
+    }
+
+    [Fact]
+    public void should_write_a_bare_empty_aps_when_location_has_no_data()
+    {
+        // when
+        var json = _Json(_Prepare(new ApnsLocationNotification()));
+
+        // then
+        json.Should().Be("""{"aps":{}}""");
+    }
+
+    [Fact]
+    public void should_write_only_content_changed_when_widgets_or_controls_are_sent()
+    {
+        // when
+        var widgets = _Json(_Prepare(new ApnsWidgetsNotification { CollapseId = "w" }));
+        var controls = _Json(_Prepare(new ApnsControlsNotification { CollapseId = "c" }));
+
+        // then
+        widgets.Should().Be("""{"aps":{"content-changed":true}}""");
+        controls.Should().Be("""{"aps":{"content-changed":true}}""");
+    }
+
+    [Fact]
+    public void should_send_the_explicit_expiration_when_push_to_talk_sets_one()
+    {
+        // given
+        var notification = new ApnsPushToTalkNotification { Expiration = ApnsExpiration.At(_Now.AddHours(2)) };
+
+        // when
+        var headers = _Prepare(notification).Headers;
+
+        // then
+        _Lines(headers).Should().Contain("apns-expiration: 1790337600").And.NotContain("apns-expiration: 0");
+    }
+
+    public static TheoryData<string, ApnsNotification> NicheTypesWithPriority5 =>
+        new()
+        {
+            {
+                "location",
+                new ApnsLocationNotification { Priority = ApnsPriority.PowerConsiderate }
+            },
+            {
+                "widgets",
+                new ApnsWidgetsNotification { Priority = ApnsPriority.PowerConsiderate }
+            },
+            {
+                "controls",
+                new ApnsControlsNotification { Priority = ApnsPriority.PowerConsiderate }
+            },
+            {
+                "complication",
+                new ApnsComplicationNotification { Priority = ApnsPriority.PowerConsiderate }
+            },
+            {
+                "file provider",
+                new ApnsFileProviderNotification
+                {
+                    ContainerIdentifier = "c",
+                    Domain = "d",
+                    Priority = ApnsPriority.PowerConsiderate,
+                }
+            },
+        };
+
+    [Theory]
+    [MemberData(nameof(NicheTypesWithPriority5))]
+    public void should_send_priority_5_when_a_niche_type_asks_for_it(string scenario, ApnsNotification notification)
+    {
+        // when
+        var headers = _Prepare(notification).Headers;
+
+        // then
+        _Lines(headers).Should().Contain("apns-priority: 5", scenario);
+    }
+
+    public static TheoryData<string, ApnsNotification> NicheTypesWithPriority1 =>
+        new()
+        {
+            {
+                "location",
+                new ApnsLocationNotification { Priority = ApnsPriority.PowerPrioritized }
+            },
+            {
+                "widgets",
+                new ApnsWidgetsNotification { Priority = ApnsPriority.PowerPrioritized }
+            },
+            {
+                "controls",
+                new ApnsControlsNotification { Priority = ApnsPriority.PowerPrioritized }
+            },
+            {
+                "complication",
+                new ApnsComplicationNotification { Priority = ApnsPriority.PowerPrioritized }
+            },
+            {
+                "file provider",
+                new ApnsFileProviderNotification
+                {
+                    ContainerIdentifier = "c",
+                    Domain = "d",
+                    Priority = ApnsPriority.PowerPrioritized,
+                }
+            },
+        };
+
+    [Theory]
+    [MemberData(nameof(NicheTypesWithPriority1))]
+    public void should_throw_when_a_niche_type_uses_priority_1(string scenario, ApnsNotification notification)
+    {
+        // when
+        var act = () => _Prepare(notification);
+
+        // then
+        act.Should().Throw<ArgumentException>(scenario);
+    }
+
+    [Theory]
+    [InlineData("", "d")]
+    [InlineData(" ", "d")]
+    [InlineData("c", "")]
+    [InlineData("c", " ")]
+    public void should_throw_when_file_provider_container_identifier_or_domain_is_blank(
+        string containerIdentifier,
+        string domain
+    )
+    {
+        // given
+        var notification = new ApnsFileProviderNotification
+        {
+            ContainerIdentifier = containerIdentifier,
+            Domain = domain,
+        };
+
+        // when
+        var act = () => _Prepare(notification);
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    public static TheoryData<string, ApnsNotification> NicheTypesWithReservedKey =>
+        new()
+        {
+            {
+                "location",
+                new ApnsLocationNotification { Data = _Reserved() }
+            },
+            {
+                "push-to-talk",
+                new ApnsPushToTalkNotification { Data = _Reserved() }
+            },
+            {
+                "complication",
+                new ApnsComplicationNotification { Data = _Reserved() }
+            },
+        };
+
+    [Theory]
+    [MemberData(nameof(NicheTypesWithReservedKey))]
+    public void should_throw_when_niche_data_uses_the_reserved_aps_key(string scenario, ApnsNotification notification)
+    {
+        // when
+        var act = () => _Prepare(notification);
+
+        // then
+        act.Should().Throw<ArgumentException>(scenario);
+    }
+
+    public static TheoryData<string, Func<int, ApnsNotification>> NicheTypesWithData =>
+        new()
+        {
+            {
+                "location",
+                filler => new ApnsLocationNotification { Data = _Filler(filler) }
+            },
+            {
+                "push-to-talk",
+                filler => new ApnsPushToTalkNotification { Data = _Filler(filler) }
+            },
+            {
+                "complication",
+                filler => new ApnsComplicationNotification { Data = _Filler(filler) }
+            },
+        };
+
+    [Theory]
+    [MemberData(nameof(NicheTypesWithData))]
+    public void should_accept_4096_bytes_and_refuse_one_more_when_a_niche_type_carries_data(
+        string scenario,
+        Func<int, ApnsNotification> create
+    )
+    {
+        // given: {"aps":{},"k":"<filler>"} is 17 bytes of fixed JSON plus the filler.
+        var atLimit = create(4096 - 17);
+        var overLimit = create(4096 - 17 + 1);
+
+        // when
+        var accepted = _Prepare(atLimit);
+        var act = () => _Prepare(overLimit);
+
+        // then
+        accepted.Payload.Should().HaveCount(4096, scenario);
+        act.Should().Throw<ArgumentException>(scenario);
+    }
+
+    [Fact]
+    public void should_refuse_a_file_provider_payload_over_4096_bytes()
+    {
+        // given: {"container-identifier":"<filler>","domain":"d"} is 40 bytes of fixed JSON plus the filler.
+        var atLimit = new ApnsFileProviderNotification
+        {
+            ContainerIdentifier = new string('x', 4096 - 40),
+            Domain = "d",
+        };
+        var overLimit = atLimit with { ContainerIdentifier = new string('x', 4096 - 40 + 1) };
+
+        // when
+        var accepted = _Prepare(atLimit);
+        var act = () => _Prepare(overLimit);
+
+        // then
+        accepted.Payload.Should().HaveCount(4096);
+        act.Should().Throw<ArgumentException>();
+    }
+
+    public static TheoryData<string, ApnsNotification> NicheNotifications =>
+        new()
+        {
+            { "location", new ApnsLocationNotification() },
+            { "push-to-talk", new ApnsPushToTalkNotification() },
+            { "widgets", new ApnsWidgetsNotification() },
+            { "controls", new ApnsControlsNotification() },
+            { "complication", new ApnsComplicationNotification() },
+            {
+                "file provider",
+                new ApnsFileProviderNotification { ContainerIdentifier = "c", Domain = "d" }
+            },
+        };
+
+    [Theory]
+    [MemberData(nameof(NicheNotifications))]
+    public void should_throw_when_a_niche_type_is_sent_through_a_voip_instance(
+        string scenario,
+        ApnsNotification notification
+    )
+    {
+        // when
+        var act = () => _Prepare(notification, o => o.PushType = ApnsPushType.Voip);
+
+        // then
+        act.Should().Throw<ArgumentException>(scenario);
+    }
+
+    private static Dictionary<string, string> _KeyValue() => new(StringComparer.Ordinal) { ["k"] = "v" };
+
+    private static Dictionary<string, string> _Reserved() => new(StringComparer.Ordinal) { ["aps"] = "x" };
+
+    private static Dictionary<string, string> _Filler(int length) =>
+        new(StringComparer.Ordinal) { ["k"] = new string('x', length) };
+
+    #endregion
+
     #region Expiration and collapse id
 
     [Fact]

@@ -253,7 +253,54 @@ public sealed class ApnsTypedServiceTests : TestBase
                     ContentState = _Element("""{"score":1}"""),
                 }
             },
+            { "location", new ApnsLocationNotification() },
+            { "push-to-talk", new ApnsPushToTalkNotification() },
+            { "widgets", new ApnsWidgetsNotification() },
+            { "controls", new ApnsControlsNotification() },
+            { "complication", new ApnsComplicationNotification() },
+            {
+                "file provider",
+                new ApnsFileProviderNotification { ContainerIdentifier = "c", Domain = "d" }
+            },
         };
+
+    public static TheoryData<ApnsNotification, string, string> NicheNotifications =>
+        new()
+        {
+            { new ApnsLocationNotification(), "location", ".location-query" },
+            { new ApnsPushToTalkNotification(), "pushtotalk", ".voip-ptt" },
+            { new ApnsWidgetsNotification(), "widgets", ".push-type.widgets" },
+            { new ApnsControlsNotification(), "controls", ".push-type.controls" },
+            { new ApnsComplicationNotification(), "complication", ".complication" },
+            {
+                new ApnsFileProviderNotification { ContainerIdentifier = "c", Domain = "d" },
+                "fileprovider",
+                ".pushkit.fileprovider"
+            },
+        };
+
+    [Theory]
+    [MemberData(nameof(NicheNotifications))]
+    public async Task should_send_each_niche_push_type_to_its_topic(
+        ApnsNotification notification,
+        string pushType,
+        string topicSuffix
+    )
+    {
+        // given
+        await using var provider = _server.CreateProvider();
+        var service = provider.GetRequiredService<IApnsPushNotificationService>();
+
+        // when
+        var result = await service.SendAsync(_DeviceToken, notification, AbortToken);
+
+        // then
+        result.Response.IsSucceeded().Should().BeTrue();
+        var sent = _server.Requests.Should().ContainSingle().Subject;
+        sent.Headers["apns-push-type"].Should().Be(pushType);
+        sent.Headers["apns-topic"].Should().Be(FakeApnsServer.BundleId + topicSuffix);
+        sent.Headers["apns-priority"].Should().Be("10");
+    }
 
     [Theory]
     [MemberData(nameof(NonVoipNotifications))]
