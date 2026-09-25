@@ -77,14 +77,14 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
             await Task.WhenAll(startTasks);
 
             // then — all initializers report ready, exactly one audit_log table exists, and the
-            // full 5-index complement is present (regression guard: a CATCH that swallows a real
+            // full 6-index complement is present (regression guard: a CATCH that swallows a real
             // CREATE INDEX failure would otherwise pass the table-count assertion silently).
             hosts
                 .Select(h => h.Services.GetRequiredService<IEnumerable<IInitializer>>().Single().IsInitialized)
                 .Should()
                 .AllSatisfy(initialized => initialized.Should().BeTrue());
             (await _CountTablesAsync("audit_log_sql_concurrent", "audit_log")).Should().Be(1);
-            (await _CountIndexesAsync("audit_log_sql_concurrent", "audit_log")).Should().Be(5);
+            (await _CountIndexesAsync("audit_log_sql_concurrent", "audit_log")).Should().Be(6);
         }
         finally
         {
@@ -144,7 +144,7 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         // Nonclustered indexes only (type = 2) — excludes the clustered PK so the count matches
-        // the 5 CREATE NONCLUSTERED INDEX statements in SqlServerAuditLogStorageInitializer.
+        // the 6 CREATE NONCLUSTERED INDEX statements in SqlServerAuditLogStorageInitializer.
         await using var command = new SqlCommand(
             $"SELECT COUNT(*) FROM sys.indexes WHERE object_id = OBJECT_ID(N'[{schema}].[{table}]') AND type = 2;",
             connection

@@ -1,39 +1,27 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.Checks;
 using Headless.MultiTenancy;
-using Microsoft.Extensions.Options;
 
-namespace Headless.AuditLog.SqlServer;
+namespace Headless.AuditLog.Internal;
 
-internal sealed class SqlServerAuditLog<TContext>(
-    SqlServerAuditLogWriter writer,
-    ICurrentUser currentUser,
-    ICurrentTenant currentTenant,
-    ICorrelationIdProvider correlationIdProvider,
-    TimeProvider timeProvider,
-    IOptions<AuditLogOptions> options
-) : IAuditLog<TContext>, IAuditLogWriter<TContext>
+/// <summary>
+/// Builds the row for an explicit audit event, shared by the enlisted <see cref="IAuditLog{TContext}"/> and the
+/// standalone <see cref="IAuditLogWriter{TContext}"/> so both stamp the actor and truncate fields the same way.
+/// </summary>
+internal static class ExplicitAuditLogEntry
 {
-    // The raw-SQL writer commits on its own connection, so the enlisted and standalone contracts behave the same.
-    public Task WriteAsync(AuditLogWriteRequest request, CancellationToken cancellationToken = default)
+    public static AuditLogEntry Create(
+        AuditLogWriteRequest request,
+        ICurrentUser currentUser,
+        ICurrentTenant currentTenant,
+        ICorrelationIdProvider correlationIdProvider,
+        TimeProvider timeProvider
+    )
     {
-        return LogAsync(request, cancellationToken);
-    }
-
-    public Task LogAsync(AuditLogWriteRequest request, CancellationToken cancellationToken = default)
-    {
-        Argument.IsNotNull(request);
-
-        if (!options.Value.IsEnabled)
+        return new AuditLogEntry
         {
-            return Task.CompletedTask;
-        }
-
-        var entry = new AuditLogEntryData
-        {
-            CreatedAt = timeProvider.GetUtcNow(),
+            CreatedAt = timeProvider.GetUtcNow().UtcDateTime,
             UserId = AuditLogFieldLimits.Truncate(currentUser.UserId?.ToString(), AuditLogFieldLimits.UserId),
             AccountId = AuditLogFieldLimits.Truncate(currentUser.AccountId?.ToString(), AuditLogFieldLimits.AccountId),
             TenantId = AuditLogFieldLimits.Truncate(currentTenant.Id, AuditLogFieldLimits.TenantId),
@@ -42,13 +30,12 @@ internal sealed class SqlServerAuditLog<TContext>(
                 AuditLogFieldLimits.CorrelationId
             ),
             Action = AuditLogFieldLimits.Truncate(request.Action, AuditLogFieldLimits.Action),
+            ChangeType = null,
             EntityType = AuditLogFieldLimits.Truncate(request.EntityType, AuditLogFieldLimits.EntityType),
             EntityId = AuditLogFieldLimits.Truncate(request.EntityId, AuditLogFieldLimits.EntityId),
             NewValues = request.Data,
             Success = request.Success,
             ErrorCode = AuditLogFieldLimits.Truncate(request.ErrorCode, AuditLogFieldLimits.ErrorCode),
         };
-
-        return writer.WriteAsync([entry], cancellationToken: cancellationToken);
     }
 }

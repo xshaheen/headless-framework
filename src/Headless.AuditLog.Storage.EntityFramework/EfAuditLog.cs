@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.AuditLog.Internal;
 using Headless.Checks;
 using Headless.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
@@ -32,27 +33,7 @@ internal sealed class EfAuditLog<TContext>(
         context
             .Set<AuditLogEntry>()
             .Add(
-                new AuditLogEntry
-                {
-                    CreatedAt = timeProvider.GetUtcNow().UtcDateTime,
-                    UserId = AuditLogFieldLimits.Truncate(currentUser.UserId?.ToString(), AuditLogFieldLimits.UserId),
-                    AccountId = AuditLogFieldLimits.Truncate(
-                        currentUser.AccountId?.ToString(),
-                        AuditLogFieldLimits.AccountId
-                    ),
-                    TenantId = AuditLogFieldLimits.Truncate(currentTenant.Id, AuditLogFieldLimits.TenantId),
-                    CorrelationId = AuditLogFieldLimits.Truncate(
-                        correlationIdProvider.CorrelationId,
-                        AuditLogFieldLimits.CorrelationId
-                    ),
-                    Action = AuditLogFieldLimits.Truncate(request.Action, AuditLogFieldLimits.Action),
-                    ChangeType = null,
-                    EntityType = AuditLogFieldLimits.Truncate(request.EntityType, AuditLogFieldLimits.EntityType),
-                    EntityId = AuditLogFieldLimits.Truncate(request.EntityId, AuditLogFieldLimits.EntityId),
-                    NewValues = request.Data,
-                    Success = request.Success,
-                    ErrorCode = AuditLogFieldLimits.Truncate(request.ErrorCode, AuditLogFieldLimits.ErrorCode),
-                }
+                ExplicitAuditLogEntry.Create(request, currentUser, currentTenant, correlationIdProvider, timeProvider)
             );
 
         return Task.CompletedTask;

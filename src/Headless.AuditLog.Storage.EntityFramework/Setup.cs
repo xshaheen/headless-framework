@@ -52,6 +52,10 @@ public static class SetupAuditLogEntityFramework
                 typeof(IAuditLog<>).MakeGenericType(dbContextType),
                 typeof(EfAuditLog<>).MakeGenericType(dbContextType)
             );
+            services.TryAddScoped(
+                typeof(IAuditLogWriter<>).MakeGenericType(dbContextType),
+                typeof(EfAuditLogWriter<>).MakeGenericType(dbContextType)
+            );
             services.TryAddSingleton(
                 typeof(IReadAuditLog<>).MakeGenericType(dbContextType),
                 typeof(EfReadAuditLog<>).MakeGenericType(dbContextType)

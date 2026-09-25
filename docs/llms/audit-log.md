@@ -19,7 +19,7 @@ Install `Headless.AuditLog.Core` plus exactly one storage provider:
 | `Headless.AuditLog.Storage.PostgreSql` | You want zero EF dependency and are on PostgreSQL. |
 | `Headless.AuditLog.Storage.SqlServer` | You want zero EF dependency and are on SQL Server. |
 
-Code against `IAuditLog<TContext>` and `IReadAuditLog<TContext>` — never reference provider types directly.
+Code against `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAuditLog<TContext>` — never reference provider types directly. To audit authorization denials in an API, call `services.AddHeadlessAuthorizationDenialAudit<TContext>()` from `Headless.Api.Core`.
 
 ## Agent Rules
 
@@ -32,6 +32,8 @@ Code against `IAuditLog<TContext>` and `IReadAuditLog<TContext>` — never refer
 - Raw PostgreSQL and SQL Server packages provide storage only. Automatic change capture and the fluent metadata policy are EF-specific; there is no parallel provider-neutral policy registry.
 - Use `IAuditLog<TContext>` for explicit events (reads, reveals, failures) — do not insert `AuditLogEntry` rows directly. Multi-context applications resolve a distinct logger per owning context via the `TContext` type parameter.
 - Use `IReadAuditLog<TContext>` to query audit history. Do not couple callers to `AuditLogEntry` or EF types directly.
+- Page audit history with the continuation token, never with offsets: pass the previous page's `ContinuationPage<AuditLogEntryData>.ContinuationToken` as `AuditLogQuery.ContinuationToken`, with the same filters and `Direction`, until it comes back `null`. The token is opaque; do not parse or build it.
+- Use `IAuditLogWriter<TContext>` for an explicit event that must persist even though no `SaveChanges` follows, such as a denied request. Use `IAuditLog<TContext>` when the entry must commit or roll back with the caller's entity changes. On EF storage the writer needs `IDbContextFactory<TContext>`.
 - Soft-delete and suspend transitions are detected automatically and emit `entity.soft_deleted` / `entity.restored` / `entity.suspended` / `entity.unsuspended` actions instead of `entity.updated`.
 - `EntityFilter` and `PropertyFilter` predicates are cached after first evaluation per `(Type, propertyName)`. Keep them pure and deterministic.
 - `IpAddress` and `UserAgent` are not auto-populated by EF change capture — set them explicitly through `IAuditLog<TContext>.LogAsync` when relevant.
@@ -48,7 +50,7 @@ The pipeline produces two kinds of rows:
 
 1. **Automatic property-level entries** — emitted on `SaveChanges` for entities included by the finalized EF model policy, or for unconfigured entities when `AuditByDefault` is `true`. The `EfAuditChangeCapture` service scans `ChangeTracker` entries before the save, records `OldValues`, `NewValues`, and `ChangedFields`, and maps the EF `EntityState` to an `AuditChangeType` (`Created`, `Updated`, `Deleted`).
 
-2. **Explicit business-event entries** — emitted by calling `IAuditLog<TContext>.LogAsync(request)`. Used for events that have no corresponding entity mutation: data reads, PII reveals, cross-tenant access, authorization failures. These entries have no `OldValues`, no `ChangeType`, and the caller controls every field through `AuditLogWriteRequest`, including the `action` string (e.g., `"pii.revealed"`, `"report.downloaded"`).
+2. **Explicit business-event entries** — emitted by calling `IAuditLog<TContext>.LogAsync(request)`. Used for events that have no corresponding entity mutation: data reads, PII reveals, cross-tenant access, authorization failures. These entries have no `OldValues`, no `ChangeType`, and the caller controls every field through `AuditLogWriteRequest`, including the `action` string (e.g., `"pii.revealed"`, `"report.downloaded"`). `IAuditLogWriter<TContext>.WriteAsync(request)` records the same kind of entry but commits it immediately in its own transaction; see [Standalone writes](#standalone-writes).
 
 ### What gets captured
 
@@ -75,6 +77,62 @@ A strategy passed to `IsAuditSensitive(SensitiveDataStrategy.Exclude)` overrides
 For EF storage, audit entries are added to the **same `DbContext` instance** and commit in the **same database transaction** as the entity changes — no separate round-trip and no data loss on rollback. The `IAuditLogStore` receives the `savingContext` parameter on every `Save`/`SaveAsync` call to enforce this in multi-context applications.
 
 For raw ADO.NET providers, atomicity is available but conditional: the store attempts to enroll in the consumer's ambient `DbConnection` / `DbTransaction` via `IAmbientDbTransactionAccessor`. If no ambient transaction exists or the drivers differ, audit rows commit on a separate connection and are not atomic with `SaveChanges`.
+
+### Paging audit history
+
+`IReadAuditLog<TContext>.QueryAsync` returns one `ContinuationPage<AuditLogEntryData>` (from `Headless.Primitives`). Entries are ordered by `CreatedAt`, then by the row `Id`, in `AuditLogQuery.Direction`: `NewestFirst` (default) or `OldestFirst`. The `Id` tie-break gives entries that share a timestamp a stable order, so no entry is skipped or repeated at a page boundary.
+
+Paging is keyset-based. The page's `ContinuationToken` encodes the `(CreatedAt, Id)` of its last entry; the next query returns entries strictly after that position. The token is `null` when no further entries match. Each provider fetches `Size + 1` rows to decide this, so there is no count query.
+
+```csharp
+string? token = null;
+
+do
+{
+    var page = await readAuditLog.QueryAsync(
+        new AuditLogQuery
+        {
+            TenantId = tenantId,
+            Action = "authorization.forbidden",
+            Size = 100,
+            ContinuationToken = token,
+        },
+        ct
+    );
+
+    Render(page.Items);
+    token = page.ContinuationToken;
+} while (token is not null);
+```
+
+- Send a token with the same filters and `Direction` that produced it. The token carries only a position, so a changed filter still returns entries after that position under the new filter, which is rarely what a UI wants.
+- Entries written after the first page was read appear only when they sort after the current position: with `OldestFirst` they show up at the end of the walk, and with `NewestFirst` they appear only when you start again from the first page.
+- A token stays valid across providers and process restarts.
+- `QueryAsync` throws `ArgumentException` for a token it did not issue or an undefined `Direction`, and `ArgumentOutOfRangeException` when `Size` is less than one or equal to int.MaxValue.
+- Filters: `Action`, `EntityType`, `EntityId`, `UserId` (the actor), `AccountId`, `TenantId`, `CorrelationId`, `From` (inclusive), and `To` (exclusive). Every provider ships an index for each common filter that ends in `(CreatedAt, Id)`, so a filtered page seeks to its position instead of scanning.
+
+### Standalone writes
+
+`IAuditLogWriter<TContext>` records an explicit event and commits it before `WriteAsync` returns, in a transaction of its own. Use it when the request ends without a `SaveChanges` that would carry an `IAuditLog<TContext>` entry, for example an authorization denial or a read-only request that must leave a trail. A standalone entry survives a later rollback of the caller's work.
+
+- EF storage writes through a new context from `IDbContextFactory<TContext>`, so the caller's scoped context and its pending changes are untouched.
+- PostgreSQL and SQL Server storage write through their own connection, exactly like their `IAuditLog<TContext>`.
+- `WriteAsync` does nothing when `AuditLogOptions.IsEnabled` is `false`.
+
+### Authorization denial entries
+
+`services.AddHeadlessAuthorizationDenialAudit<TContext>()` in `Headless.Api.Core` wraps the registered `IAuthorizationMiddlewareResultHandler` and writes one entry through `IAuditLogWriter<TContext>` each time the authorization middleware challenges or forbids a request. Register the audit log storage too; the writer comes from it.
+
+| Field | Value |
+|---|---|
+| `Action` | `authorization.challenged` (no or rejected authentication, usually 401) or `authorization.forbidden` (authenticated, a requirement failed, usually 403). |
+| `Success` | `false` |
+| `UserId`, `AccountId`, `TenantId`, `CorrelationId` | Stamped by the writer from `ICurrentUser`, `ICurrentTenant`, and `ICorrelationIdProvider`. `UserId` is empty when the caller is unauthenticated. |
+| `NewValues` | `method` (HTTP method), `route` (the endpoint's route template, such as `/orders/{id}`, never the request path), and `policies` (the named policies on the endpoint; empty for the default policy). |
+
+The request body, query string, headers, and raw path are never recorded. The entry commits before the challenge or forbid response is written, and the write is not cancelled when the client disconnects, so resetting the connection does not erase the record. A failed audit write is logged as an error (`AuthorizationDenialAuditWriteFailed`) and the denial response proceeds unchanged. Call the registration after any custom `IAuthorizationMiddlewareResultHandler`, which it wraps; a handler registered after it replaces it. Every audited denial costs one database insert and commit, including denials of anonymous traffic, so put rate limiting ahead of authorization on endpoints that attract scanners or credential stuffing. Denials raised outside the authorization middleware, such as a `Results.Forbid()` returned by an endpoint, are not audited.
+
+Query denials with `new AuditLogQuery { TenantId = tenantId, Action = "authorization.forbidden" }`.
 
 ### Field length limits
 
@@ -110,7 +168,10 @@ Defines the property-level audit log contracts for tracking entity mutations and
 - `AuditLogOptions` — master enable/disable, `AuditByDefault` mode, per-entity/property filters, `CaptureErrorStrategy`, configurable default exclusions, sensitive-value transformer.
 - `IAuditLog<TContext>` — explicit logging of non-mutation events; `TContext` binds the logger to a specific persistence context for multi-context applications.
 - `AuditLogWriteRequest` — explicit event data with a required `Action` initializer and optional entity, payload, success, and error metadata.
-- `IReadAuditLog<TContext>` — query abstraction returning `IReadOnlyList<AuditLogEntryData>`; supports filtering by `action`, `entityType`, `entityId`, `userId`, `tenantId`, `from`, `to`, and `limit`.
+- `IAuditLogWriter<TContext>` — explicit logging that commits each entry immediately in its own transaction; see [Standalone writes](#standalone-writes).
+- `IReadAuditLog<TContext>` — keyset-paged query abstraction returning `ContinuationPage<AuditLogEntryData>`; see [Paging audit history](#paging-audit-history).
+- `AuditLogQuery` — implements `IContinuationPageRequest`: filters (`Action`, `EntityType`, `EntityId`, `UserId`, `AccountId`, `TenantId`, `CorrelationId`, `From`, `To`), `Direction`, `Size` (default 100), and `ContinuationToken`.
+- `AuditLogSortDirection` — `NewestFirst` (default) or `OldestFirst`.
 - `AuditLogEntryData` — immutable record capturing all fields; `OldValues`/`NewValues` are `Dictionary<string, object?>`.
 - `IAuditLogStore` — storage abstraction called by the change-tracking pipeline; `Save`/`SaveAsync` take the saving `DbContext` and return `IAuditLogStoreEntry` handles.
 - `IAuditLogStoreEntry` — provider handle; orchestrator calls `DiscardPendingChanges()` on failure and `ReleaseAfterCommit()` after success. Both must be idempotent.
@@ -145,15 +206,16 @@ await auditLog.LogAsync(
 Query audit history:
 
 ```csharp
-var entries = await readAuditLog.QueryAsync(
+var page = await readAuditLog.QueryAsync(
     new AuditLogQuery
     {
         EntityType = typeof(Patient).FullName,
         EntityId = patientId.ToString(),
-        Limit = 50,
+        Size = 50,
     },
     ct
 );
+// page.Items holds the entries; pass page.ContinuationToken to fetch the next page.
 ```
 
 ### Configuration
@@ -245,10 +307,11 @@ EF Core storage provider for automatic audit entries and explicit event logging.
 
 - `EfAuditLogStore` — adds `AuditLogEntry` rows to the same `DbContext` so they commit in the same transaction as entity changes.
 - `EfAuditLog<TContext>` — implements `IAuditLog<TContext>` for explicit event logging; resolves `ICurrentUser`, `ICurrentTenant`, `ICorrelationIdProvider`, and `TimeProvider` from DI.
+- `EfAuditLogWriter<TContext>` — implements `IAuditLogWriter<TContext>`; saves each entry through a new context from `IDbContextFactory<TContext>`.
 - `EfReadAuditLog<TContext>` — implements `IReadAuditLog<TContext>` using `IDbContextFactory<TContext>` (no-tracking queries).
 - `AuditLogEntry` — EF entity excluded from automatic capture through EF model metadata, preventing recursion when `AuditByDefault` is enabled.
 - `AuditLogModelBuilderExtensions.AddHeadlessAuditLog(modelBuilder, options)` — registers and configures the `AuditLogEntry` entity type; idempotent.
-- Composite primary key `(CreatedAt, Id)` for partition-readiness; index set covers tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, and correlation ID.
+- Composite primary key `(CreatedAt, Id)` for partition-readiness; index set covers tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, tenant+account+time, and correlation ID, each ending in `(CreatedAt, Id)` for keyset paging.
 - A startup validator (`AuditLogEntityStartupValidator`) checks that `AuditLogEntry` was fully configured through `modelBuilder.AddHeadlessAuditLog` and throws with a clear message if the call was omitted, even when the entity was pre-registered.
 
 ### Design constraints
@@ -287,7 +350,7 @@ services.AddHeadlessAuditLog(setup =>
 });
 ```
 
-`UseEntityFramework<TContext>()` requires the same context to be registered with EF Core. Register `IDbContextFactory<TContext>` too if you resolve `IReadAuditLog<TContext>`.
+`UseEntityFramework<TContext>()` requires the same context to be registered with EF Core. Register `IDbContextFactory<TContext>` too if you resolve `IReadAuditLog<TContext>` or `IAuditLogWriter<TContext>`.
 
 #### DbContext setup
 
@@ -329,12 +392,12 @@ await auditLog.LogAsync(new AuditLogWriteRequest
 #### Query audit entries
 
 ```csharp
-var entries = await readAuditLog.QueryAsync(
+var page = await readAuditLog.QueryAsync(
     new AuditLogQuery
     {
         Action = "entity.updated",
         EntityType = typeof(Patient).FullName,
-        Limit = 50,
+        Size = 50,
     },
     ct
 );
@@ -374,6 +437,7 @@ builder.HasKey(e => e.Id); // single-column PK for SQLite
 
 - Registers `IAuditLogStore` as scoped (`EfAuditLogStore`).
 - Registers `IAuditLog<TContext>` as scoped (`EfAuditLog<TContext>`).
+- Registers `IAuditLogWriter<TContext>` as scoped (`EfAuditLogWriter<TContext>`).
 - Registers `IReadAuditLog<TContext>` as singleton (`EfReadAuditLog<TContext>`).
 - Registers `AuditLogEntityStartupValidator<TContext>` as an `IHeadlessStartupValidator` (validates the model at startup).
 - Automatic `ChangeTracker` capture and the fluent model policy are supplied by `Headless.EntityFramework`; this package only selects EF-backed audit storage.
@@ -388,14 +452,14 @@ Raw PostgreSQL storage provider for audit rows. No Entity Framework dependency �
 
 - No EF Core dependency — depends only on `Npgsql`, `Headless.AuditLog.Abstractions`, and `Headless.AuditLog.Core`.
 - `PostgreSqlAuditLogStore` — implements `IAuditLogStore`; enrolls in the consumer's ambient Npgsql transaction when available; falls back to its own connection otherwise.
-- `PostgreSqlAuditLog<TContext>` — implements `IAuditLog<TContext>` for explicit event logging.
+- `PostgreSqlAuditLog<TContext>` — implements `IAuditLog<TContext>` and `IAuditLogWriter<TContext>` for explicit event logging; both write over the provider's own connection.
 - `PostgreSqlReadAuditLog<TContext>` — implements `IReadAuditLog<TContext>` via parameterized SQL queries.
 - `PostgreSqlAuditLogStorageInitializer` — creates schema, table, and indexes at host startup; DDL races across replicas serialized with `pg_advisory_xact_lock`.
 - Batched INSERT: up to 500 rows per command (cached per row count to avoid repeated string building).
 - `jsonb` by default for `OldValues`, `NewValues`, and `ChangedFields`; override via `AuditLogStorageOptions.JsonColumnType` (`Jsonb` or `Json` accepted; `NvarcharMax` rejected at options validation time).
 - `PostgreSqlAuditLogOptions` — `ConnectionString` (required) and `CommandTimeout` (default 30 s).
 - `UsePostgreSql` ships the full provider overload trio: `(string connectionString)`, `(IConfiguration configuration)`, `(Action<PostgreSqlAuditLogOptions>)`, and `(Action<PostgreSqlAuditLogOptions, IServiceProvider>)`.
-- Same index set as the EF provider: tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, correlation ID.
+- Same index set as the EF provider: tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, tenant+account+time, correlation ID, each ending in `(CreatedAt, Id)`.
 
 ### Design constraints
 
@@ -467,7 +531,7 @@ setup.UsePostgreSql((options, sp) =>
 - Registers `PostgreSqlAuditLogStorageInitializer` as a hosted service (creates schema + table + indexes at startup).
 - Registers `PostgreSqlAuditLogWriter` as singleton.
 - Registers `IAuditLogStore` as scoped (`PostgreSqlAuditLogStore`).
-- Registers `IAuditLog<TContext>` as singleton (`PostgreSqlAuditLog<TContext>`).
+- Registers `IAuditLog<TContext>` and `IAuditLogWriter<TContext>` as singletons (`PostgreSqlAuditLog<TContext>`).
 - Registers `IReadAuditLog<TContext>` as singleton (`PostgreSqlReadAuditLog<TContext>`).
 - Registers `IJsonSerializer`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.
 
@@ -481,14 +545,14 @@ Raw SQL Server storage provider for audit rows. No Entity Framework dependency �
 
 - No EF Core dependency — depends only on `Microsoft.Data.SqlClient`, `Headless.AuditLog.Abstractions`, and `Headless.AuditLog.Core`.
 - `SqlServerAuditLogStore` — implements `IAuditLogStore`; enrolls in the consumer's ambient `SqlTransaction` when available; falls back to its own connection otherwise.
-- `SqlServerAuditLog<TContext>` — implements `IAuditLog<TContext>` for explicit event logging.
-- `SqlServerReadAuditLog<TContext>` — implements `IReadAuditLog<TContext>` via parameterized SQL queries using `TOP(@Limit)`.
+- `SqlServerAuditLog<TContext>` — implements `IAuditLog<TContext>` and `IAuditLogWriter<TContext>` for explicit event logging; both write over the provider's own connection.
+- `SqlServerReadAuditLog<TContext>` — implements `IReadAuditLog<TContext>` via parameterized SQL queries using `TOP(@Limit)`. The writer and reader bind timestamps as `datetime2`, so stored values, range bounds, and continuation positions keep full precision.
 - `SqlServerAuditLogStorageInitializer` — creates schema, table, and indexes at host startup; DDL races serialized with `sp_getapplock`; wrapped in `BEGIN TRAN`/`COMMIT TRAN` with a `TRY`/`CATCH`/`ROLLBACK` guard.
 - Batched INSERT: up to 100 rows per command (SQL Server parameter limit is lower than PostgreSQL's).
 - `nvarchar(max)` by default for JSON columns; `NvarcharMax` is the only accepted `AuditLogJsonColumnType` (PostgreSQL-specific types are rejected at options validation time).
 - `SqlServerAuditLogOptions` — `ConnectionString` (required) and `CommandTimeout` (default 30 s).
 - `UseSqlServer` ships the full provider overload trio: `(string connectionString)`, `(IConfiguration configuration)`, `(Action<SqlServerAuditLogOptions>)`, and `(Action<SqlServerAuditLogOptions, IServiceProvider>)`.
-- Same index set as the EF provider: tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, correlation ID.
+- Same index set as the EF provider: tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, tenant+account+time, correlation ID, each ending in `(CreatedAt, Id)`.
 
 ### Design constraints
 
@@ -562,6 +626,6 @@ setup.UseSqlServer((options, sp) =>
 - Registers `SqlServerAuditLogStorageInitializer` as a hosted service (creates schema + table + indexes at startup).
 - Registers `SqlServerAuditLogWriter` as singleton.
 - Registers `IAuditLogStore` as scoped (`SqlServerAuditLogStore`).
-- Registers `IAuditLog<TContext>` as singleton (`SqlServerAuditLog<TContext>`).
+- Registers `IAuditLog<TContext>` and `IAuditLogWriter<TContext>` as singletons (`SqlServerAuditLog<TContext>`).
 - Registers `IReadAuditLog<TContext>` as singleton (`SqlServerReadAuditLog<TContext>`).
 - Registers `IJsonSerializer`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.
