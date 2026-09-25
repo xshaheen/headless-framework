@@ -394,7 +394,7 @@ builder.Services.AddHeadlessPermissions(setup =>
         // Max wait to acquire the per-app save lock (default: 5 minutes)
         options.ApplicationSaveLockAcquireTimeout = TimeSpan.FromMinutes(5);
 
-        // How long the MD5 hash of saved permissions is cached (default: 30 days)
+        // How long the SHA-256 hash of saved permissions is cached (default: 30 days)
         options.PermissionsHashCacheExpiration = TimeSpan.FromDays(30);
 
         // How long the cross-app update stamp lives in the distributed cache (default: 30 days)
