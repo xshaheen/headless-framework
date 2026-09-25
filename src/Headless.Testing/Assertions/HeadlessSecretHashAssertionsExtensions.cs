@@ -29,9 +29,23 @@ public static class HeadlessSecretHashAssertionsExtensions
         params object[] becauseArgs
     )
     {
+        // A null collection means the query never ran; passing it would report a column as checked when nothing was.
+        assertions
+            .CurrentAssertionChain.BecauseOf(because, becauseArgs)
+            .ForCondition(assertions.Subject is not null)
+            .FailWith(
+                "Expected {context:collection} to hold only {0} secret hashes{reason}, but found <null>.",
+                algorithmId
+            );
+
+        if (assertions.Subject is null)
+        {
+            return new AndConstraint<StringCollectionAssertions>(assertions);
+        }
+
         var index = 0;
 
-        foreach (var value in assertions.Subject ?? [])
+        foreach (var value in assertions.Subject)
         {
             string? problem = null;
 

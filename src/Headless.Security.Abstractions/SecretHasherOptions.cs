@@ -85,6 +85,11 @@ public sealed class Pbkdf2HashParameters
 public sealed class SecretHasherCostCheckOptions
 {
     /// <summary>Gets or sets what happens when the measured cost is out of range. Defaults to <see cref="SecretHasherCostCheckMode.Warn" />.</summary>
+    /// <remarks>
+    /// The default is the same in every environment. Test-grade parameters reaching production are exactly what this
+    /// check exists to catch, so switching it off in production would silence its most valuable signal, and a warning
+    /// cannot block a rollout.
+    /// </remarks>
     public SecretHasherCostCheckMode Mode { get; set; } = SecretHasherCostCheckMode.Warn;
 
     /// <summary>Gets or sets the shortest acceptable hash duration. Defaults to 5 milliseconds.</summary>

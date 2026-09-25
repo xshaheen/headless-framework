@@ -62,23 +62,29 @@ internal sealed class SecretHasherStartupValidationService(
             return Task.CompletedTask;
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
-        _CheckCost(algorithm, current.CostCheck);
+        _CheckCost(algorithm, current.CostCheck, cancellationToken);
 
         return Task.CompletedTask;
     }
 
-    private void _CheckCost(ISecretHashAlgorithm algorithm, SecretHasherCostCheckOptions costCheck)
+    private void _CheckCost(
+        ISecretHashAlgorithm algorithm,
+        SecretHasherCostCheckOptions costCheck,
+        CancellationToken cancellationToken
+    )
     {
         var timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
 
         // Warm-up: the first call pays JIT and allocator start-up costs that later calls never see.
+        cancellationToken.ThrowIfCancellationRequested();
         algorithm.Hash(_BenchmarkSecret);
 
         var samples = new TimeSpan[_MeasuredSamples];
 
         for (var i = 0; i < samples.Length; i++)
         {
+            // Each hash can take up to MaximumDuration, so a cancelled startup stops between samples.
+            cancellationToken.ThrowIfCancellationRequested();
             var start = timeProvider.GetTimestamp();
             algorithm.Hash(_BenchmarkSecret);
             samples[i] = timeProvider.GetElapsedTime(start);

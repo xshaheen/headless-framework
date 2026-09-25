@@ -53,6 +53,18 @@ public sealed class SecretHashAssertionsTests
     }
 
     [Fact]
+    public void should_fail_for_a_null_collection()
+    {
+        string[]? column = null;
+
+        FluentActions
+            .Invoking(() => column.Should().AllBeSecretHashes(SecretHashAlgorithms.Argon2id))
+            .Should()
+            .Throw<Exception>()
+            .WithMessage("*<null>*");
+    }
+
+    [Fact]
     public void should_fail_for_a_null_value()
     {
         string?[] column = [_Argon2, null];

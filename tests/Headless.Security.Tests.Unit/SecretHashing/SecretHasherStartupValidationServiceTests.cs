@@ -122,6 +122,22 @@ public sealed class SecretHasherStartupValidationServiceTests
     }
 
     [Fact]
+    public async Task should_stop_the_benchmark_between_samples_when_startup_is_cancelled()
+    {
+        // given — startup is cancelled while the warm-up hash is running.
+        using var startup = new CancellationTokenSource();
+        var algorithm = new TimedAlgorithm { AfterHash = startup.Cancel };
+        await using var provider = _BuildProvider(o => o.CostCheck.Mode = SecretHasherCostCheckMode.Warn, algorithm);
+
+        // when
+        var act = () => _Service(provider).StartingAsync(startup.Token);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        algorithm.HashCalls.Should().Be(1);
+    }
+
+    [Fact]
     public async Task should_run_one_warm_up_and_three_measured_hashes_once()
     {
         // given
@@ -206,12 +222,15 @@ public sealed class SecretHasherStartupValidationServiceTests
 
         public int HashCalls { get; private set; }
 
+        public Action? AfterHash { get; init; }
+
         public string Id => "timed";
 
         public string Hash(ReadOnlySpan<byte> secret)
         {
             var cost = Costs is { } costs ? costs[HashCalls] : Cost;
             HashCalls++;
+            AfterHash?.Invoke();
             Time!.Advance(cost);
 
             return new PhcString(Id, null, [], new byte[16], new byte[16]).ToString();
