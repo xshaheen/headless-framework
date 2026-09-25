@@ -99,6 +99,43 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
             );
     }
 
+    [Theory]
+    [InlineData(1500, 2)]
+    [InlineData(0, 1)]
+    public async Task should_map_too_many_requests_exception_to_429_with_retry_after_header(
+        int retryAfterMilliseconds,
+        int expectedSeconds
+    )
+    {
+        // given
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        problemDetailsService.TryWriteAsync(Arg.Any<ProblemDetailsContext>()).Returns(true);
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
+        var httpContext = new DefaultHttpContext();
+        var error = new ErrorDescriptor("otp_attempts_exceeded", "Too many codes.");
+        var exception = new TooManyRequestsException(TimeSpan.FromMilliseconds(retryAfterMilliseconds), error);
+
+        // when
+        var result = await handler.TryHandleAsync(httpContext, exception, AbortToken);
+
+        // then
+        result.Should().BeTrue();
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+        httpContext
+            .Response.Headers.RetryAfter.ToString()
+            .Should()
+            .Be(expectedSeconds.ToString(CultureInfo.InvariantCulture));
+        await problemDetailsService
+            .Received(1)
+            .TryWriteAsync(
+                Arg.Is<ProblemDetailsContext>(c =>
+                    c.ProblemDetails.Status == 429
+                    && Equals(c.ProblemDetails.Extensions["retryAfter"], expectedSeconds)
+                    && Equals(c.ProblemDetails.Extensions["error"], error)
+                )
+            );
+    }
+
     [Fact]
     public async Task should_map_validation_exception_to_422_with_field_errors_extension()
     {
