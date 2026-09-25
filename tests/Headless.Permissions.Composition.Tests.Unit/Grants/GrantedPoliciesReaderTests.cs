@@ -2,7 +2,6 @@
 
 using System.Security.Claims;
 using Headless.Abstractions;
-using Headless.Permissions.ClientConfig;
 using Headless.Permissions.Grants;
 using Headless.Permissions.Models;
 using Headless.Testing.Helpers;
@@ -10,24 +9,19 @@ using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authorization;
 using NSubstitute.ExceptionExtensions;
 
-namespace Tests.ClientConfig;
+namespace Tests.Grants;
 
-public sealed class ClientAuthorizationConfigBuilderTests : TestBase
+public sealed class GrantedPoliciesReaderTests : TestBase
 {
     private readonly IPermissionManager _permissionManager = Substitute.For<IPermissionManager>();
     private readonly IAuthorizationService _authorizationService = Substitute.For<IAuthorizationService>();
     private readonly ThreadCurrentPrincipalAccessor _principalAccessor = new();
     private readonly TestCurrentTenant _currentTenant = new();
-    private readonly ClientAuthorizationConfigBuilder _sut;
+    private readonly GrantedPoliciesReader _sut;
 
-    public ClientAuthorizationConfigBuilderTests()
+    public GrantedPoliciesReaderTests()
     {
-        _sut = new ClientAuthorizationConfigBuilder(
-            _permissionManager,
-            _authorizationService,
-            _currentTenant,
-            _principalAccessor
-        );
+        _sut = new GrantedPoliciesReader(_permissionManager, _authorizationService, _currentTenant, _principalAccessor);
         _permissionManager
             .GetAllAsync(Arg.Any<ICurrentUser>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns([]);
@@ -50,18 +44,10 @@ public sealed class ClientAuthorizationConfigBuilderTests : TestBase
             ]);
 
         // when
-        var config = await _sut.BuildAsync(context, ["Administrator", "Charity"], AbortToken);
+        var granted = await _sut.GetAsync(context, ["Administrator", "Charity"], AbortToken);
 
         // then
-        config
-            .GrantedPolicies.Should()
-            .BeEquivalentTo(
-                new Dictionary<string, bool>(StringComparer.Ordinal)
-                {
-                    ["Administrator"] = true,
-                    ["Orders.Edit"] = true,
-                }
-            );
+        granted.Should().BeEquivalentTo("Administrator", "Orders.Edit");
     }
 
     [Fact]
@@ -71,7 +57,7 @@ public sealed class ClientAuthorizationConfigBuilderTests : TestBase
         var context = _Context("tenant-1");
 
         // when
-        await _sut.BuildAsync(context, [], AbortToken);
+        await _sut.GetAsync(context, [], AbortToken);
 
         // then
         await _permissionManager
@@ -84,19 +70,17 @@ public sealed class ClientAuthorizationConfigBuilderTests : TestBase
     }
 
     [Fact]
-    public async Task should_evaluate_a_repeated_policy_name_once()
+    public async Task should_evaluate_a_repeated_policy_name_once_even_when_it_fails()
     {
         // given
         var context = _Context("tenant-1");
-        _authorizationService
-            .AuthorizeAsync(context.Principal, null, "Administrator")
-            .Returns(AuthorizationResult.Success());
+        _authorizationService.AuthorizeAsync(context.Principal, null, "Charity").Returns(AuthorizationResult.Failed());
 
         // when
-        await _sut.BuildAsync(context, ["Administrator", "Administrator"], AbortToken);
+        await _sut.GetAsync(context, ["Charity", "Charity"], AbortToken);
 
         // then
-        await _authorizationService.Received(1).AuthorizeAsync(context.Principal, null, "Administrator");
+        await _authorizationService.Received(1).AuthorizeAsync(context.Principal, null, "Charity");
     }
 
     [Fact]
@@ -109,7 +93,7 @@ public sealed class ClientAuthorizationConfigBuilderTests : TestBase
             .ThrowsAsync(new InvalidOperationException("No policy found: Typo."));
 
         // when
-        var act = () => _sut.BuildAsync(context, ["Typo"], AbortToken);
+        var act = () => _sut.GetAsync(context, ["Typo"], AbortToken);
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>();
@@ -136,7 +120,7 @@ public sealed class ClientAuthorizationConfigBuilderTests : TestBase
             });
 
         // when
-        await _sut.BuildAsync(new ClientConfigContext(issued, "issued-tenant"), ["Administrator"], AbortToken);
+        await _sut.GetAsync(new PrincipalContext(issued, "issued-tenant"), ["Administrator"], AbortToken);
 
         // then
         principalDuringCheck.Should().BeSameAs(issued);
@@ -145,9 +129,9 @@ public sealed class ClientAuthorizationConfigBuilderTests : TestBase
         _currentTenant.Id.Should().Be("ambient-tenant");
     }
 
-    private static ClientConfigContext _Context(string? tenantId)
+    private static PrincipalContext _Context(string? tenantId)
     {
-        return new ClientConfigContext(
+        return new PrincipalContext(
             new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user-1")], "test")),
             tenantId
         );

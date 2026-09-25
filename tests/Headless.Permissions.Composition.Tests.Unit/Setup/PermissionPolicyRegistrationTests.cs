@@ -4,7 +4,6 @@ using System.Security.Claims;
 using Headless.Abstractions;
 using Headless.MultiTenancy;
 using Headless.Permissions;
-using Headless.Permissions.ClientConfig;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.Grants;
 using Headless.Permissions.Models;
@@ -140,7 +139,7 @@ public sealed class PermissionPolicyRegistrationTests : TestBase
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
         // then
-        provider.GetRequiredService<IClientAuthorizationConfigBuilder>().Should().NotBeNull();
+        provider.GetRequiredService<IGrantedPoliciesReader>().Should().NotBeNull();
         provider.GetRequiredService<IAuthorizationPolicyCatalog>().Should().NotBeNull();
         provider.GetRequiredService<ICurrentTenant>().Should().BeOfType<CurrentTenant>();
     }

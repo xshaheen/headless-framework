@@ -3,17 +3,16 @@
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.MultiTenancy;
-using Headless.Permissions.Grants;
 using Microsoft.AspNetCore.Authorization;
 
-namespace Headless.Permissions.ClientConfig;
+namespace Headless.Permissions.Grants;
 
 /// <summary>
-/// Builds the authorization section of an application's client config: the permissions the principal is granted
-/// and the named policies it satisfies.
+/// Reads which permissions a principal is granted and which named policies it satisfies, for example to include in
+/// the configuration an application returns to its front end.
 /// </summary>
 [PublicAPI]
-public interface IClientAuthorizationConfigBuilder
+public interface IGrantedPoliciesReader
 {
     /// <summary>Resolves what the principal in <paramref name="context"/> is granted.</summary>
     /// <param name="context">The principal and tenant to resolve the grants for.</param>
@@ -23,36 +22,30 @@ public interface IClientAuthorizationConfigBuilder
     /// Every defined permission is always checked.
     /// </param>
     /// <param name="cancellationToken">The abort token.</param>
-    /// <returns>The granted permissions and satisfied policies.</returns>
+    /// <returns>
+    /// The granted permission names and the satisfied policy names. A name that is not granted is absent.
+    /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="context"/> or <paramref name="policyNames"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">A name in <paramref name="policyNames"/> is not a registered policy or a defined permission.</exception>
-    Task<ClientAuthorizationConfig> BuildAsync(
-        ClientConfigContext context,
+    Task<IReadOnlySet<string>> GetAsync(
+        PrincipalContext context,
         IReadOnlyCollection<string> policyNames,
         CancellationToken cancellationToken = default
     );
 }
 
-/// <summary>The authorization section of a client config.</summary>
-/// <param name="GrantedPolicies">
-/// The granted permission names and satisfied policy names, each mapped to <see langword="true"/>. Names that are
-/// not granted are absent rather than mapped to <see langword="false"/>.
-/// </param>
-[PublicAPI]
-public sealed record ClientAuthorizationConfig(IReadOnlyDictionary<string, bool> GrantedPolicies);
-
-/// <summary>Default <see cref="IClientAuthorizationConfigBuilder"/>.</summary>
-internal sealed class ClientAuthorizationConfigBuilder(
+/// <summary>Default <see cref="IGrantedPoliciesReader"/>.</summary>
+internal sealed class GrantedPoliciesReader(
     IPermissionManager permissionManager,
     IAuthorizationService authorizationService,
     ICurrentTenant currentTenant,
     // Optional: only Headless.Api.ServiceDefaults registers an accessor. The principal is passed explicitly to the
     // grant check and to IAuthorizationService, so the switch matters only to handlers that read the ambient one.
     ICurrentPrincipalAccessor? principalAccessor = null
-) : IClientAuthorizationConfigBuilder
+) : IGrantedPoliciesReader
 {
-    public async Task<ClientAuthorizationConfig> BuildAsync(
-        ClientConfigContext context,
+    public async Task<IReadOnlySet<string>> GetAsync(
+        PrincipalContext context,
         IReadOnlyCollection<string> policyNames,
         CancellationToken cancellationToken = default
     )
@@ -65,22 +58,17 @@ internal sealed class ClientAuthorizationConfigBuilder(
         using var principalScope = principalAccessor?.Change(context.Principal);
         using var tenantScope = currentTenant.Change(context.TenantId);
 
-        var granted = new Dictionary<string, bool>(StringComparer.Ordinal);
+        var granted = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var policyName in policyNames)
+        foreach (var policyName in policyNames.Distinct(StringComparer.Ordinal))
         {
             cancellationToken.ThrowIfCancellationRequested();
-
-            if (granted.ContainsKey(policyName))
-            {
-                continue;
-            }
 
             var result = await authorizationService.AuthorizeAsync(context.Principal, policyName).ConfigureAwait(false);
 
             if (result.Succeeded)
             {
-                granted[policyName] = true;
+                granted.Add(policyName);
             }
         }
 
@@ -92,10 +80,10 @@ internal sealed class ClientAuthorizationConfigBuilder(
         {
             if (permission.IsGranted)
             {
-                granted[permission.Name] = true;
+                granted.Add(permission.Name);
             }
         }
 
-        return new ClientAuthorizationConfig(granted);
+        return granted;
     }
 }

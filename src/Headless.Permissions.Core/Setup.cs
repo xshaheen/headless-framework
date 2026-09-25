@@ -5,7 +5,6 @@ using Headless.Caching;
 using Headless.Checks;
 using Headless.Hosting.Initialization;
 using Headless.MultiTenancy;
-using Headless.Permissions.ClientConfig;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.GrantProviders;
 using Headless.Permissions.Grants;
@@ -199,7 +198,7 @@ public static class SetupPermissions
         services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
 
         services.TryAddTransient<IAuthorizationPolicyCatalog, AuthorizationPolicyCatalog>();
-        services.TryAddTransient<IClientAuthorizationConfigBuilder, ClientAuthorizationConfigBuilder>();
+        services.TryAddTransient<IGrantedPoliciesReader, GrantedPoliciesReader>();
 
         if (setup.RegisterPermissionNamePolicies)
         {

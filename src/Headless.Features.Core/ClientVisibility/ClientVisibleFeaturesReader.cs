@@ -6,41 +6,40 @@ using Headless.Features.Definitions;
 using Headless.Features.Values;
 using Headless.MultiTenancy;
 
-namespace Headless.Features.ClientConfig;
+namespace Headless.Features.ClientVisibility;
 
 /// <summary>
-/// Builds the features section of an application's client config: the effective values of every feature
-/// whose definition is <see cref="Models.FeatureDefinition.IsVisibleToClients"/>.
+/// Reads the effective values of every feature whose definition is
+/// <see cref="Models.FeatureDefinition.IsVisibleToClients"/>, for example to include in the configuration an
+/// application returns to its front end.
 /// </summary>
 [PublicAPI]
-public interface IClientFeaturesConfigBuilder
+public interface IClientVisibleFeaturesReader
 {
     /// <summary>Resolves the client-visible feature values for the principal and tenant in <paramref name="context"/>.</summary>
     /// <param name="context">The principal and tenant to resolve the values for.</param>
     /// <param name="cancellationToken">The abort token.</param>
-    /// <returns>The client-visible feature values, keyed by feature name.</returns>
+    /// <returns>
+    /// The effective value of each client-visible feature, keyed by feature name. A feature with no value maps to
+    /// <see langword="null"/>.
+    /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="context"/> is <see langword="null"/>.</exception>
-    Task<ClientFeaturesConfig> BuildAsync(ClientConfigContext context, CancellationToken cancellationToken = default);
+    Task<IReadOnlyDictionary<string, string?>> GetAsync(
+        PrincipalContext context,
+        CancellationToken cancellationToken = default
+    );
 }
 
-/// <summary>The features section of a client config.</summary>
-/// <param name="Values">
-/// The effective value of each client-visible feature, keyed by feature name. A feature with no value maps to
-/// <see langword="null"/>.
-/// </param>
-[PublicAPI]
-public sealed record ClientFeaturesConfig(IReadOnlyDictionary<string, string?> Values);
-
-/// <summary>Default <see cref="IClientFeaturesConfigBuilder"/>.</summary>
-internal sealed class ClientFeaturesConfigBuilder(
+/// <summary>Default <see cref="IClientVisibleFeaturesReader"/>.</summary>
+internal sealed class ClientVisibleFeaturesReader(
     IFeatureDefinitionManager definitionManager,
     IFeatureManager featureManager,
     ICurrentPrincipalAccessor principalAccessor,
     ICurrentTenant currentTenant
-) : IClientFeaturesConfigBuilder
+) : IClientVisibleFeaturesReader
 {
-    public async Task<ClientFeaturesConfig> BuildAsync(
-        ClientConfigContext context,
+    public async Task<IReadOnlyDictionary<string, string?>> GetAsync(
+        PrincipalContext context,
         CancellationToken cancellationToken = default
     )
     {
@@ -58,8 +57,6 @@ internal sealed class ClientFeaturesConfigBuilder(
 
         var values = await featureManager.GetAllAsync(names, cancellationToken).ConfigureAwait(false);
 
-        return new ClientFeaturesConfig(
-            values.ToDictionary(pair => pair.Key, pair => pair.Value.Value, StringComparer.Ordinal)
-        );
+        return values.ToDictionary(pair => pair.Key, pair => pair.Value.Value, StringComparer.Ordinal);
     }
 }

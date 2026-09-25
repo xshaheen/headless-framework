@@ -2,26 +2,26 @@
 
 using System.Security.Claims;
 using Headless.Abstractions;
-using Headless.Features.ClientConfig;
+using Headless.Features.ClientVisibility;
 using Headless.Features.Definitions;
 using Headless.Features.Models;
 using Headless.Features.Values;
 using Headless.Testing.Helpers;
 using Headless.Testing.Tests;
 
-namespace Tests.ClientConfig;
+namespace Tests.ClientVisibility;
 
-public sealed class ClientFeaturesConfigBuilderTests : TestBase
+public sealed class ClientVisibleFeaturesReaderTests : TestBase
 {
     private readonly IFeatureDefinitionManager _definitionManager = Substitute.For<IFeatureDefinitionManager>();
     private readonly IFeatureManager _featureManager = Substitute.For<IFeatureManager>();
     private readonly ThreadCurrentPrincipalAccessor _principalAccessor = new();
     private readonly TestCurrentTenant _currentTenant = new();
-    private readonly ClientFeaturesConfigBuilder _sut;
+    private readonly ClientVisibleFeaturesReader _sut;
 
-    public ClientFeaturesConfigBuilderTests()
+    public ClientVisibleFeaturesReaderTests()
     {
-        _sut = new ClientFeaturesConfigBuilder(_definitionManager, _featureManager, _principalAccessor, _currentTenant);
+        _sut = new ClientVisibleFeaturesReader(_definitionManager, _featureManager, _principalAccessor, _currentTenant);
     }
 
     [Fact]
@@ -39,11 +39,11 @@ public sealed class ClientFeaturesConfigBuilderTests : TestBase
             );
 
         // when
-        var config = await _sut.BuildAsync(_Context("tenant-1"), AbortToken);
+        var values = await _sut.GetAsync(_Context("tenant-1"), AbortToken);
 
         // then
-        config
-            .Values.Should()
+        values
+            .Should()
             .BeEquivalentTo(new Dictionary<string, string?>(StringComparer.Ordinal) { ["Reports.Export"] = "true" });
         await _featureManager
             .Received(1)
@@ -75,7 +75,7 @@ public sealed class ClientFeaturesConfigBuilderTests : TestBase
             });
 
         // when
-        await _sut.BuildAsync(new ClientConfigContext(issued, "issued-tenant"), AbortToken);
+        await _sut.GetAsync(new PrincipalContext(issued, "issued-tenant"), AbortToken);
 
         // then
         principalDuringRead.Should().BeSameAs(issued);
@@ -88,14 +88,14 @@ public sealed class ClientFeaturesConfigBuilderTests : TestBase
     public async Task should_throw_when_context_is_null()
     {
         // when
-        var act = () => _sut.BuildAsync(null!, AbortToken);
+        var act = () => _sut.GetAsync(null!, AbortToken);
 
         // then
         await act.Should().ThrowAsync<ArgumentNullException>();
     }
 
-    private static ClientConfigContext _Context(string? tenantId)
+    private static PrincipalContext _Context(string? tenantId)
     {
-        return new ClientConfigContext(new ClaimsPrincipal(new ClaimsIdentity("test")), tenantId);
+        return new PrincipalContext(new ClaimsPrincipal(new ClaimsIdentity("test")), tenantId);
     }
 }

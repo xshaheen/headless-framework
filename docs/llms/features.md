@@ -226,11 +226,11 @@ Core implementation of feature management with caching, value providers, and def
 - `HeadlessFeaturesSetupBuilder` — fluent builder returned to `AddHeadlessFeatures`; exposes `ConfigureManagement`, `ConfigureStorage`, and `RegisterExtension`
 - `services.AddFeatureDefinitionProvider<T>()` — registers a custom `IFeatureDefinitionProvider`
 - `services.AddFeatureValueProvider<T>()` — registers a custom `IFeatureValueReadProvider` (idempotent by type)
-- `IClientFeaturesConfigBuilder` (`Headless.Features.ClientConfig`) — builds the features section of an application's client config: `BuildAsync(ClientConfigContext, …)` returns `ClientFeaturesConfig.Values`, the effective value of every feature whose definition is `IsVisibleToClients`, keyed by name. Headless ships no endpoint; the application composes this section with the authorization and settings sections into its own response (see the client-config recipe in `docs/llms/permissions.md`)
+- `IClientVisibleFeaturesReader` (`Headless.Features.ClientVisibility`) — `GetAsync(PrincipalContext, …)` returns the effective value of every feature whose definition is `IsVisibleToClients`, keyed by name, for example to include in the configuration an application returns to its front end. Headless ships no endpoint; see the client-config recipe in `docs/llms/permissions.md`
 
 ### Design constraints
 
-- `IClientFeaturesConfigBuilder` resolves for the principal and tenant in its `ClientConfigContext`, not the ambient ones: it switches `ICurrentPrincipalAccessor` and `ICurrentTenant` to the context for the duration of the build and restores them afterwards. Pass `TenantId: null` for the host. This is what makes it safe inside a login or token-refresh response, where the newly issued principal is not yet ambient.
+- `IClientVisibleFeaturesReader` resolves for the principal and tenant in its `PrincipalContext`, not the ambient ones: it switches `ICurrentPrincipalAccessor` and `ICurrentTenant` to the context for the duration of the read and restores them afterwards. Pass `TenantId: null` for the host. This is what makes it safe inside a login or token-refresh response, where the newly issued principal is not yet ambient.
 
 - Value providers are registered with the last-added provider having the highest resolution priority. The built-in order is `DefaultValue` → `Edition` → `Tenant` (Tenant wins). Custom providers added via `AddFeatureValueProvider<T>()` are appended after `Tenant` and therefore have the highest priority. This matters when writing custom providers that must override built-in resolution.
 - `TenantFeatureValueProvider` and `EditionFeatureValueProvider` resolve their store key as `providerKey ?? ambient` — an explicit key (e.g. `GetForTenantAsync(name, tenantId)`) always wins, and a `null` key falls back to `ICurrentTenant.Id` / the principal's edition claim. The same rule applies to reads and writes, so a value written for one tenant is read back for that tenant only.
@@ -320,7 +320,7 @@ services.AddHeadlessFeatures(setup =>
 
 ### Runtime behavior
 
-- Registers `IFeatureManager` and `IClientFeaturesConfigBuilder` as transient
+- Registers `IFeatureManager` and `IClientVisibleFeaturesReader` as transient
 - Registers `IStaticFeatureDefinitionStore`, `IDynamicFeatureDefinitionStore`, `IFeatureDefinitionManager`, `IFeatureValueStore`, `IFeatureValueProviderManager` as singletons
 - Registers `DefaultValueFeatureValueProvider`, `EditionFeatureValueProvider`, `TenantFeatureValueProvider` as singletons
 - Starts `FeaturesInitializationBackgroundService` as a hosted service

@@ -5,7 +5,7 @@ using Headless.Caching;
 using Headless.Checks;
 using Headless.Hosting.Initialization;
 using Headless.Security;
-using Headless.Settings.ClientConfig;
+using Headless.Settings.ClientVisibility;
 using Headless.Settings.Definitions;
 using Headless.Settings.Helpers;
 using Headless.Settings.Models;
@@ -180,7 +180,7 @@ public static class SetupSettings
 
         services.TryAddSingleton<ISettingValueProviderManager, SettingValueProviderManager>();
         services.TryAddSingleton<ISettingManager, SettingManager>();
-        services.TryAddSingleton<IClientSettingsConfigBuilder, ClientSettingsConfigBuilder>();
+        services.TryAddSingleton<IClientVisibleSettingsReader, ClientVisibleSettingsReader>();
 
         return services;
     }

@@ -2,26 +2,26 @@
 
 using System.Security.Claims;
 using Headless.Abstractions;
-using Headless.Settings.ClientConfig;
+using Headless.Settings.ClientVisibility;
 using Headless.Settings.Definitions;
 using Headless.Settings.Models;
 using Headless.Settings.Values;
 using Headless.Testing.Helpers;
 using Headless.Testing.Tests;
 
-namespace Tests.ClientConfig;
+namespace Tests.ClientVisibility;
 
-public sealed class ClientSettingsConfigBuilderTests : TestBase
+public sealed class ClientVisibleSettingsReaderTests : TestBase
 {
     private readonly ISettingDefinitionManager _definitionManager = Substitute.For<ISettingDefinitionManager>();
     private readonly ISettingManager _settingManager = Substitute.For<ISettingManager>();
     private readonly ThreadCurrentPrincipalAccessor _principalAccessor = new();
     private readonly TestCurrentTenant _currentTenant = new();
-    private readonly ClientSettingsConfigBuilder _sut;
+    private readonly ClientVisibleSettingsReader _sut;
 
-    public ClientSettingsConfigBuilderTests()
+    public ClientVisibleSettingsReaderTests()
     {
-        _sut = new ClientSettingsConfigBuilder(_definitionManager, _settingManager, _currentTenant, _principalAccessor);
+        _sut = new ClientVisibleSettingsReader(_definitionManager, _settingManager, _currentTenant, _principalAccessor);
     }
 
     [Fact]
@@ -39,11 +39,11 @@ public sealed class ClientSettingsConfigBuilderTests : TestBase
             );
 
         // when
-        var config = await _sut.BuildAsync(_Context("tenant-1"), AbortToken);
+        var values = await _sut.GetAsync(_Context("tenant-1"), AbortToken);
 
         // then
-        config
-            .Values.Should()
+        values
+            .Should()
             .BeEquivalentTo(
                 new Dictionary<string, string?>(StringComparer.Ordinal) { ["Localization.DefaultLanguage"] = "ar" }
             );
@@ -62,10 +62,10 @@ public sealed class ClientSettingsConfigBuilderTests : TestBase
         _definitionManager.GetAllAsync(AbortToken).Returns([new SettingDefinition("Smtp.Password")]);
 
         // when
-        var config = await _sut.BuildAsync(_Context(tenantId: null), AbortToken);
+        var values = await _sut.GetAsync(_Context(tenantId: null), AbortToken);
 
         // then
-        config.Values.Should().BeEmpty();
+        values.Should().BeEmpty();
         await _settingManager.DidNotReceive().GetAllAsync(Arg.Any<HashSet<string>>(), Arg.Any<CancellationToken>());
     }
 
@@ -93,7 +93,7 @@ public sealed class ClientSettingsConfigBuilderTests : TestBase
             });
 
         // when
-        await _sut.BuildAsync(new ClientConfigContext(issued, "issued-tenant"), AbortToken);
+        await _sut.GetAsync(new PrincipalContext(issued, "issued-tenant"), AbortToken);
 
         // then
         principalDuringRead.Should().BeSameAs(issued);
@@ -103,21 +103,21 @@ public sealed class ClientSettingsConfigBuilderTests : TestBase
     }
 
     [Fact]
-    public async Task should_build_when_no_principal_accessor_is_registered()
+    public async Task should_read_when_no_principal_accessor_is_registered()
     {
         // given — only Headless.Api.ServiceDefaults registers an accessor; a worker host has none.
-        var sut = new ClientSettingsConfigBuilder(_definitionManager, _settingManager, _currentTenant);
+        var sut = new ClientVisibleSettingsReader(_definitionManager, _settingManager, _currentTenant);
         _definitionManager.GetAllAsync(AbortToken).Returns([new SettingDefinition("Smtp.Password")]);
 
         // when
-        var config = await sut.BuildAsync(_Context("tenant-1"), AbortToken);
+        var values = await sut.GetAsync(_Context("tenant-1"), AbortToken);
 
         // then
-        config.Values.Should().BeEmpty();
+        values.Should().BeEmpty();
     }
 
-    private static ClientConfigContext _Context(string? tenantId)
+    private static PrincipalContext _Context(string? tenantId)
     {
-        return new ClientConfigContext(new ClaimsPrincipal(new ClaimsIdentity("test")), tenantId);
+        return new PrincipalContext(new ClaimsPrincipal(new ClaimsIdentity("test")), tenantId);
     }
 }
