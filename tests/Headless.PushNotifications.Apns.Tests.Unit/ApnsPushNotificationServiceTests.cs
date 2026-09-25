@@ -241,6 +241,24 @@ public sealed class ApnsPushNotificationServiceTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_resend_when_the_connection_is_lost_after_apns_read_the_request()
+    {
+        // given - APNs does not deduplicate, so resending a request it may already have accepted would show the
+        // notification twice.
+        _server.Responder = _ => FakeApnsReply.Abort;
+        await using var provider = _server.CreateProvider();
+        var service = provider.GetRequiredService<IPushNotificationService>();
+
+        // when
+        var response = await service.SendToDeviceAsync(_DeviceToken, PushNotificationRequests.Valid(), AbortToken);
+
+        // then
+        response.IsFailed().Should().BeTrue();
+        response.FailureError.Should().Contain(nameof(HttpRequestException));
+        _server.Requests.Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task should_succeed_when_apns_answers_503_once_then_200()
     {
         // given

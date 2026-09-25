@@ -6,6 +6,7 @@ using System.Net;
 using System.Security.Cryptography;
 using Headless.PushNotifications;
 using Headless.PushNotifications.Apns;
+using Headless.Threading;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -40,9 +41,20 @@ public sealed record FakeApnsRequest(
 /// <param name="Status">The HTTP status code.</param>
 /// <param name="Reason">The APNs <c>reason</c> written into a JSON error body; ignored for 200.</param>
 /// <param name="RawBody">A literal response body that replaces the JSON error body when set.</param>
-public sealed record FakeApnsReply(int Status, string? Reason = null, string? RawBody = null)
+/// <param name="AbortAfterRead">
+/// Resets the stream after the request body was read instead of answering, which is how a connection lost after APNs
+/// accepted a notification looks to the client.
+/// </param>
+public sealed record FakeApnsReply(
+    int Status,
+    string? Reason = null,
+    string? RawBody = null,
+    bool AbortAfterRead = false
+)
 {
     public static FakeApnsReply Ok { get; } = new(200);
+
+    public static FakeApnsReply Abort { get; } = new(200, AbortAfterRead: true);
 }
 
 /// <summary>
@@ -60,7 +72,7 @@ public sealed class FakeApnsServer : IAsyncDisposable
     private readonly ECDsa _key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
     private readonly WebApplication _app;
     private int _inFlight;
-    private int _maxInFlight;
+    private long _maxInFlight;
 
     private FakeApnsServer(WebApplication app)
     {
@@ -82,7 +94,7 @@ public sealed class FakeApnsServer : IAsyncDisposable
 
     public IReadOnlyList<FakeApnsRequest> Requests => [.. _requests];
 
-    public int MaxInFlight => Volatile.Read(ref _maxInFlight);
+    public long MaxInFlight => Volatile.Read(ref _maxInFlight);
 
     public static async Task<FakeApnsServer> StartAsync(CancellationToken cancellationToken)
     {
@@ -127,12 +139,6 @@ public sealed class FakeApnsServer : IAsyncDisposable
             HashAlgorithmName.SHA256,
             DSASignatureFormat.IeeeP1363FixedFieldConcatenation
         );
-    }
-
-    /// <summary>Decodes the claims segment of a provider token.</summary>
-    public static JsonDocument DecodeClaims(string jwt)
-    {
-        return JsonDocument.Parse(Base64Url.DecodeFromChars(jwt.Split('.')[1]));
     }
 
     /// <summary>Options that point at this server's key identity, with any overrides applied.</summary>
@@ -204,7 +210,7 @@ public sealed class FakeApnsServer : IAsyncDisposable
     private async Task _HandleAsync(HttpContext context)
     {
         var inFlight = Interlocked.Increment(ref _inFlight);
-        _UpdateMax(inFlight);
+        _maxInFlight.InterlockedRaiseTo(inFlight);
 
         try
         {
@@ -249,6 +255,14 @@ public sealed class FakeApnsServer : IAsyncDisposable
             }
 
             var reply = Responder(recorded);
+
+            if (reply.AbortAfterRead)
+            {
+                context.Abort();
+
+                return;
+            }
+
             context.Response.StatusCode = reply.Status;
 
             if (headers.TryGetValue("apns-id", out var apnsId))
@@ -273,23 +287,6 @@ public sealed class FakeApnsServer : IAsyncDisposable
         finally
         {
             Interlocked.Decrement(ref _inFlight);
-        }
-    }
-
-    private void _UpdateMax(int value)
-    {
-        var current = Volatile.Read(ref _maxInFlight);
-
-        while (value > current)
-        {
-            var observed = Interlocked.CompareExchange(ref _maxInFlight, value, current);
-
-            if (observed == current)
-            {
-                return;
-            }
-
-            current = observed;
         }
     }
 }

@@ -293,9 +293,20 @@ public static class SetupApnsPushNotifications
 
     private static bool _IsRetryable(Outcome<HttpResponseMessage> outcome)
     {
+        // Only failures that prove the request never reached APNs are retried. A connection lost after the request
+        // was sent may follow an accepted notification, and APNs does not deduplicate, so resending it would show
+        // the notification twice.
+        if (outcome.Exception is HttpRequestException requestException)
+        {
+            return requestException.HttpRequestError
+                is HttpRequestError.ConnectionError
+                    or HttpRequestError.NameResolutionError
+                    or HttpRequestError.SecureConnectionError;
+        }
+
         if (outcome.Exception is not null)
         {
-            return outcome.Exception is HttpRequestException;
+            return false;
         }
 
         return outcome.Result?.StatusCode is HttpStatusCode.InternalServerError or HttpStatusCode.ServiceUnavailable;
