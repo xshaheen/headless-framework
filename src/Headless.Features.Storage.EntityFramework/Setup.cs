@@ -49,12 +49,7 @@ public static class SetupFeaturesEntityFramework
                 typeof(IFeatureDefinitionRecordRepository),
                 typeof(EfFeatureDefinitionRecordRepository<>).MakeGenericType(dbContextType)
             );
-            services.TryAddEnumerable(
-                ServiceDescriptor.Singleton(
-                    typeof(IHostedService),
-                    typeof(FeaturesEntityValidationStartupGate<>).MakeGenericType(dbContextType)
-                )
-            );
+            services.AddStartupValidator(typeof(FeaturesEntityStartupValidator<>).MakeGenericType(dbContextType));
         }
     }
 

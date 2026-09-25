@@ -2,8 +2,6 @@
 
 using Headless.Checks;
 using Headless.Hosting.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
@@ -69,9 +67,8 @@ public static class HeadlessRequiredServiceExtensions
             Argument.IsNotNullOrWhiteSpace(requiredBy);
             Argument.IsNotNullOrWhiteSpace(remedy);
 
-            // Idempotent by impl type, so the runner is registered exactly once no matter how many features
-            // declare requirements.
-            services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RequiredServiceStartupValidator>());
+            // Idempotent by validator type, so one check covers every requirement declared in the host.
+            services.AddStartupValidator<RequiredServiceStartupValidator>();
 
             _GetOrAddRegistry(services).Add(new RequiredServiceRegistration(serviceType, requiredBy, remedy));
 

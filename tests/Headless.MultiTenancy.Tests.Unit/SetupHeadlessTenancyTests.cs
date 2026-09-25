@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Validation;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -25,7 +26,7 @@ public sealed class SetupHeadlessTenancyTests
             .ContainSingle();
         builder
             .Services.Where(descriptor =>
-                descriptor.ServiceType == typeof(IHostedService)
+                descriptor.ServiceType == typeof(IStartupValidator)
                 && string.Equals(
                     descriptor.ImplementationType?.Name,
                     "HeadlessTenancyStartupValidator",
@@ -67,15 +68,15 @@ public sealed class SetupHeadlessTenancyTests
         builder.AddHeadlessTenancy(tenancy => tenancy.RecordSeam("Http", TenantPostureStatus.Configured));
 
         await using var provider = builder.Services.BuildServiceProvider();
-        var hostedService = (IHostedLifecycleService)
+        var hostedService = (IStartupValidator)
             provider
-                .GetServices<IHostedService>()
+                .GetServices<IStartupValidator>()
                 .Single(service =>
                     string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
                 );
 
-        // when — validation runs in StartingAsync so it fires before any other hosted service's StartAsync.
-        var act = () => hostedService.StartingAsync(CancellationToken.None);
+        // when
+        var act = () => hostedService.ValidateAsync(CancellationToken.None);
 
         // then
         await act.Should()
@@ -98,15 +99,15 @@ public sealed class SetupHeadlessTenancyTests
         builder.AddHeadlessTenancy(tenancy => tenancy.RecordSeam("Http", TenantPostureStatus.Configured));
 
         await using var provider = builder.Services.BuildServiceProvider();
-        var hostedService = (IHostedLifecycleService)
+        var hostedService = (IStartupValidator)
             provider
-                .GetServices<IHostedService>()
+                .GetServices<IStartupValidator>()
                 .Single(service =>
                     string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
                 );
 
         // when
-        var act = () => hostedService.StartingAsync(CancellationToken.None);
+        var act = () => hostedService.ValidateAsync(CancellationToken.None);
 
         // then
         await act.Should()
@@ -218,15 +219,15 @@ public sealed class SetupHeadlessTenancyTests
         builder.AddHeadlessTenancy(tenancy => tenancy.RecordSeam("Http", TenantPostureStatus.Configured));
 
         await using var provider = builder.Services.BuildServiceProvider();
-        var hostedService = (IHostedLifecycleService)
+        var hostedService = (IStartupValidator)
             provider
-                .GetServices<IHostedService>()
+                .GetServices<IStartupValidator>()
                 .Single(service =>
                     string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
                 );
 
         // when
-        var act = () => hostedService.StartingAsync(CancellationToken.None);
+        var act = () => hostedService.ValidateAsync(CancellationToken.None);
 
         // then — the throw is converted to a synthetic diagnostic AND iteration continues to the next validator
         var exception = (await act.Should().ThrowAsync<HeadlessTenancyValidationException>()).Which;
@@ -246,15 +247,15 @@ public sealed class SetupHeadlessTenancyTests
         builder.AddHeadlessTenancy(tenancy => tenancy.RecordSeam("Http", TenantPostureStatus.Configured));
 
         await using var provider = builder.Services.BuildServiceProvider();
-        var hostedService = (IHostedLifecycleService)
+        var hostedService = (IStartupValidator)
             provider
-                .GetServices<IHostedService>()
+                .GetServices<IStartupValidator>()
                 .Single(service =>
                     string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
                 );
 
         // when
-        var act = () => hostedService.StartingAsync(CancellationToken.None);
+        var act = () => hostedService.ValidateAsync(CancellationToken.None);
 
         // then — the structured diagnostics are recoverable from the typed exception, not just the message
         var exception = (await act.Should().ThrowAsync<HeadlessTenancyValidationException>()).Which;
@@ -271,9 +272,9 @@ public sealed class SetupHeadlessTenancyTests
         builder.AddHeadlessTenancy(_ => { });
 
         await using var provider = builder.Services.BuildServiceProvider();
-        var hostedService = (IHostedLifecycleService)
+        var hostedService = (IStartupValidator)
             provider
-                .GetServices<IHostedService>()
+                .GetServices<IStartupValidator>()
                 .Single(service =>
                     string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
                 );
@@ -281,7 +282,7 @@ public sealed class SetupHeadlessTenancyTests
         await cts.CancelAsync();
 
         // when
-        var act = () => hostedService.StartingAsync(cts.Token);
+        var act = () => hostedService.ValidateAsync(cts.Token);
 
         // then
         await act.Should().ThrowAsync<OperationCanceledException>();
@@ -301,15 +302,15 @@ public sealed class SetupHeadlessTenancyTests
         builder.AddHeadlessTenancy(_ => { });
 
         await using var provider = builder.Services.BuildServiceProvider();
-        var hostedService = (IHostedLifecycleService)
+        var hostedService = (IStartupValidator)
             provider
-                .GetServices<IHostedService>()
+                .GetServices<IStartupValidator>()
                 .Single(service =>
                     string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
                 );
 
         // when
-        var act = () => hostedService.StartingAsync(CancellationToken.None);
+        var act = () => hostedService.ValidateAsync(CancellationToken.None);
 
         // then
         var exception = (await act.Should().ThrowAsync<OperationCanceledException>()).Which;

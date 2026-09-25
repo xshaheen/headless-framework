@@ -88,7 +88,7 @@ public static class SetupMiddlewares
     /// <param name="app">The application builder.</param>
     /// <remarks>
     /// Notifies any registered <see cref="IStatusCodesRewriterCalledNotifier"/> (e.g.,
-    /// <c>HeadlessServiceDefaultsValidationStartupFilter</c>) synchronously before adding the middleware,
+    /// <c>HeadlessServiceDefaultsStartupValidator</c>) synchronously before adding the middleware,
     /// and records <see cref="TenantCatalogPosture.StatusCodesRewriterRuntimeMarker"/> on an already-configured
     /// tenant catalog seam so <c>TenantCatalogPostureValidator</c> can fail a catalog-resolution host that
     /// never wired the rewriter (its mismatch rejection would otherwise stay distinguishable from the
@@ -99,7 +99,7 @@ public static class SetupMiddlewares
     /// <returns>The same application builder.</returns>
     public static IApplicationBuilder UseStatusCodesRewriter(this IApplicationBuilder app)
     {
-        // Notify any registered observer (e.g. HeadlessServiceDefaultsValidationStartupFilter) that the middleware was wired.
+        // Notify any registered observer (e.g. HeadlessServiceDefaultsStartupValidator) that the middleware was wired.
         if (
             app.ApplicationServices.GetService(typeof(IStatusCodesRewriterCalledNotifier))
             is IStatusCodesRewriterCalledNotifier notifier

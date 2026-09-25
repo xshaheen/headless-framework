@@ -289,6 +289,7 @@ Core hosting utilities and extensions for ASP.NET Core applications.
 ### API and behavior
 
 - DI extensions: `AddIf`, `AddIfElse`, `AddOrReplace*`, `Unregister<T>`
+- Startup validators (`IStartupValidator`, `AddStartupValidator`) that run before any hosted service starts and report every failure together
 - Required-service declarations (`RequireRegisteredService<T>`) that fail the host at startup instead of at first use
 - Options validation with FluentValidation
 - Configuration binding extensions
@@ -370,6 +371,33 @@ services.AddOrReplaceSingleton<IService>(sp => new Impl(sp.GetRequired<IDep>()))
 services.AddOrReplaceFallbackSingleton<IService, NullFallback, DefaultImpl>();
 ```
 
+#### Startup Validators
+
+A package that must refuse to start on a misconfiguration implements `IStartupValidator` (`Headless.Hosting.Validation`) and registers it; it does not write its own hosted service.
+
+```csharp
+internal sealed class OrdersModelValidator(IDbContextFactory<AppDbContext> factory) : IStartupValidator
+{
+    public async Task ValidateAsync(CancellationToken cancellationToken)
+    {
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
+
+        if (db.Model.FindEntityType(typeof(Order)) is null)
+        {
+            throw new InvalidOperationException("Call modelBuilder.AddOrders() in OnModelCreating.");
+        }
+    }
+}
+
+services.AddStartupValidator<OrdersModelValidator>();
+```
+
+- **One runner, before every `StartAsync`.** The first `AddStartupValidator` call registers a single `IHostedLifecycleService` that runs every validator in `StartingAsync`, so a misconfigured host fails before background workers or consumers start.
+- **Every failure in one start.** Each validator runs even after another fails. A single failure surfaces as its own exception, unwrapped, so a typed exception such as `MissingRequiredServiceException` keeps its type; two or more surface as a `StartupValidationException` (an `AggregateException`) whose inner exceptions are the originals. Cancelling startup stops the run and is never reported as a failure.
+- **Registration.** `AddStartupValidator<T>()` and `AddStartupValidator(Type)` are idempotent per validator type; `AddStartupValidator(Func<IServiceProvider, IStartupValidator>)` adds a validator on every call, for one validator per named instance.
+- **Cheap checks only.** Validators run on every instance on every start and have no switch to turn them off. Keep them to in-memory checks (options, EF model metadata, DI registrations, wiring flags). A diagnostic that does network I/O or measures cost belongs in its own hosted service with a mode.
+- **Advisory findings.** A validator that should only warn logs through an injected logger and returns normally.
+
 #### Required Services
 
 The abstraction-plus-provider split lets a package register cleanly against a contract whose only implementation ships in a *provider* package the host must choose — `Headless.Settings.Core` consumes `ICache<SettingValueCacheItem>` while referencing only `Headless.Caching.Abstractions`, for example. Without a declared prerequisite such a host starts green and throws on the first request that touches the feature.
@@ -381,7 +409,7 @@ services.RequireRegisteredService<ICache<SettingValueCacheItem>>(
 );
 ```
 
-- **Checked at startup, not at declaration.** The requirement is usually satisfied by a sibling `Add…` call that has not run yet, so inspecting the collection at declaration time would reject valid registration orders. The check runs as an `IHostedLifecycleService.StartingAsync`, ahead of every hosted service's `StartAsync`, so a broken host never lets background workers or consumers start under an assumption the container cannot honour.
+- **Checked at startup, not at declaration.** The requirement is usually satisfied by a sibling `Add…` call that has not run yet, so inspecting the collection at declaration time would reject valid registration orders. The check is an `IStartupValidator`, so it runs ahead of every hosted service's `StartAsync`, so a broken host never lets background workers or consumers start under an assumption the container cannot honour.
 - **Probed, never resolved.** It asks `IServiceProviderIsService` rather than resolving the contract, so validation never constructs the service under test (a Redis-backed cache would reach into its connection options and turn a provider misconfiguration into an opaque failure from the guard). MS.DI's probe answers a *constructed* generic from an *open*-generic registration, so `ICache<Foo>` reports present when only `typeof(ICache<>)` was registered — which is exactly how the caching providers register. A container that does not expose the probe falls back to a null-returning resolve.
 - **Aggregated.** Requirements from every feature in the host are collected and reported in one `MissingRequiredServiceException` (`Headless.Hosting.DependencyInjection`), each line naming its `requiredBy` and `remedy`. A host missing one shared provider sees every affected feature at once instead of one failure per restart. Identical declarations collapse to a single line, and the startup check itself is registered once no matter how many features declare requirements.
 

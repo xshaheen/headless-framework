@@ -65,7 +65,7 @@ public sealed class HeadlessJobsTenancyBuilder
         _RegisterSentinelOnce<PropagateTenantSentinel>(options => options.PropagateTenant = true);
 
         // Routes through the unified IHeadlessTenancyValidator collection aggregated by
-        // HeadlessTenancyStartupValidator (IHostedLifecycleService) — runs in StartingAsync before any
+        // HeadlessTenancyStartupValidator (an IStartupValidator) — runs before any
         // IHostedService.StartAsync so a misconfigured tenancy posture fails fast.
         _builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHeadlessTenancyValidator, JobsTenantPropagationStartupValidator>()

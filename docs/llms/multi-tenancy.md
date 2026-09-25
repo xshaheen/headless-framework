@@ -749,7 +749,7 @@ The framework ships no per-tenant cron rows or per-tenant cron expressions — c
 
 #### Startup Diagnostics
 
-The Jobs seam contributes three startup diagnostics through `HeadlessTenancyStartupValidator` (mirroring the Messaging seam), each fired in `StartingAsync` before any hosted service runs:
+The Jobs seam contributes three startup diagnostics through `HeadlessTenancyStartupValidator` (mirroring the Messaging seam), each checked before any hosted service starts:
 
 | Code | Severity | Fires when |
 |---|---|---|
@@ -907,7 +907,7 @@ None.
     - `TenantPostureManifest` — thread-safe, singleton, non-PII record of seam posture: status (`TenantPostureStatus`), capability labels, and runtime markers. Diagnostic breadcrumb only; records do not create enforcement.
     - `TenantPostureStatus` — enum whose ordinal is posture precedence: `Configured(0) < Propagating(1) < Guarded(2) < Enforcing(3)`. `RecordSeam` always keeps the strongest status across contributions.
     - `IHeadlessTenancyValidator` / `HeadlessTenancyDiagnostic` — extension hook for seam packages to emit startup diagnostics. Diagnostics can be `Information`, `Warning`, or startup-blocking `Error`.
-    - `HeadlessTenancyStartupValidator` — `IHostedLifecycleService` that runs all registered validators in `StartingAsync` before any other hosted service starts; throws `HeadlessTenancyValidationException` (an `InvalidOperationException`) on any `Error` diagnostic.
+    - `HeadlessTenancyStartupValidator` — an `IStartupValidator` that runs all registered tenancy validators before any hosted service starts; throws `HeadlessTenancyValidationException` (an `InvalidOperationException`) on any `Error` diagnostic.
     - `HeadlessTenancyValidationContext` — context record passed to validators: `Services` (the app `IServiceProvider`) + `Manifest`.
 - **Tenant catalog** (opt-in; see [Tenant Catalog](#tenant-catalog) for the concepts and extension tiers):
     - `HeadlessTenancyBuilder.Catalog(Action<HeadlessTenancyCatalogSetupBuilder> configure)` — configures `TenantCatalogOptions`, registers exactly one storage provider (`UseInMemory`/`UseConfiguration`/`UseEntityFramework`, guarded — a second registration fails startup), and wires the catalog service and the `ICurrentTenantInfo` accessor.
@@ -921,7 +921,7 @@ None.
 
 ### Design constraints
 
-- **`HeadlessTenancyStartupValidator`** is registered as an `IHostedLifecycleService` (not a plain `IHostedService`) so `StartingAsync` runs before any other hosted service's `StartAsync`. This ordering guarantees that a misconfigured posture fails the host before background workers or messaging consumers begin processing under the wrong assumptions. The validation itself is synchronous inside `StartingAsync` — the task is only faulted if the host's own startup continuation throws; the validated diagnostics surface as the typed `HeadlessTenancyValidationException` before the task is awaited.
+- **`HeadlessTenancyStartupValidator`** is an `IStartupValidator`, so it runs before any hosted service's `StartAsync`. This ordering guarantees that a misconfigured posture fails the host before background workers or messaging consumers begin processing under the wrong assumptions. When it is the only startup validator that fails, the host sees the typed `HeadlessTenancyValidationException` unwrapped; alongside other failures it is one of the inner exceptions of a `StartupValidationException`.
 - **Two independent cache namespaces, one shared expiration.** The catalog caches the identifier→id mapping and the id→`TenantInfo` shape as separate `ICache<T>` item types, both defaulting to `TenantCatalogOptions.CacheExpiration`. A single store hit from an identifier lookup populates both namespaces in one pass. The cache always holds the base `TenantInfo` shape — a subclass returned by an app-owned store is cloned down before caching and re-hydrated (or downcast, when the store returns the subtype directly) on read, so no polymorphic instance is ever serialized into the cache.
 - **Identifier resolution reads through `GetOrAddAsync`; two paths deliberately do not.** The identifier namespace uses the cache's factory-backed read, so an expiry rollover under concurrent load for one identifier costs a single store read rather than one per caller (in-process single-flight; cross-node deduplication would additionally require an `ICacheFactoryLockProvider`). The factory writes the id namespace as a side effect of the same store hit, so one store read still populates both. A factory-backed read always persists whatever the factory returns, which two paths cannot accept: the id namespace must never cache an id that has no catalog row (`FindByIdAsync` would then keep answering `null` for a tenant that has since appeared), and a host that sets `UnknownIdentifierCacheExpiration = TimeSpan.Zero` must not write unknown identifiers at all — a zero duration is a write followed by an immediate eviction, not a skipped write. Both keep the plain read-then-conditional-write shape and trade single-flight away for their write rule.
 - **Accessor-only is a first-class, non-failing posture.** A host can call `Catalog(catalog => catalog.UseInMemory(...))` without ever calling `Headless.Api.Core`'s `.Http(http => http.ResolveFromCatalog(...))`. That combination records only the `catalog-accessor` capability — `ICurrentTenantInfo` metadata reads work, but no HTTP identifier resolution runs. `TenantCatalogPostureValidator` treats this as valid and never fails startup for it; it only fails when `catalog-resolution` is recorded without a configured store, without an actually-wired resolution pipeline, or without the status-codes rewriter that writes the mismatch rejection.
@@ -976,7 +976,7 @@ Custom validators implement `IHeadlessTenancyValidator` and register themselves 
 ### Runtime behavior
 
 - Registers a singleton `TenantPostureManifest` via `services.AddSingleton(manifest)`.
-- Registers `HeadlessTenancyStartupValidator` as `IHostedService` (via `TryAddEnumerable`; safe to call multiple times).
+- Registers `HeadlessTenancyStartupValidator` as an `IStartupValidator` (idempotent; safe to call multiple times).
 - Registers a default no-op scoped `ICurrentTenantInfo` (`NullCurrentTenantInfo`).
 - `AddHeadlessTenancy` also invokes the caller's `configure` callback, which may register additional services from seam packages.
 - `Catalog(...)` registers `TenantCatalogOptions` (validated, `ValidateOnStart`), the selected storage provider's services, `ITenantCatalogService` (scoped, backed by `TenantCatalogService`), replaces the default `ICurrentTenantInfo` with the catalog-backed implementation, and registers `TenantCatalogPostureValidator`.
@@ -1035,4 +1035,4 @@ None. This package binds no options of its own — `UseEntityFramework<TContext>
 ### Runtime behavior
 
 - Registers `EfTenantStore<TContext>` as a singleton, exposed as both `ITenantStore` and `ITenantDirectory`
-- Registers `TenantCatalogEntityValidationStartupGate<TContext>` as an `IHostedService` (via `TryAddEnumerable`) that validates the model configuration at host startup
+- Registers `TenantCatalogEntityStartupValidator<TContext>` as an `IStartupValidator` (idempotent) that validates the model configuration at host startup

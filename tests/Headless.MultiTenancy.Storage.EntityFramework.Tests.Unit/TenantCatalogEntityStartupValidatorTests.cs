@@ -7,20 +7,20 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Tests;
 
-public sealed class TenantCatalogEntityValidationStartupGateTests : TestBase
+public sealed class TenantCatalogEntityStartupValidatorTests : TestBase
 {
     [Fact]
     public async Task should_reject_pre_registered_but_unconfigured_tenant_record()
     {
         // given
-        var gate = new TenantCatalogEntityValidationStartupGate<PreRegisteredTenantDbContext>(
+        var validator = new TenantCatalogEntityStartupValidator<PreRegisteredTenantDbContext>(
             new TestDbContextFactory<PreRegisteredTenantDbContext>(() =>
                 new PreRegisteredTenantDbContext(_Options<PreRegisteredTenantDbContext>())
             )
         );
 
         // when
-        var act = () => gate.StartingAsync(AbortToken);
+        var act = () => validator.ValidateAsync(AbortToken);
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*AddHeadlessTenancyCatalog*");
@@ -30,14 +30,14 @@ public sealed class TenantCatalogEntityValidationStartupGateTests : TestBase
     public async Task should_accept_fully_configured_tenant_record()
     {
         // given
-        var gate = new TenantCatalogEntityValidationStartupGate<ConfiguredTenantDbContext>(
+        var validator = new TenantCatalogEntityStartupValidator<ConfiguredTenantDbContext>(
             new TestDbContextFactory<ConfiguredTenantDbContext>(() =>
                 new ConfiguredTenantDbContext(_Options<ConfiguredTenantDbContext>())
             )
         );
 
         // when
-        var act = () => gate.StartingAsync(AbortToken);
+        var act = () => validator.ValidateAsync(AbortToken);
 
         // then
         await act.Should().NotThrowAsync();

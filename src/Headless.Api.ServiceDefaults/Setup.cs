@@ -225,17 +225,7 @@ public static class SetupApi
             builder.Services.TryAddSingleton<IStatusCodesRewriterCalledNotifier>(
                 _ => new StatusCodesRewriterCalledNotifier(startupState)
             );
-            builder.Services.TryAddSingleton<HeadlessServiceDefaultsValidationStartupFilter>();
-            builder.Services.TryAddEnumerable(
-                ServiceDescriptor.Singleton<IStartupFilter, HeadlessServiceDefaultsValidationStartupFilter>(sp =>
-                    sp.GetRequiredService<HeadlessServiceDefaultsValidationStartupFilter>()
-                )
-            );
-            builder.Services.TryAddEnumerable(
-                ServiceDescriptor.Singleton<IHostedLifecycleService, HeadlessServiceDefaultsValidationStartupFilter>(
-                    sp => sp.GetRequiredService<HeadlessServiceDefaultsValidationStartupFilter>()
-                )
-            );
+            builder.Services.AddStartupValidator<HeadlessServiceDefaultsStartupValidator>();
 
             // Core API primitives
             builder.Services.AddEndpointsApiExplorer();

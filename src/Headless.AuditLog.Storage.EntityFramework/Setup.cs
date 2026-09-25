@@ -56,12 +56,7 @@ public static class SetupAuditLogEntityFramework
                 typeof(IReadAuditLog<>).MakeGenericType(dbContextType),
                 typeof(EfReadAuditLog<>).MakeGenericType(dbContextType)
             );
-            services.TryAddEnumerable(
-                ServiceDescriptor.Singleton(
-                    typeof(IHostedService),
-                    typeof(AuditLogEntityValidationStartupGate<>).MakeGenericType(dbContextType)
-                )
-            );
+            services.AddStartupValidator(typeof(AuditLogEntityStartupValidator<>).MakeGenericType(dbContextType));
         }
     }
 

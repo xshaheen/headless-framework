@@ -287,7 +287,7 @@ The same TCS/race/dedup discipline transfers to other startup-time initializers 
 | Failure-mode + race tests | `tests/Headless.AuditLog.Storage.PostgreSql.Tests.Integration/PostgreSqlAuditLogFailureModesTests.cs` |
 | Atomicity + provider-mismatch tests | `tests/Headless.AuditLog.Storage.PostgreSql.Tests.Integration/PostgreSqlAuditLogAtomicityTests.cs` |
 | Factory + ctor-throws tests | `tests/Headless.EntityFramework.Tests.Integration/HeadlessDbContextFactoryTests.cs` |
-| EF startup validation gate | `src/Headless.Settings.Storage.EntityFramework/Internal/SettingsEntityValidationStartupGate.cs`, `src/Headless.AuditLog.Storage.EntityFramework/Internal/AuditLogEntityValidationStartupGate.cs` |
+| EF startup validator | `src/Headless.Settings.Storage.EntityFramework/Internal/SettingsEntityStartupValidator.cs`, `src/Headless.AuditLog.Storage.EntityFramework/Internal/AuditLogEntityStartupValidator.cs` |
 
 ## Related
 
