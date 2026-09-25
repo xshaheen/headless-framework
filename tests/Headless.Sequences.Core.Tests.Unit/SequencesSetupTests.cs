@@ -166,9 +166,21 @@ public sealed class SequencesSetupTests : TestBase
     }
 
     [Theory]
+    [InlineData(" invoice")]
+    [InlineData("invoice ")]
+    public void should_reject_a_padded_name_added_through_options(string name)
+    {
+        var options = _Options(setup => setup.ConfigureOptions(o => o.Policies[name] = new SequencePolicy()));
+
+        options.Invoking(x => x.Value).Should().Throw<OptionsValidationException>();
+    }
+
+    [Theory]
     [InlineData("")]
     [InlineData("  ")]
-    public void should_refuse_a_blank_policy_name_at_the_builder(string name)
+    [InlineData("invoice ")]
+    [InlineData(" invoice")]
+    public void should_refuse_a_blank_or_padded_policy_name_at_the_builder(string name)
     {
         var act = () =>
             new ServiceCollection().AddHeadlessSequences(setup =>

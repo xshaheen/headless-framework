@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 namespace Headless.Sequences.SqlServer;
 
 /// <summary>Creates the counter schema and table at host startup, once, before any call can reach them.</summary>
+#pragma warning disable CA2100 // SQL text is built from the validated schema and table names plus internal column constants.
 internal sealed class SqlServerSequencesStorageInitializer(IOptions<SqlServerSequencesOptions> options)
     : HostedInitializer
 {
@@ -108,3 +109,4 @@ internal sealed class SqlServerSequencesStorageInitializer(IOptions<SqlServerSeq
             """;
     }
 }
+#pragma warning restore CA2100

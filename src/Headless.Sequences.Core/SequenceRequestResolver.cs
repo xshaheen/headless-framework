@@ -15,6 +15,7 @@ internal sealed class SequenceRequestResolver(ICurrentTenant currentTenant, IOpt
     {
         Argument.IsNotNullOrWhiteSpace(name);
         Argument.HasMaxLength(name, SequenceFieldLimits.NameMaxLength);
+        SequenceKeyText.EnsureNoSurroundingWhitespace(name, "name", nameof(name));
 
         var storedPartition = _NormalizePartition(partition);
 
@@ -40,7 +41,10 @@ internal sealed class SequenceRequestResolver(ICurrentTenant currentTenant, IOpt
             );
         }
 
-        return Argument.HasMaxLength(partition, SequenceFieldLimits.PartitionMaxLength);
+        Argument.HasMaxLength(partition, SequenceFieldLimits.PartitionMaxLength);
+        SequenceKeyText.EnsureNoSurroundingWhitespace(partition, "partition", nameof(partition));
+
+        return partition;
     }
 
     private static string _NormalizeTenantId(string? tenantId)
@@ -70,6 +74,8 @@ internal sealed class SequenceRequestResolver(ICurrentTenant currentTenant, IOpt
                 nameof(tenantId)
             );
         }
+
+        SequenceKeyText.EnsureNoSurroundingWhitespace(tenantId, "tenant id", nameof(tenantId));
 
         return tenantId;
     }

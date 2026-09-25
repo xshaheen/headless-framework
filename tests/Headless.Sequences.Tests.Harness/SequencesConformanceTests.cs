@@ -270,15 +270,29 @@ public abstract class SequencesConformanceTests<TFixture>(TFixture fixture) : Te
                 AbortToken
             );
 
+        // A padded key part would share the unpadded counter on SQL Server, which ignores trailing spaces when
+        // comparing keys, so every provider refuses it before a statement runs.
+        var paddedName = async () => await host.Generator.NextAsync(name + " ", cancellationToken: AbortToken);
+        var paddedPartition = async () => await host.Generator.NextAsync(name, "2026 ", AbortToken);
+
         await tooLongName.Should().ThrowAsync<ArgumentException>();
         await blankPartition.Should().ThrowAsync<ArgumentException>();
         await tooLongPartition.Should().ThrowAsync<ArgumentException>();
+        await paddedName.Should().ThrowAsync<ArgumentException>();
+        await paddedPartition.Should().ThrowAsync<ArgumentException>();
 
         using (host.CurrentTenant.Change(new string('t', SequenceFieldLimits.TenantIdMaxLength + 1)))
         {
             var tooLongTenant = async () => await host.Generator.NextAsync(name, cancellationToken: AbortToken);
 
             await tooLongTenant.Should().ThrowAsync<ArgumentException>();
+        }
+
+        using (host.CurrentTenant.Change("acme "))
+        {
+            var paddedTenant = async () => await host.Generator.NextAsync(name, cancellationToken: AbortToken);
+
+            await paddedTenant.Should().ThrowAsync<ArgumentException>();
         }
 
         (await Fixture.ReadValueAsync(new SequenceKey("", name, ""), AbortToken)).Should().BeNull();

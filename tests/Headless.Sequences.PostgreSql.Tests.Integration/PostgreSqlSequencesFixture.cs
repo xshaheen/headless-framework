@@ -69,7 +69,9 @@ public sealed class PostgreSqlSequencesFixture
 
     public void ConfigureProvider(HeadlessSequencesSetupBuilder setup)
     {
-        setup.UsePostgreSql(ConnectionString);
+        // Each host gets its own pool, and the contention tests run several hosts at once; the default pool of 100
+        // per host would let them exceed the container's max_connections and fail with 53300 instead of contending.
+        setup.UsePostgreSql(new NpgsqlConnectionStringBuilder(ConnectionString) { MaxPoolSize = 30 }.ToString());
     }
 
     public DbConnection CreateConnection()

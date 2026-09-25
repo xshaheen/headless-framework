@@ -4,7 +4,6 @@
     <Description>SQL Server provider for Headless tenant-scoped sequences: atomic update-or-insert counters for fast and gap-free numbering.</Description>
     <PackageTags>headless;sequences;numbering;sql-server;dotnet</PackageTags>
     <RootNamespace>Headless.Sequences.SqlServer</RootNamespace>
-    <NoWarn>$(NoWarn);CA2100</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" />

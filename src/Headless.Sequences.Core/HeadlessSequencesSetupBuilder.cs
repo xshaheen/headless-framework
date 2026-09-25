@@ -62,12 +62,15 @@ public sealed class HeadlessSequencesSetupBuilder
     /// <param name="name">The counter name, compared ordinally.</param>
     /// <param name="policy">The policy.</param>
     /// <returns>This builder, to allow chaining.</returns>
-    /// <exception cref="ArgumentException"><paramref name="name" /> is blank or too long.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="name" /> is blank, too long, or starts or ends with whitespace.
+    /// </exception>
     /// <exception cref="ArgumentNullException"><paramref name="policy" /> is <see langword="null" />.</exception>
     public HeadlessSequencesSetupBuilder Policy(string name, SequencePolicy policy)
     {
         Argument.IsNotNullOrWhiteSpace(name);
         Argument.HasMaxLength(name, SequenceFieldLimits.NameMaxLength);
+        SequenceKeyText.EnsureNoSurroundingWhitespace(name, "name", nameof(name));
         Argument.IsNotNull(policy);
 
         return ConfigureOptions(options => options.Policies[name] = policy);

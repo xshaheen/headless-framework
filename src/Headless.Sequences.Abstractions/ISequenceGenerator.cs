@@ -23,8 +23,8 @@ public interface ISequenceGenerator
     /// <param name="cancellationToken">Token used to cancel the database call.</param>
     /// <returns>The value taken.</returns>
     /// <exception cref="ArgumentException">
-    /// The name is blank or too long, the partition is whitespace-only or too long, or the current tenant id is
-    /// whitespace-only or too long.
+    /// The name is blank or too long, the partition is whitespace-only or too long, the current tenant id is
+    /// whitespace-only or too long, or any of them starts or ends with whitespace.
     /// </exception>
     /// <exception cref="InvalidOperationException">The counter is registered as gap-free.</exception>
     ValueTask<long> NextAsync(string name, string? partition = null, CancellationToken cancellationToken = default);
@@ -39,8 +39,8 @@ public interface ISequenceGenerator
     /// <returns>The values taken, in order.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="count" /> is less than 1.</exception>
     /// <exception cref="ArgumentException">
-    /// The name is blank or too long, the partition is whitespace-only or too long, or the current tenant id is
-    /// whitespace-only or too long.
+    /// The name is blank or too long, the partition is whitespace-only or too long, the current tenant id is
+    /// whitespace-only or too long, or any of them starts or ends with whitespace.
     /// </exception>
     /// <exception cref="InvalidOperationException">The counter is registered as gap-free.</exception>
     /// <exception cref="OverflowException">The block would run past <see cref="long.MaxValue" />.</exception>

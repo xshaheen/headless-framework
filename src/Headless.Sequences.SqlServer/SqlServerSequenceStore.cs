@@ -26,6 +26,7 @@ namespace Headless.Sequences.SqlServer;
 /// with <c>XACT_ABORT ON</c> dooms that transaction, so the insert must never be allowed to fail and be absorbed.
 /// </para>
 /// </remarks>
+#pragma warning disable CA2100 // SQL text is built from the validated schema and table names plus internal column constants.
 internal sealed class SqlServerSequenceStore(IOptions<SqlServerSequencesOptions> options) : ISequenceStore
 {
     // A deadlock is the one failure a fresh transaction can clear on its own; the first attempt plus two retries.
@@ -226,3 +227,4 @@ internal sealed class SqlServerSequenceStore(IOptions<SqlServerSequencesOptions>
             """;
     }
 }
+#pragma warning restore CA2100

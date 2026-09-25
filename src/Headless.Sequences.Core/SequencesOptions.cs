@@ -38,6 +38,8 @@ internal sealed class SequencesOptionsValidator : AbstractValidator<SequencesOpt
                     .NotEmpty()
                     .Must(static name => !string.IsNullOrWhiteSpace(name))
                     .WithMessage("A sequence name must not be blank.")
+                    .Must(static name => !SequenceKeyText.HasSurroundingWhitespace(name))
+                    .WithMessage("A sequence name must not start or end with whitespace.")
                     .MaximumLength(SequenceFieldLimits.NameMaxLength);
 
                 entry.RuleFor(x => x.Value).NotNull().SetValidator(new SequencePolicyValidator());

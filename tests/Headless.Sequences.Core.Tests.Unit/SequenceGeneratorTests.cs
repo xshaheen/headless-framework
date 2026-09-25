@@ -200,6 +200,27 @@ public sealed class SequenceGeneratorTests : TestBase
         context.Store.ReceivedCalls().Should().BeEmpty();
     }
 
+    [Theory]
+    [InlineData("receipt ", null, null)]
+    [InlineData(" receipt", null, null)]
+    [InlineData("receipt", "2026 ", null)]
+    [InlineData("receipt", "\t2026", null)]
+    [InlineData("receipt", null, "t1 ")]
+    [InlineData("receipt", null, " t1")]
+    public async Task should_refuse_a_key_part_padded_with_whitespace(string name, string? partition, string? tenantId)
+    {
+        // given
+        var context = new SequenceTestContext();
+        context.Tenant.Id = tenantId;
+
+        // when
+        var act = async () => await context.Generator.NextAsync(name, partition, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*whitespace*");
+        context.Store.ReceivedCalls().Should().BeEmpty();
+    }
+
     [Fact]
     public async Task should_key_the_counter_by_the_current_tenant_and_partition()
     {
