@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text;
 using Headless.Checks;
 using Headless.PushNotifications.Firebase.Internals;
 
@@ -16,6 +17,9 @@ internal sealed class FcmPushNotificationService(IFcmMessageSender sender) : IPu
     private const int _MaxBodyLength = 4000;
     private const int _MaxFidsPerBatch = 500;
 
+    // Forwarded to APNs as apns-collapse-id through the iOS bridge, and Apple caps that header at 64 UTF-8 bytes.
+    private const int _MaxCollapseKeyBytes = 64;
+
     public async ValueTask<PushNotificationResponse> SendToDeviceAsync(
         string clientIdentifier,
         PushNotificationRequest request,
@@ -26,7 +30,7 @@ internal sealed class FcmPushNotificationService(IFcmMessageSender sender) : IPu
         Argument.IsNotNull(request);
         _ValidateContent(request);
 
-        var content = new FcmMessageContent(request.Title, request.Body, request.Data);
+        var content = new FcmMessageContent(request.Title, request.Body, request.Data, request.CollapseKey);
 
         return await sender.SendAsync(content, clientIdentifier, cancellationToken).ConfigureAwait(false);
     }
@@ -41,7 +45,7 @@ internal sealed class FcmPushNotificationService(IFcmMessageSender sender) : IPu
         Argument.IsNotNull(request);
         _ValidateContent(request);
 
-        var content = new FcmMessageContent(request.Title, request.Body, request.Data);
+        var content = new FcmMessageContent(request.Title, request.Body, request.Data, request.CollapseKey);
         var responses = new List<PushNotificationResponse>(clientIdentifiers.Count);
         var successCount = 0;
         var failureCount = 0;
@@ -80,6 +84,11 @@ internal sealed class FcmPushNotificationService(IFcmMessageSender sender) : IPu
         Argument.IsLessThanOrEqualTo(request.Title.Length, _MaxTitleLength);
         Argument.IsLessThanOrEqualTo(request.Body.Length, _MaxBodyLength);
         _EnsureDataAllowed(request.Data);
+
+        if (request.CollapseKey is not null)
+        {
+            Argument.IsLessThanOrEqualTo(Encoding.UTF8.GetByteCount(request.CollapseKey), _MaxCollapseKeyBytes);
+        }
     }
 
     private static void _EnsureDataAllowed(IReadOnlyDictionary<string, string>? data)

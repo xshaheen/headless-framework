@@ -88,6 +88,24 @@ public sealed class PushNotificationsSetupBuilderTests
     }
 
     [Fact]
+    public void should_reject_setup_when_apns_and_firebase_are_both_default()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        var action = () =>
+            services.AddHeadlessPushNotifications(static setup =>
+            {
+                setup.UseApns(static o => o.BundleId = "com.example.app");
+                setup.UseFirebase(static o => o.Json = "{}");
+            });
+
+        // then
+        action.Should().Throw<InvalidOperationException>().WithMessage("*at most one default*");
+    }
+
+    [Fact]
     public void should_resolve_single_default_service_when_one_provider_is_configured()
     {
         // given
@@ -197,7 +215,7 @@ public sealed class PushNotificationsSetupBuilderTests
         action
             .Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*'marketing' requires exactly one provider*UseFirebase*");
+            .WithMessage("*'marketing' requires exactly one provider*UseApns*");
     }
 
     [Fact]

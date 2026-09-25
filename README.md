@@ -159,7 +159,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Blob storage | `AddHeadlessBlobs` | `UseAws`, `UseAzure`, `UseCloudflareR2`, `UseFileSystem`, `UseRedis`, `UseSsh` |
 | Email | `AddHeadlessEmails` | `UseAwsSes`, `UseAzure`, `UseMailkit`, `UseDevelopment`, `UseNoop` |
 | SMS | `AddHeadlessSms` | `UseTwilio`, `UseAwsSns`, `UseInfobip`, `UseCequens`, `UseConnekio`, `UseVictoryLink`, `UseVodafone`, `UseDevelopment` |
-| Push notifications | `AddHeadlessPushNotifications` | `UseFirebase`, `UseNoop` |
+| Push notifications | `AddHeadlessPushNotifications` | `UseFirebase`, `UseApns`, `UseNoop` |
 | Distributed locks | `AddHeadlessDistributedLocks` | `UseInMemory`, `UseRedis`, `UsePostgreSql`, `UseSqlServer` |
 | Node membership | `AddHeadlessCoordination` | `UseRedis`, `UsePostgreSql`, `UseSqlServer` |
 | Feature flags | `AddHeadlessFeatures` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
@@ -495,11 +495,12 @@ Database-backed permission system. Define permissions as code, store assignments
 
 ### Push Notifications
 
-Firebase Cloud Messaging behind a clean abstraction, with a no-op dev provider for local testing.
+Firebase Cloud Messaging and Apple Push Notification service behind a clean abstraction, with a no-op dev provider for local testing.
 
 | Package | Description |
 |---------|-------------|
 | [Headless.PushNotifications.Abstractions](src/Headless.PushNotifications.Abstractions/README.md) | Push notification interfaces |
+| [Headless.PushNotifications.Apns](src/Headless.PushNotifications.Apns/README.md) | Apple Push Notification service (APNs) |
 | [Headless.PushNotifications.Core](src/Headless.PushNotifications.Core/README.md) | Unified setup builder for composing named push-notification services |
 | [Headless.PushNotifications.Dev](src/Headless.PushNotifications.Dev/README.md) | Development push provider |
 | [Headless.PushNotifications.Firebase](src/Headless.PushNotifications.Firebase/README.md) | Firebase Cloud Messaging |

@@ -17,7 +17,7 @@ public static class SetupPushNotificationsCore
         /// <summary>
         /// Registers Headless push-notification services from a single setup builder. Provider packages
         /// contribute the default (unkeyed) service through <c>Use*</c> extensions on
-        /// <see cref="HeadlessPushNotificationsSetupBuilder"/> (for example <c>UseFirebase</c>, <c>UseNoop</c>)
+        /// <see cref="HeadlessPushNotificationsSetupBuilder"/> (for example <c>UseApns</c>, <c>UseFirebase</c>, <c>UseNoop</c>)
         /// and named services through <c>setup.AddNamed(name, i =&gt; i.Use*(…))</c>. A default service is
         /// optional (at most one); named services are optional and unbounded. Contributions are queued and not
         /// run until the setup gates pass, so a setup that fails a gate leaves the service collection unchanged
