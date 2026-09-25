@@ -8,7 +8,7 @@ namespace Tests;
 
 /// <summary>
 /// Runs the cross-provider <see cref="PushNotificationServiceConformanceTests"/> contract against the Firebase
-/// service. Firebase-specific behavior (payload limits, reserved data keys, collapse-key mapping, 500-FID batching)
+/// service. Firebase-specific behavior (payload limits, reserved data keys, field mapping, 500-FID batching)
 /// lives in <see cref="FcmPushNotificationServiceTests"/>.
 /// </summary>
 public sealed class FcmConformanceTests : PushNotificationServiceConformanceTests
@@ -99,6 +99,54 @@ public sealed class FcmConformanceTests : PushNotificationServiceConformanceTest
     public override Task should_reject_a_blank_body()
     {
         return base.should_reject_a_blank_body();
+    }
+
+    [Fact]
+    public override Task should_reject_a_title_without_a_body()
+    {
+        return base.should_reject_a_title_without_a_body();
+    }
+
+    [Fact]
+    public override Task should_reject_a_body_without_a_title()
+    {
+        return base.should_reject_a_body_without_a_title();
+    }
+
+    [Fact]
+    public override Task should_reject_a_request_without_title_body_or_data()
+    {
+        return base.should_reject_a_request_without_title_body_or_data();
+    }
+
+    [Fact]
+    public override Task should_reject_a_data_only_request_with_a_badge()
+    {
+        return base.should_reject_a_data_only_request_with_a_badge();
+    }
+
+    [Fact]
+    public override Task should_reject_a_data_only_request_with_a_sound()
+    {
+        return base.should_reject_a_data_only_request_with_a_sound();
+    }
+
+    [Fact]
+    public override Task should_reject_a_negative_badge()
+    {
+        return base.should_reject_a_negative_badge();
+    }
+
+    [Fact]
+    public override Task should_reject_a_negative_time_to_live()
+    {
+        return base.should_reject_a_negative_time_to_live();
+    }
+
+    [Fact]
+    public override Task should_succeed_for_a_data_only_request()
+    {
+        return base.should_succeed_for_a_data_only_request();
     }
 
     [Fact]

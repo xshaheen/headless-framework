@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using FirebaseAdmin;
 using FirebaseAdmin.Messaging;
 using Google.Apis.Auth.OAuth2;
@@ -25,9 +26,11 @@ namespace Headless.PushNotifications.Firebase.Internals;
 /// </remarks>
 internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
 {
-    private const int _ApnsBadge = 1;
+    // Apple requires priority 5 for a background (content-available) push and rejects 10 for it.
+    private const string _ApnsBackgroundPriority = "5";
 
     private readonly ILogger<FcmMessageSender> _logger;
+    private readonly TimeProvider _timeProvider;
     private readonly ResiliencePipeline _retryPipeline;
     private readonly Lazy<FirebaseMessaging> _messaging;
     private FirebaseApp? _app;
@@ -36,11 +39,13 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
         IOptionsMonitor<FirebaseOptions> options,
         ResiliencePipelineProvider<string> pipelineProvider,
         string? optionsName,
+        TimeProvider timeProvider,
         ILogger<FcmMessageSender> logger
     )
     {
         Argument.IsNotNull(options);
         Argument.IsNotNull(pipelineProvider);
+        _timeProvider = Argument.IsNotNull(timeProvider);
         _logger = Argument.IsNotNull(logger);
         _retryPipeline = pipelineProvider.GetPipeline(FcmResilienceKeys.GetRetryPipelineKey(optionsName));
 
@@ -67,7 +72,7 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
         CancellationToken cancellationToken
     )
     {
-        var message = BuildMessage(content, fid);
+        var message = BuildMessage(content, fid, _timeProvider.GetUtcNow());
 
         try
         {
@@ -100,7 +105,7 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
         CancellationToken cancellationToken
     )
     {
-        var message = BuildMulticastMessage(content, fids);
+        var message = BuildMulticastMessage(content, fids, _timeProvider.GetUtcNow());
 
         BatchResponse batchResponse;
 
@@ -161,39 +166,101 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
         return results;
     }
 
-    internal static Message BuildMessage(FcmMessageContent content, string fid)
+    internal static Message BuildMessage(FcmMessageContent content, string fid, DateTimeOffset now)
     {
         return new Message
         {
             Fid = fid,
             Data = content.Data,
-            Notification = new Notification { Title = content.Title, Body = content.Body },
-            Android = new AndroidConfig { Priority = Priority.High, CollapseKey = content.CollapseKey },
-            Apns = _BuildApnsConfig(content),
+            Notification = _BuildNotification(content),
+            Android = _BuildAndroidConfig(content),
+            Apns = _BuildApnsConfig(content, now),
         };
     }
 
-    internal static MulticastMessage BuildMulticastMessage(FcmMessageContent content, IReadOnlyList<string> fids)
+    internal static MulticastMessage BuildMulticastMessage(
+        FcmMessageContent content,
+        IReadOnlyList<string> fids,
+        DateTimeOffset now
+    )
     {
         return new MulticastMessage
         {
             Fids = [.. fids],
             Data = content.Data,
-            Notification = new Notification { Title = content.Title, Body = content.Body },
-            Android = new AndroidConfig { Priority = Priority.High, CollapseKey = content.CollapseKey },
-            Apns = _BuildApnsConfig(content),
+            Notification = _BuildNotification(content),
+            Android = _BuildAndroidConfig(content),
+            Apns = _BuildApnsConfig(content, now),
         };
     }
 
-    private static ApnsConfig _BuildApnsConfig(FcmMessageContent content)
+    private static Notification? _BuildNotification(FcmMessageContent content)
     {
-        return new ApnsConfig
+        // Without a notification block FCM delivers a data message, which the app handles in the background.
+        return content.IsDataOnly ? null : new Notification { Title = content.Title, Body = content.Body };
+    }
+
+    private static AndroidConfig _BuildAndroidConfig(FcmMessageContent content)
+    {
+        // Android cannot clear a badge, so a zero count means "not set" there, as it does in FCM itself.
+        var count = content.Badge is > 0 ? content.Badge : null;
+
+        return new AndroidConfig
         {
-            Aps = new Aps { Badge = _ApnsBadge },
-            Headers = content.CollapseKey is null
-                ? null
-                : new Dictionary<string, string>(StringComparer.Ordinal) { ["apns-collapse-id"] = content.CollapseKey },
+            // High stays the default so callers that never set a priority keep today's delivery.
+            Priority = content.Priority is PushNotificationPriority.Normal ? Priority.Normal : Priority.High,
+            CollapseKey = content.CollapseKey,
+            TimeToLive = content.TimeToLive,
+            Notification =
+                count is null && content.Sound is null
+                    ? null
+                    : new AndroidNotification { NotificationCount = count, Sound = content.Sound },
         };
+    }
+
+    private static ApnsConfig _BuildApnsConfig(FcmMessageContent content, DateTimeOffset now)
+    {
+        var headers = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        if (content.CollapseKey is not null)
+        {
+            headers["apns-collapse-id"] = content.CollapseKey;
+        }
+
+        if (content.IsDataOnly)
+        {
+            headers["apns-priority"] = _ApnsBackgroundPriority;
+        }
+        else if (content.Priority is { } priority)
+        {
+            headers["apns-priority"] = priority is PushNotificationPriority.High ? "10" : "5";
+        }
+
+        if (content.TimeToLive is { } timeToLive)
+        {
+            // APNs reads 0 as "attempt once, do not store", so a zero lifetime must not become the current time.
+            headers["apns-expiration"] =
+                timeToLive == TimeSpan.Zero
+                    ? "0"
+                    : (now + timeToLive).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
+        }
+
+        return new ApnsConfig { Aps = _BuildAps(content), Headers = headers.Count == 0 ? null : headers };
+    }
+
+    private static Aps? _BuildAps(FcmMessageContent content)
+    {
+        if (content.IsDataOnly)
+        {
+            return new Aps { ContentAvailable = true };
+        }
+
+        if (content.Badge is null && content.Sound is null)
+        {
+            return null;
+        }
+
+        return new Aps { Badge = content.Badge, Sound = content.Sound };
     }
 
     private static string _Describe(FirebaseMessagingException? exception)

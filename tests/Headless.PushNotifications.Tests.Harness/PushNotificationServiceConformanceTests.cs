@@ -100,6 +100,51 @@ public abstract class PushNotificationServiceConformanceTests : TestBase
         await act.Should().ThrowAsync<ArgumentException>();
     }
 
+    public virtual Task should_reject_a_title_without_a_body()
+    {
+        return _ShouldReject(new PushNotificationRequest { Title = "Order shipped" });
+    }
+
+    public virtual Task should_reject_a_body_without_a_title()
+    {
+        return _ShouldReject(new PushNotificationRequest { Body = "Your order is on its way." });
+    }
+
+    public virtual Task should_reject_a_request_without_title_body_or_data()
+    {
+        return _ShouldReject(new PushNotificationRequest());
+    }
+
+    public virtual Task should_reject_a_data_only_request_with_a_badge()
+    {
+        return _ShouldReject(PushNotificationRequests.DataOnly() with { Badge = 1 });
+    }
+
+    public virtual Task should_reject_a_data_only_request_with_a_sound()
+    {
+        return _ShouldReject(PushNotificationRequests.DataOnly() with { Sound = "default" });
+    }
+
+    public virtual Task should_reject_a_negative_badge()
+    {
+        return _ShouldReject(PushNotificationRequests.Valid() with { Badge = -1 });
+    }
+
+    public virtual Task should_reject_a_negative_time_to_live()
+    {
+        return _ShouldReject(PushNotificationRequests.Valid() with { TimeToLive = TimeSpan.FromSeconds(-1) });
+    }
+
+    public virtual async Task should_succeed_for_a_data_only_request()
+    {
+        var service = CreateAcceptingService();
+
+        var response = await service.SendToDeviceAsync("device-1", PushNotificationRequests.DataOnly(), AbortToken);
+
+        response.IsSucceeded().Should().BeTrue();
+        response.ClientIdentifier.Should().Be("device-1");
+    }
+
     public virtual async Task should_reject_an_empty_multicast_list()
     {
         var service = CreateAcceptingService();
@@ -157,5 +202,16 @@ public abstract class PushNotificationServiceConformanceTests : TestBase
         var act = async () => await service.SendToDeviceAsync("device-1", PushNotificationRequests.Valid(), cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    private async Task _ShouldReject(PushNotificationRequest request)
+    {
+        var service = CreateAcceptingService();
+
+        var single = async () => await service.SendToDeviceAsync("device-1", request, AbortToken);
+        var multicast = async () => await service.SendMulticastAsync(["device-1"], request, AbortToken);
+
+        await single.Should().ThrowAsync<ArgumentException>();
+        await multicast.Should().ThrowAsync<ArgumentException>();
     }
 }

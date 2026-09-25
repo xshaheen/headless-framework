@@ -30,7 +30,7 @@ internal sealed class FcmPushNotificationService(IFcmMessageSender sender) : IPu
         Argument.IsNotNull(request);
         _ValidateContent(request);
 
-        var content = new FcmMessageContent(request.Title, request.Body, request.Data, request.CollapseKey);
+        var content = FcmMessageContent.From(request);
 
         return await sender.SendAsync(content, clientIdentifier, cancellationToken).ConfigureAwait(false);
     }
@@ -45,7 +45,7 @@ internal sealed class FcmPushNotificationService(IFcmMessageSender sender) : IPu
         Argument.IsNotNull(request);
         _ValidateContent(request);
 
-        var content = new FcmMessageContent(request.Title, request.Body, request.Data, request.CollapseKey);
+        var content = FcmMessageContent.From(request);
         var responses = new List<PushNotificationResponse>(clientIdentifiers.Count);
         var successCount = 0;
         var failureCount = 0;
@@ -79,10 +79,15 @@ internal sealed class FcmPushNotificationService(IFcmMessageSender sender) : IPu
 
     private static void _ValidateContent(PushNotificationRequest request)
     {
-        Argument.IsNotNullOrWhiteSpace(request.Title);
-        Argument.IsNotNullOrWhiteSpace(request.Body);
-        Argument.IsLessThanOrEqualTo(request.Title.Length, _MaxTitleLength);
-        Argument.IsLessThanOrEqualTo(request.Body.Length, _MaxBodyLength);
+        PushNotificationRequestValidation.Validate(request);
+
+        // Both are set together or not at all once the shared rules pass.
+        if (request is { Title: { } title, Body: { } body })
+        {
+            Argument.IsLessThanOrEqualTo(title.Length, _MaxTitleLength);
+            Argument.IsLessThanOrEqualTo(body.Length, _MaxBodyLength);
+        }
+
         _EnsureDataAllowed(request.Data);
 
         if (request.CollapseKey is not null)
