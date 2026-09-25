@@ -103,10 +103,13 @@ When raising cost, prefer memory for Argon2id. Measure on production hardware: a
 
 At host start, `SecretHasherStartupValidationService` makes two checks:
 
-1. It fails startup when the algorithm the builder selected has no registered implementation, which only a faulty custom `Use*` extension can cause. This check is not affected by `CostCheck.Mode`.
-2. It benchmarks the selected algorithm: one warm-up hash, then the median of three. It compares the median against `CostCheck.MinimumDuration` (default 5 ms) and `CostCheck.MaximumDuration` (default 1 s). A result out of range logs a warning (`Warn`, the default), fails startup (`Strict`), or is not measured at all (`Off`).
+1. It fails startup when the algorithm the builder selected has no registered implementation, which only a faulty custom `Use*` extension can cause. This check is cheap, runs in `StartingAsync` before other hosted services, and is not affected by `CostCheck.Mode`.
+2. It benchmarks the selected algorithm: one warm-up hash, then the median of three. It compares the median against `CostCheck.MinimumDuration` (default 5 ms) and `CostCheck.MaximumDuration` (default 1 s). `CostCheck.Mode` decides what happens:
+    - `Warn` (the default): the benchmark runs in the background once the host has started, so it never delays startup, and an out-of-range result logs a warning. Stopping the host cancels it between samples.
+    - `Strict`: the benchmark runs in `StartingAsync` and an out-of-range result fails startup. Every instance then waits for four hashes before it serves traffic, and one instance on a busy node can fail its start although the parameters are fine, so prefer `Strict` for a staging or CI smoke check over every production replica.
+    - `Off`: nothing is measured.
 
-In tests, set low costs and `CostCheck.Mode = SecretHasherCostCheckMode.Off`. The default `Warn` mode would log a warning for test-grade parameters.
+The benchmark runs on every instance, because each instance verifies on its own hardware. The mode does not depend on the environment; set it per environment through configuration, for example `Headless:SecretHasher:CostCheck:Mode` = `Off` in `appsettings.Testing.json`. In tests, set low costs and `CostCheck.Mode = SecretHasherCostCheckMode.Off`: the default `Warn` would log a warning for test-grade parameters.
 
 ---
 
@@ -251,7 +254,7 @@ FluentValidation checks every option type at startup (`ValidateOnStart`). The se
 ### Runtime behavior
 
 - Every service registers as a singleton.
-- `SecretHasherStartupValidationService` runs in `IHostedLifecycleService.StartingAsync`, before other hosted services start, and only once per host. [Tuning and the startup cost check](#tuning-and-the-startup-cost-check) covers what it checks.
+- `SecretHasherStartupValidationService` checks the registration in `IHostedLifecycleService.StartingAsync`, before other hosted services start, and only once per host. The cost benchmark runs there too under `Strict`, and in the background after startup under `Warn`. [Tuning and the startup cost check](#tuning-and-the-startup-cost-check) covers what it checks.
 
 ---
 

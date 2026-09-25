@@ -33,7 +33,7 @@ public sealed class SecretHasherCostCheckOptions
     /// <remarks>
     /// The default is the same in every environment. Test-grade parameters reaching production are exactly what this
     /// check exists to catch, so switching it off in production would silence its most valuable signal, and a warning
-    /// cannot block a rollout.
+    /// runs after startup, so it cannot delay or block a rollout.
     /// </remarks>
     public SecretHasherCostCheckMode Mode { get; set; } = SecretHasherCostCheckMode.Warn;
 
@@ -51,9 +51,15 @@ public enum SecretHasherCostCheckMode
     /// <summary>Skip the benchmark entirely.</summary>
     Off = 0,
 
-    /// <summary>Log a warning and continue starting.</summary>
+    /// <summary>
+    /// Benchmark in the background once the host has started, and log a warning for an out-of-range result. Startup
+    /// never waits for it.
+    /// </summary>
     Warn = 1,
 
-    /// <summary>Fail startup.</summary>
+    /// <summary>
+    /// Benchmark before any hosted service starts, and fail startup for an out-of-range result. Every instance waits
+    /// for the benchmark, and a busy node can fail a start with sound parameters, so prefer it for a staging or CI check.
+    /// </summary>
     Strict = 2,
 }

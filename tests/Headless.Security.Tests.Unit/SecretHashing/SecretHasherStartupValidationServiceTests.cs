@@ -54,7 +54,7 @@ public sealed class SecretHasherStartupValidationServiceTests
         );
 
         // when
-        await _Service(provider).StartingAsync(CancellationToken.None);
+        await _StartAsync(_Service(provider));
 
         // then
         logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Message.Contains("faster"));
@@ -85,7 +85,7 @@ public sealed class SecretHasherStartupValidationServiceTests
         await using var provider = _BuildProvider(o => o.CostCheck.Mode = mode, algorithm, logger);
 
         // when
-        var act = () => _Service(provider).StartingAsync(CancellationToken.None);
+        var act = () => _StartAsync(_Service(provider));
 
         // then
         if (mode == SecretHasherCostCheckMode.Strict)
@@ -119,12 +119,73 @@ public sealed class SecretHasherStartupValidationServiceTests
     }
 
     [Fact]
-    public async Task should_stop_the_benchmark_between_samples_when_startup_is_cancelled()
+    public async Task should_not_hash_before_the_host_has_started_in_warn_mode()
+    {
+        // given
+        var algorithm = new TimedAlgorithm();
+        await using var provider = _BuildProvider(o => o.CostCheck.Mode = SecretHasherCostCheckMode.Warn, algorithm);
+
+        // when
+        await _Service(provider).StartingAsync(CancellationToken.None);
+
+        // then
+        algorithm.HashCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_log_instead_of_throwing_when_the_background_benchmark_fails()
+    {
+        // given
+        var algorithm = new TimedAlgorithm { Failure = new InvalidOperationException("allocation failed") };
+        var logger = new RecordingLoggerProvider();
+        await using var provider = _BuildProvider(
+            o => o.CostCheck.Mode = SecretHasherCostCheckMode.Warn,
+            algorithm,
+            logger
+        );
+
+        // when
+        var act = () => _StartAsync(_Service(provider));
+
+        // then
+        await act.Should().NotThrowAsync();
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Message.Contains("could not hash"));
+    }
+
+    [Fact]
+    public async Task should_stop_the_background_benchmark_between_samples_when_the_host_stops()
+    {
+        // given — the host starts stopping while the warm-up hash is running.
+        SecretHasherStartupValidationService? sut = null;
+        Task? stopping = null;
+        var algorithm = new TimedAlgorithm
+        {
+            AfterHash = () => stopping ??= sut!.StoppingAsync(CancellationToken.None),
+        };
+        var logger = new RecordingLoggerProvider();
+        await using var provider = _BuildProvider(
+            o => o.CostCheck.Mode = SecretHasherCostCheckMode.Warn,
+            algorithm,
+            logger
+        );
+        sut = _Service(provider);
+
+        // when
+        await _StartAsync(sut);
+        await stopping!;
+
+        // then
+        algorithm.HashCalls.Should().Be(1);
+        logger.Entries.Should().NotContain(e => e.Level >= LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task should_stop_the_strict_benchmark_between_samples_when_startup_is_cancelled()
     {
         // given — startup is cancelled while the warm-up hash is running.
         using var startup = new CancellationTokenSource();
         var algorithm = new TimedAlgorithm { AfterHash = startup.Cancel };
-        await using var provider = _BuildProvider(o => o.CostCheck.Mode = SecretHasherCostCheckMode.Warn, algorithm);
+        await using var provider = _BuildProvider(o => o.CostCheck.Mode = SecretHasherCostCheckMode.Strict, algorithm);
 
         // when
         var act = () => _Service(provider).StartingAsync(startup.Token);
@@ -143,8 +204,8 @@ public sealed class SecretHasherStartupValidationServiceTests
         var sut = _Service(provider);
 
         // when
-        await sut.StartingAsync(CancellationToken.None);
-        await sut.StartingAsync(CancellationToken.None);
+        await _StartAsync(sut);
+        await _StartAsync(sut);
 
         // then
         algorithm.HashCalls.Should().Be(4);
@@ -196,6 +257,13 @@ public sealed class SecretHasherStartupValidationServiceTests
         return services.BuildServiceProvider();
     }
 
+    private static async Task _StartAsync(SecretHasherStartupValidationService sut)
+    {
+        await sut.StartingAsync(CancellationToken.None);
+        await sut.StartedAsync(CancellationToken.None);
+        await sut.BackgroundCheck;
+    }
+
     private static SecretHasherStartupValidationService _Service(IServiceProvider provider)
     {
         return new SecretHasherStartupValidationService(
@@ -217,10 +285,17 @@ public sealed class SecretHasherStartupValidationServiceTests
 
         public Action? AfterHash { get; init; }
 
+        public Exception? Failure { get; init; }
+
         public string Id => "timed";
 
         public string Hash(ReadOnlySpan<byte> secret)
         {
+            if (Failure is not null)
+            {
+                throw Failure;
+            }
+
             var cost = Costs is { } costs ? costs[HashCalls] : Cost;
             HashCalls++;
             AfterHash?.Invoke();

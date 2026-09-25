@@ -253,6 +253,20 @@ The only deltas from shipping code: `DiagnosticProbeMode` becomes `HeadlessValid
 
 So the tier taxonomy classifies by *cost/IO*, but the env-default is ultimately a function of **whether the check is correctness-adjacent**. Tier-2 gates whose signal has prod value (outbox atomicity here) may legitimately run `Warn`-everywhere; reserve `Off`-in-prod for purely dev/CI diagnostics. Do not "correct" this gate to `Off`-in-prod to match the generic Tier-2 rule.
 
+### Split a gate by tier, and run a Tier-2 `Warn` after startup (real, `SecretHasherStartupValidationService.cs`)
+
+The secret-hasher gate holds one check of each tier, so each tier follows its own rule:
+
+- **Registration (Tier-1).** The selected algorithm id must have a registered `ISecretHashAlgorithm`. It is an in-memory lookup, runs in `StartingAsync`, always throws, and has no switch; `CostCheck.Mode` does not govern it.
+- **Cost benchmark (Tier-2 by latency, not I/O).** One warm-up plus three timed hashes: CPU-bound, but up to four times the configured hash cost on the startup path. The mode is `SecretHasherCostCheckMode { Off, Warn, Strict }`.
+
+Two choices differ from the generic Tier-2 rule:
+
+- **`Warn` in every environment, no environment default.** Test-grade cost parameters reaching production are exactly what the benchmark catches, so its signal is production-relevant, which is the same argument as the `CommitInterceptorStartupGate` exception above. Consumers switch it off per environment through configuration (`Headless:SecretHasher:CostCheck:Mode`).
+- **`Warn` runs in the background from `StartedAsync`.** A warning cannot justify making every instance wait, so only `Strict`, which asks for a gate, measures in `StartingAsync`. The background task captures a `CancellationTokenSource` that `StoppingAsync` cancels and then awaits, it checks cancellation between samples, and it logs its own failures instead of faulting, because nothing else observes it. This removes both Tier-2 production hazards for the default mode: no startup latency, and no transient-slowness start failure.
+
+Use this shape for any diagnostic whose check needs no ordering guarantee: `Strict` blocks in `StartingAsync`, `Warn` measures after startup.
+
 ## Related
 
 - [`best-practices/storage-initializer-lifecycle-correctness.md`](../best-practices/storage-initializer-lifecycle-correctness.md) — concrete Tier-1 correctness-gate instances (the EF `*ValidationStartupGate` files) and the fail-closed-on-misconfig rationale. **Primary sibling.**
