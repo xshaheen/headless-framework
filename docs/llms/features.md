@@ -129,7 +129,8 @@ Defines the unified interface for feature management and feature flags across di
 - `FeatureGroupDefinition` — organizes related `FeatureDefinition` instances; supports `GetFlatFeatures()` for depth-first enumeration; also implements `ICanAddChildFeature`
 - `ICanAddChildFeature` — shared fluent contract (`AddChild(...)`) implemented by both `FeatureGroupDefinition` and `FeatureDefinition` so top-level and nested features build the same way (renamed from `ICanCreateChildFeature`)
 - `IFeatureDefinitionContext` — passed to each provider's `Define`; exposes `AddGroup(name, displayName)`, `GetGroupOrDefault(name)`, and `RemoveGroup(name)`. Groups are created by name — there is no instance-taking `AddGroup(FeatureGroupDefinition)` overload (the group ctor is internal, so consumers cannot construct one)
-- `FeatureValue` — record returned by `GetAsync`/`GetAllAsync` carrying the resolved string value and the `FeatureValueProvider` that supplied it; bulk reads (`GetAllAsync`, `GetAllForTenantAsync`, `GetAllForEditionAsync`, `GetAllDefaultAsync`) return `IReadOnlyList<FeatureValue>`
+- `FeatureValue` — record returned by `GetAsync`/`GetAllAsync` carrying the resolved string value and the `FeatureValueProvider` that supplied it; provider-scoped bulk reads (`GetAllAsync(providerName, …)`, `GetAllForTenantAsync`, `GetAllForEditionAsync`, `GetAllDefaultAsync`) return `IReadOnlyList<FeatureValue>`
+- `IFeatureManager.GetAllAsync(IReadOnlySet<string> featureNames)` — resolves a named set through the full provider chain in one call, exactly as `GetAsync(name)` resolves one; returns a `Dictionary<string, FeatureValue>` where a feature with no value maps to a `FeatureValue` whose `Value` is `null`, and undefined names are omitted
 - `FeatureValueProviderNames` — constants `Tenant`, `Edition`, `DefaultValue` for targeting built-in providers
 - Extension methods on `IFeatureManager`: `IsEnabledAsync`, `GetAsync<T>`, `EnsureEnabledAsync`, `GrantAsync`, `RevokeAsync`
 - Scoped extension methods: `GetForTenantAsync`, `SetForTenantAsync`, `GrantToTenantAsync`, `RevokeFromTenantAsync`, `DeleteForTenantAsync` (tenant); equivalent `*ForEditionAsync` / `*ToEditionAsync` set (edition); `GetDefaultAsync`, `GetAllDefaultAsync` (default provider)
@@ -225,8 +226,11 @@ Core implementation of feature management with caching, value providers, and def
 - `HeadlessFeaturesSetupBuilder` — fluent builder returned to `AddHeadlessFeatures`; exposes `ConfigureManagement`, `ConfigureStorage`, and `RegisterExtension`
 - `services.AddFeatureDefinitionProvider<T>()` — registers a custom `IFeatureDefinitionProvider`
 - `services.AddFeatureValueProvider<T>()` — registers a custom `IFeatureValueReadProvider` (idempotent by type)
+- `IClientFeaturesConfigBuilder` (`Headless.Features.ClientConfig`) — builds the features section of an application's client config: `BuildAsync(ClientConfigContext, …)` returns `ClientFeaturesConfig.Values`, the effective value of every feature whose definition is `IsVisibleToClients`, keyed by name. Headless ships no endpoint; the application composes this section with the authorization and settings sections into its own response (see the client-config recipe in `docs/llms/permissions.md`)
 
 ### Design constraints
+
+- `IClientFeaturesConfigBuilder` resolves for the principal and tenant in its `ClientConfigContext`, not the ambient ones: it switches `ICurrentPrincipalAccessor` and `ICurrentTenant` to the context for the duration of the build and restores them afterwards. Pass `TenantId: null` for the host. This is what makes it safe inside a login or token-refresh response, where the newly issued principal is not yet ambient.
 
 - Value providers are registered with the last-added provider having the highest resolution priority. The built-in order is `DefaultValue` → `Edition` → `Tenant` (Tenant wins). Custom providers added via `AddFeatureValueProvider<T>()` are appended after `Tenant` and therefore have the highest priority. This matters when writing custom providers that must override built-in resolution.
 - `TenantFeatureValueProvider` and `EditionFeatureValueProvider` resolve their store key as `providerKey ?? ambient` — an explicit key (e.g. `GetForTenantAsync(name, tenantId)`) always wins, and a `null` key falls back to `ICurrentTenant.Id` / the principal's edition claim. The same rule applies to reads and writes, so a value written for one tenant is read back for that tenant only.
@@ -316,7 +320,7 @@ services.AddHeadlessFeatures(setup =>
 
 ### Runtime behavior
 
-- Registers `IFeatureManager` as transient
+- Registers `IFeatureManager` and `IClientFeaturesConfigBuilder` as transient
 - Registers `IStaticFeatureDefinitionStore`, `IDynamicFeatureDefinitionStore`, `IFeatureDefinitionManager`, `IFeatureValueStore`, `IFeatureValueProviderManager` as singletons
 - Registers `DefaultValueFeatureValueProvider`, `EditionFeatureValueProvider`, `TenantFeatureValueProvider` as singletons
 - Starts `FeaturesInitializationBackgroundService` as a hosted service

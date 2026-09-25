@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Checks;
+using Headless.Features.ClientConfig;
 using Headless.Features.Definitions;
 using Headless.Features.Filters;
 using Headless.Features.Models;
@@ -189,6 +190,7 @@ public static class SetupFeatures
 
         services.TryAddSingleton<IFeatureValueProviderManager, FeatureValueProviderManager>();
         services.TryAddTransient<IFeatureManager, FeatureManager>();
+        services.TryAddTransient<IClientFeaturesConfigBuilder, ClientFeaturesConfigBuilder>();
 
         services.AddSingleton<IMethodInvocationFeatureCheckerService, MethodInvocationFeatureCheckerService>();
 

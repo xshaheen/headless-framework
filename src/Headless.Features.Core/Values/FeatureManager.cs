@@ -46,6 +46,39 @@ public sealed class FeatureManager(
     }
 
     /// <inheritdoc/>
+    public async Task<Dictionary<string, FeatureValue>> GetAllAsync(
+        IReadOnlySet<string> featureNames,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(featureNames);
+
+        var result = new Dictionary<string, FeatureValue>(featureNames.Count, StringComparer.Ordinal);
+
+        if (featureNames.Count == 0)
+        {
+            return result;
+        }
+
+        // One definition read for the whole set instead of a FindAsync per name.
+        var definitions = await definitionManager.GetFeaturesAsync(cancellationToken).ConfigureAwait(false);
+        var providers = valueProviderManager.ValueProviders;
+
+        foreach (var definition in definitions)
+        {
+            if (!featureNames.Contains(definition.Name) || result.ContainsKey(definition.Name))
+            {
+                continue;
+            }
+
+            result[definition.Name] = await _ResolveAsync(definition, providers, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return result;
+    }
+
+    /// <inheritdoc/>
     /// <exception cref="ArgumentNullException"><paramref name="providerName"/> is <see langword="null"/>.</exception>
     public async Task<IReadOnlyList<FeatureValue>> GetAllAsync(
         string providerName,
@@ -322,6 +355,27 @@ public sealed class FeatureManager(
         }
 
         return new(name, Value: null, Provider: null);
+    }
+
+    private static async Task<FeatureValue> _ResolveAsync(
+        FeatureDefinition definition,
+        IReadOnlyList<IFeatureValueReadProvider> providers,
+        CancellationToken cancellationToken
+    )
+    {
+        foreach (var provider in providers)
+        {
+            var value = await provider
+                .GetOrDefaultAsync(definition, providerKey: null, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (value is not null)
+            {
+                return new(definition.Name, value, new(provider.Name, Key: null));
+            }
+        }
+
+        return new(definition.Name, Value: null, Provider: null);
     }
 }
 
