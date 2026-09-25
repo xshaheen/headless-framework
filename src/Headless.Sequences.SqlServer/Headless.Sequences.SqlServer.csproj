@@ -1,0 +1,19 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>SQL Server provider for Headless tenant-scoped sequences: atomic update-or-insert counters for fast and gap-free numbering.</Description>
+    <PackageTags>headless;sequences;numbering;sql-server;dotnet</PackageTags>
+    <RootNamespace>Headless.Sequences.SqlServer</RootNamespace>
+    <NoWarn>$(NoWarn);CA2100</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.Sequences.Core\Headless.Sequences.Core.csproj" />
+    <ProjectReference Include="..\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />
+  </ItemGroup>
+</Project>
