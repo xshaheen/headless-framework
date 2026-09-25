@@ -37,61 +37,61 @@ internal sealed record ApnsRequestHeaders(
         var (pushType, topic, priority) = notification switch
         {
             ApnsAlertNotification alert when options.PushType == ApnsPushType.Voip => (
-                "voip",
+                ApnsPushTypes.Voip,
                 $"{options.BundleId}.voip",
                 alert.Priority ?? options.Priority
             ),
-            ApnsAlertNotification alert => ("alert", options.BundleId, alert.Priority ?? options.Priority),
+            ApnsAlertNotification alert => (ApnsPushTypes.Alert, options.BundleId, alert.Priority ?? options.Priority),
             ApnsVoipDataNotification voipData when options.PushType == ApnsPushType.Voip => (
-                "voip",
+                ApnsPushTypes.Voip,
                 $"{options.BundleId}.voip",
                 voipData.Priority ?? options.Priority
             ),
             ApnsBackgroundNotification => _NotVoip(
                 options,
-                "background",
+                ApnsPushTypes.Background,
                 options.BundleId,
                 ApnsPriority.PowerConsiderate
             ),
             ApnsLiveActivityNotification liveActivity => _NotVoip(
                 options,
-                "liveactivity",
+                ApnsPushTypes.LiveActivity,
                 $"{options.BundleId}.push-type.liveactivity",
                 _LiveActivityPriority(liveActivity.Priority)
             ),
             ApnsLocationNotification location => _NotVoip(
                 options,
-                "location",
+                ApnsPushTypes.Location,
                 $"{options.BundleId}.location-query",
                 _NichePriority(location.Priority)
             ),
             ApnsPushToTalkNotification => _NotVoip(
                 options,
-                "pushtotalk",
+                ApnsPushTypes.PushToTalk,
                 $"{options.BundleId}.voip-ptt",
                 ApnsPriority.Immediate
             ),
             ApnsWidgetsNotification widgets => _NotVoip(
                 options,
-                "widgets",
+                ApnsPushTypes.Widgets,
                 $"{options.BundleId}.push-type.widgets",
                 _NichePriority(widgets.Priority)
             ),
             ApnsControlsNotification controls => _NotVoip(
                 options,
-                "controls",
+                ApnsPushTypes.Controls,
                 $"{options.BundleId}.push-type.controls",
                 _NichePriority(controls.Priority)
             ),
             ApnsComplicationNotification complication => _NotVoip(
                 options,
-                "complication",
+                ApnsPushTypes.Complication,
                 $"{options.BundleId}.complication",
                 _NichePriority(complication.Priority)
             ),
             ApnsFileProviderNotification fileProvider => _NotVoip(
                 options,
-                "fileprovider",
+                ApnsPushTypes.FileProvider,
                 $"{options.BundleId}.pushkit.fileprovider",
                 _NichePriority(fileProvider.Priority)
             ),

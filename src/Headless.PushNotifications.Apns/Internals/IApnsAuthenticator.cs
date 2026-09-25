@@ -81,11 +81,11 @@ internal sealed class ApnsCertificateAuthenticator : IApnsAuthenticator
     // state certificate support for controls, so it is refused conservatively.
     private static readonly FrozenSet<string> _TokenOnlyPushTypes = FrozenSet.Create(
         StringComparer.Ordinal,
-        "location",
-        "fileprovider",
-        "liveactivity",
-        "widgets",
-        "controls"
+        ApnsPushTypes.Location,
+        ApnsPushTypes.FileProvider,
+        ApnsPushTypes.LiveActivity,
+        ApnsPushTypes.Widgets,
+        ApnsPushTypes.Controls
     );
 
     public static ApnsCertificateAuthenticator Instance { get; } = new();

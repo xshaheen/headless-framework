@@ -20,8 +20,6 @@ internal static class ApnsPayloadWriter
     // overwrite it.
     private const string _ApsKey = "aps";
 
-    private const string _VoipPushType = "voip";
-
     /// <summary>
     /// Validates <paramref name="notification"/> for an instance configured with <paramref name="options"/> and
     /// returns its UTF-8 JSON payload with the request headers it decides.
@@ -87,7 +85,7 @@ internal static class ApnsPayloadWriter
             }
         }
 
-        var limit = string.Equals(headers.PushType, _VoipPushType, StringComparison.Ordinal)
+        var limit = string.Equals(headers.PushType, ApnsPushTypes.Voip, StringComparison.Ordinal)
             ? _MaxVoipPayloadBytes
             : _MaxAlertPayloadBytes;
 

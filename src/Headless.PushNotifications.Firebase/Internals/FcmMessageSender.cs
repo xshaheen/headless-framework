@@ -26,8 +26,8 @@ namespace Headless.PushNotifications.Firebase.Internals;
 /// </remarks>
 internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
 {
-    // Apple requires priority 5 for a background (content-available) push and rejects 10 for it.
-    private const string _ApnsBackgroundPriority = "5";
+    private const string _ApnsNormalPriority = "5";
+    private const string _ApnsHighPriority = "10";
 
     private readonly ILogger<FcmMessageSender> _logger;
     private readonly TimeProvider _timeProvider;
@@ -229,11 +229,13 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
 
         if (content.IsDataOnly)
         {
-            headers["apns-priority"] = _ApnsBackgroundPriority;
+            // Apple requires priority 5 for a background (content-available) push and rejects 10 for it.
+            headers["apns-priority"] = _ApnsNormalPriority;
         }
         else if (content.Priority is { } priority)
         {
-            headers["apns-priority"] = priority is PushNotificationPriority.High ? "10" : "5";
+            headers["apns-priority"] =
+                priority is PushNotificationPriority.High ? _ApnsHighPriority : _ApnsNormalPriority;
         }
 
         if (content.TimeToLive is { } timeToLive)
