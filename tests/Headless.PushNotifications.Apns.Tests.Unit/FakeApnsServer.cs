@@ -45,11 +45,16 @@ public sealed record FakeApnsRequest(
 /// Resets the stream after the request body was read instead of answering, which is how a connection lost after APNs
 /// accepted a notification looks to the client.
 /// </param>
+/// <param name="UniqueId">
+/// The <c>apns-unique-id</c> response header, which the APNs sandbox adds to identify the notification in its delivery
+/// log; omitted when <see langword="null"/>.
+/// </param>
 public sealed record FakeApnsReply(
     int Status,
     string? Reason = null,
     string? RawBody = null,
-    bool AbortAfterRead = false
+    bool AbortAfterRead = false,
+    string? UniqueId = null
 )
 {
     public static FakeApnsReply Ok { get; } = new(200);
@@ -268,6 +273,11 @@ public sealed class FakeApnsServer : IAsyncDisposable
             if (headers.TryGetValue("apns-id", out var apnsId))
             {
                 context.Response.Headers["apns-id"] = apnsId;
+            }
+
+            if (reply.UniqueId is not null)
+            {
+                context.Response.Headers["apns-unique-id"] = reply.UniqueId;
             }
 
             if (reply.RawBody is not null)

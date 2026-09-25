@@ -11,12 +11,19 @@ namespace Headless.PushNotifications.Apns;
 
 /// <summary>
 /// Apple Push Notification service (APNs) push notification service. Sends one HTTP/2 request per device token
-/// with a cached ES256 provider token and maps each APNs answer onto a <see cref="PushNotificationResponse"/>.
+/// with a cached ES256 provider token and maps each APNs answer onto an <see cref="ApnsSendResult"/>.
 /// </summary>
 /// <remarks>
+/// <para>
+/// One instance serves both <see cref="IApnsPushNotificationService"/> and <see cref="IPushNotificationService"/>. The
+/// shared methods convert the request into an alert, background, or VoIP notification, send it through the typed
+/// path, and return each result's <see cref="ApnsSendResult.Response"/>.
+/// </para>
+/// <para>
 /// Per-token outcomes never throw: rejections, transport faults left after retries, and resilience rejections
 /// such as an open circuit all become <see cref="PushNotificationResponseStatus.Failure"/>, so a multicast keeps
 /// every result it already has. Only invalid input and caller cancellation throw.
+/// </para>
 /// </remarks>
 internal sealed class ApnsPushNotificationService(
     IHttpClientFactory httpClientFactory,
@@ -24,10 +31,54 @@ internal sealed class ApnsPushNotificationService(
     ApnsTokenSource tokenSource,
     IOptionsMonitor<ApnsOptions> optionsMonitor,
     string? optionsName,
+    TimeProvider timeProvider,
     ILogger<ApnsPushNotificationService> logger
-) : IPushNotificationService
+) : IApnsPushNotificationService, IPushNotificationService
 {
+    private const string _UniqueIdHeader = "apns-unique-id";
+
     private static readonly MediaTypeHeaderValue _JsonContentType = new("application/json");
+
+    #region Typed
+
+    public async ValueTask<ApnsSendResult> SendAsync(
+        string deviceToken,
+        ApnsNotification notification,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrWhiteSpace(deviceToken);
+
+        var options = optionsMonitor.Get(optionsName);
+        var prepared = ApnsPayloadWriter.Prepare(notification, options, timeProvider);
+
+        return await _SendOneAsync(options, deviceToken, prepared, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<ApnsBatchSendResult> SendMulticastAsync(
+        IReadOnlyList<string> deviceTokens,
+        ApnsNotification notification,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _EnsureTokens(deviceTokens, nameof(deviceTokens));
+
+        var options = optionsMonitor.Get(optionsName);
+        var prepared = ApnsPayloadWriter.Prepare(notification, options, timeProvider);
+        var results = await _SendManyAsync(options, deviceTokens, prepared, cancellationToken).ConfigureAwait(false);
+        var successCount = results.Count(static r => r.Response.IsSucceeded());
+
+        return new ApnsBatchSendResult
+        {
+            SuccessCount = successCount,
+            FailureCount = results.Length - successCount,
+            Results = results,
+        };
+    }
+
+    #endregion
+
+    #region Shared
 
     public async ValueTask<PushNotificationResponse> SendToDeviceAsync(
         string clientIdentifier,
@@ -38,11 +89,10 @@ internal sealed class ApnsPushNotificationService(
         Argument.IsNotNullOrWhiteSpace(clientIdentifier);
 
         var options = optionsMonitor.Get(optionsName);
-        var payload = ApnsPayloadWriter.Write(request, options.PushType);
-        var client = httpClientFactory.CreateClient(httpClientName);
+        var prepared = ApnsPayloadWriter.Prepare(_Convert(request, options), options, timeProvider);
+        var result = await _SendOneAsync(options, clientIdentifier, prepared, cancellationToken).ConfigureAwait(false);
 
-        return await _SendAsync(client, options, clientIdentifier, payload, request.CollapseKey, cancellationToken)
-            .ConfigureAwait(false);
+        return result.Response;
     }
 
     public async ValueTask<BatchPushNotificationResponse> SendMulticastAsync(
@@ -51,48 +101,13 @@ internal sealed class ApnsPushNotificationService(
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(clientIdentifiers);
-
-        // Every token is checked before the first send, so one bad entry cannot cause a partial delivery.
-        for (var i = 0; i < clientIdentifiers.Count; i++)
-        {
-            if (string.IsNullOrWhiteSpace(clientIdentifiers[i]))
-            {
-                throw new ArgumentException(
-                    $"The client identifier at index {i.ToString(CultureInfo.InvariantCulture)} is null, empty, or white space.",
-                    nameof(clientIdentifiers)
-                );
-            }
-        }
+        _EnsureTokens(clientIdentifiers, nameof(clientIdentifiers));
 
         var options = optionsMonitor.Get(optionsName);
-        var payload = ApnsPayloadWriter.Write(request, options.PushType);
-        var client = httpClientFactory.CreateClient(httpClientName);
-        var responses = new PushNotificationResponse[clientIdentifiers.Count];
-
-        // Each send writes its own slot, which keeps input order without sorting afterwards.
-        await Parallel
-            .ForAsync(
-                0,
-                clientIdentifiers.Count,
-                new ParallelOptions
-                {
-                    MaxDegreeOfParallelism = options.MaxConcurrency,
-                    CancellationToken = cancellationToken,
-                },
-                async (index, token) =>
-                    responses[index] = await _SendAsync(
-                            client,
-                            options,
-                            clientIdentifiers[index],
-                            payload,
-                            request.CollapseKey,
-                            token
-                        )
-                        .ConfigureAwait(false)
-            )
+        var prepared = ApnsPayloadWriter.Prepare(_Convert(request, options), options, timeProvider);
+        var results = await _SendManyAsync(options, clientIdentifiers, prepared, cancellationToken)
             .ConfigureAwait(false);
-
+        var responses = results.Select(static r => r.Response).ToArray();
         var successCount = responses.Count(static r => r.IsSucceeded());
 
         return new BatchPushNotificationResponse
@@ -103,12 +118,110 @@ internal sealed class ApnsPushNotificationService(
         };
     }
 
-    private async ValueTask<PushNotificationResponse> _SendAsync(
+    /// <summary>Converts a validated shared request into the APNs notification it becomes on this instance.</summary>
+    private ApnsNotification _Convert(PushNotificationRequest request, ApnsOptions options)
+    {
+        PushNotificationRequestValidation.Validate(request);
+
+        var expiration = request.TimeToLive switch
+        {
+            null => null,
+            { } ttl when ttl == TimeSpan.Zero => ApnsExpiration.DeliverOnce,
+            { } ttl => ApnsExpiration.At(timeProvider.GetUtcNow() + ttl),
+        };
+
+        ApnsPriority? priority = request.Priority switch
+        {
+            PushNotificationPriority.High => ApnsPriority.Immediate,
+            PushNotificationPriority.Normal => ApnsPriority.PowerConsiderate,
+            _ => null,
+        };
+
+        if (!PushNotificationRequestValidation.IsDataOnly(request))
+        {
+            return new ApnsAlertNotification
+            {
+                Alert = new ApnsAlert { Title = request.Title, Body = request.Body },
+                Badge = request.Badge,
+                Sound = request.Sound is null ? null : ApnsSound.Named(request.Sound),
+                Data = request.Data,
+                Priority = priority,
+                Expiration = expiration,
+                CollapseId = request.CollapseKey,
+            };
+        }
+
+        // PushKit never receives a background push, so a VoIP instance keeps a data-only request a VoIP push.
+        if (options.PushType == ApnsPushType.Voip)
+        {
+            return new ApnsVoipDataNotification
+            {
+                Data = request.Data,
+                Priority = priority,
+                Expiration = expiration,
+                CollapseId = request.CollapseKey,
+            };
+        }
+
+        // Apple requires priority 5 for background pushes, so the request's priority does not apply here.
+        return new ApnsBackgroundNotification
+        {
+            Data = request.Data,
+            Expiration = expiration,
+            CollapseId = request.CollapseKey,
+        };
+    }
+
+    #endregion
+
+    #region Sending
+
+    private async ValueTask<ApnsSendResult> _SendOneAsync(
+        ApnsOptions options,
+        string deviceToken,
+        ApnsPreparedNotification prepared,
+        CancellationToken cancellationToken
+    )
+    {
+        var client = httpClientFactory.CreateClient(httpClientName);
+
+        return await _SendAsync(client, options, deviceToken, prepared, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask<ApnsSendResult[]> _SendManyAsync(
+        ApnsOptions options,
+        IReadOnlyList<string> deviceTokens,
+        ApnsPreparedNotification prepared,
+        CancellationToken cancellationToken
+    )
+    {
+        var client = httpClientFactory.CreateClient(httpClientName);
+        var results = new ApnsSendResult[deviceTokens.Count];
+
+        // Each send writes its own slot, which keeps input order without sorting afterwards.
+        await Parallel
+            .ForAsync(
+                0,
+                deviceTokens.Count,
+                new ParallelOptions
+                {
+                    MaxDegreeOfParallelism = options.MaxConcurrency,
+                    CancellationToken = cancellationToken,
+                },
+                async (index, token) =>
+                    results[index] = await _SendAsync(client, options, deviceTokens[index], prepared, token)
+                        .ConfigureAwait(false)
+            )
+            .ConfigureAwait(false);
+
+        return results;
+    }
+
+    private async ValueTask<ApnsSendResult> _SendAsync(
         HttpClient client,
         ApnsOptions options,
         string deviceToken,
-        byte[] payload,
-        string? collapseKey,
+        ApnsPreparedNotification prepared,
         CancellationToken cancellationToken
     )
     {
@@ -121,21 +234,16 @@ internal sealed class ApnsPushNotificationService(
             _EnsureSecureEndpoint(client.BaseAddress);
 
             var token = await tokenSource.GetTokenAsync(options, cancellationToken).ConfigureAwait(false);
-            var (status, reason) = await _PostAsync(
-                    client,
-                    options,
-                    deviceToken,
-                    payload,
-                    collapseKey,
-                    apnsId,
-                    token.Value,
-                    cancellationToken
-                )
+            var answer = await _PostAsync(client, deviceToken, prepared, apnsId, token.Value, cancellationToken)
                 .ConfigureAwait(false);
 
             if (
-                status == HttpStatusCode.Forbidden
-                && string.Equals(reason, ApnsResponseMapper.ExpiredProviderTokenReason, StringComparison.Ordinal)
+                answer.Status == HttpStatusCode.Forbidden
+                && string.Equals(
+                    answer.Error.Reason,
+                    ApnsResponseMapper.ExpiredProviderTokenReason,
+                    StringComparison.Ordinal
+                )
             )
             {
                 // One retry only: the source re-mints once per rejected generation (and never sooner than Apple's
@@ -146,37 +254,37 @@ internal sealed class ApnsPushNotificationService(
 
                 logger.LogProviderTokenExpired(token.Generation, retryToken.Generation);
 
-                (status, reason) = await _PostAsync(
-                        client,
-                        options,
-                        deviceToken,
-                        payload,
-                        collapseKey,
-                        apnsId,
-                        retryToken.Value,
-                        cancellationToken
-                    )
+                answer = await _PostAsync(client, deviceToken, prepared, apnsId, retryToken.Value, cancellationToken)
                     .ConfigureAwait(false);
             }
 
-            var response = ApnsResponseMapper.Map(
+            var result = ApnsResponseMapper.CreateResult(
                 deviceToken,
                 apnsId,
-                status,
-                reason,
+                answer.Status,
+                answer.Error,
+                answer.UniqueId,
                 options.TreatBadDeviceTokenAsUnregistered
             );
 
-            if (response.IsUnregistered() && logger.IsEnabled(LogLevel.Information))
+            if (result.Response.IsUnregistered() && logger.IsEnabled(LogLevel.Information))
             {
-                logger.LogDeviceTokenUnregistered((int)status, reason ?? "no reason", _Mask(deviceToken));
+                logger.LogDeviceTokenUnregistered(
+                    (int)answer.Status,
+                    answer.Error.Reason ?? "no reason",
+                    _Mask(deviceToken)
+                );
             }
-            else if (response.IsFailed() && logger.IsEnabled(LogLevel.Warning))
+            else if (result.Response.IsFailed() && logger.IsEnabled(LogLevel.Warning))
             {
-                logger.LogNotificationRejected((int)status, reason ?? "no reason", _Mask(deviceToken));
+                logger.LogNotificationRejected(
+                    (int)answer.Status,
+                    answer.Error.Reason ?? "no reason",
+                    _Mask(deviceToken)
+                );
             }
 
-            return response;
+            return result;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -192,16 +300,17 @@ internal sealed class ApnsPushNotificationService(
                 logger.LogSendFailed(e, _Mask(deviceToken));
             }
 
-            return PushNotificationResponse.Failed(deviceToken, ApnsResponseMapper.DescribeException(e));
+            return new ApnsSendResult
+            {
+                Response = PushNotificationResponse.Failed(deviceToken, ApnsResponseMapper.DescribeException(e)),
+            };
         }
     }
 
-    private static async ValueTask<(HttpStatusCode Status, string? Reason)> _PostAsync(
+    private static async ValueTask<ApnsAnswer> _PostAsync(
         HttpClient client,
-        ApnsOptions options,
         string deviceToken,
-        byte[] payload,
-        string? collapseKey,
+        ApnsPreparedNotification prepared,
         string apnsId,
         string providerToken,
         CancellationToken cancellationToken
@@ -217,37 +326,46 @@ internal sealed class ApnsPushNotificationService(
         message.VersionPolicy = HttpVersionPolicy.RequestVersionExact;
 
         message.Headers.Authorization = new AuthenticationHeaderValue("bearer", providerToken);
-        message.Headers.TryAddWithoutValidation(
-            "apns-topic",
-            options.PushType == ApnsPushType.Voip ? $"{options.BundleId}.voip" : options.BundleId
-        );
-        message.Headers.TryAddWithoutValidation(
-            "apns-push-type",
-            options.PushType == ApnsPushType.Voip ? "voip" : "alert"
-        );
-        message.Headers.TryAddWithoutValidation(
-            "apns-priority",
-            ((int)options.Priority).ToString(CultureInfo.InvariantCulture)
-        );
-        message.Headers.TryAddWithoutValidation("apns-id", apnsId);
 
-        if (collapseKey is not null)
+        foreach (var (name, value) in prepared.Headers.Enumerate())
         {
-            message.Headers.TryAddWithoutValidation("apns-collapse-id", collapseKey);
+            message.Headers.TryAddWithoutValidation(name, value);
         }
 
-        message.Content = new ByteArrayContent(payload) { Headers = { ContentType = _JsonContentType } };
+        message.Headers.TryAddWithoutValidation("apns-id", apnsId);
+        message.Content = new ByteArrayContent(prepared.Payload) { Headers = { ContentType = _JsonContentType } };
 
         using var response = await client.SendAsync(message, cancellationToken).ConfigureAwait(false);
 
+        var uniqueId = response.Headers.TryGetValues(_UniqueIdHeader, out var values) ? values.FirstOrDefault() : null;
+
         if (response.StatusCode == HttpStatusCode.OK)
         {
-            return (HttpStatusCode.OK, null);
+            return new ApnsAnswer(HttpStatusCode.OK, ApnsResponseMapper.ReadError([]), uniqueId);
         }
 
         var body = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
 
-        return (response.StatusCode, ApnsResponseMapper.ReadReason(body));
+        return new ApnsAnswer(response.StatusCode, ApnsResponseMapper.ReadError(body), uniqueId);
+    }
+
+    #endregion
+
+    private static void _EnsureTokens(IReadOnlyList<string> deviceTokens, string paramName)
+    {
+        Argument.IsNotNullOrEmpty(deviceTokens, paramName: paramName);
+
+        // Every token is checked before the first send, so one bad entry cannot cause a partial delivery.
+        for (var i = 0; i < deviceTokens.Count; i++)
+        {
+            if (string.IsNullOrWhiteSpace(deviceTokens[i]))
+            {
+                throw new ArgumentException(
+                    $"The client identifier at index {i.ToString(CultureInfo.InvariantCulture)} is null, empty, or white space.",
+                    paramName
+                );
+            }
+        }
     }
 
     private static void _EnsureSecureEndpoint(Uri? baseAddress)
@@ -286,4 +404,6 @@ internal sealed class ApnsPushNotificationService(
     {
         return deviceToken.Length > 8 ? deviceToken[..8] + "***" : "***";
     }
+
+    private readonly record struct ApnsAnswer(HttpStatusCode Status, ApnsErrorBody Error, string? UniqueId);
 }

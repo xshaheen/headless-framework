@@ -42,6 +42,11 @@ internal sealed record ApnsRequestHeaders(
                 alert.Priority ?? options.Priority
             ),
             ApnsAlertNotification alert => ("alert", options.BundleId, alert.Priority ?? options.Priority),
+            ApnsVoipDataNotification voipData when options.PushType == ApnsPushType.Voip => (
+                "voip",
+                $"{options.BundleId}.voip",
+                voipData.Priority ?? options.Priority
+            ),
             ApnsBackgroundNotification => _NotVoip(
                 options,
                 "background",

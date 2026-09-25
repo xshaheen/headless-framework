@@ -153,6 +153,152 @@ public sealed class ApnsPushNotificationServiceTests : TestBase
         _server.Requests.Should().ContainSingle().Subject.Headers["apns-priority"].Should().Be("5");
     }
 
+    [Fact]
+    public async Task should_send_badge_sound_priority_and_expiration_when_the_request_sets_them()
+    {
+        // given
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 9, 25, 10, 0, 0, TimeSpan.Zero));
+        await using var provider = _server.CreateProvider(configureServices: s => s.AddSingleton<TimeProvider>(clock));
+        var service = provider.GetRequiredService<IPushNotificationService>();
+        var request = PushNotificationRequests.Valid("Hi", "There") with
+        {
+            Badge = 3,
+            Sound = "default",
+            Priority = PushNotificationPriority.Normal,
+            TimeToLive = TimeSpan.FromHours(1),
+        };
+
+        // when
+        var response = await service.SendToDeviceAsync(_DeviceToken, request, AbortToken);
+
+        // then
+        response.IsSucceeded().Should().BeTrue();
+        var sent = _server.Requests.Should().ContainSingle().Subject;
+        sent.Headers["apns-push-type"].Should().Be("alert");
+        sent.Headers["apns-priority"].Should().Be("5");
+        sent.Headers["apns-expiration"].Should().Be((1_790_330_400L + 3600).ToString(CultureInfo.InvariantCulture));
+        sent.Body.Should().Be("""{"aps":{"alert":{"title":"Hi","body":"There"},"badge":3,"sound":"default"}}""");
+    }
+
+    [Theory]
+    [InlineData(PushNotificationPriority.High, "10")]
+    [InlineData(PushNotificationPriority.Normal, "5")]
+    public async Task should_override_the_options_priority_when_the_request_sets_one(
+        PushNotificationPriority priority,
+        string expected
+    )
+    {
+        // given
+        await using var provider = _server.CreateProvider(o => o.Priority = ApnsPriority.PowerPrioritized);
+        var service = provider.GetRequiredService<IPushNotificationService>();
+        var request = PushNotificationRequests.Valid() with { Priority = priority };
+
+        // when
+        await service.SendToDeviceAsync(_DeviceToken, request, AbortToken);
+
+        // then
+        _server.Requests.Should().ContainSingle().Subject.Headers["apns-priority"].Should().Be(expected);
+    }
+
+    [Fact]
+    public async Task should_send_expiration_zero_when_time_to_live_is_zero()
+    {
+        // given
+        await using var provider = _server.CreateProvider();
+        var service = provider.GetRequiredService<IPushNotificationService>();
+        var request = PushNotificationRequests.Valid() with { TimeToLive = TimeSpan.Zero };
+
+        // when
+        await service.SendToDeviceAsync(_DeviceToken, request, AbortToken);
+
+        // then
+        _server.Requests.Should().ContainSingle().Subject.Headers["apns-expiration"].Should().Be("0");
+    }
+
+    [Fact]
+    public async Task should_send_no_expiration_when_time_to_live_is_not_set()
+    {
+        // given
+        await using var provider = _server.CreateProvider();
+        var service = provider.GetRequiredService<IPushNotificationService>();
+
+        // when
+        await service.SendToDeviceAsync(_DeviceToken, PushNotificationRequests.Valid(), AbortToken);
+
+        // then
+        _server.Requests.Should().ContainSingle().Subject.Headers.Should().NotContainKey("apns-expiration");
+    }
+
+    [Fact]
+    public async Task should_send_a_data_only_request_as_a_background_push_at_priority_5_even_when_high()
+    {
+        // given
+        await using var provider = _server.CreateProvider(o => o.Priority = ApnsPriority.Immediate);
+        var service = provider.GetRequiredService<IPushNotificationService>();
+        var request = PushNotificationRequests.DataOnly() with { Priority = PushNotificationPriority.High };
+
+        // when
+        var response = await service.SendToDeviceAsync(_DeviceToken, request, AbortToken);
+
+        // then
+        response.IsSucceeded().Should().BeTrue();
+        var sent = _server.Requests.Should().ContainSingle().Subject;
+        sent.Headers["apns-push-type"].Should().Be("background");
+        sent.Headers["apns-topic"].Should().Be(FakeApnsServer.BundleId);
+        sent.Headers["apns-priority"].Should().Be("5");
+        sent.Body.Should().Be("""{"aps":{"content-available":1},"sync":"1"}""");
+    }
+
+    [Fact]
+    public async Task should_send_a_data_only_request_as_a_voip_push_when_the_instance_is_voip()
+    {
+        // given
+        await using var provider = _server.CreateProvider(o =>
+        {
+            o.PushType = ApnsPushType.Voip;
+            o.Priority = ApnsPriority.Immediate;
+        });
+        var service = provider.GetRequiredService<IPushNotificationService>();
+
+        // when
+        var response = await service.SendToDeviceAsync(_DeviceToken, PushNotificationRequests.DataOnly(), AbortToken);
+
+        // then
+        response.IsSucceeded().Should().BeTrue();
+        var sent = _server.Requests.Should().ContainSingle().Subject;
+        sent.Headers["apns-push-type"].Should().Be("voip");
+        sent.Headers["apns-topic"].Should().Be($"{FakeApnsServer.BundleId}.voip");
+        sent.Headers["apns-priority"].Should().Be("10");
+        sent.Body.Should().Be("""{"aps":{},"sync":"1"}""");
+    }
+
+    [Fact]
+    public async Task should_allow_a_data_only_voip_payload_up_to_5120_bytes()
+    {
+        // given
+        await using var provider = _server.CreateProvider(o => o.PushType = ApnsPushType.Voip);
+        var service = provider.GetRequiredService<IPushNotificationService>();
+        var overhead = """{"aps":{},"k":""}""".Length;
+        var fits = new PushNotificationRequest
+        {
+            Data = new Dictionary<string, string>(StringComparer.Ordinal) { ["k"] = new string('x', 5120 - overhead) },
+        };
+        var tooLarge = new PushNotificationRequest
+        {
+            Data = new Dictionary<string, string>(StringComparer.Ordinal) { ["k"] = new string('x', 5121 - overhead) },
+        };
+
+        // when
+        var response = await service.SendToDeviceAsync(_DeviceToken, fits, AbortToken);
+        var act = async () => await service.SendToDeviceAsync(_DeviceToken, tooLarge, AbortToken);
+
+        // then
+        response.IsSucceeded().Should().BeTrue();
+        Encoding.UTF8.GetByteCount(_server.Requests.Should().ContainSingle().Subject.Body).Should().Be(5120);
+        await act.Should().ThrowAsync<ArgumentException>();
+        _server.Requests.Should().ContainSingle();
+    }
+
     #endregion
 
     #region Outcome mapping
@@ -593,6 +739,21 @@ public sealed class ApnsPushNotificationServiceTests : TestBase
             { "4097-byte payload", _RequestOfPayloadSize(4097) },
             { "blank title", PushNotificationRequests.Valid(title: " ") },
             { "blank body", PushNotificationRequests.Valid(body: " ") },
+            { "data-only with a badge", PushNotificationRequests.DataOnly() with { Badge = 1 } },
+            {
+                "data-only aps data key",
+                new PushNotificationRequest
+                {
+                    Data = new Dictionary<string, string>(StringComparer.Ordinal) { ["aps"] = "x" },
+                }
+            },
+            {
+                "negative time-to-live",
+                PushNotificationRequests.Valid() with
+                {
+                    TimeToLive = TimeSpan.FromSeconds(-1),
+                }
+            },
         };
 
     [Theory]

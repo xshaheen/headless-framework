@@ -94,6 +94,54 @@ public sealed class ApnsConformanceTests : PushNotificationServiceConformanceTes
     }
 
     [Fact]
+    public override Task should_reject_a_title_without_a_body()
+    {
+        return base.should_reject_a_title_without_a_body();
+    }
+
+    [Fact]
+    public override Task should_reject_a_body_without_a_title()
+    {
+        return base.should_reject_a_body_without_a_title();
+    }
+
+    [Fact]
+    public override Task should_reject_a_request_without_title_body_or_data()
+    {
+        return base.should_reject_a_request_without_title_body_or_data();
+    }
+
+    [Fact]
+    public override Task should_reject_a_data_only_request_with_a_badge()
+    {
+        return base.should_reject_a_data_only_request_with_a_badge();
+    }
+
+    [Fact]
+    public override Task should_reject_a_data_only_request_with_a_sound()
+    {
+        return base.should_reject_a_data_only_request_with_a_sound();
+    }
+
+    [Fact]
+    public override Task should_reject_a_negative_badge()
+    {
+        return base.should_reject_a_negative_badge();
+    }
+
+    [Fact]
+    public override Task should_reject_a_negative_time_to_live()
+    {
+        return base.should_reject_a_negative_time_to_live();
+    }
+
+    [Fact]
+    public override Task should_succeed_for_a_data_only_request()
+    {
+        return base.should_succeed_for_a_data_only_request();
+    }
+
+    [Fact]
     public override Task should_reject_an_empty_multicast_list()
     {
         return base.should_reject_an_empty_multicast_list();

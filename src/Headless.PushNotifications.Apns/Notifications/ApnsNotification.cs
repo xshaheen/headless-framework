@@ -154,6 +154,12 @@ public sealed record ApnsLiveActivityNotification : ApnsNotification
     public ApnsAlert? Alert { get; init; }
 
     /// <summary>
+    /// The sound the <see cref="Alert"/> plays, written inside it as <c>aps.alert.sound</c>. Needs
+    /// <see cref="Alert"/>, and takes a named sound only, not a critical one.
+    /// </summary>
+    public ApnsSound? Sound { get; init; }
+
+    /// <summary>
     /// The name of the app's <c>ActivityAttributes</c> type, written as <c>aps.attributes-type</c>. Start only.
     /// </summary>
     public string? AttributesType { get; init; }

@@ -16,9 +16,6 @@ internal static class ApnsPayloadWriter
     private const int _MaxAlertPayloadBytes = 4096;
     private const int _MaxVoipPayloadBytes = 5120;
 
-    // Apple caps the apns-collapse-id header at 64 bytes.
-    private const int _MaxCollapseKeyBytes = 64;
-
     // The payload's own dictionary, where Apple reads alert, badge, and sound; a custom key with this name would
     // overwrite it.
     private const string _ApsKey = "aps";
@@ -64,6 +61,9 @@ internal static class ApnsPayloadWriter
                 case ApnsLiveActivityNotification liveActivity:
                     _WriteLiveActivityNotification(writer, liveActivity, timeProvider);
                     break;
+                case ApnsVoipDataNotification voipData:
+                    _WriteVoipDataNotification(writer, voipData);
+                    break;
                 default:
                     throw new ArgumentException(
                         $"Unsupported APNs notification type '{notification.GetType().Name}'.",
@@ -79,47 +79,6 @@ internal static class ApnsPayloadWriter
         _EnsureWithinLimit(buffer.WrittenCount, limit, headers.PushType, nameof(notification));
 
         return new ApnsPreparedNotification(buffer.WrittenSpan.ToArray(), headers);
-    }
-
-    /// <summary>Validates <paramref name="request"/> and returns its UTF-8 JSON payload.</summary>
-    /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException">
-    /// The title or body is blank, a data key is <c>aps</c>, the collapse key exceeds 64 UTF-8 bytes, or the payload
-    /// exceeds the push type's size limit.
-    /// </exception>
-    public static byte[] Write(PushNotificationRequest request, ApnsPushType pushType)
-    {
-        Argument.IsNotNull(request);
-        Argument.IsNotNullOrWhiteSpace(request.Title);
-        Argument.IsNotNullOrWhiteSpace(request.Body);
-
-        if (request.CollapseKey is not null)
-        {
-            Argument.IsLessThanOrEqualTo(Encoding.UTF8.GetByteCount(request.CollapseKey), _MaxCollapseKeyBytes);
-        }
-
-        _EnsureNoReservedKey(request.Data, nameof(request));
-
-        var buffer = new ArrayBufferWriter<byte>(512);
-
-        using (var writer = new Utf8JsonWriter(buffer))
-        {
-            writer.WriteStartObject();
-            writer.WriteStartObject(_ApsKey);
-            writer.WriteStartObject("alert");
-            writer.WriteString("title", request.Title);
-            writer.WriteString("body", request.Body);
-            writer.WriteEndObject();
-            writer.WriteEndObject();
-            _WriteData(writer, request.Data);
-            writer.WriteEndObject();
-        }
-
-        var limit = pushType == ApnsPushType.Voip ? _MaxVoipPayloadBytes : _MaxAlertPayloadBytes;
-
-        _EnsureWithinLimit(buffer.WrittenCount, limit, pushType.ToString(), nameof(request));
-
-        return buffer.WrittenSpan.ToArray();
     }
 
     #region Alert
@@ -263,6 +222,22 @@ internal static class ApnsPayloadWriter
 
     #endregion
 
+    #region VoIP data
+
+    private static void _WriteVoipDataNotification(Utf8JsonWriter writer, ApnsVoipDataNotification notification)
+    {
+        _EnsureNoReservedKey(notification.Data, nameof(notification));
+
+        // PushKit hands the whole payload to the app, but APNs still expects the aps dictionary to be present.
+        writer.WriteStartObject();
+        writer.WriteStartObject(_ApsKey);
+        writer.WriteEndObject();
+        _WriteData(writer, notification.Data);
+        writer.WriteEndObject();
+    }
+
+    #endregion
+
     #region Live Activity
 
     private static void _WriteLiveActivityNotification(
@@ -311,7 +286,7 @@ internal static class ApnsPayloadWriter
 
         if (notification.Alert is not null)
         {
-            _WriteLiveActivityAlert(writer, notification.Alert);
+            _WriteLiveActivityAlert(writer, notification.Alert, notification.Sound);
         }
 
         writer.WriteEndObject();
@@ -375,15 +350,34 @@ internal static class ApnsPayloadWriter
         {
             _ValidateAlert(notification.Alert, liveActivity: true);
         }
+
+        if (notification.Sound is not null)
+        {
+            // The sound plays with the alert, so it has nowhere to go without one; Live Activity alerts take only a
+            // sound name.
+            if (notification.Alert is null)
+            {
+                throw new ArgumentException("A Live Activity sound needs an alert to play with.", nameof(notification));
+            }
+
+            if (notification.Sound.IsCritical)
+            {
+                throw new ArgumentException(
+                    "A Live Activity alert plays only a named sound, not a critical sound.",
+                    nameof(notification)
+                );
+            }
+        }
     }
 
-    private static void _WriteLiveActivityAlert(Utf8JsonWriter writer, ApnsAlert alert)
+    private static void _WriteLiveActivityAlert(Utf8JsonWriter writer, ApnsAlert alert, ApnsSound? sound)
     {
         // A Live Activity alert writes each text as a literal string or as a {loc-key, loc-args} dictionary, not the
-        // flat *-loc-key keys of an ordinary alert.
+        // flat *-loc-key keys of an ordinary alert, and carries its sound inside the alert rather than beside it.
         writer.WriteStartObject("alert");
         _WriteLiveActivityText(writer, "title", alert.Title, alert.TitleLocKey, alert.TitleLocArgs);
         _WriteLiveActivityText(writer, "body", alert.Body, alert.LocKey, alert.LocArgs);
+        _WriteOptionalString(writer, "sound", sound?.Name);
         writer.WriteEndObject();
     }
 

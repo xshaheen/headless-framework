@@ -225,18 +225,31 @@ public static class SetupApnsPushNotifications
                 configureResilience?.Invoke(options);
             });
 
+        // One instance serves both service types, so the typed and shared paths share its HTTP client, provider
+        // token, and options.
         if (name is null)
         {
-            services.AddSingleton<IPushNotificationService>(static serviceProvider =>
+            services.AddSingleton(static serviceProvider =>
                 _CreateService(serviceProvider, HttpClientName, optionsName: null)
+            );
+            services.AddSingleton<IPushNotificationService>(static serviceProvider =>
+                serviceProvider.GetRequiredService<ApnsPushNotificationService>()
+            );
+            services.AddSingleton<IApnsPushNotificationService>(static serviceProvider =>
+                serviceProvider.GetRequiredService<ApnsPushNotificationService>()
             );
 
             return;
         }
 
+        services.AddKeyedSingleton(name, (serviceProvider, _) => _CreateService(serviceProvider, httpClientName, name));
         services.AddKeyedSingleton<IPushNotificationService>(
             name,
-            (serviceProvider, _) => _CreateService(serviceProvider, httpClientName, name)
+            static (serviceProvider, key) => serviceProvider.GetRequiredKeyedService<ApnsPushNotificationService>(key)
+        );
+        services.AddKeyedSingleton<IApnsPushNotificationService>(
+            name,
+            static (serviceProvider, key) => serviceProvider.GetRequiredKeyedService<ApnsPushNotificationService>(key)
         );
     }
 
@@ -272,6 +285,7 @@ public static class SetupApnsPushNotifications
             serviceProvider.GetRequiredService<ApnsTokenSource>(),
             serviceProvider.GetRequiredService<IOptionsMonitor<ApnsOptions>>(),
             optionsName,
+            serviceProvider.GetRequiredService<TimeProvider>(),
             serviceProvider.GetRequiredService<ILogger<ApnsPushNotificationService>>()
         );
     }

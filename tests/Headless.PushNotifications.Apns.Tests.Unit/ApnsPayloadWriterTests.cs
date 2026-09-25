@@ -395,6 +395,65 @@ public sealed class ApnsPayloadWriterTests : TestBase
     }
 
     [Fact]
+    public void should_write_the_sound_inside_the_alert_when_live_activity_sets_one()
+    {
+        // given
+        var notification = new ApnsLiveActivityNotification
+        {
+            Event = ApnsLiveActivityEvent.Update,
+            ContentState = _Element("""{"score":1}"""),
+            Alert = new ApnsAlert { Title = "Goal", Body = "A scores" },
+            Sound = ApnsSound.Named("chime.aiff"),
+        };
+
+        // when
+        var json = _Json(_Prepare(notification));
+
+        // then
+        json.Should()
+            .Be(
+                """{"aps":{"timestamp":1790330400,"event":"update","content-state":{"score":1},"alert":{"title":"Goal","body":"A scores","sound":"chime.aiff"}}}"""
+            );
+    }
+
+    [Fact]
+    public void should_throw_when_live_activity_sets_a_sound_without_an_alert()
+    {
+        // given
+        var notification = new ApnsLiveActivityNotification
+        {
+            Event = ApnsLiveActivityEvent.Update,
+            ContentState = _Element("""{"score":1}"""),
+            Sound = ApnsSound.Default,
+        };
+
+        // when
+        var act = () => _Prepare(notification);
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_throw_when_live_activity_sound_is_critical()
+    {
+        // given
+        var notification = new ApnsLiveActivityNotification
+        {
+            Event = ApnsLiveActivityEvent.Update,
+            ContentState = _Element("""{"score":1}"""),
+            Alert = new ApnsAlert { Body = "A scores" },
+            Sound = ApnsSound.Critical("default", 0.5),
+        };
+
+        // when
+        var act = () => _Prepare(notification);
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
     public void should_throw_when_live_activity_alert_sets_a_field_live_activities_do_not_show()
     {
         // given
