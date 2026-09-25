@@ -5,6 +5,7 @@ using Headless.Caching;
 using Headless.Checks;
 using Headless.Hosting.Initialization;
 using Headless.MultiTenancy;
+using Headless.Permissions.ClientConfig;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.GrantProviders;
 using Headless.Permissions.Grants;
@@ -187,6 +188,13 @@ public static class SetupPermissions
 
         services.AddSingleton<IAuthorizationHandler, PermissionRequirementHandler>();
         services.AddSingleton<IAuthorizationHandler, PermissionsRequirementHandler>();
+
+        // The requirement handlers and the client-config builder evaluate through IAuthorizationService, which a
+        // worker host would otherwise lack. AddAuthorizationCore is TryAdd-only, so a host's own registrations win.
+        services.AddAuthorizationCore();
+
+        services.TryAddSingleton<IAuthorizationPolicyCatalog, AuthorizationPolicyCatalog>();
+        services.TryAddTransient<IClientAuthorizationConfigBuilder, ClientAuthorizationConfigBuilder>();
 
         if (setup.RegisterPermissionNamePolicies)
         {

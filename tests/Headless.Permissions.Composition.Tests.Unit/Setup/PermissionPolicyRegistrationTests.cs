@@ -2,7 +2,9 @@
 
 using System.Security.Claims;
 using Headless.Abstractions;
+using Headless.MultiTenancy;
 using Headless.Permissions;
+using Headless.Permissions.ClientConfig;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.Grants;
 using Headless.Permissions.Models;
@@ -125,6 +127,22 @@ public sealed class PermissionPolicyRegistrationTests : TestBase
 
         // then
         provider.GetRequiredService<IAuthorizationPolicyProvider>().Should().BeOfType<PermissionPolicyProvider>();
+    }
+
+    [Fact]
+    public void should_resolve_client_config_services_without_authorization_registration()
+    {
+        // given — no AddAuthorization/AddAuthorizationCore: AddHeadlessPermissions registers authorization itself.
+        var services = _CreateResolvableServices(Substitute.For<IPermissionManager>());
+        services.AddSingleton<ICurrentPrincipalAccessor, ThreadCurrentPrincipalAccessor>();
+        services.AddSingleton(Substitute.For<ICurrentTenant>());
+
+        // when
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+
+        // then
+        provider.GetRequiredService<IClientAuthorizationConfigBuilder>().Should().NotBeNull();
+        provider.GetRequiredService<IAuthorizationPolicyCatalog>().Should().NotBeNull();
     }
 
     [Theory]
