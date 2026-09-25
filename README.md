@@ -183,7 +183,7 @@ Two rules follow from that shape:
 | **API host** | `AddHeadless()` one-line bootstrap: problem details, OpenTelemetry, OpenAPI, health checks, compression, forwarded headers, HSTS, startup validation. Minimal API and MVC integrations, FluentValidation filters, Stripe-style HTTP idempotency. |
 | **Data** | EF Core conventions, global filters, soft deletes, DDD base types, seed data. Raw connection factories for PostgreSQL, SQL Server, and SQLite. Couchbase. Geospatial support through NetTopologySuite. |
 | **State and storage** | Caching (memory, Redis, hybrid L1/L2, tagging, stampede protection). Blob storage across six backends. Dynamic settings, feature flags, permissions, and audit logs, each with three storage providers. |
-| **Distributed runtime** | Messaging with a transactional outbox, retries, and delayed delivery over eight transports. Background jobs with cron, retries, and source-generated registration. Distributed locks. Node membership and liveness. A scoped unit of work that drains outbox and job work atomically on commit. |
+| **Distributed runtime** | Messaging with a transactional outbox, retries, and delayed delivery over eight transports. Background jobs with cron, retries, and source-generated registration. Distributed locks. Attempt limiting for OTP, password-reset, and PIN flows. Node membership and liveness. A scoped unit of work that drains outbox and job work atomically on commit. |
 | **Integrations** | Email, SMS, push notifications, CAPTCHA, image processing, media text extraction, Paymob payments, TUS resumable uploads, sitemaps, slugs, URL building. |
 | **Multi-tenancy** | Tenant context that flows through HTTP resolution, EF Core query filters, permission caching, and messaging headers, plus an optional tenant catalog. |
 | **Testing** | xUnit v3 base classes, Bogus builders, `WebApplicationFactory` fixtures with database reset, Testcontainers fixtures, and a messaging test harness that asserts on published, consumed, and faulted messages. |
@@ -519,6 +519,14 @@ Coordinate access to shared resources across distributed services.
 | [Headless.DistributedLocks.PostgreSql](src/Headless.DistributedLocks.PostgreSql/README.md) | PostgreSQL advisory-lock locking |
 | [Headless.DistributedLocks.Redis](src/Headless.DistributedLocks.Redis/README.md) | Redis-based locking |
 | [Headless.DistributedLocks.SqlServer](src/Headless.DistributedLocks.SqlServer/README.md) | SQL Server application-lock locking |
+
+### Rate Limiting
+
+Exact attempt quotas per phone number, email address, IP address, or card, shared by every replica.
+
+| Package | Description |
+|---------|-------------|
+| [Headless.RateLimiting](src/Headless.RateLimiting/README.md) | Fixed-window attempt limiter over `ICache` with pseudonymised subject keys |
 
 ### Coordination
 

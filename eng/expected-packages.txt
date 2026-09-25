@@ -127,6 +127,7 @@ Headless.PushNotifications.Abstractions
 Headless.PushNotifications.Core
 Headless.PushNotifications.Dev
 Headless.PushNotifications.Firebase
+Headless.RateLimiting
 Headless.Redis
 Headless.Security
 Headless.Security.Abstractions
