@@ -28,6 +28,12 @@ public sealed class PostgreSqlConnectionReplayConformanceTests(PostgreSqlUnitOfW
     }
 
     [Fact]
+    public override Task should_report_an_in_doubt_commit_without_replay_when_the_connection_fails_during_the_commit()
+    {
+        return base.should_report_an_in_doubt_commit_without_replay_when_the_connection_fails_during_the_commit();
+    }
+
+    [Fact]
     public override Task should_not_replay_after_the_block_prevents_retry()
     {
         return base.should_not_replay_after_the_block_prevents_retry();
@@ -50,7 +56,16 @@ public sealed class PostgreSqlConnectionReplayConformanceTests(PostgreSqlUnitOfW
 [Collection<PostgreSqlUnitOfWorkFixture>]
 public sealed class PostgreSqlEntityFrameworkReplayConformanceTests(PostgreSqlUnitOfWorkFixture fixture)
     : UnitOfWorkReplayConformanceTests(
-        new EntityFrameworkReplayFixture(fixture, options => options.UseNpgsql(fixture.ConnectionString))
+        new EntityFrameworkReplayFixture(
+            fixture,
+            options => options.UseNpgsql(fixture.ConnectionString),
+            (connection, ct) =>
+                PostgreSqlUnitOfWorkFixture.TerminateSessionAsync(
+                    fixture.ConnectionString,
+                    ((NpgsqlConnection)connection).ProcessID,
+                    ct
+                )
+        )
     )
 {
     [Fact]
@@ -63,6 +78,12 @@ public sealed class PostgreSqlEntityFrameworkReplayConformanceTests(PostgreSqlUn
     public override Task should_not_replay_when_the_commit_faults()
     {
         return base.should_not_replay_when_the_commit_faults();
+    }
+
+    [Fact]
+    public override Task should_report_an_in_doubt_commit_without_replay_when_the_connection_fails_during_the_commit()
+    {
+        return base.should_report_an_in_doubt_commit_without_replay_when_the_connection_fails_during_the_commit();
     }
 
     [Fact]
@@ -102,6 +123,12 @@ public sealed class PostgreSqlDataSourceReplayConformanceTests(PostgreSqlUnitOfW
     public override Task should_not_replay_when_the_commit_faults()
     {
         return base.should_not_replay_when_the_commit_faults();
+    }
+
+    [Fact]
+    public override Task should_report_an_in_doubt_commit_without_replay_when_the_connection_fails_during_the_commit()
+    {
+        return base.should_report_an_in_doubt_commit_without_replay_when_the_connection_fails_during_the_commit();
     }
 
     [Fact]
@@ -156,7 +183,8 @@ public sealed class PostgreSqlDataSourceReplayFixture(PostgreSqlUnitOfWorkFixtur
 
         return await factory.RunAsync(
             dataSource,
-            (unitOfWork, connection, ct) => operation(new PostgreSqlReplayContext(factory, connection, unitOfWork), ct),
+            (unitOfWork, connection, ct) =>
+                operation(new PostgreSqlReplayContext(factory, connection, unitOfWork, container.ConnectionString), ct),
             cancellationToken: cancellationToken
         );
     }
@@ -191,7 +219,8 @@ public sealed class PostgreSqlConnectionReplayFixture(PostgreSqlUnitOfWorkFixtur
 
         return await factory.RunAsync(
             connection,
-            (unitOfWork, ct) => operation(new PostgreSqlReplayContext(factory, connection, unitOfWork), ct),
+            (unitOfWork, ct) =>
+                operation(new PostgreSqlReplayContext(factory, connection, unitOfWork, container.ConnectionString), ct),
             cancellationToken: cancellationToken
         );
     }
@@ -224,7 +253,8 @@ public sealed class PostgreSqlConnectionReplayFixture(PostgreSqlUnitOfWorkFixtur
 public sealed class PostgreSqlReplayContext(
     IUnitOfWorkFactory factory,
     NpgsqlConnection connection,
-    IUnitOfWork unitOfWork
+    IUnitOfWork unitOfWork,
+    string adminConnectionString
 ) : IUnitOfWorkReplayContext
 {
     public IUnitOfWork UnitOfWork => unitOfWork;
@@ -242,6 +272,15 @@ public sealed class PostgreSqlReplayContext(
             _Transaction()
         );
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public Task BreakConnectionAsync(CancellationToken cancellationToken)
+    {
+        return PostgreSqlUnitOfWorkFixture.TerminateSessionAsync(
+            adminConnectionString,
+            connection.ProcessID,
+            cancellationToken
+        );
     }
 
     public Task RunJoinedAsync(

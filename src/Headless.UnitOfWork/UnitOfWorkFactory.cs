@@ -115,23 +115,44 @@ internal sealed partial class UnitOfWorkFactory(
 
         if (unit.Resource is { IsOwned: true } resource)
         {
+            var cancelledBeforeCommit = cancellationToken.IsCancellationRequested;
+
             try
             {
                 await resource.CommitAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                // The commit faulted: the unit transitions to Failed before the exception propagates, so a
-                // second CompleteAsync throws the "already failed" message rather than re-committing.
-                var failure = new UnitOfWorkFailure(UnitOfWorkFailureReason.Faulted, ex);
+                // A commit that may have reached the database is reported as in-doubt, with its own exception type,
+                // because a caller that treats it as a certain rollback and retries can apply the operation twice.
+                var inDoubt = InDoubtCommitFaults.IsInDoubt(ex, cancelledBeforeCommit)
+                    ? new UnitOfWorkInDoubtException(ex)
+                    : null;
+                var failure = inDoubt is null
+                    ? new UnitOfWorkFailure(UnitOfWorkFailureReason.Faulted, ex)
+                    : new UnitOfWorkFailure(UnitOfWorkFailureReason.InDoubt, inDoubt);
 
+                // The unit transitions to Failed before the exception propagates, so a second CompleteAsync throws
+                // the "already failed" message rather than re-committing.
                 unit.TransitionCompletedToFailed(failure);
+
+                if (inDoubt is not null)
+                {
+                    LogCommitInDoubt(Logger, ex);
+                }
+
                 // The owned transaction is still open when the commit never reached the database (an interceptor
                 // or a network fault before the commit) and would otherwise hold its locks until the connection
                 // dies; roll it back best-effort. A resource whose commit did land reports the transaction as
                 // finished and treats this as a dispose.
                 await _RollbackAfterCommitFaultAsync(resource).ConfigureAwait(false);
                 await _DrainFailedQuietlyAsync(claim, failure).ConfigureAwait(false);
+
+                if (inDoubt is not null)
+                {
+                    throw inDoubt;
+                }
+
                 ExceptionDispatchInfo.Capture(ex).Throw();
             }
         }
@@ -309,6 +330,14 @@ internal sealed partial class UnitOfWorkFactory(
     )]
     // ReSharper disable once InconsistentNaming
     private static partial void LogBackgroundDrainFaulted(ILogger logger, Exception? exception);
+
+    [LoggerMessage(
+        EventId = 7,
+        Level = LogLevel.Warning,
+        Message = "A unit of work's commit may have reached the database before its connection failed, so the transaction may or may not have committed; its OnCompleted work did not run. Before retrying the business operation, check its durable idempotency key (IIdempotentOperations.PeekAsync) instead of retrying blind. Enlisted outbox and job rows are delivered by the relay if the commit landed."
+    )]
+    // ReSharper disable once InconsistentNaming
+    private static partial void LogCommitInDoubt(ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 5,

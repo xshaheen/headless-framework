@@ -9,7 +9,10 @@ namespace Microsoft.Data.SqlClient;
 /// Stands in for SqlClient's exception by its full type name, which is all the classifier reads: the real type has
 /// no public constructor, and the unit-of-work core references no driver.
 /// </summary>
-internal sealed class SqlException(int number) : DbException($"fake SqlClient failure {number}")
+internal sealed class SqlException(int number, byte severity = 16, Exception? inner = null)
+    : DbException($"fake SqlClient failure {number}", inner)
 {
     public int Number { get; } = number;
+
+    public byte Class { get; } = severity;
 }

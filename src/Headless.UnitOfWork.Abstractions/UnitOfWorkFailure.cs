@@ -7,7 +7,10 @@ namespace Headless.UnitOfWork;
 /// and exposed as <see cref="IUnitOfWork.Failure" />.
 /// </summary>
 /// <param name="Reason">Why the unit failed.</param>
-/// <param name="Exception">The originating fault, when one exists (a commit fault or the abandoning exception).</param>
+/// <param name="Exception">
+/// The originating fault, when one exists: the commit fault (for <see cref="UnitOfWorkFailureReason.InDoubt" />, the
+/// <see cref="UnitOfWorkInDoubtException" /> the commit threw) or the abandoning exception.
+/// </param>
 [PublicAPI]
 public sealed record UnitOfWorkFailure(UnitOfWorkFailureReason Reason, Exception? Exception = null);
 
@@ -29,6 +32,17 @@ public enum UnitOfWorkFailureReason
     /// <summary>The unit was disposed without <see cref="IUnitOfWork.CompleteAsync" /> or <see cref="IUnitOfWork.RollbackAsync" />.</summary>
     Abandoned = 2,
 
-    /// <summary>The resource's commit (or the completion drain's resource interaction) faulted.</summary>
+    /// <summary>
+    /// The resource's commit faulted before it could have reached the database, or the database answered it with an
+    /// error: the transaction did not commit.
+    /// </summary>
     Faulted = 3,
+
+    /// <summary>
+    /// The commit request may have reached the database, but the connection failed (or timed out) before an answer
+    /// came back, so whether the transaction committed is unknown. <see cref="IUnitOfWork.CompleteAsync" /> throws
+    /// <see cref="UnitOfWorkInDoubtException" />; check a durable idempotency key before retrying the business
+    /// operation.
+    /// </summary>
+    InDoubt = 4,
 }

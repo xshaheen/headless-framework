@@ -28,6 +28,12 @@ public sealed class SqlServerConnectionReplayConformanceTests(SqlServerUnitOfWor
     }
 
     [Fact]
+    public override Task should_report_an_in_doubt_commit_without_replay_when_the_connection_fails_during_the_commit()
+    {
+        return base.should_report_an_in_doubt_commit_without_replay_when_the_connection_fails_during_the_commit();
+    }
+
+    [Fact]
     public override Task should_not_replay_after_the_block_prevents_retry()
     {
         return base.should_not_replay_after_the_block_prevents_retry();
@@ -50,7 +56,16 @@ public sealed class SqlServerConnectionReplayConformanceTests(SqlServerUnitOfWor
 [Collection<SqlServerUnitOfWorkFixture>]
 public sealed class SqlServerEntityFrameworkReplayConformanceTests(SqlServerUnitOfWorkFixture fixture)
     : UnitOfWorkReplayConformanceTests(
-        new EntityFrameworkReplayFixture(fixture, options => options.UseSqlServer(fixture.ConnectionString))
+        new EntityFrameworkReplayFixture(
+            fixture,
+            options => options.UseSqlServer(fixture.ConnectionString),
+            (connection, ct) =>
+                SqlServerUnitOfWorkFixture.KillSessionAsync(
+                    fixture.ConnectionString,
+                    ((SqlConnection)connection).ServerProcessId,
+                    ct
+                )
+        )
     )
 {
     [Fact]
@@ -63,6 +78,12 @@ public sealed class SqlServerEntityFrameworkReplayConformanceTests(SqlServerUnit
     public override Task should_not_replay_when_the_commit_faults()
     {
         return base.should_not_replay_when_the_commit_faults();
+    }
+
+    [Fact]
+    public override Task should_report_an_in_doubt_commit_without_replay_when_the_connection_fails_during_the_commit()
+    {
+        return base.should_report_an_in_doubt_commit_without_replay_when_the_connection_fails_during_the_commit();
     }
 
     [Fact]
@@ -105,6 +126,12 @@ public sealed class SqlServerConnectionFactoryReplayConformanceTests(SqlServerUn
     }
 
     [Fact]
+    public override Task should_report_an_in_doubt_commit_without_replay_when_the_connection_fails_during_the_commit()
+    {
+        return base.should_report_an_in_doubt_commit_without_replay_when_the_connection_fails_during_the_commit();
+    }
+
+    [Fact]
     public override Task should_not_replay_after_the_block_prevents_retry()
     {
         return base.should_not_replay_after_the_block_prevents_retry();
@@ -144,7 +171,8 @@ public sealed class SqlServerConnectionFactoryReplayFixture(SqlServerUnitOfWorkF
 
         return await factory.RunAsync(
             _ => ValueTask.FromResult(new SqlConnection(container.ConnectionString)),
-            (unitOfWork, connection, ct) => operation(new SqlServerReplayContext(factory, connection, unitOfWork), ct),
+            (unitOfWork, connection, ct) =>
+                operation(new SqlServerReplayContext(factory, connection, unitOfWork, container.ConnectionString), ct),
             retry: new RetryStrategyOptions
             {
                 MaxRetryAttempts = 1,
@@ -185,7 +213,8 @@ public sealed class SqlServerConnectionReplayFixture(SqlServerUnitOfWorkFixture 
 
         return await factory.RunAsync(
             connection,
-            (unitOfWork, ct) => operation(new SqlServerReplayContext(factory, connection, unitOfWork), ct),
+            (unitOfWork, ct) =>
+                operation(new SqlServerReplayContext(factory, connection, unitOfWork, container.ConnectionString), ct),
             cancellationToken: cancellationToken
         );
     }
@@ -202,8 +231,12 @@ public sealed class SqlServerConnectionReplayFixture(SqlServerUnitOfWorkFixture 
 }
 
 /// <summary>One attempt of a raw-ADO SQL Server <c>RunAsync</c>, on the connection that attempt runs on.</summary>
-public sealed class SqlServerReplayContext(IUnitOfWorkFactory factory, SqlConnection connection, IUnitOfWork unitOfWork)
-    : IUnitOfWorkReplayContext
+public sealed class SqlServerReplayContext(
+    IUnitOfWorkFactory factory,
+    SqlConnection connection,
+    IUnitOfWork unitOfWork,
+    string adminConnectionString
+) : IUnitOfWorkReplayContext
 {
     public IUnitOfWork UnitOfWork => unitOfWork;
 
@@ -216,6 +249,15 @@ public sealed class SqlServerReplayContext(IUnitOfWorkFactory factory, SqlConnec
     {
         await using var command = new SqlCommand("ROLLBACK TRANSACTION", connection, _Transaction());
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public Task BreakConnectionAsync(CancellationToken cancellationToken)
+    {
+        return SqlServerUnitOfWorkFixture.KillSessionAsync(
+            adminConnectionString,
+            connection.ServerProcessId,
+            cancellationToken
+        );
     }
 
     public Task RunJoinedAsync(

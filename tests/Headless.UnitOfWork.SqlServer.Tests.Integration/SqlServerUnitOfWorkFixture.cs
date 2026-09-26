@@ -164,6 +164,50 @@ public sealed class SqlServerUnitOfWorkFixture
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Kills session <paramref name="sessionId" /> from another connection and waits until it is gone, so the next
+    /// request its client sends meets a dropped session.
+    /// </summary>
+    public static async Task KillSessionAsync(
+        string connectionString,
+        int sessionId,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var admin = new SqlConnection(connectionString);
+        await admin.OpenAsync(cancellationToken);
+
+        // KILL takes no variable, so the id is formatted into dynamic SQL from a typed parameter.
+        await using (
+            var kill = new SqlCommand(
+                "DECLARE @sql nvarchar(64) = N'KILL ' + CAST(@spid AS nvarchar(11)); EXEC (@sql);",
+                admin
+            )
+        )
+        {
+            kill.Parameters.AddWithValue("@spid", sessionId);
+            await kill.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using var alive = new SqlCommand(
+            "SELECT COUNT(*) FROM sys.dm_exec_sessions WHERE session_id = @spid",
+            admin
+        );
+        alive.Parameters.AddWithValue("@spid", sessionId);
+
+        for (var attempt = 0; attempt < 200; attempt++)
+        {
+            if (Convert.ToInt32(await alive.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture) == 0)
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(25), cancellationToken);
+        }
+
+        throw new TimeoutException($"Session {sessionId} was still alive 5 seconds after KILL.");
+    }
+
     public static ServiceProvider BuildProvider(CapturingLoggerProvider? logs = null)
     {
         var services = new ServiceCollection();
