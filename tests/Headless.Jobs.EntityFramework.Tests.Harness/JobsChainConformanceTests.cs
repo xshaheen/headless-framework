@@ -15,6 +15,7 @@ using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -497,6 +498,83 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
                 );
 
             (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Should().BeSameAs(sentinel);
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(0);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    // unit.Jobs writes every node of the tree inside the unit's transaction, so the whole chain becomes visible
+    // exactly when the unit commits, together with the unit's own domain write.
+    public virtual async Task chain_enqueue_through_the_unit_commits_every_node_with_the_unit()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildCoordinatedEnqueueHost("chain-commit");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await fixture.CreateProbeTableAsync(ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var builder = JobChain.Start(_Payload("root"), executionTime: DateTimeOffset.UtcNow.AddHours(1));
+            var child = builder.Root.Then(_Payload("child"));
+            child.Then(_Payload("grandchild"));
+            builder.Root.Catch(_Payload("catch"));
+            var chain = builder.Build();
+            var rootId = Guid.Empty;
+
+            await fixture.RunCoordinatedTransactionAsync(
+                host.Services,
+                async (_, unitOfWork, connection, transaction, innerCt) =>
+                {
+                    await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
+                    rootId = await unitOfWork.Jobs.EnqueueAsync(chain, innerCt);
+                },
+                ct
+            );
+
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(4);
+            (await fixture.CountProbeRowsAsync(ct)).Should().Be(1);
+            (await _ReadNodeAsync(rootId, ct)).ParentId.Should().BeNull();
+            (await _ChildrenAsync(rootId, ct)).Should().HaveCount(2);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    // The injected scheduler never enlists, so it owns the chain's atomicity itself: a database failure after the
+    // first job-row insert has executed rolls back the whole tree, never leaving a root without its descendants.
+    public virtual async Task chain_enqueue_through_the_injected_scheduler_leaves_no_rows_when_the_write_fails()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        var fault = new FailAfterFirstTimeJobInsertInterceptor();
+        using var host = fixture.BuildHost("chain-autonomous-fault", interceptor: fault);
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
+            var builder = JobChain.Start(_Payload("root"), executionTime: DateTimeOffset.UtcNow.AddHours(1));
+            var child = builder.Root.Then(_Payload("child"));
+            child.Then(_Payload("grandchild"));
+            builder.Root.Catch(_Payload("catch"));
+            fault.Arm();
+
+            var enqueue = () => scheduler.EnqueueAsync(builder.Build(), ct);
+
+            await enqueue
+                .Should()
+                .ThrowAsync<DbUpdateException>()
+                .WithInnerException(typeof(InvalidOperationException))
+                .WithMessage(fault.Message);
+            fault.Tripped.Should().BeTrue("the failure must land after job rows reached the database");
             (await fixture.CountTimeJobsAsync(ct)).Should().Be(0);
         }
         finally
@@ -1837,4 +1915,55 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
 
         await command.ExecuteNonQueryAsync(ct);
     }
+}
+
+/// <summary>
+/// Fails the first command that inserts time-job rows, after the database has executed it, so the rows it wrote
+/// exist inside the open transaction when the failure surfaces. Inactive until <see cref="Arm" />.
+/// </summary>
+internal sealed class FailAfterFirstTimeJobInsertInterceptor : DbCommandInterceptor
+{
+    private int _armed;
+    private int _tripped;
+
+    public string Message => "Injected failure after a time-job insert.";
+
+    public bool Tripped => Volatile.Read(ref _tripped) == 1;
+
+    public void Arm() => Interlocked.Exchange(ref _armed, 1);
+
+    public override async ValueTask<DbDataReader> ReaderExecutedAsync(
+        DbCommand command,
+        CommandExecutedEventData eventData,
+        DbDataReader result,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (_TryTrip(command))
+        {
+            // Release the reader first so the rollback that follows is not refused by a busy connection.
+            await result.DisposeAsync();
+            throw new InvalidOperationException(Message);
+        }
+
+        return await base.ReaderExecutedAsync(command, eventData, result, cancellationToken);
+    }
+
+    public override ValueTask<int> NonQueryExecutedAsync(
+        DbCommand command,
+        CommandExecutedEventData eventData,
+        int result,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _TryTrip(command)
+            ? throw new InvalidOperationException(Message)
+            : base.NonQueryExecutedAsync(command, eventData, result, cancellationToken);
+    }
+
+    private bool _TryTrip(DbCommand command) =>
+        command.CommandText.Contains("INSERT", StringComparison.OrdinalIgnoreCase)
+        && command.CommandText.Contains("TimeJobs", StringComparison.Ordinal)
+        && Interlocked.CompareExchange(ref _armed, 0, 1) == 1
+        && Interlocked.Exchange(ref _tripped, 1) == 0;
 }
