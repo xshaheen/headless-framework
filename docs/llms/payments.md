@@ -21,7 +21,7 @@ Install only the packages that match your job. `Services` depends on both `CashI
 
 Register via:
 - `services.AddPaymobCashIn(options => ...)` — for payment collection.
-- `services.AddPaymobCashOut(options => ...)` — for disbursements.
+- `services.AddPaymobCashOut(configuration.GetSection("Paymob:CashOut"))` — for disbursements.
 - `services.AddPaymobServices()` — registers `IPaymobCashInService`, `ICashOutService`, and `IPaymobCashInFeesCalculator` from the Services package (call it after the two broker registrations above).
 
 ## Agent Rules
@@ -161,6 +161,8 @@ public sealed class PaymentService(IPaymobCashInBroker broker)
 
 Validate an incoming callback:
 
+<!-- example: fragment -->
+
 ```csharp
 [HttpPost("paymob/callback")]
 public IActionResult HandleCallback([FromBody] CashInCallbackTransaction transaction, [FromQuery] string hmac)
@@ -265,14 +267,8 @@ dotnet add package Headless.Payments.Paymob.CashOut
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddPaymobCashOut(options =>
-{
-    options.ApiBaseUrl = "https://disbursement.paymob.com/api/";
-    options.UserName = builder.Configuration["Paymob:CashOut:UserName"]!;
-    options.Password = builder.Configuration["Paymob:CashOut:Password"]!;
-    options.ClientId = builder.Configuration["Paymob:CashOut:ClientId"]!;
-    options.ClientSecret = builder.Configuration["Paymob:CashOut:ClientSecret"]!;
-});
+// PaymobCashOutOptions credentials are init-only, so bind them from configuration.
+builder.Services.AddPaymobCashOut(builder.Configuration.GetSection("Paymob:CashOut"));
 ```
 
 Disburse to a mobile wallet:
@@ -399,14 +395,7 @@ builder.Services.AddPaymobCashIn(options =>
     options.SecretKey = builder.Configuration["Paymob:CashIn:SecretKey"]!;
 });
 
-builder.Services.AddPaymobCashOut(options =>
-{
-    options.ApiBaseUrl = builder.Configuration["Paymob:CashOut:ApiBaseUrl"]!;
-    options.UserName = builder.Configuration["Paymob:CashOut:UserName"]!;
-    options.Password = builder.Configuration["Paymob:CashOut:Password"]!;
-    options.ClientId = builder.Configuration["Paymob:CashOut:ClientId"]!;
-    options.ClientSecret = builder.Configuration["Paymob:CashOut:ClientSecret"]!;
-});
+builder.Services.AddPaymobCashOut(builder.Configuration.GetSection("Paymob:CashOut"));
 
 // Register the service layer (IPaymobCashInService, ICashOutService, IPaymobCashInFeesCalculator)
 builder.Services.AddPaymobServices();
@@ -472,7 +461,7 @@ public sealed class PayoutService(ICashOutService cashOut)
 
         if (!result.Succeeded)
         {
-            throw new InvalidOperationException(result.Error.Message);
+            throw new InvalidOperationException(result.Error.Description);
         }
     }
 }

@@ -113,7 +113,7 @@ Defines the unified interface and contract types for push notification services.
   - `SendMulticastAsync(clientTokens, request, ct)` — batch delivery
 - `PushNotificationRequest` — the notification payload (`required Title`, `required Body`, optional `Data`). Both send methods take one request; add new delivery options as optional `init` properties rather than new overloads.
 - `IPushNotificationServiceProvider` — resolves named services by name: `GetService(name)` (throws when unregistered) and `GetServiceOrNull(name)` (returns `null`), plus `RegisteredNames` (`IReadOnlySet<string>`) listing the registered named instances (the default is excluded) so an externally supplied name can be validated before resolving. Backed by the container's keyed `IPushNotificationService` registrations; the concrete implementation lives in `Headless.PushNotifications.Core`.
-- `PushNotificationResponse` — single-device outcome with three states (`Success`, `Failure`, `Unregistered`); factory methods `Succeeded`, `Failed`, `Unregistered`; query methods `IsSucceeded()`, `IsFailed()`, `IsUnregistered()`; properties `Token`, `MessageId?`, `FailureError?`, `Status`
+- `PushNotificationResponse` — single-device outcome with three states (`Success`, `Failure`, `Unregistered`); factory methods `Succeeded`, `Failed`, `Unregistered`; query methods `IsSucceeded()`, `IsFailed()`, `IsUnregistered()`; properties `ClientIdentifier`, `MessageId?`, `FailureError?`, `Status`
 - `PushNotificationResponseStatus` enum — `Success`, `Failure`, `Unregistered`
 - `BatchPushNotificationResponse` — multicast aggregate: `SuccessCount`, `FailureCount`, `Responses` (one per token)
 
@@ -126,7 +126,11 @@ dotnet add package Headless.PushNotifications.Abstractions
 ### Setup and use
 
 ```csharp
-public sealed class NotificationService(IPushNotificationService pushService, ILogger<NotificationService> logger)
+public sealed class NotificationService(
+    IPushNotificationService pushService,
+    IDeviceTokenStore tokenStore,
+    ILogger<NotificationService> logger
+)
 {
     public async Task SendAsync(string deviceToken, string title, string message, CancellationToken ct)
     {
@@ -144,7 +148,7 @@ public sealed class NotificationService(IPushNotificationService pushService, IL
         if (response.IsUnregistered())
         {
             // Token is stale — remove it from your store.
-            await RemoveTokenAsync(deviceToken, ct);
+            await tokenStore.RemoveAsync(deviceToken, ct);
         }
         else if (response.IsFailed())
         {
@@ -166,7 +170,7 @@ public sealed class NotificationService(IPushNotificationService pushService, IL
         foreach (var r in result.Responses)
         {
             if (r.IsUnregistered())
-                await RemoveTokenAsync(r.Token, ct);
+                await tokenStore.RemoveAsync(r.ClientIdentifier, ct);
         }
     }
 }
