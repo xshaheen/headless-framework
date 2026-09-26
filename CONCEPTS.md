@@ -19,6 +19,12 @@ A coordination participant identified as `nodeId@incarnation` — the node id pl
 distinguishes one run of that node from a later restart. Two runs of the same `nodeId` are *distinct*
 identities, so a restarted node never inherits its dead predecessor's standing.
 
+### Membership
+The set of Node identities the store currently classifies as live, read through `INodeMembership`.
+Membership reports liveness only and never records ownership: a consumer stamps a Node identity on its
+own rows and reclaims the rows whose owner is no longer live. Distinct from a Distributed lock and a
+Fenced lease, which grant ownership. See [docs/llms/coordination.md](docs/llms/coordination.md).
+
 ### Incarnation
 The monotonic generation number that qualifies a Node identity. Allocated by an atomic increment in
 the store at registration; a heartbeat or leave carrying a prior incarnation is rejected at the
@@ -271,6 +277,16 @@ is never skipped. The cost is that every writer of that counter waits for the pr
 Its counterpart, the fast mode through the injected `ISequenceGenerator`, commits the number in its
 own transaction and may leave a gap when the caller rolls back. A name has exactly one mode.
 
+## Distributed locks
+
+### Distributed lock
+Mutual exclusion on a named resource for a live in-process handle (`IDistributedLock`, returning an
+`IDistributedLease`). The handle cannot move to another process. Redis locks expire by TTL; PostgreSQL
+and SQL Server locks are session-scoped with no TTL and live as long as the holding connection. The
+optional `FencingToken` protects data only when the protected resource rejects a token not greater than
+the last one it accepted, or when the lock is transaction-coupled. See
+[docs/llms/distributed-locks.md](docs/llms/distributed-locks.md).
+
 ## Fencing
 
 ### Fenced lease
@@ -281,7 +297,8 @@ settling, releasing, and fencing are separate database calls the store answers, 
 held by any process — including one with no connection to this framework — and outlives any single
 connection. Distinct from a distributed lock (`Headless.DistributedLocks`), which grants exclusive
 execution to a live in-process handle. *Avoid:* lease (bare) when a distributed lock's TTL lease is
-meant — name the package (`IDistributedLock`) or say "fenced lease" for `IFencedLeases`.
+meant — name the package (`IDistributedLock`) or say "fenced lease" for `IFencedLeases`. See
+[docs/llms/fencing.md](docs/llms/fencing.md).
 
 ### Lease generation
 
@@ -303,7 +320,8 @@ completed result is returned), or `Conflict` (the key is stored under a differen
 result contract). An admitted operation holds its own lease on the key's record row: a generation
 drawn from the idempotency store's sequence plus a lease expiry decided by the database clock. Its
 renewal, fence, completion, and release name that generation, and the store refuses them once a later
-admission drew a newer one. Idempotency does not use Fencing's fenced leases.
+admission drew a newer one. Idempotency does not use Fencing's fenced leases. See
+[docs/llms/idempotency.md](docs/llms/idempotency.md).
 
 ## Startup validation
 

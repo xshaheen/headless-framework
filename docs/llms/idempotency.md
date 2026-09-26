@@ -7,6 +7,10 @@ packages: Idempotency.Abstractions, Idempotency.Core, Idempotency.InMemory, Idem
 
 > Durable, tenant-scoped idempotent admission: admit a key once across processes, replay its stored result on retry, and refuse a stale attempt's completion. Each record row carries its own lease and generation.
 
+## How this differs from locks and fenced leases
+
+Idempotent admission answers "has this operation already happened, and what was its result?". It admits one attempt per tenant-scoped key and fingerprint and replays the stored result to every later retry. It does not serialize different keys over a shared resource: use a [distributed lock](distributed-locks.md) for "one process at a time", and a [fenced lease](fencing.md) for ownership of work with no result to replay, such as a resource handed to an external executor. Comparison of all four primitives: [Choosing a coordination primitive](index.md#choosing-a-coordination-primitive).
+
 ## Orientation
 
 Register one provider; nothing else is required:

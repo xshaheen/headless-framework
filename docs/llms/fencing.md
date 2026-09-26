@@ -7,11 +7,14 @@ packages: Fencing.Abstractions, Fencing.Core, Fencing.InMemory, Fencing.PostgreS
 
 > A relational fenced-lease primitive: grant a lease on `(tenant, kind, resource)`, hand its generation to any executor, and refuse that executor's write once a later grant replaces it.
 
-## Lease, lock, or fencing token?
+## How this differs from locks and idempotency
 
-A **distributed lock** (`Headless.DistributedLocks`, see [distributed-locks.md](distributed-locks.md)) grants exclusive execution to a live in-process handle. Its optional `FencingToken` is a number the *protected resource itself* must check — the lock does not check it for you, and a resource with no such check gets no protection from the token existing.
+A fenced lease answers "who owns this work, at which generation, until when?". Comparison of all four primitives: [Choosing a coordination primitive](index.md#choosing-a-coordination-primitive).
 
-A **fenced lease** (`IFencedLeases` / `unit.Leases`) is a durable database row any process can carry by `(resource, generation)`. The database checks it for you, inside the caller's own transaction, at the moment the write happens — not by convention at the call site. There is no live handle: an external executor with no connection to the framework can hold a lease, heartbeat it, and post a result hours later, which a connection-scoped lock cannot do.
+- A **distributed lock** ([Distributed Locks](distributed-locks.md)) grants exclusive execution to a live in-process handle. Its optional `FencingToken` is a number the *protected resource itself* must check — the lock does not check it for you. Use a lock instead when the work runs in one live process and a duplicate run only wastes effort.
+- A **fenced lease** (`IFencedLeases` / `unit.Leases`) is a durable database row any process can carry by `(resource, generation)`. The database checks it for you, inside the caller's own transaction, at the moment the write happens — not by convention at the call site. There is no live handle: an external executor with no connection to the framework can hold a lease, heartbeat it, and post a result hours later, which a connection-scoped lock cannot do.
+- Use [Idempotency](idempotency.md) instead when the question is "has this operation already happened?" and a retry must replay its stored result. Idempotency keeps its own lease on its record and does not use this table.
+- Do not add a fenced lease for work that already has a row you own. Put the lease on that row, as Jobs and Messaging do (`OwnerId`/`Owner` plus `LockedUntil`).
 
 The classic (Kleppmann) failure this is built for:
 
