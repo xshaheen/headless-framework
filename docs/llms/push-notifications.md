@@ -71,13 +71,14 @@ For pushes only APNs has — Live Activities, rich alert controls, background pu
 - `PushNotificationRequest.CollapseKey` is limited to 64 UTF-8 bytes by both production providers, because Apple caps the `apns-collapse-id` header at 64 bytes. A longer key throws `ArgumentException` before any network call.
 - APNs reports a token as `Unregistered` only on HTTP 410. `BadDeviceToken` (HTTP 400) is a `Failure` by default, because Apple returns it both for a malformed token and for a valid token sent to the wrong environment. A host pointed at the wrong `ApnsOptions.Environment` would discard every valid token it holds if that rejection meant unregistered. Set `TreatBadDeviceTokenAsUnregistered = true` only when the environment is known to be right.
 - APNs payloads are limited to 4096 bytes for every push type except VoIP, which allows 5120 bytes. The limit is measured on the JSON the provider writes, including `Data`. An oversized payload throws `ArgumentException` before any network call.
-- APNs reserves the top-level `aps` key. A `Data` entry named `aps` throws `ArgumentException`. Every other `Data` key is written at the top level of the payload, beside `aps`.
-- An instance configured with `PushType = ApnsPushType.Voip` holds PushKit tokens, which receive only VoIP pushes. Through it, `IApnsPushNotificationService` sends only `ApnsAlertNotification` (as a VoIP push); every other notification type throws `ArgumentException`.
+- APNs reserves the top-level `aps` key. A `Data` entry named `aps` throws `ArgumentException`. Every other `Data` key is written at the top level of the payload, beside `aps`, never inside it: APNs ignores custom keys in `aps`. The typed notifications take `Data` as a `JsonObject`, so a value can be any JSON; the shared `PushNotificationRequest.Data` stays a string map, because FCM data messages carry only strings.
+- An instance configured with `PushType = ApnsPushType.Voip` holds PushKit tokens, which receive only VoIP pushes. Through it, `IApnsPushNotificationService` sends only `ApnsAlertNotification` and an `ApnsRawNotification` of type `Alert` or `Voip` (each as a VoIP push); every other notification type throws `ArgumentException`.
 - Live Activity pushes default to priority 5, while Apple's default is 10, so an update can be delayed. Set `Priority = ApnsPriority.Immediate` only for updates the user must see now: Apple budgets priority-10 Live Activity pushes per hour.
-- Send a Live Activity `Start` to the app's push-to-start token, and `Update` and `End` to the push token of the running activity. These are not the device token used for alerts.
+- Send a Live Activity `Start` to the app's push-to-start token, and `Update` and `End` to the push token of the running activity. These are not the device token used for alerts. Set `RequestPushToken` on the `Start` so the started activity reports that push token (iOS 18 and later).
+- `ApnsNotification.ApnsId` sets the `apns-id` for a single-token `SendAsync`. A multicast with `ApnsId` set throws `ArgumentException`, because every request needs its own id.
 - A critical sound (`ApnsSound.Critical`) or `ApnsInterruptionLevel.Critical` needs Apple's critical-alerts entitlement (`com.apple.developer.usernotifications.critical-alerts`) on the app. Without it the device plays a critical sound as an ordinary sound. The provider does not check the entitlement.
 - Load `ApnsOptions.PrivateKey` (the `.p8` PEM text), `Certificate`, and `CertificatePassword` from a secret store or an environment variable, never from committed configuration. The appsettings sample in this guide uses a placeholder. `ToString()` redacts all three and `[JsonIgnore]` keeps them out of serialized options.
-- An APNs instance authenticates with a `.p8` signing key (token mode) or a `.p12` provider certificate (certificate mode), never both. Certificate mode refuses `location`, `fileprovider`, `liveactivity`, `widgets`, and `controls` pushes with `ArgumentException`. Use token mode for those.
+- An APNs instance authenticates with a `.p8` signing key (token mode) or a `.p12` provider certificate (certificate mode), never both. Certificate mode refuses `location`, `fileprovider`, `liveactivity`, `widgets`, and `controls` pushes with `ArgumentException`, whether typed or sent as an `ApnsRawNotification` of that `Type`. Use token mode for those.
 - Rotating the APNs signing key requires a process restart: the provider caches the imported key and its provider token per `(team id, key id)` for the life of the container. Two option sets with the same team id and key id but different key text are refused, and every send through the second one returns `Failure`. A renewed certificate does not: when the configuration source reloads, new connections present it (see [Certificate authentication](#certificate-authentication)).
 - Every process that signs with the same APNs key mints its own provider token, and Apple rejects token updates for one key more often than once every 20 minutes with `TooManyProviderTokenUpdates`. Within one container the provider shares one token per key. Across many processes or hosts, prefer a separate key per environment or deployment.
 - APNs retries in-process only connection failures that happen before a request is sent (connect, DNS, TLS), at most twice. A connection lost after a request was sent is not retried, because APNs does not deduplicate and a resend could show the notification twice; it becomes a `Failure` you may retry at the risk of a duplicate. An HTTP 5xx is never retried in-process and becomes a `Failure`: Apple asks senders to wait about 15 minutes before retrying one, so retry it later from your own queue or job rather than in a tight loop. Never retry an HTTP 429 `TooManyRequests` immediately: it throttles that one device token.
@@ -134,7 +135,7 @@ await pushService.SendToDeviceAsync(
 | `TimeToLive` (`TimeSpan?`, 0 to 28 days) | `apns-expiration` = now + TTL in epoch seconds. `TimeSpan.Zero` sends `0`: one attempt, no storage | Message TTL | `apns-expiration`, computed the same way |
 | `CollapseKey` (`string?`, ≤ 64 UTF-8 bytes) | `apns-collapse-id` | Collapse key | `apns-collapse-id` |
 
-A `null` `TimeToLive` sends no expiration, so the provider's own storage policy applies. A `TimeToLive` over 28 days, Firebase's maximum Android TTL, throws `ArgumentOutOfRangeException` on every provider. An unset `Badge` sends no badge on either provider.
+A `null` `TimeToLive` sends no expiration, so the provider's own storage policy applies. The exception is an APNs VoIP instance, which sends `apns-expiration: 0`, because Apple tells senders to deliver VoIP pushes once or within seconds. A `TimeToLive` over 28 days, Firebase's maximum Android TTL, throws `ArgumentOutOfRangeException` on every provider. An unset `Badge` sends no badge on either provider.
 
 A data-only request maps as follows:
 
@@ -519,7 +520,7 @@ Apple Push Notification service (APNs) implementation of `IPushNotificationServi
 - Single-device and multicast delivery on both interfaces; a multicast sends one request per token with at most `MaxConcurrency` in flight and returns results in input order
 - The shared path turns a notification request into an alert push, `{"aps":{"alert":{"title":…,"body":…},"badge":…,"sound":…}, …}`, and a data-only request into a background push (a VoIP push on a VoIP instance). Each `Data` entry is written as a top-level string field beside `aps`
 - `CollapseKey` is sent as the `apns-collapse-id` header, and `TimeToLive` as `apns-expiration`
-- A success carries a client-generated UUID, sent as the `apns-id` header, as `MessageId`
+- A success carries the `apns-id` header value as `MessageId`: a client-generated UUID, or the typed notification's `ApnsId` when set. A resend after an expired provider token keeps the same id
 - Production and sandbox environments
 - Options validated at startup via FluentValidation and `ValidateOnStart`
 
@@ -529,6 +530,8 @@ Input validation throws `ArgumentException` before any network call when:
 - the multicast token list is null or empty
 - the shared request breaks the notification or data-only rule, or a field is out of range
 - `Data` contains the reserved key `aps`
+- a typed multicast notification sets `ApnsId`
+- an `ApnsRawNotification` payload is not a JSON object, or its `Priority` is not allowed for its `Type`
 - `CollapseKey` or `CollapseId` is blank or exceeds 64 UTF-8 bytes
 - the written JSON payload exceeds 4096 bytes (5120 bytes for a VoIP push)
 - a typed notification breaks a rule of its type (see [Typed APNs API](#typed-apns-api))
@@ -538,10 +541,11 @@ Input validation throws `ArgumentException` before any network call when:
 
 `IApnsPushNotificationService.SendAsync(deviceToken, notification, ct)` returns an `ApnsSendResult`; `SendMulticastAsync(deviceTokens, notification, ct)` returns an `ApnsBatchSendResult`. The notification's type decides the push type, topic, priority rules, and allowed fields, so an alert on a background push cannot be expressed. `ApnsNotification` is the closed base record; only this package defines subtypes.
 
-Every notification accepts two optional per-message fields:
+Every notification accepts three optional per-message fields:
 
-- `Expiration` (`ApnsExpiration?`): `ApnsExpiration.At(instant)` sends that instant as `apns-expiration`, and `ApnsExpiration.DeliverOnce` sends `0` (one attempt, no storage). `null` sends no header, so APNs applies its own storage policy.
+- `Expiration` (`ApnsExpiration?`): `ApnsExpiration.At(instant)` sends that instant as `apns-expiration`, and `ApnsExpiration.DeliverOnce` sends `0` (one attempt, no storage). `null` sends no header, so APNs applies its own storage policy, except on VoIP and push-to-talk pushes, where `null` sends `DeliverOnce` because Apple tells senders to use `0` for both. Set `Expiration` to override.
 - `CollapseId` (`string?`): sent as `apns-collapse-id`, at most 64 UTF-8 bytes.
+- `ApnsId` (`Guid?`): sent as `apns-id` and returned as `ApnsSendResult.ApnsId`, so you can record the id before the send and find the notification in Apple's logs. `null` sends a new random UUID. The resend after an expired provider token keeps the id. Only `SendAsync` accepts it; `SendMulticastAsync` throws `ArgumentException` before any request, because each request needs its own id.
 
 | Type | `apns-push-type` | Topic | Payload | `apns-priority` |
 |---|---|---|---|---|
@@ -554,8 +558,9 @@ Every notification accepts two optional per-message fields:
 | `ApnsControlsNotification` | `controls` | `<BundleId>.push-type.controls` | `{"aps":{"content-changed":true}}` | `Priority`, default 10; 5 allowed; 1 refused |
 | `ApnsComplicationNotification` | `complication` | `<BundleId>.complication` | `{"aps":{}}` plus `Data` | `Priority`, default 10; 5 allowed; 1 refused |
 | `ApnsFileProviderNotification` | `fileprovider` | `<BundleId>.pushkit.fileprovider` | `{"container-identifier":…,"domain":…}`, no `aps` | `Priority`, default 10; 5 allowed; 1 refused |
+| `ApnsRawNotification` | Decided by `Type` | The topic of that push type | `Payload`, written verbatim | The rules of that push type; a fixed priority (background 5, push-to-talk 10) refuses any other |
 
-Only `ApnsAlertNotification` can go through a VoIP instance; the others throw `ArgumentException` there. Only the VoIP push type gets the 5120-byte limit; every other type is limited to 4096 bytes.
+Only `ApnsAlertNotification` and a raw `Alert` or `Voip` can go through a VoIP instance; the others throw `ArgumentException` there, and a raw `Voip` throws on any other instance. Only the VoIP push type gets the 5120-byte limit; every other type is limited to 4096 bytes.
 
 #### Alert notifications
 
@@ -580,9 +585,30 @@ var result = await apns.SendAsync(
         Sound = ApnsSound.Default,
         ThreadId = "order-1234",
         InterruptionLevel = ApnsInterruptionLevel.TimeSensitive,
-        Data = new Dictionary<string, string> { ["orderId"] = "1234" },
+        Data = new JsonObject { ["orderId"] = 1234, ["items"] = new JsonArray("book", "pen") },
         Expiration = ApnsExpiration.At(DateTimeOffset.UtcNow.AddHours(1)),
     },
+    ct
+);
+```
+
+#### Custom data
+
+`Data` on the alert, background, location, push-to-talk, and complication notifications is a `JsonObject` (`System.Text.Json.Nodes`). Apple allows a dictionary, array, string, number, or Boolean for a custom key, so a value can be any JSON. Each key is written beside `aps` at the top of the payload; the key `aps` throws. The provider serializes the object once per send and never modifies it: a multicast writes one payload and reuses it for every token, and the same `JsonObject` can go into later notifications. Do not modify it while a send is preparing. Widgets, controls, Live Activity, and File Provider notifications have fixed payloads and no `Data`. `JsonObject` has no value equality, so two notifications with the same data compare unequal.
+
+#### Raw notifications
+
+`ApnsRawNotification` sends a payload you build yourself, for Apple keys the typed notifications do not model. It takes a required `Type` (`ApnsNotificationType`), a required `Payload` (`JsonElement`, which must be a JSON object), an optional `Priority`, and the common `Expiration`, `CollapseId`, and `ApnsId`.
+
+- `Type` decides everything the typed notification of that push type decides: the `apns-push-type` header, the topic, the default and allowed priorities, the 4096-byte or 5120-byte size limit, the VoIP and push-to-talk deliver-once default, whether a VoIP instance can send it, and whether certificate mode refuses it.
+- The payload is sent byte for byte as the element holds it, and its size is measured on those bytes. Those bytes must read as strict JSON: an element parsed with `AllowTrailingCommas` or comment handling that kept a trailing comma or a comment throws `ArgumentException`, because APNs would reject it. The provider does not check its keys, so a custom key placed inside `aps` reaches APNs, which ignores it. Prefer a typed notification when one fits.
+
+```csharp
+using var payload = JsonDocument.Parse("""{"aps":{"alert":{"title":"Hi"},"new-apple-key":1},"orderId":1234}""");
+
+await apns.SendAsync(
+    deviceToken,
+    new ApnsRawNotification { Type = ApnsNotificationType.Alert, Payload = payload.RootElement.Clone() },
     ct
 );
 ```
@@ -597,11 +623,12 @@ var result = await apns.SendAsync(
 
 | `Event` | Device token | Required | Allowed only here |
 |---|---|---|---|
-| `ApnsLiveActivityEvent.Start` | The app's push-to-start token | `ContentState`, `AttributesType`, `Attributes`, `Alert` | `AttributesType`, `Attributes` |
+| `ApnsLiveActivityEvent.Start` | The app's push-to-start token | `ContentState`, `AttributesType`, `Attributes`, `Alert` | `AttributesType`, `Attributes`, `RequestPushToken` |
 | `ApnsLiveActivityEvent.Update` | The running activity's push token | `ContentState` | — |
 | `ApnsLiveActivityEvent.End` | The running activity's push token | Nothing; send the final `ContentState` so the ended activity shows the latest data | — |
 
 - `Timestamp` defaults to the clock's current time. The device ignores an update older than the one it shows.
+- `RequestPushToken` writes `"input-push-token": 1` inside `aps` on a `Start`, so the started activity (iOS 18 and iPadOS 18 or later) reports a push token for its updates. Setting it on `Update` or `End` throws.
 - `StaleDate`, `DismissalDate`, and `RelevanceScore` are optional. A Live Activity relevance score must be a finite number; it ranks the activity against the app's other activities.
 - `Alert` shows only a title and a body. Setting `Subtitle`, `SubtitleLocKey`, `SubtitleLocArgs`, or `LaunchImage` throws. Localized texts are written as `{"loc-key":…,"loc-args":[…]}` dictionaries.
 - `Sound` needs `Alert` and is written inside it as `aps.alert.sound`. It takes `ApnsSound.Default` or a named sound; a critical sound throws.
@@ -677,7 +704,7 @@ public sealed class DeliveryActivityPusher(IApnsPushNotificationService apns)
 |---|---|
 | `StatusCode` | The HTTP status, or `null` when no answer arrived (transport fault, timeout, open circuit, refused endpoint) |
 | `Reason` | The APNs error code from the body, such as `BadDeviceToken`; `null` on success or when the body has none |
-| `ApnsId` | The `apns-id` the request carried, which identifies the notification in Apple's logs; `null` when no answer arrived |
+| `ApnsId` | The `apns-id` the request carried (the notification's `ApnsId` when set), which identifies the notification in Apple's logs; `null` when no answer arrived |
 | `UniqueId` | The `apns-unique-id` header, which only the sandbox returns, for looking the notification up in Apple's delivery log |
 | `InvalidSince` | For HTTP 410, the instant APNs confirmed the token was no longer valid (the body's millisecond `timestamp`); otherwise `null` |
 
@@ -691,7 +718,7 @@ An instance uses certificate mode when `Certificate` is set: the base64 text of 
 - Startup validation also fails when the certificate is not base64 PKCS#12, the password does not open it, it has no private key, or it has expired.
 - At host start a hosted service checks the certificate again with `TimeProvider`: an expired certificate fails the start with `InvalidOperationException`, and one that expires within 30 days logs a warning. It then checks the current certificate once a day: within 30 days of expiry it logs a warning, and once the certificate has expired it logs an error without stopping the host. Apple certificates last one year and are renewed by hand.
 - The certificate is presented during the TLS handshake. Requests carry no `authorization` header and still carry `apns-topic`, which a certificate valid for several topics requires.
-- Certificate mode refuses `location`, `fileprovider`, `liveactivity`, `widgets`, and `controls` pushes with `ArgumentException` before any network call. Apple documents or instructs token authentication for the first four. Apple does not state certificate support for `controls`, so the provider refuses it to be safe. Alert, background, VoIP, push-to-talk, and complication pushes work.
+- Certificate mode refuses `location`, `fileprovider`, `liveactivity`, `widgets`, and `controls` pushes with `ArgumentException` before any network call, whether typed or sent as an `ApnsRawNotification` of that `Type`. Apple documents or instructs token authentication for the first four. Apple does not state certificate support for `controls`, so the provider refuses it to be safe. Alert, background, VoIP, push-to-talk, and complication pushes work.
 - A renewed certificate takes effect without a restart when the options come from a configuration source that reloads, such as a reloading file or secret provider. When `Certificate` or `CertificatePassword` changes, the instance loads the new certificate, and each new TLS connection presents it. Existing connections keep the previous certificate until they recycle, within 6 hours. A change to any other option does not reload the certificate. Options set in code, or bound from a source that never reloads, still need a restart.
 - A renewed certificate that fails validation (not PKCS#12, wrong password, no private key, or expired) is rejected as a whole options change: the reload raises `OptionsValidationException` and every send through the instance throws it until the configuration is corrected. The instance never presents the rejected certificate. Validate the renewed `.p12` before publishing it.
 - Key storage depends on the OS. On Linux the private key stays in memory. On Windows it reaches the user key store, because SChannel cannot use an in-memory key for TLS client authentication. On macOS it goes into a temporary keychain.
@@ -715,7 +742,7 @@ builder.Services.AddHeadlessPushNotifications(setup =>
 - **Device tokens stay out of logs.** The `HttpClientFactory` request loggers are removed, because the request URI carries the raw device token. The provider's own log messages mask the token to its first 8 characters.
 - **HTTPS only, except loopback.** A non-HTTPS endpoint is refused unless its host is loopback, so a `configureClient` override cannot send the payload or the bearer token in cleartext over a network. The refusal surfaces as a `Failure` on each send.
 - **Environment must match the token.** A device token belongs to the environment the app was built for. `Sandbox` is for builds signed with a development profile; `Production` (the default) is for App Store, TestFlight, and ad hoc builds.
-- **Push type is per instance for VoIP.** `ApnsOptions.PushType` stays an instance setting: a VoIP instance holds PushKit tokens and sends every shared request and every `ApnsAlertNotification` as a VoIP push. Register a separate named instance for VoIP.
+- **Push type is per instance for VoIP.** `ApnsOptions.PushType` stays an instance setting: a VoIP instance holds PushKit tokens and sends every shared request and every `ApnsAlertNotification` as a VoIP push, deliver-once unless the request sets an expiration. Register a separate named instance for VoIP.
 - **Not supported.** iOS 18 broadcast push channels for Live Activities.
 
 ### Install

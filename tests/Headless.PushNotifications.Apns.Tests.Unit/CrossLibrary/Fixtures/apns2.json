@@ -1,0 +1,493 @@
+{
+  "library": "github.com/sideshow/apns2",
+  "version": "v0.25.0",
+  "generatedAt": "2026-01-01T00:00:00Z",
+  "scenarios": [
+    {
+      "id": "alert-basic",
+      "supported": true,
+      "unsupportedReason": null,
+      "headers": {
+        "apns-push-type": "alert",
+        "apns-topic": "com.example.app",
+        "apns-priority": null,
+        "apns-expiration": null,
+        "apns-collapse-id": null,
+        "apns-id": null
+      },
+      "payload": {
+        "aps": {
+          "alert": {
+            "body": "World",
+            "title": "Hello"
+          }
+        }
+      }
+    },
+    {
+      "id": "alert-full",
+      "supported": false,
+      "unsupportedReason": "payload.Payload has no builder method for aps.target-content-id",
+      "headers": null,
+      "payload": null
+    },
+    {
+      "id": "alert-full-without-target-content-id",
+      "supported": true,
+      "unsupportedReason": null,
+      "headers": {
+        "apns-push-type": "alert",
+        "apns-topic": "com.example.app",
+        "apns-priority": null,
+        "apns-expiration": null,
+        "apns-collapse-id": null,
+        "apns-id": null
+      },
+      "payload": {
+        "aps": {
+          "alert": {
+            "body": "Your order #42 is on its way",
+            "launch-image": "launch.png",
+            "loc-args": [
+              "42",
+              "tomorrow"
+            ],
+            "loc-key": "ORDER_BODY",
+            "subtitle": "Arrives tomorrow",
+            "title": "Order shipped",
+            "title-loc-args": [
+              "42"
+            ],
+            "title-loc-key": "ORDER_TITLE"
+          },
+          "badge": 0,
+          "category": "ORDER_UPDATE",
+          "interruption-level": "time-sensitive",
+          "mutable-content": 1,
+          "relevance-score": 0.5,
+          "sound": "chime.caf",
+          "thread-id": "orders"
+        }
+      }
+    },
+    {
+      "id": "alert-critical-sound",
+      "supported": true,
+      "unsupportedReason": null,
+      "headers": {
+        "apns-push-type": "alert",
+        "apns-topic": "com.example.app",
+        "apns-priority": null,
+        "apns-expiration": null,
+        "apns-collapse-id": null,
+        "apns-id": null
+      },
+      "payload": {
+        "aps": {
+          "alert": {
+            "body": "Check the sensor",
+            "title": "Critical"
+          },
+          "interruption-level": "critical",
+          "sound": {
+            "critical": 1,
+            "name": "chime.caf",
+            "volume": 0.8
+          }
+        }
+      }
+    },
+    {
+      "id": "background",
+      "supported": true,
+      "unsupportedReason": null,
+      "headers": {
+        "apns-push-type": "background",
+        "apns-topic": "com.example.app",
+        "apns-priority": "5",
+        "apns-expiration": null,
+        "apns-collapse-id": null,
+        "apns-id": null
+      },
+      "payload": {
+        "aps": {
+          "content-available": 1
+        },
+        "sync": "inbox"
+      }
+    },
+    {
+      "id": "voip",
+      "supported": true,
+      "unsupportedReason": null,
+      "headers": {
+        "apns-push-type": "voip",
+        "apns-topic": "com.example.app.voip",
+        "apns-priority": null,
+        "apns-expiration": null,
+        "apns-collapse-id": null,
+        "apns-id": null
+      },
+      "payload": {
+        "aps": {},
+        "callId": "call-7",
+        "caller": "Alice"
+      }
+    },
+    {
+      "id": "liveactivity-start",
+      "supported": true,
+      "unsupportedReason": null,
+      "headers": {
+        "apns-push-type": "liveactivity",
+        "apns-topic": "com.example.app.push-type.liveactivity",
+        "apns-priority": null,
+        "apns-expiration": null,
+        "apns-collapse-id": null,
+        "apns-id": null
+      },
+      "payload": {
+        "aps": {
+          "alert": {
+            "body": "We are preparing your order",
+            "title": "Order started"
+          },
+          "attributes": {
+            "orderId": "42",
+            "restaurant": "Pizza Place"
+          },
+          "attributes-type": "DeliveryAttributes",
+          "content-state": {
+            "etaMinutes": 25,
+            "status": "preparing"
+          },
+          "event": "start",
+          "sound": "chime.caf",
+          "timestamp": 1767225600
+        }
+      }
+    },
+    {
+      "id": "liveactivity-update",
+      "supported": true,
+      "unsupportedReason": null,
+      "headers": {
+        "apns-push-type": "liveactivity",
+        "apns-topic": "com.example.app.push-type.liveactivity",
+        "apns-priority": null,
+        "apns-expiration": null,
+        "apns-collapse-id": null,
+        "apns-id": null
+      },
+      "payload": {
+        "aps": {
+          "content-state": {
+            "etaMinutes": 10,
+            "status": "on-the-way"
+          },
+          "event": "update",
+          "relevance-score": 0.5,
+          "stale-date": 1767229200,
+          "timestamp": 1767225600
+        }
+      }
+    },
+    {
+      "id": "liveactivity-end",
+      "supported": true,
+      "unsupportedReason": null,
+      "headers": {
+        "apns-push-type": "liveactivity",
+        "apns-topic": "com.example.app.push-type.liveactivity",
+        "apns-priority": null,
+        "apns-expiration": null,
+        "apns-collapse-id": null,
+        "apns-id": null
+      },
+      "payload": {
+        "aps": {
+          "content-state": {
+            "etaMinutes": 0,
+            "status": "delivered"
+          },
+          "dismissal-date": 1767232800,
+          "event": "end",
+          "timestamp": 1767225600
+        }
+      }
+    },
+    {
+      "id": "location",
+      "supported": true,
+      "unsupportedReason": null,
+      "headers": {
+        "apns-push-type": "location",
+        "apns-topic": "com.example.app.location-query",
+        "apns-priority": null,
+        "apns-expiration": null,
+        "apns-collapse-id": null,
+        "apns-id": null
+      },
+      "payload": {
+        "aps": {}
+      }
+    },
+    {
+      "id": "pushtotalk",
+      "supported": true,
+      "unsupportedReason": null,
+      "headers": {
+        "apns-push-type": "pushtotalk",
+        "apns-topic": "com.example.app.voip-ptt",
+        "apns-priority": null,
+        "apns-expiration": null,
+        "apns-collapse-id": null,
+        "apns-id": null
+      },
+      "payload": {
+        "activeSpeaker": "Alice",
+        "aps": {}
+      }
+    },
+    {
+      "id": "widgets",
+      "supported": false,
+      "unsupportedReason": "payload.Payload has no builder method for aps.content-changed",
+      "headers": null,
+      "payload": null
+    },
+    {
+      "id": "controls",
+      "supported": false,
+      "unsupportedReason": "payload.Payload has no builder method for aps.content-changed",
+      "headers": null,
+      "payload": null
+    },
+    {
+      "id": "complication",
+      "supported": true,
+      "unsupportedReason": null,
+      "headers": {
+        "apns-push-type": "complication",
+        "apns-topic": "com.example.app.complication",
+        "apns-priority": null,
+        "apns-expiration": null,
+        "apns-collapse-id": null,
+        "apns-id": null
+      },
+      "payload": {
+        "aps": {},
+        "temperature": 21
+      }
+    },
+    {
+      "id": "fileprovider",
+      "supported": true,
+      "unsupportedReason": null,
+      "headers": {
+        "apns-push-type": "fileprovider",
+        "apns-topic": "com.example.app.pushkit.fileprovider",
+        "apns-priority": null,
+        "apns-expiration": null,
+        "apns-collapse-id": null,
+        "apns-id": null
+      },
+      "payload": {
+        "aps": {},
+        "container-identifier": "NSFileProviderRootContainerItemIdentifier",
+        "domain": "com.example.app.fileprovider.domain"
+      }
+    },
+    {
+      "id": "custom-data-nested",
+      "supported": true,
+      "unsupportedReason": null,
+      "headers": {
+        "apns-push-type": "alert",
+        "apns-topic": "com.example.app",
+        "apns-priority": null,
+        "apns-expiration": null,
+        "apns-collapse-id": null,
+        "apns-id": null
+      },
+      "payload": {
+        "aps": {
+          "alert": {
+            "body": "You have a new order"
+          }
+        },
+        "count": 3,
+        "flag": false,
+        "order": {
+          "id": "A-1",
+          "lines": [
+            {
+              "qty": 2,
+              "sku": "X1"
+            }
+          ],
+          "paid": true,
+          "total": 12.5
+        },
+        "tags": [
+          "new",
+          "priority"
+        ]
+      }
+    },
+    {
+      "id": "expiration-zero",
+      "supported": false,
+      "unsupportedReason": "apns2 writes apns-expiration only when Expiration is after the Unix epoch, so 0 cannot be sent",
+      "headers": null,
+      "payload": null
+    },
+    {
+      "id": "expiration-absolute",
+      "supported": true,
+      "unsupportedReason": null,
+      "headers": {
+        "apns-push-type": "alert",
+        "apns-topic": "com.example.app",
+        "apns-priority": null,
+        "apns-expiration": "1767312000",
+        "apns-collapse-id": null,
+        "apns-id": null
+      },
+      "payload": {
+        "aps": {
+          "alert": {
+            "body": "Keep for a day",
+            "title": "Later"
+          }
+        }
+      }
+    },
+    {
+      "id": "collapse-id",
+      "supported": true,
+      "unsupportedReason": null,
+      "headers": {
+        "apns-push-type": "alert",
+        "apns-topic": "com.example.app",
+        "apns-priority": null,
+        "apns-expiration": null,
+        "apns-collapse-id": "order-42",
+        "apns-id": null
+      },
+      "payload": {
+        "aps": {
+          "alert": {
+            "body": "Latest status",
+            "title": "Order 42"
+          }
+        }
+      }
+    },
+    {
+      "id": "priority-5",
+      "supported": true,
+      "unsupportedReason": null,
+      "headers": {
+        "apns-push-type": "alert",
+        "apns-topic": "com.example.app",
+        "apns-priority": "5",
+        "apns-expiration": null,
+        "apns-collapse-id": null,
+        "apns-id": null
+      },
+      "payload": {
+        "aps": {
+          "alert": {
+            "body": "Power-considerate delivery",
+            "title": "Low"
+          }
+        }
+      }
+    },
+    {
+      "id": "priority-10",
+      "supported": true,
+      "unsupportedReason": null,
+      "headers": {
+        "apns-push-type": "alert",
+        "apns-topic": "com.example.app",
+        "apns-priority": "10",
+        "apns-expiration": null,
+        "apns-collapse-id": null,
+        "apns-id": null
+      },
+      "payload": {
+        "aps": {
+          "alert": {
+            "body": "Immediate delivery",
+            "title": "High"
+          }
+        }
+      }
+    },
+    {
+      "id": "apns-id",
+      "supported": true,
+      "unsupportedReason": null,
+      "headers": {
+        "apns-push-type": "alert",
+        "apns-topic": "com.example.app",
+        "apns-priority": null,
+        "apns-expiration": null,
+        "apns-collapse-id": null,
+        "apns-id": "123e4567-e89b-12d3-a456-426614174000"
+      },
+      "payload": {
+        "aps": {
+          "alert": {
+            "body": "Caller-chosen id",
+            "title": "Tracked"
+          }
+        }
+      }
+    },
+    {
+      "id": "raw-payload",
+      "supported": true,
+      "unsupportedReason": null,
+      "headers": {
+        "apns-push-type": "alert",
+        "apns-topic": "com.example.app",
+        "apns-priority": null,
+        "apns-expiration": null,
+        "apns-collapse-id": null,
+        "apns-id": null
+      },
+      "payload": {
+        "aps": {
+          "alert": {
+            "body": "Unmodelled keys pass through",
+            "title": "Raw"
+          },
+          "future-apple-key": {
+            "enabled": true
+          },
+          "sound": "default"
+        },
+        "customRoot": [
+          1,
+          "two",
+          {
+            "three": 3
+          }
+        ]
+      }
+    }
+  ],
+  "jwt": {
+    "header": {
+      "alg": "ES256",
+      "kid": "TESTKEY123"
+    },
+    "claims": {
+      "iat": "<number>",
+      "iss": "TESTTEAM12"
+    }
+  }
+}

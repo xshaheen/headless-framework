@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Json.Nodes;
 using Headless.PushNotifications.Apns;
 using Headless.PushNotifications.Apns.Internals;
 using Headless.Testing.Tests;
@@ -38,7 +39,7 @@ public sealed class ApnsPayloadWriterTests : TestBase
             InterruptionLevel = ApnsInterruptionLevel.TimeSensitive,
             RelevanceScore = 0.5,
             TargetContentId = "window-1",
-            Data = new Dictionary<string, string>(StringComparer.Ordinal) { ["k"] = "v" },
+            Data = new JsonObject { ["k"] = "v" },
         };
 
         // when
@@ -257,7 +258,46 @@ public sealed class ApnsPayloadWriterTests : TestBase
         var headers = _Prepare(notification, o => o.PushType = ApnsPushType.Voip).Headers;
 
         // then
-        _Lines(headers).Should().Equal("apns-push-type: voip", $"apns-topic: {_BundleId}.voip", "apns-priority: 10");
+        _Lines(headers)
+            .Should()
+            .Equal("apns-push-type: voip", $"apns-topic: {_BundleId}.voip", "apns-priority: 10", "apns-expiration: 0");
+    }
+
+    [Fact]
+    public void should_default_every_voip_push_to_deliver_once()
+    {
+        // given
+        var alert = new ApnsAlertNotification { Alert = new ApnsAlert { Body = "Call" } };
+        var data = new ApnsVoipDataNotification { Data = new JsonObject { ["callId"] = "1" } };
+        var raw = new ApnsRawNotification { Type = ApnsNotificationType.Voip, Payload = _Element("""{"aps":{}}""") };
+        ApnsNotification[] notifications = [alert, data, raw];
+
+        // when
+        var headers = notifications.Select(n => _Prepare(n, o => o.PushType = ApnsPushType.Voip).Headers);
+
+        // then
+        headers.Should().AllSatisfy(h => _Lines(h).Should().Contain("apns-expiration: 0"));
+    }
+
+    [Fact]
+    public void should_send_the_caller_expiration_when_a_voip_push_sets_one()
+    {
+        // given
+        var notification = new ApnsAlertNotification
+        {
+            Alert = new ApnsAlert { Body = "Call" },
+            Expiration = ApnsExpiration.At(_Now.AddSeconds(30)),
+        };
+
+        // when
+        var headers = _Prepare(notification, o => o.PushType = ApnsPushType.Voip).Headers;
+
+        // then
+        _Lines(headers)
+            .Should()
+            .Contain(
+                "apns-expiration: " + _Now.AddSeconds(30).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)
+            );
     }
 
     #endregion
@@ -268,10 +308,7 @@ public sealed class ApnsPayloadWriterTests : TestBase
     public void should_write_content_available_with_top_level_data_when_notification_is_background()
     {
         // given
-        var notification = new ApnsBackgroundNotification
-        {
-            Data = new Dictionary<string, string>(StringComparer.Ordinal) { ["sync"] = "1" },
-        };
+        var notification = new ApnsBackgroundNotification { Data = new JsonObject { ["sync"] = "1" } };
 
         // when
         var prepared = _Prepare(notification, o => o.Priority = ApnsPriority.Immediate);
@@ -988,12 +1025,11 @@ public sealed class ApnsPayloadWriterTests : TestBase
         act.Should().Throw<ArgumentException>(scenario);
     }
 
-    private static Dictionary<string, string> _KeyValue() => new(StringComparer.Ordinal) { ["k"] = "v" };
+    private static JsonObject _KeyValue() => new() { ["k"] = "v" };
 
-    private static Dictionary<string, string> _Reserved() => new(StringComparer.Ordinal) { ["aps"] = "x" };
+    private static JsonObject _Reserved() => new() { ["aps"] = "x" };
 
-    private static Dictionary<string, string> _Filler(int length) =>
-        new(StringComparer.Ordinal) { ["k"] = new string('x', length) };
+    private static JsonObject _Filler(int length) => new() { ["k"] = new string('x', length) };
 
     #endregion
 
@@ -1095,7 +1131,7 @@ public sealed class ApnsPayloadWriterTests : TestBase
         var notification = new ApnsAlertNotification
         {
             Alert = new ApnsAlert { Body = "Body" },
-            Data = new Dictionary<string, string>(StringComparer.Ordinal) { ["aps"] = "x" },
+            Data = new JsonObject { ["aps"] = "x" },
         };
 
         // when
@@ -1109,10 +1145,7 @@ public sealed class ApnsPayloadWriterTests : TestBase
     public void should_throw_when_background_data_uses_the_reserved_aps_key()
     {
         // given
-        var notification = new ApnsBackgroundNotification
-        {
-            Data = new Dictionary<string, string>(StringComparer.Ordinal) { ["aps"] = "x" },
-        };
+        var notification = new ApnsBackgroundNotification { Data = new JsonObject { ["aps"] = "x" } };
 
         // when
         var act = () => _Prepare(notification);
@@ -1157,6 +1190,407 @@ public sealed class ApnsPayloadWriterTests : TestBase
 
     #endregion
 
+    #region JSON data
+
+    [Fact]
+    public void should_write_json_data_values_as_peers_of_aps()
+    {
+        // given
+        var notification = new ApnsBackgroundNotification
+        {
+            Data = new JsonObject
+            {
+                ["order"] = new JsonObject { ["id"] = 42, ["tags"] = new JsonArray("a", "b") },
+                ["urgent"] = true,
+                ["ratio"] = 0.5,
+                ["note"] = "hi",
+                ["missing"] = null,
+            },
+        };
+
+        // when
+        var json = _Json(_Prepare(notification));
+
+        // then
+        json.Should()
+            .Be(
+                """{"aps":{"content-available":1},"order":{"id":42,"tags":["a","b"]},"urgent":true,"ratio":0.5,"note":"hi","missing":null}"""
+            );
+    }
+
+    [Fact]
+    public void should_leave_the_caller_data_untouched_when_preparing()
+    {
+        // given
+        var nested = new JsonObject { ["id"] = 42 };
+        var data = new JsonObject { ["order"] = nested, ["note"] = "hi" };
+        var before = data.ToJsonString();
+        var notification = new ApnsAlertNotification
+        {
+            Alert = new ApnsAlert { Body = "Body" },
+            Data = data,
+        };
+
+        // when
+        _Prepare(notification);
+        _Prepare(notification);
+
+        // then
+        data.ToJsonString().Should().Be(before);
+        data.Parent.Should().BeNull();
+        nested.Parent.Should().BeSameAs(data);
+        data.Count.Should().Be(2);
+    }
+
+    [Fact]
+    public void should_count_json_data_toward_the_payload_limit()
+    {
+        // given: {"aps":{"content-available":1},"k":["<filler>"]} is 40 bytes of fixed JSON plus the filler.
+        var atLimit = new ApnsBackgroundNotification
+        {
+            Data = new JsonObject { ["k"] = new JsonArray(new string('x', 4096 - 40)) },
+        };
+        var overLimit = new ApnsBackgroundNotification
+        {
+            Data = new JsonObject { ["k"] = new JsonArray(new string('x', 4096 - 40 + 1)) },
+        };
+
+        // when
+        var accepted = _Prepare(atLimit);
+        var act = () => _Prepare(overLimit);
+
+        // then
+        accepted.Payload.Should().HaveCount(4096);
+        act.Should().Throw<ArgumentException>();
+    }
+
+    #endregion
+
+    #region Raw notification
+
+    public static TheoryData<ApnsNotificationType, string, string, string> RawTypes =>
+        new()
+        {
+            { ApnsNotificationType.Alert, "alert", "", "10" },
+            { ApnsNotificationType.Background, "background", "", "5" },
+            { ApnsNotificationType.LiveActivity, "liveactivity", ".push-type.liveactivity", "5" },
+            { ApnsNotificationType.Location, "location", ".location-query", "10" },
+            { ApnsNotificationType.PushToTalk, "pushtotalk", ".voip-ptt", "10" },
+            { ApnsNotificationType.Widgets, "widgets", ".push-type.widgets", "10" },
+            { ApnsNotificationType.Controls, "controls", ".push-type.controls", "10" },
+            { ApnsNotificationType.Complication, "complication", ".complication", "10" },
+            { ApnsNotificationType.FileProvider, "fileprovider", ".pushkit.fileprovider", "10" },
+        };
+
+    [Theory]
+    [MemberData(nameof(RawTypes))]
+    public void should_send_a_raw_notification_with_the_headers_of_its_type(
+        ApnsNotificationType type,
+        string pushType,
+        string topicSuffix,
+        string priority
+    )
+    {
+        // given
+        var notification = new ApnsRawNotification { Type = type, Payload = _Element("""{"aps":{}}""") };
+
+        // when
+        var headers = _Prepare(notification).Headers;
+
+        // then
+        headers.PushType.Should().Be(pushType);
+        headers.Topic.Should().Be(_BundleId + topicSuffix);
+        _Lines(headers).Should().Contain($"apns-priority: {priority}");
+    }
+
+    [Fact]
+    public void should_write_the_raw_payload_verbatim()
+    {
+        // given
+        const string payload = """{ "aps" : { "alert" : "Hi", "future-key" : [1, 2] }, "custom": {"a": "éé"} }""";
+        var notification = new ApnsRawNotification
+        {
+            Type = ApnsNotificationType.Alert,
+            Payload = _Element(payload),
+            Priority = ApnsPriority.PowerConsiderate,
+            Expiration = ApnsExpiration.DeliverOnce,
+            CollapseId = "c1",
+        };
+
+        // when
+        var prepared = _Prepare(notification);
+
+        // then
+        _Json(prepared).Should().Be(payload);
+        _Lines(prepared.Headers)
+            .Should()
+            .Equal(
+                "apns-push-type: alert",
+                $"apns-topic: {_BundleId}",
+                "apns-priority: 5",
+                "apns-expiration: 0",
+                "apns-collapse-id: c1"
+            );
+    }
+
+    [Fact]
+    public void should_default_a_raw_push_to_talk_to_deliver_once()
+    {
+        // given
+        var notification = new ApnsRawNotification
+        {
+            Type = ApnsNotificationType.PushToTalk,
+            Payload = _Element("""{"aps":{}}"""),
+        };
+
+        // when
+        var headers = _Prepare(notification).Headers;
+
+        // then
+        _Lines(headers).Should().Contain("apns-expiration: 0");
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("\"text\"")]
+    [InlineData("1")]
+    public void should_throw_when_the_raw_payload_is_not_a_json_object(string payload)
+    {
+        // given
+        var notification = new ApnsRawNotification { Type = ApnsNotificationType.Alert, Payload = _Element(payload) };
+
+        // when
+        var act = () => _Prepare(notification);
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Theory]
+    [InlineData("""{"aps":{},"k":1,}""")]
+    [InlineData("""{"aps":{} /* note */,"k":1}""")]
+    public void should_throw_when_the_raw_payload_was_parsed_leniently(string payload)
+    {
+        // given
+        using var document = JsonDocument.Parse(
+            payload,
+            new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip }
+        );
+        var notification = new ApnsRawNotification
+        {
+            Type = ApnsNotificationType.Alert,
+            Payload = document.RootElement.Clone(),
+        };
+
+        // when
+        var act = () => _Prepare(notification);
+
+        // then
+        act.Should().Throw<ArgumentException>().WithMessage("*strict JSON*");
+    }
+
+    [Fact]
+    public void should_send_the_raw_payload_bytes_verbatim()
+    {
+        // given
+        const string payload = """{ "aps" : { "alert" : "é" },  "k" : 1.0 }""";
+        var notification = new ApnsRawNotification { Type = ApnsNotificationType.Alert, Payload = _Element(payload) };
+
+        // when
+        var prepared = _Prepare(notification);
+
+        // then
+        prepared.Payload.Should().Equal(Encoding.UTF8.GetBytes(payload));
+    }
+
+    [Fact]
+    public void should_throw_when_the_raw_payload_is_undefined()
+    {
+        // given
+        var notification = new ApnsRawNotification { Type = ApnsNotificationType.Alert, Payload = default };
+
+        // when
+        var act = () => _Prepare(notification);
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_throw_when_the_raw_type_is_undefined()
+    {
+        // given
+        var notification = new ApnsRawNotification { Type = (ApnsNotificationType)99, Payload = _Element("{}") };
+
+        // when
+        var act = () => _Prepare(notification);
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    public static TheoryData<ApnsNotificationType, ApnsPriority> RawDisallowedPriorities =>
+        new()
+        {
+            { ApnsNotificationType.Background, ApnsPriority.Immediate },
+            { ApnsNotificationType.Background, ApnsPriority.PowerPrioritized },
+            { ApnsNotificationType.PushToTalk, ApnsPriority.PowerConsiderate },
+            { ApnsNotificationType.LiveActivity, ApnsPriority.PowerPrioritized },
+            { ApnsNotificationType.Location, ApnsPriority.PowerPrioritized },
+            { ApnsNotificationType.Widgets, ApnsPriority.PowerPrioritized },
+            { ApnsNotificationType.Controls, ApnsPriority.PowerPrioritized },
+            { ApnsNotificationType.Complication, ApnsPriority.PowerPrioritized },
+            { ApnsNotificationType.FileProvider, ApnsPriority.PowerPrioritized },
+        };
+
+    [Theory]
+    [MemberData(nameof(RawDisallowedPriorities))]
+    public void should_throw_when_a_raw_priority_breaks_its_type_rules(ApnsNotificationType type, ApnsPriority priority)
+    {
+        // given
+        var notification = new ApnsRawNotification
+        {
+            Type = type,
+            Payload = _Element("""{"aps":{}}"""),
+            Priority = priority,
+        };
+
+        // when
+        var act = () => _Prepare(notification);
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_send_a_raw_alert_or_voip_as_voip_through_a_voip_instance()
+    {
+        // given
+        var alert = new ApnsRawNotification { Type = ApnsNotificationType.Alert, Payload = _Element("""{"aps":{}}""") };
+        var voip = alert with { Type = ApnsNotificationType.Voip };
+
+        // when
+        var alertHeaders = _Prepare(alert, o => o.PushType = ApnsPushType.Voip).Headers;
+        var voipHeaders = _Prepare(voip, o => o.PushType = ApnsPushType.Voip).Headers;
+
+        // then
+        alertHeaders.PushType.Should().Be("voip");
+        alertHeaders.Topic.Should().Be($"{_BundleId}.voip");
+        voipHeaders.PushType.Should().Be("voip");
+        voipHeaders.Topic.Should().Be($"{_BundleId}.voip");
+    }
+
+    [Fact]
+    public void should_throw_when_a_raw_voip_is_sent_through_a_non_voip_instance()
+    {
+        // given
+        var notification = new ApnsRawNotification { Type = ApnsNotificationType.Voip, Payload = _Element("{}") };
+
+        // when
+        var act = () => _Prepare(notification);
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_throw_when_a_voip_instance_gets_a_raw_non_voip_type()
+    {
+        // given
+        var notification = new ApnsRawNotification
+        {
+            Type = ApnsNotificationType.Background,
+            Payload = _Element("""{"aps":{"content-available":1}}"""),
+        };
+
+        // when
+        var act = () => _Prepare(notification, o => o.PushType = ApnsPushType.Voip);
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_apply_the_size_limit_of_the_raw_type()
+    {
+        // given: {"k":"<filler>"} is 8 bytes of fixed JSON plus the filler.
+        var atAlertLimit = _RawWithFiller(ApnsNotificationType.Alert, 4096 - 8);
+        var overAlertLimit = _RawWithFiller(ApnsNotificationType.Alert, 4096 - 8 + 1);
+        var atVoipLimit = _RawWithFiller(ApnsNotificationType.Voip, 5120 - 8);
+        var overVoipLimit = _RawWithFiller(ApnsNotificationType.Voip, 5120 - 8 + 1);
+
+        // when
+        var acceptedAlert = _Prepare(atAlertLimit);
+        var actAlert = () => _Prepare(overAlertLimit);
+        var acceptedVoip = _Prepare(atVoipLimit, o => o.PushType = ApnsPushType.Voip);
+        var actVoip = () => _Prepare(overVoipLimit, o => o.PushType = ApnsPushType.Voip);
+
+        // then
+        acceptedAlert.Payload.Should().HaveCount(4096);
+        actAlert.Should().Throw<ArgumentException>();
+        acceptedVoip.Payload.Should().HaveCount(5120);
+        actVoip.Should().Throw<ArgumentException>();
+    }
+
+    private static ApnsRawNotification _RawWithFiller(ApnsNotificationType type, int fillerLength)
+    {
+        return new ApnsRawNotification
+        {
+            Type = type,
+            Payload = _Element($$"""{"k":"{{new string('x', fillerLength)}}"}"""),
+        };
+    }
+
+    #endregion
+
+    #region Live Activity push token
+
+    [Fact]
+    public void should_write_input_push_token_inside_aps_when_a_start_requests_a_push_token()
+    {
+        // given
+        var notification = new ApnsLiveActivityNotification
+        {
+            Event = ApnsLiveActivityEvent.Start,
+            ContentState = _Element("""{"score":0}"""),
+            AttributesType = "MatchAttributes",
+            Attributes = _Element("""{"home":"A"}"""),
+            Alert = new ApnsAlert { Title = "Kickoff" },
+            RequestPushToken = true,
+        };
+
+        // when
+        var json = _Json(_Prepare(notification));
+
+        // then
+        json.Should()
+            .Be(
+                """{"aps":{"timestamp":1790330400,"event":"start","content-state":{"score":0},"input-push-token":1,"attributes-type":"MatchAttributes","attributes":{"home":"A"},"alert":{"title":"Kickoff"}}}"""
+            );
+    }
+
+    [Theory]
+    [InlineData(ApnsLiveActivityEvent.Update)]
+    [InlineData(ApnsLiveActivityEvent.End)]
+    public void should_throw_when_a_non_start_event_requests_a_push_token(ApnsLiveActivityEvent activityEvent)
+    {
+        // given
+        var notification = new ApnsLiveActivityNotification
+        {
+            Event = activityEvent,
+            ContentState = _Element("""{"score":1}"""),
+            RequestPushToken = true,
+        };
+
+        // when
+        var act = () => _Prepare(notification);
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    #endregion
+
     #region Helpers
 
     private ApnsPreparedNotification _Prepare(ApnsNotification notification, Action<ApnsOptions>? configure = null)
@@ -1188,10 +1622,7 @@ public sealed class ApnsPayloadWriterTests : TestBase
 
     private static ApnsBackgroundNotification _BackgroundWithFiller(int fillerLength)
     {
-        return new ApnsBackgroundNotification
-        {
-            Data = new Dictionary<string, string>(StringComparer.Ordinal) { ["k"] = new string('x', fillerLength) },
-        };
+        return new ApnsBackgroundNotification { Data = new JsonObject { ["k"] = new string('x', fillerLength) } };
     }
 
     private static ApnsAlertNotification _AlertWithFiller(int fillerLength)
@@ -1199,7 +1630,7 @@ public sealed class ApnsPayloadWriterTests : TestBase
         return new ApnsAlertNotification
         {
             Alert = new ApnsAlert { Body = "Call" },
-            Data = new Dictionary<string, string>(StringComparer.Ordinal) { ["k"] = new string('x', fillerLength) },
+            Data = new JsonObject { ["k"] = new string('x', fillerLength) },
         };
     }
 

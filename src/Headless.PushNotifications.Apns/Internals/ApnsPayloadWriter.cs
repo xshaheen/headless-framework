@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Buffers;
+using System.Runtime.InteropServices;
+using System.Text.Json.Nodes;
 using Headless.Checks;
 
 namespace Headless.PushNotifications.Apns.Internals;
@@ -44,6 +46,12 @@ internal static class ApnsPayloadWriter
 
         // Headers first: they refuse a push type the instance cannot send before any payload work.
         var headers = ApnsRequestHeaders.Create(notification, options);
+
+        if (notification is ApnsRawNotification raw)
+        {
+            return new ApnsPreparedNotification(_RawPayload(raw, headers), headers);
+        }
+
         var buffer = new ArrayBufferWriter<byte>(512);
 
 #pragma warning disable MA0045 // False positive: a synchronous in-memory JSON writer in a synchronous method; await using would add nothing.
@@ -86,14 +94,54 @@ internal static class ApnsPayloadWriter
             }
         }
 
-        var limit = string.Equals(headers.PushType, ApnsPushTypes.Voip, StringComparison.Ordinal)
-            ? _MaxVoipPayloadBytes
-            : _MaxAlertPayloadBytes;
-
-        _EnsureWithinLimit(buffer.WrittenCount, limit, headers.PushType, nameof(notification));
+        _EnsureWithinLimit(buffer.WrittenCount, headers.PushType, nameof(notification));
 
         return new ApnsPreparedNotification(buffer.WrittenSpan.ToArray(), headers);
     }
+
+    #region Raw
+
+    private static byte[] _RawPayload(ApnsRawNotification notification, ApnsRequestHeaders headers)
+    {
+        if (notification.Payload.ValueKind != JsonValueKind.Object)
+        {
+            throw new ArgumentException(
+                $"An APNs raw notification payload must be a JSON object, not {notification.Payload.ValueKind}.",
+                nameof(notification)
+            );
+        }
+
+        // The element's own UTF-8 bytes rather than a re-serialization, so the payload reaches APNs exactly as the
+        // caller wrote it and the size check measures those bytes.
+        var payload = JsonMarshal.GetRawUtf8Value(notification.Payload).ToArray();
+
+        _EnsureStrictJson(payload, nameof(notification));
+        _EnsureWithinLimit(payload.Length, headers.PushType, nameof(notification));
+
+        return payload;
+    }
+
+    // A JsonElement parsed with lenient options (trailing commas, comments) keeps those bytes, and APNs would reject
+    // the payload after the size check passed it, so the bytes must also read as strict JSON.
+    private static void _EnsureStrictJson(byte[] payload, string paramName)
+    {
+        var reader = new Utf8JsonReader(payload);
+
+        try
+        {
+            while (reader.Read()) { }
+        }
+        catch (JsonException exception)
+        {
+            throw new ArgumentException(
+                "An APNs raw notification payload must be strict JSON: no comments or trailing commas.",
+                paramName,
+                exception
+            );
+        }
+    }
+
+    #endregion
 
     #region Alert
 
@@ -238,7 +286,7 @@ internal static class ApnsPayloadWriter
 
     #region Data-only push types
 
-    private static void _WriteEmptyApsWithData(Utf8JsonWriter writer, IReadOnlyDictionary<string, string>? data)
+    private static void _WriteEmptyApsWithData(Utf8JsonWriter writer, JsonObject? data)
     {
         _EnsureNoReservedKey(data, "notification");
 
@@ -313,6 +361,11 @@ internal static class ApnsPayloadWriter
             writer.WriteNumber("relevance-score", relevance);
         }
 
+        if (notification.RequestPushToken)
+        {
+            writer.WriteNumber("input-push-token", 1);
+        }
+
         _WriteOptionalString(writer, "attributes-type", notification.AttributesType);
 
         if (notification.Attributes is { } attributes)
@@ -366,6 +419,14 @@ internal static class ApnsPayloadWriter
         {
             throw new ArgumentException(
                 "Only a Live Activity 'start' push carries an attributes type and attributes.",
+                nameof(notification)
+            );
+        }
+        else if (notification.RequestPushToken)
+        {
+            // An update or end goes to the activity's own push token, so there is no new token to request.
+            throw new ArgumentException(
+                "Only a Live Activity 'start' push can request a push token.",
                 nameof(notification)
             );
         }
@@ -549,7 +610,7 @@ internal static class ApnsPayloadWriter
         }
     }
 
-    private static void _EnsureNoReservedKey(IReadOnlyDictionary<string, string>? data, string paramName)
+    private static void _EnsureNoReservedKey(JsonObject? data, string paramName)
     {
         if (data?.ContainsKey(_ApsKey) == true)
         {
@@ -557,8 +618,12 @@ internal static class ApnsPayloadWriter
         }
     }
 
-    private static void _EnsureWithinLimit(int payloadBytes, int limit, string pushType, string paramName)
+    private static void _EnsureWithinLimit(int payloadBytes, string pushType, string paramName)
     {
+        var limit = string.Equals(pushType, ApnsPushTypes.Voip, StringComparison.Ordinal)
+            ? _MaxVoipPayloadBytes
+            : _MaxAlertPayloadBytes;
+
         if (payloadBytes > limit)
         {
             throw new ArgumentException(
@@ -568,16 +633,27 @@ internal static class ApnsPayloadWriter
         }
     }
 
-    private static void _WriteData(Utf8JsonWriter writer, IReadOnlyDictionary<string, string>? data)
+    private static void _WriteData(Utf8JsonWriter writer, JsonObject? data)
     {
         if (data is null)
         {
             return;
         }
 
+        // Each value is written into this payload's writer rather than moved into a new tree, so the caller's
+        // object keeps its nodes and can be reused, including by concurrent sends.
         foreach (var (key, value) in data)
         {
-            writer.WriteString(key, value);
+            writer.WritePropertyName(key);
+
+            if (value is null)
+            {
+                writer.WriteNullValue();
+            }
+            else
+            {
+                value.WriteTo(writer);
+            }
         }
     }
 

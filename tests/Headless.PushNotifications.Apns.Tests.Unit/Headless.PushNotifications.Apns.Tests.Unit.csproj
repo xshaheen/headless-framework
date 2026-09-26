@@ -13,4 +13,29 @@
     <ProjectReference Include="..\..\src\Headless.PushNotifications.Apns\Headless.PushNotifications.Apns.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
+  <!-- The cross-library conformance test reads the oracle fixtures, the shared scenarios, and the test-only provider
+       key from the output directory, so it does not depend on the working directory or the repository layout. -->
+  <ItemGroup>
+    <None Update="CrossLibrary\Fixtures\*.json;CrossLibrary\divergences.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\..\eng\apns-oracles\scenarios.json" Link="CrossLibrary\scenarios.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\..\eng\apns-oracles\node\package.json" Link="CrossLibrary\Pins\package.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\..\eng\apns-oracles\java\pom.xml" Link="CrossLibrary\Pins\pom.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\..\eng\apns-oracles\go\go.mod" Link="CrossLibrary\Pins\go.mod">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None
+      Include="..\..\eng\apns-oracles\test-keys\AuthKey_TESTKEY123.TEST-ONLY.p8"
+      Link="CrossLibrary\AuthKey_TESTKEY123.TEST-ONLY.p8"
+    >
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>

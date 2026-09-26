@@ -3,7 +3,7 @@
 namespace Headless.PushNotifications.Apns;
 
 /// <summary>
-/// Sends APNs-native notifications (alert, background, and Live Activity pushes) and returns the APNs details of each
+/// Sends APNs-native notifications (every typed push type, or a raw payload) and returns the APNs details of each
 /// outcome.
 /// </summary>
 /// <remarks>
@@ -25,7 +25,10 @@ public interface IApnsPushNotificationService
     /// <param name="deviceToken">The device token, or for a Live Activity the activity's push or push-to-start token.</param>
     /// <param name="notification">The notification to send.</param>
     /// <param name="cancellationToken">Cancels the send.</param>
-    /// <returns>The outcome for <paramref name="deviceToken"/>.</returns>
+    /// <returns>
+    /// The outcome for <paramref name="deviceToken"/>, whose <see cref="ApnsSendResult.ApnsId"/> is
+    /// <see cref="ApnsNotification.ApnsId"/> when the notification sets one.
+    /// </returns>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="deviceToken"/> is blank, or <paramref name="notification"/> breaks a rule of its push type or
@@ -45,8 +48,9 @@ public interface IApnsPushNotificationService
     /// <returns>One outcome per token, in input order.</returns>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="deviceTokens"/> is empty or holds a blank token, or <paramref name="notification"/> breaks a
-    /// rule of its push type or cannot be sent through this instance.
+    /// <paramref name="deviceTokens"/> is empty or holds a blank token, <paramref name="notification"/> sets
+    /// <see cref="ApnsNotification.ApnsId"/>, or <paramref name="notification"/> breaks a rule of its push type or
+    /// cannot be sent through this instance.
     /// </exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     ValueTask<ApnsBatchSendResult> SendMulticastAsync(
