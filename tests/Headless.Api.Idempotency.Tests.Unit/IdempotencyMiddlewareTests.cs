@@ -5,7 +5,6 @@ using Headless.Abstractions;
 using Headless.Api.Idempotency;
 using Headless.Constants;
 using Headless.Idempotency;
-using Headless.MultiTenancy;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;

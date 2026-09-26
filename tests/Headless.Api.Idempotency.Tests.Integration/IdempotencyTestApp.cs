@@ -5,7 +5,6 @@ using Headless.Abstractions;
 using Headless.Api.Abstractions;
 using Headless.Api.Idempotency;
 using Headless.Constants;
-using Headless.Core;
 using Headless.MultiTenancy;
 using Headless.Primitives;
 using Headless.Testing.Helpers;

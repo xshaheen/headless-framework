@@ -6,7 +6,6 @@ using Headless.Api;
 using Headless.Api.Idempotency;
 using Headless.Constants;
 using Headless.Idempotency;
-using Headless.MultiTenancy;
 using Headless.Primitives;
 using Headless.Testing.Helpers;
 using Microsoft.AspNetCore.Http;
