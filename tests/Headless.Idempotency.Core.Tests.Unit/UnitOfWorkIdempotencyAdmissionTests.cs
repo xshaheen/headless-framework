@@ -40,6 +40,7 @@ public sealed class UnitOfWorkIdempotencyAdmissionTests : TestBase
                 Fingerprint,
                 context.LeaseDuration,
                 context.Retention,
+                false,
                 AbortToken
             );
         });
@@ -185,7 +186,7 @@ public sealed class UnitOfWorkIdempotencyAdmissionTests : TestBase
         admission.Generation.Should().Be(Generation);
         await context
             .Store.Received(1)
-            .AdmitAsync(unit, RecordKey, Fingerprint, context.LeaseDuration, context.Retention, AbortToken);
+            .AdmitAsync(unit, RecordKey, Fingerprint, context.LeaseDuration, context.Retention, true, AbortToken);
     }
 
     [Fact]
@@ -222,7 +223,7 @@ public sealed class UnitOfWorkIdempotencyAdmissionTests : TestBase
         admission.IsTakeover.Should().BeFalse();
         await context
             .Store.Received(1)
-            .AdmitAsync(unit, RecordKey, Fingerprint, context.LeaseDuration, context.Retention, AbortToken);
+            .AdmitAsync(unit, RecordKey, Fingerprint, context.LeaseDuration, context.Retention, false, AbortToken);
     }
 
     [Fact]
@@ -306,7 +307,7 @@ public sealed class UnitOfWorkIdempotencyAdmissionTests : TestBase
         var hostKey = new IdempotencyRecordKey(string.Empty, Key);
         context.Store.LockOrInsertAsync(unit, hostKey, Fingerprint, context.Retention, AbortToken).Returns(Inserted());
         context
-            .Store.AdmitAsync(unit, hostKey, Fingerprint, context.LeaseDuration, context.Retention, AbortToken)
+            .Store.AdmitAsync(unit, hostKey, Fingerprint, context.LeaseDuration, context.Retention, false, AbortToken)
             .Returns(Grant);
 
         // when
@@ -326,14 +327,14 @@ public sealed class UnitOfWorkIdempotencyAdmissionTests : TestBase
         var lease = TimeSpan.FromSeconds(45);
         var retention = TimeSpan.FromDays(7);
         context.Store.LockOrInsertAsync(unit, RecordKey, Fingerprint, retention, AbortToken).Returns(Inserted());
-        context.Store.AdmitAsync(unit, RecordKey, Fingerprint, lease, retention, AbortToken).Returns(Grant);
+        context.Store.AdmitAsync(unit, RecordKey, Fingerprint, lease, retention, false, AbortToken).Returns(Grant);
 
         // when
         var admission = await context.Feature.AdmitAsync(unit, Key, Fingerprint, null, lease, retention, AbortToken);
 
         // then
         admission.Retention.Should().Be(retention);
-        await context.Store.Received(1).AdmitAsync(unit, RecordKey, Fingerprint, lease, retention, AbortToken);
+        await context.Store.Received(1).AdmitAsync(unit, RecordKey, Fingerprint, lease, retention, false, AbortToken);
     }
 
     [Theory]
@@ -428,7 +429,15 @@ public sealed class UnitOfWorkIdempotencyAdmissionTests : TestBase
     private void _GivenGrant(IdempotencyTestContext context, IUnitOfWork unit)
     {
         context
-            .Store.AdmitAsync(unit, RecordKey, Fingerprint, context.LeaseDuration, context.Retention, AbortToken)
+            .Store.AdmitAsync(
+                unit,
+                RecordKey,
+                Fingerprint,
+                context.LeaseDuration,
+                context.Retention,
+                Arg.Any<bool>(),
+                AbortToken
+            )
             .Returns(Grant);
     }
 

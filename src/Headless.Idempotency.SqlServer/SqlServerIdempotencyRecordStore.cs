@@ -62,6 +62,7 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
     private readonly string _admitSql;
     private readonly string _completeSql;
     private readonly string _releaseSql;
+    private readonly string _setRecoveryPointSql;
     private readonly string _renewSql;
     private readonly string _peekSql;
 
@@ -88,6 +89,7 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
         _admitSql = _BuildAdmitSql(_table, sequence);
         _completeSql = _BuildCompleteSql(_table);
         _releaseSql = _BuildReleaseSql(_table);
+        _setRecoveryPointSql = _BuildSetRecoveryPointSql(_table);
         _renewSql = _BuildRenewSql(_table);
         _peekSql = _BuildPeekSql(_table);
     }
@@ -220,6 +222,17 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
             .GetFieldValueAsync<DateTimeOffset>(8, cancellationToken)
             .ConfigureAwait(false);
 
+        IdempotentRecoveryPoint? recoveryPoint = null;
+
+        if (!await reader.IsDBNullAsync(11, cancellationToken).ConfigureAwait(false))
+        {
+            recoveryPoint = new IdempotentRecoveryPoint(
+                reader.GetString(11),
+                await reader.GetFieldValueAsync<byte[]>(12, cancellationToken).ConfigureAwait(false),
+                reader.GetString(13)
+            );
+        }
+
         return new IdempotencyRecordState(
             inserted,
             status,
@@ -229,7 +242,8 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
             result,
             retentionUntil,
             IsRetentionElapsed: reader.GetBoolean(9),
-            IsLeaseLive: reader.GetBoolean(10)
+            IsLeaseLive: reader.GetBoolean(10),
+            recoveryPoint
         );
     }
 
@@ -243,6 +257,7 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
         IdempotencyFingerprint fingerprint,
         TimeSpan leaseDuration,
         TimeSpan retention,
+        bool keepRecoveryPoint,
         CancellationToken cancellationToken = default
     )
     {
@@ -254,6 +269,7 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
         _AddFingerprintParameters(command, fingerprint);
         _AddSpanParameters(command, _LeaseSpan, leaseDuration);
         _AddSpanParameters(command, _RetentionSpan, retention);
+        command.Parameters.Add(new SqlParameter("KeepRecoveryPoint", SqlDbType.Bit) { Value = keepRecoveryPoint });
 
         await using var reader = await _ExecuteReaderAsync(command, cancellationToken).ConfigureAwait(false);
         await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
@@ -313,6 +329,40 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
         _AddSpanParameters(command, _RetentionSpan, retention);
 
         await _WriteAsync(command, key, "release", cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask SetRecoveryPointAsync(
+        IUnitOfWork unitOfWork,
+        IdempotencyRecordKey key,
+        long generation,
+        string point,
+        ReadOnlyMemory<byte> state,
+        string contract,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(unitOfWork);
+        Argument.IsNotNull(point);
+        Argument.IsNotNull(contract);
+        var (connection, transaction) = _RequireLive(_Relational(unitOfWork));
+
+        await using var command = _CreateCommand(_setRecoveryPointSql, connection, transaction, key);
+        command.Parameters.Add(_GenerationParameter(generation));
+        command.Parameters.Add(
+            new SqlParameter("RecoveryPoint", SqlDbType.NVarChar, IdempotencyFieldLimits.RecoveryPointMaxLength)
+            {
+                Value = point,
+            }
+        );
+        command.Parameters.Add(new SqlParameter("RecoveryState", SqlDbType.VarBinary, -1) { Value = state.ToArray() });
+        command.Parameters.Add(
+            new SqlParameter("RecoveryContract", SqlDbType.NVarChar, IdempotencyFieldLimits.ContractMaxLength)
+            {
+                Value = contract,
+            }
+        );
+
+        await _WriteAsync(command, key, "set the recovery point of", cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task _WriteAsync(
@@ -763,7 +813,10 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
                 @rowFingerprint varbinary({IdempotencyFieldLimits.FingerprintMaxLength}), @rowGeneration bigint,
                 @rowLeaseExpiresAt datetimeoffset(7), @rowResult varbinary(max),
                 @rowContract nvarchar({IdempotencyFieldLimits.ContractMaxLength}),
-                @rowRetentionUntil datetimeoffset(7), @now datetimeoffset(7);
+                @rowRetentionUntil datetimeoffset(7), @now datetimeoffset(7),
+                @rowRecoveryPoint nvarchar({IdempotencyFieldLimits.RecoveryPointMaxLength}),
+                @rowRecoveryState varbinary(max),
+                @rowRecoveryContract nvarchar({IdempotencyFieldLimits.ContractMaxLength});
 
             SELECT @rowFound = 1,
                 @rowStatus = {SqlServerIdempotencySchema.Status},
@@ -773,7 +826,10 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
                 @rowLeaseExpiresAt = {SqlServerIdempotencySchema.LeaseExpiresAt},
                 @rowResult = {SqlServerIdempotencySchema.Result},
                 @rowContract = {SqlServerIdempotencySchema.ResultContract},
-                @rowRetentionUntil = {SqlServerIdempotencySchema.RetentionUntil}
+                @rowRetentionUntil = {SqlServerIdempotencySchema.RetentionUntil},
+                @rowRecoveryPoint = {SqlServerIdempotencySchema.RecoveryPoint},
+                @rowRecoveryState = {SqlServerIdempotencySchema.RecoveryState},
+                @rowRecoveryContract = {SqlServerIdempotencySchema.RecoveryContract}
             FROM {table} WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
             WHERE {_KeyPredicate};
 
@@ -791,7 +847,10 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
                 @rowContract,
                 @rowRetentionUntil,
                 CAST(CASE WHEN @rowRetentionUntil <= @now THEN 1 ELSE 0 END AS bit),
-                CAST(CASE WHEN @rowLeaseExpiresAt > @now THEN 1 ELSE 0 END AS bit);
+                CAST(CASE WHEN @rowLeaseExpiresAt > @now THEN 1 ELSE 0 END AS bit),
+                @rowRecoveryPoint,
+                @rowRecoveryState,
+                @rowRecoveryContract;
             """;
     }
 
@@ -813,7 +872,8 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
     private static string _BuildAdmitSql(string table, string sequence)
     {
         // Runs on a row this transaction already locked, so its clock and its generation both come after any wait.
-        // Also the in-place reset of a record past its retention: every outcome column is overwritten.
+        // Also the in-place reset of a record past its retention: every outcome column is overwritten, and the recovery
+        // point is kept only for an attempt that resumes the earlier one.
         return $"""
             {_ExtendRetentionSql()}
 
@@ -829,6 +889,9 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
                 {SqlServerIdempotencySchema.LeaseExpiresAt} = @grantedUntil,
                 {SqlServerIdempotencySchema.Result} = NULL,
                 {SqlServerIdempotencySchema.ResultContract} = NULL,
+                {SqlServerIdempotencySchema.RecoveryPoint} = CASE WHEN @KeepRecoveryPoint = 1 THEN {SqlServerIdempotencySchema.RecoveryPoint} END,
+                {SqlServerIdempotencySchema.RecoveryState} = CASE WHEN @KeepRecoveryPoint = 1 THEN {SqlServerIdempotencySchema.RecoveryState} END,
+                {SqlServerIdempotencySchema.RecoveryContract} = CASE WHEN @KeepRecoveryPoint = 1 THEN {SqlServerIdempotencySchema.RecoveryContract} END,
                 {SqlServerIdempotencySchema.RetentionUntil} = {_ExtendedRetention}
             WHERE {_KeyPredicate};
 
@@ -848,6 +911,9 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
                 {SqlServerIdempotencySchema.LeaseExpiresAt} = NULL,
                 {SqlServerIdempotencySchema.Result} = @Result,
                 {SqlServerIdempotencySchema.ResultContract} = @ResultContract,
+                {SqlServerIdempotencySchema.RecoveryPoint} = NULL,
+                {SqlServerIdempotencySchema.RecoveryState} = NULL,
+                {SqlServerIdempotencySchema.RecoveryContract} = NULL,
                 {SqlServerIdempotencySchema.RetentionUntil} = {_ExtendedRetention}
             WHERE {_KeyPredicate}
                 AND {SqlServerIdempotencySchema.Generation} = @Generation;
@@ -858,6 +924,7 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
 
     private static string _BuildReleaseSql(string table)
     {
+        // The recovery point is kept: a released attempt may have finished steps the next attempt should not redo.
         return $"""
             {_ExtendRetentionSql()}
 
@@ -868,6 +935,22 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
                 {SqlServerIdempotencySchema.Result} = NULL,
                 {SqlServerIdempotencySchema.ResultContract} = NULL,
                 {SqlServerIdempotencySchema.RetentionUntil} = {_ExtendedRetention}
+            WHERE {_KeyPredicate}
+                AND {SqlServerIdempotencySchema.Generation} = @Generation;
+
+            SELECT @@ROWCOUNT;
+            """;
+    }
+
+    private static string _BuildSetRecoveryPointSql(string table)
+    {
+        // Runs on a row this transaction already locked and found held by the generation, so the guard only restates
+        // that; no clock is read, since the lease was judged live under the same lock.
+        return $"""
+            UPDATE {table}
+            SET {SqlServerIdempotencySchema.RecoveryPoint} = @RecoveryPoint,
+                {SqlServerIdempotencySchema.RecoveryState} = @RecoveryState,
+                {SqlServerIdempotencySchema.RecoveryContract} = @RecoveryContract
             WHERE {_KeyPredicate}
                 AND {SqlServerIdempotencySchema.Generation} = @Generation;
 

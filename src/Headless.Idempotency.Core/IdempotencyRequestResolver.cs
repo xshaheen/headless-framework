@@ -110,6 +110,24 @@ internal sealed class IdempotencyRequestResolver(
         _EnsureNoSurroundingWhitespace(contract, "contract", paramName);
     }
 
+    /// <summary>Validates a recovery point's name, state, and contract tag.</summary>
+    /// <exception cref="ArgumentException">The name, state, or contract is invalid or too long.</exception>
+    public static void ValidateRecoveryPoint(string point, ReadOnlyMemory<byte> state, string contract)
+    {
+        Argument.IsNotNullOrWhiteSpace(point);
+        Argument.HasMaxLength(point, IdempotencyFieldLimits.RecoveryPointMaxLength);
+        ValidateContract(contract, nameof(contract));
+
+        if (state.Length > IdempotencyFieldLimits.RecoveryStateMaxLength)
+        {
+            throw new ArgumentException(
+                $"A recovery point's state is at most {IdempotencyFieldLimits.RecoveryStateMaxLength} bytes; it is "
+                    + $"{state.Length}. Keep larger resume data in the operation's own storage and record where it is.",
+                nameof(state)
+            );
+        }
+    }
+
     /// <summary>
     /// Returns an admission or renewal lease duration, the caller's or the configured default, checked against the
     /// configured bounds.

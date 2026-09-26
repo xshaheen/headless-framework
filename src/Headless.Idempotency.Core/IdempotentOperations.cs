@@ -90,6 +90,37 @@ internal sealed class IdempotentOperations(
         }
     }
 
+    public async ValueTask SetRecoveryPointAsync(
+        IdempotentAdmission admission,
+        string point,
+        ReadOnlyMemory<byte> state,
+        string contract,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var unit = await store.BeginOwnedUnitAsync(cancellationToken).ConfigureAwait(false);
+
+        await using (unit.ConfigureAwait(false))
+        {
+            try
+            {
+                await enlisted
+                    .SetRecoveryPointAsync(unit, admission, point, state, contract, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch
+            {
+                await unit.RollbackAsync().ConfigureAwait(false);
+
+                throw;
+            }
+
+            // The step it records already happened; a late cancel must not discard the record of it, or a retry
+            // would run the step again.
+            await unit.CompleteAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
     public async ValueTask<IdempotentLeaseStatus> ReleaseAsync(
         IdempotentAdmission admission,
         CancellationToken cancellationToken = default

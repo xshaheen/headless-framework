@@ -319,9 +319,22 @@ The outcome of admitting a tenant-scoped idempotency key for a versioned request
 completed result is returned), or `Conflict` (the key is stored under a different fingerprint or
 result contract). An admitted operation holds its own lease on the key's record row: a generation
 drawn from the idempotency store's sequence plus a lease expiry decided by the database clock. Its
-renewal, fence, completion, and release name that generation, and the store refuses them once a later
-admission drew a newer one. Idempotency does not use Fencing's fenced leases. See
+renewal, fence, recovery point, completion, and release name that generation, and the store refuses
+them once a later admission drew a newer one. Idempotency does not use Fencing's fenced leases. See
 [docs/llms/idempotency.md](docs/llms/idempotency.md).
+
+### Recovery point
+
+The last step an admitted attempt recorded as done on its idempotency record: a short name, opaque
+resume state, and a contract tag. It is written under the attempt's generation, fenced like a
+completion, and usually in the same unit of work as the step's own writes, so it commits exactly when
+the step does. The next admission of the key after that attempt crashed, stalled, or released
+receives it and resumes after the named step instead of repeating it. Completion clears it, a
+release keeps it, and a record reset after its retention drops it. A final "done" point that carries
+the result lets a retry answer without re-running work whose completion was lost after it committed.
+Distinct from a Jobs recovery run, which is an occurrence materialized for a missed schedule
+window. *Avoid:* checkpoint for this, since it suggests the store captures state on its own; the
+handler records every point explicitly. See [docs/llms/idempotency.md](docs/llms/idempotency.md#recovery-points).
 
 ## Startup validation
 

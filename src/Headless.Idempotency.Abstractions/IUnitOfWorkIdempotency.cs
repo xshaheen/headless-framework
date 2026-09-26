@@ -70,6 +70,31 @@ public interface IUnitOfWorkIdempotency : IUnitOfWorkFeature
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Records the last step the admitted operation finished, with its resume state, inside
+    /// <paramref name="unitOfWork" />'s transaction.
+    /// </summary>
+    /// <param name="unitOfWork">The unit whose transaction holds the recovery point.</param>
+    /// <param name="admission">The admitted operation.</param>
+    /// <param name="point">The finished step's name.</param>
+    /// <param name="state">The state the step left behind.</param>
+    /// <param name="contract">The contract tag the state is written under.</param>
+    /// <param name="cancellationToken">Token used to cancel the database commands.</param>
+    /// <returns>A task that completes when the recovery point is written.</returns>
+    /// <exception cref="ArgumentException">
+    /// The admission is not admitted, or the point name, state, or contract is invalid or too long.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">The unit cannot host the write.</exception>
+    /// <exception cref="StaleAdmissionException">The attempt no longer owns the key; nothing was written.</exception>
+    ValueTask SetRecoveryPointAsync(
+        IUnitOfWork unitOfWork,
+        IdempotentAdmission admission,
+        string point,
+        ReadOnlyMemory<byte> state,
+        string contract,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Releases the admitted operation without a result inside <paramref name="unitOfWork" />'s transaction.</summary>
     /// <param name="unitOfWork">The unit whose transaction holds the release.</param>
     /// <param name="admission">The admitted operation.</param>

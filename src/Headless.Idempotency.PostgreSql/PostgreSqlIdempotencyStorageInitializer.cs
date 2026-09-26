@@ -72,9 +72,10 @@ internal sealed partial class PostgreSqlIdempotencyStorageInitializer(
         // the database's default collation is. A completed record always carries its result and contract and a
         // pending one never does, so a replay can never read a half-written outcome. A pending record names an
         // admitted attempt's generation exactly when it carries that attempt's lease expiry; a completed one keeps
-        // the generation that completed it and no lease. One store-wide sequence issues every generation, so a key
-        // admitted again after its record was purged still gets a generation above every earlier attempt's. The
-        // retention index serves the purge.
+        // the generation that completed it and no lease. A recovery point is whole (name, state, and contract) or
+        // absent, and only a pending record keeps one, since completion clears it. One store-wide sequence issues
+        // every generation, so a key admitted again after its record was purged still gets a generation above every
+        // earlier attempt's. The retention index serves the purge.
         return $"""
             SELECT pg_advisory_xact_lock(hashtextextended(@LockResource, 0));
 
@@ -93,6 +94,9 @@ internal sealed partial class PostgreSqlIdempotencyStorageInitializer(
                 {PostgreSqlIdempotencySchema.Result} bytea NULL,
                 {PostgreSqlIdempotencySchema.ResultContract} varchar({IdempotencyFieldLimits.ContractMaxLength}) COLLATE "C" NULL,
                 {PostgreSqlIdempotencySchema.RetentionUntil} timestamptz NOT NULL,
+                {PostgreSqlIdempotencySchema.RecoveryPoint} varchar({IdempotencyFieldLimits.RecoveryPointMaxLength}) COLLATE "C" NULL,
+                {PostgreSqlIdempotencySchema.RecoveryState} bytea NULL,
+                {PostgreSqlIdempotencySchema.RecoveryContract} varchar({IdempotencyFieldLimits.ContractMaxLength}) COLLATE "C" NULL,
                 CONSTRAINT "pk_{t}" PRIMARY KEY (
                     {PostgreSqlIdempotencySchema.TenantId},
                     {PostgreSqlIdempotencySchema.Key}
@@ -107,6 +111,12 @@ internal sealed partial class PostgreSqlIdempotencyStorageInitializer(
                     ({PostgreSqlIdempotencySchema.Status} = {PostgreSqlIdempotencySchema.Completed})
                         = ({PostgreSqlIdempotencySchema.Result} IS NOT NULL AND {PostgreSqlIdempotencySchema.ResultContract} IS NOT NULL)
                     AND ({PostgreSqlIdempotencySchema.Result} IS NULL) = ({PostgreSqlIdempotencySchema.ResultContract} IS NULL)
+                ),
+                CONSTRAINT "ck_{t}_recovery" CHECK (
+                    ({PostgreSqlIdempotencySchema.RecoveryPoint} IS NULL) = ({PostgreSqlIdempotencySchema.RecoveryState} IS NULL)
+                    AND ({PostgreSqlIdempotencySchema.RecoveryPoint} IS NULL) = ({PostgreSqlIdempotencySchema.RecoveryContract} IS NULL)
+                    AND ({PostgreSqlIdempotencySchema.RecoveryPoint} IS NULL OR {PostgreSqlIdempotencySchema.Status} = {PostgreSqlIdempotencySchema.Pending})
+                    AND COALESCE(octet_length({PostgreSqlIdempotencySchema.RecoveryState}), 0) <= {IdempotencyFieldLimits.RecoveryStateMaxLength}
                 ),
                 CONSTRAINT "ck_{t}_lease" CHECK (
                     ({PostgreSqlIdempotencySchema.Generation} IS NULL OR {PostgreSqlIdempotencySchema.Generation} > 0)

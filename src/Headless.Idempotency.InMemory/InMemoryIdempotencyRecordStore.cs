@@ -109,6 +109,7 @@ internal sealed class InMemoryIdempotencyRecordStore(
         IdempotencyFingerprint fingerprint,
         TimeSpan leaseDuration,
         TimeSpan retention,
+        bool keepRecoveryPoint,
         CancellationToken cancellationToken = default
     )
     {
@@ -131,7 +132,8 @@ internal sealed class InMemoryIdempotencyRecordStore(
                 generation,
                 leaseExpiresAt,
                 Result: null,
-                _Extend(record.RetentionUntil, now, retention)
+                _Extend(record.RetentionUntil, now, retention),
+                keepRecoveryPoint ? record.RecoveryPoint : null
             )
         );
 
@@ -163,6 +165,31 @@ internal sealed class InMemoryIdempotencyRecordStore(
                 LeaseExpiresAt = null,
                 Result = new IdempotentResult(result.Span, contract),
                 RetentionUntil = _Extend(record.RetentionUntil, now, retention),
+                RecoveryPoint = null,
+            }
+        );
+    }
+
+    public async ValueTask SetRecoveryPointAsync(
+        IUnitOfWork unitOfWork,
+        IdempotencyRecordKey key,
+        long generation,
+        string point,
+        ReadOnlyMemory<byte> state,
+        string contract,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var transaction = await _LockAsync(unitOfWork, key, cancellationToken).ConfigureAwait(false);
+        var record = _RequireGeneration(transaction.Read(key), key, generation, "set the recovery point of");
+
+        // Staged like every other write, so the point reaches the table only when the unit completes and a rollback
+        // drops it with the step's own work. The point copies the caller's bytes.
+        transaction.Stage(
+            key,
+            record with
+            {
+                RecoveryPoint = new IdempotentRecoveryPoint(point, state.Span, contract),
             }
         );
     }
@@ -337,7 +364,8 @@ internal sealed class InMemoryIdempotencyRecordStore(
             record.Result,
             record.RetentionUntil,
             IsRetentionElapsed: record.RetentionUntil <= now,
-            IsLeaseLive: record.LeaseExpiresAt > now
+            IsLeaseLive: record.LeaseExpiresAt > now,
+            record.RecoveryPoint
         );
     }
 

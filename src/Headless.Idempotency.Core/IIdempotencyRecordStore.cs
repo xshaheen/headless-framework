@@ -13,7 +13,8 @@ namespace Headless.Idempotency;
 /// <para>
 /// A record is one row per <see cref="IdempotencyRecordKey" /> holding the fingerprint and its algorithm tag, the
 /// state (<see cref="IdempotencyRecordStatus" />), the admitted attempt's generation and lease expiry, the result bytes
-/// and contract, and <c>retention_until</c>. Generations come from one store-wide sequence the provider's initializer
+/// and contract, the last recovery point (its name, state bytes, and contract, all present or all absent), and
+/// <c>retention_until</c>. Generations come from one store-wide sequence the provider's initializer
 /// creates, drawn only after the record's row lock is held, so they grow per key even across a purge of the row. Every
 /// time comparison uses the database clock read after the row lock is held, never the application clock.
 /// </para>
@@ -92,13 +93,17 @@ public interface IIdempotencyRecordStore
     /// Admits a new attempt on the record this transaction already locked: draws the next generation from the store's
     /// sequence, sets the lease to expire <paramref name="leaseDuration" /> after the database clock, and writes state
     /// <see cref="IdempotencyRecordStatus.Pending" />, <paramref name="fingerprint" /> and its algorithm, no result or
-    /// contract, and retention extended. A record past its retention is reset in place this way.
+    /// contract, and retention extended. A record past its retention is reset in place this way. The recovery point is
+    /// kept when <paramref name="keepRecoveryPoint" /> is set and cleared otherwise.
     /// </summary>
     /// <param name="unitOfWork">The unit of work, already accepted by <see cref="ValidateEnlistment" />.</param>
     /// <param name="key">The record key.</param>
     /// <param name="fingerprint">The admitted request's fingerprint.</param>
     /// <param name="leaseDuration">How long the admitted attempt owns the key, from the database clock.</param>
     /// <param name="retention">The retention to extend to, from the database clock.</param>
+    /// <param name="keepRecoveryPoint">
+    /// Whether the new attempt resumes the earlier one, so its recovery point stays; otherwise it is cleared.
+    /// </param>
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
     /// <returns>The granted generation and lease expiry.</returns>
     ValueTask<IdempotencyRecordGrant> AdmitAsync(
@@ -107,13 +112,14 @@ public interface IIdempotencyRecordStore
         IdempotencyFingerprint fingerprint,
         TimeSpan leaseDuration,
         TimeSpan retention,
+        bool keepRecoveryPoint,
         CancellationToken cancellationToken = default
     );
 
     /// <summary>
     /// Stores the result on the record this transaction already locked and found held by
     /// <paramref name="generation" />: state <see cref="IdempotencyRecordStatus.Completed" />, the result bytes and
-    /// contract, no lease expiry (the generation is kept), and retention extended.
+    /// contract, no lease expiry (the generation is kept), no recovery point, and retention extended.
     /// </summary>
     /// <param name="unitOfWork">The unit of work, already accepted by <see cref="ValidateEnlistment" />.</param>
     /// <param name="key">The record key.</param>
@@ -135,8 +141,8 @@ public interface IIdempotencyRecordStore
 
     /// <summary>
     /// Frees the record this transaction already locked and found held by <paramref name="generation" /> for the next
-    /// admission: state <see cref="IdempotencyRecordStatus.Pending" /> with no generation or lease, and retention
-    /// extended.
+    /// admission: state <see cref="IdempotencyRecordStatus.Pending" /> with no generation or lease, the recovery point
+    /// kept, and retention extended.
     /// </summary>
     /// <param name="unitOfWork">The unit of work, already accepted by <see cref="ValidateEnlistment" />.</param>
     /// <param name="key">The record key.</param>
@@ -149,6 +155,28 @@ public interface IIdempotencyRecordStore
         IdempotencyRecordKey key,
         long generation,
         TimeSpan retention,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Replaces the recovery point on the record this transaction already locked and found held by
+    /// <paramref name="generation" />. Nothing else on the row changes.
+    /// </summary>
+    /// <param name="unitOfWork">The unit of work, already accepted by <see cref="ValidateEnlistment" />.</param>
+    /// <param name="key">The record key.</param>
+    /// <param name="generation">The recording attempt's generation.</param>
+    /// <param name="point">The finished step's name.</param>
+    /// <param name="state">The step's resume state.</param>
+    /// <param name="contract">The state's contract tag.</param>
+    /// <param name="cancellationToken">Token used to cancel the database command.</param>
+    /// <returns>A task that completes when the row is written.</returns>
+    ValueTask SetRecoveryPointAsync(
+        IUnitOfWork unitOfWork,
+        IdempotencyRecordKey key,
+        long generation,
+        string point,
+        ReadOnlyMemory<byte> state,
+        string contract,
         CancellationToken cancellationToken = default
     );
 

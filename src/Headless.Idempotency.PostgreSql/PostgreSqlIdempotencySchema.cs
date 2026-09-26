@@ -18,6 +18,9 @@ internal static class PostgreSqlIdempotencySchema
     public const string Result = "result";
     public const string ResultContract = "result_contract";
     public const string RetentionUntil = "retention_until";
+    public const string RecoveryPoint = "recovery_point";
+    public const string RecoveryState = "recovery_state";
+    public const string RecoveryContract = "recovery_contract";
 
     // Stored as smallint, with the values of IdempotencyRecordStatus.
     public const short Pending = (short)IdempotencyRecordStatus.Pending;

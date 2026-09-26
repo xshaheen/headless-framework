@@ -59,7 +59,8 @@ internal sealed class SqlServerIdempotencyStorageInitializer(
         // first admissions of a new key without a duplicate-key error. The key parts total 384 nvarchar characters,
         // under the 900-byte clustered key limit. A completed record always carries its result and contract and a
         // pending one never does. A pending record names an admitted attempt's generation exactly when it carries that
-        // attempt's lease expiry; a completed one keeps the generation that completed it and no lease. One store-wide
+        // attempt's lease expiry; a completed one keeps the generation that completed it and no lease. A recovery point is
+        // whole (name, state, and contract) or absent, and only a pending record keeps one. One store-wide
         // sequence issues every generation, so a key admitted again after its record was purged still gets a
         // generation above every earlier attempt's. The retention index serves the purge.
         return $"""
@@ -100,6 +101,9 @@ internal sealed class SqlServerIdempotencyStorageInitializer(
                             {SqlServerIdempotencySchema.Result} varbinary(max) NULL,
                             {SqlServerIdempotencySchema.ResultContract} nvarchar({IdempotencyFieldLimits.ContractMaxLength}) COLLATE {collation} NULL,
                             {SqlServerIdempotencySchema.RetentionUntil} datetimeoffset(7) NOT NULL,
+                            {SqlServerIdempotencySchema.RecoveryPoint} nvarchar({IdempotencyFieldLimits.RecoveryPointMaxLength}) COLLATE {collation} NULL,
+                            {SqlServerIdempotencySchema.RecoveryState} varbinary(max) NULL,
+                            {SqlServerIdempotencySchema.RecoveryContract} nvarchar({IdempotencyFieldLimits.ContractMaxLength}) COLLATE {collation} NULL,
                             CONSTRAINT [PK_{t}] PRIMARY KEY CLUSTERED (
                                 {SqlServerIdempotencySchema.TenantId} ASC,
                                 {SqlServerIdempotencySchema.Key} ASC
@@ -111,6 +115,14 @@ internal sealed class SqlServerIdempotencyStorageInitializer(
                             CONSTRAINT [CK_{t}_result] CHECK (
                                 ({SqlServerIdempotencySchema.Status} = {SqlServerIdempotencySchema.Completed} AND {SqlServerIdempotencySchema.Result} IS NOT NULL AND {SqlServerIdempotencySchema.ResultContract} IS NOT NULL)
                                 OR ({SqlServerIdempotencySchema.Status} = {SqlServerIdempotencySchema.Pending} AND {SqlServerIdempotencySchema.Result} IS NULL AND {SqlServerIdempotencySchema.ResultContract} IS NULL)
+                            ),
+                            CONSTRAINT [CK_{t}_recovery] CHECK (
+                                ({SqlServerIdempotencySchema.RecoveryPoint} IS NULL AND {SqlServerIdempotencySchema.RecoveryState} IS NULL AND {SqlServerIdempotencySchema.RecoveryContract} IS NULL)
+                                OR (
+                                    {SqlServerIdempotencySchema.RecoveryPoint} IS NOT NULL AND {SqlServerIdempotencySchema.RecoveryState} IS NOT NULL AND {SqlServerIdempotencySchema.RecoveryContract} IS NOT NULL
+                                    AND {SqlServerIdempotencySchema.Status} = {SqlServerIdempotencySchema.Pending}
+                                    AND DATALENGTH({SqlServerIdempotencySchema.RecoveryState}) <= {IdempotencyFieldLimits.RecoveryStateMaxLength}
+                                )
                             ),
                             CONSTRAINT [CK_{t}_generation] CHECK ({SqlServerIdempotencySchema.Generation} IS NULL OR {SqlServerIdempotencySchema.Generation} > 0),
                             CONSTRAINT [CK_{t}_lease] CHECK (

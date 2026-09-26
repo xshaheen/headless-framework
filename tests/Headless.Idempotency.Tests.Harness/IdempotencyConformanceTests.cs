@@ -32,6 +32,8 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
 
     protected const string Contract = "test-result.v1";
 
+    protected const string RecoveryContract = "test-recovery.v1";
+
     protected TFixture Fixture { get; } = fixture;
 
     #region Admission races
@@ -873,6 +875,294 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
         }
 
         (await Fixture.ReadRecordAsync(HostKey(inFlight), AbortToken)).Should().NotBeNull();
+    }
+
+    #endregion
+
+    #region Recovery points
+
+    public virtual async Task should_hand_a_takeover_the_last_recovery_point_the_crashed_attempt_committed()
+    {
+        var key = CreateKey();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        var first = await AdmitAsync(host, key);
+        first.RecoveryPoint.Should().BeNull("a first admission has nothing to resume");
+
+        await using (var unit = await Fixture.BeginUnitAsync(host, AbortToken))
+        {
+            await unit.Unit.Idempotency.SetRecoveryPointAsync(
+                first,
+                "reserved",
+                Payload("reservation-1"),
+                RecoveryContract,
+                AbortToken
+            );
+            await unit.CommitAsync(AbortToken);
+        }
+
+        // A later point replaces the earlier one; the autonomous form commits on its own.
+        await host.Operations.SetRecoveryPointAsync(
+            first,
+            "charged",
+            Payload("charge-1"),
+            RecoveryContract,
+            AbortToken
+        );
+
+        var stored = await Fixture.ReadRecordAsync(HostKey(key), AbortToken);
+        stored!.RecoveryPoint.Should().Be("charged");
+        Text(stored.RecoveryState!).Should().Be("charge-1");
+        stored.RecoveryContract.Should().Be(RecoveryContract);
+        stored.Generation.Should().Be(first.Generation, "a recovery point changes nothing but itself");
+        stored.Status.Should().Be(IdempotencyRecordStatus.Pending);
+
+        await Fixture.ShiftLeaseIntoPastAsync(HostKey(key), LongLease + TimeSpan.FromMinutes(1), AbortToken);
+        var second = await AdmitAsync(host, key);
+
+        second.IsAdmitted.Should().BeTrue();
+        second.IsTakeover.Should().BeTrue();
+        second.RecoveryPoint.Should().NotBeNull();
+        second.RecoveryPoint!.Name.Should().Be("charged");
+        Text(second.RecoveryPoint.State).Should().Be("charge-1");
+        second.RecoveryPoint.Contract.Should().Be(RecoveryContract);
+        (await Fixture.ReadRecordAsync(HostKey(key), AbortToken))!
+            .RecoveryPoint.Should()
+            .Be("charged", "the takeover keeps the point until it records its own or completes");
+    }
+
+    public virtual async Task should_refuse_a_recovery_point_from_an_attempt_that_lost_the_key_and_write_nothing()
+    {
+        var key = CreateKey();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        var first = await AdmitAsync(host, key);
+        await Fixture.ShiftLeaseIntoPastAsync(HostKey(key), LongLease + TimeSpan.FromMinutes(1), AbortToken);
+
+        var expired = async () =>
+            await host.Operations.SetRecoveryPointAsync(first, "late", Payload("x"), RecoveryContract, AbortToken);
+
+        (await expired.Should().ThrowAsync<StaleAdmissionException>())
+            .Which.Reason.Should()
+            .Be(IdempotentLeaseStatus.Expired);
+        (await Fixture.ReadRecordAsync(HostKey(key), AbortToken))!.RecoveryPoint.Should().BeNull();
+
+        var second = await AdmitAsync(host, key);
+        await host.Operations.SetRecoveryPointAsync(second, "owner", Payload("mine"), RecoveryContract, AbortToken);
+        var before = await Fixture.ReadRecordAsync(HostKey(key), AbortToken);
+
+        await using (var unit = await Fixture.BeginUnitAsync(host, AbortToken))
+        {
+            var enlisted = async () =>
+                await unit.Unit.Idempotency.SetRecoveryPointAsync(
+                    first,
+                    "zombie",
+                    Payload("theirs"),
+                    RecoveryContract,
+                    AbortToken
+                );
+
+            (await enlisted.Should().ThrowAsync<StaleAdmissionException>())
+                .Which.Reason.Should()
+                .Be(IdempotentLeaseStatus.Stale);
+            await unit.RollbackAsync();
+        }
+
+        (await Fixture.ReadRecordAsync(HostKey(key), AbortToken))
+            .Should()
+            .BeEquivalentTo(before, "a refused recovery point writes nothing");
+    }
+
+    public virtual async Task should_not_expose_a_recovery_point_whose_unit_rolled_back()
+    {
+        var key = CreateKey();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        var first = await AdmitAsync(host, key);
+
+        await using (var unit = await Fixture.BeginUnitAsync(host, AbortToken))
+        {
+            await unit.Unit.Idempotency.FenceAsync(first, AbortToken);
+            await unit.Unit.Idempotency.SetRecoveryPointAsync(
+                first,
+                "rolled-back",
+                Payload("never"),
+                RecoveryContract,
+                AbortToken
+            );
+            await unit.RollbackAsync();
+        }
+
+        (await Fixture.ReadRecordAsync(HostKey(key), AbortToken))!.RecoveryPoint.Should().BeNull();
+
+        await Fixture.ShiftLeaseIntoPastAsync(HostKey(key), LongLease + TimeSpan.FromMinutes(1), AbortToken);
+        var second = await AdmitAsync(host, key);
+
+        second.IsTakeover.Should().BeTrue();
+        second.RecoveryPoint.Should().BeNull("the point rolled back with the step it recorded");
+    }
+
+    public virtual async Task should_clear_the_recovery_point_when_the_operation_completes()
+    {
+        var key = CreateKey();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        var admitted = await AdmitAsync(host, key);
+
+        await using (var unit = await Fixture.BeginUnitAsync(host, AbortToken))
+        {
+            await unit.Unit.Idempotency.SetRecoveryPointAsync(
+                admitted,
+                "done",
+                Payload("receipt"),
+                RecoveryContract,
+                AbortToken
+            );
+            await unit.Unit.Idempotency.CompleteAsync(
+                admitted,
+                Payload("result"),
+                Contract,
+                cancellationToken: AbortToken
+            );
+            await unit.CommitAsync(AbortToken);
+        }
+
+        var stored = await Fixture.ReadRecordAsync(HostKey(key), AbortToken);
+        stored!.Status.Should().Be(IdempotencyRecordStatus.Completed);
+        stored.RecoveryPoint.Should().BeNull();
+        stored.RecoveryState.Should().BeNull();
+        stored.RecoveryContract.Should().BeNull();
+
+        var replay = await AdmitAsync(host, key);
+        replay.Disposition.Should().Be(IdempotentDisposition.Replay);
+        replay.RecoveryPoint.Should().BeNull();
+    }
+
+    public virtual async Task should_keep_the_recovery_point_through_a_release_until_retention_resets_the_record()
+    {
+        var key = CreateKey();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        var first = await AdmitAsync(host, key);
+        await host.Operations.SetRecoveryPointAsync(
+            first,
+            "shipped",
+            Payload("parcel-9"),
+            RecoveryContract,
+            AbortToken
+        );
+        (await host.Operations.ReleaseAsync(first, AbortToken)).Should().Be(IdempotentLeaseStatus.Released);
+
+        var released = await Fixture.ReadRecordAsync(HostKey(key), AbortToken);
+        released!.Generation.Should().BeNull();
+        released.RecoveryPoint.Should().Be("shipped", "a released attempt may have finished steps worth resuming");
+
+        var second = await AdmitAsync(host, key);
+
+        second.IsTakeover.Should().BeFalse("a release is not a crash");
+        second.RecoveryPoint!.Name.Should().Be("shipped");
+        Text(second.RecoveryPoint.State).Should().Be("parcel-9");
+
+        (await host.Operations.ReleaseAsync(second, AbortToken)).Should().Be(IdempotentLeaseStatus.Released);
+        await Fixture.ShiftRecordIntoPastAsync(HostKey(key), Retention + TimeSpan.FromHours(1), AbortToken);
+        var reset = await AdmitAsync(host, key);
+
+        reset.IsAdmitted.Should().BeTrue();
+        reset.RecoveryPoint.Should().BeNull("a record reset after its retention starts a new operation");
+        (await Fixture.ReadRecordAsync(HostKey(key), AbortToken))!.RecoveryPoint.Should().BeNull();
+    }
+
+    public virtual async Task should_refuse_an_oversized_recovery_state_before_any_write_and_store_one_at_the_limit()
+    {
+        var key = CreateKey();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        var admitted = await AdmitAsync(host, key);
+        var before = await Fixture.ReadRecordAsync(HostKey(key), AbortToken);
+        var oversized = new byte[IdempotencyFieldLimits.RecoveryStateMaxLength + 1];
+
+        var autonomous = async () =>
+            await host.Operations.SetRecoveryPointAsync(admitted, "big", oversized, RecoveryContract, AbortToken);
+
+        await autonomous.Should().ThrowAsync<ArgumentException>();
+
+        await using (var unit = await Fixture.BeginUnitAsync(host, AbortToken))
+        {
+            var enlisted = async () =>
+                await unit.Unit.Idempotency.SetRecoveryPointAsync(
+                    admitted,
+                    "big",
+                    oversized,
+                    RecoveryContract,
+                    AbortToken
+                );
+
+            await enlisted.Should().ThrowAsync<ArgumentException>();
+            await unit.RollbackAsync();
+        }
+
+        (await Fixture.ReadRecordAsync(HostKey(key), AbortToken))
+            .Should()
+            .BeEquivalentTo(before, "an oversized state is refused before any write");
+
+        var atLimit = new byte[IdempotencyFieldLimits.RecoveryStateMaxLength];
+        atLimit.AsSpan().Fill(0x5A);
+        var longest = new string('p', IdempotencyFieldLimits.RecoveryPointMaxLength);
+        await host.Operations.SetRecoveryPointAsync(admitted, longest, atLimit, RecoveryContract, AbortToken);
+
+        var stored = await Fixture.ReadRecordAsync(HostKey(key), AbortToken);
+        stored!.RecoveryPoint.Should().Be(longest);
+        stored.RecoveryState.Should().Equal(atLimit);
+    }
+
+    public virtual async Task should_keep_recovery_points_of_different_tenants_independent()
+    {
+        var key = CreateKey();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        IdempotentAdmission tenantA;
+        IdempotentAdmission tenantB;
+
+        using (host.CurrentTenant.Change("tenant-a"))
+        {
+            tenantA = await AdmitAsync(host, key);
+        }
+
+        using (host.CurrentTenant.Change("tenant-b"))
+        {
+            tenantB = await AdmitAsync(host, key);
+        }
+
+        // The admission carries its own tenant, so the point lands on tenant-a's record whatever tenant is current.
+        await host.Operations.SetRecoveryPointAsync(tenantA, "a-step", Payload("a"), RecoveryContract, AbortToken);
+
+        await Fixture.ShiftLeaseIntoPastAsync(
+            new IdempotencyRecordKey("tenant-a", key),
+            LongLease + TimeSpan.FromMinutes(1),
+            AbortToken
+        );
+        await Fixture.ShiftLeaseIntoPastAsync(
+            new IdempotencyRecordKey("tenant-b", key),
+            LongLease + TimeSpan.FromMinutes(1),
+            AbortToken
+        );
+
+        using (host.CurrentTenant.Change("tenant-a"))
+        {
+            var resumed = await AdmitAsync(host, key);
+            resumed.IsTakeover.Should().BeTrue();
+            resumed.RecoveryPoint!.Name.Should().Be("a-step");
+        }
+
+        using (host.CurrentTenant.Change("tenant-b"))
+        {
+            var other = await AdmitAsync(host, key);
+            other.IsTakeover.Should().BeTrue();
+            other.Generation.Should().BeGreaterThan(tenantB.Generation!.Value);
+            other.RecoveryPoint.Should().BeNull("tenant-b's record never had a point");
+        }
+
+        (await Fixture.ReadRecordAsync(HostKey(key), AbortToken)).Should().BeNull("the host scope has no record");
     }
 
     #endregion

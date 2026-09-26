@@ -57,7 +57,10 @@ public sealed class InMemoryIdempotencyFixture
                     row.LeaseExpiresAt,
                     row.Result?.Payload.ToArray(),
                     row.Result?.Contract,
-                    row.RetentionUntil
+                    row.RetentionUntil,
+                    row.RecoveryPoint?.Name,
+                    row.RecoveryPoint?.State.ToArray(),
+                    row.RecoveryPoint?.Contract
                 )
         );
     }

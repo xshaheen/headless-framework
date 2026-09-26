@@ -134,7 +134,7 @@ public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture
         await using var command = new SqlCommand(
             $"""
             SELECT [status], [fingerprint_algorithm], [fingerprint], [generation], [lease_expires_at], [result],
-                [result_contract], [retention_until]
+                [result_contract], [retention_until], [recovery_point], [recovery_state], [recovery_contract]
             FROM {_Records}
             WHERE [tenant_id] = @tenant AND [idempotency_key] = @recordKey
             """,
@@ -161,7 +161,12 @@ public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture
                 ? null
                 : await reader.GetFieldValueAsync<byte[]>(5, cancellationToken),
             await reader.IsDBNullAsync(6, cancellationToken) ? null : reader.GetString(6),
-            await reader.GetFieldValueAsync<DateTimeOffset>(7, cancellationToken)
+            await reader.GetFieldValueAsync<DateTimeOffset>(7, cancellationToken),
+            await reader.IsDBNullAsync(8, cancellationToken) ? null : reader.GetString(8),
+            await reader.IsDBNullAsync(9, cancellationToken)
+                ? null
+                : await reader.GetFieldValueAsync<byte[]>(9, cancellationToken),
+            await reader.IsDBNullAsync(10, cancellationToken) ? null : reader.GetString(10)
         );
     }
 

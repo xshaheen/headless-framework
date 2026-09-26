@@ -91,6 +91,43 @@ public sealed class UnitOfWorkIdempotency
         return _idempotency.CompleteAsync(_unitOfWork, admission, result, contract, retention, cancellationToken);
     }
 
+    /// <summary>
+    /// Records <paramref name="point" /> as the last step the admitted operation finished, with the state it needs to
+    /// resume after that step, inside the bound unit's transaction, so the point commits exactly when the step's own
+    /// writes do.
+    /// </summary>
+    /// <remarks>
+    /// Fenced like <see cref="CompleteAsync" />: it locks the key's record until the unit ends and writes only while the
+    /// attempt still owns the key. A later call replaces the earlier point; completion clears it, and a release keeps it,
+    /// because a released attempt may still have finished steps worth resuming after. The next admission of the key
+    /// after this attempt ends without completing reads it from <see cref="IdempotentAdmission.RecoveryPoint" />. Record
+    /// a final point carrying the operation's result in the same unit as its last writes, and a retry that finds it can
+    /// answer from that state even when the attempt died before its completion committed.
+    /// </remarks>
+    /// <param name="admission">The admitted operation.</param>
+    /// <param name="point">The finished step's name.</param>
+    /// <param name="state">The state the step left behind.</param>
+    /// <param name="contract">The contract tag the state is written under.</param>
+    /// <param name="cancellationToken">Token used to cancel the database commands.</param>
+    /// <returns>A task that completes when the recovery point is written.</returns>
+    /// <exception cref="ArgumentException">
+    /// The admission is not admitted, or the point name, state, or contract is invalid or too long.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">The bound unit is no longer active or cannot host the write.</exception>
+    /// <exception cref="StaleAdmissionException">
+    /// The attempt no longer owns the key; nothing was written. Let it roll the unit back.
+    /// </exception>
+    public ValueTask SetRecoveryPointAsync(
+        IdempotentAdmission admission,
+        string point,
+        ReadOnlyMemory<byte> state,
+        string contract,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _idempotency.SetRecoveryPointAsync(_unitOfWork, admission, point, state, contract, cancellationToken);
+    }
+
     /// <summary>Releases the admitted operation without a result inside the bound unit's transaction.</summary>
     /// <param name="admission">The admitted operation.</param>
     /// <param name="cancellationToken">Token used to cancel the database commands.</param>
