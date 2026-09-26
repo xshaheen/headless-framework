@@ -787,6 +787,13 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
         }
       },
+      "headless.entityframework.testing": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.EntityFramework": "[1.0.0, )",
+          "Headless.Testing": "[1.0.0, )"
+        }
+      },
       "headless.entityframework.tests.harness": {
         "type": "Project",
         "dependencies": {
@@ -795,6 +802,7 @@
           "Bogus": "[35.6.5, )",
           "DeepCloner": "[0.10.4, )",
           "Headless.EntityFramework": "[1.0.0, )",
+          "Headless.EntityFramework.Testing": "[1.0.0, )",
           "Headless.Testing": "[1.0.0, )",
           "Headless.Testing.Testcontainers": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.12, )",
