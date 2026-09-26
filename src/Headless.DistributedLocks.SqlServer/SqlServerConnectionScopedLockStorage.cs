@@ -482,6 +482,7 @@ internal sealed class SqlServerConnectionScopedLockStorage(
             LeaseId = leaseId;
             IsShared = isShared;
             Connection = connection;
+            ConnectionLostToken = _lostTokenSource.Token;
             _timeProvider = timeProvider;
             _probeGateAcquiredAsync = probeGateAcquiredAsync;
             _probeCommandTimeoutSeconds = SqlServerApplicationLock.GetCommandTimeoutSeconds(commandTimeout);
@@ -495,7 +496,10 @@ internal sealed class SqlServerConnectionScopedLockStorage(
         public string LeaseId { get; }
         public bool IsShared { get; }
         public SqlConnection Connection { get; }
-        public CancellationToken ConnectionLostToken => _lostTokenSource.Token;
+
+        // Captured once so a renewal that races release can still read it: CancellationTokenSource.Token throws after
+        // Dispose, while IsCancellationRequested on an already-captured token does not.
+        public CancellationToken ConnectionLostToken { get; }
 
         public void StartMonitoring()
         {

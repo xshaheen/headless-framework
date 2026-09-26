@@ -133,7 +133,7 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
             // Close. Drop it explicitly instead of registering it.
             Ensure.NotDisposed(_disposed, this);
 
-            var held = new HeldLock(resource, leaseId, engineHandle);
+            var held = new HeldLock(resource, leaseId, engineHandle, connectionLostToken);
             _heldByLockId[leaseId] = held;
             ownershipTransferred = true;
 
@@ -385,7 +385,17 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     /// A single held lock: owns the engine handle (which owns the connection lifecycle, the advisory unlock, and the
     /// connection-monitoring registration). Disposal is idempotent and delegates entirely to the engine handle.
     /// </summary>
-    private sealed class HeldLock(string resource, string leaseId, IDistributedLease engineHandle) : IAsyncDisposable
+    /// <param name="connectionLostToken">
+    /// The loss token captured at acquire: the engine's token for a monitored lock, otherwise
+    /// <see cref="CancellationToken.None"/>. It is captured rather than read from the engine handle on demand because
+    /// that getter registers connection monitoring on first read and throws once the handle is disposed.
+    /// </param>
+    private sealed class HeldLock(
+        string resource,
+        string leaseId,
+        IDistributedLease engineHandle,
+        CancellationToken connectionLostToken
+    ) : IAsyncDisposable
     {
         private int _disposed;
 
@@ -393,7 +403,7 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
 
         public string LeaseId { get; } = leaseId;
 
-        public bool IsLost => engineHandle.LostToken.IsCancellationRequested;
+        public bool IsLost => connectionLostToken.IsCancellationRequested;
 
         public async ValueTask DisposeAsync()
         {
