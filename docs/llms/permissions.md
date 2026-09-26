@@ -129,7 +129,7 @@ The message carries permission names and the scope that changed, never grant val
 
 `IBus` is optional. A host that never calls `AddHeadlessMessaging` writes grants exactly as before and publishes nothing. A failed publish is logged and never fails the write that already succeeded. In both cases a peer keeps its copy until it re-reads for its own reasons, so a consumer that must converge without a bus still needs a periodic refresh.
 
-The announcement follows the write but not the commit. The injected `IBus` never enlists in a transaction, so when `SetAsync` runs inside a caller's unit of work (`RunAsync(db, …)`) the message goes out before that unit commits. A peer that re-reads in that window loads the old grant with no further signal. Call `SetAsync` outside a surrounding unit, or keep the backstop refresh above, when that window matters.
+The announcement follows a committed write. A grant write never joins a unit of work the caller has open: the EF store saves through a fresh context from `IDbContextFactory<TContext>`, and the PostgreSQL and SQL Server stores open their own connection and transaction. `SetAsync` commits before it returns, even inside a caller's `RunAsync(db, …)`, and the message goes out after that commit, so a peer that re-reads on it loads the new grant. The write is not atomic with the caller's other writes: a `SetAsync` inside a unit that later rolls back leaves the grant changed.
 
 This signal is separate from grant-cache coherence. A store-backed write evicts the affected cache entries directly. `PermissionGrantChangedMessage` exists for state the framework cannot see, such as a resolved grant decision that a consumer copied into a field of its own.
 
