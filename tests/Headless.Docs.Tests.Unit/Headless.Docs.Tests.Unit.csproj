@@ -1,0 +1,28 @@
+<Project Sdk="Headless.NET.Sdk.Test">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Tests</RootNamespace>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3.mtp-v2" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <!-- The SQL guide's examples query through Dapper, which consumers install next to Headless.Sql. -->
+    <PackageReference Include="Dapper" />
+  </ItemGroup>
+  <ItemGroup Label="Documented packages">
+    <!--
+      Every shipped package is referenced so the documentation examples compile against the real public API.
+      The source generators are referenced too; the compiler runs them over each example as a consumer's build would.
+    -->
+    <ProjectReference Include="..\..\src\Headless.*\Headless.*.csproj" />
+  </ItemGroup>
+  <ItemGroup Label="Example preludes">
+    <!--
+      Preludes are read from the source tree and compiled with the examples at test time, like the guides
+      themselves, so editing either needs no rebuild.
+    -->
+    <Compile Remove="Preludes\**" />
+    <None Include="Preludes\**" />
+  </ItemGroup>
+</Project>
