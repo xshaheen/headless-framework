@@ -82,6 +82,8 @@ public sealed class ApnsTypedServiceTests : TestBase
 
         // then
         var sentApnsId = _server.Requests.Should().ContainSingle().Subject.Headers["apns-id"];
+        // Apple's apns-id is the canonical 8-4-4-4-12 hyphenated UUID form.
+        sentApnsId.Should().MatchRegex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
         result.Response.IsSucceeded().Should().BeTrue();
         result.Response.MessageId.Should().Be(sentApnsId);
         result.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -125,6 +127,26 @@ public sealed class ApnsTypedServiceTests : TestBase
         result.StatusCode.Should().BeNull();
         result.Reason.Should().BeNull();
         result.ApnsId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_keep_the_caller_apns_id_when_the_endpoint_is_unreachable()
+    {
+        // given
+        var closedPort = _GetClosedLoopbackPort();
+        await using var provider = _server.CreateProvider(configureClient: c =>
+            c.BaseAddress = new Uri($"http://127.0.0.1:{closedPort}")
+        );
+        var service = provider.GetRequiredService<IApnsPushNotificationService>();
+        var apnsId = Guid.Parse("4d3c2b1a-0f9e-4d8c-b7a6-5f4e3d2c1b0a");
+
+        // when
+        var result = await service.SendAsync(_DeviceToken, _Alert() with { ApnsId = apnsId }, AbortToken);
+
+        // then
+        result.Response.IsFailed().Should().BeTrue();
+        result.StatusCode.Should().BeNull();
+        result.ApnsId.Should().Be("4d3c2b1a-0f9e-4d8c-b7a6-5f4e3d2c1b0a");
     }
 
     [Fact]

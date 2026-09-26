@@ -601,7 +601,7 @@ var result = await apns.SendAsync(
 `ApnsRawNotification` sends a payload you build yourself, for Apple keys the typed notifications do not model. It takes a required `Type` (`ApnsNotificationType`), a required `Payload` (`JsonElement`, which must be a JSON object), an optional `Priority`, and the common `Expiration`, `CollapseId`, and `ApnsId`.
 
 - `Type` decides everything the typed notification of that push type decides: the `apns-push-type` header, the topic, the default and allowed priorities, the 4096-byte or 5120-byte size limit, the VoIP and push-to-talk deliver-once default, whether a VoIP instance can send it, and whether certificate mode refuses it.
-- The payload is sent byte for byte as the element holds it, and its size is measured on those bytes. The provider does not check its keys, so a custom key placed inside `aps` reaches APNs, which ignores it. Prefer a typed notification when one fits.
+- The payload is sent byte for byte as the element holds it, and its size is measured on those bytes. Those bytes must read as strict JSON: an element parsed with `AllowTrailingCommas` or comment handling that kept a trailing comma or a comment throws `ArgumentException`, because APNs would reject it. The provider does not check its keys, so a custom key placed inside `aps` reaches APNs, which ignores it. Prefer a typed notification when one fits.
 
 ```csharp
 using var payload = JsonDocument.Parse("""{"aps":{"alert":{"title":"Hi"},"new-apple-key":1},"orderId":1234}""");

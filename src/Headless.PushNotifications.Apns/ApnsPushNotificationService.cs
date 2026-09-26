@@ -372,12 +372,15 @@ internal sealed class ApnsPushNotificationService(
                 logger.LogSendFailed(e, _Mask(deviceToken));
             }
 
+            // A caller-chosen apns-id is the caller's correlation key, so it survives a failed send; a generated one
+            // never reached APNs and is not reported.
             result = new ApnsSendResult
             {
                 // The duplicate risk of retrying a transport failure is documented on ApnsFailureKind.Transport;
                 // FailureError keeps its documented "<ExceptionType>: <message>" shape.
                 Response = PushNotificationResponse.Failed(deviceToken, ApnsResponseMapper.DescribeException(e)),
                 FailureKind = ApnsFailureKind.Transport,
+                ApnsId = callerApnsId is null ? null : apnsId,
             };
         }
 
