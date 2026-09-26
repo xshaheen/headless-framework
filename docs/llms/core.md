@@ -183,6 +183,7 @@ public void CreateUser(string name, int age, List<string> roles)
 - `Argument.HasLength` / `HasMinLength` / `HasMaxLength` / `HasLengthBetween` / `HasLengthGreaterThan` / `HasLengthLessThan` / `HasLengthNotEqualTo(string, …)` — string length bounds (throw `ArgumentOutOfRangeException`)
 - `Argument.HasCount` / `HasMinCount` / `HasMaxCount` / `HasCountBetween(collection, …)` — item-count bounds (`IReadOnlyCollection<T>` fast-path + `IEnumerable<T>`)
 - `Argument.StartsWith` / `EndsWith` / `Contains(string, value, comparison)` — string content (`StringComparison.Ordinal` by default)
+- `Argument.HasNoSurroundingWhiteSpace(string?)` — rejects a value that starts or ends with white space (null and empty pass through). Use it on strings stored as keys: SQL Server ignores trailing spaces when it compares strings or enforces a unique index, under every collation, so `"acme"` and `"acme "` are one key there and two on PostgreSQL
 - `Argument.IsInRangeFor(index, count | collection | span)` — bounds-checks an index against a length/collection/span
 - `Argument.FileExists(path)` / `DirectoryExists(path)`
 - `Argument.Matches(string, regex)` — throws `ArgumentException` when the string does not match the pattern

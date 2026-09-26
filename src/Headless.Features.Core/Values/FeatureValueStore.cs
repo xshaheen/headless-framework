@@ -16,6 +16,11 @@ namespace Headless.Features.Values;
 /// read for a given provider scope all values are fetched from the database and cached together,
 /// so subsequent reads for the same scope are served from cache. Mutations (<see cref="SetAsync"/>,
 /// <see cref="DeleteAsync"/>) update both the database and the cache immediately.
+/// <para>
+/// Every member throws <see cref="ArgumentException"/> before touching storage when a feature name, provider name, or
+/// provider key starts or ends with white space. SQL Server ignores trailing spaces when it compares keys while
+/// PostgreSQL keeps them, so <c>"acme"</c> and <c>"acme "</c> would address one row on one provider and two on the other.
+/// </para>
 /// </remarks>
 public interface IFeatureValueStore
 {
@@ -99,6 +104,13 @@ public sealed class FeatureValueStore(
     /// <summary>How many times a batch is planned and saved before a concurrent-writer collision is surfaced.</summary>
     private const int _MaxSaveAttempts = 3;
 
+    private static void _EnsureKey(string? providerName, string? providerKey, string? name = null)
+    {
+        Argument.HasNoSurroundingWhiteSpace(providerName);
+        Argument.HasNoSurroundingWhiteSpace(providerKey);
+        Argument.HasNoSurroundingWhiteSpace(name);
+    }
+
     /// <inheritdoc/>
     public async Task<string?> GetOrDefaultAsync(
         string name,
@@ -107,6 +119,8 @@ public sealed class FeatureValueStore(
         CancellationToken cancellationToken = default
     )
     {
+        _EnsureKey(providerName, providerKey, name);
+
         var cacheKey = FeatureValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
         var existValueCacheItem = await cache
             .GetAsync<FeatureValueCacheItem>(cacheKey, cancellationToken)
@@ -137,6 +151,8 @@ public sealed class FeatureValueStore(
         CancellationToken cancellationToken = default
     )
     {
+        _EnsureKey(providerName, providerKey, name);
+
         var featureValue = await repository
             .FindAsync(name, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
@@ -172,6 +188,12 @@ public sealed class FeatureValueStore(
     {
         Argument.IsNotNull(values);
         Argument.IsNotNull(providerName);
+        _EnsureKey(providerName, providerKey);
+
+        foreach (var name in values.Keys)
+        {
+            Argument.HasNoSurroundingWhiteSpace(name);
+        }
 
         if (values.Count == 0)
         {
@@ -295,6 +317,8 @@ public sealed class FeatureValueStore(
         CancellationToken cancellationToken = default
     )
     {
+        _EnsureKey(providerName, providerKey, name);
+
         var features = await repository
             .FindAllAsync(name, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
