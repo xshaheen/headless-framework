@@ -204,6 +204,13 @@
         <Project Path="tests\Headless.Features.Tests.Integration\Headless.Features.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Features.Tests.Unit\Headless.Features.Tests.Unit.csproj" />
     </Folder>
+    <Folder Name="/Fencing/">
+        <Project Path="src\Headless.Fencing.Abstractions\Headless.Fencing.Abstractions.csproj" />
+        <Project Path="src\Headless.Fencing.Core\Headless.Fencing.Core.csproj" />
+    </Folder>
+    <Folder Name="/Fencing/Tests/">
+        <Project Path="tests\Headless.Fencing.Core.Tests.Unit\Headless.Fencing.Core.Tests.Unit.csproj" />
+    </Folder>
     <Folder Name="/Generators/">
         <Project Path="src\Headless.Generator.Primitives.Abstractions\Headless.Generator.Primitives.Abstractions.csproj" />
         <Project Path="src\Headless.Generator.Primitives\Headless.Generator.Primitives.csproj" />

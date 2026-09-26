@@ -1,0 +1,12 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Contracts for Headless fenced leases: the autonomous lease API, the lease generation that fences stale writers, and the unit-of-work accessor that grants, settles, and fences inside the caller's transaction.</Description>
+    <PackageTags>headless;fencing;lease;fencing-token;unit-of-work;dotnet</PackageTags>
+    <RootNamespace>Headless.Fencing</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.UnitOfWork.Abstractions\Headless.UnitOfWork.Abstractions.csproj" />
+  </ItemGroup>
+</Project>
