@@ -102,7 +102,7 @@ The message carries setting names and the scope they were written at, never valu
 
 `IBus` is optional. A host that never calls `AddHeadlessMessaging` writes settings exactly as before and publishes nothing, and a failed publish is logged and never fails the write that already succeeded. In both cases a peer keeps its copy until it re-reads for its own reasons, so a consumer that must converge without a bus still needs a periodic refresh.
 
-The announcement follows the write but not the commit. The injected `IBus` never enlists in a transaction, so when `SetAsync` runs inside a caller's unit of work (`RunAsync(db, …)`) the message goes out before that unit commits, and a peer that re-reads in that window loads the old value with no further signal. Call `SetAsync` outside a surrounding unit, or keep the backstop refresh above, when that window matters.
+The announcement follows a committed write. A setting write never joins a unit of work the caller has open: the EF store saves through a fresh context from `IDbContextFactory<TContext>`, and the PostgreSQL and SQL Server stores open their own connection and transaction. `SetAsync` commits before it returns, even inside a caller's `RunAsync(db, …)`, and the message goes out after that commit, so a peer that re-reads on it loads the new value. The write is not atomic with the caller's other writes: a `SetAsync` inside a unit that later rolls back leaves the setting changed.
 
 This is separate from cache coherence, which is already handled: a store-backed write evicts its own cache entry, and a hybrid cache broadcasts that eviction through `CacheInvalidationMessage`. The change signal exists for state the framework cannot see, such as a value a consumer copied into a field of its own.
 
