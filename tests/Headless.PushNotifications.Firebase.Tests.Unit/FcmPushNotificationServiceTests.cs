@@ -185,6 +185,7 @@ public sealed class FcmPushNotificationServiceTests : TestBase
     [InlineData("data_only_with_sound")]
     [InlineData("negative_badge")]
     [InlineData("negative_time_to_live")]
+    [InlineData("time_to_live_over_28_days")]
     public async Task should_throw_without_calling_the_sender_when_request_is_invalid(string scenario)
     {
         // given
@@ -278,6 +279,10 @@ public sealed class FcmPushNotificationServiceTests : TestBase
             "data_only_with_sound" => dataOnly with { Sound = "default" },
             "negative_badge" => _Request() with { Badge = -1 },
             "negative_time_to_live" => _Request() with { TimeToLive = TimeSpan.FromSeconds(-1) },
+            "time_to_live_over_28_days" => _Request() with
+            {
+                TimeToLive = TimeSpan.FromDays(28) + TimeSpan.FromTicks(1),
+            },
             _ => throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null),
         };
     }

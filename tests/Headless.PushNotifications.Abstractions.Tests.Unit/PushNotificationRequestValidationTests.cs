@@ -70,6 +70,55 @@ public sealed class PushNotificationRequestValidationTests
     }
 
     [Fact]
+    public void should_accept_a_time_to_live_of_exactly_28_days()
+    {
+        // given
+        var request = new PushNotificationRequest
+        {
+            Title = "title",
+            Body = "body",
+            TimeToLive = TimeSpan.FromDays(28),
+        };
+
+        // when
+        var action = () => PushNotificationRequestValidation.Validate(request);
+
+        // then
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void should_reject_a_time_to_live_over_28_days_with_the_limit_in_the_message()
+    {
+        // given
+        var request = new PushNotificationRequest
+        {
+            Title = "title",
+            Body = "body",
+            TimeToLive = TimeSpan.FromDays(28) + TimeSpan.FromTicks(1),
+        };
+
+        // when
+        var action = () => PushNotificationRequestValidation.Validate(request);
+
+        // then
+        action.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*28 days*");
+    }
+
+    [Fact]
+    public void should_reject_the_largest_time_to_live_without_overflowing()
+    {
+        // given
+        var request = new PushNotificationRequest { Data = _Data, TimeToLive = TimeSpan.MaxValue };
+
+        // when
+        var action = () => PushNotificationRequestValidation.Validate(request);
+
+        // then
+        action.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*28 days*");
+    }
+
+    [Fact]
     public void should_reject_a_null_request()
     {
         // when

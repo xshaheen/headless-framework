@@ -81,9 +81,12 @@ public sealed record PushNotificationRequest
     public PushNotificationPriority? Priority { get; init; }
 
     /// <summary>
-    /// Optional time the provider keeps the message for a device that is offline; must not be negative. Defaults to
-    /// <see langword="null"/>, which leaves the provider's own storage policy in place.
+    /// Optional time the provider keeps the message for a device that is offline; must be between zero and 28 days.
+    /// Defaults to <see langword="null"/>, which leaves the provider's own storage policy in place.
     /// </summary>
-    /// <remarks><see cref="TimeSpan.Zero"/> means one delivery attempt with no storage.</remarks>
+    /// <remarks>
+    /// <see cref="TimeSpan.Zero"/> means one delivery attempt with no storage. 28 days is Firebase's maximum Android
+    /// time-to-live, so every provider rejects a longer value with <see cref="ArgumentOutOfRangeException"/>.
+    /// </remarks>
     public TimeSpan? TimeToLive { get; init; }
 }

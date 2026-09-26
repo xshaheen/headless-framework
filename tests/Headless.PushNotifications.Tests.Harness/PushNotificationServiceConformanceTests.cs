@@ -135,6 +135,31 @@ public abstract class PushNotificationServiceConformanceTests : TestBase
         return _ShouldReject(PushNotificationRequests.Valid() with { TimeToLive = TimeSpan.FromSeconds(-1) });
     }
 
+    public virtual async Task should_reject_a_time_to_live_over_28_days()
+    {
+        var service = CreateAcceptingService();
+        var request = PushNotificationRequests.Valid() with
+        {
+            TimeToLive = TimeSpan.FromDays(28) + TimeSpan.FromTicks(1),
+        };
+
+        var single = async () => await service.SendToDeviceAsync("device-1", request, AbortToken);
+        var multicast = async () => await service.SendMulticastAsync(["device-1"], request, AbortToken);
+
+        await single.Should().ThrowAsync<ArgumentOutOfRangeException>().WithMessage("*28 days*");
+        await multicast.Should().ThrowAsync<ArgumentOutOfRangeException>().WithMessage("*28 days*");
+    }
+
+    public virtual async Task should_accept_a_time_to_live_of_exactly_28_days()
+    {
+        var service = CreateAcceptingService();
+        var request = PushNotificationRequests.Valid() with { TimeToLive = TimeSpan.FromDays(28) };
+
+        var response = await service.SendToDeviceAsync("device-1", request, AbortToken);
+
+        response.IsSucceeded().Should().BeTrue();
+    }
+
     public virtual async Task should_succeed_for_a_data_only_request()
     {
         var service = CreateAcceptingService();

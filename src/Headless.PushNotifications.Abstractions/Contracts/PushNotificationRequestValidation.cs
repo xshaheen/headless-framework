@@ -12,17 +12,35 @@ namespace Headless.PushNotifications;
 internal static class PushNotificationRequestValidation
 {
     /// <summary>
+    /// The longest <see cref="PushNotificationRequest.TimeToLive"/> any provider accepts: 28 days, Firebase's maximum
+    /// Android time-to-live. The cap also keeps the providers' <c>now + time-to-live</c> expiry arithmetic from
+    /// overflowing.
+    /// </summary>
+    internal static readonly TimeSpan MaxTimeToLive = TimeSpan.FromDays(28);
+
+    /// <summary>
     /// Throws unless <paramref name="request"/> is either a notification (non-blank title and body) or a data-only
-    /// message (no title or body, at least one data entry, no badge or sound), with a non-negative badge and
-    /// time-to-live and a defined priority.
+    /// message (no title or body, at least one data entry, no badge or sound), with a non-negative badge, a
+    /// time-to-live between zero and 28 days, and a defined priority.
     /// </summary>
     /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">The request matches neither kind, or a field is out of range.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The time-to-live is negative or longer than 28 days.</exception>
     public static void Validate(PushNotificationRequest request)
     {
         Argument.IsNotNull(request);
         Argument.IsPositiveOrZero(request.Badge);
         Argument.IsPositiveOrZero(request.TimeToLive);
+
+        if (request.TimeToLive is { } timeToLive)
+        {
+            Argument.IsLessThanOrEqualTo(
+                timeToLive,
+                MaxTimeToLive,
+                "A push notification time-to-live cannot exceed 28 days.",
+                "request.TimeToLive"
+            );
+        }
 
         if (request.Priority is { } priority)
         {

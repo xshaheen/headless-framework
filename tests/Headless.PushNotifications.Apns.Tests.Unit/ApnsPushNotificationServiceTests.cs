@@ -754,6 +754,13 @@ public sealed class ApnsPushNotificationServiceTests : TestBase
                     TimeToLive = TimeSpan.FromSeconds(-1),
                 }
             },
+            {
+                "time-to-live over 28 days",
+                PushNotificationRequests.Valid() with
+                {
+                    TimeToLive = TimeSpan.FromDays(28) + TimeSpan.FromTicks(1),
+                }
+            },
         };
 
     [Theory]

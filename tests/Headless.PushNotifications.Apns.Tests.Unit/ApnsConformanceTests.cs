@@ -136,6 +136,18 @@ public sealed class ApnsConformanceTests : PushNotificationServiceConformanceTes
     }
 
     [Fact]
+    public override Task should_reject_a_time_to_live_over_28_days()
+    {
+        return base.should_reject_a_time_to_live_over_28_days();
+    }
+
+    [Fact]
+    public override Task should_accept_a_time_to_live_of_exactly_28_days()
+    {
+        return base.should_accept_a_time_to_live_of_exactly_28_days();
+    }
+
+    [Fact]
     public override Task should_succeed_for_a_data_only_request()
     {
         return base.should_succeed_for_a_data_only_request();
