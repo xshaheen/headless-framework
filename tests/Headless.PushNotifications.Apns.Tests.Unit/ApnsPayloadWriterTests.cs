@@ -1366,6 +1366,43 @@ public sealed class ApnsPayloadWriterTests : TestBase
         act.Should().Throw<ArgumentException>();
     }
 
+    [Theory]
+    [InlineData("""{"aps":{},"k":1,}""")]
+    [InlineData("""{"aps":{} /* note */,"k":1}""")]
+    public void should_throw_when_the_raw_payload_was_parsed_leniently(string payload)
+    {
+        // given
+        using var document = JsonDocument.Parse(
+            payload,
+            new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip }
+        );
+        var notification = new ApnsRawNotification
+        {
+            Type = ApnsNotificationType.Alert,
+            Payload = document.RootElement.Clone(),
+        };
+
+        // when
+        var act = () => _Prepare(notification);
+
+        // then
+        act.Should().Throw<ArgumentException>().WithMessage("*strict JSON*");
+    }
+
+    [Fact]
+    public void should_send_the_raw_payload_bytes_verbatim()
+    {
+        // given
+        const string payload = """{ "aps" : { "alert" : "é" },  "k" : 1.0 }""";
+        var notification = new ApnsRawNotification { Type = ApnsNotificationType.Alert, Payload = _Element(payload) };
+
+        // when
+        var prepared = _Prepare(notification);
+
+        // then
+        prepared.Payload.Should().Equal(Encoding.UTF8.GetBytes(payload));
+    }
+
     [Fact]
     public void should_throw_when_the_raw_payload_is_undefined()
     {

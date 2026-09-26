@@ -115,9 +115,30 @@ internal static class ApnsPayloadWriter
         // caller wrote it and the size check measures those bytes.
         var payload = JsonMarshal.GetRawUtf8Value(notification.Payload).ToArray();
 
+        _EnsureStrictJson(payload, nameof(notification));
         _EnsureWithinLimit(payload.Length, headers.PushType, nameof(notification));
 
         return payload;
+    }
+
+    // A JsonElement parsed with lenient options (trailing commas, comments) keeps those bytes, and APNs would reject
+    // the payload after the size check passed it, so the bytes must also read as strict JSON.
+    private static void _EnsureStrictJson(byte[] payload, string paramName)
+    {
+        var reader = new Utf8JsonReader(payload);
+
+        try
+        {
+            while (reader.Read()) { }
+        }
+        catch (JsonException exception)
+        {
+            throw new ArgumentException(
+                "An APNs raw notification payload must be strict JSON: no comments or trailing commas.",
+                paramName,
+                exception
+            );
+        }
     }
 
     #endregion

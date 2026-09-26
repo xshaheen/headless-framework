@@ -339,8 +339,8 @@ public sealed record ApnsFileProviderNotification : ApnsNotification
 /// </summary>
 /// <remarks>
 /// <para>
-/// The payload is not validated beyond being a JSON object, so custom keys placed inside <c>aps</c> are sent as given
-/// even though APNs ignores them. <see cref="JsonElement"/> has no value equality, so two raw notifications with the
+/// The payload must be a JSON object whose bytes read as strict JSON (no trailing commas or comments). Its keys are
+/// not validated, so custom keys placed inside <c>aps</c> are sent as given even though APNs ignores them. <see cref="JsonElement"/> has no value equality, so two raw notifications with the
 /// same payload compare unequal.
 /// </para>
 /// <para>

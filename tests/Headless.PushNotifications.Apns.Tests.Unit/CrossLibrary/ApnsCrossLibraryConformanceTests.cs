@@ -3,6 +3,7 @@
 using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text.Json.Nodes;
+using System.Xml.Linq;
 using Headless.PushNotifications.Apns;
 using Headless.PushNotifications.Apns.Internals;
 using Headless.Testing.Tests;
@@ -116,6 +117,34 @@ public sealed class ApnsCrossLibraryConformanceTests : TestBase
 
         // then
         _AssertOnlyListedDifferences(library, scenario, differences);
+    }
+
+    [Fact]
+    public void should_record_fixtures_generated_by_the_pinned_library_versions()
+    {
+        // A pin bump without `make apns-oracles` would leave fixtures describing the old library.
+        var pins = Path.Combine(AppContext.BaseDirectory, "CrossLibrary", "Pins");
+        var nodeApn = JsonNode.Parse(File.ReadAllText(Path.Combine(pins, "package.json")))!["dependencies"]![
+            "@parse/node-apn"
+        ]!.GetValue<string>();
+        var pushy = XDocument
+            .Load(Path.Combine(pins, "pom.xml"))
+            .Descendants()
+            .First(e => e.Name.LocalName == "artifactId" && e.Value == "pushy")
+            .ElementsAfterSelf()
+            .First(e => e.Name.LocalName == "version")
+            .Value;
+        var apns2 = File.ReadAllLines(Path.Combine(pins, "go.mod"))
+            .Select(line => line.Trim())
+            .First(line => line.StartsWith("require github.com/sideshow/apns2 ", StringComparison.Ordinal))
+            .Split(' ')[^1];
+
+        foreach (var (library, pinned) in new[] { ("node-apn", nodeApn), ("pushy", pushy), ("apns2", apns2) })
+        {
+            _String(_Fixtures.Value[library], "version")
+                .Should()
+                .Be(pinned, $"the {library} fixture must be regenerated with `make apns-oracles` after a pin change");
+        }
     }
 
     [Fact]

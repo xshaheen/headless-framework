@@ -349,9 +349,12 @@ internal sealed class ApnsPushNotificationService(
                 logger.LogSendFailed(e, _Mask(deviceToken));
             }
 
+            // A caller-chosen apns-id is the caller's correlation key, so it survives a failed send; a generated one
+            // never reached APNs and is not reported.
             return new ApnsSendResult
             {
                 Response = PushNotificationResponse.Failed(deviceToken, ApnsResponseMapper.DescribeException(e)),
+                ApnsId = callerApnsId is null ? null : apnsId,
             };
         }
     }
