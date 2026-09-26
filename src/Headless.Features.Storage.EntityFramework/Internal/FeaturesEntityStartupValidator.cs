@@ -3,6 +3,7 @@
 using Headless.Features.Entities;
 using Headless.Hosting.Validation;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Features.Internal;
 
@@ -12,9 +13,11 @@ namespace Headless.Features.Internal;
 /// was not called in <c>OnModelCreating</c>.
 /// </summary>
 /// <typeparam name="TContext">The <see cref="DbContext"/> type to validate.</typeparam>
-/// <param name="dbFactory">Factory used to obtain a <typeparamref name="TContext"/> for model inspection.</param>
-internal sealed class FeaturesEntityStartupValidator<TContext>(IDbContextFactory<TContext> dbFactory)
-    : IHeadlessStartupValidator
+/// <param name="services">
+/// Provider the factory is resolved from inside <c>ValidateAsync</c>, not the constructor: the startup runner builds every
+/// validator up front, so a missing factory would otherwise fail its activation before the required-service check reports it.
+/// </param>
+internal sealed class FeaturesEntityStartupValidator<TContext>(IServiceProvider services) : IHeadlessStartupValidator
     where TContext : DbContext
 {
     /// <summary>Validates that all required feature entity types are registered in the EF model.</summary>
@@ -27,6 +30,14 @@ internal sealed class FeaturesEntityStartupValidator<TContext>(IDbContextFactory
     /// </exception>
     public async Task ValidateAsync(CancellationToken cancellationToken)
     {
+        await using var scope = services.CreateAsyncScope();
+        var dbFactory = scope.ServiceProvider.GetService<IDbContextFactory<TContext>>();
+
+        if (dbFactory is null)
+        {
+            return;
+        }
+
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         _EnsureEntity(context, typeof(FeatureValueRecord), nameof(FeatureValueRecord));

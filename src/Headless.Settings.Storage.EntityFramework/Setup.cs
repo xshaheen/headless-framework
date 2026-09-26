@@ -56,6 +56,11 @@ public static class SetupSettingsEntityFramework
                 typeof(ISettingDefinitionRecordRepository),
                 typeof(EfSettingDefinitionRecordRepository<>).MakeGenericType(dbContextType)
             );
+            services.RequireSingletonService(
+                typeof(IDbContextFactory<>).MakeGenericType(dbContextType),
+                requiredBy: "Headless settings EF storage",
+                remedy: "Register it with AddDbContextFactory<TContext>() or AddPooledDbContextFactory<TContext>() at the default singleton lifetime; the store is a singleton and would keep one scoped or transient factory for the life of the host."
+            );
             services.AddStartupValidator(typeof(SettingsEntityStartupValidator<>).MakeGenericType(dbContextType));
         }
     }

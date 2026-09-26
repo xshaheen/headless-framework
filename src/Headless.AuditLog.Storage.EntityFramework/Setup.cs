@@ -60,6 +60,11 @@ public static class SetupAuditLogEntityFramework
                 typeof(IReadAuditLog<>).MakeGenericType(dbContextType),
                 typeof(EfReadAuditLog<>).MakeGenericType(dbContextType)
             );
+            services.RequireSingletonService(
+                typeof(IDbContextFactory<>).MakeGenericType(dbContextType),
+                requiredBy: "Headless audit log EF storage",
+                remedy: "Register it with AddDbContextFactory<TContext>() or AddPooledDbContextFactory<TContext>() at the default singleton lifetime; the store is a singleton and would keep one scoped or transient factory for the life of the host."
+            );
             services.AddStartupValidator(typeof(AuditLogEntityStartupValidator<>).MakeGenericType(dbContextType));
         }
     }

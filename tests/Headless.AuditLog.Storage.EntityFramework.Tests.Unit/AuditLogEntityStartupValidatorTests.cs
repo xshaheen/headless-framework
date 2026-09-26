@@ -4,6 +4,7 @@ using Headless.AuditLog;
 using Headless.AuditLog.Internal;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
@@ -13,11 +14,10 @@ public sealed class AuditLogEntityStartupValidatorTests : TestBase
     public async Task should_reject_pre_registered_but_unconfigured_audit_log_entry()
     {
         // given
-        var validator = new AuditLogEntityStartupValidator<PreRegisteredAuditLogDbContext>(
-            new TestDbContextFactory<PreRegisteredAuditLogDbContext>(() =>
-                new PreRegisteredAuditLogDbContext(_Options<PreRegisteredAuditLogDbContext>())
-            )
+        await using var services = _Services<PreRegisteredAuditLogDbContext>(() =>
+            new PreRegisteredAuditLogDbContext(_Options<PreRegisteredAuditLogDbContext>())
         );
+        var validator = new AuditLogEntityStartupValidator<PreRegisteredAuditLogDbContext>(services);
 
         // when
         var act = () => validator.ValidateAsync(AbortToken);
@@ -30,17 +30,38 @@ public sealed class AuditLogEntityStartupValidatorTests : TestBase
     public async Task should_accept_fully_configured_audit_log_entry()
     {
         // given
-        var validator = new AuditLogEntityStartupValidator<ConfiguredAuditLogDbContext>(
-            new TestDbContextFactory<ConfiguredAuditLogDbContext>(() =>
-                new ConfiguredAuditLogDbContext(_Options<ConfiguredAuditLogDbContext>())
-            )
+        await using var services = _Services<ConfiguredAuditLogDbContext>(() =>
+            new ConfiguredAuditLogDbContext(_Options<ConfiguredAuditLogDbContext>())
         );
+        var validator = new AuditLogEntityStartupValidator<ConfiguredAuditLogDbContext>(services);
 
         // when
         var act = () => validator.ValidateAsync(AbortToken);
 
         // then
         await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task should_leave_a_missing_factory_to_the_required_service_check()
+    {
+        // given — no factory registered: the required-service check reports it, so this check must not fail first
+        await using var services = new ServiceCollection().BuildServiceProvider();
+        var validator = new AuditLogEntityStartupValidator<ConfiguredAuditLogDbContext>(services);
+
+        // when
+        var act = () => validator.ValidateAsync(AbortToken);
+
+        // then
+        await act.Should().NotThrowAsync();
+    }
+
+    private static ServiceProvider _Services<TContext>(Func<TContext> createContext)
+        where TContext : DbContext
+    {
+        return new ServiceCollection()
+            .AddSingleton<IDbContextFactory<TContext>>(new TestDbContextFactory<TContext>(createContext))
+            .BuildServiceProvider();
     }
 
     private static DbContextOptions<TContext> _Options<TContext>()
