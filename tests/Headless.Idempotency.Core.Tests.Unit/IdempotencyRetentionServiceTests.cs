@@ -94,8 +94,10 @@ public sealed class IdempotencyRetentionServiceTests : TestBase
         // when
         await service.StopAsync(AbortToken);
 
-        // then
-        service.ExecuteTask!.IsCompletedSuccessfully.Should().BeTrue();
+        // then — BackgroundService starts ExecuteAsync through Task.Run with the stopping token, so a stop that lands
+        // before the loop is scheduled ends the task canceled rather than completed; both are a clean stop.
+        service.ExecuteTask!.IsCompleted.Should().BeTrue();
+        service.ExecuteTask.IsFaulted.Should().BeFalse();
         _store.ReceivedCalls().Should().BeEmpty();
     }
 
