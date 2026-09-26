@@ -96,6 +96,44 @@ public sealed class ApnsSetupTests : TestBase
     }
 
     [Fact]
+    public async Task should_resolve_the_typed_and_shared_services_to_one_instance_for_default_and_named()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessPushNotifications(setup =>
+        {
+            setup.UseApns(o => _Configure(o, "com.example.app"), c => c.BaseAddress = _server.BaseAddress);
+            setup.AddNamed(
+                "a",
+                i => i.UseApns(o => _Configure(o, "com.example.a"), c => c.BaseAddress = _server.BaseAddress)
+            );
+        });
+        await using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
+        );
+
+        // when
+        var defaultShared = provider.GetRequiredService<IPushNotificationService>();
+        var defaultTyped = provider.GetRequiredService<IApnsPushNotificationService>();
+        var namedShared = provider.GetRequiredKeyedService<IPushNotificationService>("a");
+        var namedTyped = provider.GetRequiredKeyedService<IApnsPushNotificationService>("a");
+
+        // then
+        defaultTyped.Should().BeSameAs(defaultShared);
+        namedTyped.Should().BeSameAs(namedShared);
+        namedTyped.Should().NotBeSameAs(defaultTyped);
+        provider.GetRequiredService<IPushNotificationServiceProvider>().GetService("a").Should().BeSameAs(namedTyped);
+
+        await namedTyped.SendAsync(
+            "device-a",
+            new ApnsAlertNotification { Alert = new ApnsAlert { Body = "Hi" } },
+            AbortToken
+        );
+        _server.Requests.Should().ContainSingle().Subject.Headers["apns-topic"].Should().Be("com.example.a");
+    }
+
+    [Fact]
     public async Task should_share_one_provider_token_when_default_and_named_instances_use_the_same_key()
     {
         // given

@@ -4,6 +4,7 @@ using System.Buffers.Text;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using Headless.PushNotifications;
 using Headless.PushNotifications.Apns;
 using Headless.Threading;
@@ -11,6 +12,8 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.AspNetCore.Server.Kestrel.Https;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
@@ -26,6 +29,9 @@ namespace Tests;
 /// <param name="Body">The request body as UTF-8 text.</param>
 /// <param name="Bearer">The provider token from the <c>authorization: bearer</c> header, if any.</param>
 /// <param name="Attempt">The 1-based count of requests the server has received for this device token.</param>
+/// <param name="ClientCertificateThumbprint">
+/// The thumbprint of the client certificate presented during the TLS handshake, or <see langword="null"/> on h2c.
+/// </param>
 public sealed record FakeApnsRequest(
     string Protocol,
     string Method,
@@ -34,7 +40,8 @@ public sealed record FakeApnsRequest(
     IReadOnlyDictionary<string, string> Headers,
     string Body,
     string? Bearer,
-    int Attempt
+    int Attempt,
+    string? ClientCertificateThumbprint = null
 );
 
 /// <summary>The answer the fake APNs server gives to one request.</summary>
@@ -45,11 +52,16 @@ public sealed record FakeApnsRequest(
 /// Resets the stream after the request body was read instead of answering, which is how a connection lost after APNs
 /// accepted a notification looks to the client.
 /// </param>
+/// <param name="UniqueId">
+/// The <c>apns-unique-id</c> response header, which the APNs sandbox adds to identify the notification in its delivery
+/// log; omitted when <see langword="null"/>.
+/// </param>
 public sealed record FakeApnsReply(
     int Status,
     string? Reason = null,
     string? RawBody = null,
-    bool AbortAfterRead = false
+    bool AbortAfterRead = false,
+    string? UniqueId = null
 )
 {
     public static FakeApnsReply Ok { get; } = new(200);
@@ -59,7 +71,8 @@ public sealed record FakeApnsReply(
 
 /// <summary>
 /// An in-process APNs double: Kestrel on a loopback port speaking cleartext HTTP/2 (h2c prior knowledge), so the
-/// provider's real <see cref="SocketsHttpHandler"/> HTTP/2 path runs end to end.
+/// provider's real <see cref="SocketsHttpHandler"/> HTTP/2 path runs end to end. <see cref="StartTlsAsync"/> serves
+/// HTTP/2 over TLS instead and requires a client certificate, as APNs certificate authentication does.
 /// </summary>
 public sealed class FakeApnsServer : IAsyncDisposable
 {
@@ -69,14 +82,16 @@ public sealed class FakeApnsServer : IAsyncDisposable
 
     private readonly ConcurrentQueue<FakeApnsRequest> _requests = new();
     private readonly ConcurrentDictionary<string, int> _attempts = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _acceptedClientThumbprints;
     private readonly ECDsa _key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
     private readonly WebApplication _app;
     private int _inFlight;
     private long _maxInFlight;
 
-    private FakeApnsServer(WebApplication app)
+    private FakeApnsServer(WebApplication app, ConcurrentDictionary<string, byte> acceptedClientThumbprints)
     {
         _app = app;
+        _acceptedClientThumbprints = acceptedClientThumbprints;
         PrivateKeyPem = _key.ExportPkcs8PrivateKeyPem();
     }
 
@@ -96,25 +111,87 @@ public sealed class FakeApnsServer : IAsyncDisposable
 
     public long MaxInFlight => Volatile.Read(ref _maxInFlight);
 
-    public static async Task<FakeApnsServer> StartAsync(CancellationToken cancellationToken)
+    /// <summary>The TLS server certificate's thumbprint, or <see langword="null"/> for an h2c server.</summary>
+    public string? ServerCertificateThumbprint { get; private set; }
+
+    public static Task<FakeApnsServer> StartAsync(CancellationToken cancellationToken)
     {
+        return _StartAsync(serverCertificate: null, clientCertificateThumbprint: null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Starts a TLS server that requires a client certificate and accepts only the one whose thumbprint is
+    /// <paramref name="clientCertificateThumbprint"/>.
+    /// </summary>
+    public static Task<FakeApnsServer> StartTlsAsync(
+        X509Certificate2 serverCertificate,
+        string clientCertificateThumbprint,
+        CancellationToken cancellationToken
+    )
+    {
+        return _StartAsync(serverCertificate, clientCertificateThumbprint, cancellationToken);
+    }
+
+    private static async Task<FakeApnsServer> _StartAsync(
+        X509Certificate2? serverCertificate,
+        string? clientCertificateThumbprint,
+        CancellationToken cancellationToken
+    )
+    {
+        var acceptedClientThumbprints = new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
+
+        if (clientCertificateThumbprint is not null)
+        {
+            acceptedClientThumbprints[clientCertificateThumbprint] = 0;
+        }
+
         var builder = WebApplication.CreateSlimBuilder();
         builder.Logging.ClearProviders();
         builder.WebHost.ConfigureKestrel(kestrel =>
         {
-            kestrel.Listen(IPAddress.Loopback, 0, listen => listen.Protocols = HttpProtocols.Http2);
+            kestrel.Listen(
+                IPAddress.Loopback,
+                0,
+                listen =>
+                {
+                    listen.Protocols = HttpProtocols.Http2;
+
+                    if (serverCertificate is not null)
+                    {
+                        listen.UseHttps(
+                            serverCertificate,
+                            https =>
+                            {
+                                https.ClientCertificateMode = ClientCertificateMode.RequireCertificate;
+                                // Kestrel rejects a self-signed client certificate unless a callback accepts it.
+                                https.ClientCertificateValidation = (certificate, _, _) =>
+                                    acceptedClientThumbprints.ContainsKey(certificate.Thumbprint);
+                            }
+                        );
+                    }
+                }
+            );
             // The provider may fan out up to 1000 concurrent streams; keep the fake from being the bottleneck.
             kestrel.Limits.Http2.MaxStreamsPerConnection = 1000;
         });
 
         var app = builder.Build();
-        var server = new FakeApnsServer(app);
+        var server = new FakeApnsServer(app, acceptedClientThumbprints)
+        {
+            ServerCertificateThumbprint = serverCertificate?.Thumbprint,
+        };
         app.Run(server._HandleAsync);
 
         await app.StartAsync(cancellationToken);
         server.BaseAddress = new Uri(app.Urls.First());
 
         return server;
+    }
+
+    /// <summary>Makes a TLS server also accept the client certificate whose thumbprint is <paramref name="thumbprint"/>.</summary>
+    public void AcceptClientCertificate(string thumbprint)
+    {
+        _acceptedClientThumbprints[thumbprint] = 0;
     }
 
     /// <summary>Returns the bearer values the server has seen, without duplicates, in arrival order.</summary>
@@ -205,6 +282,95 @@ public sealed class FakeApnsServer : IAsyncDisposable
         );
     }
 
+    /// <summary>
+    /// Builds a container whose default push service is APNs in certificate mode, aimed at this TLS server and
+    /// trusting its self-signed certificate through the internal primary-handler hook.
+    /// </summary>
+    public ServiceProvider CreateCertificateProvider(
+        string certificate,
+        string? certificatePassword,
+        Action<ApnsOptions>? configure = null,
+        Action<IServiceCollection>? configureServices = null
+    )
+    {
+        return _CreateCertificateProvider(
+            (collection, name) =>
+                collection.Configure<ApnsOptions, ApnsOptionsValidator>(
+                    options =>
+                    {
+                        options.Certificate = certificate;
+                        options.CertificatePassword = certificatePassword;
+                        options.BundleId = BundleId;
+                        configure?.Invoke(options);
+                    },
+                    name
+                ),
+            configureServices,
+            newConnectionPerRequest: false
+        );
+    }
+
+    /// <summary>
+    /// Builds a certificate-mode container whose options bind <paramref name="configuration"/>, so reloading it
+    /// changes them. Every request opens a new TLS connection: a zero pooled-connection lifetime stands in for the
+    /// production six-hour recycle, so a test sees which certificate a new connection presents without waiting.
+    /// </summary>
+    public ServiceProvider CreateCertificateProvider(
+        IConfiguration configuration,
+        Action<IServiceCollection>? configureServices = null
+    )
+    {
+        return _CreateCertificateProvider(
+            (collection, name) => collection.Configure<ApnsOptions, ApnsOptionsValidator>(configuration, name),
+            configureServices,
+            newConnectionPerRequest: true
+        );
+    }
+
+    private ServiceProvider _CreateCertificateProvider(
+        Action<IServiceCollection, string?> configureOptions,
+        Action<IServiceCollection>? configureServices,
+        bool newConnectionPerRequest
+    )
+    {
+        var serverThumbprint = ServerCertificateThumbprint;
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        configureServices?.Invoke(services);
+
+        services.AddHeadlessPushNotifications(setup =>
+            setup.RegisterDefaultProvider(s =>
+                SetupApnsPushNotifications.AddApnsCore(
+                    s,
+                    name: null,
+                    configureOptions,
+                    client => client.BaseAddress = BaseAddress,
+                    resilience => resilience.Retry.Delay = TimeSpan.Zero,
+                    handler =>
+                    {
+                        handler.SslOptions.RemoteCertificateValidationCallback = (_, presented, _, _) =>
+                            presented is not null
+                            && string.Equals(
+                                presented.GetCertHashString(),
+                                serverThumbprint,
+                                StringComparison.OrdinalIgnoreCase
+                            );
+
+                        if (newConnectionPerRequest)
+                        {
+                            handler.PooledConnectionLifetime = TimeSpan.Zero;
+                        }
+                    }
+                )
+            )
+        );
+
+        return services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
+        );
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _app.StopAsync();
@@ -250,7 +416,8 @@ public sealed class FakeApnsServer : IAsyncDisposable
                 headers,
                 body,
                 bearer,
-                attempt
+                attempt,
+                context.Connection.ClientCertificate?.Thumbprint
             );
             _requests.Enqueue(recorded);
 
@@ -273,6 +440,11 @@ public sealed class FakeApnsServer : IAsyncDisposable
             if (headers.TryGetValue("apns-id", out var apnsId))
             {
                 context.Response.Headers["apns-id"] = apnsId;
+            }
+
+            if (reply.UniqueId is not null)
+            {
+                context.Response.Headers["apns-unique-id"] = reply.UniqueId;
             }
 
             if (reply.RawBody is not null)

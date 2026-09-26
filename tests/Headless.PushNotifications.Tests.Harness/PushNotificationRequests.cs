@@ -15,4 +15,13 @@ public static class PushNotificationRequests
     {
         return new PushNotificationRequest { Title = title, Body = body };
     }
+
+    /// <summary>A minimal valid data-only <see cref="PushNotificationRequest"/>: no title, no body, one data entry.</summary>
+    public static PushNotificationRequest DataOnly()
+    {
+        return new PushNotificationRequest
+        {
+            Data = new Dictionary<string, string>(StringComparer.Ordinal) { ["sync"] = "1" },
+        };
+    }
 }

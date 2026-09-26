@@ -2,6 +2,7 @@
 
 using System.Security.Cryptography;
 using Headless.PushNotifications;
+using Headless.PushNotifications.Apns;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -67,5 +68,45 @@ public sealed class CrossProviderPushNotificationsMixingTests
         }
 
         serviceProvider.RegisteredNames.Should().BeEquivalentTo(["audit", "marketing", "ios"]);
+    }
+
+    [Fact]
+    public void should_resolve_the_typed_apns_service_only_for_a_named_apns_instance()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var privateKey = key.ExportPkcs8PrivateKeyPem();
+
+        services.AddHeadlessPushNotifications(setup =>
+        {
+            setup.UseNoop();
+            setup.AddNamed("marketing", static instance => instance.UseFirebase(static o => o.Json = "{}"));
+            setup.AddNamed(
+                "ios",
+                instance =>
+                    instance.UseApns(o =>
+                    {
+                        o.KeyId = "ABC123DEFG";
+                        o.TeamId = "TEAM123456";
+                        o.PrivateKey = privateKey;
+                        o.BundleId = "com.example.app";
+                    })
+            );
+        });
+
+        // when
+        using var provider = services.BuildServiceProvider();
+
+        // then - the typed APNs service is the same instance as the named shared service, and no other
+        // provider exposes it.
+        provider
+            .GetRequiredKeyedService<IApnsPushNotificationService>("ios")
+            .Should()
+            .BeSameAs(provider.GetRequiredKeyedService<IPushNotificationService>("ios"));
+        provider.GetKeyedService<IApnsPushNotificationService>("marketing").Should().BeNull();
+        provider.GetService<IApnsPushNotificationService>().Should().BeNull();
     }
 }
