@@ -50,6 +50,21 @@ public interface IFeatureManager
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>Gets the effective values of a set of features in one call.</summary>
+    /// <param name="featureNames">The feature names to resolve.</param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <returns>
+    /// A dictionary keyed by feature name, resolved through the full provider chain exactly as
+    /// <see cref="GetAsync"/> resolves one feature with no provider named. A feature that has no value
+    /// still appears, with a <see cref="FeatureValue"/> whose <see cref="FeatureValue.Value"/> is
+    /// <see langword="null"/>. Names that are not defined are omitted.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="featureNames"/> is <see langword="null"/>.</exception>
+    Task<Dictionary<string, FeatureValue>> GetAllAsync(
+        IReadOnlySet<string> featureNames,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Gets all feature values for the given provider and key.</summary>
     /// <param name="providerName">The provider to query.</param>
     /// <param name="providerKey">Provider-specific key. When <see langword="null"/>, the provider uses its default logic.</param>

@@ -260,6 +260,9 @@ Core implementation of permission management with grant resolution, caching, bac
 - `PermissionsStorageOptions` — schema and table name configuration shared across all storage providers
 - `HeadlessPermissionsSetupBuilder` — fluent builder returned inside `AddHeadlessPermissions`; exposes `ConfigureManagement`, `ConfigureStorage`, `DisableStartupInitialization`, `DisablePermissionNamePolicies`, `RegisterExtension`. `ConfigureStorage` also accepts the `Headless:Permissions:Storage` configuration section.
 - `PermissionPolicyProvider` — `IAuthorizationPolicyProvider` that resolves a defined permission name as a policy holding one `PermissionRequirement`; registered by default in place of ASP.NET Core's default provider
+- `IAuthorizationPolicyCatalog` (`Headless.Permissions.Requirements`) — lists names: `GetRegisteredPolicyNamesAsync()` (policies added to `AuthorizationOptions`), `GetPermissionNamesAsync()` (defined permission names, for grant checks), and `GetPolicyNamesAsync()` (every name that resolves to a policy through the active provider: the registered policies, plus the permissions with any `PolicyNamePrefix` applied when `PermissionPolicyProvider` is that provider). Every name `GetPolicyNamesAsync()` returns is safe to pass to `IAuthorizationService`, including under `DisablePermissionNamePolicies()` or a host-owned provider, where it returns the registered policies only
+- `IGrantedPoliciesReader` (`Headless.Permissions.Grants`) — `GetAsync(PrincipalContext, policyNames, …)` returns the set of every granted permission name plus every listed policy the principal satisfies
+- `PrincipalContext(ClaimsPrincipal Principal, string? TenantId)` (`Headless.Abstractions`, in `Headless.Core`) — the principal and tenant a reader resolves for in place of the ambient ones
 - `HeadlessPermissionsBuilder` — returned by `AddHeadlessPermissions`; exposes `Services` for post-registration additions
 - `services.AddPermissionDefinitionProvider<T>()` — registers a custom `IPermissionDefinitionProvider` as singleton
 - `services.AddPermissionGrantProvider<T>()` — registers an additional grant provider (last-registered = highest priority)
@@ -278,6 +281,7 @@ The always-allow test doubles (`AlwaysAllowPermissionManager` / `AlwaysAllowAuth
 - **Generated policies hold only the permission requirement**, the same as a hand-written `AddPolicy(name, p => p.Requirements.Add(new PermissionRequirement(name)))`. ASP.NET Core never merges `DefaultPolicy` into a named policy, so tenant enforcement added through `RequireTenant()` and any default authentication schemes do not apply to `[Authorize("Orders.Edit")]`.
 - **Caching.** A resolved name keeps its policy for the process lifetime, and the provider lets the authorization middleware cache the combined policy per endpoint. Misses are not cached, so a permission added later through the dynamic store resolves without a restart (after `DynamicDefinitionsMemoryCacheExpiration`); a permission deleted after first use keeps its policy, and `PermissionRequirementHandler` denies it because undefined permissions are never granted.
 - **Failures propagate.** A definition-store failure (cache, lock, or database) while resolving a policy surfaces as that exception, never as "policy not found", and is not cached. The provider contract has no cancellation token, so with the dynamic store enabled a first lookup during an outage can wait up to `CrossApplicationsCommonLockAcquireTimeout`.
+- **Policy catalog limits.** ASP.NET Core exposes no listing of registered policies, so `IAuthorizationPolicyCatalog.GetRegisteredPolicyNamesAsync()` reads the private map on `AuthorizationOptions` through `[UnsafeAccessor]`; an ASP.NET Core release that renames or removes it makes the call throw `MissingMethodException`, and a unit test pins it so an upgrade fails CI first. Policies a custom `IAuthorizationPolicyProvider` produces on demand have no list and are not included.
 - The grant cache is tenant-scoped (`ScopedCache<PermissionGrantCacheItem>` keyed on `ICurrentTenant.Id`). A permission check for tenant A never returns a cached result for tenant B.
 - `PermissionsInitializationBackgroundService` implements `IInitializer`: anything awaiting `WaitForInitializationAsync()` blocks until both the save and pre-cache steps complete. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; other failures retain 10 retries, and the terminal exception is surfaced to every waiter. If the host stops before initialization finishes, the background task and waiters are cancelled.
 - `PermissionGrantRecord` implements `ICreateAudit` / `IUpdateAudit` and carries `CreatedAt` (non-null) and `UpdatedAt` (nullable) audit timestamps. Grants are insert-only — a revoke deletes the row and inserts a replacement rather than updating — so `UpdatedAt` is normally null. The EF provider stamps `CreatedAt` through the audit save-processor; the raw-SQL providers stamp it from the injected `TimeProvider`. Hydrate from storage with the `PermissionGrantRecord.FromStorage(...)` factory, which sets the audit fields.
@@ -357,6 +361,38 @@ builder.Services.AddHeadlessPermissions(setup =>
     setup.UseEntityFramework<AppDbContext>();
 });
 ```
+
+#### Client Config for SPAs
+
+A front end usually needs, at login and on refresh, which permissions and policies the user holds and which client-visible features and settings apply. Headless ships one reader per domain and no endpoint: the application composes their results into its own response and returns it wherever it wants, such as a user-config endpoint and the login and refresh responses.
+
+```csharp
+public sealed class UserConfigFactory(
+    IGrantedPoliciesReader grantedPolicies,
+    IClientVisibleFeaturesReader features,
+    IClientVisibleSettingsReader settings
+)
+{
+    // The named policies the client is allowed to see; every defined permission is always included.
+    private static readonly string[] _ExposedPolicies = ["Administrator", "Charity"];
+
+    public async Task<UserConfig> BuildAsync(ClaimsPrincipal principal, string? tenantId, CancellationToken ct)
+    {
+        var context = new PrincipalContext(principal, tenantId);
+
+        return new UserConfig
+        {
+            GrantedPolicies = await grantedPolicies.GetAsync(context, _ExposedPolicies, ct),
+            Features = await features.GetAsync(context, ct),
+            Settings = await settings.GetAsync(context, ct),
+        };
+    }
+}
+```
+
+- Every reader resolves for the context's principal and tenant, not the ambient ones: it switches `ICurrentPrincipalAccessor` and `ICurrentTenant` to the context while it runs and restores them afterwards. Build the config from the principal you are about to return, not from `ICurrentUser`, because at login the new principal is not yet ambient. Pass `TenantId: null` for the host.
+- The granted-policies set holds only what is granted; a name that is not granted is absent. Project it to whatever shape the front end expects, such as `{ name: true }`. Permissions are checked with one `IPermissionManager.GetAllAsync` call, and each listed policy costs one `IAuthorizationService` evaluation.
+- A listed policy name that is neither a registered policy nor a defined permission throws ASP.NET Core's "No policy found" `InvalidOperationException`. To expose every registered policy instead of a fixed list, pass `await catalog.GetRegisteredPolicyNamesAsync()`.
 
 #### Seeding Permissions at Startup
 
@@ -456,6 +492,9 @@ builder.Services.AddHeadlessPermissions(setup =>
 - Starts `PermissionsInitializationBackgroundService` as a hosted service (`IInitializer`) unless `setup.DisableStartupInitialization()` was called
 - Registers `IGrantPermissionsSeedHelper` as transient
 - Registers `PermissionRequirementHandler` and `PermissionsRequirementHandler` as `IAuthorizationHandler` singletons
+- Calls `AddAuthorizationCore()`, so `IAuthorizationService` resolves in a host that never called `AddAuthorization()` (a worker, for example); the call only adds what is missing, so a host's own authorization registrations win
+- Registers `IAuthorizationPolicyCatalog` and `IGrantedPoliciesReader` as transient
+- Registers an `AsyncLocal`-backed `CurrentTenant` as the `ICurrentTenant` fallback (the same fallback Messaging and Jobs use); any real tenancy registration replaces it
 - Registers `PermissionPolicyProvider` as the singleton `IAuthorizationPolicyProvider`, replacing ASP.NET Core's default provider and keeping a host-registered one, unless `setup.DisablePermissionNamePolicies()` was called
 - Registers a tenant-scoped `ICache<PermissionGrantCacheItem>` as singleton
 

@@ -43,6 +43,54 @@ public sealed class FeatureManagerTests : TestBase
     }
 
     [Fact]
+    public async Task should_resolve_requested_features_through_the_provider_chain_when_batch_read()
+    {
+        // given
+        var high = Substitute.For<IFeatureValueProvider>();
+        high.Name.Returns("High");
+        var low = Substitute.For<IFeatureValueProvider>();
+        low.Name.Returns("Low");
+        _valueProviderManager.ValueProviders.Returns([high, low]);
+        var fromHigh = new FeatureDefinition("FromHigh");
+        var fromLow = new FeatureDefinition("FromLow");
+        var unset = new FeatureDefinition("Unset");
+        var notRequested = new FeatureDefinition("NotRequested");
+        _definitionManager.GetFeaturesAsync(AbortToken).Returns([fromHigh, fromLow, unset, notRequested]);
+        // NSubstitute auto-returns "" for an unconfigured Task<string?>; a provider without a value returns null.
+        high.GetOrDefaultAsync(Arg.Any<FeatureDefinition>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns((string?)null);
+        low.GetOrDefaultAsync(Arg.Any<FeatureDefinition>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns((string?)null);
+        high.GetOrDefaultAsync(fromHigh, null, AbortToken).Returns("h");
+        low.GetOrDefaultAsync(fromHigh, null, AbortToken).Returns("shadowed");
+        low.GetOrDefaultAsync(fromLow, null, AbortToken).Returns("l");
+
+        // when
+        var values = await _sut.GetAllAsync(
+            new HashSet<string>(StringComparer.Ordinal) { "FromHigh", "FromLow", "Unset", "Undefined" },
+            AbortToken
+        );
+
+        // then
+        values.Keys.Should().BeEquivalentTo("FromHigh", "FromLow", "Unset");
+        values["FromHigh"].Should().Be(new FeatureValue("FromHigh", "h", new FeatureValueProvider("High", null)));
+        values["FromLow"].Should().Be(new FeatureValue("FromLow", "l", new FeatureValueProvider("Low", null)));
+        values["Unset"].Should().Be(new FeatureValue("Unset", null, null));
+        await _definitionManager.DidNotReceive().FindAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_return_empty_without_reading_definitions_when_batch_read_is_empty()
+    {
+        // when
+        var values = await _sut.GetAllAsync(new HashSet<string>(StringComparer.Ordinal), AbortToken);
+
+        // then
+        values.Should().BeEmpty();
+        await _definitionManager.DidNotReceive().GetFeaturesAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task should_publish_the_changed_name_and_scope_after_a_write()
     {
         // given
