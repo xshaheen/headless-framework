@@ -823,7 +823,9 @@ Root tenancy setup:
 
 ```csharp
 builder.AddHeadlessTenancy(tenancy =>
-    tenancy.Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
+    tenancy
+        .Http(http => http.ResolveFromClaims()) // the ambient tenant that propagation captures
+        .Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
 );
 ```
 
@@ -942,7 +944,11 @@ Absolute schedules retain the requested instant in UTC as `ScheduledAt`; `Publis
 The framework ships built-in middleware that propagates the originating tenant on the wire:
 
 ```csharp
-builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant()));
+builder.AddHeadlessTenancy(tenancy =>
+    tenancy
+        .Http(http => http.ResolveFromClaims()) // the ambient tenant that propagation captures
+        .Messaging(messaging => messaging.PropagateTenant())
+);
 ```
 
 The root tenancy seam registers `TenantPropagationPublishMiddleware` (stamps `PublishOptions.TenantId` from ambient `ICurrentTenant.Id`) and `TenantPropagationConsumeMiddleware` (calls `ICurrentTenant.Change(...)` for the lifetime of the consume). Caller-set values on `PublishOptions.TenantId` are preserved verbatim — set it explicitly to override the ambient tenant. See the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section for the trust boundary and the strict-tenancy guard.
