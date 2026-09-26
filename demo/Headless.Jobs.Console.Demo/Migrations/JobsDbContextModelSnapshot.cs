@@ -17,7 +17,7 @@ namespace Headless.Jobs.Console.Demo.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.9")
+                .HasAnnotation("ProductVersion", "10.0.12")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -26,6 +26,18 @@ namespace Headless.Jobs.Console.Demo.Migrations
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("CausationId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ContractVersion")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .UseCollation("C");
+
+                    b.Property<string>("CorrelationId")
+                        .HasColumnType("text");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -51,7 +63,9 @@ namespace Headless.Jobs.Console.Demo.Migrations
 
                     b.Property<string>("Function")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .UseCollation("C");
 
                     b.Property<string>("InitIdentifier")
                         .HasColumnType("text");
@@ -139,6 +153,18 @@ namespace Headless.Jobs.Console.Demo.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("CausationId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ContractVersion")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .UseCollation("C");
+
+                    b.Property<string>("CorrelationId")
+                        .HasColumnType("text");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -162,6 +188,12 @@ namespace Headless.Jobs.Console.Demo.Migrations
                     b.Property<DateTime>("ExecutionTime")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("Function")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .UseCollation("C");
+
                     b.Property<DateTime?>("LockedUntil")
                         .HasColumnType("timestamp with time zone");
 
@@ -176,6 +208,9 @@ namespace Headless.Jobs.Console.Demo.Migrations
                     b.Property<DateTime?>("RecoveredFromUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<byte[]>("Request")
+                        .HasColumnType("bytea");
+
                     b.Property<int>("RetryCount")
                         .HasColumnType("integer");
 
@@ -186,6 +221,10 @@ namespace Headless.Jobs.Console.Demo.Migrations
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
+
+                    b.Property<string>("TenantId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -221,10 +260,27 @@ namespace Headless.Jobs.Console.Demo.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("BusinessKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .UseCollation("C");
+
                     b.Property<bool>("CancelRequested")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
                         .HasDefaultValue(false);
+
+                    b.Property<string>("CausationId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ContractVersion")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .UseCollation("C");
+
+                    b.Property<string>("CorrelationId")
+                        .HasColumnType("text");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -244,12 +300,28 @@ namespace Headless.Jobs.Console.Demo.Migrations
                     b.Property<DateTime?>("ExecutionTime")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("FingerprintAlgorithm")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
                     b.Property<string>("Function")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .UseCollation("C");
+
+                    b.Property<long?>("Generation")
+                        .HasColumnType("bigint");
 
                     b.Property<string>("InitIdentifier")
                         .HasColumnType("text");
+
+                    b.Property<string>("IntentFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<bool?>("IsCurrentGeneration")
+                        .HasColumnType("boolean");
 
                     b.Property<DateTime?>("LockedUntil")
                         .HasColumnType("timestamp with time zone");
@@ -291,7 +363,8 @@ namespace Headless.Jobs.Console.Demo.Migrations
 
                     b.Property<string>("TenantId")
                         .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
+                        .HasColumnType("character varying(200)")
+                        .UseCollation("C");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -315,7 +388,26 @@ namespace Headless.Jobs.Console.Demo.Migrations
                     b.HasIndex("TenantId", "Status", "ExecutionTime")
                         .HasDatabaseName("IX_TimeJob_TenantId_Status_ExecutionTime");
 
-                    b.ToTable("TimeJobs", "jobs");
+                    b.HasIndex(new[] { "Function", "BusinessKey" }, "UX_TimeJobs_CurrentKey_System")
+                        .IsUnique()
+                        .HasFilter("\"BusinessKey\" IS NOT NULL AND \"TenantId\" IS NULL AND \"IsCurrentGeneration\" = TRUE");
+
+                    b.HasIndex(new[] { "TenantId", "Function", "BusinessKey" }, "UX_TimeJobs_CurrentKey_Tenant")
+                        .IsUnique()
+                        .HasFilter("\"BusinessKey\" IS NOT NULL AND \"TenantId\" IS NOT NULL AND \"IsCurrentGeneration\" = TRUE");
+
+                    b.HasIndex(new[] { "Function", "BusinessKey", "Generation" }, "UX_TimeJobs_KeyGeneration_System")
+                        .IsUnique()
+                        .HasFilter("\"BusinessKey\" IS NOT NULL AND \"TenantId\" IS NULL");
+
+                    b.HasIndex(new[] { "TenantId", "Function", "BusinessKey", "Generation" }, "UX_TimeJobs_KeyGeneration_Tenant")
+                        .IsUnique()
+                        .HasFilter("\"BusinessKey\" IS NOT NULL AND \"TenantId\" IS NOT NULL");
+
+                    b.ToTable("TimeJobs", "jobs", t =>
+                        {
+                            t.HasCheckConstraint("CK_TimeJobs_KeyedMetadata", "(\"BusinessKey\" IS NULL AND \"IntentFingerprint\" IS NULL AND \"FingerprintAlgorithm\" IS NULL AND \"Generation\" IS NULL AND \"IsCurrentGeneration\" IS NULL) OR (\"BusinessKey\" IS NOT NULL AND \"BusinessKey\" <> '' AND \"IntentFingerprint\" IS NOT NULL AND \"IntentFingerprint\" <> '' AND \"FingerprintAlgorithm\" IS NOT NULL AND \"FingerprintAlgorithm\" <> '' AND \"Generation\" IS NOT NULL AND \"Generation\" > 0 AND \"IsCurrentGeneration\" IS NOT NULL AND \"ParentId\" IS NULL AND \"RunCondition\" IS NULL)");
+                        });
                 });
 
             modelBuilder.Entity("Headless.Jobs.Entities.CronJobOccurrenceEntity<Headless.Jobs.Entities.CronJobEntity>", b =>

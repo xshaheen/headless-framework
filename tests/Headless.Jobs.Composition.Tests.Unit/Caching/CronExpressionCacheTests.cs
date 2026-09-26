@@ -248,7 +248,8 @@ public sealed class CronExpressionCacheTests : TestBase
                         "new-seed",
                         "0 7 * * *",
                         MissedRunPolicy.Coalesce,
-                        JobsRecoveryDefaults.MissedRunGraceSeconds
+                        JobsRecoveryDefaults.MissedRunGraceSeconds,
+                        CronOverlapPolicy.Allow
                     ),
                 ],
                 AbortToken

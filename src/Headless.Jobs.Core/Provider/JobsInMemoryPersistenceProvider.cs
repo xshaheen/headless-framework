@@ -1421,11 +1421,18 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     {
         var now = _timeProvider.GetUtcNow();
 
-        foreach (var seed in cronJobs)
+        foreach (
+            var (
+                function,
+                expression,
+                onMissedRun,
+                missedRunGraceSeconds,
+                onOverlap,
+                evaluationFingerprint,
+                contractVersion
+            ) in cronJobs
+        )
         {
-            var (function, expression, onMissedRun, missedRunGraceSeconds, evaluationFingerprint, contractVersion) =
-                seed;
-
             // Deterministic id keyed by function (matches the durable provider's seed identity): a re-seed — including
             // a changed expression — updates the same row in place rather than inserting a duplicate. Single-process
             // provider, so there is no cross-node race here.
@@ -1503,7 +1510,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 // construction — which is why no provenance marker is persisted.
                 OnMissedRun = onMissedRun,
                 MissedRunGraceSeconds = missedRunGraceSeconds,
-                OnOverlap = seed.OnOverlap,
+                OnOverlap = onOverlap,
                 EvaluationFingerprint = evaluationFingerprint,
             };
 

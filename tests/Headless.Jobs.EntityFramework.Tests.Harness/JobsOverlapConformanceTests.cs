@@ -197,10 +197,13 @@ public abstract class JobsOverlapConformanceTests<TFixture>(TFixture fixture) : 
         using var host = fixture.BuildHost("overlap-seed");
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         var persistence = _Persistence(host);
-        var seed = new CronSeedDefinition("overlap-seed", "0 0 * * * *", MissedRunPolicy.Coalesce, 60)
-        {
-            OnOverlap = CronOverlapPolicy.Skip,
-        };
+        var seed = new CronSeedDefinition(
+            "overlap-seed",
+            "0 0 * * * *",
+            MissedRunPolicy.Coalesce,
+            60,
+            CronOverlapPolicy.Skip
+        );
 
         await persistence.MigrateDefinedCronJobsAsync([seed], ct);
         var created = (await persistence.GetCronJobsAsync(predicate: null, ct)).Single();

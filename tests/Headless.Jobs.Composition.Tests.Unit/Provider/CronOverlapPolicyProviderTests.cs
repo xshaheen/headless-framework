@@ -176,12 +176,7 @@ public sealed class CronOverlapPolicyProviderTests : TestBase
         var provider = _Create();
 
         await provider.MigrateDefinedCronJobsAsync(
-            [
-                new CronSeedDefinition("seeded", "0 * * * * *", MissedRunPolicy.Coalesce, 60)
-                {
-                    OnOverlap = CronOverlapPolicy.Skip,
-                },
-            ],
+            [new CronSeedDefinition("seeded", "0 * * * * *", MissedRunPolicy.Coalesce, 60, CronOverlapPolicy.Skip)],
             AbortToken
         );
         var created = (await provider.GetCronJobsAsync(predicate: null, AbortToken)).Single();
@@ -201,12 +196,7 @@ public sealed class CronOverlapPolicyProviderTests : TestBase
             .Be(created.ScheduleRevision, "materialization reads the policy fresh, so no stale copy needs fencing");
 
         await provider.MigrateDefinedCronJobsAsync(
-            [
-                new CronSeedDefinition("seeded", "0 * * * * *", MissedRunPolicy.Coalesce, 60)
-                {
-                    OnOverlap = CronOverlapPolicy.Skip,
-                },
-            ],
+            [new CronSeedDefinition("seeded", "0 * * * * *", MissedRunPolicy.Coalesce, 60, CronOverlapPolicy.Skip)],
             AbortToken
         );
 

@@ -12,10 +12,11 @@ namespace Headless.Jobs.Models;
 /// <param name="Expression">Six-field cron expression, already resolved from configuration when it was a <c>%</c> key.</param>
 /// <param name="OnMissedRun">Recovery policy to seed at creation.</param>
 /// <param name="MissedRunGraceSeconds">Misfire grace, in seconds, to seed at creation.</param>
+/// <param name="OnOverlap">Overlap policy to seed at creation.</param>
 /// <param name="EvaluationFingerprint">Current evaluator fingerprint stamped with a new or repositioned seed.</param>
 /// <param name="ContractVersion">Registered payload version stamped only on newly created definitions.</param>
 /// <remarks>
-/// Both recovery settings are already resolved by the caller — attribute value, else the scheduler-wide setting, else
+/// The recovery and overlap settings are already resolved by the caller — attribute value, else the scheduler-wide setting, else
 /// the framework default — so the provider persists a concrete value rather than re-deriving one. That matters because
 /// the threshold must be identical on every node: if each provider resolved it from local configuration, two nodes
 /// could disagree about whether the same instant misfired.
@@ -35,10 +36,7 @@ public readonly record struct CronSeedDefinition(
     string Expression,
     MissedRunPolicy OnMissedRun,
     int MissedRunGraceSeconds,
+    CronOverlapPolicy OnOverlap,
     string? EvaluationFingerprint = null,
     string ContractVersion = JobContract.InitialVersion
-)
-{
-    /// <summary>Overlap policy to seed at creation, resolved by the caller like the recovery settings.</summary>
-    public CronOverlapPolicy OnOverlap { get; init; }
-}
+);
