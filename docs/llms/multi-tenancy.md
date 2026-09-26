@@ -64,6 +64,8 @@ app.UseAuthorization();
 - When using `IgnoreMultiTenancyFilter()`, add an inline `// MULTI-TENANCY-BYPASS: <reason>` comment naming the approved scenario (cross-tenant snapshot, admin lookup, system maintenance, etc.) so reviewers and post-incident readers can distinguish legitimate bypasses from drift.
 - Enable strict EF tenant writes with `.EntityFramework(ef => ef.GuardTenantWrites())` when tenant-owned saves must fail without a matching tenant context.
 - Enable strict EF tenant reads with `.EntityFramework(ef => ef.GuardTenantReads())` when a query over required-tenant rows must fail instead of returning nothing without a tenant. See [EF Tenant Read Guard](#ef-tenant-read-guard).
+- For schema-per-tenant or database-per-tenant data, route the context with `.EntityFramework(ef => ef.RouteTenantData<AppDbContext>())` plus one `.DataPlacement(...)` source, and create routed contexts with `await IDbContextFactory<AppDbContext>.CreateDbContextAsync()` under the tenant; never inject a routed context directly into tenant-scoped code. See [Tenant Data Placement](#tenant-data-placement).
+- Keep outbox storage, the Jobs store, and the tenant catalog, Settings, Features, and Permissions stores on a context that is not tenant-routed; startup fails with `HEADLESS_TENANCY_ROUTED_CONTEXT_NOT_ALLOWED` otherwise.
 - Use `ITenantWriteGuardBypass.BeginBypass()` only around intentional admin or host-level writes. `IgnoreMultiTenancyFilter()` affects reads only; it does not bypass guarded writes.
 - Permission cache scoping depends on `ICurrentTenant.Id`. Host-level operations with no tenant use the shared `t:` scope by design.
 - For background jobs, adopt the Jobs tenancy seam (`.Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue())`) so time jobs capture the ambient tenant at schedule time and restore it around every execution attempt. Cron is always system-scope: fan out one explicit-tenant time job per tenant from application code — see [Background Jobs](#background-jobs).
@@ -86,7 +88,7 @@ app.UseAuthorization();
 
 ## Core Concepts
 
-- **Logical isolation with a shared schema is the model.** Headless tenancy implements one point on the isolation spectrum: tenants share a database, a schema, and a deployment, and are separated by an ambient canonical tenant id propagated through EF query filters, the write guard, caches, jobs, and messages. Pooled and dedicated topologies — a database or schema per tenant, per-tenant connection strings, dedicated compute, regional placement for residency — are **out of scope**. The framework ships no per-tenant connection resolution and never routes a tenant to its own store; that boundary is app-owned infrastructure. Decide isolation requirements before adopting this model: if smaller failure blast radius, compliance, dedicated capacity, or data residency demand a physical boundary, this framework's guarantees stop at the logical one and the physical one is yours to build. Within logical isolation the coverage is deliberately broad but not total — see [Defense Layers and Known Gaps](#defense-layers-and-known-gaps) for the paths that bypass it, and note that tenant rate limiting and the resource-exhaustion class it addresses are delegated to consumers ([DoS and rate limiting](#dos-and-rate-limiting)).
+- **Logical isolation with a shared schema is the default; schema-per-tenant and database-per-tenant are opt-in.** By default tenants share a database, a schema, and a deployment, and are separated by an ambient canonical tenant id propagated through EF query filters, the write guard, caches, jobs, and messages. An application that needs a physical boundary routes an EF context per tenant: each tenant gets its own schema (the recommended middle ground), its own database, or both, from an `ITenantDataPlacementResolver`. See [Tenant Data Placement](#tenant-data-placement). The tenant filters and guards still apply inside each tenant's store. Dedicated compute and regional placement for residency remain out of scope, as does routing relays and host-level stores (outbox, Jobs store, tenant catalog, Settings, Features, Permissions): they stay on one fixed database. Within logical isolation the coverage is deliberately broad but not total — see [Defense Layers and Known Gaps](#defense-layers-and-known-gaps) for the paths that bypass it, and note that tenant rate limiting and the resource-exhaustion class it addresses are delegated to consumers ([DoS and rate limiting](#dos-and-rate-limiting)).
 - **Tenant identifier vs. canonical tenant id.** A *tenant identifier* is the public, resolution-facing name of a tenant — a host label (`acme` from `acme.example.com`), a route value, or a header value. It may change over a tenant's life (rebrands, custom domains) and is normalized (trim, lowercase invariant) before any lookup; it is never used to key persistence or authorization. The *canonical tenant id* is the stable id that keys everything tenant-owned: ambient `ICurrentTenant.Id`, EF filters and write guards, Jobs/Messaging propagation, and per-tenant Settings/Features/Permissions state. A JWT tenant claim carries the canonical id directly — claim-based resolution never touches the catalog. Identifier-based resolution exists specifically to map a public identifier to the canonical id before ambient context is set.
 - **The catalog owns identity, routing, and lifecycle only.** `TenantInfo` carries `Id`, `Identifier`, `Name`, `IsEnabled`, and `ExtraProperties`. `ExtraProperties` is read-along payload — it never participates in lookups or caching keys. Per-tenant application configuration (feature flags, limits, branding) belongs in Settings/Features/Permissions keyed by the canonical id, not on the tenant model — the framework already ships cached, managed per-tenant stores for that, and a rich tenant model would compete with them.
 - **Three extension tiers**, from least to most structural, so the pipeline itself never becomes generic:
@@ -629,6 +631,93 @@ Without the guard, a query over a tenant-owned entity with a required tenant col
 
 `GuardTenantReads()` is the only registration API. `TenantGuardOptions.GuardReads` reports the configured state and has no public setter. When the seam records `guard-tenant-reads` but `GuardReads` resolves to false, for example because a later registration replaced `IOptions<TenantGuardOptions>`, host startup fails with `HEADLESS_TENANCY_EF_READ_GUARD_DISABLED`; the write guard reports `HEADLESS_TENANCY_EF_WRITE_GUARD_DISABLED` the same way.
 
+## Tenant Data Placement
+
+Tenant data placement puts each tenant's data in its own schema, its own database, or both. It is opt-in per EF context: contexts that are not routed keep the shared database and schema, and a host that routes nothing needs no configuration.
+
+### Choosing a topology
+
+| Topology | How | Use when | Cost |
+|---|---|---|---|
+| Shared schema (default) | Nothing to configure | Most SaaS workloads; logical isolation is enough | Isolation is the query filter and write guard |
+| Schema per tenant | Placement with `Schema` | A physical boundary per tenant inside one database: per-tenant backup/restore, noisy-table isolation, easier offboarding | One EF model per schema in memory; every schema migrated separately |
+| Database per tenant | Placement with `ConnectionString` (optionally `Schema` too) | Compliance, blast radius, or dedicated capacity demand separate databases | One ADO.NET connection pool per tenant; migrations per database; operational fan-out |
+
+Prefer schema-per-tenant as the middle ground. ADO.NET pools connections per distinct connection string, so database-per-tenant multiplies pools: with `Maximum Pool Size = 100` (Npgsql's default) and 50 active tenant databases, one application instance may hold up to 5,000 connections, while PostgreSQL's default `max_connections` is 100. Size `Maximum Pool Size` down per tenant, put PgBouncer (or your provider's pooler) in front, or raise `max_connections` deliberately. Schema-per-tenant shares one pool per instance.
+
+### Setup
+
+```csharp
+builder.Services.AddHeadlessDbContext<AppDbContext>(options => options.UseNpgsql(sharedConnectionString));
+
+builder.AddHeadlessTenancy(tenancy => tenancy
+    .DataPlacement(placement => placement.UseConfiguration(
+        builder.Configuration.GetSection("Headless:MultiTenancy:DataPlacement")))
+    .EntityFramework(ef => ef.GuardTenantWrites().RouteTenantData<AppDbContext>()));
+```
+
+```json
+{
+  "Headless": {
+    "MultiTenancy": {
+      "DataPlacement": {
+        "Tenants": [
+          { "TenantId": "acme", "Schema": "tenant_acme" },
+          { "TenantId": "globex", "ConnectionString": "Host=db2;Database=globex;..." }
+        ]
+      }
+    }
+  }
+}
+```
+
+Create routed contexts through the factory under the tenant:
+
+```csharp
+public sealed class OrdersService(IDbContextFactory<AppDbContext> factory)
+{
+    public async Task<List<Order>> ListAsync(CancellationToken cancellationToken)
+    {
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        return await db.Orders.ToListAsync(cancellationToken);
+    }
+}
+```
+
+### Placement sources
+
+`DataPlacement(...)` takes exactly one source.
+
+- **`UseConfiguration(...)`** binds `ConfigurationTenantDataPlacementOptions` once at startup (three overloads: `IConfiguration`, `Action<T>`, `Action<T, IServiceProvider>`). Each entry needs a `TenantId` and a `Schema`, a `ConnectionString`, or both; duplicate tenant ids fail startup. A change requires a restart.
+- **`UseResolver<TResolver>()`** registers your `ITenantDataPlacementResolver` (scoped) behind an in-process cache with the catalog's fault rules: a cache read fault degrades to a miss, a cache write fault is swallowed, a resolver fault propagates unwrapped, and `OperationCanceledException` always propagates. Placements carry connection strings, so they are cached only in process: an in-memory cache tier (`IInMemoryCache`, registered by `UseInMemory()`, which a hybrid setup also uses as its local tier) is a startup requirement. Positive results live for `TenantDataPlacementOptions.CacheExpiration` (default 5 minutes); a missing placement is never cached. A resolver must read host-level storage only, never a routed context.
+
+`ITenantDataPlacementResolver` returns a `TenantDataPlacement { Schema?, ConnectionString? }` keyed by canonical tenant id, or `null` for no placement. Placement is infrastructure configuration: it stays off `TenantInfo`, which owns identity only, and out of Settings, whose EF store would have to be read before the placement it decides. `TenantDataPlacement.ToString()` never prints the connection string.
+
+### Guarantees
+
+- **Pinned at creation.** A routed context pins its tenant and placement while it is constructed, because EF builds the model then and the model carries the schema. Once the ambient tenant changes, every use of that context throws `InvalidOperationException`: queries, `SaveChanges`, `Add`, connection opens, and every command on an already-open connection, raw SQL included. Create a new context per tenant.
+- **Factory creation only, under a tenant.** `CreateDbContextAsync()` resolves the placement asynchronously before the context is built. Injecting a routed context directly, or calling the synchronous `CreateDbContext()`, while a tenant is ambient throws. With no ambient tenant, both use the context's own registration (connection string and `DefaultSchema`), so design-time tooling and host work are unaffected.
+- **Fail closed.** A tenant with no placement is refused at `CreateDbContextAsync()`. A routed context never falls back to the shared database. `RouteTenantData` without a `DataPlacement(...)` source fails startup with `HEADLESS_TENANCY_EF_ROUTING_WITHOUT_PLACEMENT`.
+- **Enforced at the connection.** An interceptor checks that the context's connection reaches the pinned database, comparing database name and normalized data source, not the raw connection string. Provider administrative connections, such as the one `EnsureCreated` opens to run `CREATE DATABASE`, are not held to the tenant database. Error messages name the context and tenant only, never a connection string.
+- **Filters and guards unchanged.** The query filter, write guard, and read guard key on the canonical tenant id and apply inside each tenant's store exactly as in a shared schema.
+- **All tables in the tenant schema.** In a schema-placed context, any entity mapped to an explicit other schema fails model building: a tenant-owned table there would mix tenants, and a shared table would be created again by every tenant's migrations. Keep shared tables in a context that is not routed. A database-only placement keeps explicit schemas.
+- **Bounded models.** Each schema gets its own EF model and compiled queries. `RouteTenantData<T>(o => o.MaxCachedSchemas = 100)` bounds how many stay cached per context type (default 100); past it, the least recently used are rebuilt on next use.
+- **Relays never route.** The outbox storages, the Jobs store, and the tenant catalog, Settings, Features, and Permissions EF stores fail startup (`HEADLESS_TENANCY_ROUTED_CONTEXT_NOT_ALLOWED`) over a routed context. Enlisted outbox and Jobs writes from a database-routed context are refused by the shared `RelationalDatabaseIdentity` check (see [Unit of Work](unit-of-work.md)); a schema-routed context shares the database, so its enlisted writes land in the relay's own tables.
+- **A moved placement takes effect per node after its cached entry expires** (`CacheExpiration`) or on restart.
+
+### Migrations
+
+Scaffold migrations once, against the context's own `DefaultSchema`, with the usual `dotnet ef migrations add`. When a routed context migrates under a tenant, every schema reference equal to that default moves to the tenant schema: in the migration operations, in each migration's target model (so seed data and column alterations find their tables), and in the model snapshot (so EF's pending-model-changes check still runs). Each tenant schema keeps its own `__EFMigrationsHistory`. Raw SQL inside a migration (`migrationBuilder.Sql(...)`) is not rewritten; qualify it yourself or keep it schema-agnostic.
+
+Migrate every tenant outside request scope, at startup or from a deployment job:
+
+```csharp
+await app.Services.MigrateDbContextByFactoryAsync<AppDbContext>(cancellationToken); // host placement
+await app.Services.MigrateTenantDatabasesAsync<AppDbContext>(cancellationToken); // every tenant
+```
+
+`MigrateTenantDatabasesAsync` enumerates `ITenantDirectory` (every shipped catalog store implements it), migrates disabled tenants too, runs one tenant at a time, and stops at the first failure, logging that tenant's id and rethrowing the original exception. Database-per-tenant targets are created if they do not exist.
+
 ## Messaging Exhausted Callbacks
 
 When messaging tenant propagation is enabled, exhausted callbacks restore `ICurrentTenant` from the message envelope before invoking `RetryPolicy.OnExhausted`. This applies to publish failures, consume failures, and poisoned-on-arrival messages that bypass normal consumer execution. Missing, whitespace, or oversized tenant headers resolve to no tenant, matching consume-side lenient header handling.
@@ -855,6 +944,7 @@ Tests that assert the normalized 403 `g:tenant_required` ProblemDetails (or any 
 - Forgetting `using` around `currentTenant.Change()` in non-HTTP code can leak tenant context within the current async flow.
 - Assuming host-level cache scope `t:` is tenant-isolated is incorrect; it is intentionally shared.
 - Assuming `IgnoreMultiTenancyFilter()` bypasses write protection is incorrect; it only affects reads.
+- Injecting a tenant-routed context into tenant-scoped code throws at construction; routed contexts come from `IDbContextFactory<T>.CreateDbContextAsync()`.
 
 ---
 
@@ -873,6 +963,7 @@ Tests that assert the normalized 403 `g:tenant_required` ProblemDetails (or any 
     - `ITenantStore` — read-only store SPI: `FindByIdentifierAsync(normalizedIdentifier)`, `FindByIdAsync(id)`
     - `ITenantDirectory` — optional enumeration capability (`GetAllAsync()`) a store implements alongside `ITenantStore`; all v1 stores implement it
     - `ICurrentTenantInfo` — reads catalog `TenantInfo` for the ambient tenant (`GetAsync()`); resolves per read, never throws for an absent tenant
+    - `ITenantDataPlacementResolver` / `TenantDataPlacement` — where a tenant's data physically lives (`Schema?`, `ConnectionString?`), keyed by canonical tenant id; `null` means no placement. See [Tenant Data Placement](#tenant-data-placement)
     - `TenantResolutionOutcome` / `TenantResolutionKind` — the closed outcome set produced by identifier-based resolution: `Resolved`, `Unknown`, `Disabled`, `Ignored`, `Invalid`. `TenantResolutionKind.None` is the reserved zero value — it marks an uninitialized outcome (a bare `default(TenantResolutionOutcome)`, an auto-valued test double, or a consumer-supplied `ITenantCatalogService` returning it) rather than a sixth resolution outcome; the catalog itself never produces it, and consumers should treat seeing it as a contract violation
 
 ### Install
@@ -937,6 +1028,11 @@ None.
     - `ICurrentTenantInfo` — registered by default as a no-op (`GetAsync()` always returns `null`) until `Catalog(...)` replaces it with the catalog-backed implementation. `AddTypedCurrentTenantInfo<T>(projection)` registers the opt-in `ICurrentTenantInfo<T>` typed leaf accessor.
     - `TenancyErrorCodes` / `TenancyMessageDescriber` — the `g:tenant_resolution_failed` / `g:tenant_unknown` / `g:tenant_disabled` / `g:tenant_identifier_mismatch` / `g:tenant_identifier_invalid` ProblemDetails codes consumed by `Headless.Api.Core`'s rejection mapping.
     - `TenantCatalogPosture` — shared, non-PII seam/capability constants (`Catalog` seam, `catalog-accessor`/`catalog-resolution` capabilities) that this package and `Headless.Api.Core` both write to and that `TenantCatalogPostureValidator` cross-checks at startup.
+- **Tenant data placement** (opt-in; see [Tenant Data Placement](#tenant-data-placement)):
+    - `HeadlessTenancyBuilder.DataPlacement(Action<HeadlessTenancyDataPlacementSetupBuilder> configure)` — exactly one of `UseConfiguration(...)` (three overloads) or `UseResolver<TResolver>()`; records the `DataPlacement` seam.
+    - `TenantDataPlacementOptions` — `CacheExpiration` for `UseResolver<T>()` placements (default 5 min).
+    - `ConfigurationTenantDataPlacementOptions` / `ConfigurationTenantDataPlacement` — the bound `Tenants` list of `{ TenantId, Schema, ConnectionString }`.
+    - `TenantDataRoutedContextRegistration` and `services.RequireUnroutedTenantDataContext(contextType, owner)` — the marker a routed context type registers and the guard a relay or host-level store uses to fail startup over one.
 
 ### Design constraints
 
@@ -997,6 +1093,7 @@ Custom validators implement `IHeadlessTenancyValidator` and register themselves 
 - Registers a singleton `TenantPostureManifest` via `services.AddSingleton(manifest)`.
 - Registers `HeadlessTenancyStartupValidator` as an `IHeadlessStartupValidator` (idempotent; safe to call multiple times).
 - Registers a default no-op scoped `ICurrentTenantInfo` (`NullCurrentTenantInfo`).
+- Registers a default `ITenantDataPlacementResolver` that returns no placement; only tenant-routed contexts consult it.
 - `AddHeadlessTenancy` also invokes the caller's `configure` callback, which may register additional services from seam packages.
 - `Catalog(...)` registers `TenantCatalogOptions` (validated, `ValidateOnStart`), the selected storage provider's services, `ITenantCatalogService` (scoped, backed by `TenantCatalogService`), replaces the default `ICurrentTenantInfo` with the catalog-backed implementation, and registers `TenantCatalogPostureValidator`.
 

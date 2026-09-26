@@ -101,9 +101,9 @@ public sealed class HeadlessTenancyDataPlacementSetupBuilder
 
     /// <summary>
     /// Resolves placements through an app-supplied <typeparamref name="TResolver"/>, registered as scoped and
-    /// cached in process for <see cref="TenantDataPlacementOptions.CacheExpiration"/>. Requires an in-process cache
-    /// tier (<c>AddHeadlessCaching(c =&gt; c.UseInMemory())</c> or a hybrid cache): placements carry connection
-    /// strings and are never written to a distributed cache.
+    /// cached in process for <see cref="TenantDataPlacementOptions.CacheExpiration"/>. Requires an in-memory cache
+    /// tier (<c>AddHeadlessCaching(c =&gt; c.UseInMemory())</c>, which a hybrid setup also uses as its local tier):
+    /// placements carry connection strings and are never written to a distributed cache.
     /// </summary>
     /// <typeparam name="TResolver">The resolver. It must read host-level storage only.</typeparam>
     /// <returns>The same builder instance to allow chaining.</returns>
@@ -124,8 +124,8 @@ public sealed class HeadlessTenancyDataPlacementSetupBuilder
                     );
                     services.RequireRegisteredService<IInMemoryCache>(
                         "Headless multi-tenancy data placement (UseResolver)",
-                        "Call AddHeadlessCaching(...) with an in-process tier (UseInMemory or UseHybrid); tenant "
-                            + "placements carry connection strings and are cached in process only."
+                        "Call AddHeadlessCaching(...) with UseInMemory (a hybrid setup registers it as its local tier); "
+                            + "tenant placements carry connection strings and are cached in process only."
                     );
                 }
             )
