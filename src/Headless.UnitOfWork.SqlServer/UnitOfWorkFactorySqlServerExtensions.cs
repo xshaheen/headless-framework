@@ -125,6 +125,8 @@ public static class UnitOfWorkFactorySqlServerExtensions
 
                     return true;
                 },
+                NoReplayUnitOfWorkExecutionStrategy.Instance,
+                UnitOfWorkAttemptUnwind.RollBack,
                 UnitOfWorkRunner.LoggerFor(factory),
                 cancellationToken
             );
@@ -165,6 +167,8 @@ public static class UnitOfWorkFactorySqlServerExtensions
                         ct
                     ),
                 operation,
+                NoReplayUnitOfWorkExecutionStrategy.Instance,
+                UnitOfWorkAttemptUnwind.RollBack,
                 UnitOfWorkRunner.LoggerFor(factory),
                 cancellationToken
             );
