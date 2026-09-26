@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.Caching.Memory;
@@ -13,42 +14,42 @@ internal sealed record HeadlessTenantRoutedContext(Type ContextType, int MaxCach
 /// The tenant-routed context types and, per type, the bounded memory cache that holds their per-schema models.
 /// </summary>
 /// <remarks>
+/// <para>
 /// EF's default internal cache (10240 units) keeps about 40 schemas before it evicts and rebuilds models: EF Core 10
 /// caches a design-time model (150) and a runtime model (100) per schema, sharing the budget with compiled queries
 /// (10 each). Each routed type therefore gets its own cache sized for its schema count plus a compiled-query
-/// allowance per schema. One instance per type keeps every routed instance of that type on one EF service provider.
+/// allowance per schema.
+/// </para>
+/// <para>
+/// The caches are process-wide, keyed by context type and size, like EF's own model cache. A new cache instance
+/// forces a new EF internal service provider, and EF refuses to build more than twenty per process, so a cache per
+/// application container would break any process that builds several hosts (integration test suites do).
+/// </para>
 /// </remarks>
-internal sealed class HeadlessTenantDataRouting : IDisposable
+internal sealed class HeadlessTenantDataRouting(IEnumerable<HeadlessTenantRoutedContext> routedContexts)
 {
     private const long _ModelUnitsPerSchema = 250;
     private const long _CompiledQueryUnitsPerSchema = 1000;
 
-    private readonly FrozenDictionary<Type, MemoryCache> _caches;
+    private static readonly ConcurrentDictionary<(Type ContextType, int MaxCachedSchemas), MemoryCache> _Caches = new();
 
-    public HeadlessTenantDataRouting(IEnumerable<HeadlessTenantRoutedContext> routedContexts)
-    {
-        _caches = routedContexts.ToFrozenDictionary(
-            static routed => routed.ContextType,
-            static routed => new MemoryCache(
+    private readonly FrozenDictionary<Type, int> _routed = routedContexts.ToFrozenDictionary(
+        static routed => routed.ContextType,
+        static routed => routed.MaxCachedSchemas
+    );
+
+    public bool IsRouted(Type contextType) => _routed.ContainsKey(contextType);
+
+    public IMemoryCache GetModelCache(Type contextType) =>
+        _Caches.GetOrAdd(
+            (contextType, _routed[contextType]),
+            static key => new MemoryCache(
                 new MemoryCacheOptions
                 {
-                    SizeLimit = routed.MaxCachedSchemas * (_ModelUnitsPerSchema + _CompiledQueryUnitsPerSchema),
+                    SizeLimit = key.MaxCachedSchemas * (_ModelUnitsPerSchema + _CompiledQueryUnitsPerSchema),
                 }
             )
         );
-    }
-
-    public bool IsRouted(Type contextType) => _caches.ContainsKey(contextType);
-
-    public IMemoryCache GetModelCache(Type contextType) => _caches[contextType];
-
-    public void Dispose()
-    {
-        foreach (var cache in _caches.Values)
-        {
-            cache.Dispose();
-        }
-    }
 }
 
 /// <summary>
