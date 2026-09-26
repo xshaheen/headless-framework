@@ -264,7 +264,6 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
                 var scopedManager = unitOfWork.TimeJobs<TimeJobEntity>();
                 var keyed = JobsKeyedSchedulingScenarios.Candidate();
                 keyed.Function = ordinary.Function;
-                keyed.Enlistment = TransactionEnlistment.Required;
                 var key = new JobKey("nonordinal-preflight");
                 var schedule = () => scopedManager.ScheduleKeyedAsync(key, keyed, cancellationToken: ct);
                 await schedule.Should().ThrowAsync<InvalidOperationException>().WithMessage("*collation*");
@@ -277,13 +276,7 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
                 await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, ct);
 
                 var cancel = () =>
-                    scopedManager.CancelKeyedAsync(
-                        new JobKeyScope(ordinary.Function),
-                        key,
-                        1,
-                        enlistment: TransactionEnlistment.Required,
-                        cancellationToken: ct
-                    );
+                    scopedManager.CancelKeyedAsync(new JobKeyScope(ordinary.Function), key, 1, cancellationToken: ct);
                 await cancel.Should().ThrowAsync<InvalidOperationException>().WithMessage("*collation*");
                 probe.Calls.Should().Be(1);
                 connection.State.Should().Be(System.Data.ConnectionState.Open);

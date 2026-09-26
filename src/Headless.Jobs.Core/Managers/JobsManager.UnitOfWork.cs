@@ -27,19 +27,17 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
     );
 
     // Routing decision. The receiver decides enlistment: the autonomous facade passes no unit and takes the
-    // direct path unless the function is TransactionEnlistment.Required, which refuses it before any effect;
-    // the bound facade behind unit.Jobs passes its unit and must enlist — a unit with no joinable relational
-    // resource, or an incompatible or dead one, throws rather than degrading to a standalone row.
+    // direct path, which owns its own atomicity; the bound facade behind unit.Jobs passes its unit and must
+    // enlist — a unit with no joinable relational resource, or an incompatible or dead one, throws rather than
+    // degrading to a standalone row.
     private CoordinatedJobContext? _TryCaptureCoordinatedContext(
         IUnitOfWork? unitOfWork,
-        TransactionEnlistment enlistment,
         string function,
         bool requireSavepoints
     )
     {
         if (unitOfWork is null)
         {
-            _RejectAutonomousReceiver(enlistment, function);
             return null;
         }
 
@@ -59,18 +57,6 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         var captured = new CapturedRelationalResource(relational);
         writer.ValidateContext(captured, requireSavepoints);
         return new CoordinatedJobContext(unitOfWork, captured, writer, requireSavepoints);
-    }
-
-    private static void _RejectAutonomousReceiver(TransactionEnlistment enlistment, string function)
-    {
-        if (enlistment == TransactionEnlistment.Required)
-        {
-            throw new InvalidOperationException(
-                $"Scheduling '{function}' requires a unit of work (TransactionEnlistment.Required), so it cannot run "
-                    + "through an injected scheduler or manager. Schedule it through unit.Jobs on the unit of work "
-                    + "the write must join, or register the function with TransactionEnlistment.Optional."
-            );
-        }
     }
 
     // A plain State == Active re-validation before the write: there is no ambient coordinator to drift from; the

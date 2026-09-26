@@ -11,17 +11,8 @@ namespace Tests.Transactions;
 
 public sealed partial class JobsManagerCoordinatedRoutingTests
 {
-    [Theory]
-    [InlineData("root", false)]
-    [InlineData("success", false)]
-    [InlineData("failure", false)]
-    [InlineData("root", true)]
-    [InlineData("success", true)]
-    [InlineData("failure", true)]
-    public async Task chain_facade_preserves_required_atomicity_before_manager_effects(
-        string requiredNode,
-        bool nonRelational
-    )
+    [Fact]
+    public async Task enlisted_chain_facade_refuses_a_unit_without_a_relational_resource_before_manager_effects()
     {
         var middlewareCalls = 0;
         using var dispatch = _ReplaceScheduleDispatch(
@@ -31,12 +22,11 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
                 return next(ct);
             }
         );
-        var sut = _CreateSut(nonRelational ? CoordinatorMode.NonRelational : CoordinatorMode.None, withWriter: true);
-        var refusal = _RefusalFor(nonRelational);
-        var (facade, chain) = _ChainFacade(sut, requiredNode);
+        var sut = _CreateSut(CoordinatorMode.NonRelational, withWriter: true);
+        var (facade, chain) = _ChainFacade(sut);
 
         var enqueue = () => facade.EnqueueAsync(chain, AbortToken);
-        await enqueue.Should().ThrowAsync<InvalidOperationException>().WithMessage(refusal);
+        await enqueue.Should().ThrowAsync<InvalidOperationException>().WithMessage(_NoRelationalResourceRefusal);
 
         middlewareCalls.Should().Be(0);
         await sut
@@ -56,7 +46,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task chain_facade_without_required_atomicity_keeps_automatic_manager_routing(bool coordinated)
+    public async Task chain_facade_hands_the_whole_tree_to_one_write_chosen_by_the_receiver(bool coordinated)
     {
         var middlewareCalls = 0;
         using var dispatch = _ReplaceScheduleDispatch(
@@ -67,7 +57,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
             }
         );
         var sut = _CreateSut(coordinated ? CoordinatorMode.LiveRelational : CoordinatorMode.None, withWriter: true);
-        var (facade, chain) = _ChainFacade(sut, requiredNode: null);
+        var (facade, chain) = _ChainFacade(sut);
 
         var id = await facade.EnqueueAsync(chain, AbortToken);
 
@@ -79,7 +69,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
             await sut
                 .Writer.Received(1)
                 .WriteTimeJobsAsync(
-                    Arg.Any<TimeJobEntity[]>(),
+                    Arg.Is<TimeJobEntity[]>(jobs => _IsWholeChain(jobs)),
                     Arg.Any<IRelationalUnitOfWorkResource>(),
                     Arg.Any<CancellationToken>()
                 );
@@ -91,7 +81,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         {
             await sut
                 .Persistence.Received(1)
-                .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+                .AddTimeJobsAsync(Arg.Is<TimeJobEntity[]>(jobs => _IsWholeChain(jobs)), Arg.Any<CancellationToken>());
             await sut
                 .Writer.DidNotReceive()
                 .WriteTimeJobsAsync(
@@ -102,17 +92,18 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         }
     }
 
-    private static (IJobScheduler Facade, JobChain Chain) _ChainFacade(Sut sut, string? requiredNode)
+    // One root carrying both conditional children: the tree reaches storage in a single call, so its atomicity is
+    // that call's (the unit's transaction when enlisted, the provider's own transaction when autonomous).
+    private static bool _IsWholeChain(TimeJobEntity[] jobs) =>
+        jobs is [{ Children.Count: 2 } root] && root.Children.All(child => child.ParentId == root.Id);
+
+    private static (IJobScheduler Facade, JobChain Chain) _ChainFacade(Sut sut)
     {
         var registry = JobFunctionProvider.CreateHostRegistry(configuration: null);
         var descriptor = registry.Descriptors[_FunctionName];
-        var builder = JobChain.Start(
-            descriptor,
-            DateTimeOffset.UtcNow.AddHours(1),
-            new JobOptions { Enlistment = _Enlistment(requiredNode, "root") }
-        );
-        builder.Root.Then(descriptor, new JobOptions { Enlistment = _Enlistment(requiredNode, "success") });
-        builder.Root.Catch(descriptor, new JobOptions { Enlistment = _Enlistment(requiredNode, "failure") });
+        var builder = JobChain.Start(descriptor, DateTimeOffset.UtcNow.AddHours(1));
+        builder.Root.Then(descriptor);
+        builder.Root.Catch(descriptor);
         var facade = new JobScheduler<TimeJobEntity, CronJobEntity>(
             sut.Time,
             sut.Cron,
@@ -125,9 +116,4 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         );
         return (facade, builder.Build());
     }
-
-    private static TransactionEnlistment _Enlistment(string? requiredNode, string candidate) =>
-        string.Equals(requiredNode, candidate, StringComparison.Ordinal)
-            ? TransactionEnlistment.Required
-            : TransactionEnlistment.Optional;
 }

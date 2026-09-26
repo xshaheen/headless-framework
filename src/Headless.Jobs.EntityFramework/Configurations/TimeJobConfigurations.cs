@@ -48,7 +48,6 @@ public class TimeJobConfigurations<TTimeJob>(string schema, string? contractColl
 
         // Transient schedule-time authorization flag: never a column.
         builder.Ignore(x => x.IsSystemJob);
-        builder.Ignore(x => x.Enlistment);
 
         builder.Property(x => x.CancelRequested).IsRequired().HasDefaultValue(value: false);
 

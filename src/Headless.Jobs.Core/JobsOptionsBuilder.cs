@@ -27,14 +27,14 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     private readonly Dictionary<Type, JobOptions> _jobOptionsByRequest = [];
     private readonly Dictionary<JobFunctionDescriptor, JobOptions> _jobOptionsByDescriptor = [];
 
-    /// <summary>Sets retry, node-death, and atomic-enlistment defaults for this host. Invocation metadata is not accepted.</summary>
+    /// <summary>Sets retry and node-death defaults for this host. Invocation metadata is not accepted.</summary>
     public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureDefaults(JobOptions options)
     {
         _jobDefaults = JobSchedulingPolicies.Snapshot(options);
         return this;
     }
 
-    /// <summary>Authors retry, node-death, and atomic-enlistment defaults for this host.</summary>
+    /// <summary>Authors retry and node-death defaults for this host.</summary>
     /// <remarks>Invokes the callback once synchronously with a fresh builder, then validates and snapshots its options. Asynchronous callbacks are not supported.</remarks>
     /// <param name="configure">Authors startup policy settings; invocation metadata is not accepted.</param>
     /// <returns>This builder for method chaining.</returns>
