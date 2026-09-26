@@ -136,10 +136,11 @@ internal sealed partial class IdempotencyMiddleware(
             return;
         }
 
-        // Derive the key scope. Without a KeyDeriver, RequireUserIdentity refuses requests that carry no
-        // authenticated user rather than let unrelated callers share a key.
+        // Derive the key scope. An empty scope skips idempotency: a KeyDeriver returns one to opt a request out, and
+        // without a KeyDeriver, RequireUserIdentity refuses requests that carry no authenticated user rather than
+        // let unrelated callers share a key.
         var scope = _BuildScope(context, options, keyHeader);
-        if (scope is null)
+        if (scope.Length == 0)
         {
             LogSkippedNoIdentity();
             await next(context).ConfigureAwait(false);
@@ -689,7 +690,7 @@ internal sealed partial class IdempotencyMiddleware(
             : null;
     }
 
-    private string? _BuildScope(HttpContext context, IdempotencyOptions options, string keyHeader)
+    private string _BuildScope(HttpContext context, IdempotencyOptions options, string keyHeader)
     {
         if (options.KeyDeriver != null)
         {
@@ -704,7 +705,7 @@ internal sealed partial class IdempotencyMiddleware(
         // caller shares one namespace, or configure KeyDeriver with a verified per-caller discriminator.
         if (options.RequireUserIdentity && string.IsNullOrEmpty(user))
         {
-            return null;
+            return string.Empty;
         }
 
         var method = _CanonicalMethod(context.Request.Method);
