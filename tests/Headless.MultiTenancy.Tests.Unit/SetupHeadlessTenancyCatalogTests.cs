@@ -190,13 +190,12 @@ public sealed class SetupHeadlessTenancyCatalogTests : TestBase
     private sealed record TenantSeedSource(string Id, string Identifier, string Name);
 
     [Fact]
-    public void should_throw_at_store_resolution_when_in_memory_seeds_have_duplicate_normalized_identifiers()
+    public async Task should_fail_host_startup_when_in_memory_seeds_have_duplicate_normalized_identifiers()
     {
-        // given — the in-memory arm, exercised through the full DI wiring. The registered
-        // InMemoryTenantStoreOptionsValidator (Configure<T,TValidator>, per the Options Pattern
-        // convention) fires on first IOptions<T>.Value access — inside the store's own constructor —
-        // so the surfaced exception is OptionsValidationException; the plain InvalidOperationException
-        // constructor guard (InMemoryTenantStoreTests) covers direct construction that bypasses DI.
+        // given — the in-memory arm through the full DI wiring. The seed options are validated on start, so a
+        // duplicate stops IHost.StartAsync before any request could reach the store; the plain
+        // InvalidOperationException constructor guard (InMemoryTenantStoreTests) covers direct construction
+        // that bypasses DI.
         var builder = Host.CreateApplicationBuilder();
         builder.AddHeadlessTenancy(tenancy =>
             tenancy.Catalog(catalog =>
@@ -207,14 +206,40 @@ public sealed class SetupHeadlessTenancyCatalogTests : TestBase
                 })
             )
         );
+        builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
 
-        using var provider = builder.Services.BuildServiceProvider();
+        using var host = builder.Build();
 
         // when
-        var act = () => provider.GetRequiredService<ITenantStore>();
+        var act = () => host.StartAsync(AbortToken);
 
         // then
-        act.Should().Throw<OptionsValidationException>().WithMessage("*normalize to the same identifier*");
+        await act.Should().ThrowAsync<OptionsValidationException>().WithMessage("*normalize to the same identifier*");
+    }
+
+    [Fact]
+    public async Task should_fail_host_startup_when_max_identifier_length_exceeds_the_hostname_limit()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+        builder.AddHeadlessTenancy(tenancy =>
+            tenancy.Catalog(catalog =>
+            {
+                catalog.Configure(options =>
+                    options.MaxIdentifierLength = TenantCatalogOptions.MaxIdentifierLengthLimit + 1
+                );
+                catalog.UseInMemory(_ => { });
+            })
+        );
+        builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+
+        using var host = builder.Build();
+
+        // when
+        var act = () => host.StartAsync(AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<OptionsValidationException>().WithMessage("*MaxIdentifierLength*");
     }
 
     [Fact]
