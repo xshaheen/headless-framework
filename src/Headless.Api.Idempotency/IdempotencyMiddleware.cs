@@ -3,7 +3,9 @@
 using System.Buffers;
 using System.Security.Cryptography;
 using Headless.Abstractions;
+using Headless.Api;
 using Headless.Api.Idempotency.Resources;
+using Headless.Api.MultiTenancy;
 using Headless.Constants;
 using Headless.Idempotency;
 using Headless.MultiTenancy;
@@ -26,6 +28,7 @@ internal sealed partial class IdempotencyMiddleware(
     IIdempotentOperations operations,
     ICurrentTenant currentTenant,
     ICurrentUser currentUser,
+    IOptions<MultiTenancyOptions> tenancyOptions,
     IProblemDetailsCreator problemDetailsCreator,
     TimeProvider timeProvider,
     ICancellationTokenProvider cancellationTokenProvider,
@@ -133,11 +136,10 @@ internal sealed partial class IdempotencyMiddleware(
             return;
         }
 
-        // Derive the key scope. The default derivation requires a tenant or authenticated user;
-        // for fully anonymous routes with no KeyDeriver override, refuse to apply idempotency
-        // rather than let unrelated callers share a key.
+        // Derive the key scope. Without a KeyDeriver, RequireUserIdentity refuses requests that carry no
+        // authenticated user rather than let unrelated callers share a key.
         var scope = _BuildScope(context, options, keyHeader);
-        if (scope.Length == 0)
+        if (scope is null)
         {
             LogSkippedNoIdentity();
             await next(context).ConfigureAwait(false);
@@ -148,7 +150,8 @@ internal sealed partial class IdempotencyMiddleware(
             keyHeader,
             scope,
             HashScope(scope),
-            IdempotencyFingerprint.Compute(requestHash!)
+            IdempotencyFingerprint.Compute(requestHash!),
+            _ResolveStoreTenant()
         );
 
         IdempotentAdmission admission;
@@ -194,20 +197,36 @@ internal sealed partial class IdempotencyMiddleware(
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(scope)));
     }
 
-    private ValueTask<IdempotentAdmission> _AdmitAsync(
+    private async ValueTask<IdempotentAdmission> _AdmitAsync(
         AdmissionRequest request,
         IdempotencyOptions options,
         CancellationToken ct
     )
     {
-        return operations.AdmitAsync(
-            request.Key,
-            request.Fingerprint,
-            IdempotencyResponseSnapshot.Contract,
-            options.InFlightLease,
-            options.Retention,
-            ct
-        );
+        // The store keys the record by the current tenant, so run the call under the request's store tenant. The
+        // scope must stay open across the whole await: the store reads the tenant after its own first await.
+        // Release, renewal, and completion key by the admission's recorded tenant and need no scope.
+        using (currentTenant.Change(request.TenantId))
+        {
+            return await operations
+                .AdmitAsync(
+                    request.Key,
+                    request.Fingerprint,
+                    IdempotencyResponseSnapshot.Contract,
+                    options.InFlightLease,
+                    options.Retention,
+                    ct
+                )
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async ValueTask<IdempotencyPeekStatus> _PeekAsync(AdmissionRequest request, CancellationToken ct)
+    {
+        using (currentTenant.Change(request.TenantId))
+        {
+            return await operations.PeekAsync(request.Key, ct).ConfigureAwait(false);
+        }
     }
 
     /// <summary>Routes an admission that is not in flight: run the handler, replay, or report the conflict.</summary>
@@ -288,7 +307,7 @@ internal sealed partial class IdempotencyMiddleware(
 
                 try
                 {
-                    peek = await operations.PeekAsync(request.Key, ct).ConfigureAwait(false);
+                    peek = await _PeekAsync(request, ct).ConfigureAwait(false);
                 }
                 catch (Exception storeEx) when (_IsStoreFailure(storeEx, ct))
                 {
@@ -654,33 +673,38 @@ internal sealed partial class IdempotencyMiddleware(
         return cloned;
     }
 
-    private string _BuildScope(HttpContext context, IdempotencyOptions options, string keyHeader)
+    /// <summary>
+    /// Returns the tenant the store keys this request's record under: the authenticated principal's tenant claim,
+    /// or <see langword="null" /> (the host scope) for a principal without one and for anonymous requests.
+    /// </summary>
+    /// <remarks>
+    /// The ambient tenant is deliberately ignored. Pre-authentication resolution (catalog identifiers from the host
+    /// or a header) sets it from caller-controlled input, so keying by it would let an anonymous caller pick which
+    /// tenant's namespace its key lands in, and pre-seed or replay that tenant's records.
+    /// </remarks>
+    private string? _ResolveStoreTenant()
+    {
+        return currentUser is { IsAuthenticated: true, Principal: { } principal }
+            ? TenantClaimReader.GetTenantId(principal, tenancyOptions.Value)
+            : null;
+    }
+
+    private string? _BuildScope(HttpContext context, IdempotencyOptions options, string keyHeader)
     {
         if (options.KeyDeriver != null)
         {
             return options.KeyDeriver(context, keyHeader);
         }
 
-        var tenant = currentTenant.Id;
         var user = (string?)currentUser.UserId;
 
-        // Refuse to apply idempotency when neither identity is resolvable. When RequireUserIdentity
-        // is true (default), tenant-only requests also fall through — preventing two anonymous
-        // callers in the same tenant from cross-replaying each other's responses on a shared
-        // Idempotency-Key. Operators with intentional anon-within-tenant flows (webhook receivers,
-        // OAuth callbacks) set RequireUserIdentity=false and accept the trade-off, or configure
-        // KeyDeriver with a stable per-caller identifier.
-        var tenantMissing = string.IsNullOrEmpty(tenant);
-        var userMissing = string.IsNullOrEmpty(user);
-
-        if (tenantMissing && userMissing)
+        // RequireUserIdentity (default) refuses requests without a user, so two anonymous callers cannot
+        // cross-replay each other's responses on a shared Idempotency-Key. Operators with intentional anonymous
+        // flows (webhook receivers, OAuth callbacks) set RequireUserIdentity=false and accept that every anonymous
+        // caller shares one namespace, or configure KeyDeriver with a verified per-caller discriminator.
+        if (options.RequireUserIdentity && string.IsNullOrEmpty(user))
         {
-            return string.Empty;
-        }
-
-        if (options.RequireUserIdentity && userMissing)
-        {
-            return string.Empty;
+            return null;
         }
 
         var method = _CanonicalMethod(context.Request.Method);
@@ -690,8 +714,8 @@ internal sealed partial class IdempotencyMiddleware(
         // when the client reuses the same idempotency key. QueryString.Value includes the
         // leading "?" or is empty when no query exists.
         var query = context.Request.QueryString.Value ?? string.Empty;
-        // The tenant is not part of the scope: the durable store keys every record by the current
-        // tenant. Anonymous-user fallback uses an empty segment rather than a literal "anon" so a
+        // The tenant is not part of the scope: the store keys every record by the tenant from
+        // _ResolveStoreTenant. Anonymous-user fallback uses an empty segment rather than a literal "anon" so a
         // real UserId equal to the string "anon" cannot collide with the anonymous bucket.
         return $"idem:{user ?? string.Empty}:{method}:{path}{query}:{keyHeader}";
     }
@@ -825,12 +849,16 @@ internal sealed partial class IdempotencyMiddleware(
         }
     }
 
-    /// <summary>The per-request identity of an admission: header value, scope, store key, and fingerprint.</summary>
+    /// <summary>
+    /// The per-request identity of an admission: header value, scope, store key, fingerprint, and the tenant the store
+    /// keys the record under.
+    /// </summary>
     private sealed record AdmissionRequest(
         string HeaderKey,
         string Scope,
         string Key,
-        IdempotencyFingerprint Fingerprint
+        IdempotencyFingerprint Fingerprint,
+        string? TenantId
     );
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Idempotency replay hit for key {IdempotencyKey}")]
@@ -883,7 +911,7 @@ internal sealed partial class IdempotencyMiddleware(
 
     [LoggerMessage(
         Level = LogLevel.Warning,
-        Message = "Idempotency skipped: neither tenant nor user identity is present and no KeyDeriver is configured"
+        Message = "Idempotency skipped: RequireUserIdentity is set, no authenticated user is present, and no KeyDeriver is configured"
     )]
     // ReSharper disable once InconsistentNaming
     private partial void LogSkippedNoIdentity();
