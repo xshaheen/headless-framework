@@ -30,8 +30,8 @@ namespace Tests;
 /// Covers the posture contract between catalog identifier resolution and
 /// <c>UseStatusCodesRewriter()</c>: the rewriter is what collapses the authorization-tier claim mismatch
 /// into the generic tenant rejection, so a host that omits it — or registers it downstream of
-/// <c>UseAuthorization()</c>, where the short-circuited evaluation never reaches it — keeps the tenant
-/// enumeration oracle the byte-identical rejection exists to close.
+/// <c>UseAuthorization()</c>, where the short-circuited evaluation never reaches it — would keep the tenant
+/// enumeration oracle the byte-identical rejection exists to close, and fails startup instead.
 /// </summary>
 public sealed class TenantCatalogRewriterPostureTests : TestBase
 {
@@ -53,54 +53,33 @@ public sealed class TenantCatalogRewriterPostureTests : TestBase
             .WithMessage("*UseStatusCodesRewriter()*");
     }
 
-    [Fact]
-    public async Task should_start_when_the_rewriter_is_registered_after_use_authorization_because_order_is_unobservable()
+    [Theory]
+    [InlineData(RewriterPlacement.AfterAuthorization)]
+    [InlineData(RewriterPlacement.WrappingAndAfterAuthorization)]
+    public async Task should_fail_startup_when_a_catalog_resolution_host_calls_use_status_codes_rewriter_after_use_authorization(
+        RewriterPlacement placement
+    )
     {
-        // The manifest records presence, not position — this host satisfies the startup diagnostic while
-        // still being misordered, which is exactly why the exposure below needs a test of its own.
-        await using var app = _CreateApp(RewriterPlacement.AfterAuthorization);
+        // A rewriter downstream of UseAuthorization() never observes the failed evaluation, because authorization
+        // short-circuits before calling next: the claim mismatch would surface as the bare forbid while an unknown
+        // identifier still gets the generic 404 rejection. A correctly placed second call does not vouch for the
+        // misplaced one, which may serve a branch it does not wrap. This also fails if a future ASP.NET Core
+        // stops setting the builder property UseStatusCodesRewriter() reads to observe the order.
+        await using var app = _CreateApp(placement);
 
         var act = () => app.StartAsync(AbortToken);
 
-        await act.Should().NotThrowAsync();
-    }
-
-    [Fact]
-    public async Task should_leave_the_mismatch_distinguishable_from_an_unknown_tenant_when_the_rewriter_runs_after_authorization()
-    {
-        // A rewriter registered downstream of UseAuthorization() never observes the failed evaluation:
-        // authorization short-circuits before calling next. The claim mismatch therefore surfaces as the bare
-        // forbid the scheme produced, while an unknown identifier still gets the generic 404 rejection the
-        // resolution middleware writes itself — the two rejections stay distinguishable by status code
-        // alone, which is the enumeration oracle. This asserts the exposure as it exists today.
-        await using var app = _CreateApp(RewriterPlacement.AfterAuthorization);
-        await app.StartAsync(AbortToken);
-        using var client = HttpTenancyTestHarness.CreateClient(app);
-
-        using var mismatchResponse = await _SendAsync(client, identifier: "acme", secondarySchemeTenantId: "ten_999");
-        using var unknownResponse = await _SendAsync(client, identifier: "ghost", secondarySchemeTenantId: "ten_123");
-
-        mismatchResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        unknownResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-
-        var mismatchBody = await mismatchResponse.Content.ReadAsStringAsync(AbortToken);
-        mismatchBody.Should().NotContain(TenancyErrorCodes.ResolutionFailed);
-
-        var unknownBody = await unknownResponse.Content.ReadAsStringAsync(AbortToken);
-        using var unknownDocument = JsonDocument.Parse(unknownBody);
-        unknownDocument
-            .RootElement.GetProperty("error")
-            .GetProperty("code")
-            .GetString()
-            .Should()
-            .Be(TenancyErrorCodes.ResolutionFailed);
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*CATALOG_RESOLUTION_REWRITER_AFTER_AUTHORIZATION*")
+            .WithMessage("*UseAuthorization()*");
     }
 
     [Fact]
     public async Task should_keep_the_mismatch_byte_identical_to_an_unknown_tenant_when_the_rewriter_wraps_authorization()
     {
-        // The correctly ordered counterpart, so the assertion above reads as a defect of placement rather
-        // than of the rewriter-ordering design.
+        // The correctly ordered host: the rewriter collapses the authorization-tier mismatch into the same
+        // rejection an unknown identifier gets.
         await using var app = _CreateApp(RewriterPlacement.WrappingAuthorization);
         await app.StartAsync(AbortToken);
         using var client = HttpTenancyTestHarness.CreateClient(app);
@@ -119,7 +98,7 @@ public sealed class TenantCatalogRewriterPostureTests : TestBase
 
     // --- app factory ---
 
-    private enum RewriterPlacement
+    public enum RewriterPlacement
     {
         /// <summary>UseStatusCodesRewriter() is never called — the startup diagnostic's target.</summary>
         Omitted = 0,
@@ -129,6 +108,9 @@ public sealed class TenantCatalogRewriterPostureTests : TestBase
 
         /// <summary>Registered downstream of UseAuthorization(), which short-circuits before reaching it.</summary>
         AfterAuthorization = 2,
+
+        /// <summary>Registered both before UseAuthentication() and again downstream of UseAuthorization().</summary>
+        WrappingAndAfterAuthorization = 3,
     }
 
     private static WebApplication _CreateApp(RewriterPlacement placement)
@@ -180,7 +162,7 @@ public sealed class TenantCatalogRewriterPostureTests : TestBase
 
         var app = builder.Build();
 
-        if (placement is RewriterPlacement.WrappingAuthorization)
+        if (placement is RewriterPlacement.WrappingAuthorization or RewriterPlacement.WrappingAndAfterAuthorization)
         {
             app.UseStatusCodesRewriter();
         }
@@ -190,7 +172,7 @@ public sealed class TenantCatalogRewriterPostureTests : TestBase
         app.UseAuthentication();
         app.UseAuthorization();
 
-        if (placement is RewriterPlacement.AfterAuthorization)
+        if (placement is RewriterPlacement.AfterAuthorization or RewriterPlacement.WrappingAndAfterAuthorization)
         {
             app.UseStatusCodesRewriter();
         }
