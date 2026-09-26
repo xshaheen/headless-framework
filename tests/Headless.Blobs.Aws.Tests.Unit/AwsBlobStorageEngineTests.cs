@@ -774,19 +774,27 @@ public sealed class AwsBlobStorageEngineTests : TestBase
     }
 
     [Fact]
-    public async Task presigned_upload_url_refuses_a_max_length_it_cannot_enforce()
+    public async Task presigned_upload_url_ignores_a_max_length_it_cannot_enforce()
     {
+        _s3.GetPreSignedURLAsync(Arg.Any<GetPreSignedUrlRequest>()).Returns("https://example.com/signed-put");
+
         var sut = _CreateSut();
 
-        var act = async () =>
-            await sut.GetPresignedUploadUrlAsync(
-                new BlobLocation("bucket", "report.pdf"),
-                TimeSpan.FromMinutes(15),
-                new PresignedUploadConstraints { MaxLength = 1024 },
-                AbortToken
-            );
+        var url = await sut.GetPresignedUploadUrlAsync(
+            new BlobLocation("bucket", "report.pdf"),
+            TimeSpan.FromMinutes(15),
+            new PresignedUploadConstraints { ContentType = "application/pdf", MaxLength = 1024 },
+            AbortToken
+        );
 
-        await act.Should().ThrowAsync<NotSupportedException>();
-        await _s3.DidNotReceive().GetPreSignedURLAsync(Arg.Any<GetPreSignedUrlRequest>());
+        url.Should().Be(new Uri("https://example.com/signed-put"));
+        await _s3.Received(1)
+            .GetPreSignedURLAsync(Arg.Is<GetPreSignedUrlRequest>(r => r.ContentType == "application/pdf"));
+    }
+
+    [Fact]
+    public void reports_content_type_as_the_only_enforced_upload_constraint()
+    {
+        _CreateSut().SupportedUploadConstraints.Should().Be(PresignedUploadConstraintKinds.ContentType);
     }
 }

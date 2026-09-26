@@ -19,7 +19,10 @@ public sealed class SetupBlobSignedUrlTests : TestBase
         await using var app = await SignedUrlTestApp.StartAsync(AbortToken);
 
         // then
-        app.DefaultStorage.Should().BeAssignableTo<IPresignedUrlBlobStorage>();
+        app.DefaultStorage.Should()
+            .BeAssignableTo<IPresignedUrlBlobStorage>()
+            .Which.SupportedUploadConstraints.Should()
+            .Be(PresignedUploadConstraintKinds.ContentType | PresignedUploadConstraintKinds.MaxLength);
         app.NamedStorage.Should().BeAssignableTo<IPresignedUrlBlobStorage>();
         app.App.Services.GetRequiredKeyedService<IPresignedUrlBlobStorage>(SignedUrlTestApp.NamedStore)
             .Should()

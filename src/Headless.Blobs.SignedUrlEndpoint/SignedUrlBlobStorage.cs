@@ -21,6 +21,9 @@ internal sealed class SignedUrlBlobStorage(IBlobStorage inner, string? store, Bl
 
     public bool RequiresContainerProvisioning => inner.RequiresContainerProvisioning;
 
+    public PresignedUploadConstraintKinds SupportedUploadConstraints =>
+        PresignedUploadConstraintKinds.ContentType | PresignedUploadConstraintKinds.MaxLength;
+
     #region Presigned Urls
 
     public ValueTask<Uri> GetPresignedDownloadUrlAsync(

@@ -851,6 +851,10 @@ internal sealed class AwsBlobStorage(
     #region Presigned Urls
 
     /// <inheritdoc />
+    /// <remarks>S3 signs the content type into the URL, but a presigned PUT cannot bound the upload's size.</remarks>
+    public PresignedUploadConstraintKinds SupportedUploadConstraints => PresignedUploadConstraintKinds.ContentType;
+
+    /// <inheritdoc />
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="expiry"/> is not positive.</exception>
     public ValueTask<Uri> GetPresignedDownloadUrlAsync(
         BlobLocation location,
@@ -865,10 +869,9 @@ internal sealed class AwsBlobStorage(
     /// <remarks>
     /// A <see cref="PresignedUploadConstraints.ContentType"/> is signed into the URL, so the upload must send that exact
     /// <c>Content-Type</c> header or S3 rejects the signature. S3 cannot bound the size of a presigned PUT, so a
-    /// <see cref="PresignedUploadConstraints.MaxLength"/> is refused rather than ignored.
+    /// <see cref="PresignedUploadConstraints.MaxLength"/> is ignored.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="expiry"/> is not positive.</exception>
-    /// <exception cref="NotSupportedException">Thrown when <paramref name="constraints"/> sets a maximum length.</exception>
     public ValueTask<Uri> GetPresignedUploadUrlAsync(
         BlobLocation location,
         TimeSpan expiry,
@@ -876,14 +879,6 @@ internal sealed class AwsBlobStorage(
         CancellationToken cancellationToken = default
     )
     {
-        if (constraints?.MaxLength is not null)
-        {
-            throw new NotSupportedException(
-                "S3 presigned PUT URLs cannot limit the upload size. Enforce the limit after upload, or use a "
-                    + "presigned POST policy outside this abstraction."
-            );
-        }
-
         return _GetPresignedUrlAsync(location, expiry, HttpVerb.PUT, constraints?.ContentType, cancellationToken);
     }
 

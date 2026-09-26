@@ -37,6 +37,12 @@ namespace Headless.Blobs;
 public interface IPresignedUrlBlobStorage
 {
     /// <summary>
+    /// The <see cref="PresignedUploadConstraints"/> members this backend enforces on an upload URL. Constraints outside
+    /// this set are accepted by <see cref="GetPresignedUploadUrlAsync"/> but not enforced.
+    /// </summary>
+    PresignedUploadConstraintKinds SupportedUploadConstraints { get; }
+
+    /// <summary>
     /// Creates a pre-authenticated URL that allows downloading (HTTP GET) the specified blob until it expires.
     /// </summary>
     /// <param name="location">The blob the URL grants read access to.</param>
@@ -55,14 +61,12 @@ public interface IPresignedUrlBlobStorage
     /// <param name="location">The blob the URL grants write access to.</param>
     /// <param name="expiry">How long the URL remains valid, measured from now.</param>
     /// <param name="constraints">
-    /// Restrictions the upload request must satisfy, or <see langword="null"/> for none. A signed content type must be
+    /// Restrictions the upload request must satisfy, or <see langword="null"/> for none. Only the members in
+    /// <see cref="SupportedUploadConstraints"/> are enforced; the rest are ignored. An enforced content type must be
     /// sent as the upload's <c>Content-Type</c> header.
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A signed, time-limited URL for uploading the blob.</returns>
-    /// <exception cref="NotSupportedException">
-    /// <paramref name="constraints"/> sets a restriction this backend cannot enforce.
-    /// </exception>
     ValueTask<Uri> GetPresignedUploadUrlAsync(
         BlobLocation location,
         TimeSpan expiry,
