@@ -54,6 +54,12 @@ public sealed class SqlServerReaderWriterLockConformanceTests : DistributedReadW
     }
 
     [Fact]
+    public override Task should_not_renew_read_and_write_handles_after_release()
+    {
+        return base.should_not_renew_read_and_write_handles_after_release();
+    }
+
+    [Fact]
     public override Task should_allow_multiple_readers_and_release_on_dispose()
     {
         return base.should_allow_multiple_readers_and_release_on_dispose();

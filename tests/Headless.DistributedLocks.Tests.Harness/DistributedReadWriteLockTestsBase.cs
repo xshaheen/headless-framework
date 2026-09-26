@@ -79,6 +79,33 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
         (await provider.IsReadLockedAsync(resource, AbortToken)).Should().BeFalse();
     }
 
+    /// <summary>
+    /// Read and write handles honour the renew contract: they renew while held and report <see langword="false"/>
+    /// once released, on every backend.
+    /// </summary>
+    public virtual async Task should_not_renew_read_and_write_handles_after_release()
+    {
+        var provider = GetReaderWriterLockProvider();
+
+        await using var reader = await provider.AcquireReadLockAsync(
+            Faker.Random.AlphaNumeric(10),
+            cancellationToken: AbortToken
+        );
+        await using var writer = await provider.AcquireWriteLockAsync(
+            Faker.Random.AlphaNumeric(10),
+            cancellationToken: AbortToken
+        );
+
+        (await reader.RenewAsync(cancellationToken: AbortToken)).Should().BeTrue();
+        (await writer.RenewAsync(cancellationToken: AbortToken)).Should().BeTrue();
+
+        await reader.ReleaseAsync();
+        await writer.ReleaseAsync();
+
+        (await reader.RenewAsync(cancellationToken: AbortToken)).Should().BeFalse();
+        (await writer.RenewAsync(cancellationToken: AbortToken)).Should().BeFalse();
+    }
+
     public virtual async Task should_acquire_write_lock_exclusively()
     {
         var provider = GetReaderWriterLockProvider();

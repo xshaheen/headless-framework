@@ -79,6 +79,14 @@ internal interface IConnectionScopedLockStorage
     ValueTask<string?> GetLocalLeaseIdAsync(string resource, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Reports whether this storage instance still holds the lock acquired as <paramref name="leaseId"/> on
+    /// <paramref name="resource"/>: it is registered, not yet released, and its connection has not been observed
+    /// lost. This backs renewal, which for a connection-scoped lock can only confirm ownership, never extend it.
+    /// It must answer from local state; opening a connection per call would turn every renewal into a probe.
+    /// </summary>
+    ValueTask<bool> IsHeldAsync(string resource, string leaseId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lists the locks currently enumerable through the backing store's inspection path. Some backends can only
     /// enumerate locks held by this process because the store metadata does not expose reversible resource names.
     /// </summary>
