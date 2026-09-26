@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.Caching;
 using Headless.Hosting.Initialization;
 using Headless.MultiTenancy;
 using Headless.Permissions;
@@ -268,6 +269,8 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
 
         // unify: management-core deps
         builder.Services.AddSingleton(TimeProvider.System);
+        // Grant caching is required, and the host refuses to start without a registered cache.
+        builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
         builder.Services.AddHeadlessPermissions(setup =>
         {
             setup.ConfigureStorage(options => options.Schema = _Schema);
