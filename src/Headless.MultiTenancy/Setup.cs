@@ -49,6 +49,10 @@ public static class SetupHeadlessTenancy
         // registration with the catalog-backed implementation.
         services.TryAddScoped<ICurrentTenantInfo, NullCurrentTenantInfo>();
 
+        // Default placement source: no tenant has a placement. Only tenant-routed data contexts consult it, and
+        // routing one without configuring DataPlacement(...) fails startup.
+        services.TryAddSingleton<ITenantDataPlacementResolver, NullTenantDataPlacementResolver>();
+
         return manifest;
     }
 

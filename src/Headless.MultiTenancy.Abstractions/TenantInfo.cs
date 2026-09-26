@@ -15,7 +15,9 @@ namespace Headless.MultiTenancy;
 /// <remarks>
 /// Per-tenant application configuration does not belong on this model or in <see cref="ExtraProperties"/>:
 /// it belongs in Settings/Features/Permissions keyed by <see cref="Id"/>. This model owns tenant
-/// identity, routing (<see cref="Identifier"/>), and lifecycle (<see cref="IsEnabled"/>) only.
+/// identity, routing (<see cref="Identifier"/>), and lifecycle (<see cref="IsEnabled"/>) only. Where a tenant's
+/// data physically lives (its own schema or database) is infrastructure configuration served by
+/// <see cref="ITenantDataPlacementResolver"/>, not by this model.
 /// </remarks>
 [PublicAPI]
 public class TenantInfo : IHasExtraProperties
