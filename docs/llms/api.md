@@ -374,6 +374,7 @@ Exception mapping from `AddHeadlessProblemDetails()`:
 | `MissingTenantContextException` | 403 with `error.code: g:tenant_required` |
 | `CrossTenantWriteException` | 409 with `error.code: g:cross_tenant_write` |
 | `ConflictException` | 409 with `errors` |
+| `TooManyRequestsException` | 429 with `Retry-After` header (whole seconds, rounded up, at least 1), `retryAfter`, and optional `error` |
 | `FluentValidation.ValidationException` | 422 with field errors |
 | `EntityNotFoundException` | 404 |
 | EF Core `DbUpdateConcurrencyException` (matched by type name) | 409 with concurrency-failure error |

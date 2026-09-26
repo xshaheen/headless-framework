@@ -447,6 +447,13 @@
         <Project Path="tests\Headless.PushNotifications.Dev.Tests.Unit\Headless.PushNotifications.Dev.Tests.Unit.csproj" />
         <Project Path="tests\Headless.PushNotifications.Firebase.Tests.Unit\Headless.PushNotifications.Firebase.Tests.Unit.csproj" />
     </Folder>
+    <Folder Name="/RateLimiting/">
+        <Project Path="src\Headless.RateLimiting\Headless.RateLimiting.csproj" />
+    </Folder>
+    <Folder Name="/RateLimiting/Tests/">
+        <Project Path="tests\Headless.RateLimiting.Tests.Integration\Headless.RateLimiting.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.RateLimiting.Tests.Unit\Headless.RateLimiting.Tests.Unit.csproj" />
+    </Folder>
     <Folder Name="/Seo/">
         <Project Path="src\Headless.Sitemaps\Headless.Sitemaps.csproj" />
         <Project Path="src\Headless.Slugs\Headless.Slugs.csproj" />

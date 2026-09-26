@@ -79,6 +79,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
     {
         ProblemDetails? problemDetails;
         int statusCode;
+        int? retryAfterSeconds = null;
 
         try
         {
@@ -130,6 +131,18 @@ internal sealed partial class HeadlessApiExceptionHandler(
                 case ConflictException conflict:
                     problemDetails = problemDetailsCreator.Conflict(conflict.Errors);
                     statusCode = StatusCodes.Status409Conflict;
+                    break;
+
+                case TooManyRequestsException tooManyRequests:
+                    // Whole seconds, rounded up, and never zero: Retry-After is delta-seconds, and a zero or
+                    // truncated value invites the client to retry before the budget has reopened.
+                    retryAfterSeconds = (int)
+                        Math.Clamp(Math.Ceiling(tooManyRequests.RetryAfter.TotalSeconds), 1, int.MaxValue);
+                    problemDetails = problemDetailsCreator.TooManyRequests(
+                        retryAfterSeconds.Value,
+                        tooManyRequests.Error
+                    );
+                    statusCode = StatusCodes.Status429TooManyRequests;
                     break;
 
                 case ValidationException validation:
@@ -209,6 +222,11 @@ internal sealed partial class HeadlessApiExceptionHandler(
         }
 
         httpContext.Response.StatusCode = statusCode;
+
+        if (retryAfterSeconds is { } seconds)
+        {
+            httpContext.Response.Headers.RetryAfter = seconds.ToString(CultureInfo.InvariantCulture);
+        }
 
         bool written;
         try
