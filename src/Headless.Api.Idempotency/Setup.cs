@@ -102,7 +102,8 @@ public static class SetupIdempotency
             // every idempotent request would fail.
             services.RequireRegisteredService<IIdempotentOperations>(
                 requiredBy: "Headless API idempotency",
-                remedy: "Call AddHeadlessIdempotency(...) with a provider (UseInMemory / UsePostgreSql / UseSqlServer)."
+                remedy: "Call AddHeadlessIdempotency(...) with a provider (UseCache / UseInMemory / UsePostgreSql / "
+                    + "UseSqlServer)."
             );
 
             return services;

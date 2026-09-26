@@ -9,7 +9,7 @@ namespace Headless.Idempotency;
 /// <summary>
 /// Configures durable idempotency during <c>AddHeadlessIdempotency(setup =&gt; …)</c>: the admission defaults and purge
 /// schedule, the storage schema, and exactly one provider chosen through a <c>Use…</c> call such as
-/// <c>UseInMemory</c>, <c>UsePostgreSql</c>, or <c>UseSqlServer</c>.
+/// <c>UseCache</c>, <c>UseInMemory</c>, <c>UsePostgreSql</c>, or <c>UseSqlServer</c>.
 /// </summary>
 [PublicAPI]
 public sealed class HeadlessIdempotencySetupBuilder

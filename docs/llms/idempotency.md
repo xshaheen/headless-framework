@@ -1,6 +1,6 @@
 ---
 domain: Idempotency
-packages: Idempotency.Abstractions, Idempotency.Core, Idempotency.InMemory, Idempotency.PostgreSql, Idempotency.SqlServer
+packages: Idempotency.Abstractions, Idempotency.Core, Idempotency.InMemory, Idempotency.Caching, Idempotency.PostgreSql, Idempotency.SqlServer
 ---
 
 # Idempotency
@@ -18,6 +18,7 @@ Register one provider; nothing else is required:
 ```csharp
 builder.Services.AddHeadlessIdempotency(setup => setup.UsePostgreSql(connectionString)); // or setup.UseSqlServer(...)
 // tests, local development, one instance: builder.Services.AddHeadlessIdempotency(setup => setup.UseInMemory());
+// several replicas sharing Redis, no SQL database, autonomous calls only: setup.UseCache()
 ```
 
 Each key's record row holds the admitted attempt's lease itself (a `generation` plus `lease_expires_at`), the same shape Stripe idempotency keys and AWS Powertools idempotency use. There is no second table, so every call locks exactly one row, and there is no lock order to get wrong. Idempotency does not depend on [`Headless.Fencing`](fencing.md).
@@ -118,7 +119,7 @@ return await factory.RunAsync(db, async (unit, ct) =>
 
 ### Enlistment and the fence
 
-Enlisted calls (`unit.Idempotency.*`) follow the same rules as `unit.Leases` and `unit.Sequences` (see [unit-of-work.md](unit-of-work.md)): `RequireTransaction`, then `ValidateEnlistment`, then — for admit, complete, set-recovery-point, and release, never for the fence read — mark an observed-mode unit non-retryable. What the unit must carry is the provider's judgment: the relational providers need a live transaction on their own database, while the in-memory provider refuses any unit over a database connection and accepts a resource-less unit (`IUnitOfWorkFactory.BeginAsync()`), which then plays the transaction. `unit.Idempotency.FenceAsync` takes the record row with an update-intent lock (`FOR NO KEY UPDATE` on PostgreSQL, `UPDLOCK, HOLDLOCK, ROWLOCK` on SQL Server) held until the unit ends, then refuses with `StaleAdmissionException` unless the record is still pending at the admission's generation with a live lease by the database clock read after the lock. A concurrent admission of the key waits on that row and then sees the unit's committed outcome. The lock is never shared: a waiting admission would queue for the update lock behind it, and the fencing unit's own completion would then deadlock.
+Enlisted calls (`unit.Idempotency.*`) follow the same rules as `unit.Leases` and `unit.Sequences` (see [unit-of-work.md](unit-of-work.md)): `RequireTransaction`, then `ValidateEnlistment`, then — for admit, complete, set-recovery-point, and release, never for the fence read — mark an observed-mode unit non-retryable. What the unit must carry is the provider's judgment: the relational providers need a live transaction on their own database, while the in-memory provider refuses any unit over a database connection and accepts a resource-less unit (`IUnitOfWorkFactory.BeginAsync()`), which then plays the transaction. The cache provider refuses every caller unit, because a cache cannot commit or roll back with one. `unit.Idempotency.FenceAsync` takes the record row with an update-intent lock (`FOR NO KEY UPDATE` on PostgreSQL, `UPDLOCK, HOLDLOCK, ROWLOCK` on SQL Server) held until the unit ends, then refuses with `StaleAdmissionException` unless the record is still pending at the admission's generation with a live lease by the database clock read after the lock. A concurrent admission of the key waits on that row and then sees the unit's committed outcome. The lock is never shared: a waiting admission would queue for the update lock behind it, and the fencing unit's own completion would then deadlock.
 
 ## HTTP composition
 
@@ -136,7 +137,8 @@ Enlisted calls (`unit.Idempotency.*`) follow the same rules as `unit.Leases` and
 | --- | --- | --- | --- |
 | `Headless.Idempotency.PostgreSql` | Records must survive restarts and be shared by every instance, and enlisted units run on PostgreSQL | Units run on SQL Server | Insert-or-lock with `ON CONFLICT DO NOTHING`; `clock_timestamp()` decides |
 | `Headless.Idempotency.SqlServer` | The same, with units on SQL Server | — | `UPDLOCK, HOLDLOCK` insert-or-lock without `TRY/CATCH`; `SYSUTCDATETIME()` decides |
-| `Headless.Idempotency.InMemory` | Tests, local development, or a single-instance host with no relational database (for example Redis-only) | Several instances serve the same keys, or retries must be deduplicated across a restart | Records live in one process and vanish on restart; the registered `TimeProvider` decides leases and retention; enlisted calls run only on resource-less units, so a fence cannot join a database transaction |
+| `Headless.Idempotency.InMemory` | Tests, local development, or a single-instance host with no relational database | Several instances serve the same keys, or retries must be deduplicated across a restart | Records live in one process and vanish on restart; the registered `TimeProvider` decides leases and retention; enlisted calls run only on resource-less units, so a fence cannot join a database transaction |
+| `Headless.Idempotency.Caching` | Several replicas share a Redis cache and there is no SQL database, and every call is autonomous (`IIdempotentOperations`, the HTTP middleware) | A result must survive a cache flush or eviction, or the operation needs `unit.Idempotency`, `FenceAsync`, or a recovery point recorded inside a unit | Autonomous only; durability is the cache's, so an evicted or flushed record means the operation runs again; the application clock decides leases, so replica clock skew shifts expiry; completion is still compare-and-swap guarded by generation, so a zombie never overwrites a newer result |
 
 ---
 
@@ -186,6 +188,7 @@ Applications reach it through a provider package, as shown in [Orientation](#ori
 - `AddHeadlessIdempotency` requires exactly one `Use…` provider call and nothing else. It swaps the `NullCurrentTenant` fallback for the `AsyncLocal`-backed `CurrentTenant` unless the host registered its own, because records are keyed by the current tenant.
 - It registers `IIdempotentOperations`, `IUnitOfWorkIdempotency`, and `IdempotencyRequestResolver` as singletons, and always adds `IdempotencyRetentionService` as a hosted service — when `PurgeInterval` is `null` the service stays idle on a fixed one-minute re-check cadence instead of exiting, so a later reload back to a value resumes purging without restarting the host.
 - `IIdempotencyRecordStore` is the provider seam. Applications do not call it.
+- An optimistic provider (one that checks at write time instead of locking at read time, such as the cache provider) throws `IdempotencyRecordConflictException` from a write another caller beat. The autonomous `AdmitAsync`, `CompleteAsync`, `SetRecoveryPointAsync`, and `ReleaseAsync` then run again, whole, in a fresh owned unit, at most 8 attempts with no delay between them. The locking providers never throw it.
 
 ---
 
@@ -216,6 +219,44 @@ builder.Services.AddHeadlessIdempotency(setup => setup.UseInMemory());
 - There is no deadlock detection. Units that lock several keys must lock them in one consistent order, and callers should pass a cancellation token that bounds the wait.
 - The retention purge skips a record a unit holds and keeps a record whose lease is still live, like the relational providers.
 - `Headless.Api.Idempotency` works on it unchanged: `AddHeadlessIdempotency(setup => setup.UseInMemory())` plus `AddIdempotency(...)` needs no database.
+
+---
+
+## Headless.Idempotency.Caching
+
+Idempotency records in the application's `ICache`, for several replicas that share a Redis cache and have no SQL database. Autonomous calls only.
+
+### Setup
+
+```bash
+dotnet add package Headless.Idempotency.Caching
+```
+
+```csharp
+builder.Services.AddHeadlessCaching(setup => setup.UseRedis(options => options.ConnectionMultiplexer = redis));
+builder.Services.AddHeadlessIdempotency(setup => setup.UseCache());
+```
+
+`UseCache()` needs a caching provider registered through `AddHeadlessCaching`; host startup fails without one. It also has `UseCache(Action<CacheIdempotencyOptions>)`, `UseCache(Action<CacheIdempotencyOptions, IServiceProvider>)`, and `UseCache(IConfiguration)`. It registers `TimeProvider.System` and the unit-of-work factory when the host has not. `ConfigureStorage` has no effect on it.
+
+### Configuration
+
+| `CacheIdempotencyOptions` | Default | Effect |
+| --- | --- | --- |
+| `KeyPrefix` | `headless:idempotency:` | Prefix of every entry: `{prefix}record:{tenant length}:{tenant}{key}` per record and `{prefix}generation` for the counter. Give applications that share a cache distinct prefixes. |
+| `CacheName` | `null` | A keyed `ICache` instance to hold the records. `null` uses the registered `IRemoteCache` when there is one, otherwise the default `ICache`. Name a remote (Redis) instance, not a hybrid one. |
+
+### Design and runtime behavior
+
+- **Autonomous only.** `IIdempotentOperations` and the HTTP middleware work. Every `unit.Idempotency` call is refused with `InvalidOperationException`: that includes enlisted admission, completion, and release, `FenceAsync`, and `SetRecoveryPointAsync` inside a unit. A cache cannot commit or roll back with a unit of work, so use a relational provider (or `UseInMemory` in one process) for those. The autonomous `SetRecoveryPointAsync` works.
+- **One entry per record.** Each key's record is one cache entry holding the whole record as JSON (status, fingerprint and algorithm, generation, lease expiry, result bytes and contract, recovery point, retention). Every change is a compare-and-swap against the exact entry the call read: `TryInsertAsync` for a new record, `TryReplaceIfEqualAsync` otherwise. A call that loses the race re-reads and decides again (see [Headless.Idempotency.Core](#headlessidempotencycore)), so concurrent admissions converge like locked ones: one `Admitted`, the others `InFlight`, `Replay`, or `Conflict`. A write the cache declines while the entry is unchanged (for example an entry over an in-memory cache's size limit) throws `InvalidOperationException` instead of retrying.
+- **Completion is fenced by generation.** Complete, release, recovery point, and renewal each write only while the entry is pending at the attempt's generation with a live lease, and the swap fails if anything changed since that check. An attempt that lost the key gets `StaleAdmissionException` and writes nothing, so a zombie never overwrites a newer result. There is no lock between the check and the swap, so a slow attempt's write races a takeover through the swap rather than waiting on a row lock.
+- **Application clock.** Lease expiry and retention are instants from the registered `TimeProvider`, stored in the entry. Replicas whose clocks disagree disagree on when a lease expires: a replica running ahead takes over a live attempt early. Keep lease durations well above the expected skew.
+- **Retention is the cache's expiry.** Each entry expires in the cache at the later of its retention and its lease, so a live attempt keeps its record even past retention. `PurgeAsync` deletes nothing and `IdempotencyRetentionService` has nothing to do; set `PurgeInterval = null` to keep it idle.
+- **Durability is the cache's.** An evicted or flushed record is a record that never existed: the next admission of the key is a fresh `Admitted`, not a `Replay`, and the operation runs again. Run Redis with a no-eviction policy (or `volatile-*` with enough memory) and persistence if that matters.
+- **Generations.** Drawn from a cache counter (`IncrementAsync`) that never expires. A generation is never issued at or below the highest one the record ever admitted, and the counter is raised past it, so generations keep growing per key even if the counter is evicted. Losing the counter and the record together can restart generations from 1.
+- `PeekAsync` is one cache read. `RenewAsync` is its own compare-and-swap loop with the same bound as the autonomous calls.
+- `Headless.Api.Idempotency` works on it unchanged, including `WaitAndReplay`, since the middleware uses only the autonomous surface. A handler that calls `unit.Idempotency.FenceAsync` or records a recovery point inside its unit is refused.
 
 ---
 

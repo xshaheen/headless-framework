@@ -164,7 +164,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Node membership | `AddHeadlessCoordination` | `UseRedis`, `UsePostgreSql`, `UseSqlServer` |
 | Sequences | `AddHeadlessSequences` | `UsePostgreSql`, `UseSqlServer` |
 | Fencing (durable leases) | `AddHeadlessFencing` | `UsePostgreSql`, `UseSqlServer`, `UseInMemory` |
-| Idempotency | `AddHeadlessIdempotency` | `UsePostgreSql`, `UseSqlServer`, `UseInMemory` |
+| Idempotency | `AddHeadlessIdempotency` | `UsePostgreSql`, `UseSqlServer`, `UseInMemory`, `UseCache` |
 | Feature flags | `AddHeadlessFeatures` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
 | Dynamic settings | `AddHeadlessSettings` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
 | Permissions | `AddHeadlessPermissions` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
@@ -568,12 +568,13 @@ Durable, cross-process leases that fence a stale or zombie attempt's writes at t
 
 ### Idempotency
 
-Durable, tenant-scoped idempotent admission: admit a key once across processes and replay its stored result on retry, independent of any cache TTL. Each record row carries its own lease and generation.
+Durable, tenant-scoped idempotent admission: admit a key once across processes and replay its stored result on retry, independent of any cache TTL on the relational providers. Each record carries its own lease and generation.
 
 | Package | Description |
 |---------|-------------|
 | [Headless.Idempotency.Abstractions](src/Headless.Idempotency.Abstractions/README.md) | `IIdempotentOperations`, `IdempotentAdmission`, and the `unit.Idempotency` accessor |
 | [Headless.Idempotency.Core](src/Headless.Idempotency.Core/README.md) | Registration, admission orchestration, and the retention purge |
+| [Headless.Idempotency.Caching](src/Headless.Idempotency.Caching/README.md) | Idempotency records in a shared cache (Redis) for autonomous calls across replicas without SQL |
 | [Headless.Idempotency.InMemory](src/Headless.Idempotency.InMemory/README.md) | In-process idempotency records for tests and single-instance hosts |
 | [Headless.Idempotency.PostgreSql](src/Headless.Idempotency.PostgreSql/README.md) | PostgreSQL idempotency records |
 | [Headless.Idempotency.SqlServer](src/Headless.Idempotency.SqlServer/README.md) | SQL Server idempotency records |
