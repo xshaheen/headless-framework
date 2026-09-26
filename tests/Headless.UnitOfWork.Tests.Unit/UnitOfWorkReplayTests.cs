@@ -82,15 +82,10 @@ public sealed class UnitOfWorkReplayTests : TestBase
         foreign
             .BeginAsync(
                 Arg.Any<Func<CancellationToken, ValueTask<IUnitOfWorkResource>>>(),
-                Arg.Any<UnitOfWorkOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(call =>
-                owned.BeginAsync(
-                    call.Arg<Func<CancellationToken, ValueTask<IUnitOfWorkResource>>>(),
-                    options: null,
-                    AbortToken
-                )
+                owned.BeginAsync(call.Arg<Func<CancellationToken, ValueTask<IUnitOfWorkResource>>>(), AbortToken)
             );
         var run = new Run(foreign);
 
@@ -241,11 +236,7 @@ public sealed class UnitOfWorkReplayTests : TestBase
                     return ValueTask.FromResult(connection);
                 },
                 (connection, ct) =>
-                    factory.BeginAsync(
-                        _ => ValueTask.FromResult<IUnitOfWorkResource>(connection.Resource),
-                        options: null,
-                        ct
-                    ),
+                    factory.BeginAsync(_ => ValueTask.FromResult<IUnitOfWorkResource>(connection.Resource), ct),
                 (_, _, _) =>
                 {
                     Attempts++;

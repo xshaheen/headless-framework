@@ -32,7 +32,6 @@ internal static class BoundConnectionUnitOfWork
 
                     return await beginOwned(ct).ConfigureAwait(false);
                 },
-                options: null,
                 cancellationToken
             )
             .ConfigureAwait(false);

@@ -75,11 +75,7 @@ public sealed class InDoubtCommitTests : TestBase
         var factory = new UnitOfWorkFactory(logger);
         var driverFault = new FakeDbException(isTransient: true, inner: new IOException("connection reset"));
         var resource = new FakeUnitOfWorkResource { CommitFault = driverFault };
-        var unit = await factory.BeginAsync(
-            _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
-            AbortToken
-        );
+        var unit = await factory.BeginAsync(_ => ValueTask.FromResult<IUnitOfWorkResource>(resource), AbortToken);
         UnitOfWorkFailure? observed = null;
         var completed = false;
         unit.OnFailed(failure =>
@@ -118,11 +114,7 @@ public sealed class InDoubtCommitTests : TestBase
         var factory = new UnitOfWorkFactory(logger);
         var serverError = new FakeDbException(sqlState: "40001");
         var resource = new FakeUnitOfWorkResource { CommitFault = serverError };
-        var unit = await factory.BeginAsync(
-            _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
-            AbortToken
-        );
+        var unit = await factory.BeginAsync(_ => ValueTask.FromResult<IUnitOfWorkResource>(resource), AbortToken);
 
         var act = () => unit.CompleteAsync(AbortToken).AsTask();
 
@@ -157,7 +149,6 @@ public sealed class InDoubtCommitTests : TestBase
                                     CommitFault = new FakeDbException(inner: new SocketException()),
                                 }
                             ),
-                        options: null,
                         ct
                     ),
                 (_, _, _) =>

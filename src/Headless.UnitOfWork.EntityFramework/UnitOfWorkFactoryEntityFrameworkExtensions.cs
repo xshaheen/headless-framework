@@ -209,7 +209,6 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
 
                     return new EfUnitOfWorkResource(db, transaction, owned: true);
                 },
-                options: null,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
