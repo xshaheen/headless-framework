@@ -222,7 +222,8 @@ internal sealed class TenantCatalogService(
         CancellationToken cancellationToken
     )
     {
-        var cachedIdentifier = await _TryGetCacheAsync(identifierCache, identifierCacheKey, cancellationToken)
+        var cachedIdentifier = await TenantCacheOperations
+            .TryGetAsync(logger, identifierCache, identifierCacheKey, cancellationToken)
             .ConfigureAwait(false);
 
         if (cachedIdentifier.HasValue)
@@ -254,7 +255,9 @@ internal sealed class TenantCatalogService(
         {
             if (_options.UnknownIdentifierCacheExpiration > TimeSpan.Zero)
             {
-                await _TryUpsertCacheAsync(
+                await TenantCacheOperations
+                    .TryUpsertAsync(
+                        logger,
                         identifierCache,
                         identifierCacheKey,
                         new TenantIdentifierCacheItem(tenantId: null),
@@ -269,7 +272,9 @@ internal sealed class TenantCatalogService(
 
         // Single store hit populates both axes: the identifier→id mapping, and the id→TenantInfo shape
         // (avoiding a second store round trip through _ResolveByIdAsync for the info we already have).
-        await _TryUpsertCacheAsync(
+        await TenantCacheOperations
+            .TryUpsertAsync(
+                logger,
                 identifierCache,
                 identifierCacheKey,
                 new TenantIdentifierCacheItem(tenant.Id),
@@ -296,7 +301,9 @@ internal sealed class TenantCatalogService(
     private async Task<TenantInfo?> _ResolveByIdAsync(string id, CancellationToken cancellationToken)
     {
         var idCacheKey = TenantInfoCacheItem.CalculateCacheKey(id);
-        var cached = await _TryGetCacheAsync(infoCache, idCacheKey, cancellationToken).ConfigureAwait(false);
+        var cached = await TenantCacheOperations
+            .TryGetAsync(logger, infoCache, idCacheKey, cancellationToken)
+            .ConfigureAwait(false);
 
         if (cached.HasValue)
         {
@@ -324,7 +331,8 @@ internal sealed class TenantCatalogService(
         var idCacheKey = TenantInfoCacheItem.CalculateCacheKey(tenant.Id);
         var baseShape = _CloneToBaseShape(tenant);
 
-        return _TryUpsertCacheAsync(
+        return TenantCacheOperations.TryUpsertAsync(
+            logger,
             infoCache,
             idCacheKey,
             new TenantInfoCacheItem(baseShape),
@@ -340,80 +348,4 @@ internal sealed class TenantCatalogService(
             ExtraProperties = new ExtraProperties(source.ExtraProperties),
         };
     }
-
-    /// <summary>
-    /// Reads from <paramref name="cache"/>, degrading a read fault to a miss so the caller falls
-    /// through to the store. <see cref="OperationCanceledException"/> is never a cache fault and always
-    /// propagates unchanged.
-    /// </summary>
-    private async Task<CacheValue<T>> _TryGetCacheAsync<T>(
-        ICache<T> cache,
-        string cacheKey,
-        CancellationToken cancellationToken
-    )
-    {
-        try
-        {
-            return await cache.GetAsync(cacheKey, cancellationToken).ConfigureAwait(false);
-        }
-#pragma warning disable CA1031 // Cache read faults degrade to a miss by design; the store is the source of truth and is consulted next. OperationCanceledException is excluded so caller cancellation still propagates.
-        catch (Exception fault) when (fault is not OperationCanceledException)
-#pragma warning restore CA1031
-        {
-            logger.LogTenantCatalogCacheReadFaultedDegradingToMiss(fault, typeof(T).Name);
-
-            return CacheValue<T>.NoValue;
-        }
-    }
-
-    /// <summary>
-    /// Writes to <paramref name="cache"/>, swallowing a write fault so the outcome already derived
-    /// from the store stays unchanged. <see cref="OperationCanceledException"/> always propagates unchanged.
-    /// </summary>
-    private async Task _TryUpsertCacheAsync<T>(
-        ICache<T> cache,
-        string cacheKey,
-        T value,
-        TimeSpan expiration,
-        CancellationToken cancellationToken
-    )
-    {
-        try
-        {
-            await cache.UpsertAsync(cacheKey, value, expiration, cancellationToken).ConfigureAwait(false);
-        }
-#pragma warning disable CA1031 // Cache write faults must never surface to the caller: the store-derived outcome already computed is authoritative regardless of whether the cache write below succeeds. OperationCanceledException is excluded so caller cancellation still propagates.
-        catch (Exception fault) when (fault is not OperationCanceledException)
-#pragma warning restore CA1031
-        {
-            logger.LogTenantCatalogCacheWriteFaulted(fault, typeof(T).Name);
-        }
-    }
-}
-
-internal static partial class TenantCatalogServiceLogger
-{
-    [LoggerMessage(
-        EventId = 10,
-        EventName = "TenantCatalogCacheReadFaultedDegradingToMiss",
-        Level = LogLevel.Warning,
-        Message = "Tenant catalog cache read of {CacheItemType} faulted; degrading to a cache miss and falling through to the store."
-    )]
-    public static partial void LogTenantCatalogCacheReadFaultedDegradingToMiss(
-        this ILogger logger,
-        Exception exception,
-        string cacheItemType
-    );
-
-    [LoggerMessage(
-        EventId = 11,
-        EventName = "TenantCatalogCacheWriteFaulted",
-        Level = LogLevel.Warning,
-        Message = "Tenant catalog cache write of {CacheItemType} faulted; the resolved outcome is unaffected."
-    )]
-    public static partial void LogTenantCatalogCacheWriteFaulted(
-        this ILogger logger,
-        Exception exception,
-        string cacheItemType
-    );
 }
