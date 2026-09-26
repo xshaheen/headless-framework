@@ -56,12 +56,17 @@ public sealed record FakeApnsRequest(
 /// The <c>apns-unique-id</c> response header, which the APNs sandbox adds to identify the notification in its delivery
 /// log; omitted when <see langword="null"/>.
 /// </param>
+/// <param name="RetryAfterSeconds">
+/// The <c>Retry-After</c> response header in seconds; APNs does not document one, but a throttling proxy in front of
+/// it may send it, so the fake can carry it.
+/// </param>
 public sealed record FakeApnsReply(
     int Status,
     string? Reason = null,
     string? RawBody = null,
     bool AbortAfterRead = false,
-    string? UniqueId = null
+    string? UniqueId = null,
+    int? RetryAfterSeconds = null
 )
 {
     public static FakeApnsReply Ok { get; } = new(200);
@@ -83,15 +88,21 @@ public sealed class FakeApnsServer : IAsyncDisposable
     private readonly ConcurrentQueue<FakeApnsRequest> _requests = new();
     private readonly ConcurrentDictionary<string, int> _attempts = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _acceptedClientThumbprints;
+    private readonly ConnectionCounter _connectionCounter;
     private readonly ECDsa _key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
     private readonly WebApplication _app;
     private int _inFlight;
     private long _maxInFlight;
 
-    private FakeApnsServer(WebApplication app, ConcurrentDictionary<string, byte> acceptedClientThumbprints)
+    private FakeApnsServer(
+        WebApplication app,
+        ConcurrentDictionary<string, byte> acceptedClientThumbprints,
+        ConnectionCounter connectionCounter
+    )
     {
         _app = app;
         _acceptedClientThumbprints = acceptedClientThumbprints;
+        _connectionCounter = connectionCounter;
         PrivateKeyPem = _key.ExportPkcs8PrivateKeyPem();
     }
 
@@ -107,16 +118,51 @@ public sealed class FakeApnsServer : IAsyncDisposable
     /// <summary>A delay applied before answering, so concurrent requests overlap and in-flight counts mean something.</summary>
     public TimeSpan ResponseDelay { get; set; }
 
+    /// <summary>
+    /// Serves exactly one stream per connection, the way APNs starts a token-authenticated connection until it has
+    /// seen a valid provider token: <c>Http2.MaxStreamsPerConnection = 1</c>. A second concurrent request on the
+    /// same connection is refused with <c>REFUSED_STREAM</c>, which the client must retry on another connection.
+    /// </summary>
+    public bool OneStreamPerConnection { get; set; }
+
     public IReadOnlyList<FakeApnsRequest> Requests => [.. _requests];
 
     public long MaxInFlight => Volatile.Read(ref _maxInFlight);
+
+    /// <summary>
+    /// How many TCP connections the server accepted in total, counted at the connection level so a connection
+    /// whose every stream was refused still counts.
+    /// </summary>
+    public int OpenedConnections => _connectionCounter.OpenedCount;
+
+    /// <summary>The highest number of connections open at the same instant.</summary>
+    public long MaxConcurrentConnections => _connectionCounter.MaxConcurrentCount;
 
     /// <summary>The TLS server certificate's thumbprint, or <see langword="null"/> for an h2c server.</summary>
     public string? ServerCertificateThumbprint { get; private set; }
 
     public static Task<FakeApnsServer> StartAsync(CancellationToken cancellationToken)
     {
-        return _StartAsync(serverCertificate: null, clientCertificateThumbprint: null, cancellationToken);
+        return _StartAsync(
+            serverCertificate: null,
+            clientCertificateThumbprint: null,
+            oneStreamPerConnection: false,
+            cancellationToken
+        );
+    }
+
+    /// <summary>
+    /// Starts a server that serves exactly one HTTP/2 stream per connection, the way APNs starts a
+    /// token-authenticated connection until it has seen a valid provider token.
+    /// </summary>
+    public static Task<FakeApnsServer> StartOneStreamAsync(CancellationToken cancellationToken)
+    {
+        return _StartAsync(
+            serverCertificate: null,
+            clientCertificateThumbprint: null,
+            oneStreamPerConnection: true,
+            cancellationToken
+        );
     }
 
     /// <summary>
@@ -129,12 +175,18 @@ public sealed class FakeApnsServer : IAsyncDisposable
         CancellationToken cancellationToken
     )
     {
-        return _StartAsync(serverCertificate, clientCertificateThumbprint, cancellationToken);
+        return _StartAsync(
+            serverCertificate,
+            clientCertificateThumbprint,
+            oneStreamPerConnection: false,
+            cancellationToken
+        );
     }
 
     private static async Task<FakeApnsServer> _StartAsync(
         X509Certificate2? serverCertificate,
         string? clientCertificateThumbprint,
+        bool oneStreamPerConnection,
         CancellationToken cancellationToken
     )
     {
@@ -144,6 +196,10 @@ public sealed class FakeApnsServer : IAsyncDisposable
         {
             acceptedClientThumbprints[clientCertificateThumbprint] = 0;
         }
+
+        // Written by the connection middleware before the server object exists to hand it to; a simple box the
+        // middleware can reach.
+        var connectionCounter = new ConnectionCounter();
 
         var builder = WebApplication.CreateSlimBuilder();
         builder.Logging.ClearProviders();
@@ -169,14 +225,27 @@ public sealed class FakeApnsServer : IAsyncDisposable
                             }
                         );
                     }
+
+                    // Connection-level middleware sees every accepted connection, including one whose only stream
+                    // was refused for exceeding the stream limit, which the request pipeline never sees.
+                    listen.Use(next =>
+                        async connection =>
+                        {
+                            connectionCounter.Accepted();
+                            using var openConnection = connectionCounter.Open();
+
+                            await next(connection);
+                        }
+                    );
                 }
             );
-            // The provider may fan out up to 1000 concurrent streams; keep the fake from being the bottleneck.
-            kestrel.Limits.Http2.MaxStreamsPerConnection = 1000;
+            // The one-stream mode stands in for APNs starting a token-authenticated connection with a single
+            // stream; the default keeps the fake from being the bottleneck for a 1000-stream multicast.
+            kestrel.Limits.Http2.MaxStreamsPerConnection = oneStreamPerConnection ? 1 : 1000;
         });
 
         var app = builder.Build();
-        var server = new FakeApnsServer(app, acceptedClientThumbprints)
+        var server = new FakeApnsServer(app, acceptedClientThumbprints, connectionCounter)
         {
             ServerCertificateThumbprint = serverCertificate?.Thumbprint,
         };
@@ -186,6 +255,43 @@ public sealed class FakeApnsServer : IAsyncDisposable
         server.BaseAddress = new Uri(app.Urls.First());
 
         return server;
+    }
+
+    /// <summary>
+    /// Counts accepted TCP connections and how many are open at once, from connection middleware, so a connection
+    /// whose every stream was refused still counts.
+    /// </summary>
+    private sealed class ConnectionCounter
+    {
+        private int _opened;
+        private long _current;
+        private long _maxConcurrent;
+
+        public int OpenedCount => Volatile.Read(ref _opened);
+
+        public long MaxConcurrentCount => Volatile.Read(ref _maxConcurrent);
+
+        public void Accepted()
+        {
+            Interlocked.Increment(ref _opened);
+            var current = Interlocked.Increment(ref _current);
+            _maxConcurrent.InterlockedRaiseTo(current);
+        }
+
+        public IDisposable Open() => new Closer(this);
+
+        private void _Closed()
+        {
+            Interlocked.Decrement(ref _current);
+        }
+
+        private sealed class Closer(ConnectionCounter counter) : IDisposable
+        {
+            public void Dispose()
+            {
+                counter._Closed();
+            }
+        }
     }
 
     /// <summary>Makes a TLS server also accept the client certificate whose thumbprint is <paramref name="thumbprint"/>.</summary>
@@ -445,6 +551,11 @@ public sealed class FakeApnsServer : IAsyncDisposable
             if (reply.UniqueId is not null)
             {
                 context.Response.Headers["apns-unique-id"] = reply.UniqueId;
+            }
+
+            if (reply.RetryAfterSeconds is { } retryAfter)
+            {
+                context.Response.Headers["Retry-After"] = retryAfter.ToString(CultureInfo.InvariantCulture);
             }
 
             if (reply.RawBody is not null)

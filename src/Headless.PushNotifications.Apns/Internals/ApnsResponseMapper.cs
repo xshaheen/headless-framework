@@ -14,6 +14,9 @@ internal static class ApnsResponseMapper
 
     private const string _BadDeviceTokenReason = "BadDeviceToken";
 
+    // Apple: "After 15 minutes, you can retry JSON payloads that receive response status codes that begin with 5XX."
+    private static readonly TimeSpan _ServerRetryAfter = TimeSpan.FromMinutes(15);
+
     private static readonly ApnsErrorBody _NoError = new(Reason: null, Timestamp: null);
 
     private static readonly long _MinUnixMilliseconds = DateTimeOffset.MinValue.ToUnixTimeMilliseconds();
@@ -58,6 +61,8 @@ internal static class ApnsResponseMapper
         bool treatBadDeviceTokenAsUnregistered
     )
     {
+        var failureKind = status == HttpStatusCode.OK ? null : ApnsFailureClassifier.Classify(status, error.Reason);
+
         return new ApnsSendResult
         {
             Response = Map(deviceToken, apnsId, status, error.Reason, treatBadDeviceTokenAsUnregistered),
@@ -66,6 +71,15 @@ internal static class ApnsResponseMapper
             ApnsId = apnsId,
             UniqueId = string.IsNullOrWhiteSpace(uniqueId) ? null : uniqueId,
             InvalidSince = status == HttpStatusCode.Gone ? _FromUnixMilliseconds(error.Timestamp) : null,
+            FailureKind = failureKind,
+            RetryAfter = failureKind switch
+            {
+                ApnsFailureKind.ServerError => _ServerRetryAfter,
+                // A 429 waits only as long as APNs says: Apple's response-header table does not list Retry-After,
+                // so a missing header leaves the delay to the caller.
+                ApnsFailureKind.Throttled when error.RetryAfter is { } retryAfter => retryAfter,
+                _ => null,
+            },
         };
     }
 

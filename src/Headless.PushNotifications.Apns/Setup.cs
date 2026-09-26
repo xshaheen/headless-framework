@@ -44,8 +44,27 @@ public static class SetupApnsPushNotifications
 {
     internal const string HttpClientName = "Headless:Apns";
 
+    // Apple serves the same hosts on 443 and on 2197 for networks that block 443 to non-web endpoints.
     internal static readonly Uri ProductionAddress = new("https://api.push.apple.com");
     internal static readonly Uri SandboxAddress = new("https://api.sandbox.push.apple.com");
+    internal const int AlternativePort = 2197;
+    internal const int DefaultPort = 443;
+
+    /// <summary>The endpoint the environment and port settings select.</summary>
+    internal static Uri GetBaseAddress(ApnsOptions options)
+    {
+        // A UriBuilder port must be reset to -1 to mean "scheme default", so the flag decides it once here.
+        var address = options.Environment == ApnsEnvironment.Sandbox ? SandboxAddress : ProductionAddress;
+
+        if (!options.UseAlternativePort)
+        {
+            return address;
+        }
+
+        var builder = new UriBuilder(address) { Port = AlternativePort };
+
+        return builder.Uri;
+    }
 
     extension(HeadlessPushNotificationsSetupBuilder setup)
     {
@@ -217,8 +236,7 @@ public static class SetupApnsPushNotifications
                 (serviceProvider, client) =>
                 {
                     var options = serviceProvider.GetRequiredService<IOptionsMonitor<ApnsOptions>>().Get(name);
-                    client.BaseAddress =
-                        options.Environment == ApnsEnvironment.Sandbox ? SandboxAddress : ProductionAddress;
+                    client.BaseAddress = GetBaseAddress(options);
                     client.DefaultRequestVersion = HttpVersion.Version20;
                     client.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionExact;
                     configureClient?.Invoke(client);
@@ -300,6 +318,9 @@ public static class SetupApnsPushNotifications
                     target.Priority = options.Priority;
                     target.TreatBadDeviceTokenAsUnregistered = options.TreatBadDeviceTokenAsUnregistered;
                     target.MaxConcurrency = options.MaxConcurrency;
+                    target.UseAlternativePort = options.UseAlternativePort;
+                    target.Proxy = options.Proxy;
+                    target.MaxConnections = options.MaxConnections;
                 },
                 name
             );
@@ -357,6 +378,22 @@ public static class SetupApnsPushNotifications
             var holder = ApnsCertificateHolder.Get(serviceProvider, name);
             handler.SslOptions.LocalCertificateSelectionCallback = (_, _, _, _, _) => holder.Certificate;
         }
+
+        // Read at handler build time: a live IWebProxy cannot reload from configuration anyway.
+        var options = serviceProvider.GetRequiredService<IOptionsMonitor<ApnsOptions>>().Get(name);
+
+        if (options.Proxy is not null)
+        {
+            handler.Proxy = options.Proxy;
+        }
+
+        // The instance's connection budget. Registered per instance so the semaphore counts exactly this
+        // instance's connections, and captured by the callback so the bound survives option reloads: the budget a
+        // live pool already dials under cannot change under it.
+#pragma warning disable CA2000 // False positive: the limiter's ownership transfers to the handler through the callback; the factory disposes the handler for the handler's whole infinite lifetime.
+        var limiter = new ApnsConnectionLimiter(options.MaxConnections);
+#pragma warning restore CA2000
+        handler.ConnectCallback = limiter.ConnectAsync;
 
         configurePrimaryHandler?.Invoke(handler);
 

@@ -10,7 +10,11 @@ namespace Headless.PushNotifications.Apns.Internals;
 internal sealed record ApnsErrorBody(
     [property: JsonPropertyName("reason")] string? Reason,
     [property: JsonPropertyName("timestamp")] long? Timestamp
-);
+)
+{
+    // Not serialized: filled from the Retry-After response header, which a 429 may carry.
+    public TimeSpan? RetryAfter { get; init; }
+}
 
 // Source-generated so reading the error body stays trim- and AOT-safe.
 [JsonSerializable(typeof(ApnsErrorBody))]
