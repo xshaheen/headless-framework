@@ -10,7 +10,7 @@ using NSubstitute.ExceptionExtensions;
 
 namespace Tests;
 
-public sealed class TenantCatalogServiceTests : TestBase
+public sealed partial class TenantCatalogServiceTests : TestBase
 {
     private readonly ITenantStore _store = Substitute.For<ITenantStore>();
     private readonly ICache<TenantIdentifierCacheItem> _identifierCache = Substitute.For<
@@ -541,11 +541,8 @@ public sealed class TenantCatalogServiceTests : TestBase
     // A custom IdentifierPattern can admit characters the default slug rejects, and the identifier is caller
     // input on the pre-auth path. The cache key is the fixed prefix plus the normalized identifier verbatim.
 
-    private static readonly Regex _PermissivePattern = new(
-        @"^[a-z0-9:*?\[\]._-]+$",
-        RegexOptions.CultureInvariant,
-        TimeSpan.FromMilliseconds(100)
-    );
+    [GeneratedRegex(@"^[a-z0-9:*?\[\]._-]+$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
+    private static partial Regex _PermissivePattern { get; }
 
     [Theory]
     [InlineData("a:b*[x]")]
@@ -645,7 +642,14 @@ public sealed class TenantCatalogServiceTests : TestBase
         var thrown = await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*identifier*");
         thrown.Which.Message.Should().NotContain("acme").And.NotContain("other");
         _writtenIdentifierEntry.Should().BeNull();
-        await _infoCache.DidNotReceiveWithAnyArgs().UpsertAsync(default!, default!, default, default);
+        await _infoCache
+            .DidNotReceive()
+            .UpsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<TenantInfoCacheItem>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -662,8 +666,22 @@ public sealed class TenantCatalogServiceTests : TestBase
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*identifier*");
-        await _identifierCache.DidNotReceiveWithAnyArgs().UpsertAsync(default!, default!, default, default);
-        await _infoCache.DidNotReceiveWithAnyArgs().UpsertAsync(default!, default!, default, default);
+        await _identifierCache
+            .DidNotReceive()
+            .UpsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<TenantIdentifierCacheItem>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
+        await _infoCache
+            .DidNotReceive()
+            .UpsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<TenantInfoCacheItem>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -687,8 +705,22 @@ public sealed class TenantCatalogServiceTests : TestBase
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*identifier*");
-        await _identifierCache.DidNotReceiveWithAnyArgs().UpsertAsync(default!, default!, default, default);
-        await _infoCache.DidNotReceiveWithAnyArgs().UpsertAsync(default!, default!, default, default);
+        await _identifierCache
+            .DidNotReceive()
+            .UpsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<TenantIdentifierCacheItem>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
+        await _infoCache
+            .DidNotReceive()
+            .UpsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<TenantInfoCacheItem>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -703,7 +735,14 @@ public sealed class TenantCatalogServiceTests : TestBase
         // then
         var thrown = await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*id*");
         thrown.Which.Message.Should().NotContain("ten_1").And.NotContain("ten_2");
-        await _infoCache.DidNotReceiveWithAnyArgs().UpsertAsync(default!, default!, default, default);
+        await _infoCache
+            .DidNotReceive()
+            .UpsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<TenantInfoCacheItem>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -718,7 +757,14 @@ public sealed class TenantCatalogServiceTests : TestBase
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>();
-        await _infoCache.DidNotReceiveWithAnyArgs().UpsertAsync(default!, default!, default, default);
+        await _infoCache
+            .DidNotReceive()
+            .UpsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<TenantInfoCacheItem>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     #endregion

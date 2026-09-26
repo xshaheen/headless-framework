@@ -243,6 +243,6 @@ public sealed class TenantCatalogCacheInvalidatorTests : TestBase
 
         // then
         await identifierCache.Received(1).RemoveAsync("tenancy:catalog:identifier:a*[b]?", AbortToken);
-        await identifierCache.DidNotReceiveWithAnyArgs().RemoveByPrefixAsync(default!, default);
+        await identifierCache.DidNotReceive().RemoveByPrefixAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 }
