@@ -131,6 +131,8 @@ execution: code
 - The provider enforces its own bound through `ApnsOptions.MaxConnections`:
   - A `ConnectCallback` takes a permit from a per-instance `SemaphoreSlim` before it dials.
   - It returns a stream wrapper that releases the permit when the connection's stream is disposed.
+  - The permit is acquired with the callback's `CancellationToken`. Once acquired, it is held until one of two things happens: the wrapper takes ownership, or the dial faults. Both paths release it (`try { dial } catch { Release(); throw; }`). The pool swallows callback exceptions (`HttpConnectionPool.Http2.cs`, `InjectNewHttp2ConnectionAsync` → `HandleHttp2ConnectionFailure`), so a stranded permit would permanently shrink the pool.
+  - A test fails N dials against the fake server, then asserts that new connections can still be opened up to the bound.
   - Requests wait for a free stream on an open connection or for a permit.
 - Choose the default from the measured cold-start behavior and pushy's sizing advice. Record the evidence in the XML docs.
 - A test proves the bound: with the one-stream server and `MaxConcurrency` 100, the number of open connections never exceeds `MaxConnections`, and every send completes.
