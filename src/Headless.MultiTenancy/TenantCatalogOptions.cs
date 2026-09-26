@@ -38,8 +38,22 @@ public sealed class TenantCatalogOptions
     /// </summary>
     public IList<string> IgnoredIdentifiers { get; set; } = [];
 
-    /// <summary>The maximum accepted length, in characters, of a normalized identifier. Default: 63 (the DNS-label limit).</summary>
+    /// <summary>
+    /// The maximum accepted length, in characters, of a normalized identifier. Default: 63 (the DNS-label limit).
+    /// Must lie in 1..<see cref="MaxIdentifierLengthLimit"/>; startup rejects any other value.
+    /// </summary>
+    /// <remarks>
+    /// Raise it to <see cref="MaxIdentifierLengthLimit"/> only for whole-host (custom-domain) identifiers. The bound
+    /// runs before <see cref="IdentifierPattern"/> on unauthenticated input, so it also caps how much text a custom
+    /// pattern can be asked to backtrack over.
+    /// </remarks>
     public int MaxIdentifierLength { get; set; } = 63;
+
+    /// <summary>
+    /// The largest value <see cref="MaxIdentifierLength"/> accepts: 253, the DNS hostname limit, which is the
+    /// longest identifier any built-in source can produce (a whole-host template captures at most a full hostname).
+    /// </summary>
+    public const int MaxIdentifierLengthLimit = 253;
 
     /// <summary>
     /// The shape a normalized identifier must match before any cache or store lookup. Default:
@@ -75,7 +89,7 @@ internal sealed class TenantCatalogOptionsValidator : AbstractValidator<TenantCa
     {
         RuleFor(x => x.CacheExpiration).GreaterThan(TimeSpan.Zero);
         RuleFor(x => x.UnknownIdentifierCacheExpiration).GreaterThanOrEqualTo(TimeSpan.Zero);
-        RuleFor(x => x.MaxIdentifierLength).GreaterThan(0);
+        RuleFor(x => x.MaxIdentifierLength).InclusiveBetween(1, TenantCatalogOptions.MaxIdentifierLengthLimit);
         RuleFor(x => x.IdentifierPattern).NotNull();
         RuleFor(x => x.IdentifierPattern).Must(_HaveMatchTimeout).WithMessage(_InfiniteMatchTimeoutMessage);
         RuleForEach(x => x.IgnoredIdentifiers).NotEmpty();
