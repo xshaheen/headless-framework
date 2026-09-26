@@ -126,6 +126,10 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadle
     /// </summary>
     public string? TenantId => _runtime.TenantId;
 
+    internal HeadlessRoutedPlacement? RoutedPlacement => _runtime.RoutedPlacement;
+
+    internal string? AmbientTenantId => _runtime.AmbientTenantId;
+
     // The IHeadlessDbContext seam is implemented explicitly (non-overridable) so it stays off this context's
     // public surface and avoids an externally-overridable member bound to the seam (CA2119). CA1033 (explicit
     // member not visible to derived types) is intentional: derived contexts never call these — the framework
@@ -244,6 +248,17 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadle
     }
 
     /// <summary>
+    /// Applies the pinned tenant data placement when this context type is tenant-routed. Always call
+    /// <c>base.OnConfiguring</c> when overriding: a routed context that skips it fails at construction.
+    /// </summary>
+    /// <param name="optionsBuilder">The options builder for this context instance.</param>
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        base.OnConfiguring(optionsBuilder);
+        _runtime.ConfigureOptions(optionsBuilder);
+    }
+
+    /// <summary>
     /// Applies Headless primitive-type value converter mappings in addition to any conventions the
     /// subclass registers. Always call <c>base.ConfigureConventions</c> when overriding.
     /// </summary>
@@ -255,16 +270,27 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadle
     }
 
     /// <summary>
-    /// Applies the <see cref="DefaultSchema"/> (if non-null), calls <c>base.OnModelCreating</c>, and then
+    /// Applies the <see cref="DefaultSchema"/> (if non-null; a tenant-routed context applies its pinned tenant schema
+    /// instead), calls <c>base.OnModelCreating</c>, and then
     /// lets the Headless runtime apply global query filters (multi-tenancy, soft-delete, suspend) and
     /// entity conventions. Always call <c>base.OnModelCreating</c> when overriding.
     /// </summary>
     /// <param name="modelBuilder">The model builder for the current context.</param>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        if (!string.IsNullOrWhiteSpace(DefaultSchema))
+        // A tenant-routed context builds its model for the pinned schema and stamps it, so the runtime can refuse a
+        // model EF served for another schema.
+        var routedPlacement = _runtime.RoutedPlacement;
+        var schema = routedPlacement is null ? DefaultSchema : routedPlacement.EffectiveSchema;
+
+        if (!string.IsNullOrWhiteSpace(schema))
         {
-            modelBuilder.HasDefaultSchema(DefaultSchema);
+            modelBuilder.HasDefaultSchema(schema);
+        }
+
+        if (routedPlacement is not null)
+        {
+            modelBuilder.HasAnnotation(HeadlessModelAnnotations.Tenancy.PlacementSchema, schema);
         }
 
         base.OnModelCreating(modelBuilder);

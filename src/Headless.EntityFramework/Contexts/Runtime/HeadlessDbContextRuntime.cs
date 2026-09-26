@@ -38,7 +38,18 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
     private bool _initialized;
     private bool _stampTenantHandlerAttached;
 
-    public string? TenantId => services.TenantId;
+    /// <summary>
+    /// The tenant the context serves: the live ambient tenant for an unrouted context, or the pinned tenant for a
+    /// tenant-routed one (which throws once the ambient tenant has moved on).
+    /// </summary>
+    public string? TenantId =>
+        RoutedPlacement is null ? services.TenantId : RoutedPlacement.GetTenantId(services.TenantId);
+
+    /// <summary>The live ambient tenant, regardless of any pin.</summary>
+    public string? AmbientTenantId => services.TenantId;
+
+    /// <summary>The pinned placement of a tenant-routed context, or <see langword="null"/> for an unrouted one.</summary>
+    public HeadlessRoutedPlacement? RoutedPlacement { get; private set; }
 
     internal IServiceProvider ServiceProvider => services.ServiceProvider;
 
@@ -49,9 +60,15 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
             return;
         }
 
+        // Pin before anything touches ChangeTracker: building the change tracker builds the model, and a routed
+        // model is keyed by the pinned schema.
+        RoutedPlacement = HeadlessRoutedPlacement.Pin(db, services.ServiceProvider, services.TenantId);
+
         db.ChangeTracker.Tracked += _navigationModifiedTracker.ChangeTrackerTracked;
         db.ChangeTracker.StateChanged += _navigationModifiedTracker.ChangeTrackerStateChanged;
         _initialized = true;
+
+        RoutedPlacement?.VerifyModel(db.Model);
 
         if (services.IsTenantWriteGuardEnabled)
         {
@@ -165,6 +182,16 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
     {
         builder.AddBuildingBlocksPrimitivesConvertersMappings();
         builder.Conventions.Add(_ => new HeadlessTenantModelConvention(db));
+
+        if (RoutedPlacement is { IsSchemaPlaced: true, EffectiveSchema: { } schema })
+        {
+            builder.Conventions.Add(_ => new HeadlessTenantPlacementModelConvention(schema));
+        }
+    }
+
+    public void ConfigureOptions(DbContextOptionsBuilder optionsBuilder)
+    {
+        RoutedPlacement?.Configure(optionsBuilder);
     }
 
     public static void ProcessModelCreating(ModelBuilder builder)

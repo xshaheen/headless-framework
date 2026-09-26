@@ -9,6 +9,7 @@ internal static class HeadlessModelAnnotations
         internal const string IsOwned = "Headless:Tenant:IsOwned";
         internal const string PropertyName = "Headless:Tenant:PropertyName";
         internal const string ScopedIndex = "Headless:Tenant:ScopedIndex";
+        internal const string PlacementSchema = "Headless:Tenant:PlacementSchema";
     }
 
     internal static class AuditLog

@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.EntityFramework.Contexts.Runtime;
+using Headless.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -59,6 +61,8 @@ internal sealed class HeadlessDbContextFactory<TDbContext>(IServiceScopeFactory 
 
         try
         {
+            await _PinTenantPlacementAsync(scope.ServiceProvider, cancellationToken).ConfigureAwait(false);
+
             return _AttachScope(scope);
         }
         catch
@@ -70,6 +74,40 @@ internal sealed class HeadlessDbContextFactory<TDbContext>(IServiceScopeFactory 
             await scope.DisposeAsync().ConfigureAwait(false);
             throw;
         }
+    }
+
+    /// <summary>
+    /// For a tenant-routed context type under an ambient tenant, resolves the tenant's placement and pins it in the
+    /// new scope before the context is built, because the context builds its model (and so needs the schema) inside
+    /// its constructor, where nothing can be awaited. A tenant with no placement is refused: a routed context never
+    /// falls back to the shared database. Resolver faults and cancellation propagate unchanged.
+    /// </summary>
+    private static async Task _PinTenantPlacementAsync(IServiceProvider services, CancellationToken cancellationToken)
+    {
+        if (services.GetService<HeadlessTenantDataRouting>()?.IsRouted(typeof(TDbContext)) != true)
+        {
+            return;
+        }
+
+        var tenantId = services.GetRequiredService<ICurrentTenant>().Id;
+
+        if (string.IsNullOrWhiteSpace(tenantId))
+        {
+            return;
+        }
+
+        var placement =
+            await services
+                .GetRequiredService<ITenantDataPlacementResolver>()
+                .ResolveAsync(tenantId, cancellationToken)
+                .ConfigureAwait(false)
+            ?? throw new InvalidOperationException(
+                $"Tenant '{tenantId}' has no data placement, so the tenant-routed context "
+                    + $"'{typeof(TDbContext).Name}' cannot be created for it. Add the tenant's placement to the "
+                    + "configured placement source; routed contexts never fall back to the shared database."
+            );
+
+        services.GetRequiredService<HeadlessTenantPlacementPin>().Set(tenantId, placement);
     }
 
     private static TDbContext _AttachScope(IServiceScope scope)
