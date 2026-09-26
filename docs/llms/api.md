@@ -40,6 +40,7 @@ Additional packages:
 - API-key query-string authentication is opt-in (`AllowApiKeyInQueryString = true`); the dynamic scheme provider ignores `?api_key=` unless the API-key handler would accept it.
 - Use `MapHeadlessEndpoints()` to expose `/health`, `/alive`, OpenAPI JSON, and static web assets. `AddHeadless()` registers a `self` health check tagged `live`.
 - Keep `TrustForwardedHeadersFromAnyProxy` disabled unless the service is reachable only through trusted proxy infrastructure.
+- Register CORS with `services.AddHeadlessCors(configuration.GetSection("Cors"))` and select `HeadlessCorsConstants.RestrictedCors` in `app.UseCors(...)` or `RequireCors(...)`; do not hand-write a policy with `SetIsOriginAllowed(_ => true)` plus `AllowCredentials()`, which reflects every origin and hands it the user's session. `HeadlessCorsConstants.AllowAnyCors` is for development only and never allows credentials; a cookie-authenticated SPA on `http://localhost:5173` belongs in `AllowedOrigins` instead.
 - `Headless.Api.ServiceDefaults` validates by default that `UseHeadless()`, `UseStatusCodesRewriter()`, and `MapHeadlessEndpoints()` were applied at startup. For custom/manual pipelines, disable via `options.Validation.RequireUseHeadless = false`, `options.Validation.RequireStatusCodesRewriter = false`, and `options.Validation.RequireMapHeadlessEndpoints = false`.
 - `AddHeadless()` invokes `SetupApi.ConfigureGlobalSettings()` automatically (idempotent) to set regex timeout, FluentValidation, and JWT defaults. Call it manually only if you need those defaults applied before `AddHeadless()` runs.
 - Prefer `Headless.Api.MinimalApi` over `Headless.Api.Mvc` for new projects. Use `.Validate<T>()` on endpoints for FluentValidation integration.
@@ -187,6 +188,7 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 - HTTP tenant catalog resolution (pre-authentication): `ResolveFromCatalog(...)`, `UseHeadlessTenantCatalogResolution()`, `ITenantIdentifierSource` returning `TenantIdentifierSourceResult` (`None` / `Found` / `Invalid`), and the `HeadlessTenantCatalogResolutionBuilder` members `AddHostSource(...)`, `AddRouteSource(...)`, `AddHeaderSource(...)`, `AddSource<T>()`, `AddSource(instance)`, `AddSource(Func<HttpContext, string?>)` with options `HostTenantIdentifierSourceOptions` (`Templates`), `RouteTenantIdentifierSourceOptions` (`RouteValueName`, `PromoteAmbientRouteValue`), and `HeaderTenantIdentifierSourceOptions` (`HeaderNames`, `DefaultHeaderName` = `X-Tenant`)
 - HTTP tenant authorization: `TenantRequirement`, `[AllowMissingTenant]`, `.AllowMissingTenant()`, `[RequireTenant]`, `.RequireTenant()`
 - `AddHeadlessAuthorizationDenialAudit<TContext>()` — opt-in; wraps `IAuthorizationMiddlewareResultHandler` and writes an `authorization.challenged` or `authorization.forbidden` audit entry (method, route template, policy names; never the body or path) through `IAuditLogWriter<TContext>`. Requires an audit log storage provider; see [Authorization denial entries](audit-log.md#authorization-denial-entries)
+- `AddHeadlessCors(IConfiguration | Action<HeadlessCorsOptions> | Action<HeadlessCorsOptions, IServiceProvider>)` — registers the `HeadlessCorsConstants.RestrictedCors` policy from validated `HeadlessCorsOptions` and the development-only `HeadlessCorsConstants.AllowAnyCors` policy (any origin, header, and method; never credentials). Opt-in; `AddHeadless()` does not call it
 - Diagnostic listeners: `AddHeadlessApiDiagnosticListeners()`, `BadRequestDiagnosticAdapter`, `MiddlewareAnalysisDiagnosticAdapter`
 
 ### Design constraints
@@ -337,6 +339,38 @@ Each source also accepts an `IConfiguration` section (`AddHostSource(section)` w
 
 Ignored identifiers (for example `www`) stay on `TenantCatalogOptions.IgnoredIdentifiers` in `Headless.MultiTenancy`; there is no per-source list. An ignored identifier, an apex host, and an unmatched host all fall through to host context with no store call, so endpoints that need a tenant must sit under `TenantRequirement`. A whole-host (bare `{tenant}`) template needs `TenantCatalogOptions.MaxIdentifierLength = 253` and an `IdentifierPattern` shaped for hostnames that carries a match timeout; both are catalog-wide, so mixing a subdomain source with a custom-domain source relaxes the subdomain shape too, and hostile identifier cardinality is bounded by negative caching plus the consumer's rate limiting.
 
+#### CORS
+
+`AddHeadlessCors(...)` binds `HeadlessCorsOptions` and validates it at startup (`ValidateOnStart`):
+
+| Property | Default | Notes |
+|---|---|---|
+| `AllowedOrigins` | `[]` | Exact serialized origins: `http` or `https`, host, optional port. |
+| `AllowedOriginTemplates` | `[]` | `https://*.example.com` matches any subdomain at any depth with the same scheme and port, never the bare suffix. |
+| `AllowCredentials` | `false` | Sends `Access-Control-Allow-Credentials: true`. |
+| `AllowedHeaders` | `[]` = any | A `*` entry also means any. |
+| `AllowedMethods` | `[]` = any | A `*` entry also means any. |
+| `ExposedHeaders` | `[]` | Response headers scripts may read. |
+| `MaxAge` | `null` (no header) | Preflight cache lifetime; browsers cap it (Chromium at two hours). |
+
+```json
+{
+  "Cors": {
+    "AllowedOrigins": [ "https://app.example.com" ],
+    "AllowedOriginTemplates": [ "https://*.tenants.example.com" ],
+    "AllowCredentials": true
+  }
+}
+```
+
+Startup fails with `OptionsValidationException` when:
+
+- `AllowedOrigins` and `AllowedOriginTemplates` are both empty, with or without credentials. The restricted policy is never unrestricted; use `AllowAnyCors` in development.
+- An origin contains `*`. Wildcards belong in `AllowedOriginTemplates`; any-origin access belongs to `AllowAnyCors`.
+- An origin or template is not a bare `http`/`https` origin: it carries a path or trailing slash, user info, a query, a fragment, or surrounding whitespace, or is not absolute (including the literal `null`). The browser's `Origin` header never carries these parts, so such an entry would silently match nothing.
+- A template does not start with `<scheme>://*.`, has a second `*`, or has a literal suffix of fewer than two labels (`https://*`, `https://*.`, `https://*.com`). A two-label public suffix such as `https://*.co.uk` passes and admits every site under it; never configure one.
+- A header, method, or exposed-header entry is blank, or `MaxAge` is zero or negative.
+
 #### API surfaces
 
 An API surface is a named set of endpoints sharing routing, authorization and tenancy defaults, plus an OpenAPI document. `AddHeadlessApiSurface(name, configure)` runs its optional callback immediately, validates the definition, and registers an immutable descriptor plus a singleton `ApiSurfaceRegistry`. MVC, Minimal API, telemetry, and OpenAPI share these definitions. Configure definitions during registration; the builders do not use the deferred .NET options pipeline. Changes to a retained builder after registration have no effect.
@@ -392,6 +426,7 @@ All other exceptions return `false`; the host default or a downstream handler re
 
 - Opt-in surface registration validates options at startup and registers the immutable singleton registry; middleware sets the request feature and activity tag.
 - Registers `HttpContextAccessor` (via `AddHeadlessProblemDetails`)
+- `AddHeadlessCors(...)` calls `AddCors()` and registers one `IConfigureOptions<CorsOptions>` (`TryAddEnumerable`) that builds both named policies when `CorsOptions` first resolves; templates enable `SetIsOriginAllowedToAllowWildcardSubdomains()`
 - `ResolveFromCatalog(...)` registers `TenantCatalogResolutionMiddleware`, `TenantIdentifierIntegrityHandler` (`IAuthorizationHandler`, `TryAddEnumerable`), `IHttpContextAccessor`, and `TryAdd` fallbacks for `IProblemDetailsCreator`, `TimeProvider`, and `IBuildInformationAccessor`; `AddHostSource` / `AddRouteSource` / `AddHeaderSource` each register their singleton `ITenantIdentifierSource` (`TryAddEnumerable`, deduplicated by type) and validated options (`ValidateOnStart`); `AddSource(instance)` and the delegate overload append a singleton; `AddRouteSource` also calls `AddRouting()` and decorates the routing `LinkGenerator` once with `TenantAmbientRouteValueLinkGenerator`
 - Every catalog rejection response sets `Cache-Control: no-store`; the header source appends its configured names to the response `Vary` header on every consult
 - Configures response compression providers (Brotli, Gzip)

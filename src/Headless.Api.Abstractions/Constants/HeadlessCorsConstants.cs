@@ -12,9 +12,15 @@ namespace Headless.Constants;
 [PublicAPI]
 public static class HeadlessCorsConstants
 {
-    /// <summary>Name of the CORS policy that restricts access to a configured list of allowed origins.</summary>
+    /// <summary>
+    /// Name of the CORS policy that restricts access to configured origins and origin templates. <c>AddHeadlessCors</c>
+    /// in <c>Headless.Api.Core</c> registers it from validated <c>HeadlessCorsOptions</c>.
+    /// </summary>
     public const string RestrictedCors = "_origins";
 
-    /// <summary>Name of the CORS policy that allows requests from any origin.</summary>
+    /// <summary>
+    /// Name of the development CORS policy that allows any origin, header, and method, and never allows credentials.
+    /// <c>AddHeadlessCors</c> in <c>Headless.Api.Core</c> registers it.
+    /// </summary>
     public const string AllowAnyCors = "_any_origins";
 }
