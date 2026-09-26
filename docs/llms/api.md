@@ -40,7 +40,8 @@ Additional packages:
 - API-key query-string authentication is opt-in (`AllowApiKeyInQueryString = true`); the dynamic scheme provider ignores `?api_key=` unless the API-key handler would accept it.
 - Use `MapHeadlessEndpoints()` to expose `/health`, `/alive`, OpenAPI JSON, and static web assets. `AddHeadless()` registers a `self` health check tagged `live`.
 - Keep `TrustForwardedHeadersFromAnyProxy` disabled unless the service is reachable only through trusted proxy infrastructure.
-- Register CORS with `services.AddHeadlessCors(configuration.GetSection("Cors"))` and select `HeadlessCorsConstants.RestrictedCors` in `app.UseCors(...)` or `RequireCors(...)`; do not hand-write a policy with `SetIsOriginAllowed(_ => true)` plus `AllowCredentials()`, which reflects every origin and hands it the user's session. `HeadlessCorsConstants.AllowAnyCors` is for development only and never allows credentials; a cookie-authenticated SPA on `http://localhost:5173` belongs in `AllowedOrigins` instead.
+- Register CORS with `services.AddHeadlessCors(configuration.GetSection("Cors"))` and select `HeadlessCorsConstants.RestrictedCors` in `app.UseCors(...)` or `RequireCors(...)`; add more policies with `AddHeadlessCors("name", ...)`. Do not hand-write a policy with `SetIsOriginAllowed(_ => true)` plus `AllowCredentials()`, which reflects every origin and hands it the user's session; origins known only at request time (tenant custom domains) go through an `ICorsOriginSource`. `AddHeadlessAllowAnyCors()` is for development: it never allows credentials and fails startup in Production unless `AllowAnyOriginInProduction` confirms a public API. A cookie-authenticated SPA on `http://localhost:5173` belongs in `AllowedOrigins` instead.
+- CORS governs browsers only. A native mobile client (React Native on iOS or Android, Flutter, a native SDK) sends no `Origin` header, so no policy applies and its requests pass unchanged; authenticate it like any client and never treat CORS as protection against non-browser callers. Its browser-hosted variants do need origins: an Expo or React Native Web dev server (`http://localhost:8081`, `http://localhost:19006`), the deployed web build, and Capacitor or Ionic webviews (`capacitor://localhost`, `ionic://localhost`).
 - `Headless.Api.ServiceDefaults` validates by default that `UseHeadless()`, `UseStatusCodesRewriter()`, and `MapHeadlessEndpoints()` were applied at startup. For custom/manual pipelines, disable via `options.Validation.RequireUseHeadless = false`, `options.Validation.RequireStatusCodesRewriter = false`, and `options.Validation.RequireMapHeadlessEndpoints = false`.
 - `AddHeadless()` invokes `SetupApi.ConfigureGlobalSettings()` automatically (idempotent) to set regex timeout, FluentValidation, and JWT defaults. Call it manually only if you need those defaults applied before `AddHeadless()` runs.
 - Prefer `Headless.Api.MinimalApi` over `Headless.Api.Mvc` for new projects. Use `.Validate<T>()` on endpoints for FluentValidation integration.
@@ -188,7 +189,7 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 - HTTP tenant catalog resolution (pre-authentication): `ResolveFromCatalog(...)`, `UseHeadlessTenantCatalogResolution()`, `ITenantIdentifierSource` returning `TenantIdentifierSourceResult` (`None` / `Found` / `Invalid`), and the `HeadlessTenantCatalogResolutionBuilder` members `AddHostSource(...)`, `AddRouteSource(...)`, `AddHeaderSource(...)`, `AddSource<T>()`, `AddSource(instance)`, `AddSource(Func<HttpContext, string?>)` with options `HostTenantIdentifierSourceOptions` (`Templates`), `RouteTenantIdentifierSourceOptions` (`RouteValueName`, `PromoteAmbientRouteValue`), and `HeaderTenantIdentifierSourceOptions` (`HeaderNames`, `DefaultHeaderName` = `X-Tenant`)
 - HTTP tenant authorization: `TenantRequirement`, `[AllowMissingTenant]`, `.AllowMissingTenant()`, `[RequireTenant]`, `.RequireTenant()`
 - `AddHeadlessAuthorizationDenialAudit<TContext>()` — opt-in; wraps `IAuthorizationMiddlewareResultHandler` and writes an `authorization.challenged` or `authorization.forbidden` audit entry (method, route template, policy names; never the body or path) through `IAuditLogWriter<TContext>`. Requires an audit log storage provider; see [Authorization denial entries](audit-log.md#authorization-denial-entries)
-- `AddHeadlessCors(IConfiguration | Action<HeadlessCorsOptions> | Action<HeadlessCorsOptions, IServiceProvider>)` — registers the `HeadlessCorsConstants.RestrictedCors` policy from validated `HeadlessCorsOptions` and the development-only `HeadlessCorsConstants.AllowAnyCors` policy (any origin, header, and method; never credentials; shares the configured `ExposedHeaders` and `MaxAge`). Opt-in; `AddHeadless()` does not call it
+- `AddHeadlessCors([policyName,] IConfiguration | Action<HeadlessCorsOptions> | Action<HeadlessCorsOptions, IServiceProvider>)` — registers a named CORS policy from validated `HeadlessCorsOptions`; without a name it registers `HeadlessCorsConstants.RestrictedCors`. `AddHeadlessAllowAnyCors(Action<HeadlessCorsOptions>?)` registers `HeadlessCorsConstants.AllowAnyCors` (any origin, never credentials). `AddHeadlessCorsOriginSource<TSource>(policyName, lifetime)` attaches an `ICorsOriginSource` that approves origins at request time. Opt-in; `AddHeadless()` calls none of them
 - Diagnostic listeners: `AddHeadlessApiDiagnosticListeners()`, `BadRequestDiagnosticAdapter`, `MiddlewareAnalysisDiagnosticAdapter`
 
 ### Design constraints
@@ -341,32 +342,55 @@ Ignored identifiers (for example `www`) stay on `TenantCatalogOptions.IgnoredIde
 
 #### CORS
 
-`AddHeadlessCors(...)` binds `HeadlessCorsOptions` and validates it at startup (`ValidateOnStart`):
+Each policy is a named `HeadlessCorsOptions` instance validated at startup (`ValidateOnStart`). Calling a registration again for the same name adds to that policy's configuration.
 
 | Property | Default | Notes |
 |---|---|---|
-| `AllowedOrigins` | `[]` | Exact serialized origins: scheme, host, optional port. Hybrid mobile webview origins such as `capacitor://localhost` and `ionic://localhost` are accepted. |
+| `AllowedOrigins` | `[]` | Exact serialized origins: scheme, host, optional port. Any scheme with a host is accepted, so `capacitor://localhost` and `ionic://localhost` work. |
 | `AllowedOriginTemplates` | `[]` | `https://*.example.com` matches any subdomain at any depth with the same scheme and port, never the bare suffix. |
+| `AllowAnyOrigin` | `false` | Admits every origin. Excludes origin lists, origin sources, and credentials. |
+| `AllowAnyOriginInProduction` | `false` | Required for an `AllowAnyOrigin` policy in the Production environment; a public API that any site may call sets it deliberately. |
 | `AllowCredentials` | `false` | Sends `Access-Control-Allow-Credentials: true`. |
 | `AllowedHeaders` | `[]` = any | A `*` entry also means any. |
 | `AllowedMethods` | `[]` = any | A `*` entry also means any. |
-| `ExposedHeaders` | `[]` | Response headers scripts may read. Also applied to `AllowAnyCors`. |
-| `MaxAge` | `null` (no header) | Preflight cache lifetime; browsers cap it (Chromium at two hours). Also applied to `AllowAnyCors`. |
+| `ExposedHeaders` | `[]` | Response headers scripts may read. |
+| `MaxAge` | `null` (no header) | Preflight cache lifetime; browsers cap it (Chromium at two hours). |
+
+```csharp
+builder.Services.AddHeadlessCors(builder.Configuration.GetSection("Cors"));    // RestrictedCors
+builder.Services.AddHeadlessCors("public", o => { o.AllowAnyOrigin = true; o.AllowAnyOriginInProduction = true; o.AllowedMethods = ["GET"]; });
+builder.Services.AddHeadlessCorsOriginSource<TenantDomainOriginSource>();       // tenant custom domains
+
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddHeadlessAllowAnyCors(o => o.ExposedHeaders = ["ETag", "Link"]);
+}
+
+app.UseRouting();
+app.UseCors();                                         // policies chosen per endpoint below
+app.MapGroup("/api").RequireCors(HeadlessCorsConstants.RestrictedCors);
+app.MapGroup("/public").RequireCors("public");
+```
 
 ```json
 {
   "Cors": {
-    "AllowedOrigins": [ "https://app.example.com" ],
+    "AllowedOrigins": [ "https://app.example.com", "http://localhost:8081" ],
     "AllowedOriginTemplates": [ "https://*.tenants.example.com" ],
     "AllowCredentials": true
   }
 }
 ```
 
+**Origins known only at request time.** Implement `ICorsOriginSource.IsOriginAllowedAsync(origin, context, cancellationToken)` and register it per policy with `AddHeadlessCorsOriginSource<TSource>(policyName = RestrictedCors, lifetime = Scoped)`; it resolves from the request's services, so a scoped source may use a `DbContext`. The source runs only when a request carries exactly one `Origin` header that the policy's static lists do not admit, never for the opaque origin `null`, and never for another policy. An approved origin gets that policy's headers, methods, and credentials setting, and the response carries `Vary: Origin`. Preflight and actual requests both consult it, so cache lookups. The source decorates the registered `ICorsPolicyProvider`; register a custom provider before it.
+
+**Native and mobile clients.** CORS is enforced by browsers, so it neither blocks nor protects non-browser callers. React Native on iOS and Android sends no `Origin`, and the CORS middleware passes such requests through unchanged. What does need an origin is anything running in a browser engine: Expo and React Native Web (`http://localhost:8081` for the Metro dev server, `http://localhost:19006` for older Expo web, then the deployed web origin), and Capacitor or Ionic webviews. A `react-native-webview` page loaded from a local file has the opaque origin `null`, which no policy can safely admit; serve that content from an `http(s)` origin instead. WebSocket upgrades bypass CORS entirely; restrict them with `WebSocketOptions.AllowedOrigins`.
+
 Startup fails with `OptionsValidationException` when:
 
-- `AllowedOrigins` and `AllowedOriginTemplates` are both empty, with or without credentials. The restricted policy is never unrestricted; use `AllowAnyCors` in development.
-- An origin contains `*`. Wildcards belong in `AllowedOriginTemplates`; any-origin access belongs to `AllowAnyCors`.
+- A policy has no `AllowedOrigins`, no `AllowedOriginTemplates`, no origin source, and no `AllowAnyOrigin`, with or without credentials.
+- `AllowAnyOrigin` is combined with origin lists, an origin source, or `AllowCredentials`, or is registered in Production without `AllowAnyOriginInProduction`.
+- An origin contains `*`. Wildcards belong in `AllowedOriginTemplates`; any-origin access belongs to `AllowAnyOrigin`.
 - An origin or template is not a bare `scheme://host[:port]` origin: it carries a path or trailing slash, user info, a query, a fragment, or surrounding whitespace, has no host, is a `file:` URL, or is not absolute (including the literal `null`). The browser's `Origin` header never carries these parts, so such an entry would silently match nothing.
 - A template does not start with `<scheme>://*.`, has a second `*`, or has a literal suffix of fewer than two labels (`https://*`, `https://*.`, `https://*.com`). A two-label public suffix such as `https://*.co.uk` passes and admits every site under it; never configure one.
 - A header, method, or exposed-header entry is blank, or `MaxAge` is zero or negative.
@@ -426,7 +450,7 @@ All other exceptions return `false`; the host default or a downstream handler re
 
 - Opt-in surface registration validates options at startup and registers the immutable singleton registry; middleware sets the request feature and activity tag.
 - Registers `HttpContextAccessor` (via `AddHeadlessProblemDetails`)
-- `AddHeadlessCors(...)` calls `AddCors()` and registers one `IConfigureOptions<CorsOptions>` (`TryAddEnumerable`) that builds both named policies when `CorsOptions` first resolves; templates enable `SetIsOriginAllowedToAllowWildcardSubdomains()`
+- `AddHeadlessCors(...)` calls `AddCors()` and registers one `IConfigureOptions<CorsOptions>` (`TryAddEnumerable`) that builds every registered policy when `CorsOptions` first resolves; templates enable `SetIsOriginAllowedToAllowWildcardSubdomains()`. The first `AddHeadlessCorsOriginSource` call decorates `ICorsPolicyProvider` once; an approved source origin gets a per-request policy admitting exactly that origin
 - `ResolveFromCatalog(...)` registers `TenantCatalogResolutionMiddleware`, `TenantIdentifierIntegrityHandler` (`IAuthorizationHandler`, `TryAddEnumerable`), `IHttpContextAccessor`, and `TryAdd` fallbacks for `IProblemDetailsCreator`, `TimeProvider`, and `IBuildInformationAccessor`; `AddHostSource` / `AddRouteSource` / `AddHeaderSource` each register their singleton `ITenantIdentifierSource` (`TryAddEnumerable`, deduplicated by type) and validated options (`ValidateOnStart`); `AddSource(instance)` and the delegate overload append a singleton; `AddRouteSource` also calls `AddRouting()` and decorates the routing `LinkGenerator` once with `TenantAmbientRouteValueLinkGenerator`
 - Every catalog rejection response sets `Cache-Control: no-store`; the header source appends its configured names to the response `Vary` header on every consult
 - Configures response compression providers (Brotli, Gzip)

@@ -1,28 +1,27 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Constants;
+using Microsoft.Extensions.Hosting;
 
 namespace Headless.Api.Cors;
 
 /// <summary>
-/// Configures the <see cref="HeadlessCorsConstants.RestrictedCors"/> policy registered by <c>AddHeadlessCors</c>.
+/// Configures one named CORS policy registered by <c>AddHeadlessCors</c> or <c>AddHeadlessAllowAnyCors</c>.
 /// </summary>
 /// <remarks>
-/// The policy is restricted by construction: it names at least one origin or origin template, and startup fails
-/// otherwise. For a development-only policy that allows any origin, use
-/// <see cref="HeadlessCorsConstants.AllowAnyCors"/>, which never allows credentials and takes only
-/// <see cref="ExposedHeaders"/> and <see cref="MaxAge"/> from these options.
+/// A policy either names the origins it allows (<see cref="AllowedOrigins"/>, <see cref="AllowedOriginTemplates"/>,
+/// or a registered <see cref="ICorsOriginSource"/>) or sets <see cref="AllowAnyOrigin"/>; startup fails when it does
+/// neither. CORS governs browsers only: a native client, such as a React Native app on iOS or Android, sends no
+/// <c>Origin</c> header, so no policy applies to it and its requests pass through unchanged.
 /// </remarks>
 [PublicAPI]
 public sealed class HeadlessCorsOptions
 {
     /// <summary>
-    /// Exact origins allowed to call the API, such as <c>https://app.example.com</c> or
-    /// <c>http://localhost:5173</c>, or a hybrid mobile webview origin such as <c>capacitor://localhost</c>. Each is
-    /// a scheme, host, and optional port, with no path, trailing slash,
-    /// query, fragment, or user info, because the browser's <c>Origin</c> header never carries them and an entry
-    /// that does silently matches nothing.
+    /// Exact origins allowed to call the API, such as <c>https://app.example.com</c>, <c>http://localhost:8081</c>
+    /// (an Expo web dev server), or a hybrid mobile webview origin such as <c>capacitor://localhost</c>. Each is a
+    /// scheme, host, and optional port, with no path, trailing slash, query, fragment, or user info, because the
+    /// browser's <c>Origin</c> header never carries them and an entry that does silently matches nothing.
     /// </summary>
     public List<string> AllowedOrigins { get; set; } = [];
 
@@ -34,6 +33,20 @@ public sealed class HeadlessCorsOptions
     /// public suffix such as <c>co.uk</c> still passes and admits every site under it; do not configure one.
     /// </summary>
     public List<string> AllowedOriginTemplates { get; set; } = [];
+
+    /// <summary>
+    /// Allows every origin. Credentials are then never allowed, and <see cref="AllowedOrigins"/>,
+    /// <see cref="AllowedOriginTemplates"/>, and an <see cref="ICorsOriginSource"/> must not be configured. Startup
+    /// fails in the Production environment unless <see cref="AllowAnyOriginInProduction"/> is also true.
+    /// </summary>
+    public bool AllowAnyOrigin { get; set; }
+
+    /// <summary>
+    /// Confirms that an <see cref="AllowAnyOrigin"/> policy is meant to run in Production, such as a public API that
+    /// any site may call without credentials. Default <see langword="false"/>, so a development policy left in a
+    /// production pipeline fails at startup instead of silently opening the API to every site.
+    /// </summary>
+    public bool AllowAnyOriginInProduction { get; set; }
 
     /// <summary>
     /// Whether browsers may send cookies and HTTP authentication on cross-origin requests and read the response.
@@ -60,20 +73,34 @@ public sealed class HeadlessCorsOptions
     /// the value (Chromium at two hours), so a longer one has no further effect.
     /// </summary>
     public TimeSpan? MaxAge { get; set; }
+
+    /// <summary>Marked by <c>AddHeadlessCorsOriginSource</c>; not bindable from configuration.</summary>
+    internal bool HasOriginSource { get; set; }
 }
 
 internal sealed class HeadlessCorsOptionsValidator : AbstractValidator<HeadlessCorsOptions>
 {
     public HeadlessCorsOptionsValidator()
+        : this(environment: null) { }
+
+    public HeadlessCorsOptionsValidator(IHostEnvironment? environment)
     {
         RuleFor(x => x)
-            .Must(x => x.AllowedOrigins.Count > 0 || x.AllowedOriginTemplates.Count > 0)
+            .Must(x =>
+                x.AllowAnyOrigin
+                || x.HasOriginSource
+                || x.AllowedOrigins.Count > 0
+                || x.AllowedOriginTemplates.Count > 0
+            )
             .WithName(nameof(HeadlessCorsOptions.AllowedOrigins))
             .WithMessage(
-                $"The restricted CORS policy needs at least one entry in {nameof(HeadlessCorsOptions.AllowedOrigins)}"
-                    + $" or {nameof(HeadlessCorsOptions.AllowedOriginTemplates)}. For a development policy that"
-                    + $" allows any origin, use {nameof(HeadlessCorsConstants)}.{nameof(HeadlessCorsConstants.AllowAnyCors)}."
+                $"A CORS policy needs at least one entry in {nameof(HeadlessCorsOptions.AllowedOrigins)} or"
+                    + $" {nameof(HeadlessCorsOptions.AllowedOriginTemplates)}, a registered origin source, or"
+                    + $" {nameof(HeadlessCorsOptions.AllowAnyOrigin)}. For a development policy that allows any"
+                    + " origin, use AddHeadlessAllowAnyCors."
             );
+
+        When(x => x.AllowAnyOrigin, () => _AddAnyOriginRules(environment));
 
         RuleForEach(x => x.AllowedOrigins).Custom(_ValidateOrigin);
         RuleForEach(x => x.AllowedOriginTemplates).Custom(_ValidateTemplate);
@@ -81,6 +108,38 @@ internal sealed class HeadlessCorsOptionsValidator : AbstractValidator<HeadlessC
         RuleForEach(x => x.AllowedMethods).NotEmpty();
         RuleForEach(x => x.ExposedHeaders).NotEmpty();
         RuleFor(x => x.MaxAge).GreaterThan(TimeSpan.Zero).When(x => x.MaxAge is not null);
+    }
+
+    private void _AddAnyOriginRules(IHostEnvironment? environment)
+    {
+        RuleFor(x => x)
+            .Must(x => x.AllowedOrigins.Count == 0 && x.AllowedOriginTemplates.Count == 0 && !x.HasOriginSource)
+            .WithName(nameof(HeadlessCorsOptions.AllowAnyOrigin))
+            .WithMessage(
+                $"{nameof(HeadlessCorsOptions.AllowAnyOrigin)} already admits every origin; remove"
+                    + $" {nameof(HeadlessCorsOptions.AllowedOrigins)}, {nameof(HeadlessCorsOptions.AllowedOriginTemplates)},"
+                    + " and any origin source, or turn it off to restrict the policy."
+            );
+
+        // Browsers refuse a wildcard origin with credentials, and reflecting every origin instead would hand any
+        // site the user's session.
+        RuleFor(x => x.AllowCredentials)
+            .Equal(toCompare: false)
+            .WithMessage(
+                $"{nameof(HeadlessCorsOptions.AllowAnyOrigin)} cannot be combined with"
+                    + $" {nameof(HeadlessCorsOptions.AllowCredentials)}; list the trusted origins instead."
+            );
+
+        if (environment?.IsProduction() == true)
+        {
+            RuleFor(x => x.AllowAnyOriginInProduction)
+                .Equal(toCompare: true)
+                .WithMessage(
+                    $"An {nameof(HeadlessCorsOptions.AllowAnyOrigin)} policy is registered in Production. Turn on"
+                        + $" {nameof(HeadlessCorsOptions.AllowAnyOriginInProduction)} for a public API that any site"
+                        + " may call, or register the policy only in development."
+                );
+        }
     }
 
     private static void _ValidateOrigin(string? origin, ValidationContext<HeadlessCorsOptions> context)
@@ -96,7 +155,7 @@ internal sealed class HeadlessCorsOptionsValidator : AbstractValidator<HeadlessC
             context.AddFailure(
                 $"Allowed origin '{origin}' contains a wildcard. Put wildcard subdomains in"
                     + $" {nameof(HeadlessCorsOptions.AllowedOriginTemplates)}, and use"
-                    + $" {nameof(HeadlessCorsConstants)}.{nameof(HeadlessCorsConstants.AllowAnyCors)} to allow any origin."
+                    + $" {nameof(HeadlessCorsOptions.AllowAnyOrigin)} to allow any origin."
             );
             return;
         }

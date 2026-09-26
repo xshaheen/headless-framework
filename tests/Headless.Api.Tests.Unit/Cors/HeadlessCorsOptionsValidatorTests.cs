@@ -3,6 +3,8 @@
 using FluentValidation.TestHelper;
 using Headless.Api.Cors;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting.Internal;
 
 namespace Tests.Cors;
 
@@ -134,5 +136,80 @@ public sealed class HeadlessCorsOptionsValidatorTests : TestBase
         var result = _sut.TestValidate(options);
 
         result.ShouldHaveValidationErrorFor(x => x.MaxAge);
+    }
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Staging")]
+    public void should_accept_an_any_origin_policy_outside_production(string environment)
+    {
+        var sut = new HeadlessCorsOptionsValidator(new HostingEnvironment { EnvironmentName = environment });
+
+        var result = sut.TestValidate(new HeadlessCorsOptions { AllowAnyOrigin = true });
+
+        result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Fact]
+    public void should_reject_an_unconfirmed_any_origin_policy_in_production()
+    {
+        var sut = new HeadlessCorsOptionsValidator(
+            new HostingEnvironment { EnvironmentName = Environments.Production }
+        );
+
+        var result = sut.TestValidate(new HeadlessCorsOptions { AllowAnyOrigin = true });
+
+        result.ShouldHaveValidationErrorFor(x => x.AllowAnyOriginInProduction);
+    }
+
+    [Fact]
+    public void should_accept_a_confirmed_any_origin_policy_in_production()
+    {
+        var sut = new HeadlessCorsOptionsValidator(
+            new HostingEnvironment { EnvironmentName = Environments.Production }
+        );
+
+        var result = sut.TestValidate(
+            new HeadlessCorsOptions { AllowAnyOrigin = true, AllowAnyOriginInProduction = true }
+        );
+
+        result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Fact]
+    public void should_reject_credentials_on_an_any_origin_policy()
+    {
+        var result = _sut.TestValidate(new HeadlessCorsOptions { AllowAnyOrigin = true, AllowCredentials = true });
+
+        result.ShouldHaveValidationErrorFor(x => x.AllowCredentials);
+    }
+
+    [Fact]
+    public void should_reject_listed_origins_on_an_any_origin_policy()
+    {
+        var result = _sut.TestValidate(
+            new HeadlessCorsOptions { AllowAnyOrigin = true, AllowedOrigins = ["https://app.example.com"] }
+        );
+
+        var failure = result.Errors.Should().ContainSingle().Subject;
+        failure.ErrorMessage.Should().Contain("already admits every origin");
+    }
+
+    [Fact]
+    public void should_accept_a_policy_backed_only_by_an_origin_source()
+    {
+        var result = _sut.TestValidate(new HeadlessCorsOptions { HasOriginSource = true });
+
+        result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Theory]
+    [InlineData("http://localhost:8081")]
+    [InlineData("http://localhost:19006")]
+    public void should_accept_expo_web_dev_server_origins(string origin)
+    {
+        var result = _sut.TestValidate(new HeadlessCorsOptions { AllowedOrigins = [origin] });
+
+        result.ShouldNotHaveAnyValidationErrors();
     }
 }
