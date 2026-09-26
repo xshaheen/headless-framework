@@ -120,6 +120,41 @@ public sealed class SetupHeadlessTenancyCatalogTests : TestBase
     }
 
     [Fact]
+    public async Task should_register_the_cache_invalidator_as_a_singleton_that_evicts_the_catalog_cache()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+        builder.AddHeadlessTenancy(tenancy =>
+            tenancy.Catalog(catalog =>
+                catalog.UseInMemory(options =>
+                    options.Tenants.Add(new TenantInfo("ten_1", "acme", "Acme", isEnabled: true))
+                )
+            )
+        );
+        builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        var cache = provider.GetRequiredService<ICache<TenantIdentifierCacheItem>>();
+        using (var scope = provider.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<ITenantCatalogService>().ResolveAsync("acme", AbortToken);
+        }
+
+        (await cache.GetAsync(TenantIdentifierCacheItem.CalculateCacheKey("acme"), AbortToken))
+            .HasValue.Should()
+            .BeTrue();
+
+        // when
+        var invalidator = provider.GetRequiredService<ITenantCatalogCacheInvalidator>();
+        await invalidator.InvalidateIdentifierAsync("acme", AbortToken);
+
+        // then
+        invalidator.Should().BeSameAs(provider.GetRequiredService<ITenantCatalogCacheInvalidator>());
+        var entry = await cache.GetAsync(TenantIdentifierCacheItem.CalculateCacheKey("acme"), AbortToken);
+        entry.HasValue.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task should_seed_the_in_memory_store_from_the_service_provider_aware_overload()
     {
         // given — the Action<TOptions, IServiceProvider> arm of the provider overload trio: seed data
