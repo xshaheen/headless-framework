@@ -5,6 +5,7 @@ using System.Data.Common;
 using System.Runtime.InteropServices;
 using Headless.Checks;
 using Headless.Constants;
+using Headless.Threading;
 using Headless.UnitOfWork;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
@@ -35,10 +36,6 @@ namespace Headless.Fencing.SqlServer;
 #pragma warning disable CA2100 // SQL text is built from the validated schema name plus internal object and column constants.
 internal sealed class SqlServerLeaseStore : ILeaseStore
 {
-    // A deadlock or snapshot update conflict is the one failure a fresh transaction can clear on its own; the first
-    // attempt plus two retries.
-    private const int _MaxAttempts = 3;
-
     // Each purge batch is its own short transaction so a large purge never holds many row locks at once.
     private const int _PurgeBatchSize = 1000;
 
@@ -51,6 +48,7 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
 
     private readonly SqlServerFencingOptions _options;
     private readonly IUnitOfWorkFactory _unitOfWorkFactory;
+    private readonly TimeProvider _timeProvider;
     private readonly string _table;
     private readonly string _grantSql;
     private readonly string _renewSql;
@@ -64,11 +62,13 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
     public SqlServerLeaseStore(
         IOptions<SqlServerFencingOptions> options,
         IOptions<FencingStorageOptions> storageOptions,
-        IUnitOfWorkFactory unitOfWorkFactory
+        IUnitOfWorkFactory unitOfWorkFactory,
+        TimeProvider timeProvider
     )
     {
         _options = options.Value;
         _unitOfWorkFactory = unitOfWorkFactory;
+        _timeProvider = timeProvider;
 
         var schema = storageOptions.Value.Schema;
         _table = SqlServerFencingSchema.QualifiedTable(schema);
@@ -537,41 +537,47 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
 
     #region Helpers
 
-    private async ValueTask<T> _RunAutonomousAsync<T>(
+    private ValueTask<T> _RunAutonomousAsync<T>(
         Func<SqlConnection, SqlTransaction, CancellationToken, Task<T>> body,
         CancellationToken cancellationToken
     )
     {
-        for (var attempt = 1; ; attempt++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            try
-            {
-                await using var connection = _options.CreateConnection();
-                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-                // Explicit so the verb runs at READ COMMITTED whatever isolation level a pooled session last used:
-                // READPAST is refused above it, and a stricter level turns a lock wait into a conflict.
-                await using var transaction = (SqlTransaction)
-                    await connection
-                        .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
-                        .ConfigureAwait(false);
-
-                var result = await body(connection, transaction, cancellationToken).ConfigureAwait(false);
-
-                // The batch already decided and the result describes it; a late cancel must not roll back a write the
-                // caller is about to be told happened.
-                await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
-
-                return result;
-            }
-            catch (SqlException ex) when (_IsRetryable(ex) && attempt < _MaxAttempts)
-            {
-                // The victim's transaction is already rolled back and disposed above; the next attempt starts clean.
-            }
-        }
+        // Each attempt opens its own connection and transaction, so the victim's rolled-back transaction is
+        // already disposed and the retry starts clean.
+        return TransientRetry.RunAsync(
+            ct => _RunOnceAsync(body, ct),
+            static ex => ex is SqlException provider && _IsRetryable(provider),
+            _timeProvider,
+            cancellationToken
+        );
     }
 
+    private async ValueTask<T> _RunOnceAsync<T>(
+        Func<SqlConnection, SqlTransaction, CancellationToken, Task<T>> body,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = _options.CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        // Explicit so the verb runs at READ COMMITTED whatever isolation level a pooled session last used:
+        // READPAST is refused above it, and a stricter level turns a lock wait into a conflict.
+        await using var transaction = (SqlTransaction)
+            await connection
+                .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+                .ConfigureAwait(false);
+
+        var result = await body(connection, transaction, cancellationToken).ConfigureAwait(false);
+
+        // The batch already decided and the result describes it; a late cancel must not roll back a write the
+        // caller is about to be told happened.
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+
+        return result;
+    }
+
+    // A deadlock or snapshot update conflict is the one failure a fresh transaction can clear on its own. Only
+    // autonomous calls retry: an enlisted call's failure has already rolled back the caller's transaction, so only
+    // the unit's owner can decide whether to run it again.
     private static bool _IsRetryable(SqlException ex)
     {
         return ex.Number is SqlErrorCodes.SqlServer.DeadlockVictim or SqlErrorCodes.SqlServer.SnapshotUpdateConflict;

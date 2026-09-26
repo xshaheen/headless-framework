@@ -3,6 +3,7 @@
 using System.Data;
 using Headless.Checks;
 using Headless.Constants;
+using Headless.Threading;
 using Headless.UnitOfWork;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
@@ -27,49 +28,55 @@ namespace Headless.Sequences.SqlServer;
 /// </para>
 /// </remarks>
 #pragma warning disable CA2100 // SQL text is built from the validated schema and table names plus internal column constants.
-internal sealed class SqlServerSequenceStore(IOptions<SqlServerSequencesOptions> options) : ISequenceStore
+internal sealed class SqlServerSequenceStore(IOptions<SqlServerSequencesOptions> options, TimeProvider timeProvider)
+    : ISequenceStore
 {
-    // A deadlock is the one failure a fresh transaction can clear on its own; the first attempt plus two retries.
-    private const int _MaxAttempts = 3;
+    // A deadlock is the one failure a fresh transaction can clear on its own.
+    private static readonly Func<Exception, bool> _IsRetryable = static ex =>
+        ex is SqlException { Number: SqlErrorCodes.SqlServer.DeadlockVictim };
 
     private readonly SqlServerSequencesOptions _options = options.Value;
     private readonly string _incrementSql = _BuildIncrementSql(options.Value);
 
-    public async ValueTask<long> IncrementAsync(
+    public ValueTask<long> IncrementAsync(
         SequenceKey key,
         long insertValue,
         long delta,
         CancellationToken cancellationToken = default
     )
     {
-        for (var attempt = 1; ; attempt++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
+        // Each attempt opens its own connection and transaction, so the deadlock victim's rolled-back transaction is
+        // already disposed and the retry starts clean.
+        return TransientRetry.RunAsync(
+            ct => _IncrementOnceAsync(key, insertValue, delta, ct),
+            _IsRetryable,
+            timeProvider,
+            cancellationToken
+        );
+    }
 
-            try
-            {
-                await using var connection = _options.CreateConnection();
-                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-                // Explicit so the batch runs at READ COMMITTED even when the session default is stricter; the
-                // HOLDLOCK hint already gives the one table access the range locking it needs.
-                await using var transaction = (SqlTransaction)
-                    await connection
-                        .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
-                        .ConfigureAwait(false);
+    private async ValueTask<long> _IncrementOnceAsync(
+        SequenceKey key,
+        long insertValue,
+        long delta,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = _options.CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        // Explicit so the batch runs at READ COMMITTED even when the session default is stricter; the HOLDLOCK hint
+        // already gives the one table access the range locking it needs.
+        await using var transaction = (SqlTransaction)
+            await connection
+                .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+                .ConfigureAwait(false);
 
-                var value = await _ExecuteAsync(connection, transaction, key, insertValue, delta, cancellationToken)
-                    .ConfigureAwait(false);
+        var value = await _ExecuteAsync(connection, transaction, key, insertValue, delta, cancellationToken)
+            .ConfigureAwait(false);
 
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
-                return value;
-            }
-            catch (SqlException ex) when (ex.Number == SqlErrorCodes.SqlServer.DeadlockVictim && attempt < _MaxAttempts)
-            {
-                // The deadlock victim's transaction is already rolled back and disposed above; the next attempt
-                // starts clean.
-            }
-        }
+        return value;
     }
 
     public void ValidateEnlistment(IRelationalUnitOfWorkResource resource)

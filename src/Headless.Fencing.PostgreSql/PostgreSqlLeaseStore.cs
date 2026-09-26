@@ -5,6 +5,7 @@ using System.Data.Common;
 using System.Runtime.InteropServices;
 using Headless.Checks;
 using Headless.Constants;
+using Headless.Threading;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -32,10 +33,6 @@ namespace Headless.Fencing.PostgreSql;
 #pragma warning disable CA2100 // SQL text is built from the validated schema name plus internal object and column constants.
 internal sealed class PostgreSqlLeaseStore : ILeaseStore
 {
-    // A deadlock or serialization failure is the one failure a fresh transaction can clear on its own; the first
-    // attempt plus two retries.
-    private const int _MaxAttempts = 3;
-
     // Each purge batch is its own short transaction so a large purge never holds many row locks at once.
     private const int _PurgeBatchSize = 1000;
 
@@ -49,6 +46,7 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
 
     private readonly PostgreSqlFencingOptions _options;
     private readonly IUnitOfWorkFactory _unitOfWorkFactory;
+    private readonly TimeProvider _timeProvider;
     private readonly string _grantExistingSql;
     private readonly string _grantInsertSql;
     private readonly string _renewSql;
@@ -62,11 +60,13 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
     public PostgreSqlLeaseStore(
         IOptions<PostgreSqlFencingOptions> options,
         IOptions<FencingStorageOptions> storageOptions,
-        IUnitOfWorkFactory unitOfWorkFactory
+        IUnitOfWorkFactory unitOfWorkFactory,
+        TimeProvider timeProvider
     )
     {
         _options = options.Value;
         _unitOfWorkFactory = unitOfWorkFactory;
+        _timeProvider = timeProvider;
 
         var schema = storageOptions.Value.Schema;
         var table = PostgreSqlFencingSchema.QualifiedTable(schema);
@@ -573,40 +573,46 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
 
     #region Helpers
 
-    private async ValueTask<T> _RunAutonomousAsync<T>(
+    private ValueTask<T> _RunAutonomousAsync<T>(
         Func<NpgsqlConnection, NpgsqlTransaction, CancellationToken, Task<T>> body,
         CancellationToken cancellationToken
     )
     {
-        for (var attempt = 1; ; attempt++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            try
-            {
-                await using var connection = _options.CreateConnection();
-                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-                // Explicit so the verb runs at READ COMMITTED even when the server's default isolation level is
-                // stricter: a stricter level turns a lost insert race or a lock wait into a serialization failure.
-                await using var transaction = await connection
-                    .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
-                    .ConfigureAwait(false);
-
-                var result = await body(connection, transaction, cancellationToken).ConfigureAwait(false);
-
-                // The statement already decided and the result describes it; a late cancel must not roll back a
-                // write the caller is about to be told happened.
-                await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
-
-                return result;
-            }
-            catch (PostgresException ex) when (_IsRetryable(ex) && attempt < _MaxAttempts)
-            {
-                // The victim's transaction is already rolled back and disposed above; the next attempt starts clean.
-            }
-        }
+        // Each attempt opens its own connection and transaction, so the victim's rolled-back transaction is
+        // already disposed and the retry starts clean.
+        return TransientRetry.RunAsync(
+            ct => _RunOnceAsync(body, ct),
+            static ex => ex is PostgresException provider && _IsRetryable(provider),
+            _timeProvider,
+            cancellationToken
+        );
     }
 
+    private async ValueTask<T> _RunOnceAsync<T>(
+        Func<NpgsqlConnection, NpgsqlTransaction, CancellationToken, Task<T>> body,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = _options.CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        // Explicit so the verb runs at READ COMMITTED even when the server's default isolation level is
+        // stricter: a stricter level turns a lost insert race or a lock wait into a serialization failure.
+        await using var transaction = await connection
+            .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+            .ConfigureAwait(false);
+
+        var result = await body(connection, transaction, cancellationToken).ConfigureAwait(false);
+
+        // The statement already decided and the result describes it; a late cancel must not roll back a
+        // write the caller is about to be told happened.
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+
+        return result;
+    }
+
+    // A deadlock or serialization failure is the one failure a fresh transaction can clear on its own. Only
+    // autonomous calls retry: an enlisted call's failure has already rolled back the caller's transaction, so only
+    // the unit's owner can decide whether to run it again.
     private static bool _IsRetryable(PostgresException ex)
     {
         return string.Equals(ex.SqlState, SqlErrorCodes.PostgreSql.DeadlockDetected, StringComparison.Ordinal)

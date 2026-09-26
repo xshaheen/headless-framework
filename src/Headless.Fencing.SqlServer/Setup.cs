@@ -136,6 +136,8 @@ public static class SetupFencingSqlServer
             services.AddSqlServerUnitOfWork();
 
             services.AddInitializerHostedService<SqlServerFencingStorageInitializer>();
+            // The store waits between deadlock retries on this clock.
+            services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<ILeaseStore, SqlServerLeaseStore>();
         }
     }

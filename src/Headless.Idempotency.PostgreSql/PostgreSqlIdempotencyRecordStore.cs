@@ -4,6 +4,7 @@ using System.Data;
 using System.Data.Common;
 using Headless.Checks;
 using Headless.Constants;
+using Headless.Threading;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -39,11 +40,6 @@ namespace Headless.Idempotency.PostgreSql;
 #pragma warning disable CA2100 // SQL text is built from the validated schema name plus internal object and column constants.
 internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
 {
-    // A deadlock or serialization failure is the one failure a fresh transaction can clear on its own; the first
-    // attempt plus two retries. Only the autonomous renewal and purge retry: an enlisted verb's failure has already
-    // rolled back the caller's transaction, so only the unit's owner can decide whether to run it again.
-    private const int _MaxAttempts = 3;
-
     // A lost insert race means another transaction committed the row between the insert and the locking read, so the
     // next round's insert does nothing and its locking read finds it. Only a row purged again in that window could
     // send the loop round once more.
@@ -55,6 +51,7 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
 
     private readonly PostgreSqlIdempotencyOptions _options;
     private readonly IUnitOfWorkFactory _unitOfWorkFactory;
+    private readonly TimeProvider _timeProvider;
     private readonly string _lockOrInsertSql;
     private readonly string _lockSql;
     private readonly string _admitSql;
@@ -67,11 +64,13 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
     public PostgreSqlIdempotencyRecordStore(
         IOptions<PostgreSqlIdempotencyOptions> options,
         IOptions<IdempotencyStorageOptions> storageOptions,
-        IUnitOfWorkFactory unitOfWorkFactory
+        IUnitOfWorkFactory unitOfWorkFactory,
+        TimeProvider timeProvider
     )
     {
         _options = options.Value;
         _unitOfWorkFactory = unitOfWorkFactory;
+        _timeProvider = timeProvider;
 
         var schema = storageOptions.Value.Schema;
         var table = PostgreSqlIdempotencySchema.QualifiedTable(schema);
@@ -497,39 +496,45 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
     /// Runs <paramref name="work" /> in a fresh READ COMMITTED transaction on the provider's own connection and commits
     /// it, retrying a deadlock or serialization failure in a new transaction.
     /// </summary>
-    private async ValueTask<T> _RunAutonomousAsync<T>(
+    private ValueTask<T> _RunAutonomousAsync<T>(
         Func<NpgsqlConnection, NpgsqlTransaction, CancellationToken, Task<T>> work,
         CancellationToken cancellationToken
     )
     {
-        for (var attempt = 1; ; attempt++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            try
-            {
-                await using var connection = _options.CreateConnection();
-                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-                // Explicit so the call runs at READ COMMITTED even when the server's default isolation level is
-                // stricter, where a skipped or concurrently changed row would surface as a serialization failure.
-                await using var transaction = await connection
-                    .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
-                    .ConfigureAwait(false);
-
-                var result = await work(connection, transaction, cancellationToken).ConfigureAwait(false);
-
-                // The write already happened and the result describes it; a late cancel must not roll it back.
-                await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
-
-                return result;
-            }
-            catch (PostgresException ex) when (_IsRetryable(ex) && attempt < _MaxAttempts)
-            {
-                // The victim's transaction is already rolled back and disposed above; the next attempt starts clean.
-            }
-        }
+        // Each attempt opens its own connection and transaction, so the victim's rolled-back transaction is
+        // already disposed and the retry starts clean.
+        return TransientRetry.RunAsync(
+            ct => _RunOnceAsync(work, ct),
+            static ex => ex is PostgresException provider && _IsRetryable(provider),
+            _timeProvider,
+            cancellationToken
+        );
     }
 
+    private async ValueTask<T> _RunOnceAsync<T>(
+        Func<NpgsqlConnection, NpgsqlTransaction, CancellationToken, Task<T>> work,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = _options.CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        // Explicit so the call runs at READ COMMITTED even when the server's default isolation level is
+        // stricter, where a skipped or concurrently changed row would surface as a serialization failure.
+        await using var transaction = await connection
+            .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+            .ConfigureAwait(false);
+
+        var result = await work(connection, transaction, cancellationToken).ConfigureAwait(false);
+
+        // The write already happened and the result describes it; a late cancel must not roll it back.
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+
+        return result;
+    }
+
+    // A deadlock or serialization failure is the one failure a fresh transaction can clear on its own. Only
+    // autonomous calls retry: an enlisted call's failure has already rolled back the caller's transaction, so only
+    // the unit's owner can decide whether to run it again.
     private static bool _IsRetryable(PostgresException ex)
     {
         return string.Equals(ex.SqlState, SqlErrorCodes.PostgreSql.DeadlockDetected, StringComparison.Ordinal)

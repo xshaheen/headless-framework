@@ -136,6 +136,8 @@ public static class SetupFencingPostgreSql
             services.AddPostgreSqlUnitOfWork();
 
             services.AddInitializerHostedService<PostgreSqlFencingStorageInitializer>();
+            // The store waits between deadlock retries on this clock.
+            services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<ILeaseStore, PostgreSqlLeaseStore>();
         }
     }
