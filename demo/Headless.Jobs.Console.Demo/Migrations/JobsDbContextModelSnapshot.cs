@@ -8,434 +8,433 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace Headless.Jobs.Console.Demo.Migrations
+namespace Headless.Jobs.Console.Demo.Migrations;
+
+[DbContext(typeof(JobsDbContext))]
+partial class JobsDbContextModelSnapshot : ModelSnapshot
 {
-    [DbContext(typeof(JobsDbContext))]
-    partial class JobsDbContextModelSnapshot : ModelSnapshot
+    protected override void BuildModel(ModelBuilder modelBuilder)
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
-        {
 #pragma warning disable 612, 618
-            modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.12")
-                .HasAnnotation("Relational:MaxIdentifierLength", 63);
-
-            NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
-
-            modelBuilder.Entity("Headless.Jobs.Entities.CronJobEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("CausationId")
-                        .HasColumnType("text");
-
-                    b.Property<string>("ContractVersion")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .UseCollation("C");
+        modelBuilder
+            .HasAnnotation("ProductVersion", "10.0.12")
+            .HasAnnotation("Relational:MaxIdentifierLength", 63);
+
+        NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+
+        modelBuilder.Entity("Headless.Jobs.Entities.CronJobEntity", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("CausationId")
+                    .HasColumnType("text");
+
+                b.Property<string>("ContractVersion")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("character varying(100)")
+                    .UseCollation("C");
 
-                    b.Property<string>("CorrelationId")
-                        .HasColumnType("text");
+                b.Property<string>("CorrelationId")
+                    .HasColumnType("text");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("Description")
-                        .HasColumnType("text");
+                b.Property<string>("Description")
+                    .HasColumnType("text");
 
-                    b.Property<string>("EvaluationFingerprint")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
+                b.Property<string>("EvaluationFingerprint")
+                    .HasMaxLength(128)
+                    .HasColumnType("character varying(128)");
 
-                    b.Property<string>("Expression")
-                        .IsRequired()
-                        .HasColumnType("text");
+                b.Property<string>("Expression")
+                    .IsRequired()
+                    .HasColumnType("text");
 
-                    b.Property<int>("FingerprintFailureCount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0);
+                b.Property<int>("FingerprintFailureCount")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer")
+                    .HasDefaultValue(0);
 
-                    b.Property<DateTime?>("FingerprintRetryAfterUtc")
-                        .HasColumnType("timestamp with time zone");
+                b.Property<DateTime?>("FingerprintRetryAfterUtc")
+                    .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("Function")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .UseCollation("C");
+                b.Property<string>("Function")
+                    .IsRequired()
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)")
+                    .UseCollation("C");
 
-                    b.Property<string>("InitIdentifier")
-                        .HasColumnType("text");
+                b.Property<string>("InitIdentifier")
+                    .HasColumnType("text");
 
-                    b.Property<bool>("IsPaused")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false);
+                b.Property<bool>("IsPaused")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("boolean")
+                    .HasDefaultValue(false);
 
-                    b.Property<int>("MissedRunGraceSeconds")
-                        .HasColumnType("integer");
+                b.Property<int>("MissedRunGraceSeconds")
+                    .HasColumnType("integer");
 
-                    b.Property<DateTime>("NextDueUtc")
-                        .HasColumnType("timestamp with time zone");
+                b.Property<DateTime>("NextDueUtc")
+                    .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("OnMissedRun")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasDefaultValue("Coalesce");
+                b.Property<string>("OnMissedRun")
+                    .IsRequired()
+                    .ValueGeneratedOnAdd()
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)")
+                    .HasDefaultValue("Coalesce");
 
-                    b.Property<string>("OnNodeDeath")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
+                b.Property<string>("OnNodeDeath")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
 
-                    b.Property<string>("OnOverlap")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasDefaultValue("Allow");
+                b.Property<string>("OnOverlap")
+                    .IsRequired()
+                    .ValueGeneratedOnAdd()
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)")
+                    .HasDefaultValue("Allow");
 
-                    b.Property<DateTime>("ReconciledThroughUtc")
-                        .HasColumnType("timestamp with time zone");
+                b.Property<DateTime>("ReconciledThroughUtc")
+                    .HasColumnType("timestamp with time zone");
 
-                    b.Property<byte[]>("Request")
-                        .HasColumnType("bytea");
+                b.Property<byte[]>("Request")
+                    .HasColumnType("bytea");
 
-                    b.Property<int>("Retries")
-                        .HasColumnType("integer");
+                b.Property<int>("Retries")
+                    .HasColumnType("integer");
 
-                    b.PrimitiveCollection<int[]>("RetryIntervals")
-                        .HasColumnType("integer[]");
+                b.PrimitiveCollection<int[]>("RetryIntervals")
+                    .HasColumnType("integer[]");
 
-                    b.Property<long>("ScheduleRevision")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasDefaultValue(0L);
+                b.Property<long>("ScheduleRevision")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("bigint")
+                    .HasDefaultValue(0L);
 
-                    b.Property<string>("TenantId")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
+                b.Property<string>("TenantId")
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)");
 
-                    b.Property<string>("TimeZoneId")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
+                b.Property<string>("TimeZoneId")
+                    .HasMaxLength(128)
+                    .HasColumnType("character varying(128)");
 
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
 
-                    b.HasKey("Id");
+                b.HasKey("Id");
 
-                    b.HasIndex("EvaluationFingerprint")
-                        .HasDatabaseName("IX_CronJobs_EvaluationFingerprint");
+                b.HasIndex("EvaluationFingerprint")
+                    .HasDatabaseName("IX_CronJobs_EvaluationFingerprint");
 
-                    b.HasIndex("Expression")
-                        .HasDatabaseName("IX_CronJobs_Expression");
+                b.HasIndex("Expression")
+                    .HasDatabaseName("IX_CronJobs_Expression");
 
-                    b.HasIndex("FingerprintRetryAfterUtc", "Id")
-                        .HasDatabaseName("IX_CronJobs_FingerprintRetryAfterUtc_Id");
+                b.HasIndex("FingerprintRetryAfterUtc", "Id")
+                    .HasDatabaseName("IX_CronJobs_FingerprintRetryAfterUtc_Id");
 
-                    b.HasIndex("Function", "Expression")
-                        .HasDatabaseName("IX_Function_Expression");
+                b.HasIndex("Function", "Expression")
+                    .HasDatabaseName("IX_Function_Expression");
 
-                    b.HasIndex("IsPaused", "NextDueUtc")
-                        .HasDatabaseName("IX_CronJobs_IsPaused_NextDueUtc");
+                b.HasIndex("IsPaused", "NextDueUtc")
+                    .HasDatabaseName("IX_CronJobs_IsPaused_NextDueUtc");
 
-                    b.ToTable("CronJobs", "jobs");
-                });
+                b.ToTable("CronJobs", "jobs");
+            });
 
-            modelBuilder.Entity("Headless.Jobs.Entities.CronJobOccurrenceEntity<Headless.Jobs.Entities.CronJobEntity>", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
+        modelBuilder.Entity("Headless.Jobs.Entities.CronJobOccurrenceEntity<Headless.Jobs.Entities.CronJobEntity>", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid");
 
-                    b.Property<string>("CausationId")
-                        .HasColumnType("text");
+                b.Property<string>("CausationId")
+                    .HasColumnType("text");
 
-                    b.Property<string>("ContractVersion")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .UseCollation("C");
+                b.Property<string>("ContractVersion")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("character varying(100)")
+                    .UseCollation("C");
 
-                    b.Property<string>("CorrelationId")
-                        .HasColumnType("text");
+                b.Property<string>("CorrelationId")
+                    .HasColumnType("text");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid>("CronJobId")
-                        .HasColumnType("uuid");
+                b.Property<Guid>("CronJobId")
+                    .HasColumnType("uuid");
 
-                    b.Property<string>("Disposition")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
+                b.Property<string>("Disposition")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
 
-                    b.Property<long>("ElapsedTime")
-                        .HasColumnType("bigint");
+                b.Property<long>("ElapsedTime")
+                    .HasColumnType("bigint");
 
-                    b.Property<string>("ExceptionMessage")
-                        .HasColumnType("text");
+                b.Property<string>("ExceptionMessage")
+                    .HasColumnType("text");
 
-                    b.Property<DateTimeOffset?>("ExecutedAt")
-                        .HasColumnType("timestamp with time zone");
+                b.Property<DateTimeOffset?>("ExecutedAt")
+                    .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTime>("ExecutionTime")
-                        .HasColumnType("timestamp with time zone");
+                b.Property<DateTime>("ExecutionTime")
+                    .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("Function")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .UseCollation("C");
+                b.Property<string>("Function")
+                    .IsRequired()
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)")
+                    .UseCollation("C");
 
-                    b.Property<DateTime?>("LockedUntil")
-                        .HasColumnType("timestamp with time zone");
+                b.Property<DateTime?>("LockedUntil")
+                    .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("OnNodeDeath")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
+                b.Property<string>("OnNodeDeath")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
 
-                    b.Property<string>("OwnerId")
-                        .HasColumnType("text");
+                b.Property<string>("OwnerId")
+                    .HasColumnType("text");
 
-                    b.Property<DateTime?>("RecoveredFromUtc")
-                        .HasColumnType("timestamp with time zone");
+                b.Property<DateTime?>("RecoveredFromUtc")
+                    .HasColumnType("timestamp with time zone");
 
-                    b.Property<byte[]>("Request")
-                        .HasColumnType("bytea");
+                b.Property<byte[]>("Request")
+                    .HasColumnType("bytea");
 
-                    b.Property<int>("RetryCount")
-                        .HasColumnType("integer");
+                b.Property<int>("RetryCount")
+                    .HasColumnType("integer");
 
-                    b.Property<string>("SkippedReason")
-                        .HasColumnType("text");
+                b.Property<string>("SkippedReason")
+                    .HasColumnType("text");
 
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
+                b.Property<string>("Status")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
 
-                    b.Property<string>("TenantId")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
+                b.Property<string>("TenantId")
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)");
 
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
 
-                    b.HasKey("Id");
+                b.HasKey("Id");
 
-                    b.HasIndex("CronJobId")
-                        .HasDatabaseName("IX_CronJobOccurrence_CronJobId");
+                b.HasIndex("CronJobId")
+                    .HasDatabaseName("IX_CronJobOccurrence_CronJobId");
 
-                    b.HasIndex("ExecutionTime")
-                        .HasDatabaseName("IX_CronJobOccurrence_ExecutionTime");
+                b.HasIndex("ExecutionTime")
+                    .HasDatabaseName("IX_CronJobOccurrence_ExecutionTime");
 
-                    b.HasIndex("CronJobId", "ExecutionTime")
-                        .IsUnique()
-                        .HasDatabaseName("UQ_CronJobId_ExecutionTime")
-                        .HasFilter("\"Status\" IN ('Idle', 'Queued', 'InProgress')");
+                b.HasIndex("CronJobId", "ExecutionTime")
+                    .IsUnique()
+                    .HasDatabaseName("UQ_CronJobId_ExecutionTime")
+                    .HasFilter("\"Status\" IN ('Idle', 'Queued', 'InProgress')");
 
-                    b.HasIndex("OwnerId", "Status")
-                        .HasDatabaseName("IX_CronJobOccurrence_OwnerId_Status");
+                b.HasIndex("OwnerId", "Status")
+                    .HasDatabaseName("IX_CronJobOccurrence_OwnerId_Status");
 
-                    b.HasIndex("Status", "ExecutionTime")
-                        .HasDatabaseName("IX_CronJobOccurrence_Status_ExecutionTime");
+                b.HasIndex("Status", "ExecutionTime")
+                    .HasDatabaseName("IX_CronJobOccurrence_Status_ExecutionTime");
 
-                    b.HasIndex("Status", "LockedUntil")
-                        .HasDatabaseName("IX_CronJobOccurrence_Status_LockedUntil");
+                b.HasIndex("Status", "LockedUntil")
+                    .HasDatabaseName("IX_CronJobOccurrence_Status_LockedUntil");
 
-                    b.ToTable("CronJobOccurrences", "jobs");
-                });
+                b.ToTable("CronJobOccurrences", "jobs");
+            });
 
-            modelBuilder.Entity("Headless.Jobs.Entities.TimeJobEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+        modelBuilder.Entity("Headless.Jobs.Entities.TimeJobEntity", b =>
+            {
+                b.Property<Guid>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("uuid");
 
-                    b.Property<string>("BusinessKey")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .UseCollation("C");
+                b.Property<string>("BusinessKey")
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)")
+                    .UseCollation("C");
 
-                    b.Property<bool>("CancelRequested")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false);
+                b.Property<bool>("CancelRequested")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("boolean")
+                    .HasDefaultValue(false);
 
-                    b.Property<string>("CausationId")
-                        .HasColumnType("text");
+                b.Property<string>("CausationId")
+                    .HasColumnType("text");
 
-                    b.Property<string>("ContractVersion")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .UseCollation("C");
+                b.Property<string>("ContractVersion")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("character varying(100)")
+                    .UseCollation("C");
 
-                    b.Property<string>("CorrelationId")
-                        .HasColumnType("text");
+                b.Property<string>("CorrelationId")
+                    .HasColumnType("text");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("Description")
-                        .HasColumnType("text");
+                b.Property<string>("Description")
+                    .HasColumnType("text");
 
-                    b.Property<long>("ElapsedTime")
-                        .HasColumnType("bigint");
+                b.Property<long>("ElapsedTime")
+                    .HasColumnType("bigint");
 
-                    b.Property<string>("ExceptionMessage")
-                        .HasColumnType("text");
+                b.Property<string>("ExceptionMessage")
+                    .HasColumnType("text");
 
-                    b.Property<DateTimeOffset?>("ExecutedAt")
-                        .HasColumnType("timestamp with time zone");
+                b.Property<DateTimeOffset?>("ExecutedAt")
+                    .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTime?>("ExecutionTime")
-                        .HasColumnType("timestamp with time zone");
+                b.Property<DateTime?>("ExecutionTime")
+                    .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("FingerprintAlgorithm")
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
+                b.Property<string>("FingerprintAlgorithm")
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
 
-                    b.Property<string>("Function")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .UseCollation("C");
+                b.Property<string>("Function")
+                    .IsRequired()
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)")
+                    .UseCollation("C");
 
-                    b.Property<long?>("Generation")
-                        .HasColumnType("bigint");
+                b.Property<long?>("Generation")
+                    .HasColumnType("bigint");
 
-                    b.Property<string>("InitIdentifier")
-                        .HasColumnType("text");
+                b.Property<string>("InitIdentifier")
+                    .HasColumnType("text");
 
-                    b.Property<string>("IntentFingerprint")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                b.Property<string>("IntentFingerprint")
+                    .HasMaxLength(64)
+                    .HasColumnType("character varying(64)");
 
-                    b.Property<bool?>("IsCurrentGeneration")
-                        .HasColumnType("boolean");
+                b.Property<bool?>("IsCurrentGeneration")
+                    .HasColumnType("boolean");
 
-                    b.Property<DateTime?>("LockedUntil")
-                        .HasColumnType("timestamp with time zone");
+                b.Property<DateTime?>("LockedUntil")
+                    .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("OnNodeDeath")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
+                b.Property<string>("OnNodeDeath")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
 
-                    b.Property<string>("OwnerId")
-                        .HasColumnType("text");
+                b.Property<string>("OwnerId")
+                    .HasColumnType("text");
 
-                    b.Property<Guid?>("ParentId")
-                        .HasColumnType("uuid");
+                b.Property<Guid?>("ParentId")
+                    .HasColumnType("uuid");
 
-                    b.Property<byte[]>("Request")
-                        .HasColumnType("bytea");
+                b.Property<byte[]>("Request")
+                    .HasColumnType("bytea");
 
-                    b.Property<int>("Retries")
-                        .HasColumnType("integer");
+                b.Property<int>("Retries")
+                    .HasColumnType("integer");
 
-                    b.Property<int>("RetryCount")
-                        .HasColumnType("integer");
+                b.Property<int>("RetryCount")
+                    .HasColumnType("integer");
 
-                    b.PrimitiveCollection<int[]>("RetryIntervals")
-                        .HasColumnType("integer[]");
+                b.PrimitiveCollection<int[]>("RetryIntervals")
+                    .HasColumnType("integer[]");
 
-                    b.Property<string>("RunCondition")
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
+                b.Property<string>("RunCondition")
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
 
-                    b.Property<string>("SkippedReason")
-                        .HasColumnType("text");
+                b.Property<string>("SkippedReason")
+                    .HasColumnType("text");
 
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
+                b.Property<string>("Status")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
 
-                    b.Property<string>("TenantId")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .UseCollation("C");
+                b.Property<string>("TenantId")
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)")
+                    .UseCollation("C");
 
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
 
-                    b.HasKey("Id");
+                b.HasKey("Id");
 
-                    b.HasIndex("ExecutionTime")
-                        .HasDatabaseName("IX_TimeJob_ExecutionTime");
+                b.HasIndex("ExecutionTime")
+                    .HasDatabaseName("IX_TimeJob_ExecutionTime");
 
-                    b.HasIndex("ParentId");
+                b.HasIndex("ParentId");
 
-                    b.HasIndex("OwnerId", "Status")
-                        .HasDatabaseName("IX_TimeJob_OwnerId_Status");
+                b.HasIndex("OwnerId", "Status")
+                    .HasDatabaseName("IX_TimeJob_OwnerId_Status");
 
-                    b.HasIndex("Status", "ExecutionTime")
-                        .HasDatabaseName("IX_TimeJob_Status_ExecutionTime");
+                b.HasIndex("Status", "ExecutionTime")
+                    .HasDatabaseName("IX_TimeJob_Status_ExecutionTime");
 
-                    b.HasIndex("Status", "LockedUntil")
-                        .HasDatabaseName("IX_TimeJob_Status_LockedUntil");
+                b.HasIndex("Status", "LockedUntil")
+                    .HasDatabaseName("IX_TimeJob_Status_LockedUntil");
 
-                    b.HasIndex("TenantId", "Status", "ExecutionTime")
-                        .HasDatabaseName("IX_TimeJob_TenantId_Status_ExecutionTime");
+                b.HasIndex("TenantId", "Status", "ExecutionTime")
+                    .HasDatabaseName("IX_TimeJob_TenantId_Status_ExecutionTime");
 
-                    b.HasIndex(new[] { "Function", "BusinessKey" }, "UX_TimeJobs_CurrentKey_System")
-                        .IsUnique()
-                        .HasFilter("\"BusinessKey\" IS NOT NULL AND \"TenantId\" IS NULL AND \"IsCurrentGeneration\" = TRUE");
+                b.HasIndex(new[] { "Function", "BusinessKey" }, "UX_TimeJobs_CurrentKey_System")
+                    .IsUnique()
+                    .HasFilter("\"BusinessKey\" IS NOT NULL AND \"TenantId\" IS NULL AND \"IsCurrentGeneration\" = TRUE");
 
-                    b.HasIndex(new[] { "TenantId", "Function", "BusinessKey" }, "UX_TimeJobs_CurrentKey_Tenant")
-                        .IsUnique()
-                        .HasFilter("\"BusinessKey\" IS NOT NULL AND \"TenantId\" IS NOT NULL AND \"IsCurrentGeneration\" = TRUE");
+                b.HasIndex(new[] { "TenantId", "Function", "BusinessKey" }, "UX_TimeJobs_CurrentKey_Tenant")
+                    .IsUnique()
+                    .HasFilter("\"BusinessKey\" IS NOT NULL AND \"TenantId\" IS NOT NULL AND \"IsCurrentGeneration\" = TRUE");
 
-                    b.HasIndex(new[] { "Function", "BusinessKey", "Generation" }, "UX_TimeJobs_KeyGeneration_System")
-                        .IsUnique()
-                        .HasFilter("\"BusinessKey\" IS NOT NULL AND \"TenantId\" IS NULL");
+                b.HasIndex(new[] { "Function", "BusinessKey", "Generation" }, "UX_TimeJobs_KeyGeneration_System")
+                    .IsUnique()
+                    .HasFilter("\"BusinessKey\" IS NOT NULL AND \"TenantId\" IS NULL");
 
-                    b.HasIndex(new[] { "TenantId", "Function", "BusinessKey", "Generation" }, "UX_TimeJobs_KeyGeneration_Tenant")
-                        .IsUnique()
-                        .HasFilter("\"BusinessKey\" IS NOT NULL AND \"TenantId\" IS NOT NULL");
+                b.HasIndex(new[] { "TenantId", "Function", "BusinessKey", "Generation" }, "UX_TimeJobs_KeyGeneration_Tenant")
+                    .IsUnique()
+                    .HasFilter("\"BusinessKey\" IS NOT NULL AND \"TenantId\" IS NOT NULL");
 
-                    b.ToTable("TimeJobs", "jobs", t =>
-                        {
-                            t.HasCheckConstraint("CK_TimeJobs_KeyedMetadata", "(\"BusinessKey\" IS NULL AND \"IntentFingerprint\" IS NULL AND \"FingerprintAlgorithm\" IS NULL AND \"Generation\" IS NULL AND \"IsCurrentGeneration\" IS NULL) OR (\"BusinessKey\" IS NOT NULL AND \"BusinessKey\" <> '' AND \"IntentFingerprint\" IS NOT NULL AND \"IntentFingerprint\" <> '' AND \"FingerprintAlgorithm\" IS NOT NULL AND \"FingerprintAlgorithm\" <> '' AND \"Generation\" IS NOT NULL AND \"Generation\" > 0 AND \"IsCurrentGeneration\" IS NOT NULL AND \"ParentId\" IS NULL AND \"RunCondition\" IS NULL)");
-                        });
-                });
+                b.ToTable("TimeJobs", "jobs", t =>
+                    {
+                        t.HasCheckConstraint("CK_TimeJobs_KeyedMetadata", "(\"BusinessKey\" IS NULL AND \"IntentFingerprint\" IS NULL AND \"FingerprintAlgorithm\" IS NULL AND \"Generation\" IS NULL AND \"IsCurrentGeneration\" IS NULL) OR (\"BusinessKey\" IS NOT NULL AND \"BusinessKey\" <> '' AND \"IntentFingerprint\" IS NOT NULL AND \"IntentFingerprint\" <> '' AND \"FingerprintAlgorithm\" IS NOT NULL AND \"FingerprintAlgorithm\" <> '' AND \"Generation\" IS NOT NULL AND \"Generation\" > 0 AND \"IsCurrentGeneration\" IS NOT NULL AND \"ParentId\" IS NULL AND \"RunCondition\" IS NULL)");
+                    });
+            });
 
-            modelBuilder.Entity("Headless.Jobs.Entities.CronJobOccurrenceEntity<Headless.Jobs.Entities.CronJobEntity>", b =>
-                {
-                    b.HasOne("Headless.Jobs.Entities.CronJobEntity", "CronJob")
-                        .WithMany()
-                        .HasForeignKey("CronJobId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+        modelBuilder.Entity("Headless.Jobs.Entities.CronJobOccurrenceEntity<Headless.Jobs.Entities.CronJobEntity>", b =>
+            {
+                b.HasOne("Headless.Jobs.Entities.CronJobEntity", "CronJob")
+                    .WithMany()
+                    .HasForeignKey("CronJobId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
 
-                    b.Navigation("CronJob");
-                });
+                b.Navigation("CronJob");
+            });
 
-            modelBuilder.Entity("Headless.Jobs.Entities.TimeJobEntity", b =>
-                {
-                    b.HasOne("Headless.Jobs.Entities.TimeJobEntity", "Parent")
-                        .WithMany("Children")
-                        .HasForeignKey("ParentId")
-                        .OnDelete(DeleteBehavior.NoAction);
+        modelBuilder.Entity("Headless.Jobs.Entities.TimeJobEntity", b =>
+            {
+                b.HasOne("Headless.Jobs.Entities.TimeJobEntity", "Parent")
+                    .WithMany("Children")
+                    .HasForeignKey("ParentId")
+                    .OnDelete(DeleteBehavior.NoAction);
 
-                    b.Navigation("Parent");
-                });
+                b.Navigation("Parent");
+            });
 
-            modelBuilder.Entity("Headless.Jobs.Entities.TimeJobEntity", b =>
-                {
-                    b.Navigation("Children");
-                });
+        modelBuilder.Entity("Headless.Jobs.Entities.TimeJobEntity", b =>
+            {
+                b.Navigation("Children");
+            });
 #pragma warning restore 612, 618
-        }
     }
 }
