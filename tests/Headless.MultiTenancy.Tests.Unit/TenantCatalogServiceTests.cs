@@ -465,6 +465,105 @@ public sealed class TenantCatalogServiceTests : TestBase
 
     #endregion
 
+    #region Store result verification
+
+    // A store that answers a lookup with a different tenant's row would otherwise have that row cached under the
+    // queried key, routing every later request for that identifier or id to the wrong tenant until expiry. The
+    // service treats the mismatch as a store fault: it propagates, and nothing reaches either cache.
+
+    [Fact]
+    public async Task should_throw_and_cache_nothing_when_the_store_answers_an_identifier_with_another_tenant()
+    {
+        // given
+        _store
+            .FindByIdentifierAsync("acme", AbortToken)
+            .Returns(new TenantInfo("ten_2", "other", "Other", isEnabled: true));
+
+        // when
+        var act = () => _sut.ResolveAsync("acme", AbortToken);
+
+        // then
+        var thrown = await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*identifier*");
+        thrown.Which.Message.Should().NotContain("acme").And.NotContain("other");
+        _writtenIdentifierEntry.Should().BeNull();
+        await _infoCache.DidNotReceiveWithAnyArgs().UpsertAsync(default!, default!, default, default);
+    }
+
+    [Fact]
+    public async Task should_throw_and_cache_nothing_on_an_identifier_mismatch_when_negative_caching_is_disabled()
+    {
+        // given
+        _options.UnknownIdentifierCacheExpiration = TimeSpan.Zero;
+        _store
+            .FindByIdentifierAsync("acme", AbortToken)
+            .Returns(new TenantInfo("ten_2", "other", "Other", isEnabled: true));
+
+        // when
+        var act = () => _sut.ResolveAsync("acme", AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*identifier*");
+        await _identifierCache.DidNotReceiveWithAnyArgs().UpsertAsync(default!, default!, default, default);
+        await _infoCache.DidNotReceiveWithAnyArgs().UpsertAsync(default!, default!, default, default);
+    }
+
+    [Fact]
+    public async Task should_throw_and_cache_nothing_on_an_identifier_mismatch_after_a_cache_read_fault()
+    {
+        // given — the read side faults, so the service falls through to the store outside the factory
+        _identifierCache
+            .GetOrAddAsync(
+                Arg.Any<string>(),
+                _AnyIdentifierFactory(),
+                _ExpectedEntryOptions,
+                Arg.Any<CancellationToken>()
+            )
+            .ThrowsAsync(new InvalidOperationException("cache down"));
+        _store
+            .FindByIdentifierAsync("acme", AbortToken)
+            .Returns(new TenantInfo("ten_2", "other", "Other", isEnabled: true));
+
+        // when
+        var act = () => _sut.ResolveAsync("acme", AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*identifier*");
+        await _identifierCache.DidNotReceiveWithAnyArgs().UpsertAsync(default!, default!, default, default);
+        await _infoCache.DidNotReceiveWithAnyArgs().UpsertAsync(default!, default!, default, default);
+    }
+
+    [Fact]
+    public async Task should_throw_and_cache_nothing_when_the_store_answers_an_id_with_another_tenant()
+    {
+        // given
+        _store.FindByIdAsync("ten_1", AbortToken).Returns(new TenantInfo("ten_2", "other", "Other", isEnabled: true));
+
+        // when
+        var act = () => _sut.FindByIdAsync("ten_1", AbortToken);
+
+        // then
+        var thrown = await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*id*");
+        thrown.Which.Message.Should().NotContain("ten_1").And.NotContain("ten_2");
+        await _infoCache.DidNotReceiveWithAnyArgs().UpsertAsync(default!, default!, default, default);
+    }
+
+    [Fact]
+    public async Task should_throw_when_the_store_answers_a_cached_identifier_mapping_with_another_tenant()
+    {
+        // given — the identifier axis hits and chains into a cold id axis
+        _ArrangeIdentifierCacheHit(new TenantIdentifierCacheItem("ten_1"));
+        _store.FindByIdAsync("ten_1", AbortToken).Returns(new TenantInfo("ten_2", "acme", "Acme", isEnabled: true));
+
+        // when
+        var act = () => _sut.ResolveAsync("acme", AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        await _infoCache.DidNotReceiveWithAnyArgs().UpsertAsync(default!, default!, default, default);
+    }
+
+    #endregion
+
     #region Cache fault degradation
 
     [Fact]
