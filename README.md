@@ -163,6 +163,8 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Distributed locks | `AddHeadlessDistributedLocks` | `UseInMemory`, `UseRedis`, `UsePostgreSql`, `UseSqlServer` |
 | Node membership | `AddHeadlessCoordination` | `UseRedis`, `UsePostgreSql`, `UseSqlServer` |
 | Sequences | `AddHeadlessSequences` | `UsePostgreSql`, `UseSqlServer` |
+| Fencing (durable leases) | `AddHeadlessFencing` | `UsePostgreSql`, `UseSqlServer` |
+| Idempotency | `AddHeadlessIdempotency` | `UsePostgreSql`, `UseSqlServer` |
 | Feature flags | `AddHeadlessFeatures` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
 | Dynamic settings | `AddHeadlessSettings` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
 | Permissions | `AddHeadlessPermissions` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
@@ -551,6 +553,28 @@ Per-tenant consecutive numbers for receipts, invoices, and case numbers. The fas
 | [Headless.Sequences.Core](src/Headless.Sequences.Core/README.md) | Registration, numbering policies, and tenant key resolution |
 | [Headless.Sequences.PostgreSql](src/Headless.Sequences.PostgreSql/README.md) | PostgreSQL counters with a single upsert-increment |
 | [Headless.Sequences.SqlServer](src/Headless.Sequences.SqlServer/README.md) | SQL Server counters with a range-locked upsert |
+
+### Fencing
+
+Durable, cross-process leases that fence a stale or zombie attempt's writes at the database. Hand a lease's `(resource, generation)` to any executor — in-process, a message consumer, a job, or an external process — and refuse its write once a later grant replaces it.
+
+| Package | Description |
+|---------|-------------|
+| [Headless.Fencing.Abstractions](src/Headless.Fencing.Abstractions/README.md) | `IFencedLeases`, `FencedLease`, and the `unit.Leases` accessor |
+| [Headless.Fencing.Core](src/Headless.Fencing.Core/README.md) | Registration, key resolution, and the expired-lease sweep |
+| [Headless.Fencing.PostgreSql](src/Headless.Fencing.PostgreSql/README.md) | PostgreSQL leases with a `SKIP LOCKED` sweep |
+| [Headless.Fencing.SqlServer](src/Headless.Fencing.SqlServer/README.md) | SQL Server leases with a `READPAST` sweep |
+
+### Idempotency
+
+Durable, tenant-scoped idempotent admission over a fenced lease: admit a key once across processes and replay its stored result on retry, independent of any cache TTL.
+
+| Package | Description |
+|---------|-------------|
+| [Headless.Idempotency.Abstractions](src/Headless.Idempotency.Abstractions/README.md) | `IIdempotentOperations`, `IdempotentAdmission`, and the `unit.Idempotency` accessor |
+| [Headless.Idempotency.Core](src/Headless.Idempotency.Core/README.md) | Registration, admission orchestration, and the retention purge |
+| [Headless.Idempotency.PostgreSql](src/Headless.Idempotency.PostgreSql/README.md) | PostgreSQL idempotency records |
+| [Headless.Idempotency.SqlServer](src/Headless.Idempotency.SqlServer/README.md) | SQL Server idempotency records |
 
 ### Unit of Work
 

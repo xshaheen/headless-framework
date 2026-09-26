@@ -165,7 +165,8 @@ or defaulted Reject outcome.
 
 - "Generation" had been used loosely for both a node's Incarnation and the durable counter that
   issues incarnations — these are distinct: Incarnation is the per-node value, the generation
-  table/counter is the authority.
+  table/counter is the authority. Fencing's Lease generation is a third, unrelated value: the
+  per-attempt number a fenced lease's grant issues, scoped to one leased resource, not one node.
 
 ## Unit of Work
 
@@ -267,6 +268,38 @@ the unit ends, so a rolled-back unit's number is re-issued to the next caller an
 is never skipped. The cost is that every writer of that counter waits for the previous writer's unit.
 Its counterpart, the fast mode through the injected `ISequenceGenerator`, commits the number in its
 own transaction and may leave a gap when the caller rolls back. A name has exactly one mode.
+
+## Fencing
+
+### Fenced lease
+
+A durable database row identified by `(tenant, kind, resource)` that a caller holds by its
+`(resource, Generation)` pair rather than by a live connection or handle. Granting, renewing,
+settling, releasing, and fencing are separate database calls the store answers, so a lease can be
+held by any process — including one with no connection to this framework — and outlives any single
+connection. Distinct from a distributed lock (`Headless.DistributedLocks`), which grants exclusive
+execution to a live in-process handle. *Avoid:* lease (bare) when a distributed lock's TTL lease is
+meant — name the package (`IDistributedLock`) or say "fenced lease" for `IFencedLeases`.
+
+### Lease generation
+
+The monotonic number a fenced lease's grant issues, drawn from one store-wide sequence per lease
+identity so it survives a purge of the row. A caller names its generation on every renew, settle,
+release, or fence call; the store refuses the call once a newer grant replaced it. Distinct from
+Incarnation (Coordination's per-node generation) and from the generation table/counter that issues
+incarnations: a lease generation identifies one attempt at one leased resource, not one run of a node.
+*Avoid:* generation (bare) for any of the three — name which: Incarnation, the incarnation-issuing
+counter, or a lease generation.
+
+## Idempotency
+
+### Idempotent admission
+
+The outcome of admitting a tenant-scoped idempotency key for a versioned request fingerprint:
+`Admitted` (the caller owns the operation under a fenced lease), `InFlight` (a live attempt owns it),
+`Replay` (a completed result is returned), or `Conflict` (the key is stored under a different
+fingerprint or result contract). An admitted operation's lease is granted under the fixed kind
+`headless.idempotency`, with the idempotency key as the lease's resource.
 
 ## Startup validation
 
