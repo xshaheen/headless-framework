@@ -127,15 +127,15 @@ dotnet add package Headless.Api.Abstractions
 Inject `IRequestContext` to access request-scoped information:
 
 ```csharp
-public sealed class OrderService(IRequestContext context)
+public sealed class OrderService(IRequestContext context, IOrderRepository repository)
 {
     public async Task<Order> CreateOrderAsync(CreateOrderRequest request, CancellationToken ct)
     {
-        var userId = context.User.Id;
+        var userId = context.User.UserId;
         var tenantId = context.Tenant.Id;
         var correlationId = context.CorrelationId;
 
-        return await _repository
+        return await repository
             .CreateAsync(
                 new Order
                 {
@@ -214,6 +214,10 @@ Composing primitives without ServiceDefaults:
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+// Clock, build-information, and HTTP-context services the problem-details factory resolves; AddHeadless() registers them.
+builder.Services.AddHeadlessTimeService();
+builder.Services.AddHeadlessHostIdentity();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddHeadlessProblemDetails();
 builder.Services.AddHeadlessApiResponseCompression();
 builder.Services.ConfigureHeadlessDefaultApi(); // Kestrel limits + HSTS + health check + routing
@@ -341,6 +345,7 @@ Ignored identifiers (for example `www`) stay on `TenantCatalogOptions.IgnoredIde
 
 An API surface is a named set of endpoints sharing routing, authorization and tenancy defaults, plus an OpenAPI document. `AddHeadlessApiSurface(name, configure)` runs its optional callback immediately, validates the definition, and registers an immutable descriptor plus a singleton `ApiSurfaceRegistry`. MVC, Minimal API, telemetry, and OpenAPI share these definitions. Configure definitions during registration; the builders do not use the deferred .NET options pipeline. Changes to a retained builder after registration have no effect.
 
+<!-- example: boot -->
 ```csharp
 using Headless.Api;
 using Headless.Api.Surfaces;
@@ -586,6 +591,7 @@ dotnet add package Headless.Api.DataProtection
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+// Resolves the registered IBlobStorage (and IBlobContainerManager, when present); register a blob provider first.
 builder.Services.AddDataProtection()
     .PersistKeysToBlobStorage()
     // Opt-in: probe the key ring at startup so a missing container / bad credentials fails the deploy,
@@ -740,6 +746,10 @@ dotnet add package Headless.Api.Idempotency
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+builder.AddHeadless(); // current user, problem details, and clock services the middleware resolves
+builder.AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims()));
+builder.Services.AddAuthentication(); // add your scheme, such as JWT bearer
+builder.Services.AddAuthorization();
 builder.Services.AddHeadlessCaching(setup => setup.UseInMemory()); // or setup.UseRedis(...)
 builder.Services.AddIdempotency(o =>
 {
@@ -749,12 +759,13 @@ builder.Services.AddIdempotency(o =>
 
 var app = builder.Build();
 
+app.UseHeadless(); // includes UseResponseCompression, which must stay OUTSIDE (before) UseIdempotency
 app.UseAuthentication();
 app.UseHeadlessTenancy(); // tenant must be resolved before idempotency
 app.UseAuthorization();
-app.UseResponseCompression(); // must be OUTSIDE (before) UseIdempotency
 app.UseIdempotency(); // installs response-capture stream; place AFTER auth and tenancy
 
+app.MapHeadlessEndpoints();
 app.MapPost("/disbursements", CreateDisbursement);
 app.Run();
 ```
@@ -824,14 +835,19 @@ dotnet add package Headless.Api.Logging.Serilog
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+builder.AddHeadless(); // registers IRequestContext, which the enrichers read
+
 // Register enrichers
 builder.Services.AddSerilogEnrichers();
 
 var app = builder.Build();
 
+app.UseHeadless();
+
 // Use enrichers middleware (place early in pipeline)
 app.UseSerilogEnrichers();
 
+app.MapHeadlessEndpoints();
 app.Run();
 ```
 
@@ -875,6 +891,9 @@ builder.Services.AddHeadlessMinimalApiEntityTagConcurrency();
 
 var app = builder.Build();
 
+app.UseHeadless();
+app.MapHeadlessEndpoints();
+
 app.MapGet(
     "/orders/{id:guid}",
     async (Guid id, IOrderService service, IProblemDetailsCreator problems, CancellationToken ct) =>
@@ -907,6 +926,7 @@ Endpoint tenancy choices override surface defaults. Native authorization policie
 
 Representation validation is optional. The default accepts any strong entity tag. Configure the shared MVC and Minimal API validator when every conditional write uses a specific representation format:
 
+<!-- example: boot -->
 ```csharp
 builder.Services.AddHeadlessMinimalApiEntityTagConcurrency(options =>
     options.IfMatchValidator = static tag => tag.TryGetUInt32(out _)
@@ -954,6 +974,8 @@ builder.Services.AddHeadlessMvcEntityTagConcurrency();
 
 var app = builder.Build();
 
+app.UseHeadless();
+app.MapHeadlessEndpoints();
 app.MapControllers();
 app.Run();
 ```

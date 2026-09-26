@@ -192,10 +192,10 @@ public sealed class TestFixture : IAsyncLifetime
         App.WaitForReadiness(async sp =>
         {
             var bootstrapper = sp.GetRequiredService<IBootstrapper>();
-            await bootstrapper.WaitUntilStartedAsync();
+            await bootstrapper.BootstrapAsync(); // joins the in-flight startup; returns once it completes
         });
 
-        App.ConfigureDatabaseReset(options => options.ConnectionString = "...");
+        App.ConfigureDatabaseReset(options => options.ConnectionProvider = _ => new NpgsqlConnection("..."));
 
         await App.InitializeAsync();
     }
@@ -248,6 +248,8 @@ Most projects benefit from a thin app-specific wrapper that adds project-shaped 
 #### Resolving `FakeTimeProvider`
 
 `AddTestTimeProvider()` (called internally during host setup) replaces the `TimeProvider` registration with a `FakeTimeProvider`. It registers against the abstract service type only:
+
+<!-- example: fragment -->
 
 ```csharp
 // Correct
