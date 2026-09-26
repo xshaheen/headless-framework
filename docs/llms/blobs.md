@@ -404,8 +404,12 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHeadlessBlobs(blobs =>
     blobs.UseAws(options => { }, awsOptions: builder.Configuration.GetAWSOptions())
 );
+```
 
-// Explicit credentials:
+Pick one shape — `AddHeadlessBlobs` may be called only once per service collection. Explicit credentials:
+
+<!-- example: boot -->
+```csharp
 builder.Services.AddHeadlessBlobs(blobs =>
     blobs.UseAws(
         options => { },
@@ -416,8 +420,12 @@ builder.Services.AddHeadlessBlobs(blobs =>
         }
     )
 );
+```
 
-// Named store with per-store credentials; keyed IPresignedUrlBlobStorage registered automatically.
+Named store with per-store credentials; keyed `IPresignedUrlBlobStorage` registered automatically:
+
+<!-- example: boot -->
+```csharp
 builder.Services.AddHeadlessBlobs(blobs =>
     blobs.AddNamed(
         "archive",
@@ -457,6 +465,7 @@ if (storage is IPresignedUrlBlobStorage presigned)
 
 The container manager is registered like `UseAws`, so `EnsureContainerAsync` creates buckets on MinIO. Presigned URLs keep the endpoint's scheme, so a local `http://` MinIO returns `http://` URLs.
 
+<!-- example: boot -->
 ```csharp
 // Local MinIO (for example the minio/minio container with its default root credentials).
 builder.Services.AddHeadlessBlobs(blobs =>
@@ -467,8 +476,11 @@ builder.Services.AddHeadlessBlobs(blobs =>
         options => options.AllowInsecureHttp = true
     )
 );
+```
 
-// Bind from configuration, and add a named store on a second endpoint.
+Or bind from configuration, and add a named store on a second endpoint (`AddHeadlessBlobs` may be called only once per service collection):
+
+```csharp
 builder.Services.AddHeadlessBlobs(blobs =>
 {
     blobs.UseS3Compatible(builder.Configuration.GetSection("Minio"));
@@ -507,6 +519,7 @@ builder.Services.AddHeadlessBlobs(blobs =>
 
 #### Options
 
+<!-- example: fragment -->
 ```csharp
 options.CannedAcl = S3CannedACL.Private;
 options.UseChunkEncoding = true;
@@ -743,6 +756,7 @@ builder.Services.AddHeadlessBlobs(blobs =>
 
 #### Options
 
+<!-- example: fragment -->
 ```csharp
 options.BaseDirectoryPath = "/path/to/storage"; // required; the root directory for all containers
 ```
@@ -867,7 +881,7 @@ builder.Services.AddHeadlessBlobs(blobs =>
     blobs.UseSsh(options =>
     {
         options.ConnectionString = "sftp://user@sftp.example.com:22/home/user/uploads";
-        options.PrivateKey = File.OpenRead("/path/to/key");
+        options.PrivateKey = System.IO.File.OpenRead("/path/to/key");
         options.PrivateKeyPassPhrase = "optional-passphrase"; // nullable
     })
 );
@@ -897,7 +911,7 @@ dotnet add package Headless.Blobs.SignedUrlEndpoint
 builder.Services.AddHeadlessBlobs(setup =>
 {
     setup.UseFileSystem(options => options.BaseDirectoryPath = "/var/app/blobs");
-    setup.AddNamed("exports", instance => instance.UseRedis(options => { /* ... */ }));
+    setup.AddNamed("exports", instance => instance.UseRedis(options => options.ConnectionMultiplexer = redis));
     setup.UseSignedUrlEndpoint(options => options.BaseUrl = new Uri("https://api.example.com"));
 });
 
