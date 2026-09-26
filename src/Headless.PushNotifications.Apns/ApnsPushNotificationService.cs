@@ -144,19 +144,24 @@ internal sealed class ApnsPushNotificationService(
                     .InvalidateAsync(options, token.Generation, cancellationToken)
                     .ConfigureAwait(false);
 
-                logger.LogProviderTokenExpired(token.Generation, retryToken.Generation);
+                // Inside the 20-minute limit the source hands back the rejected token itself, and APNs would refuse
+                // a byte-identical resend the same way, so the original rejection stands.
+                if (retryToken.Generation != token.Generation)
+                {
+                    logger.LogProviderTokenExpired(token.Generation, retryToken.Generation);
 
-                (status, reason) = await _PostAsync(
-                        client,
-                        options,
-                        deviceToken,
-                        payload,
-                        collapseKey,
-                        apnsId,
-                        retryToken.Value,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
+                    (status, reason) = await _PostAsync(
+                            client,
+                            options,
+                            deviceToken,
+                            payload,
+                            collapseKey,
+                            apnsId,
+                            retryToken.Value,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+                }
             }
 
             var response = ApnsResponseMapper.Map(
