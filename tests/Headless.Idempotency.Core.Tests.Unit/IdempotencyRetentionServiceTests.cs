@@ -23,6 +23,12 @@ public sealed class IdempotencyRetentionServiceTests : TestBase
     private readonly IIdempotencyRecordStore _store = Substitute.For<IIdempotencyRecordStore>();
     private readonly FakeTimeProvider _time = new();
 
+    // Every loop round reads the options first, so a read proves ExecuteAsync is running. BackgroundService starts it
+    // through Task.Run with the stopping token, and a stop that lands before the thread pool picks it up ends
+    // ExecuteTask canceled without the loop ever running, so tests that assert a clean stop wait for this first.
+    private readonly TaskCompletionSource _loopStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _optionReads;
+
     [Fact]
     public async Task should_purge_record_batches_until_one_comes_back_short()
     {
@@ -90,14 +96,13 @@ public sealed class IdempotencyRetentionServiceTests : TestBase
         // given
         using var service = _Service();
         await service.StartAsync(AbortToken);
+        await _loopStarted.Task.WaitAsync(AbortToken);
 
         // when
         await service.StopAsync(AbortToken);
 
-        // then — BackgroundService starts ExecuteAsync through Task.Run with the stopping token, so a stop that lands
-        // before the loop is scheduled ends the task canceled rather than completed; both are a clean stop.
-        service.ExecuteTask!.IsCompleted.Should().BeTrue();
-        service.ExecuteTask.IsFaulted.Should().BeFalse();
+        // then
+        service.ExecuteTask!.IsCompletedSuccessfully.Should().BeTrue();
         _store.ReceivedCalls().Should().BeEmpty();
     }
 
@@ -110,8 +115,7 @@ public sealed class IdempotencyRetentionServiceTests : TestBase
 
         // when
         await service.StartAsync(AbortToken);
-        _time.Advance(TimeSpan.FromDays(1));
-        await Task.Delay(50, AbortToken);
+        await _AdvanceUntilAsync(() => Volatile.Read(ref _optionReads) >= 2);
 
         // then — a disabled purge keeps re-checking on a fixed cadence instead of exiting the hosted service
         _store.ReceivedCalls().Should().BeEmpty();
@@ -138,8 +142,7 @@ public sealed class IdempotencyRetentionServiceTests : TestBase
 
         // when — still disabled: the re-check tick alone must not purge anything
         await service.StartAsync(AbortToken);
-        _time.Advance(TimeSpan.FromDays(1));
-        await Task.Delay(50, AbortToken);
+        await _AdvanceUntilAsync(() => Volatile.Read(ref _optionReads) >= 2);
         _store.ReceivedCalls().Should().BeEmpty("the interval is still null");
 
         // and then the option reloads back to a value on the already-running service
@@ -154,7 +157,12 @@ public sealed class IdempotencyRetentionServiceTests : TestBase
     private IdempotencyRetentionService _Service()
     {
         var monitor = Substitute.For<IOptionsMonitor<IdempotentOperationsOptions>>();
-        monitor.CurrentValue.Returns(_ => _options);
+        monitor.CurrentValue.Returns(_ =>
+        {
+            Interlocked.Increment(ref _optionReads);
+            _loopStarted.TrySetResult();
+            return _options;
+        });
 
         return new IdempotencyRetentionService(
             _store,
@@ -168,9 +176,15 @@ public sealed class IdempotencyRetentionServiceTests : TestBase
     // advances the clock; advancing repeatedly until the expected effect lands avoids racing it.
     private async Task _AdvanceUntilAsync(Task effect)
     {
+        await _AdvanceUntilAsync(() => effect.IsCompleted);
+        await effect;
+    }
+
+    private async Task _AdvanceUntilAsync(Func<bool> reached)
+    {
         var deadline = DateTime.UtcNow.AddSeconds(10);
 
-        while (!effect.IsCompleted)
+        while (!reached())
         {
             if (DateTime.UtcNow > deadline)
             {
@@ -180,7 +194,5 @@ public sealed class IdempotencyRetentionServiceTests : TestBase
             _time.Advance(_Interval);
             await Task.Delay(10, AbortToken);
         }
-
-        await effect;
     }
 }
