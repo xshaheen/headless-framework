@@ -63,6 +63,7 @@ app.UseAuthorization();
 - Raw SQL requires explicit tenant predicates and authorization. `BeginBypass()` has no effect on raw SQL and never removes SQL predicates or database constraints from tracked writes.
 - When using `IgnoreMultiTenancyFilter()`, add an inline `// MULTI-TENANCY-BYPASS: <reason>` comment naming the approved scenario (cross-tenant snapshot, admin lookup, system maintenance, etc.) so reviewers and post-incident readers can distinguish legitimate bypasses from drift.
 - Enable strict EF tenant writes with `.EntityFramework(ef => ef.GuardTenantWrites())` when tenant-owned saves must fail without a matching tenant context.
+- Enable strict EF tenant reads with `.EntityFramework(ef => ef.GuardTenantReads())` when a query over required-tenant rows must fail instead of returning nothing without a tenant. See [EF Tenant Read Guard](#ef-tenant-read-guard).
 - Use `ITenantWriteGuardBypass.BeginBypass()` only around intentional admin or host-level writes. `IgnoreMultiTenancyFilter()` affects reads only; it does not bypass guarded writes.
 - Permission cache scoping depends on `ICurrentTenant.Id`. Host-level operations with no tenant use the shared `t:` scope by design.
 - For background jobs, adopt the Jobs tenancy seam (`.Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue())`) so time jobs capture the ambient tenant at schedule time and restore it around every execution attempt. Cron is always system-scope: fan out one explicit-tenant time job per tenant from application code — see [Background Jobs](#background-jobs).
@@ -609,6 +610,23 @@ using (bypass.BeginBypass())
 `IgnoreMultiTenancyFilter()` is only a read-side query-filter bypass. Loading a row through `IgnoreMultiTenancyFilter()` does not permit cross-tenant updates or deletes when the write guard is enabled; wrap only the intended write in `ITenantWriteGuardBypass.BeginBypass()`.
 
 Write-guard bypass does not remove SQL tenant predicates, required columns, or database constraints, and does not supply a valid original tenant. It has no effect on raw SQL.
+
+### EF Tenant Read Guard
+
+The EF read guard is opt-in and separate from the write guard. Enable it from the root tenancy surface:
+
+```csharp
+builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites().GuardTenantReads()));
+```
+
+Without the guard, a query over a tenant-owned entity with a required tenant column returns no rows when no tenant is resolved. A background job or handler that forgot to set the tenant then looks healthy while reading and bulk-deleting nothing. With `GuardTenantReads()`, the multi-tenancy filter throws `Headless.MultiTenancy.MissingTenantContextException` when such a query executes while `ICurrentTenant.Id` is null or white space. The exception is not wrapped, so it maps to the same normalized HTTP 403 as the write guard.
+
+- **Covered:** every query that applies `HeadlessQueryFilters.MultiTenancyFilter` to an entity whose tenant column is required: materializing queries, `ExecuteUpdate`/`ExecuteDelete`, `Include`, and explicit navigation loads. The check runs each time the query executes, so a query EF already compiled under a tenant still checks the current one.
+- **Required columns only.** Roots declared with `IsTenantOwned()` get a required tenant column; `IMultiTenant` roots keep their own nullability. An entity with a nullable tenant column keeps host-row semantics under the guard: with no tenant it returns rows whose tenant is null. Among the framework's own entities, only tenant-owned Identity (`ConfigureTenantOwnedIdentity`) is affected; permission grants, settings, and features keep nullable tenant columns and keep reading host rows.
+- **Bypass:** `IgnoreMultiTenancyFilter()` removes the filter, and therefore the guard, for one query. Mark it with a `// MULTI-TENANCY-BYPASS: <reason>` comment. `ITenantWriteGuardBypass.BeginBypass()` does not relax reads.
+- **Not covered:** raw SQL (`FromSql`, `ExecuteSql`) and identity-map hits such as `FindAsync` on an already tracked entity. Neither runs the filter.
+
+`GuardTenantReads()` is the only registration API. `TenantReadGuardOptions.IsEnabled` reports the configured state and has no public setter. When the seam records `guard-tenant-reads` but the options resolve to disabled, for example because a later registration replaced `IOptions<TenantReadGuardOptions>`, host startup fails with `HEADLESS_TENANCY_EF_READ_GUARD_DISABLED`.
 
 ## Messaging Exhausted Callbacks
 
