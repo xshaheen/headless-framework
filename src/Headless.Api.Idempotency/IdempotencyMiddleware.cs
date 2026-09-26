@@ -4,52 +4,53 @@ using System.Buffers;
 using System.Security.Cryptography;
 using Headless.Abstractions;
 using Headless.Api.Idempotency.Resources;
-using Headless.Caching;
 using Headless.Constants;
-using Headless.DistributedLocks;
+using Headless.Fencing;
+using Headless.Idempotency;
 using Headless.MultiTenancy;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
 namespace Headless.Api.Idempotency;
 
+/// <summary>
+/// HTTP adapter over durable idempotent admission: admits the request's key, runs the handler behind a renewed
+/// fenced lease, and completes the admission with the captured response (or releases it), so a retry replays the
+/// stored response from any node.
+/// </summary>
 internal sealed partial class IdempotencyMiddleware(
     IOptionsMonitor<IdempotencyOptions> optionsMonitor,
-    ICache cache,
+    IIdempotentOperations operations,
     ICurrentTenant currentTenant,
     ICurrentUser currentUser,
     IProblemDetailsCreator problemDetailsCreator,
     TimeProvider timeProvider,
     ICancellationTokenProvider cancellationTokenProvider,
-    ILogger<IdempotencyMiddleware> logger,
-    // IDistributedLock is an OPTIONAL dependency: only the WaitAndReplay in-flight strategy needs it
-    // (the default Reject strategy does not). It is validated at startup only when WaitAndReplay is
-    // configured (see IdempotencyOptions), so it is resolved lazily here rather than constructor-injected.
-    IServiceProvider serviceProvider
+    ILogger<IdempotencyMiddleware> logger
 ) : IMiddleware
 {
+    private static readonly TimeSpan _InitialPollDelay = TimeSpan.FromMilliseconds(50);
+    private static readonly TimeSpan _MaxPollDelay = TimeSpan.FromSeconds(1);
+
     /// <summary>
-    /// Processes the incoming request through the idempotency pipeline: key validation,
-    /// fingerprinting, cache lookup, in-flight coordination, handler execution, and response
-    /// capture/finalization.
+    /// Processes the incoming request through the idempotency pipeline: key validation, fingerprinting, admission,
+    /// in-flight handling, handler execution under a renewed lease, and response capture and completion.
     /// </summary>
     /// <param name="context">The current HTTP context.</param>
     /// <param name="next">The next middleware delegate.</param>
     /// <exception cref="Exception">
-    /// Re-throws any exception from the downstream handler after removing the in-flight cache
-    /// marker. Cache cleanup failures are logged and swallowed so the original exception
-    /// propagates cleanly.
+    /// Re-throws any exception from the downstream handler after releasing the admission. Release failures are
+    /// logged and swallowed so the original exception propagates cleanly. Store failures before the handler runs
+    /// propagate when <see cref="IdempotencyOptions.OnStoreError"/> is <see cref="OnStoreErrorBehavior.Throw"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when <see cref="IdempotencyOptions.RequestFingerprint"/> returns
-    /// <see langword="null"/> or an empty array. Also propagated from <c>_ReplayAsync</c>
-    /// when the response has already started before the replay path is reached (indicates
-    /// incorrect middleware ordering).
+    /// Thrown when <see cref="IdempotencyOptions.RequestFingerprint"/> returns <see langword="null"/> or an empty
+    /// array. Also propagated from the replay path when the response has already started before it is reached
+    /// (indicates incorrect middleware ordering).
     /// </exception>
     public async Task InvokeAsync(HttpContext context, RequestDelegate next)
     {
@@ -108,7 +109,7 @@ internal sealed partial class IdempotencyMiddleware(
         // mode requires downstream handlers to read bodies that legitimately exceed the cap.
         context.Request.EnableBuffering(options.RequestBodyBufferThreshold);
 
-        var (fingerprintOrNull, oversize) = await _ComputeFingerprintAsync(context, options, ct).ConfigureAwait(false);
+        var (requestHash, oversize) = await _ComputeRequestHashAsync(context, options, ct).ConfigureAwait(false);
 
         if (oversize)
         {
@@ -133,28 +134,33 @@ internal sealed partial class IdempotencyMiddleware(
             return;
         }
 
-        var fingerprint = fingerprintOrNull!;
-
-        // Derive cache key. The default derivation requires a tenant or authenticated user;
+        // Derive the key scope. The default derivation requires a tenant or authenticated user;
         // for fully anonymous routes with no KeyDeriver override, refuse to apply idempotency
-        // rather than cross-pollinate cache slots between unrelated callers.
-        var cacheKey = _BuildCacheKey(context, options, keyHeader);
-        if (cacheKey.Length == 0)
+        // rather than let unrelated callers share a key.
+        var scope = _BuildScope(context, options, keyHeader);
+        if (scope.Length == 0)
         {
             LogSkippedNoIdentity();
             await next(context).ConfigureAwait(false);
             return;
         }
 
-        CacheValue<IdempotencyRecord> existing;
+        var request = new AdmissionRequest(
+            keyHeader,
+            scope,
+            HashScope(scope),
+            IdempotencyFingerprint.Compute(requestHash!)
+        );
+
+        IdempotentAdmission admission;
         try
         {
-            existing = await cache.GetAsync<IdempotencyRecord>(cacheKey, ct).ConfigureAwait(false);
+            admission = await _AdmitAsync(request, options, ct).ConfigureAwait(false);
         }
-        catch (Exception cacheEx)
+        catch (Exception storeEx) when (_IsStoreFailure(storeEx, ct))
         {
-            LogCacheFailure("existing-record-get", cacheKey, options.OnCacheError.ToString(), cacheEx);
-            if (options.OnCacheError == OnCacheErrorBehavior.Throw)
+            LogStoreFailure("admit", request.Key, options.OnStoreError.ToString(), storeEx);
+            if (options.OnStoreError == OnStoreErrorBehavior.Throw)
             {
                 throw;
             }
@@ -163,148 +169,353 @@ internal sealed partial class IdempotencyMiddleware(
             return;
         }
 
-        if (existing.HasValue)
+        switch (admission.Disposition)
         {
-            await _DispatchExistingRecordAsync(context, existing.Value!, options, fingerprint, cacheKey, ct)
-                .ConfigureAwait(false);
-            return;
+            case IdempotentDisposition.InFlight when options.InFlightStrategy == InFlightStrategy.WaitAndReplay:
+                await _WaitAndReplayAsync(context, next, request, options, ct).ConfigureAwait(false);
+                return;
+            case IdempotentDisposition.InFlight:
+                LogInFlightReject(request.Key);
+                var pd = problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlight());
+                await Results.Problem(pd).ExecuteAsync(context).ConfigureAwait(false);
+                return;
+            default:
+                await _DispatchSettledAsync(context, next, admission, request, options, ct).ConfigureAwait(false);
+                return;
         }
+    }
 
-        // Under WaitAndReplay, acquire the distributed lock BEFORE inserting the sentinel marker.
-        // Inserting the marker first creates a window in which an arriving loser sees the marker,
-        // calls _WaitAndReplayAsync, and grabs the lock before the winner does — leaving the
-        // winner unlocked and the loser stuck observing the InFlight marker until it times out
-        // with 409 g:idempotency_in_flight_timeout. Lock-before-insert closes that window:
-        // the winner holds the lock for the entire handler lifetime; concurrent losers either
-        // block on the lock (WaitAndReplay) or short-circuit via _WriteInFlightResponseAsync (Reject).
-        IDistributedLease? winnerLock = null;
-        if (options.InFlightStrategy == InFlightStrategy.WaitAndReplay)
+    /// <summary>
+    /// Returns the store key for a scope string: the lowercase SHA-256 hex of its UTF-8 bytes. Always 64 characters,
+    /// so a long path or a 255-character header key still fits the store's key limit, and the raw scope (which carries
+    /// the user id) never reaches the store or the logs.
+    /// </summary>
+    internal static string HashScope(string scope)
+    {
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(scope)));
+    }
+
+    private ValueTask<IdempotentAdmission> _AdmitAsync(
+        AdmissionRequest request,
+        IdempotencyOptions options,
+        CancellationToken ct
+    )
+    {
+        return operations.AdmitAsync(
+            request.Key,
+            request.Fingerprint,
+            IdempotencyResponseSnapshot.Contract,
+            options.InFlightLease,
+            options.Retention,
+            ct
+        );
+    }
+
+    /// <summary>Routes an admission that is not in flight: run the handler, replay, or report the conflict.</summary>
+    private async Task _DispatchSettledAsync(
+        HttpContext context,
+        RequestDelegate next,
+        IdempotentAdmission admission,
+        AdmissionRequest request,
+        IdempotencyOptions options,
+        CancellationToken ct
+    )
+    {
+        switch (admission.Disposition)
         {
-            var lockProvider = serviceProvider.GetRequiredService<IDistributedLock>();
+            case IdempotentDisposition.Admitted:
+                await _ExecuteAndCompleteAsync(context, next, admission, request, options).ConfigureAwait(false);
+                return;
+            case IdempotentDisposition.Replay:
+                await _ReplayAsync(context, admission.Result!, options, request.Key, ct).ConfigureAwait(false);
+                return;
+            default:
+                if (admission.StoredContract is not null)
+                {
+                    // Same request, but the stored response was written under another snapshot contract (a version
+                    // change); it cannot be replayed and must not be re-run, so it is reported like a reused key.
+                    LogContractMismatch(request.Key, admission.StoredContract);
+                }
+                else
+                {
+                    LogFingerprintMismatch(request.Key);
+                }
+
+                await _WriteMismatchAsync(context, options).ConfigureAwait(false);
+                return;
+        }
+    }
+
+    /// <summary>
+    /// Polls admission with a doubling, capped backoff until the running attempt settles or the wait budget ends. A
+    /// completed attempt replays; one that released the key or lost its lease admits this request as the new owner.
+    /// </summary>
+    private async Task _WaitAndReplayAsync(
+        HttpContext context,
+        RequestDelegate next,
+        AdmissionRequest request,
+        IdempotencyOptions options,
+        CancellationToken ct
+    )
+    {
+        var startedAt = timeProvider.GetTimestamp();
+        var delay = _InitialPollDelay;
+
+        while (true)
+        {
+            var remaining = options.InFlightLockTimeout - timeProvider.GetElapsedTime(startedAt);
+            if (remaining <= TimeSpan.Zero)
+            {
+                break;
+            }
+
+            await Task.Delay(delay < remaining ? delay : remaining, timeProvider, ct).ConfigureAwait(false);
+            delay = delay * 2 < _MaxPollDelay ? delay * 2 : _MaxPollDelay;
+
+            IdempotentAdmission admission;
             try
             {
-                winnerLock = await lockProvider
-                    .TryAcquireAsync(
-                        $"lock:{cacheKey}",
-                        new DistributedLockAcquireOptions
-                        {
-                            TimeUntilExpires = options.WinnerLockLease,
-                            AcquireTimeout = TimeSpan.Zero,
-                        },
-                        ct
-                    )
-                    .ConfigureAwait(false);
+                admission = await _AdmitAsync(request, options, ct).ConfigureAwait(false);
             }
-            catch (Exception lockEx)
+            catch (Exception storeEx) when (_IsStoreFailure(storeEx, ct))
             {
-                LogLockProviderFailure("winner-tryacquire", cacheKey, options.OnCacheError.ToString(), lockEx);
-                if (options.OnCacheError == OnCacheErrorBehavior.Throw)
+                LogStoreFailure("wait-admit", request.Key, options.OnStoreError.ToString(), storeEx);
+                if (options.OnStoreError == OnStoreErrorBehavior.Throw)
                 {
                     throw;
                 }
 
-                // FailOpen: lock provider unavailable. Bypass idempotency for this request — no
-                // marker has been inserted yet (lock-before-insert ordering), so no orphan is left.
-                await next(context).ConfigureAwait(false);
-                return;
+                // Another attempt holds the key, so running the handler here could execute the operation twice.
+                // A recoverable 409 lets the client retry once the store is back.
+                break;
             }
 
-            if (winnerLock is null)
+            if (admission.Disposition != IdempotentDisposition.InFlight)
             {
-                // Another request already holds the winner-lock for this key. Defer to the
-                // in-flight response path (Reject → 409, WaitAndReplay → block on existing winner).
-                LogWinnerLockContended(cacheKey);
-                await _WriteInFlightResponseAsync(context, options, fingerprint, cacheKey, ct).ConfigureAwait(false);
+                await _DispatchSettledAsync(context, next, admission, request, options, ct).ConfigureAwait(false);
                 return;
             }
         }
+
+        LogInFlightTimeout(request.Key);
+        var pd = problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlightTimeout());
+        await Results.Problem(pd).ExecuteAsync(context).ConfigureAwait(false);
+    }
+
+    private async Task _ExecuteAndCompleteAsync(
+        HttpContext context,
+        RequestDelegate next,
+        IdempotentAdmission admission,
+        AdmissionRequest request,
+        IdempotencyOptions options
+    )
+    {
+        if (admission.IsTakeover)
+        {
+            LogTakeover(request.Key);
+        }
+
+        // Set synchronously before the handler runs: an HttpContext feature reaches every downstream component,
+        // whereas ambient AsyncLocal state set in an async method would not flow back out of it.
+        context.Features.Set<IIdempotencyContext>(
+            new IdempotencyContext(request.HeaderKey, request.Scope, request.Key, admission)
+        );
+
+        var originalBody = context.Response.Body;
+        await using var captureStream = new CaptureStream(originalBody, options.MaxBodySizeForHashing);
+        context.Response.Body = captureStream;
+
+        using var renewalStop = new CancellationTokenSource();
+        var renewal = _RenewWhileRunningAsync(admission, options.InFlightLease, request.Key, renewalStop.Token);
 
         try
         {
-            // Cache miss — bounded retry loop handles the race where the winner crashes between TryInsert and finalize
-            for (var attempt = 0; attempt < 2; attempt++)
-            {
-                var marker = new IdempotencyRecord
-                {
-                    Kind = RecordKind.InFlight,
-                    Fingerprint = fingerprint,
-                    CreatedAt = timeProvider.GetUtcNow(),
-                };
-
-                // Sentinel TTL matches the completed-record TTL: a shorter marker TTL plus the
-                // hard-coded +5s safety margin meant a slow handler could see its marker evicted
-                // before finalize, opening the door to false in-flight rejects on retries.
-                bool inserted;
-                try
-                {
-                    inserted = await cache
-                        .TryInsertAsync(cacheKey, marker, options.IdempotencyKeyExpiration, ct)
-                        .ConfigureAwait(false);
-                }
-                catch (Exception cacheEx)
-                {
-                    LogCacheFailure("sentinel-tryinsert", cacheKey, options.OnCacheError.ToString(), cacheEx);
-                    if (options.OnCacheError == OnCacheErrorBehavior.Throw)
-                    {
-                        throw;
-                    }
-
-                    await next(context).ConfigureAwait(false);
-                    return;
-                }
-
-                if (inserted)
-                {
-                    await _ExecuteAndFinalizeCoreAsync(context, next, cacheKey, marker, fingerprint, options)
-                        .ConfigureAwait(false);
-                    return;
-                }
-
-                CacheValue<IdempotencyRecord> racePeek;
-                try
-                {
-                    racePeek = await cache.GetAsync<IdempotencyRecord>(cacheKey, ct).ConfigureAwait(false);
-                }
-                catch (Exception cacheEx)
-                {
-                    LogCacheFailure("race-peek-get", cacheKey, options.OnCacheError.ToString(), cacheEx);
-                    if (options.OnCacheError == OnCacheErrorBehavior.Throw)
-                    {
-                        throw;
-                    }
-
-                    await next(context).ConfigureAwait(false);
-                    return;
-                }
-
-                if (!racePeek.HasValue)
-                {
-                    // Winner crashed; TTL elapsed between their TryInsert and finalize — retry insertion
-                    continue;
-                }
-
-                await _DispatchExistingRecordAsync(context, racePeek.Value!, options, fingerprint, cacheKey, ct)
-                    .ConfigureAwait(false);
-                return;
-            }
-
-            // Both attempts exhausted with NoValue — treat as in-flight (winner consistently crashing)
-            var loopPd = problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlight());
-            await Results.Problem(loopPd).ExecuteAsync(context).ConfigureAwait(false);
+            await next(context).ConfigureAwait(false);
         }
-        finally
+        catch (Exception handlerEx)
         {
-            if (winnerLock is not null)
+            context.Response.Body = originalBody;
+            LogHandlerThrew(request.Key, handlerEx);
+            await renewalStop.CancelAsync().ConfigureAwait(false);
+            await renewal.ConfigureAwait(false);
+            await _ReleaseAsync(context, admission, request.Key, options, rethrowOnFailure: false)
+                .ConfigureAwait(false);
+            throw;
+        }
+
+        context.Response.Body = originalBody;
+
+        // Stop renewing before settling, so a renewal cannot race the completion that ends the lease.
+        // The loop catches its own failures, so awaiting it only waits for the in-flight renewal to finish.
+        await renewalStop.CancelAsync().ConfigureAwait(false);
+        await renewal.ConfigureAwait(false);
+
+        var shouldStore =
+            (options.ShouldCacheResponse ?? DefaultCachePredicate.Instance)(context) && !captureStream.TruncatedCapture;
+
+        if (!shouldStore)
+        {
+            await _ReleaseAsync(context, admission, request.Key, options, rethrowOnFailure: true).ConfigureAwait(false);
+            return;
+        }
+
+        var capturedHeaders = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+        foreach (var header in context.Response.Headers)
+        {
+            if (options.ReplayHeaderAllowlist.Contains(header.Key))
             {
-                await winnerLock.DisposeAsync().ConfigureAwait(false);
+                capturedHeaders[header.Key] = header.Value.ToArray()!;
+            }
+        }
+
+        var snapshot = new IdempotencyResponseSnapshot
+        {
+            StatusCode = context.Response.StatusCode,
+            Headers = capturedHeaders,
+            Body = captureStream.CapturedBytes,
+        };
+        var payload = JsonSerializer.SerializeToUtf8Bytes(
+            snapshot,
+            IdempotencyJsonContext.Default.IdempotencyResponseSnapshot
+        );
+
+        try
+        {
+            // CancellationToken.None: the handler already ran, so a client disconnect must not strand the admission
+            // pending until its lease expires, which would turn every retry into a 409 for that long.
+            await operations
+                .CompleteAsync(
+                    admission,
+                    payload,
+                    IdempotencyResponseSnapshot.Contract,
+                    cancellationToken: CancellationToken.None
+                )
+                .ConfigureAwait(false);
+        }
+        catch (StaleLeaseException staleEx)
+        {
+            // The lease expired or was taken over while the handler ran; the fence refused this result so only the
+            // owning attempt's response is stored. Nothing the client can act on, so it is logged, never thrown.
+            LogCompletionRefused(request.Key, staleEx);
+        }
+        catch (Exception storeEx)
+        {
+            LogCompletionFailed(request.Key, storeEx);
+            if (_ShouldRethrowAfterHandler(context, options))
+            {
+                throw;
+            }
+        }
+    }
+
+    private async Task _ReleaseAsync(
+        HttpContext context,
+        IdempotentAdmission admission,
+        string key,
+        IdempotencyOptions options,
+        bool rethrowOnFailure
+    )
+    {
+        try
+        {
+            var status = await operations.ReleaseAsync(admission, CancellationToken.None).ConfigureAwait(false);
+            if (status != LeaseSettlementStatus.Released)
+            {
+                LogReleaseRefused(key, status);
+            }
+        }
+        catch (Exception storeEx)
+        {
+            LogReleaseFailed(key, storeEx);
+            if (rethrowOnFailure && _ShouldRethrowAfterHandler(context, options))
+            {
+                throw;
             }
         }
     }
 
     /// <summary>
-    /// Writes the cached <paramref name="record"/> to the current response, replaying status
-    /// code, allowlisted headers, and body exactly as originally captured.
-    /// Sets the <c>Idempotent-Replayed: true</c> response header.
+    /// Whether a store failure after the handler ran should propagate: only while the response has not started and the
+    /// options ask for it. Once the response started the client already has it, and throwing would only log a 500 it
+    /// never sees.
+    /// </summary>
+    private static bool _ShouldRethrowAfterHandler(HttpContext context, IdempotencyOptions options)
+    {
+        return !context.Response.HasStarted && options.OnStoreError == OnStoreErrorBehavior.Throw;
+    }
+
+    /// <summary>
+    /// Renews the admitted lease every third of its duration until stopped or the lease is lost. Each renewal is
+    /// bounded by the same interval: a handler that holds its fenced transaction blocks the renewal on the lease row,
+    /// and an unbounded call would stall the loop until that transaction ends.
+    /// </summary>
+    private async Task _RenewWhileRunningAsync(
+        IdempotentAdmission admission,
+        TimeSpan lease,
+        string key,
+        CancellationToken stopToken
+    )
+    {
+        var interval = lease / 3;
+
+        try
+        {
+            while (true)
+            {
+                await Task.Delay(interval, timeProvider, stopToken).ConfigureAwait(false);
+
+                using var callCts = CancellationTokenSource.CreateLinkedTokenSource(stopToken);
+                var renewTask = operations.RenewAsync(admission, lease, callCts.Token).AsTask();
+                LeaseRenewalResult result;
+
+                try
+                {
+                    result = await renewTask.WaitAsync(interval, timeProvider, stopToken).ConfigureAwait(false);
+                }
+                catch (TimeoutException)
+                {
+                    // Cancel the abandoned call so it releases its connection, and observe its outcome so a late
+                    // failure is not reported as an unobserved task exception.
+                    await callCts.CancelAsync().ConfigureAwait(false);
+                    _ = renewTask.ContinueWith(
+                        static t => _ = t.Exception,
+                        CancellationToken.None,
+                        TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                        TaskScheduler.Default
+                    );
+                    LogRenewalTimedOut(key, interval);
+                    continue;
+                }
+                catch (Exception renewEx) when (!stopToken.IsCancellationRequested)
+                {
+                    LogRenewalFailed(key, renewEx);
+                    continue;
+                }
+
+                if (!result.IsRenewed)
+                {
+                    // The lease expired, was taken over, or ended; renewing further cannot win it back, and the
+                    // completion's fence will refuse this attempt's result.
+                    LogLeaseLost(key, result.Status);
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (stopToken.IsCancellationRequested)
+        {
+            // The handler finished; the loop's job is done.
+        }
+    }
+
+    private static bool _IsStoreFailure(Exception exception, CancellationToken ct)
+    {
+        // A cancellation the request itself asked for is not a store failure; let it propagate.
+        return exception is not OperationCanceledException || !ct.IsCancellationRequested;
+    }
+
+    /// <summary>
+    /// Writes the stored response to the current response, replaying status code, allowlisted headers, and body
+    /// exactly as originally captured. Sets the <c>Idempotent-Replayed: true</c> response header.
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// The response has already started. Indicates <c>UseIdempotency()</c> is ordered after
@@ -312,9 +523,9 @@ internal sealed partial class IdempotencyMiddleware(
     /// </exception>
     private async Task _ReplayAsync(
         HttpContext context,
-        IdempotencyRecord record,
+        IdempotentResult result,
         IdempotencyOptions options,
-        string cacheKey,
+        string key,
         CancellationToken ct
     )
     {
@@ -326,19 +537,21 @@ internal sealed partial class IdempotencyMiddleware(
             );
         }
 
-        context.Response.StatusCode = record.StatusCode;
+        var snapshot =
+            result.Deserialize(IdempotencyJsonContext.Default.IdempotencyResponseSnapshot)
+            ?? throw new InvalidOperationException("The stored idempotent response is empty.");
+
+        context.Response.StatusCode = snapshot.StatusCode;
 
         // Strip pre-existing allowlisted headers set by upstream middleware so byte-equivalent
         // replay isn't poisoned by per-request mutations (CORS, security policies). Headers
-        // outside the allowlist (e.g., traceparent from logging) remain untouched. IDictionary
-        // Remove on a missing key is a no-op, so iterating the allowlist avoids the double pass
-        // (and List allocation) of the previous shape.
+        // outside the allowlist (e.g., traceparent from logging) remain untouched.
         foreach (var allowedHeader in options.ReplayHeaderAllowlist)
         {
             context.Response.Headers.Remove(allowedHeader);
         }
 
-        foreach (var (name, values) in record.Headers)
+        foreach (var (name, values) in snapshot.Headers)
         {
             if (options.ReplayHeaderAllowlist.Contains(name))
             {
@@ -348,55 +561,17 @@ internal sealed partial class IdempotencyMiddleware(
 
         context.Response.Headers[HttpHeaderNames.IdempotentReplayed] = "true";
 
-        if (record.Body.Length > 0)
+        if (snapshot.Body.Length > 0)
         {
-            context.Response.ContentLength = record.Body.Length;
-            await context.Response.Body.WriteAsync(record.Body, ct).ConfigureAwait(false);
+            context.Response.ContentLength = snapshot.Body.Length;
+            await context.Response.Body.WriteAsync(snapshot.Body, ct).ConfigureAwait(false);
         }
 
-        LogReplayHit(cacheKey);
+        LogReplayHit(key);
     }
 
-    /// <summary>
-    /// Routes an already-existing cache record (either observed at the top-of-pipeline cache hit,
-    /// or surfaced during the cache-miss race-peek after TryInsert lost the insertion race) to
-    /// the correct response: replay for matching Complete, 422 for mismatched fingerprint regardless
-    /// of Kind, in-flight response (409 or wait-and-replay) for matching InFlight.
-    /// </summary>
-    private async Task _DispatchExistingRecordAsync(
-        HttpContext context,
-        IdempotencyRecord rec,
-        IdempotencyOptions options,
-        byte[] fingerprint,
-        string cacheKey,
-        CancellationToken ct
-    )
+    private async Task _WriteMismatchAsync(HttpContext context, IdempotencyOptions options)
     {
-        if (rec.Kind == RecordKind.Complete)
-        {
-            if (rec.Fingerprint != null && _FingerprintEquals(rec.Fingerprint, fingerprint))
-            {
-                await _ReplayAsync(context, rec, options, cacheKey, ct).ConfigureAwait(false);
-                return;
-            }
-
-            await _WriteMismatchAsync(context, options, cacheKey).ConfigureAwait(false);
-            return;
-        }
-
-        // InFlight: mismatched payloads still report 422 (mismatch), not 409 (in-flight).
-        if (rec.Fingerprint != null && !_FingerprintEquals(rec.Fingerprint, fingerprint))
-        {
-            await _WriteMismatchAsync(context, options, cacheKey).ConfigureAwait(false);
-            return;
-        }
-
-        await _WriteInFlightResponseAsync(context, options, fingerprint, cacheKey, ct).ConfigureAwait(false);
-    }
-
-    private async Task _WriteMismatchAsync(HttpContext context, IdempotencyOptions options, string cacheKey)
-    {
-        LogFingerprintMismatch(cacheKey);
         var descriptor = IdempotencyMessageDescriber.KeyReused();
 
         var pd =
@@ -412,268 +587,10 @@ internal sealed partial class IdempotencyMiddleware(
         await Results.Problem(pd).ExecuteAsync(context).ConfigureAwait(false);
     }
 
-    private async Task _WriteInFlightResponseAsync(
-        HttpContext context,
-        IdempotencyOptions options,
-        byte[] fingerprint,
-        string cacheKey,
-        CancellationToken ct
-    )
-    {
-        if (options.InFlightStrategy == InFlightStrategy.WaitAndReplay)
-        {
-            await _WaitAndReplayAsync(context, options, fingerprint, cacheKey, ct).ConfigureAwait(false);
-            return;
-        }
-
-        LogInFlightReject(cacheKey);
-        var pd = problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlight());
-        await Results.Problem(pd).ExecuteAsync(context).ConfigureAwait(false);
-    }
-
     private async Task _WriteBadRequestAsync(HttpContext context, ErrorDescriptor descriptor)
     {
         var pd = problemDetailsCreator.BadRequest(detail: descriptor.Description, error: descriptor);
         await Results.Problem(pd).ExecuteAsync(context).ConfigureAwait(false);
-    }
-
-    private async Task _WaitAndReplayAsync(
-        HttpContext context,
-        IdempotencyOptions options,
-        byte[] fingerprint,
-        string cacheKey,
-        CancellationToken ct
-    )
-    {
-        var lockProvider = serviceProvider.GetRequiredService<IDistributedLock>();
-        var lockKey = $"lock:{cacheKey}";
-
-        // Loser path: block until the winner releases the lock (or acquireTimeout elapses).
-        IDistributedLease? dlock;
-        try
-        {
-            dlock = await lockProvider
-                .TryAcquireAsync(
-                    lockKey,
-                    new DistributedLockAcquireOptions
-                    {
-                        TimeUntilExpires = options.WinnerLockLease,
-                        AcquireTimeout = options.InFlightLockTimeout,
-                    },
-                    ct
-                )
-                .ConfigureAwait(false);
-        }
-        catch (Exception lockEx)
-        {
-            LogLockProviderFailure("loser-tryacquire", cacheKey, options.OnCacheError.ToString(), lockEx);
-            if (options.OnCacheError == OnCacheErrorBehavior.Throw)
-            {
-                throw;
-            }
-
-            // FailOpen on the loser path: we cannot wait on the winner. Return a recoverable
-            // 409 so the client retries — bypassing to next() would re-execute the handler.
-            LogInFlightTimeout(cacheKey);
-            var failOpenPd = problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlightTimeout());
-            await Results.Problem(failOpenPd).ExecuteAsync(context).ConfigureAwait(false);
-            return;
-        }
-
-        if (dlock is null)
-        {
-            LogInFlightTimeout(cacheKey);
-            var pd = problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlightTimeout());
-            await Results.Problem(pd).ExecuteAsync(context).ConfigureAwait(false);
-            return;
-        }
-
-        await using var _ = dlock.ConfigureAwait(false);
-
-        CacheValue<IdempotencyRecord> postLock;
-        try
-        {
-            postLock = await cache.GetAsync<IdempotencyRecord>(cacheKey, ct).ConfigureAwait(false);
-        }
-        catch (Exception cacheEx)
-        {
-            LogCacheFailure("post-lock-get", cacheKey, options.OnCacheError.ToString(), cacheEx);
-            if (options.OnCacheError == OnCacheErrorBehavior.Throw)
-            {
-                throw;
-            }
-
-            // Loser path: we cannot read the winner's record. Return a recoverable 409 so the
-            // client retries — bypassing to next() here would re-execute the handler and break
-            // the idempotency guarantee outright.
-            LogInFlightTimeout(cacheKey);
-            var failOpenPd = problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlightTimeout());
-            await Results.Problem(failOpenPd).ExecuteAsync(context).ConfigureAwait(false);
-            return;
-        }
-
-        if (postLock.HasValue && postLock.Value!.Kind == RecordKind.Complete)
-        {
-            var rec = postLock.Value!;
-
-            if (rec.Fingerprint != null && _FingerprintEquals(rec.Fingerprint, fingerprint))
-            {
-                await _ReplayAsync(context, rec, options, cacheKey, ct).ConfigureAwait(false);
-                return;
-            }
-
-            await _WriteMismatchAsync(context, options, cacheKey).ConfigureAwait(false);
-            return;
-        }
-
-        // InFlight or NoValue after holding the lock → winner timed out or is still stuck
-        LogInFlightTimeout(cacheKey);
-        var timeoutPd = problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlightTimeout());
-        await Results.Problem(timeoutPd).ExecuteAsync(context).ConfigureAwait(false);
-    }
-
-    private async Task _ExecuteAndFinalizeCoreAsync(
-        HttpContext context,
-        RequestDelegate next,
-        string cacheKey,
-        IdempotencyRecord insertedMarker,
-        byte[] fingerprint,
-        IdempotencyOptions options
-    )
-    {
-        var originalBody = context.Response.Body;
-        var cap = options.MaxBodySizeForHashing;
-        await using var captureStream = new CaptureStream(originalBody, cap);
-        context.Response.Body = captureStream;
-
-        try
-        {
-            await next(context).ConfigureAwait(false);
-        }
-        catch (Exception handlerEx)
-        {
-            context.Response.Body = originalBody;
-            LogHandlerThrew(cacheKey, handlerEx);
-            try
-            {
-                // Cleanup must outlive request cancellation
-                await cache.RemoveAsync(cacheKey, CancellationToken.None).ConfigureAwait(false);
-            }
-            catch (Exception cleanupEx)
-            {
-                LogMarkerCleanupFailed(cacheKey, cleanupEx);
-            }
-            throw;
-        }
-
-        context.Response.Body = originalBody;
-
-        // Finalize cache operations use CancellationToken.None because the handler has already
-        // succeeded — the marker must either be promoted to a Complete record or removed.
-        // Allowing post-handler cancellation to abort this path leaves a 24-hour orphan that
-        // blocks every subsequent retry of the key. The outer try/catch handles any residual
-        // cancellation (e.g., a future code addition that respects `ct`) and runs cleanup.
-        try
-        {
-            var effectivePredicate = options.ShouldCacheResponse ?? DefaultCachePredicate.Instance;
-            var shouldCache = effectivePredicate(context);
-
-            if (shouldCache && !captureStream.TruncatedCapture)
-            {
-                var capturedHeaders = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
-                foreach (var header in context.Response.Headers)
-                {
-                    if (options.ReplayHeaderAllowlist.Contains(header.Key))
-                    {
-                        capturedHeaders[header.Key] = header.Value.ToArray()!;
-                    }
-                }
-
-                var completeRecord = new IdempotencyRecord
-                {
-                    Kind = RecordKind.Complete,
-                    StatusCode = context.Response.StatusCode,
-                    Headers = capturedHeaders,
-                    Body = captureStream.CapturedBytes,
-                    Fingerprint = fingerprint,
-                    CreatedAt = timeProvider.GetUtcNow(),
-                };
-
-                // Compare-and-swap the marker we inserted with the Complete record in a single
-                // round trip. TryReplaceIfEqualAsync only promotes when the stored value still
-                // equals `insertedMarker` (IEquatable<IdempotencyRecord> compares Kind,
-                // StatusCode, CreatedAt, Body, Fingerprint, and Headers), which guarantees we
-                // never clobber a parallel writer that already filled the slot.
-                //
-                // Post-handler site: the response is already committed, so cache exceptions cannot
-                // be surfaced to the client. On CAS failure (false), the slot was overwritten by
-                // another writer or evicted; log and move on rather than overwrite their record.
-                bool replaced;
-                try
-                {
-                    replaced = await cache
-                        .TryReplaceIfEqualAsync(
-                            cacheKey,
-                            insertedMarker,
-                            completeRecord,
-                            options.IdempotencyKeyExpiration,
-                            CancellationToken.None
-                        )
-                        .ConfigureAwait(false);
-                }
-                catch (Exception casEx)
-                {
-                    LogFinalizeFailed(cacheKey, casEx);
-                    try
-                    {
-                        await cache.RemoveAsync(cacheKey, CancellationToken.None).ConfigureAwait(false);
-                    }
-                    catch (Exception cleanupEx)
-                    {
-                        LogMarkerCleanupFailed(cacheKey, cleanupEx);
-                    }
-
-                    if (options.OnCacheError == OnCacheErrorBehavior.Throw)
-                    {
-                        throw;
-                    }
-
-                    return;
-                }
-
-                if (!replaced)
-                {
-                    LogFinalizeSkippedMarkerChanged(cacheKey);
-                }
-            }
-            else
-            {
-                try
-                {
-                    await cache.RemoveAsync(cacheKey, CancellationToken.None).ConfigureAwait(false);
-                }
-                catch (Exception cleanupEx)
-                {
-                    LogMarkerCleanupFailed(cacheKey, cleanupEx);
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // Defensive: even though the finalize cache ops above use CancellationToken.None,
-            // future code additions that respect `ct` would orphan the marker on client
-            // disconnect. Run cleanup so retries are not blocked for IdempotencyKeyExpiration.
-            try
-            {
-                await cache.RemoveAsync(cacheKey, CancellationToken.None).ConfigureAwait(false);
-            }
-            catch (Exception cleanupEx)
-            {
-                LogMarkerCleanupFailed(cacheKey, cleanupEx);
-            }
-            // Swallow — the response was already committed (or the client is gone). Rethrowing
-            // would surface a logged 500 the client never sees.
-        }
     }
 
     private static IdempotencyOptions _ResolveOptions(HttpContext context, IdempotencyOptions appOptions)
@@ -695,7 +612,7 @@ internal sealed partial class IdempotencyMiddleware(
         return cloned;
     }
 
-    private string _BuildCacheKey(HttpContext context, IdempotencyOptions options, string keyHeader)
+    private string _BuildScope(HttpContext context, IdempotencyOptions options, string keyHeader)
     {
         if (options.KeyDeriver != null)
         {
@@ -731,12 +648,10 @@ internal sealed partial class IdempotencyMiddleware(
         // when the client reuses the same idempotency key. QueryString.Value includes the
         // leading "?" or is empty when no query exists.
         var query = context.Request.QueryString.Value ?? string.Empty;
-        // Anonymous-user fallback uses an empty segment rather than a literal "anon" so a real
-        // UserId equal to the string "anon" cannot collide with the anonymous bucket. Combined
-        // with the unambiguous `:` separator, the two cases are distinguishable:
-        //   idem:{tenant}:anon:POST:/x:K  ← real UserId "anon"
-        //   idem:{tenant}::POST:/x:K     ← anonymous (RequireUserIdentity=false flow)
-        return $"idem:{tenant ?? string.Empty}:{user ?? string.Empty}:{method}:{path}{query}:{keyHeader}";
+        // The tenant is not part of the scope: the durable store keys every record by the current
+        // tenant. Anonymous-user fallback uses an empty segment rather than a literal "anon" so a
+        // real UserId equal to the string "anon" cannot collide with the anonymous bucket.
+        return $"idem:{user ?? string.Empty}:{method}:{path}{query}:{keyHeader}";
     }
 
     /// <summary>
@@ -765,7 +680,7 @@ internal sealed partial class IdempotencyMiddleware(
     /// <summary>
     /// Validates an idempotency-key header value: single-valued, length &lt;= 255, no control
     /// characters (ASCII 0–31 or DEL). Stripe and other vendors enforce these bounds; relaxing
-    /// them invites cache-key pollution or DoS.
+    /// them invites key pollution or DoS.
     /// </summary>
     private static bool _ValidateKeyHeader(StringValues headerValues, string keyHeader, out string reason)
     {
@@ -794,12 +709,11 @@ internal sealed partial class IdempotencyMiddleware(
         return true;
     }
 
-    private static bool _FingerprintEquals(ReadOnlySpan<byte> a, ReadOnlySpan<byte> b)
-    {
-        return a.Length == b.Length && CryptographicOperations.FixedTimeEquals(a, b);
-    }
-
-    private static async ValueTask<(byte[]? Fingerprint, bool Oversize)> _ComputeFingerprintAsync(
+    /// <summary>
+    /// Walks the buffered body to enforce the hashing cap and returns the bytes the fingerprint is computed over:
+    /// SHA-256 of the body, or the custom <see cref="IdempotencyOptions.RequestFingerprint"/> output.
+    /// </summary>
+    private static async ValueTask<(byte[]? Hash, bool Oversize)> _ComputeRequestHashAsync(
         HttpContext context,
         IdempotencyOptions options,
         CancellationToken ct
@@ -848,8 +762,8 @@ internal sealed partial class IdempotencyMiddleware(
                 requestBody.Position = 0;
 
                 // A delegate that returns null/empty would collapse every distinct request body
-                // onto a single fingerprint (FixedTimeEquals on zero-length spans returns true),
-                // letting any two requests cross-replay. Treat that as a programming error.
+                // onto a single fingerprint, letting any two requests cross-replay. Treat that as
+                // a programming error.
                 if (customFingerprint is null || customFingerprint.Length == 0)
                 {
                     throw new InvalidOperationException(
@@ -869,21 +783,43 @@ internal sealed partial class IdempotencyMiddleware(
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Idempotency replay hit for key {CacheKey}")]
-    // ReSharper disable once InconsistentNaming
-    private partial void LogReplayHit(string cacheKey);
+    /// <summary>The per-request identity of an admission: header value, scope, store key, and fingerprint.</summary>
+    private sealed record AdmissionRequest(
+        string HeaderKey,
+        string Scope,
+        string Key,
+        IdempotencyFingerprint Fingerprint
+    );
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Idempotency fingerprint mismatch for key {CacheKey}")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Idempotency replay hit for key {IdempotencyKey}")]
     // ReSharper disable once InconsistentNaming
-    private partial void LogFingerprintMismatch(string cacheKey);
+    private partial void LogReplayHit(string idempotencyKey);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Idempotency in-flight reject for key {CacheKey}")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Idempotency fingerprint mismatch for key {IdempotencyKey}")]
     // ReSharper disable once InconsistentNaming
-    private partial void LogInFlightReject(string cacheKey);
+    private partial void LogFingerprintMismatch(string idempotencyKey);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Idempotency in-flight timeout for key {CacheKey}")]
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Idempotency response for key {IdempotencyKey} is stored under contract {StoredContract} and cannot be replayed"
+    )]
     // ReSharper disable once InconsistentNaming
-    private partial void LogInFlightTimeout(string cacheKey);
+    private partial void LogContractMismatch(string idempotencyKey, string storedContract);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Idempotency in-flight reject for key {IdempotencyKey}")]
+    // ReSharper disable once InconsistentNaming
+    private partial void LogInFlightReject(string idempotencyKey);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Idempotency in-flight timeout for key {IdempotencyKey}")]
+    // ReSharper disable once InconsistentNaming
+    private partial void LogInFlightTimeout(string idempotencyKey);
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Idempotency key {IdempotencyKey} taken over from an attempt that ended without completing"
+    )]
+    // ReSharper disable once InconsistentNaming
+    private partial void LogTakeover(string idempotencyKey);
 
     [LoggerMessage(
         Level = LogLevel.Warning,
@@ -910,47 +846,57 @@ internal sealed partial class IdempotencyMiddleware(
     // ReSharper disable once InconsistentNaming
     private partial void LogSkippedNoIdentity();
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Idempotency finalize (CAS) failed for key {CacheKey}")]
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Idempotency store call failed at {Site} for key {IdempotencyKey}; behavior={Behavior}"
+    )]
     // ReSharper disable once InconsistentNaming
-
-    private partial void LogFinalizeFailed(string cacheKey, Exception exception);
+    private partial void LogStoreFailure(string site, string idempotencyKey, string behavior, Exception exception);
 
     [LoggerMessage(
         Level = LogLevel.Warning,
-        Message = "Idempotency finalize skipped: marker for key {CacheKey} no longer owned by this request"
+        Message = "Idempotency completion refused for key {IdempotencyKey}: the attempt no longer owns the key"
     )]
     // ReSharper disable once InconsistentNaming
-    private partial void LogFinalizeSkippedMarkerChanged(string cacheKey);
+    private partial void LogCompletionRefused(string idempotencyKey, Exception exception);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Idempotency marker cleanup failed for key {CacheKey}")]
+    [LoggerMessage(Level = LogLevel.Error, Message = "Idempotency completion failed for key {IdempotencyKey}")]
     // ReSharper disable once InconsistentNaming
-    private partial void LogMarkerCleanupFailed(string cacheKey, Exception exception);
-
-    [LoggerMessage(
-        Level = LogLevel.Warning,
-        Message = "Idempotency cache call failed at {Site} for key {CacheKey}; behavior={Behavior}"
-    )]
-    // ReSharper disable once InconsistentNaming
-    private partial void LogCacheFailure(string site, string cacheKey, string behavior, Exception exception);
+    private partial void LogCompletionFailed(string idempotencyKey, Exception exception);
 
     [LoggerMessage(
         Level = LogLevel.Warning,
-        Message = "Idempotency lock-provider call failed at {Site} for key {CacheKey}; behavior={Behavior}"
+        Message = "Idempotency release refused for key {IdempotencyKey} with status {Status}"
     )]
     // ReSharper disable once InconsistentNaming
-    private partial void LogLockProviderFailure(string site, string cacheKey, string behavior, Exception exception);
+    private partial void LogReleaseRefused(string idempotencyKey, LeaseSettlementStatus status);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Idempotency release failed for key {IdempotencyKey}")]
+    // ReSharper disable once InconsistentNaming
+    private partial void LogReleaseFailed(string idempotencyKey, Exception exception);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Idempotency lease renewal for key {IdempotencyKey} did not finish within {Timeout}; retrying on the next tick"
+    )]
+    // ReSharper disable once InconsistentNaming
+    private partial void LogRenewalTimedOut(string idempotencyKey, TimeSpan timeout);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Idempotency lease renewal failed for key {IdempotencyKey}")]
+    // ReSharper disable once InconsistentNaming
+    private partial void LogRenewalFailed(string idempotencyKey, Exception exception);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Idempotency lease for key {IdempotencyKey} lost ({Status}); renewal stopped"
+    )]
+    // ReSharper disable once InconsistentNaming
+    private partial void LogLeaseLost(string idempotencyKey, LeaseRenewalStatus status);
 
     [LoggerMessage(
         Level = LogLevel.Debug,
-        Message = "Idempotency winner-lock contended for key {CacheKey}; deferring to in-flight response path"
+        Message = "Idempotency handler threw for key {IdempotencyKey}; releasing the admission before propagating"
     )]
     // ReSharper disable once InconsistentNaming
-    private partial void LogWinnerLockContended(string cacheKey);
-
-    [LoggerMessage(
-        Level = LogLevel.Debug,
-        Message = "Idempotency handler threw for key {CacheKey}; removing in-flight marker before propagating"
-    )]
-    // ReSharper disable once InconsistentNaming
-    private partial void LogHandlerThrew(string cacheKey, Exception exception);
+    private partial void LogHandlerThrew(string idempotencyKey, Exception exception);
 }

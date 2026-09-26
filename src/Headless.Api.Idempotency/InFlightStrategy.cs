@@ -2,21 +2,19 @@
 
 namespace Headless.Api.Idempotency;
 
-/// <summary>How concurrent requests sharing the same idempotency key are resolved.</summary>
+/// <summary>How a request is answered while another attempt with the same idempotency key is still running.</summary>
 [PublicAPI]
 public enum InFlightStrategy
 {
     /// <summary>
-    /// Return 409 Conflict (<c>g:idempotency_in_flight</c>) immediately when a request with the
-    /// same key is already executing. No distributed lock is required; this is the default.
+    /// Return 409 Conflict (<c>g:idempotency_in_flight</c>) at once, so the client retries after a backoff. Default.
     /// </summary>
     Reject = 0,
 
     /// <summary>
-    /// Acquire a distributed lock keyed by the cache slot, block waiting for the winner to
-    /// finalize, and replay the cached response. Requires an <c>IDistributedLock</c>
-    /// to be registered (enforced at startup). If the acquisition timeout elapses, returns
-    /// 409 with <c>g:idempotency_in_flight_timeout</c>.
+    /// Poll admission with a bounded backoff until the running attempt completes (replay its response), gives the key
+    /// up or loses its lease (run the handler as the new owner), or
+    /// <see cref="IdempotencyOptions.InFlightLockTimeout" /> elapses (409 <c>g:idempotency_in_flight_timeout</c>).
     /// </summary>
     WaitAndReplay = 1,
 }

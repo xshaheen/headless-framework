@@ -1,15 +1,18 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api.Idempotency;
-using Headless.DistributedLocks;
+using Headless.Hosting.DependencyInjection;
+using Headless.Idempotency;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using IdempotencyMiddleware = Headless.Api.Idempotency.IdempotencyMiddleware;
 
 namespace Tests;
 
-public sealed class SetupIdempotencyTests
+public sealed class SetupIdempotencyTests : TestBase
 {
     [Fact]
     public void should_register_middleware_with_action_overload()
@@ -17,7 +20,7 @@ public sealed class SetupIdempotencyTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddIdempotency(o => o.IdempotencyKeyExpiration = TimeSpan.FromHours(2));
+        services.AddIdempotency(o => o.Retention = TimeSpan.FromHours(2));
 
         var descriptor = services.SingleOrDefault(s => s.ServiceType == typeof(IdempotencyMiddleware));
         descriptor.Should().NotBeNull();
@@ -25,19 +28,36 @@ public sealed class SetupIdempotencyTests
     }
 
     [Fact]
-    public void should_register_di_validator()
+    public async Task should_fail_host_start_when_durable_store_is_not_registered()
     {
+        // given
         var services = new ServiceCollection();
         services.AddLogging();
-
         services.AddIdempotency(_ => { });
 
-        services
-            .Should()
-            .Contain(s =>
-                s.ServiceType == typeof(IValidateOptions<IdempotencyOptions>)
-                && s.ImplementationType == typeof(IdempotencyOptionsDiValidator)
-            );
+        // when
+        var act = () => _RunStartingAsync(services);
+
+        // then — the missing store surfaces at startup with the remedy, not at the first idempotent request
+        var exception = (await act.Should().ThrowAsync<MissingRequiredServiceException>()).Which;
+        exception.Message.Should().Contain("AddHeadlessIdempotency");
+        exception.MissingServices.Should().ContainSingle().Which.ServiceType.Should().Be<IIdempotentOperations>();
+    }
+
+    [Fact]
+    public async Task should_start_when_durable_store_is_registered()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddIdempotency(_ => { });
+        services.AddSingleton(Substitute.For<IIdempotentOperations>());
+
+        // when
+        var act = () => _RunStartingAsync(services);
+
+        // then
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]
@@ -46,11 +66,11 @@ public sealed class SetupIdempotencyTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddIdempotency(o => o.IdempotencyKeyExpiration = TimeSpan.FromHours(7));
+        services.AddIdempotency(o => o.Retention = TimeSpan.FromHours(7));
 
         var sp = services.BuildServiceProvider();
         var resolved = sp.GetRequiredService<IOptions<IdempotencyOptions>>().Value;
-        resolved.IdempotencyKeyExpiration.Should().Be(TimeSpan.FromHours(7));
+        resolved.Retention.Should().Be(TimeSpan.FromHours(7));
     }
 
     [Fact]
@@ -77,12 +97,12 @@ public sealed class SetupIdempotencyTests
             (o, sp) =>
             {
                 var src = sp.GetRequiredService<ConfigSource>();
-                o.IdempotencyKeyExpiration = src.Expiration;
+                o.Retention = src.Expiration;
             }
         );
 
         var resolved = services.BuildServiceProvider().GetRequiredService<IOptions<IdempotencyOptions>>().Value;
-        resolved.IdempotencyKeyExpiration.Should().Be(TimeSpan.FromHours(9));
+        resolved.Retention.Should().Be(TimeSpan.FromHours(9));
     }
 
     [Fact]
@@ -132,50 +152,15 @@ public sealed class SetupIdempotencyTests
         resolved.ShouldCacheResponse.Should().BeSameAs(custom);
     }
 
-    [Fact]
-    public void should_pass_for_reject_strategy_without_lock_provider_when_di_validator()
+    private static async Task _RunStartingAsync(IServiceCollection services)
     {
-        var sp = new ServiceCollection().BuildServiceProvider();
-        var validator = new IdempotencyOptionsDiValidator(sp);
+        // The requirement check ships as an internal IHostedLifecycleService, so drive it the way the host does.
+        await using var provider = services.BuildServiceProvider();
 
-        var result = validator.Validate(
-            name: null,
-            new IdempotencyOptions { InFlightStrategy = InFlightStrategy.Reject }
-        );
-
-        result.Succeeded.Should().BeTrue();
-    }
-
-    [Fact]
-    public void should_pass_for_wait_and_replay_with_lock_provider_when_di_validator()
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton(Substitute.For<IDistributedLock>());
-        var sp = services.BuildServiceProvider();
-        var validator = new IdempotencyOptionsDiValidator(sp);
-
-        var result = validator.Validate(
-            name: null,
-            new IdempotencyOptions { InFlightStrategy = InFlightStrategy.WaitAndReplay }
-        );
-
-        result.Succeeded.Should().BeTrue();
-    }
-
-    [Fact]
-    public void should_fail_for_wait_and_replay_without_lock_provider_when_di_validator()
-    {
-        var sp = new ServiceCollection().BuildServiceProvider();
-        var validator = new IdempotencyOptionsDiValidator(sp);
-
-        var result = validator.Validate(
-            name: null,
-            new IdempotencyOptions { InFlightStrategy = InFlightStrategy.WaitAndReplay }
-        );
-
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain(nameof(IDistributedLock));
-        result.FailureMessage.Should().Contain(nameof(InFlightStrategy.WaitAndReplay));
+        foreach (var service in provider.GetServices<IHostedService>().OfType<IHostedLifecycleService>())
+        {
+            await service.StartingAsync(AbortToken);
+        }
     }
 
     private sealed record ConfigSource(TimeSpan Expiration);

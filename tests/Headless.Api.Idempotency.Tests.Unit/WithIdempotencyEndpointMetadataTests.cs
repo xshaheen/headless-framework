@@ -13,14 +13,14 @@ public sealed class WithIdempotencyEndpointMetadataTests
     {
         var builder = new RecordingBuilder();
 
-        builder.WithIdempotency(o => o.IdempotencyKeyExpiration = TimeSpan.FromDays(7));
+        builder.WithIdempotency(o => o.Retention = TimeSpan.FromDays(7));
 
         builder.CapturedMetadata.Should().ContainSingle();
         builder.CapturedMetadata[0].Should().BeOfType<IdempotencyMetadata>();
 
         var probe = new IdempotencyOptions();
         ((IdempotencyMetadata)builder.CapturedMetadata[0]).Configure(probe);
-        probe.IdempotencyKeyExpiration.Should().Be(TimeSpan.FromDays(7));
+        probe.Retention.Should().Be(TimeSpan.FromDays(7));
     }
 
     [Fact]
@@ -28,15 +28,15 @@ public sealed class WithIdempotencyEndpointMetadataTests
     {
         var builder = new RecordingBuilder();
 
-        builder.WithIdempotency(o => o.IdempotencyKeyExpiration = TimeSpan.FromHours(1));
-        builder.WithIdempotency(o => o.IdempotencyKeyExpiration = TimeSpan.FromHours(2));
+        builder.WithIdempotency(o => o.Retention = TimeSpan.FromHours(1));
+        builder.WithIdempotency(o => o.Retention = TimeSpan.FromHours(2));
 
         builder.CapturedMetadata.Should().HaveCount(2);
 
         // Verify the LAST entry carries the second config (GetMetadata<T> returns last)
         var probe = new IdempotencyOptions();
         ((IdempotencyMetadata)builder.CapturedMetadata[1]).Configure(probe);
-        probe.IdempotencyKeyExpiration.Should().Be(TimeSpan.FromHours(2));
+        probe.Retention.Should().Be(TimeSpan.FromHours(2));
     }
 
     private sealed class RecordingBuilder : IEndpointConventionBuilder

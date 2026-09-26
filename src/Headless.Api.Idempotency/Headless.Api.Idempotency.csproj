@@ -1,13 +1,15 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Description>Idempotency integration for Headless API.</Description>
+    <Description>Stripe-style HTTP idempotency middleware for Headless API, backed by the durable Headless.Idempotency store.</Description>
     <PackageTags>headless;api;idempotency;dotnet</PackageTags>
     <RootNamespace>Headless.Api.Idempotency</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Api.Idempotency.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Api.Idempotency.Tests.Integration" />
+    <!-- Lets NSubstitute proxy ILogger<IdempotencyMiddleware>, whose generic argument is internal. -->
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
@@ -16,11 +18,10 @@
     <ProjectReference Include="..\Headless.Api.Abstractions\Headless.Api.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Api.Core\Headless.Api.Core.csproj" />
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
-    <ProjectReference Include="..\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
-    <ProjectReference Include="..\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.FluentValidation\Headless.FluentValidation.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.Idempotency.Abstractions\Headless.Idempotency.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup Label="Resources">
     <EmbeddedResource Update="Resources\Messages.resx" />
