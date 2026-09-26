@@ -195,6 +195,14 @@ public sealed record ApnsLiveActivityNotification : ApnsNotification
     public bool RequestPushToken { get; init; }
 
     /// <summary>
+    /// The broadcast channel the started activity subscribes to, written as <c>aps.input-push-channel</c>. The
+    /// activity then receives the updates sent with
+    /// <see cref="IApnsPushNotificationService.SendBroadcastAsync"/> on that channel. Start only; iOS 18 and iPadOS
+    /// 18 or later.
+    /// </summary>
+    public string? InputPushChannel { get; init; }
+
+    /// <summary>
     /// The delivery priority, sent as <c>apns-priority</c>. Default: <see langword="null"/>, which sends
     /// <see cref="ApnsPriority.PowerConsiderate"/>. Apple budgets <see cref="ApnsPriority.Immediate"/> Live Activity
     /// pushes per hour and does not allow <see cref="ApnsPriority.PowerPrioritized"/>.

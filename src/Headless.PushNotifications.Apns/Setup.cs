@@ -43,6 +43,15 @@ namespace Headless.PushNotifications;
 public static class SetupApnsPushNotifications
 {
     internal const string HttpClientName = "Headless:Apns";
+    internal const string ChannelHttpClientName = "Headless:Apns:Channels";
+
+    // Apple's channel-management endpoints: port 2196 in production and 2195 in the sandbox.
+    internal static readonly Uri ProductionChannelManagementAddress = new(
+        "https://api-manage-broadcast.push.apple.com:2196"
+    );
+    internal static readonly Uri SandboxChannelManagementAddress = new(
+        "https://api-manage-broadcast.sandbox.push.apple.com:2195"
+    );
 
     // Apple serves the same hosts on 443 and on 2197 for networks that block 443 to non-web endpoints.
     internal static readonly Uri ProductionAddress = new("https://api.push.apple.com");
@@ -192,6 +201,19 @@ public static class SetupApnsPushNotifications
         return name is null ? HttpClientName : $"{HttpClientName}:{name}";
     }
 
+    internal static string GetChannelHttpClientName(string? name)
+    {
+        return name is null ? ChannelHttpClientName : $"{ChannelHttpClientName}:{name}";
+    }
+
+    /// <summary>The channel-management endpoint of the environment, which Apple serves on its own host and port.</summary>
+    internal static Uri GetChannelManagementAddress(ApnsOptions options)
+    {
+        return options.Environment == ApnsEnvironment.Sandbox
+            ? SandboxChannelManagementAddress
+            : ProductionChannelManagementAddress;
+    }
+
     /// <summary>
     /// Registers the APNs push-notification service. <paramref name="name"/> <see langword="null"/> registers the
     /// default (unkeyed) service; a non-null name registers a keyed service. Every instance reads the options for
@@ -208,7 +230,8 @@ public static class SetupApnsPushNotifications
         Action<IServiceCollection, string?> configureOptions,
         Action<HttpClient>? configureClient,
         Action<HttpStandardResilienceOptions>? configureResilience,
-        Action<SocketsHttpHandler>? configurePrimaryHandler = null
+        Action<SocketsHttpHandler>? configurePrimaryHandler = null,
+        Action<HttpClient>? configureChannelClient = null
     )
     {
         configureOptions(services, name);
@@ -250,28 +273,30 @@ public static class SetupApnsPushNotifications
             .SetHandlerLifetime(Timeout.InfiniteTimeSpan)
             // The factory's default loggers write the request URI, which carries the raw device token.
             .RemoveAllLoggers()
-            .AddStandardResilienceHandler(options =>
-            {
-                options.Retry.MaxRetryAttempts = 2;
-                // The default predicate also retries every 429, but APNs' TooManyRequests throttles one device
-                // token, so a retry would spend its backoff on a token that is still throttled.
-                // It also retries 5xx within seconds, but Apple asks senders to wait about 15 minutes before
-                // retrying one, so a 5xx is returned as a failure for the caller to retry later.
-                options.Retry.ShouldHandle = static args => ValueTask.FromResult(_IsPreSendFault(args.Outcome));
-                // The default also counts 429, so throttled device tokens would open the breaker for the whole
-                // instance. A failing server still counts even though it is no longer retried.
-                options.CircuitBreaker.ShouldHandle = static args =>
-                    ValueTask.FromResult(
-                        _IsPreSendFault(args.Outcome)
-                            || _IsServerFailure(args.Outcome)
-                            || args.Outcome.Exception is TimeoutRejectedException
-                    );
-                // The standard limiter has no queue, so concurrent multicasts on one instance would be rejected
-                // once they pass its permit count instead of waiting for a free slot.
-                options.RateLimiter.DefaultRateLimiterOptions.QueueLimit = 10_000;
+            .AddStandardResilienceHandler(options => _ConfigureResilience(options, configureResilience));
 
-                configureResilience?.Invoke(options);
-            });
+        // Channel management lives on its own host and port, so it gets its own client; it shares the primary
+        // handler's authentication, proxy, and connection bound, and the same resilience rules.
+        var channelClientName = GetChannelHttpClientName(name);
+
+        services
+            .AddHttpClient(
+                channelClientName,
+                (serviceProvider, client) =>
+                {
+                    var options = serviceProvider.GetRequiredService<IOptionsMonitor<ApnsOptions>>().Get(name);
+                    client.BaseAddress = GetChannelManagementAddress(options);
+                    client.DefaultRequestVersion = HttpVersion.Version20;
+                    client.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionExact;
+                    configureChannelClient?.Invoke(client);
+                }
+            )
+            .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
+                _CreatePrimaryHandler(serviceProvider, name, configurePrimaryHandler)
+            )
+            .SetHandlerLifetime(Timeout.InfiniteTimeSpan)
+            .RemoveAllLoggers()
+            .AddStandardResilienceHandler(options => _ConfigureResilience(options, configureResilience));
 
         // One instance serves both service types, so the typed and shared paths share its HTTP client, provider
         // token, and options.
@@ -286,6 +311,9 @@ public static class SetupApnsPushNotifications
             services.AddSingleton<IApnsPushNotificationService>(static serviceProvider =>
                 serviceProvider.GetRequiredService<ApnsPushNotificationService>()
             );
+            services.AddSingleton<IApnsBroadcastChannelService>(static serviceProvider =>
+                _CreateChannelService(serviceProvider, GetChannelHttpClientName(name: null), optionsName: null)
+            );
 
             return;
         }
@@ -299,6 +327,36 @@ public static class SetupApnsPushNotifications
             name,
             static (serviceProvider, key) => serviceProvider.GetRequiredKeyedService<ApnsPushNotificationService>(key)
         );
+        services.AddKeyedSingleton<IApnsBroadcastChannelService>(
+            name,
+            (serviceProvider, _) => _CreateChannelService(serviceProvider, channelClientName, name)
+        );
+    }
+
+    private static void _ConfigureResilience(
+        HttpStandardResilienceOptions options,
+        Action<HttpStandardResilienceOptions>? configureResilience
+    )
+    {
+        options.Retry.MaxRetryAttempts = 2;
+        // The default predicate also retries every 429, but APNs' TooManyRequests throttles one device token, so a
+        // retry would spend its backoff on a token that is still throttled. It also retries 5xx within seconds, but
+        // Apple asks senders to wait about 15 minutes before retrying one, so a 5xx is returned as a failure for the
+        // caller to retry later.
+        options.Retry.ShouldHandle = static args => ValueTask.FromResult(_IsPreSendFault(args.Outcome));
+        // The default also counts 429, so throttled device tokens would open the breaker for the whole instance. A
+        // failing server still counts even though it is no longer retried.
+        options.CircuitBreaker.ShouldHandle = static args =>
+            ValueTask.FromResult(
+                _IsPreSendFault(args.Outcome)
+                    || _IsServerFailure(args.Outcome)
+                    || args.Outcome.Exception is TimeoutRejectedException
+            );
+        // The standard limiter has no queue, so concurrent multicasts on one instance would be rejected once they
+        // pass its permit count instead of waiting for a free slot.
+        options.RateLimiter.DefaultRateLimiterOptions.QueueLimit = 10_000;
+
+        configureResilience?.Invoke(options);
     }
 
     internal static Action<IServiceCollection, string?> CopyOptions(ApnsOptions options)
@@ -348,6 +406,29 @@ public static class SetupApnsPushNotifications
             optionsName,
             serviceProvider.GetRequiredService<TimeProvider>(),
             serviceProvider.GetRequiredService<ILogger<ApnsPushNotificationService>>()
+        );
+    }
+
+    private static ApnsBroadcastChannelService _CreateChannelService(
+        IServiceProvider serviceProvider,
+        string httpClientName,
+        string? optionsName
+    )
+    {
+        var optionsMonitor = serviceProvider.GetRequiredService<IOptionsMonitor<ApnsOptions>>();
+
+        // The same mode selection as the push service: channel requests carry the same credentials.
+        IApnsAuthenticator authenticator = optionsMonitor.Get(optionsName).UsesCertificate
+            ? ApnsCertificateAuthenticator.Instance
+            : new ApnsTokenAuthenticator(serviceProvider.GetRequiredService<ApnsTokenSource>());
+
+        return new ApnsBroadcastChannelService(
+            serviceProvider.GetRequiredService<IHttpClientFactory>(),
+            httpClientName,
+            authenticator,
+            optionsMonitor,
+            optionsName,
+            serviceProvider.GetRequiredService<ILogger<ApnsBroadcastChannelService>>()
         );
     }
 

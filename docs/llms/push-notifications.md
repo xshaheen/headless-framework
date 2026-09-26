@@ -623,17 +623,18 @@ await apns.SendAsync(
 
 | `Event` | Device token | Required | Allowed only here |
 |---|---|---|---|
-| `ApnsLiveActivityEvent.Start` | The app's push-to-start token | `ContentState`, `AttributesType`, `Attributes`, `Alert` | `AttributesType`, `Attributes`, `RequestPushToken` |
+| `ApnsLiveActivityEvent.Start` | The app's push-to-start token | `ContentState`, `AttributesType`, `Attributes`, `Alert` | `AttributesType`, `Attributes`, `RequestPushToken`, `InputPushChannel` |
 | `ApnsLiveActivityEvent.Update` | The running activity's push token | `ContentState` | — |
 | `ApnsLiveActivityEvent.End` | The running activity's push token | Nothing; send the final `ContentState` so the ended activity shows the latest data | — |
 
 - `Timestamp` defaults to the clock's current time. The device ignores an update older than the one it shows.
 - `RequestPushToken` writes `"input-push-token": 1` inside `aps` on a `Start`, so the started activity (iOS 18 and iPadOS 18 or later) reports a push token for its updates. Setting it on `Update` or `End` throws.
+- `InputPushChannel` writes `"input-push-channel": "<channel id>"` inside `aps` on a `Start`, so the started activity (iOS 18 and iPadOS 18 or later) listens for [broadcasts](#broadcast-channels-ios-18) on that channel. Setting it on `Update` or `End`, or to a blank id, throws.
 - `StaleDate`, `DismissalDate`, and `RelevanceScore` are optional. A Live Activity relevance score must be a finite number; it ranks the activity against the app's other activities.
 - `Alert` shows only a title and a body. Setting `Subtitle`, `SubtitleLocKey`, `SubtitleLocArgs`, or `LaunchImage` throws. Localized texts are written as `{"loc-key":…,"loc-args":[…]}` dictionaries.
 - `Sound` needs `Alert` and is written inside it as `aps.alert.sound`. It takes `ApnsSound.Default` or a named sound; a critical sound throws.
 - `Priority` defaults to `PowerConsiderate` (5), while Apple defaults to 10, so an update can be delayed. Apple budgets `Immediate` (10) Live Activity pushes per hour, so reserve 10 for updates the user must see now. `PowerPrioritized` (1) throws.
-- A VoIP instance and a certificate-mode instance both refuse this push type.
+- A VoIP instance and a certificate-mode instance both refuse this push type to a device token. A certificate-mode instance can still broadcast it to a channel.
 
 `ContentState` and `Attributes` are `JsonElement` values that must be JSON objects, or the send throws. The provider copies them into the payload as is and never serializes your types, so it stays AOT-safe. Serialize them with your own `JsonSerializerContext`. ActivityKit decodes them into the app's Swift types with default decoding strategies, so the JSON keys must match the Swift property names exactly and no custom date strategy may apply. `JsonElement` has no value equality, so two Live Activity notifications with the same content compare unequal.
 
@@ -696,6 +697,59 @@ public sealed class DeliveryActivityPusher(IApnsPushNotificationService apns)
 - `ApnsComplicationNotification` updates a ClockKit complication. ClockKit is superseded by WidgetKit; prefer `ApnsWidgetsNotification` for widget-based complications. Apple's reference prints this topic's suffix as `h.complication`, which reads as a typo; the provider sends `.complication`, so a `TopicDisallowed` rejection points at that discrepancy.
 - `ApnsFileProviderNotification` signals a File Provider domain to sync. `ContainerIdentifier` and `Domain` are required and must not be blank.
 
+#### Broadcast channels (iOS 18)
+
+A broadcast sends one Live Activity update or end to every device subscribed to a channel, with one request, instead of one request per activity token. Devices on iOS 18 and iPadOS 18 or later subscribe by starting the activity with `InputPushChannel` set to the channel id.
+
+`IApnsBroadcastChannelService`, registered next to `IApnsPushNotificationService` by `UseApns`, manages the app's channels on APNs' channel-management endpoint (`api-manage-broadcast.push.apple.com:2196`, or `api-manage-broadcast.sandbox.push.apple.com:2195` in the sandbox):
+
+| Method | APNs request | Result |
+|---|---|---|
+| `CreateAsync(storagePolicy)` | `POST /1/apps/<bundle id>/channels` with `{"message-storage-policy":<0 or 1>,"push-type":"LiveActivity"}` | `ApnsBroadcastChannel` with the id APNs generated (HTTP 201) |
+| `GetAsync(channelId)` | `GET /1/apps/<bundle id>/channels` with `apns-channel-id` | The channel's storage policy (HTTP 200) |
+| `ListAsync()` | `GET /1/apps/<bundle id>/all-channels` | Every active channel id (HTTP 200) |
+| `DeleteAsync(channelId)` | `DELETE /1/apps/<bundle id>/channels` with `apns-channel-id` | Nothing (HTTP 204). Irreversible; APNs may still deliver messages it stored |
+
+- `ApnsChannelStoragePolicy.NoMessageStored` delivers each message once and allows a higher publishing budget, for frequent updates such as live scores. `MostRecentMessageStored` keeps the latest message for up to 8 hours for offline devices, for infrequent updates such as flight status. The policy is fixed when the channel is created.
+- An app holds up to 10,000 channels per environment, and a channel does not cross environments. Delete a channel when its event is over.
+- A channel id is a base64 string of no fixed length. Store it with the event, not in a fixed-size column.
+- A rejection throws `ApnsRequestException` with the HTTP status, the APNs reason, and the `apns-request-id` to quote to Apple. A transport fault throws the underlying exception. Channel management is a control-plane call, so there is no partial result to keep.
+
+`IApnsPushNotificationService.SendBroadcastAsync(channelId, notification)` posts the update to `/4/broadcasts/apps/<bundle id>` on the instance's regular APNs host:
+
+- It takes an `ApnsLiveActivityNotification` with `Update` or `End`. Apple does not let a broadcast start an activity, so a `Start`, and any `AttributesType`, `Attributes`, `RequestPushToken`, or `InputPushChannel`, throws `ArgumentException` before any request. A `CollapseId` throws too: Apple's broadcast request has no collapse header.
+- `apns-expiration` is required on a broadcast. A `null` `Expiration` sends `0` (deliver once, never store), which every storage policy accepts. A nonzero expiration on a `NoMessageStored` channel is rejected by APNs.
+- `apns-priority` defaults to 5 and accepts 1, 5, and 10. The push type is `liveactivity`. The request carries no `apns-topic`: the bundle id is in the path.
+- `ApnsNotification.ApnsId`, when set, becomes the `apns-request-id`; otherwise a UUID is generated. The payload limit is 5120 bytes.
+- It returns an `ApnsBroadcastResult` and never throws for a rejection or a transport fault: `IsSucceeded`, `StatusCode`, `Reason`, `FailureError`, `RequestId`, `UniqueId`, `FailureKind`, `IsRetryable`, and `RetryAfter`, classified like a device send.
+- A certificate-mode instance can create channels and broadcast: Apple's broadcast and channel-management pages both show certificate-authenticated requests.
+
+```csharp
+public sealed class MatchBroadcaster(IApnsBroadcastChannelService channels, IApnsPushNotificationService apns)
+{
+    public async ValueTask<string> OpenAsync(CancellationToken ct)
+    {
+        // Frequent score updates: store nothing, publish more.
+        var channel = await channels.CreateAsync(ApnsChannelStoragePolicy.NoMessageStored, ct);
+
+        return channel.Id; // share with the apps; each starts its activity with InputPushChannel = channel.Id
+    }
+
+    public ValueTask<ApnsBroadcastResult> ScoreAsync(string channelId, JsonElement score, CancellationToken ct)
+    {
+        return apns.SendBroadcastAsync(
+            channelId,
+            new ApnsLiveActivityNotification { Event = ApnsLiveActivityEvent.Update, ContentState = score },
+            ct
+        );
+    }
+
+    public ValueTask CloseAsync(string channelId, CancellationToken ct) => channels.DeleteAsync(channelId, ct);
+}
+```
+
+Apple's broadcast page names the push type `Liveactivity` in its header table but sends `liveactivity` in both sample requests; the provider sends `liveactivity`, as @parse/node-apn does. The channel-management body uses Apple's `LiveActivity`. The broadcast sample also shows an `api-broadcast.sandbox.push.apple.com` host, while the page's server list and node-apn use the regular APNs hosts; the provider uses the regular hosts.
+
 #### Results
 
 `ApnsSendResult` holds the provider-agnostic `Response` (`PushNotificationResponse`, the same value the shared interface returns) plus what APNs sent back:
@@ -743,7 +797,6 @@ builder.Services.AddHeadlessPushNotifications(setup =>
 - **HTTPS only, except loopback.** A non-HTTPS endpoint is refused unless its host is loopback, so a `configureClient` override cannot send the payload or the bearer token in cleartext over a network. The refusal surfaces as a `Failure` on each send.
 - **Environment must match the token.** A device token belongs to the environment the app was built for. `Sandbox` is for builds signed with a development profile; `Production` (the default) is for App Store, TestFlight, and ad hoc builds.
 - **Push type is per instance for VoIP.** `ApnsOptions.PushType` stays an instance setting: a VoIP instance holds PushKit tokens and sends every shared request and every `ApnsAlertNotification` as a VoIP push, deliver-once unless the request sets an expiration. Register a separate named instance for VoIP.
-- **Not supported.** iOS 18 broadcast push channels for Live Activities.
 
 ### Install
 
@@ -947,6 +1000,7 @@ Pass `configureResilience` to change any of these.
 #### Registrations
 
 - Registers `IPushNotificationService` and `IApnsPushNotificationService` as singletons for the default, or keyed singletons under the instance name for a named instance. Both resolve to the same service instance
+- Registers `IApnsBroadcastChannelService` the same way, with its own HTTP client (named `Headless:Apns:Channels`, or `Headless:Apns:Channels:{name}`) for the channel-management host; it shares the instance's credentials, proxy, and resilience rules, and bounds its own connections by the same `MaxConnections`
 - Registers one container-wide provider-token cache, used only by token-mode instances, and `TimeProvider.System` as a singleton if not already registered
 - Registers a hosted service per instance that checks a certificate-mode certificate's expiry at host start and daily after that; it does nothing in token mode
 - Registration has no network side effects. In token mode the signing key is loaded into the token cache and the first provider token minted on the first send; in certificate mode the certificate is loaded when the HTTP client or the startup check first needs it

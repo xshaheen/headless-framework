@@ -56,6 +56,7 @@ public sealed record FakeApnsRequest(
 /// The <c>apns-unique-id</c> response header, which the APNs sandbox adds to identify the notification in its delivery
 /// log; omitted when <see langword="null"/>.
 /// </param>
+/// <param name="Headers">Extra response headers, such as the <c>apns-channel-id</c> of a created channel.</param>
 /// <param name="RetryAfterSeconds">
 /// The <c>Retry-After</c> response header in seconds; APNs does not document one, but a throttling proxy in front of
 /// it may send it, so the fake can carry it.
@@ -66,7 +67,8 @@ public sealed record FakeApnsReply(
     string? RawBody = null,
     bool AbortAfterRead = false,
     string? UniqueId = null,
-    int? RetryAfterSeconds = null
+    int? RetryAfterSeconds = null,
+    IReadOnlyDictionary<string, string>? Headers = null
 )
 {
     public static FakeApnsReply Ok { get; } = new(200);
@@ -379,6 +381,11 @@ public sealed class FakeApnsServer : IAsyncDisposable
             )
         );
 
+        // Channel management has its own client and host; aim it at this server too.
+        services
+            .AddHttpClient(SetupApnsPushNotifications.GetChannelHttpClientName(null))
+            .ConfigureHttpClient(client => client.BaseAddress = BaseAddress);
+
         // Runs after the provider registered its HTTP client, so a handler added here sits inside the resilience
         // pipeline and sees every attempt.
         postConfigureServices?.Invoke(services);
@@ -467,7 +474,8 @@ public sealed class FakeApnsServer : IAsyncDisposable
                         {
                             handler.PooledConnectionLifetime = TimeSpan.Zero;
                         }
-                    }
+                    },
+                    configureChannelClient: client => client.BaseAddress = BaseAddress
                 )
             )
         );
@@ -548,6 +556,19 @@ public sealed class FakeApnsServer : IAsyncDisposable
                 context.Response.Headers["apns-id"] = apnsId;
             }
 
+            if (headers.TryGetValue("apns-request-id", out var requestId))
+            {
+                context.Response.Headers["apns-request-id"] = requestId;
+            }
+
+            if (reply.Headers is not null)
+            {
+                foreach (var (name, value) in reply.Headers)
+                {
+                    context.Response.Headers[name] = value;
+                }
+            }
+
             if (reply.UniqueId is not null)
             {
                 context.Response.Headers["apns-unique-id"] = reply.UniqueId;
@@ -562,7 +583,8 @@ public sealed class FakeApnsServer : IAsyncDisposable
             {
                 await context.Response.WriteAsync(reply.RawBody, context.RequestAborted);
             }
-            else if (reply.Status != 200)
+            // APNs writes an error body only for a failure; a 201 or 204 success carries none, and 204 cannot.
+            else if (reply.Status >= 400)
             {
                 context.Response.ContentType = "application/json";
                 var errorBody =
