@@ -312,6 +312,62 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
+    public void should_decorate_only_the_matching_key_when_try_decorate_keyed()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddKeyedSingleton<IMyService, MyService>("a");
+        services.AddKeyedSingleton<IMyService>("b", (_, _) => new MyService());
+        services.AddSingleton<IMyService, MyService>();
+
+        // when
+        var result = services.TryDecorateKeyed<IMyService>("a", (inner, _) => new FactoryDecoratedService(inner));
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        result.Should().BeTrue();
+        provider.GetRequiredKeyedService<IMyService>("a").Greet().Should().Be("factory:original");
+        provider.GetRequiredKeyedService<IMyService>("b").Greet().Should().Be("original");
+        provider.GetRequiredService<IMyService>().Greet().Should().Be("original");
+        provider
+            .GetRequiredKeyedService<IMyService>("a")
+            .Should()
+            .BeSameAs(provider.GetRequiredKeyedService<IMyService>("a"));
+    }
+
+    [Fact]
+    public void should_decorate_keyed_factory_and_instance_registrations_when_try_decorate_keyed()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddKeyedSingleton<IMyService>("factory", (_, _) => new MyService());
+        services.AddKeyedSingleton<IMyService>("instance", new MyService());
+
+        // when
+        services.TryDecorateKeyed<IMyService>("factory", (inner, _) => new FactoryDecoratedService(inner));
+        services.TryDecorateKeyed<IMyService>("instance", (inner, _) => new FactoryDecoratedService(inner));
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredKeyedService<IMyService>("factory").Greet().Should().Be("factory:original");
+        provider.GetRequiredKeyedService<IMyService>("instance").Greet().Should().Be("factory:original");
+    }
+
+    [Fact]
+    public void should_return_false_when_try_decorate_keyed_finds_no_registration_for_the_key()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddKeyedSingleton<IMyService, MyService>("a");
+
+        // when
+        var result = services.TryDecorateKeyed<IMyService>("b", (inner, _) => new FactoryDecoratedService(inner));
+
+        // then
+        result.Should().BeFalse();
+    }
+
+    [Fact]
     public void should_replace_service_when_replace_scoped_it_exists()
     {
         // given

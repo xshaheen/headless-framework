@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net.Http.Headers;
 using Headless.Abstractions;
 using Headless.Blobs;
 using Microsoft.Extensions.DependencyInjection;
@@ -441,4 +442,36 @@ public sealed class S3CompatibleMinioBlobStorageTests(MinioFixture fixture) : Bl
     }
 
     #endregion
+
+    [Fact]
+    public async Task presigned_upload_url_enforces_the_signed_content_type()
+    {
+        // MinIO validates presigned signatures; LocalStack skips that check by default, so it cannot prove this.
+        await using var storage = GetStorage();
+        var presigned = (IPresignedUrlBlobStorage)storage;
+
+        var container = $"presign-{Guid.NewGuid():N}";
+        var location = new BlobLocation(container, "report.pdf");
+        await GetContainerManager().EnsureContainerAsync(container, AbortToken);
+
+        var uploadUrl = await presigned.GetPresignedUploadUrlAsync(
+            location,
+            TimeSpan.FromMinutes(5),
+            new PresignedUploadConstraints { ContentType = "application/pdf" },
+            AbortToken
+        );
+
+        using var http = new HttpClient();
+
+        using var wrongType = new ByteArrayContent("<html></html>"u8.ToArray());
+        wrongType.Headers.ContentType = new MediaTypeHeaderValue("text/html");
+        using var rejected = await http.PutAsync(uploadUrl, wrongType, AbortToken);
+
+        using var rightType = new ByteArrayContent("%PDF-1.7"u8.ToArray());
+        rightType.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+        using var accepted = await http.PutAsync(uploadUrl, rightType, AbortToken);
+
+        rejected.IsSuccessStatusCode.Should().BeFalse();
+        accepted.IsSuccessStatusCode.Should().BeTrue();
+    }
 }

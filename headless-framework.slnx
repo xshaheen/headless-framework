@@ -67,6 +67,7 @@
         <Project Path="src\Headless.Blobs.Core\Headless.Blobs.Core.csproj" />
         <Project Path="src\Headless.Blobs.FileSystem\Headless.Blobs.FileSystem.csproj" />
         <Project Path="src\Headless.Blobs.Redis\Headless.Blobs.Redis.csproj" />
+        <Project Path="src\Headless.Blobs.SignedUrlEndpoint\Headless.Blobs.SignedUrlEndpoint.csproj" />
         <Project Path="src\Headless.Blobs.SshNet\Headless.Blobs.SshNet.csproj" />
     </Folder>
     <Folder Name="/Blobs/Tests/">
@@ -84,6 +85,7 @@
         <Project Path="tests\Headless.Blobs.FileSystem.Tests.Unit\Headless.Blobs.FileSystem.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Blobs.Redis.Tests.Integration\Headless.Blobs.Redis.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Blobs.Redis.Tests.Unit\Headless.Blobs.Redis.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Blobs.SignedUrlEndpoint.Tests.Unit\Headless.Blobs.SignedUrlEndpoint.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Blobs.SshNet.Tests.Integration\Headless.Blobs.SshNet.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Blobs.SshNet.Tests.Unit\Headless.Blobs.SshNet.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Blobs.Tests.Harness\Headless.Blobs.Tests.Harness.csproj" />

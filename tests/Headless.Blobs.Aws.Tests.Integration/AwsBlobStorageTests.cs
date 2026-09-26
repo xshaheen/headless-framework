@@ -125,7 +125,11 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
         // The presigned PUT goes straight to S3 and does not create the bucket; ensure it first.
         await GetContainerManager().EnsureContainerAsync(container, AbortToken);
 
-        var uploadUrl = await presigned.GetPresignedUploadUrlAsync(location, TimeSpan.FromMinutes(5), AbortToken);
+        var uploadUrl = await presigned.GetPresignedUploadUrlAsync(
+            location,
+            TimeSpan.FromMinutes(5),
+            cancellationToken: AbortToken
+        );
 
         using (var http = new HttpClient())
         using (var body = new ByteArrayContent(content))

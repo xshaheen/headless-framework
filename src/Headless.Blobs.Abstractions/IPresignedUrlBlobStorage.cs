@@ -8,9 +8,10 @@ namespace Headless.Blobs;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This is a capability interface, not part of <see cref="IBlobStorage"/>: only backends with a native signing
-/// mechanism implement it (S3 SigV4 for AWS and Cloudflare R2, SAS for Azure). Backends with no URL concept
-/// (file system, Redis, SSH) deliberately do not implement it.
+/// This is a capability interface, not part of <see cref="IBlobStorage"/>: backends with a native signing mechanism
+/// implement it (S3 SigV4 for AWS and Cloudflare R2, SAS for Azure). Backends with no URL concept (file system, Redis,
+/// SSH) gain it only when <c>Headless.Blobs.SignedUrlEndpoint</c> wraps them in a signed-URL endpoint that streams the bytes through
+/// the application.
 /// </para>
 /// <para>
 /// Consumers feature-detect the capability with an <see langword="is"/>-cast from the resolved <see cref="IBlobStorage"/>
@@ -36,6 +37,12 @@ namespace Headless.Blobs;
 public interface IPresignedUrlBlobStorage
 {
     /// <summary>
+    /// The <see cref="PresignedUploadConstraints"/> members this backend enforces on an upload URL. Constraints outside
+    /// this set are accepted by <see cref="GetPresignedUploadUrlAsync"/> but not enforced.
+    /// </summary>
+    PresignedUploadConstraintKinds SupportedUploadConstraints { get; }
+
+    /// <summary>
     /// Creates a pre-authenticated URL that allows downloading (HTTP GET) the specified blob until it expires.
     /// </summary>
     /// <param name="location">The blob the URL grants read access to.</param>
@@ -53,11 +60,17 @@ public interface IPresignedUrlBlobStorage
     /// </summary>
     /// <param name="location">The blob the URL grants write access to.</param>
     /// <param name="expiry">How long the URL remains valid, measured from now.</param>
+    /// <param name="constraints">
+    /// Restrictions the upload request must satisfy, or <see langword="null"/> for none. Only the members in
+    /// <see cref="SupportedUploadConstraints"/> are enforced; the rest are ignored. An enforced content type must be
+    /// sent as the upload's <c>Content-Type</c> header.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A signed, time-limited URL for uploading the blob.</returns>
     ValueTask<Uri> GetPresignedUploadUrlAsync(
         BlobLocation location,
         TimeSpan expiry,
+        PresignedUploadConstraints? constraints = null,
         CancellationToken cancellationToken = default
     );
 }

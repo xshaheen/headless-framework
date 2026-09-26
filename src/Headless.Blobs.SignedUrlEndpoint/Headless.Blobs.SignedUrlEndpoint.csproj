@@ -1,0 +1,17 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Signed download and upload URLs for Headless blob stores that have no native presign, served by an ASP.NET Core endpoint.</Description>
+    <PackageTags>headless;blobs;presigned-url;aspnetcore;dotnet</PackageTags>
+    <RootNamespace>Headless.Blobs</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Blobs.Abstractions\Headless.Blobs.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Blobs.Core\Headless.Blobs.Core.csproj" />
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+  </ItemGroup>
+</Project>

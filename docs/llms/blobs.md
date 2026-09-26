@@ -1,6 +1,6 @@
 ---
 domain: Blob Storage
-packages: Blobs.Abstractions, Blobs.Core, Blobs.Aws, Blobs.Azure, Blobs.CloudflareR2, Blobs.FileSystem, Blobs.Redis, Blobs.SshNet
+packages: Blobs.Abstractions, Blobs.Core, Blobs.Aws, Blobs.Azure, Blobs.CloudflareR2, Blobs.FileSystem, Blobs.Redis, Blobs.SshNet, Blobs.SignedUrlEndpoint
 ---
 
 # Blob Storage
@@ -18,6 +18,7 @@ Provider selection guide:
 - **Production (Cloudflare R2)**: `Headless.Blobs.CloudflareR2` — private, S3-compatible storage on the reused AWS engine; a cost-saving S3 replacement.
 - **SFTP/legacy**: `Headless.Blobs.SshNet` — SFTP protocol for remote servers and legacy system integration.
 - **Small cached blobs**: `Headless.Blobs.Redis` — Redis-backed storage for small, ephemeral blobs only (default 10 MB limit).
+- **Presigned URLs without a cloud provider**: `Headless.Blobs.SignedUrlEndpoint` — a signed download/upload endpoint that gives FileSystem, Redis, and SFTP stores `IPresignedUrlBlobStorage`, streaming the bytes through the application.
 
 The default store registers as a plain (unkeyed) `IBlobStorage` singleton; named stores register as keyed `IBlobStorage` singletons and resolve through `IBlobStorageProvider`. Every operation addresses a blob with a single `BlobLocation(container, path)` value — a validated `(top-level container, container-relative object key)` pair — instead of the old `string[] container` + `blobName` shape. Container/bucket lifecycle and presigned URLs are opt-in capabilities (`IBlobContainerManager`, `IPresignedUrlBlobStorage`), not part of the data-plane `IBlobStorage` contract.
 
@@ -30,7 +31,17 @@ The default store registers as a plain (unkeyed) `IBlobStorage` singleton; named
 - `UploadAsync` does **not** create a missing top-level container — that is an error. Provision the container first via `IBlobContainerManager.EnsureContainerAsync` or out-of-band (IaC). Filesystem-like providers (FileSystem, SFTP) still create the intermediate path directories inherent to writing a blob.
 - `IBlobStorage.RequiresContainerProvisioning` (get-only `bool`) tells you at runtime whether that provisioning step is mandatory: `true` on AWS, Azure, CloudflareR2 (reused AWS engine), FileSystem, and SSH; `false` only on Redis, whose backing hash materializes lazily on the first write. Consult it in infrastructure code (e.g. persistence bootstrap) before deciding whether a missing `IBlobContainerManager` is a misconfiguration.
 - Container lifecycle (Ensure/Exists/Delete) lives on `IBlobContainerManager`, **resolved from DI** (`sp.GetService<IBlobContainerManager>()` or `sp.GetKeyedService<IBlobContainerManager>("name")`) — NOT an `is`-cast from the store. AWS, Azure, FileSystem, Redis, and SSH register one; CloudflareR2 does **not** (its object-scoped tokens cannot manage buckets), so resolution returns `null` for an R2 store — null-check the result.
-- Presigned URLs are a separate capability discovered with an `is`-cast from the store (`storage is IPresignedUrlBlobStorage presigned`) and take a `BlobLocation`. AWS, Azure, and CloudflareR2 support it; for **named** stores they also register a keyed `IPresignedUrlBlobStorage` (resolve via `[FromKeyedServices("name")]`). FileSystem, Redis, and SshNet are never presigned-capable. There is no global (unkeyed) `IPresignedUrlBlobStorage` registration — do not inject it without a key.
+- Presigned URLs are a separate capability discovered with an `is`-cast from the store (`storage is IPresignedUrlBlobStorage presigned`) and take a `BlobLocation`. AWS, Azure, and CloudflareR2 support it natively; FileSystem, Redis, and SshNet support it only after `setup.UseSignedUrlEndpoint(...)` from `Headless.Blobs.SignedUrlEndpoint` plus `app.MapBlobSignedUrlEndpoint()`, which serve the bytes through the application. For **named** stores a keyed `IPresignedUrlBlobStorage` is registered too (resolve via `[FromKeyedServices("name")]`). There is no global (unkeyed) `IPresignedUrlBlobStorage` registration — do not inject it without a key.
+- Upload URLs take an optional `PresignedUploadConstraints` (`ContentType`, `MaxLength`). A backend enforces what it can and **silently ignores the rest**; `IPresignedUrlBlobStorage.SupportedUploadConstraints` (a `PresignedUploadConstraintKinds` flags value) says which ones hold. S3 and R2 enforce `ContentType` only, Azure enforces neither, and the signed-URL endpoint enforces both. When a limit matters, check the flag and validate the uploaded blob yourself for any constraint the backend does not enforce:
+
+  ```csharp
+  var url = await presigned.GetPresignedUploadUrlAsync(location, expiry, new() { ContentType = "image/png", MaxLength = 2_000_000 }, ct);
+
+  if (!presigned.SupportedUploadConstraints.HasFlag(PresignedUploadConstraintKinds.MaxLength))
+  {
+      // After the client reports the upload done: check BlobInfo.Size and delete an oversized blob.
+  }
+  ```
 - List with `ListAsync(BlobQuery) → BlobPage(Items, ContinuationToken?)`. A `null` token marks the last page; otherwise round-trip the opaque token into a new `BlobQuery` to fetch the next page. Prefer the `GetBlobsAsync(BlobQuery)` streaming extension (an `IAsyncEnumerable<BlobInfo>`) for full enumeration, or `GetBlobsListAsync(query, limit)` to materialize. FileSystem listing is bounded to O(pageSize) memory per call (sliding window), like SFTP.
 - `BlobQuery.Prefix` is the only explicit filter pushed to the backend (and it is validated through the same seam as `BlobLocation`, so a `../` prefix can never reach enumeration). Glob (`*`, `?`) is a **client-side** extension layered over streaming: `GetBlobsAsync(query, globPattern)` derives a compatible literal prefix to narrow enumeration when safe, then applies the matcher client-side. `DeleteAllAsync(BlobQuery)` deletes by validated prefix; glob-delete is list + filter + bulk-delete.
 - Pagination stability differs by backend and is documented as explicit tiers: server-side stable on S3/Azure (native continuation tokens); emulated re-scan on FileSystem/SSH (lexicographic start-after-key) and Redis (`HSCAN` cursor) — weaker stability under concurrent writes; on FileSystem/SSH each page re-scans from the start, so full enumeration costs O(n²/pageSize) backend I/O (the price of a stateless, serializable token). Treat the token as opaque: never parse, compare, or persist it across provider changes. Every provider wraps its cursor in a shared envelope, so a malformed/forged token throws a catchable `ArgumentException` uniformly instead of leaking a backend SDK error.
@@ -72,7 +83,7 @@ The token is a **serializable opaque string** that survives a web-request bounda
 
 Two opt-in capabilities live off the `IBlobStorage` data plane, and they are discovered differently — the difference is deliberate:
 
-- **Presigned URLs (`IPresignedUrlBlobStorage`)** are discovered with an `is`-cast from the resolved store (`storage is IPresignedUrlBlobStorage presigned`). The cast stays honest because both AWS and Cloudflare R2 (which reuses the AWS storage type) support signing — the capability tracks the storage type exactly.
+- **Presigned URLs (`IPresignedUrlBlobStorage`)** are discovered with an `is`-cast from the resolved store (`storage is IPresignedUrlBlobStorage presigned`). The cast stays honest because both AWS and Cloudflare R2 (which reuses the AWS storage type) support signing — the capability tracks the storage type exactly. `Headless.Blobs.SignedUrlEndpoint` keeps the same check working for FileSystem, Redis, and SSH by wrapping those stores in a pass-through decorator that implements both interfaces.
 - **Container management (`IBlobContainerManager`)** is a **separately registered DI service**, resolved with `GetService`/`GetKeyedService<IBlobContainerManager>(name)`, *not* an `is`-cast. The reason: R2 reuses `AwsBlobStorage` but cannot create buckets (object-scoped tokens), so an `is`-cast from the shared storage type would lie. By registering the manager as its own service, the AWS provider registers one while R2 registers none — and `GetKeyedService<IBlobContainerManager>` honestly returns `null` for an R2 store. AWS, Azure, FileSystem, Redis, and SSH register a manager; R2 does not.
 
 `IBlobContainerManager` exposes `EnsureContainerAsync` (idempotent create), `ContainerExistsAsync`, and `DeleteContainerAsync`. `UploadAsync` no longer auto-creates a missing top-level container — a missing managed container/bucket is an error; provision it through `EnsureContainerAsync` or IaC first. (FileSystem/SSH still create the intermediate *path* directories required to write a blob, which is path creation, not container management.)
@@ -83,7 +94,7 @@ Whether that provisioning step is required at all is a data-plane fact, so it li
 
 Metadata uses one read-only dictionary shape — `IReadOnlyDictionary<string, string>?` with non-null values — across the `UploadAsync` parameter, `BlobInfo.Metadata`, and `BlobDownloadResult.Metadata`. All six providers round-trip it. S3, Azure, and Redis store it natively (Redis in a separate info hash, atomic via Lua). FileSystem and SFTP, which have no native blob-metadata concept, store it in a **sidecar companion file** beside each blob, named with the reserved `.hlmeta` suffix.
 
-The served media type is a separate `contentType` argument on `UploadAsync` and a `ContentType` member on `BlobUploadRequest`, not a metadata entry. When it is `null` the provider derives it from the key's extension, so an extension-less key is served as `application/octet-stream` unless the caller passes the type. S3 and Azure set it as the object's `Content-Type`, which every GET and presigned URL then carries; FileSystem, Redis, and SFTP have no HTTP surface and ignore it.
+The served media type is a separate `contentType` argument on `UploadAsync` and a `ContentType` member on `BlobUploadRequest`, not a metadata entry. When it is `null` the provider derives it from the key's extension, so an extension-less key is served as `application/octet-stream` unless the caller passes the type. S3 and Azure set it as the object's `Content-Type`, which every GET and presigned URL then carries; FileSystem, Redis, and SFTP do not store it, and the `Headless.Blobs.SignedUrlEndpoint` endpoint derives the served type from the key's extension instead.
 
 Sidecar trade-offs the agent must know: write order is content-first then sidecar, and a missing sidecar reads as empty metadata, so reads stay safe across a crash window — but the pair is **non-atomic** on FileSystem/SFTP (no transaction). Sidecars are filtered from every listing, existence, count, and delete-all result, so they never surface as blobs or match a prefix/glob. Deleting a blob removes its sidecar, so re-uploading the same key without metadata cannot resurrect stale metadata. Any blob key segment that would collide with the reserved `.hlmeta` form is rejected at `BlobLocation` construction.
 
@@ -138,7 +149,7 @@ Pick one provider per store (default or named) based on where the bytes must liv
 | `Headless.Blobs.Aws` via `UseS3Compatible` | MinIO, Ceph RGW, Garage, or another self-hosted S3-compatible server, including local MinIO in development | The server is Cloudflare R2 (use `Headless.Blobs.CloudflareR2`) or needs SDK settings the helper fixes | Path-style addressing, no ACLs, and a buffered signed upload body are fixed; drop to `UseAws` + `AWSOptions` for anything else |
 | `Headless.Blobs.CloudflareR2` | S3-compatible storage with low egress cost and private buckets | You need public serving via ACLs, or in-app bucket provisioning | No ACL concept; no container-manager capability — buckets are provisioned out-of-band (IaC/dashboard) |
 | `Headless.Blobs.Azure` | Production on Azure; want Entra ID auth and SAS presigned URLs | Not on Azure | Requires a `BlobServiceClient`; extra SAS rules for AAD clients |
-| `Headless.Blobs.SshNet` | Files must land on a remote SFTP/SSH server or legacy system | High-throughput or presigned-URL workloads | Slower; no presigned URLs; sidecar metadata costs a second round-trip; opens live SSH connections |
+| `Headless.Blobs.SshNet` | Files must land on a remote SFTP/SSH server or legacy system | High-throughput or presigned-URL workloads | Slower; presigned URLs only through the `Headless.Blobs.SignedUrlEndpoint` endpoint, which streams through the application; sidecar metadata costs a second round-trip; opens live SSH connections |
 | `Headless.Blobs.Redis` | Small, ephemeral blobs (thumbnails, temp uploads) needing fast access | Large files (default 10 MB cap) or durable storage | In-memory cost; `HSCAN` paging is unordered; not for large or long-lived blobs |
 
 ---
@@ -154,7 +165,8 @@ Defines the unified interfaces and value types for blob/file storage operations 
 - `BlobQuery` / `BlobPage` — token-based paging primitive: a prefix-scoped page request (with an opt-in `IncludeMetadata` flag; listings omit per-object metadata by default) and its result plus an opaque continuation token.
 - `BlobBulkResult` — identity-carrying bulk outcome (`Container` + `Path` + optional validated `BlobLocation` + `Result<bool, Exception>`).
 - `IBlobContainerManager` — optional container-lifecycle capability (Ensure/Exists/Delete), resolved from DI; implemented by AWS, Azure, FileSystem, Redis, and SSH (not R2).
-- `IPresignedUrlBlobStorage` — optional presigned GET + PUT URL capability over a `BlobLocation`; implemented only by AWS, Azure, and CloudflareR2.
+- `IPresignedUrlBlobStorage` — optional presigned GET + PUT URL capability over a `BlobLocation`; implemented natively by AWS, Azure, and CloudflareR2, and for the other providers by the `Headless.Blobs.SignedUrlEndpoint` decorator.
+- `PresignedUploadConstraints` — optional `ContentType` and `MaxLength` an upload URL imposes; a backend ignores the ones it cannot enforce, and `IPresignedUrlBlobStorage.SupportedUploadConstraints` (`PresignedUploadConstraintKinds`) reports which it does.
 - `IBlobStorageProvider` — resolves named `IBlobStorage` instances registered through the setup builder (`GetStorage(name)`, `GetStorageOrNull(name)`, `RegisteredNames`).
 - `IBlobNamingNormalizer` — provider-specific two-tier path normalization contract applied by the provider's resolve step.
 - `BlobStorageExtensions` — `GetBlobsAsync` streaming + glob filter, `GetBlobsListAsync` materializer, and `UploadContentAsync`/`GetBlobContentAsync` (text + JSON) convenience helpers.
@@ -372,7 +384,7 @@ AWS S3 implementation of `IBlobStorage` for storing files in Amazon S3.
 - Native-token paging: `ListAsync` wraps the S3 `ListObjectsV2` continuation token in the shared opaque envelope as the `BlobPage` token; a malformed token throws `ArgumentException` instead of a raw `AmazonS3Exception`.
 - Two-tier name normalization: bucket name normalized to S3 rules; object-key path segments validated and preserved.
 - Metadata support; `GetBlobInfoAsync` reads metadata from the HEAD response. (The list API omits per-object metadata, and its `Created` falls back to `LastModified`.)
-- Presigned download/upload URLs over a `BlobLocation` via `IPresignedUrlBlobStorage` (named stores only; feature-detect via cast for the default store).
+- Presigned download/upload URLs over a `BlobLocation` via `IPresignedUrlBlobStorage` (named stores only; feature-detect via cast for the default store). An upload `ContentType` constraint is signed into the URL, so the uploader must send that exact `Content-Type` header; a `MaxLength` constraint is ignored because a presigned PUT cannot bound its size (`SupportedUploadConstraints` is `ContentType`).
 - Bucket lifecycle via a dedicated `AwsBlobContainerManager` resolved from DI (`EnsureContainerAsync` keeps a per-instance ensured-bucket cache). `UploadAsync` no longer auto-creates a missing bucket — that is an error.
 - Per-store `IAmazonS3` constructed via `S3ClientFactory`; optional `AWSOptions` to override the SDK credential/region chain.
 - `UseS3Compatible` targets MinIO and other S3-compatible servers with an explicit endpoint and static credentials.
@@ -522,7 +534,7 @@ Azure Blob Storage implementation of `IBlobStorage` for storing files in Azure.
 - Bulk operations with the Azure Batch API, returning identity-carrying `BlobBulkResult` lists.
 - Native-token paging: `ListAsync` wraps the Azure `Pageable` continuation token in the shared opaque envelope as the `BlobPage` token; a malformed token throws `ArgumentException` instead of a raw `RequestFailedException`.
 - Metadata support; `GetBlobInfoAsync` reads metadata from `GetPropertiesAsync` consistent with list metadata.
-- Presigned download/upload URLs over a `BlobLocation` via `IPresignedUrlBlobStorage` (SAS-based; named stores only — feature-detect via cast for the default store).
+- Presigned download/upload URLs over a `BlobLocation` via `IPresignedUrlBlobStorage` (SAS-based; named stores only — feature-detect via cast for the default store). A SAS cannot constrain an upload, so `PresignedUploadConstraints` is ignored (`SupportedUploadConstraints` is `None`).
 - Container lifecycle via a dedicated `AzureBlobContainerManager` resolved from DI (ensured-container cache retained). `UploadAsync` no longer auto-creates a missing container — that is an error.
 - Non-seekable upload streams pass through (no buffering).
 - Per-store `BlobServiceClient` from an optional `clientFactory`; falls back to the ambient `BlobServiceClient` from DI.
@@ -741,7 +753,7 @@ Registered via `AddHeadlessBlobs(b => b.UseFileSystem(...))` or `AddNamed("name"
 
 - Default (`UseFileSystem`): registers `IBlobStorage` as unkeyed singleton and `IBlobContainerManager` as unkeyed singleton (`FileSystemBlobContainerManager`).
 - Named (`AddNamed ... UseFileSystem`): registers `IBlobStorage` and `IBlobContainerManager` each as keyed singleton (`name`).
-- No presigned URL support — `IPresignedUrlBlobStorage` is never registered for FileSystem stores.
+- No native presigned URL support. `IPresignedUrlBlobStorage` is registered for FileSystem stores only by `UseSignedUrlEndpoint` from `Headless.Blobs.SignedUrlEndpoint`.
 
 ---
 
@@ -796,7 +808,7 @@ Registered via `AddHeadlessBlobs(b => b.UseRedis(...))` or `AddNamed("name", i =
 
 - Default (`UseRedis`): registers `IBlobStorage` as unkeyed singleton and `IBlobContainerManager` as unkeyed singleton (`RedisBlobContainerManager`); registers `TimeProvider`, `IJsonOptionsProvider`, and `IJsonSerializer` as singletons (each via `TryAdd`, so existing registrations are kept).
 - Named (`AddNamed ... UseRedis`): registers `IBlobStorage` and `IBlobContainerManager` each as keyed singleton (`name`); same `TryAdd` registrations for shared services.
-- No presigned URL support — `IPresignedUrlBlobStorage` is never registered for Redis stores.
+- No native presigned URL support. `IPresignedUrlBlobStorage` is registered for Redis stores only by `UseSignedUrlEndpoint` from `Headless.Blobs.SignedUrlEndpoint`.
 
 ---
 
@@ -867,4 +879,63 @@ Registered via `AddHeadlessBlobs(b => b.UseSsh(...))` or `AddNamed("name", i => 
 
 - Default (`UseSsh`): registers an internal SFTP connection pool as unkeyed singleton; registers `IBlobStorage` as unkeyed singleton and `IBlobContainerManager` as unkeyed singleton (internal `SshBlobContainerManager`).
 - Named (`AddNamed ... UseSsh`): registers the internal SFTP connection pool, `IBlobStorage`, and `IBlobContainerManager` each as keyed singleton (`name`). Each named store owns its own pool instance bound to its named options.
-- No presigned URL support — `IPresignedUrlBlobStorage` is never registered for SshNet stores.
+- No native presigned URL support. `IPresignedUrlBlobStorage` is registered for SshNet stores only by `UseSignedUrlEndpoint` from `Headless.Blobs.SignedUrlEndpoint`.
+
+---
+
+## Headless.Blobs.SignedUrlEndpoint
+
+Signed download and upload URLs for stores with no native presign (FileSystem, Redis, SFTP), served by an ASP.NET Core endpoint over `IBlobStorage`. Use it when an application's presigned-URL flow must work unchanged from local FileSystem development to S3 or Azure in production, or when production itself runs on one of these providers.
+
+### Setup
+
+```bash
+dotnet add package Headless.Blobs.SignedUrlEndpoint
+```
+
+```csharp
+builder.Services.AddHeadlessBlobs(setup =>
+{
+    setup.UseFileSystem(options => options.BaseDirectoryPath = "/var/app/blobs");
+    setup.AddNamed("exports", instance => instance.UseRedis(options => { /* ... */ }));
+    setup.UseSignedUrlEndpoint(options => options.BaseUrl = new Uri("https://api.example.com"));
+});
+
+var app = builder.Build();
+app.MapBlobSignedUrlEndpoint(); // GET and PUT at /blobs/{token}
+
+// Unchanged calling code, whichever provider backs the store:
+if (storage is IPresignedUrlBlobStorage presigned)
+{
+    var download = await presigned.GetPresignedDownloadUrlAsync(location, TimeSpan.FromMinutes(15), ct);
+    var upload = await presigned.GetPresignedUploadUrlAsync(
+        location,
+        TimeSpan.FromMinutes(15),
+        new PresignedUploadConstraints { ContentType = "application/pdf", MaxLength = 10 * 1024 * 1024 },
+        ct
+    );
+}
+```
+
+`UseSignedUrlEndpoint` registers the services and `MapBlobSignedUrlEndpoint` maps the routes; both are required, because mapping runs after the container is built. Mapping without the registration throws `InvalidOperationException`.
+
+### Configuration
+
+`BlobSignedUrlOptions`, validated at startup:
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `BaseUrl` | none, required | Public absolute `http`/`https` URL of the application, including any path base, with no query. Minted URLs start with it. It is configured rather than read from the current request because URLs are often minted in background work, and a reverse proxy may rewrite the request host. |
+| `RoutePrefix` | `/blobs` | Literal path the endpoint maps under and minted URLs use. |
+
+### Design and runtime behavior
+
+- **Which stores it wraps.** After every provider registers, each default and named store that does not already implement `IPresignedUrlBlobStorage` is replaced by a pass-through decorator implementing both interfaces, so `storage is IPresignedUrlBlobStorage` holds for every provider. AWS, Azure, and R2 stores are returned unwrapped and keep native presign. Named stores also get the keyed `IPresignedUrlBlobStorage` forward. A decorated default store is no longer its concrete provider type, and a store the application registered as an instance becomes container-disposed.
+- **Token.** The URL is `{BaseUrl}{RoutePrefix}/{token}`. The token is an ASP.NET Core data-protection payload that authenticates the store name, container, path, verb, expiry, and upload constraints, so a URL cannot be replayed for another blob, store, or verb. Expiry is checked against the registered `TimeProvider`. Like a cloud presigned URL, a token is reusable until it expires and cannot be revoked individually.
+- **404 for every refusal.** An expired, tampered, wrong-verb, or unknown-store token and a missing blob all return 404, never 403, so a probe cannot learn what exists.
+- **Download.** `GET` streams the blob with range support when the stream is seekable. These stores do not keep a content type, so the response type is derived from the key's extension. The bytes come from the application's own origin, where an uploaded HTML or SVG file could otherwise run script, so responses are served as `Content-Disposition: attachment` named after the blob's last path segment, with `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`. Opening the URL in a browser therefore downloads the file rather than rendering it; embedding it as an `<img>` or similar subresource still works. For untrusted uploads, prefer a separate host name for `BaseUrl`.
+- **Upload.** `PUT` writes the request body through `UploadAsync` and returns 200. A `ContentType` constraint must name one exact media type (a wildcard such as `image/*` throws `ArgumentException` when minting) and rejects any other type with 415 (parameters such as `charset` are ignored). A `MaxLength` constraint requires a `Content-Length` and no `Transfer-Encoding` (411 otherwise), rejects a larger declared length with 413 before any byte reaches the store, and sets the server's request-body limit to that length where the server allows it. Without `MaxLength`, the server's default body limit applies. A missing top-level container is a server error, as for `UploadAsync`.
+- **Failed uploads leave no blob.** FileSystem and SFTP write in place, so when an upload fails partway (the client disconnects, or the body exceeds the limit) the endpoint deletes the blob at that location, as a failed cloud presigned PUT leaves no object. This also removes any earlier version the upload was replacing. If the delete itself fails, it is logged and a truncated blob can remain.
+- **Access and conventions.** Both routes allow anonymous access, because the token is the credential, and are excluded from OpenAPI descriptions. `MapBlobSignedUrlEndpoint` returns the `RouteGroupBuilder`, so attach rate limiting, CORS, or request-timeout policies there.
+- **Key ring.** Every replica that mints or serves URLs must share one persisted data-protection key ring, or a URL minted on one replica returns 404 on another; `Headless.Api.DataProtection` can persist it to blob storage. A URL stops working when the key that protected it is revoked or deleted, and default key rotation keeps retired keys for unprotecting, so rotation alone does not break live URLs.
+- **Trade-off.** Unlike cloud presign, every byte streams through the host process and counts against its bandwidth, memory, and request limits. The value is one code path from development to production, not offloading.

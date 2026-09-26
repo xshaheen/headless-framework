@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
+using Amazon.Runtime;
 using Amazon.S3;
 using Amazon.S3.Model;
 using Headless.Abstractions;
@@ -716,11 +717,84 @@ public sealed class AwsBlobStorageEngineTests : TestBase
         var url = await sut.GetPresignedUploadUrlAsync(
             new BlobLocation("bucket", "file.txt"),
             TimeSpan.FromMinutes(15),
-            AbortToken
+            cancellationToken: AbortToken
         );
 
         url.Should().Be(new Uri("https://example.com/signed-put"));
         await _s3.Received(1)
             .GetPreSignedURLAsync(Arg.Is<GetPreSignedUrlRequest>(r => r.Verb == HttpVerb.PUT && r.Key == "file.txt"));
+    }
+
+    [Fact]
+    public async Task presigned_upload_url_signs_the_constrained_content_type()
+    {
+        _s3.GetPreSignedURLAsync(Arg.Any<GetPreSignedUrlRequest>()).Returns("https://example.com/signed-put");
+
+        var sut = _CreateSut();
+
+        await sut.GetPresignedUploadUrlAsync(
+            new BlobLocation("bucket", "report.pdf"),
+            TimeSpan.FromMinutes(15),
+            new PresignedUploadConstraints { ContentType = "application/pdf" },
+            AbortToken
+        );
+
+        await _s3.Received(1)
+            .GetPreSignedURLAsync(
+                Arg.Is<GetPreSignedUrlRequest>(r => r.Verb == HttpVerb.PUT && r.ContentType == "application/pdf")
+            );
+    }
+
+    [Fact]
+    public async Task presigned_upload_url_includes_content_type_in_the_signed_headers()
+    {
+        // SigV4 presigning is local, so a real client proves the SDK signs the header without a server round trip.
+        using var s3 = new AmazonS3Client(
+            new BasicAWSCredentials("access", "secret"),
+            new AmazonS3Config { ServiceURL = "http://localhost:9000", ForcePathStyle = true }
+        );
+        await using var sut = new AwsBlobStorage(
+            s3,
+            new MimeTypeProvider(),
+            TimeProvider.System,
+            new OptionsWrapper<AwsBlobStorageOptions>(new AwsBlobStorageOptions()),
+            new AwsBlobNamingNormalizer()
+        );
+
+        var url = await sut.GetPresignedUploadUrlAsync(
+            new BlobLocation("bucket", "report.pdf"),
+            TimeSpan.FromMinutes(15),
+            new PresignedUploadConstraints { ContentType = "application/pdf" },
+            AbortToken
+        );
+
+        var signedHeaders = System.Web.HttpUtility.ParseQueryString(url.Query)["X-Amz-SignedHeaders"];
+        signedHeaders.Should().NotBeNull();
+        signedHeaders!.Split(';').Should().Contain("content-type");
+    }
+
+    [Fact]
+    public async Task presigned_upload_url_ignores_a_max_length_it_cannot_enforce()
+    {
+        _s3.GetPreSignedURLAsync(Arg.Any<GetPreSignedUrlRequest>()).Returns("https://example.com/signed-put");
+
+        var sut = _CreateSut();
+
+        var url = await sut.GetPresignedUploadUrlAsync(
+            new BlobLocation("bucket", "report.pdf"),
+            TimeSpan.FromMinutes(15),
+            new PresignedUploadConstraints { ContentType = "application/pdf", MaxLength = 1024 },
+            AbortToken
+        );
+
+        url.Should().Be(new Uri("https://example.com/signed-put"));
+        await _s3.Received(1)
+            .GetPreSignedURLAsync(Arg.Is<GetPreSignedUrlRequest>(r => r.ContentType == "application/pdf"));
+    }
+
+    [Fact]
+    public void reports_content_type_as_the_only_enforced_upload_constraint()
+    {
+        _CreateSut().SupportedUploadConstraints.Should().Be(PresignedUploadConstraintKinds.ContentType);
     }
 }

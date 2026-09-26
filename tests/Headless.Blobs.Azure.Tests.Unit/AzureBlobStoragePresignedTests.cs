@@ -59,6 +59,31 @@ public sealed class AzureBlobStoragePresignedTests : TestBase
     }
 
     [Fact]
+    public async Task upload_presigned_ignores_constraints_a_sas_cannot_enforce()
+    {
+        // The constraints are ignored, so the call goes on to signing, which this unsigned client cannot do.
+        var sut = _CreateStorageWithoutSigningCredentials();
+
+        var act = async () =>
+            await sut.GetPresignedUploadUrlAsync(
+                new BlobLocation("mycontainer", "file.png"),
+                TimeSpan.FromMinutes(5),
+                new PresignedUploadConstraints { ContentType = "image/png", MaxLength = 1024 },
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Unable to generate a presigned URL*");
+    }
+
+    [Fact]
+    public void reports_no_enforced_upload_constraints()
+    {
+        _CreateStorageWithoutSigningCredentials()
+            .SupportedUploadConstraints.Should()
+            .Be(PresignedUploadConstraintKinds.None);
+    }
+
+    [Fact]
     public async Task presigned_throws_on_non_positive_expiry()
     {
         var sut = _CreateStorageWithoutSigningCredentials();

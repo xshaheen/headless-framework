@@ -84,7 +84,11 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
         // The presigned PUT goes straight to Azure and does not create the container; ensure it first.
         await manager.EnsureContainerAsync(container, AbortToken);
 
-        var uploadUrl = await presigned.GetPresignedUploadUrlAsync(location, TimeSpan.FromMinutes(5), AbortToken);
+        var uploadUrl = await presigned.GetPresignedUploadUrlAsync(
+            location,
+            TimeSpan.FromMinutes(5),
+            cancellationToken: AbortToken
+        );
 
         using (var http = new HttpClient())
         using (var body = new ByteArrayContent(content))
