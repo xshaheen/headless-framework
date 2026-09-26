@@ -1,0 +1,27 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Provider-agnostic setup, tenant key resolution, grant-duration bounds, and the expired-lease sweep for Headless fenced leases, with exactly-one-provider registration.</Description>
+    <PackageTags>headless;fencing;lease;fencing-token;dotnet</PackageTags>
+    <RootNamespace>Headless.Fencing</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Fencing.PostgreSql" />
+    <InternalsVisibleTo Include="Headless.Fencing.SqlServer" />
+    <InternalsVisibleTo Include="Headless.Fencing.Core.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
+    <ProjectReference Include="..\Headless.Fencing.Abstractions\Headless.Fencing.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.MultiTenancy.Abstractions\Headless.MultiTenancy.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.UnitOfWork.Abstractions\Headless.UnitOfWork.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

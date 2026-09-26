@@ -51,6 +51,8 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | React when a setting, feature, or permission grant changes instead of polling | [Settings](settings.md), [Features](features.md), [Permissions](permissions.md) — each has a "Reacting to a change" section |
 | Record entity changes or explicit audit events | [Audit Log](audit-log.md) |
 | Issue per-tenant consecutive numbers (receipts, invoices, case numbers), gap-free when audited | [Sequences](sequences.md) |
+| Grant a durable, cross-process lease that fences a stale or zombie attempt's writes; hand work to an external executor | [Fencing](fencing.md) |
+| Admit a keyed operation once across retries, processes, or executors, and replay its stored result | [Idempotency](idempotency.md) |
 
 ### Distributed runtime
 
@@ -86,6 +88,34 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | Configure Serilog defaults | [Logging](logging.md) |
 | Use hosting helpers, validators, source-generated primitives, Redis scripts, geospatial helpers, sitemaps, or slugs | [Utilities](utilities.md) |
 | Write unit/integration tests or use Testcontainers and the messaging harness | [Testing](testing.md) |
+
+## Choosing a coordination primitive
+
+Four primitives answer four different questions. Choose by the question, not by the words "lock" or "lease".
+
+| Question | Primitive | Held as | What refuses a stale holder |
+| --- | --- | --- | --- |
+| May this process run now? | Distributed lock: `IDistributedLock` ([Distributed Locks](distributed-locks.md)) | A live in-process handle (`IDistributedLease`). It cannot be handed to another process. | Nothing by default. The protected resource must check `FencingToken`, or the lock must be transaction-coupled. |
+| Who owns this work, at which generation, until when? | Fenced lease: `IFencedLeases`, `unit.Leases` ([Fencing](fencing.md)) | A durable row that any process carries as `(resource, Generation)`. | The database, inside the writer's transaction: `unit.Leases.FenceAsync`. |
+| Has this operation already happened, and what was its result? | Idempotent admission: `IIdempotentOperations`, `unit.Idempotency`; `Headless.Api.Idempotency` for HTTP ([Idempotency](idempotency.md)) | A record per tenant-scoped key and request fingerprint, with its own lease and generation. | The database: `CompleteAsync` and `unit.Idempotency.FenceAsync` refuse a superseded generation. |
+| Which node incarnations are alive? | Membership: `INodeMembership` ([Coordination](coordination.md)) | A `NodeIdentity` (`node@incarnation`) that the consumer stamps on its own rows. | The consumer's recovery write, guarded by owner identity. Membership owns nothing. |
+
+### Why each primitive exists
+
+- **Distributed lock.** Cheap mutual exclusion while the holder is alive. Use it to avoid duplicate work (efficiency), or take a transaction-coupled lock whose lifetime is the transaction. Redis locks expire by TTL. PostgreSQL and SQL Server locks are session-scoped advisory or application locks with no TTL: they live as long as the holding connection.
+- **Fenced lease.** A lock handle dies with its process and connection. A fenced lease is a database row instead, so an external executor can hold it, renew it, and post a result hours later. Expiry uses the database clock, and `SweepExpiredAsync` hands abandoned work to a durable handler (`unit.Outbox`, `unit.Jobs`) in the same transaction that marks the lease abandoned.
+- **Idempotent admission.** Retries must replay a result, not repeat the operation. `AdmitAsync` returns `Admitted`, `InFlight`, `Replay`, or `Conflict` for one tenant-scoped key and fingerprint, and the stored result replays from any entry point. The record carries its own lease and generation; it does not use the Fencing table. It answers "once per key", not "one holder at a time per resource".
+- **Membership.** Recovery needs to know which process runs died. Membership reports liveness only and never records ownership. Consumers stamp `node@incarnation` on their own rows and reclaim rows whose owner is no longer live.
+
+Jobs and Messaging need none of these for their own rows. Each work row carries its lease in its own columns (Jobs: `OwnerId` and `LockedUntil`; Messaging: `Owner` and `LockedUntil`), claimed and renewed by guarded updates on the database clock. That is correct because the row is the work: the claim, the renewal, and the result update the same row, so there is no second table and no lock order. Follow that pattern when your work already has a row you own. Use a fenced lease when it does not, or when an external executor needs a generation to carry.
+
+### Fence, token, and lease
+
+- **Lease:** time-bounded ownership that ends unless renewed. Expiry alone never stops a paused holder from writing after it resumes.
+- **Token:** a number that identifies one grant: `IDistributedLease.FencingToken`, `FencedLease.Generation`, `IdempotentAdmission.Generation`, `NodeIncarnation`. A token protects nothing until something compares it.
+- **Fence:** the comparison that refuses a write carrying a superseded token, done atomically with that write. Fencing and Idempotency fence in the database inside your transaction. A lock's `FencingToken` is fenced only if your resource stores the last accepted token and rejects anything not greater than it.
+
+**A lock alone never protects data.** A holder can pause (garbage collection, a network partition), lose its lock or lease, and resume writing without knowing. Protect a correctness invariant with a fence at the write: a transaction-coupled lock, a fenced lease, an admission generation, or a guarded row update. No fence recalls a side effect already made outside the database. Make such a side effect idempotent at its own boundary, or trigger it from the committed row.
 
 ## Cross-domain changes
 

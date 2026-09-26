@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Caching;
+using Headless.Idempotency;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -13,6 +13,11 @@ namespace Headless.Api.Idempotency;
 /// its supporting options/validators. Pair with <c>UseIdempotency()</c> on the application
 /// pipeline.
 /// </summary>
+/// <remarks>
+/// The middleware admits requests through the durable <see cref="IIdempotentOperations"/> store, so the host must
+/// also call <c>AddHeadlessIdempotency(...)</c> with a provider (in-memory for a single instance, or relational). The
+/// host fails at startup when the store is missing.
+/// </remarks>
 [PublicAPI]
 public static class SetupIdempotency
 {
@@ -27,21 +32,13 @@ public static class SetupIdempotency
         /// The configuration section to bind to <see cref="IdempotencyOptions"/>.
         /// </param>
         /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
-        /// <remarks>
-        /// Call <c>UseIdempotency()</c> on the application builder to activate the middleware.
-        /// When <see cref="IdempotencyOptions.InFlightStrategy"/> is
-        /// <see cref="InFlightStrategy.WaitAndReplay"/>, an <c>IDistributedLock</c> must also be
-        /// registered — the DI validator enforces this at host startup and raises
-        /// <see cref="OptionsValidationException"/> if it is absent.
-        /// </remarks>
+        /// <remarks>Call <c>UseIdempotency()</c> on the application builder to activate the middleware.</remarks>
         /// <exception cref="ArgumentNullException">
         /// <paramref name="configuration"/> is <see langword="null"/>.
         /// </exception>
         /// <exception cref="OptionsValidationException">
         /// Thrown at host startup (during <c>ValidateOnStart()</c>) when
-        /// <see cref="IdempotencyOptions"/> fails FluentValidation rules or when
-        /// <see cref="InFlightStrategy.WaitAndReplay"/> is selected but no
-        /// <c>IDistributedLock</c> is registered.
+        /// <see cref="IdempotencyOptions"/> fails FluentValidation rules.
         /// </exception>
         public IServiceCollection AddIdempotency(IConfiguration configuration)
         {
@@ -56,21 +53,13 @@ public static class SetupIdempotency
         /// </summary>
         /// <param name="setupAction">Delegate that configures <see cref="IdempotencyOptions"/>.</param>
         /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
-        /// <remarks>
-        /// Call <c>UseIdempotency()</c> on the application builder to activate the middleware.
-        /// When <see cref="IdempotencyOptions.InFlightStrategy"/> is
-        /// <see cref="InFlightStrategy.WaitAndReplay"/>, an <c>IDistributedLock</c> must also be
-        /// registered — the DI validator enforces this at host startup and raises
-        /// <see cref="OptionsValidationException"/> if it is absent.
-        /// </remarks>
+        /// <remarks>Call <c>UseIdempotency()</c> on the application builder to activate the middleware.</remarks>
         /// <exception cref="ArgumentNullException">
         /// <paramref name="setupAction"/> is <see langword="null"/>.
         /// </exception>
         /// <exception cref="OptionsValidationException">
         /// Thrown at host startup (during <c>ValidateOnStart()</c>) when
-        /// <see cref="IdempotencyOptions"/> fails FluentValidation rules or when
-        /// <see cref="InFlightStrategy.WaitAndReplay"/> is selected but no
-        /// <c>IDistributedLock</c> is registered.
+        /// <see cref="IdempotencyOptions"/> fails FluentValidation rules.
         /// </exception>
         public IServiceCollection AddIdempotency(Action<IdempotencyOptions> setupAction)
         {
@@ -89,21 +78,13 @@ public static class SetupIdempotency
         /// <see cref="IServiceProvider"/> for resolving additional services.
         /// </param>
         /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
-        /// <remarks>
-        /// Call <c>UseIdempotency()</c> on the application builder to activate the middleware.
-        /// When <see cref="IdempotencyOptions.InFlightStrategy"/> is
-        /// <see cref="InFlightStrategy.WaitAndReplay"/>, an <c>IDistributedLock</c> must also be
-        /// registered — the DI validator enforces this at host startup and raises
-        /// <see cref="OptionsValidationException"/> if it is absent.
-        /// </remarks>
+        /// <remarks>Call <c>UseIdempotency()</c> on the application builder to activate the middleware.</remarks>
         /// <exception cref="ArgumentNullException">
         /// <paramref name="setupAction"/> is <see langword="null"/>.
         /// </exception>
         /// <exception cref="OptionsValidationException">
         /// Thrown at host startup (during <c>ValidateOnStart()</c>) when
-        /// <see cref="IdempotencyOptions"/> fails FluentValidation rules or when
-        /// <see cref="InFlightStrategy.WaitAndReplay"/> is selected but no
-        /// <c>IDistributedLock</c> is registered.
+        /// <see cref="IdempotencyOptions"/> fails FluentValidation rules.
         /// </exception>
         public IServiceCollection AddIdempotency(Action<IdempotencyOptions, IServiceProvider> setupAction)
         {
@@ -114,17 +95,14 @@ public static class SetupIdempotency
         private IServiceCollection _AddIdempotencyCore()
         {
             services.TryAddScoped<IdempotencyMiddleware>();
+            services.TryAddSingleton(TimeProvider.System);
 
-            // IdempotencyMiddleware stores and replays responses through ICache, and this package
-            // references only Headless.Caching.Abstractions — the implementation ships in a caching
-            // provider package the host installs. Without one every idempotent request would fail.
-            services.RequireRegisteredService<ICache>(
-                requiredBy: "Headless API idempotency response replay",
-                remedy: "Call AddHeadlessCaching(...) with a provider (UseInMemory / UseRedis / UseHybrid)."
-            );
-
-            services.TryAddEnumerable(
-                ServiceDescriptor.Singleton<IValidateOptions<IdempotencyOptions>, IdempotencyOptionsDiValidator>()
+            // The middleware admits, completes, and releases through the durable store, and this package references
+            // only its abstractions: the implementation ships in a provider package the host installs. Without it
+            // every idempotent request would fail.
+            services.RequireRegisteredService<IIdempotentOperations>(
+                requiredBy: "Headless API idempotency",
+                remedy: "Call AddHeadlessIdempotency(...) with a provider (UseInMemory / UsePostgreSql / UseSqlServer)."
             );
 
             return services;

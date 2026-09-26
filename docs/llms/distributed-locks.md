@@ -7,6 +7,10 @@ packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks
 
 > Provider-agnostic distributed locking with automatic renewal, expiration, explicit release, and pluggable storage backends.
 
+## How this differs from fenced leases and idempotency
+
+A distributed lock answers "may this process run now?" for a live in-process handle. The handle cannot move to another process, and a lock does not stop a stale holder's write unless the protected resource checks `FencingToken` or the lock is transaction-coupled. Use [Fencing](fencing.md) when an external executor must carry ownership or the lease must outlive a process or connection. Use [Idempotency](idempotency.md) when a retry must replay a stored result instead of running again. Use [Coordination](coordination.md) to learn which nodes are alive. Comparison: [Choosing a coordination primitive](index.md#choosing-a-coordination-primitive).
+
 ## Orientation
 
 Use `IDistributedLock` when only one worker should own a named resource at a time. `TryAcquireAsync(...)` returns `null` on timeout; `AcquireAsync(...)` throws `LockAcquisitionTimeoutException` on timeout. Rate limiting is out of scope for this domain: for attempt quotas shared across replicas, use `IAttemptLimiter` from [Rate Limiting](rate-limiting.md); for per-replica HTTP load shedding, use `Microsoft.AspNetCore.RateLimiting`.

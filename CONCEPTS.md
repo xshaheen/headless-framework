@@ -19,6 +19,12 @@ A coordination participant identified as `nodeId@incarnation` — the node id pl
 distinguishes one run of that node from a later restart. Two runs of the same `nodeId` are *distinct*
 identities, so a restarted node never inherits its dead predecessor's standing.
 
+### Membership
+The set of Node identities the store currently classifies as live, read through `INodeMembership`.
+Membership reports liveness only and never records ownership: a consumer stamps a Node identity on its
+own rows and reclaims the rows whose owner is no longer live. Distinct from a Distributed lock and a
+Fenced lease, which grant ownership. See [docs/llms/coordination.md](docs/llms/coordination.md).
+
 ### Incarnation
 The monotonic generation number that qualifies a Node identity. Allocated by an atomic increment in
 the store at registration; a heartbeat or leave carrying a prior incarnation is rejected at the
@@ -165,7 +171,10 @@ or defaulted Reject outcome.
 
 - "Generation" had been used loosely for both a node's Incarnation and the durable counter that
   issues incarnations — these are distinct: Incarnation is the per-node value, the generation
-  table/counter is the authority.
+  table/counter is the authority. Fencing's Lease generation is a third, unrelated value: the
+  per-attempt number a fenced lease's grant issues, scoped to one leased resource, not one node.
+  An Idempotent admission's generation is a fourth: the per-attempt number drawn from the
+  idempotency store's own sequence and kept on the key's record row.
 
 ## Unit of Work
 
@@ -267,6 +276,52 @@ the unit ends, so a rolled-back unit's number is re-issued to the next caller an
 is never skipped. The cost is that every writer of that counter waits for the previous writer's unit.
 Its counterpart, the fast mode through the injected `ISequenceGenerator`, commits the number in its
 own transaction and may leave a gap when the caller rolls back. A name has exactly one mode.
+
+## Distributed locks
+
+### Distributed lock
+Mutual exclusion on a named resource for a live in-process handle (`IDistributedLock`, returning an
+`IDistributedLease`). The handle cannot move to another process. Redis locks expire by TTL; PostgreSQL
+and SQL Server locks are session-scoped with no TTL and live as long as the holding connection. The
+optional `FencingToken` protects data only when the protected resource rejects a token not greater than
+the last one it accepted, or when the lock is transaction-coupled. See
+[docs/llms/distributed-locks.md](docs/llms/distributed-locks.md).
+
+## Fencing
+
+### Fenced lease
+
+A durable database row identified by `(tenant, kind, resource)` that a caller holds by its
+`(resource, Generation)` pair rather than by a live connection or handle. Granting, renewing,
+settling, releasing, and fencing are separate database calls the store answers, so a lease can be
+held by any process — including one with no connection to this framework — and outlives any single
+connection. Distinct from a distributed lock (`Headless.DistributedLocks`), which grants exclusive
+execution to a live in-process handle. *Avoid:* lease (bare) when a distributed lock's TTL lease is
+meant — name the package (`IDistributedLock`) or say "fenced lease" for `IFencedLeases`. See
+[docs/llms/fencing.md](docs/llms/fencing.md).
+
+### Lease generation
+
+The monotonic number a fenced lease's grant issues, drawn from one store-wide sequence per lease
+identity so it survives a purge of the row. A caller names its generation on every renew, settle,
+release, or fence call; the store refuses the call once a newer grant replaced it. Distinct from
+Incarnation (Coordination's per-node generation) and from the generation table/counter that issues
+incarnations: a lease generation identifies one attempt at one leased resource, not one run of a node.
+*Avoid:* generation (bare) for any of the three — name which: Incarnation, the incarnation-issuing
+counter, or a lease generation.
+
+## Idempotency
+
+### Idempotent admission
+
+The outcome of admitting a tenant-scoped idempotency key for a versioned request fingerprint:
+`Admitted` (the caller owns the operation), `InFlight` (a live attempt owns it), `Replay` (a
+completed result is returned), or `Conflict` (the key is stored under a different fingerprint or
+result contract). An admitted operation holds its own lease on the key's record row: a generation
+drawn from the idempotency store's sequence plus a lease expiry decided by the database clock. Its
+renewal, fence, completion, and release name that generation, and the store refuses them once a later
+admission drew a newer one. Idempotency does not use Fencing's fenced leases. See
+[docs/llms/idempotency.md](docs/llms/idempotency.md).
 
 ## Startup validation
 

@@ -18,25 +18,25 @@ public sealed class IdempotencyOptionsValidatorTests
     }
 
     [Fact]
-    public void should_fail_when_expiration_is_zero()
+    public void should_fail_when_retention_is_zero()
     {
         var options = _CreateValidOptions();
-        options.IdempotencyKeyExpiration = TimeSpan.Zero;
+        options.Retention = TimeSpan.Zero;
 
         var result = _sut.TestValidate(options);
 
-        result.ShouldHaveValidationErrorFor(x => x.IdempotencyKeyExpiration);
+        result.ShouldHaveValidationErrorFor(x => x.Retention);
     }
 
     [Fact]
-    public void should_fail_when_expiration_is_negative()
+    public void should_fail_when_retention_is_negative()
     {
         var options = _CreateValidOptions();
-        options.IdempotencyKeyExpiration = TimeSpan.FromDays(-1);
+        options.Retention = TimeSpan.FromDays(-1);
 
         var result = _sut.TestValidate(options);
 
-        result.ShouldHaveValidationErrorFor(x => x.IdempotencyKeyExpiration);
+        result.ShouldHaveValidationErrorFor(x => x.Retention);
     }
 
     [Fact]
@@ -249,7 +249,7 @@ public sealed class IdempotencyOptionsValidatorTests
     }
 
     [Fact]
-    public void should_fail_when_wait_and_replay_with_lock_timeout_exceeding_5_minutes()
+    public void should_fail_when_wait_and_replay_with_lock_timeout_exceeding_1_minute()
     {
         var options = _CreateValidOptions();
         options.InFlightStrategy = InFlightStrategy.WaitAndReplay;
@@ -261,7 +261,7 @@ public sealed class IdempotencyOptionsValidatorTests
     }
 
     [Fact]
-    public void should_pass_when_wait_and_replay_with_lock_timeout_within_5_minutes()
+    public void should_pass_when_wait_and_replay_with_lock_timeout_within_1_minute()
     {
         var options = _CreateValidOptions();
         options.InFlightStrategy = InFlightStrategy.WaitAndReplay;
@@ -273,9 +273,9 @@ public sealed class IdempotencyOptionsValidatorTests
     }
 
     [Fact]
-    public void should_pass_when_lock_timeout_exceeds_5_minutes_with_reject_strategy()
+    public void should_pass_when_lock_timeout_exceeds_1_minute_with_reject_strategy()
     {
-        // The 5-minute cap only applies to WaitAndReplay; Reject has no upper bound.
+        // The 1-minute cap only applies to WaitAndReplay; Reject never waits.
         var options = _CreateValidOptions();
         options.InFlightStrategy = InFlightStrategy.Reject;
         options.InFlightLockTimeout = TimeSpan.FromMinutes(10);
@@ -283,6 +283,47 @@ public sealed class IdempotencyOptionsValidatorTests
         var result = _sut.TestValidate(options);
 
         result.ShouldNotHaveValidationErrorFor(x => x.InFlightLockTimeout);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(999)]
+    [InlineData(3_600_001)]
+    public void should_fail_when_in_flight_lease_is_outside_one_second_to_one_hour(int milliseconds)
+    {
+        var options = _CreateValidOptions();
+        options.InFlightLease = TimeSpan.FromMilliseconds(milliseconds);
+
+        var result = _sut.TestValidate(options);
+
+        result.ShouldHaveValidationErrorFor(x => x.InFlightLease);
+    }
+
+    [Fact]
+    public void should_default_to_throw_on_store_error_and_24_hour_retention()
+    {
+        var options = new IdempotencyOptions();
+
+        options.OnStoreError.Should().Be(OnStoreErrorBehavior.Throw);
+        options.Retention.Should().Be(TimeSpan.FromHours(24));
+        options.InFlightLease.Should().Be(TimeSpan.FromMinutes(1));
+    }
+
+    [Fact]
+    public void should_copy_renamed_options_when_cloned_for_endpoint_options()
+    {
+        var options = new IdempotencyOptions
+        {
+            Retention = TimeSpan.FromHours(3),
+            InFlightLease = TimeSpan.FromSeconds(45),
+            OnStoreError = OnStoreErrorBehavior.FailOpen,
+        };
+
+        var clone = options.Clone();
+
+        clone.Retention.Should().Be(TimeSpan.FromHours(3));
+        clone.InFlightLease.Should().Be(TimeSpan.FromSeconds(45));
+        clone.OnStoreError.Should().Be(OnStoreErrorBehavior.FailOpen);
     }
 
     [Fact]

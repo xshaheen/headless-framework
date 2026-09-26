@@ -7,6 +7,10 @@ packages: Coordination.Abstractions, Coordination.Core, Coordination.Core.Databa
 
 > Store-authoritative node membership and liveness for distributed consumers that need stable `node@incarnation` identity and lifecycle observations.
 
+## How this differs from locks and leases
+
+Membership answers "which node incarnations are alive?". It reports liveness only and never grants ownership. To decide who may run or who owns work, use a [distributed lock](distributed-locks.md) (a live process), a [fenced lease](fencing.md) (a durable row any executor carries), or a lease on your own work row stamped with `NodeIdentity`, as Jobs does. Comparison of all four primitives: [Choosing a coordination primitive](index.md#choosing-a-coordination-primitive).
+
 ## Orientation
 
 Use Coordination when a distributed consumer needs to know which process incarnation is alive. It supplies `INodeMembership` for register, heartbeat, leave, live-node reads, full liveness snapshots, and lifecycle events. Consumers stamp `NodeIdentity` (`node@incarnation`) on their own rows; Coordination does not store ownership.

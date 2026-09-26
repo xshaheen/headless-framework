@@ -1,0 +1,28 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Provider-agnostic setup, admission decisions, enlisted and autonomous completion, and retention purge for Headless durable idempotency, with each record carrying its own lease, and exactly-one-provider registration.</Description>
+    <PackageTags>headless;idempotency;idempotency-key;dotnet</PackageTags>
+    <RootNamespace>Headless.Idempotency</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Idempotency.InMemory" />
+    <InternalsVisibleTo Include="Headless.Idempotency.PostgreSql" />
+    <InternalsVisibleTo Include="Headless.Idempotency.SqlServer" />
+    <InternalsVisibleTo Include="Headless.Idempotency.Core.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.Idempotency.Abstractions\Headless.Idempotency.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.MultiTenancy.Abstractions\Headless.MultiTenancy.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.UnitOfWork.Abstractions\Headless.UnitOfWork.Abstractions.csproj" />
+  </ItemGroup>
+</Project>
