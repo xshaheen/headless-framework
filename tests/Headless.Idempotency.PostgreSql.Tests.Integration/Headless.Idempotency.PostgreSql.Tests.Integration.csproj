@@ -10,7 +10,6 @@
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Headless.Fencing.PostgreSql\Headless.Fencing.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.Idempotency.PostgreSql\Headless.Idempotency.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
     <ProjectReference Include="..\..\src\Headless.UnitOfWork.PostgreSql\Headless.UnitOfWork.PostgreSql.csproj" />

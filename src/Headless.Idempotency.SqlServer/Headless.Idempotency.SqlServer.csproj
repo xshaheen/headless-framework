@@ -1,8 +1,8 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Description>SQL Server provider for Headless durable idempotency: an idempotency record table locked and written inside the same transaction as its fenced lease, with database-clock retention and a bounded retention purge.</Description>
-    <PackageTags>headless;idempotency;idempotency-key;fencing;sql-server;dotnet</PackageTags>
+    <Description>SQL Server provider for Headless durable idempotency: an idempotency record table whose rows carry their own lease and generation, with database-clock leases and retention and a bounded retention purge.</Description>
+    <PackageTags>headless;idempotency;idempotency-key;sql-server;dotnet</PackageTags>
     <RootNamespace>Headless.Idempotency.SqlServer</RootNamespace>
   </PropertyGroup>
   <ItemGroup>

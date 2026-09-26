@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 namespace Headless.Idempotency.SqlServer;
 
 /// <summary>
-/// Creates the idempotency schema, record table, and retention index at host startup, once, before any call can reach
+/// Creates the idempotency schema, generation sequence, record table, and retention index at host startup, once, before any call can reach
 /// them.
 /// </summary>
 #pragma warning disable CA2100 // SQL text is built from the validated schema name plus internal object and column constants.
@@ -42,6 +42,8 @@ internal sealed class SqlServerIdempotencyStorageInitializer(
     {
         var table = SqlServerIdempotencySchema.QualifiedTable(schema);
         var tableName = $"{schema}.{SqlServerIdempotencySchema.TableName}";
+        var sequence = SqlServerIdempotencySchema.QualifiedSequence(schema);
+        var sequenceName = $"{schema}.{SqlServerIdempotencySchema.SequenceName}";
         const string collation = SqlServerIdempotencySchema.KeyCollation;
         const string t = SqlServerIdempotencySchema.TableName;
 
@@ -56,7 +58,10 @@ internal sealed class SqlServerIdempotencyStorageInitializer(
         // lock-or-insert's HOLDLOCK read takes its key-range lock on this index, which is what serializes concurrent
         // first admissions of a new key without a duplicate-key error. The key parts total 384 nvarchar characters,
         // under the 900-byte clustered key limit. A completed record always carries its result and contract and a
-        // pending one never does. The retention index serves the purge, which deletes by retention alone.
+        // pending one never does. A pending record names an admitted attempt's generation exactly when it carries that
+        // attempt's lease expiry; a completed one keeps the generation that completed it and no lease. One store-wide
+        // sequence issues every generation, so a key admitted again after its record was purged still gets a
+        // generation above every earlier attempt's. The retention index serves the purge.
         return $"""
             DECLARE @lockResult int;
             EXEC @lockResult = sp_getapplock @Resource = @LockResource, @LockMode = N'Exclusive', @LockOwner = N'Session', @LockTimeout = 30000;
@@ -74,6 +79,14 @@ internal sealed class SqlServerIdempotencyStorageInitializer(
                 END CATCH;
 
                 BEGIN TRY
+                    IF OBJECT_ID(N'{sequenceName}', N'SO') IS NULL
+                        CREATE SEQUENCE {sequence} AS bigint START WITH 1 INCREMENT BY 1 NO CYCLE;
+                END TRY
+                BEGIN CATCH
+                    IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
+                END CATCH;
+
+                BEGIN TRY
                     IF OBJECT_ID(N'{tableName}', N'U') IS NULL
                     BEGIN
                         CREATE TABLE {table} (
@@ -82,7 +95,8 @@ internal sealed class SqlServerIdempotencyStorageInitializer(
                             {SqlServerIdempotencySchema.Status} smallint NOT NULL,
                             {SqlServerIdempotencySchema.FingerprintAlgorithm} nvarchar({IdempotencyFieldLimits.FingerprintAlgorithmMaxLength}) COLLATE {collation} NOT NULL,
                             {SqlServerIdempotencySchema.Fingerprint} varbinary({IdempotencyFieldLimits.FingerprintMaxLength}) NOT NULL,
-                            {SqlServerIdempotencySchema.LeaseGeneration} bigint NULL,
+                            {SqlServerIdempotencySchema.Generation} bigint NULL,
+                            {SqlServerIdempotencySchema.LeaseExpiresAt} datetimeoffset(7) NULL,
                             {SqlServerIdempotencySchema.Result} varbinary(max) NULL,
                             {SqlServerIdempotencySchema.ResultContract} nvarchar({IdempotencyFieldLimits.ContractMaxLength}) COLLATE {collation} NULL,
                             {SqlServerIdempotencySchema.RetentionUntil} datetimeoffset(7) NOT NULL,
@@ -97,6 +111,12 @@ internal sealed class SqlServerIdempotencyStorageInitializer(
                             CONSTRAINT [CK_{t}_result] CHECK (
                                 ({SqlServerIdempotencySchema.Status} = {SqlServerIdempotencySchema.Completed} AND {SqlServerIdempotencySchema.Result} IS NOT NULL AND {SqlServerIdempotencySchema.ResultContract} IS NOT NULL)
                                 OR ({SqlServerIdempotencySchema.Status} = {SqlServerIdempotencySchema.Pending} AND {SqlServerIdempotencySchema.Result} IS NULL AND {SqlServerIdempotencySchema.ResultContract} IS NULL)
+                            ),
+                            CONSTRAINT [CK_{t}_generation] CHECK ({SqlServerIdempotencySchema.Generation} IS NULL OR {SqlServerIdempotencySchema.Generation} > 0),
+                            CONSTRAINT [CK_{t}_lease] CHECK (
+                                ({SqlServerIdempotencySchema.Status} = {SqlServerIdempotencySchema.Completed} AND {SqlServerIdempotencySchema.Generation} IS NOT NULL AND {SqlServerIdempotencySchema.LeaseExpiresAt} IS NULL)
+                                OR ({SqlServerIdempotencySchema.Status} = {SqlServerIdempotencySchema.Pending} AND {SqlServerIdempotencySchema.Generation} IS NULL AND {SqlServerIdempotencySchema.LeaseExpiresAt} IS NULL)
+                                OR ({SqlServerIdempotencySchema.Status} = {SqlServerIdempotencySchema.Pending} AND {SqlServerIdempotencySchema.Generation} IS NOT NULL AND {SqlServerIdempotencySchema.LeaseExpiresAt} IS NOT NULL)
                             )
                         );
                     END;

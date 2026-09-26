@@ -8,8 +8,7 @@ namespace Headless.Idempotency;
 /// </summary>
 /// <remarks>
 /// The tenant id and key form the record's primary key: 384 characters, 768 bytes as <c>nvarchar</c>, under SQL
-/// Server's 900-byte clustered-key limit. The key also becomes the resource of the record's fenced lease, so it is
-/// held to the fencing resource limit too.
+/// Server's 900-byte clustered-key limit.
 /// </remarks>
 [PublicAPI]
 public static class IdempotencyFieldLimits

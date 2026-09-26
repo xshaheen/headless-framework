@@ -230,8 +230,8 @@ internal sealed class IdempotencyOptionsValidator : AbstractValidator<Idempotenc
                 $"RequestBodyBufferThreshold must be <= {_MaxRequestBodyBufferThreshold} bytes (64 MiB + 1 byte)."
             );
         RuleFor(x => x.InFlightLockTimeout).GreaterThan(TimeSpan.Zero);
-        // The lower bound matches the fencing minimum and keeps the renewal interval (a third of the lease) from
-        // hammering the store; the upper bound caps how long a crashed attempt can block its key.
+        // The lower bound matches the default idempotency lease minimum and keeps the renewal interval (a third of the
+        // lease) from hammering the store; the upper bound caps how long a crashed attempt can block its key.
         RuleFor(x => x.InFlightLease)
             .GreaterThanOrEqualTo(TimeSpan.FromSeconds(1))
             .LessThanOrEqualTo(TimeSpan.FromHours(1))

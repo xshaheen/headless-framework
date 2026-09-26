@@ -789,40 +789,6 @@
           "morelinq": "[4.4.0, )"
         }
       },
-      "headless.fencing.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.fencing.core": {
-        "type": "Project",
-        "dependencies": {
-          "FluentValidation": "[12.1.1, )",
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
-          "Headless.Fencing.Abstractions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
-          "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
-          "Microsoft.Extensions.Configuration.Abstractions": "[10.0.12, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
-          "Microsoft.Extensions.Options": "[10.0.12, )"
-        }
-      },
-      "headless.fencing.sqlserver": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Fencing.Core": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.UnitOfWork": "[1.0.0, )",
-          "Headless.UnitOfWork.SqlServer": "[1.0.0, )",
-          "Microsoft.Data.SqlClient": "[7.0.2, )"
-        }
-      },
       "headless.fluentvalidation": {
         "type": "Project",
         "dependencies": {
@@ -849,7 +815,6 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
-          "Headless.Fencing.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
         }
       },
@@ -858,7 +823,7 @@
         "dependencies": {
           "FluentValidation": "[12.1.1, )",
           "Headless.Checks": "[1.0.0, )",
-          "Headless.Fencing.Abstractions": "[1.0.0, )",
+          "Headless.Core": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Idempotency.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
@@ -887,7 +852,6 @@
           "AwesomeAssertions.Json": "[9.0.0, )",
           "Bogus": "[35.6.5, )",
           "DeepCloner": "[0.10.4, )",
-          "Headless.Fencing.Core": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Idempotency.Core": "[1.0.0, )",
           "Headless.Testing": "[1.0.0, )",

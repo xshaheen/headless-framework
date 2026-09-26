@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Fencing;
 using Headless.Idempotency;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
@@ -13,20 +12,20 @@ public sealed class UnitOfWorkIdempotencyAdmissionTests : TestBase
     private static readonly IdempotentResult _Stored = new([1, 2, 3], "orders.receipt/v1");
 
     [Fact]
-    public async Task should_admit_a_new_key_and_record_the_lease_generation_after_locking_the_record()
+    public async Task should_admit_a_new_key_and_draw_the_generation_after_locking_the_record()
     {
         // given
         var context = new IdempotencyTestContext();
         var (unit, resource) = ActiveUnit();
         _GivenRecord(context, resource, Inserted());
-        _GivenGrant(context, unit, LeaseGrantResult.Granted(Lease, ExpiresAt));
+        _GivenGrant(context, resource);
 
         // when
         var admission = await context.Feature.AdmitAsync(unit, Key, Fingerprint, cancellationToken: AbortToken);
 
         // then
         admission.Disposition.Should().Be(IdempotentDisposition.Admitted);
-        admission.Lease.Should().Be(Lease);
+        admission.Generation.Should().Be(Generation);
         admission.LeaseExpiresAt.Should().Be(ExpiresAt);
         admission.IsTakeover.Should().BeFalse();
         admission.Key.Should().Be(new IdempotencyKey("t1", Key));
@@ -35,8 +34,14 @@ public sealed class UnitOfWorkIdempotencyAdmissionTests : TestBase
         Received.InOrder(() =>
         {
             _ = context.Store.LockOrInsertAsync(resource, RecordKey, Fingerprint, context.Retention, AbortToken);
-            _ = context.Leases.GrantAsync(unit, IdempotentAdmission.LeaseKind, Key, context.LeaseDuration, AbortToken);
-            _ = context.Store.AdmitAsync(resource, RecordKey, Fingerprint, 7, context.Retention, AbortToken);
+            _ = context.Store.AdmitAsync(
+                resource,
+                RecordKey,
+                Fingerprint,
+                context.LeaseDuration,
+                context.Retention,
+                AbortToken
+            );
         });
     }
 
@@ -56,7 +61,7 @@ public sealed class UnitOfWorkIdempotencyAdmissionTests : TestBase
         admission.StoredFingerprint.Should().Be(OtherFingerprint);
         admission.StoredContract.Should().BeNull();
         admission.Result.Should().BeNull();
-        _AssertNoLeaseOrRecordWrite(context);
+        _AssertNoRecordWrite(context);
     }
 
     [Fact]
@@ -73,7 +78,7 @@ public sealed class UnitOfWorkIdempotencyAdmissionTests : TestBase
         // then
         admission.Disposition.Should().Be(IdempotentDisposition.Conflict);
         admission.StoredFingerprint.Should().Be(OtherFingerprint);
-        _AssertNoLeaseOrRecordWrite(context);
+        _AssertNoRecordWrite(context);
     }
 
     [Theory]
@@ -99,8 +104,8 @@ public sealed class UnitOfWorkIdempotencyAdmissionTests : TestBase
         admission.Disposition.Should().Be(IdempotentDisposition.Replay);
         admission.Result.Should().BeSameAs(_Stored);
         admission.Result!.Payload.ToArray().Should().Equal(1, 2, 3);
-        admission.Lease.Should().BeNull();
-        _AssertNoLeaseOrRecordWrite(context);
+        admission.Generation.Should().BeNull();
+        _AssertNoRecordWrite(context);
     }
 
     [Fact]
@@ -124,7 +129,7 @@ public sealed class UnitOfWorkIdempotencyAdmissionTests : TestBase
         admission.Disposition.Should().Be(IdempotentDisposition.Conflict);
         admission.StoredContract.Should().Be("orders.receipt/v1");
         admission.Result.Should().BeNull();
-        _AssertNoLeaseOrRecordWrite(context);
+        _AssertNoRecordWrite(context);
     }
 
     [Fact]
@@ -133,8 +138,7 @@ public sealed class UnitOfWorkIdempotencyAdmissionTests : TestBase
         // given
         var context = new IdempotencyTestContext();
         var (unit, resource) = ActiveUnit();
-        _GivenRecord(context, resource, Pending(generation: 5));
-        _GivenGrant(context, unit, LeaseGrantResult.Held(5, ExpiresAt));
+        _GivenRecord(context, resource, Pending(generation: 5, isLeaseLive: true));
 
         // when
         var admission = await context.Feature.AdmitAsync(unit, Key, Fingerprint, cancellationToken: AbortToken);
@@ -142,10 +146,25 @@ public sealed class UnitOfWorkIdempotencyAdmissionTests : TestBase
         // then
         admission.Disposition.Should().Be(IdempotentDisposition.InFlight);
         admission.LeaseExpiresAt.Should().Be(ExpiresAt);
-        admission.Lease.Should().BeNull();
-        await context
-            .Store.DidNotReceiveWithAnyArgs()
-            .AdmitAsync(default!, default, default!, default, default, AbortToken);
+        admission.Generation.Should().Be(5);
+        admission.IsAdmitted.Should().BeFalse();
+        _AssertNoRecordWrite(context);
+    }
+
+    [Fact]
+    public async Task should_stay_in_flight_past_retention_while_the_holder_lease_is_live()
+    {
+        // given - a lease renewed past the record's retention still owns the key
+        var context = new IdempotencyTestContext();
+        var (unit, resource) = ActiveUnit();
+        _GivenRecord(context, resource, Pending(generation: 5, isRetentionElapsed: true, isLeaseLive: true));
+
+        // when
+        var admission = await context.Feature.AdmitAsync(unit, Key, Fingerprint, cancellationToken: AbortToken);
+
+        // then
+        admission.Disposition.Should().Be(IdempotentDisposition.InFlight);
+        _AssertNoRecordWrite(context);
     }
 
     [Fact]
@@ -154,8 +173,8 @@ public sealed class UnitOfWorkIdempotencyAdmissionTests : TestBase
         // given
         var context = new IdempotencyTestContext();
         var (unit, resource) = ActiveUnit();
-        _GivenRecord(context, resource, Pending(generation: 5));
-        _GivenGrant(context, unit, LeaseGrantResult.Takeover(Lease, ExpiresAt, previousGeneration: 5));
+        _GivenRecord(context, resource, Pending(generation: 5, isLeaseLive: false));
+        _GivenGrant(context, resource);
 
         // when
         var admission = await context.Feature.AdmitAsync(unit, Key, Fingerprint, cancellationToken: AbortToken);
@@ -163,23 +182,10 @@ public sealed class UnitOfWorkIdempotencyAdmissionTests : TestBase
         // then
         admission.Disposition.Should().Be(IdempotentDisposition.Admitted);
         admission.IsTakeover.Should().BeTrue();
-        await context.Store.Received(1).AdmitAsync(resource, RecordKey, Fingerprint, 7, context.Retention, AbortToken);
-    }
-
-    [Fact]
-    public async Task should_admit_as_a_takeover_when_a_sweep_abandoned_the_pending_attempt()
-    {
-        // given — the sweep ended the lease, so the grant is a plain grant, but the record still names the attempt
-        var context = new IdempotencyTestContext();
-        var (unit, resource) = ActiveUnit();
-        _GivenRecord(context, resource, Pending(generation: 5));
-        _GivenGrant(context, unit, LeaseGrantResult.Granted(Lease, ExpiresAt));
-
-        // when
-        var admission = await context.Feature.AdmitAsync(unit, Key, Fingerprint, cancellationToken: AbortToken);
-
-        // then
-        admission.IsTakeover.Should().BeTrue();
+        admission.Generation.Should().Be(Generation);
+        await context
+            .Store.Received(1)
+            .AdmitAsync(resource, RecordKey, Fingerprint, context.LeaseDuration, context.Retention, AbortToken);
     }
 
     [Fact]
@@ -189,7 +195,7 @@ public sealed class UnitOfWorkIdempotencyAdmissionTests : TestBase
         var context = new IdempotencyTestContext();
         var (unit, resource) = ActiveUnit();
         _GivenRecord(context, resource, Pending(generation: null));
-        _GivenGrant(context, unit, LeaseGrantResult.Granted(Lease, ExpiresAt));
+        _GivenGrant(context, resource);
 
         // when
         var admission = await context.Feature.AdmitAsync(unit, Key, Fingerprint, cancellationToken: AbortToken);
@@ -206,7 +212,7 @@ public sealed class UnitOfWorkIdempotencyAdmissionTests : TestBase
         var context = new IdempotencyTestContext();
         var (unit, resource) = ActiveUnit();
         _GivenRecord(context, resource, Completed(_Stored, OtherFingerprint, isRetentionElapsed: true));
-        _GivenGrant(context, unit, LeaseGrantResult.Granted(Lease, ExpiresAt));
+        _GivenGrant(context, resource);
 
         // when
         var admission = await context.Feature.AdmitAsync(unit, Key, Fingerprint, cancellationToken: AbortToken);
@@ -214,7 +220,9 @@ public sealed class UnitOfWorkIdempotencyAdmissionTests : TestBase
         // then
         admission.Disposition.Should().Be(IdempotentDisposition.Admitted);
         admission.IsTakeover.Should().BeFalse();
-        await context.Store.Received(1).AdmitAsync(resource, RecordKey, Fingerprint, 7, context.Retention, AbortToken);
+        await context
+            .Store.Received(1)
+            .AdmitAsync(resource, RecordKey, Fingerprint, context.LeaseDuration, context.Retention, AbortToken);
     }
 
     [Fact]
@@ -230,7 +238,7 @@ public sealed class UnitOfWorkIdempotencyAdmissionTests : TestBase
 
         // then
         await act.Should().ThrowAsync<NotSupportedException>().WithMessage("*'v9'*");
-        _AssertNoLeaseOrRecordWrite(context);
+        _AssertNoRecordWrite(context);
     }
 
     [Fact]
@@ -296,18 +304,19 @@ public sealed class UnitOfWorkIdempotencyAdmissionTests : TestBase
         context.Tenant.Id = null;
         var (unit, resource) = ActiveUnit();
         var hostKey = new IdempotencyRecordKey(string.Empty, Key);
-        var hostLease = Lease with { TenantId = null };
         context
             .Store.LockOrInsertAsync(resource, hostKey, Fingerprint, context.Retention, AbortToken)
             .Returns(Inserted());
-        _GivenGrant(context, unit, LeaseGrantResult.Granted(hostLease, ExpiresAt));
+        context
+            .Store.AdmitAsync(resource, hostKey, Fingerprint, context.LeaseDuration, context.Retention, AbortToken)
+            .Returns(Grant);
 
         // when
         var admission = await context.Feature.AdmitAsync(unit, Key, Fingerprint, cancellationToken: AbortToken);
 
         // then
         admission.Key.Should().Be(new IdempotencyKey(null, Key));
-        admission.Lease.Should().Be(hostLease);
+        admission.Generation.Should().Be(Generation);
     }
 
     [Fact]
@@ -319,16 +328,38 @@ public sealed class UnitOfWorkIdempotencyAdmissionTests : TestBase
         var lease = TimeSpan.FromSeconds(45);
         var retention = TimeSpan.FromDays(7);
         context.Store.LockOrInsertAsync(resource, RecordKey, Fingerprint, retention, AbortToken).Returns(Inserted());
-        context
-            .Leases.GrantAsync(unit, IdempotentAdmission.LeaseKind, Key, lease, AbortToken)
-            .Returns(LeaseGrantResult.Granted(Lease, ExpiresAt));
+        context.Store.AdmitAsync(resource, RecordKey, Fingerprint, lease, retention, AbortToken).Returns(Grant);
 
         // when
         var admission = await context.Feature.AdmitAsync(unit, Key, Fingerprint, null, lease, retention, AbortToken);
 
         // then
         admission.Retention.Should().Be(retention);
-        await context.Store.Received(1).AdmitAsync(resource, RecordKey, Fingerprint, 7, retention, AbortToken);
+        await context.Store.Received(1).AdmitAsync(resource, RecordKey, Fingerprint, lease, retention, AbortToken);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(500)]
+    public async Task should_refuse_a_lease_duration_outside_the_bounds_before_the_store(int milliseconds)
+    {
+        // given
+        var context = new IdempotencyTestContext();
+        var (unit, _) = ActiveUnit();
+
+        // when
+        var act = async () =>
+            await context.Feature.AdmitAsync(
+                unit,
+                Key,
+                Fingerprint,
+                leaseDuration: TimeSpan.FromMilliseconds(milliseconds),
+                cancellationToken: AbortToken
+            );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+        context.Store.ReceivedCalls().Should().BeEmpty();
     }
 
     [Fact]
@@ -397,16 +428,15 @@ public sealed class UnitOfWorkIdempotencyAdmissionTests : TestBase
         context.Store.LockOrInsertAsync(resource, RecordKey, Fingerprint, context.Retention, AbortToken).Returns(state);
     }
 
-    private void _GivenGrant(IdempotencyTestContext context, IUnitOfWork unit, LeaseGrantResult grant)
+    private void _GivenGrant(IdempotencyTestContext context, IRelationalUnitOfWorkResource resource)
     {
         context
-            .Leases.GrantAsync(unit, IdempotentAdmission.LeaseKind, Key, context.LeaseDuration, AbortToken)
-            .Returns(grant);
+            .Store.AdmitAsync(resource, RecordKey, Fingerprint, context.LeaseDuration, context.Retention, AbortToken)
+            .Returns(Grant);
     }
 
-    private static void _AssertNoLeaseOrRecordWrite(IdempotencyTestContext context)
+    private static void _AssertNoRecordWrite(IdempotencyTestContext context)
     {
-        context.Leases.ReceivedCalls().Should().BeEmpty();
         context
             .Store.ReceivedCalls()
             .Select(c => c.GetMethodInfo().Name)

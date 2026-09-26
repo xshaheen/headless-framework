@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Fencing;
 using Headless.Idempotency;
 using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.DependencyInjection;
@@ -42,17 +41,15 @@ public sealed class ApiIdempotencyPostgreSqlFixture
         await using var reset = new NpgsqlCommand(
             $"""
             DROP SCHEMA IF EXISTS "{IdempotencyStorageOptions.DefaultSchema}" CASCADE;
-            DROP SCHEMA IF EXISTS "{FencingStorageOptions.DefaultSchema}" CASCADE;
             """,
             connection
         );
         await reset.ExecuteNonQueryAsync(CancellationToken.None);
     }
 
-    /// <summary>Registers fencing and idempotency on this fixture's database.</summary>
+    /// <summary>Registers idempotency on this fixture's database.</summary>
     public void ConfigureStore(IServiceCollection services)
     {
-        services.AddHeadlessFencing(setup => setup.UsePostgreSql(PooledConnectionString));
         services.AddHeadlessIdempotency(setup =>
         {
             setup.UsePostgreSql(PooledConnectionString);

@@ -167,6 +167,8 @@ or defaulted Reject outcome.
   issues incarnations — these are distinct: Incarnation is the per-node value, the generation
   table/counter is the authority. Fencing's Lease generation is a third, unrelated value: the
   per-attempt number a fenced lease's grant issues, scoped to one leased resource, not one node.
+  An Idempotent admission's generation is a fourth: the per-attempt number drawn from the
+  idempotency store's own sequence and kept on the key's record row.
 
 ## Unit of Work
 
@@ -296,10 +298,12 @@ counter, or a lease generation.
 ### Idempotent admission
 
 The outcome of admitting a tenant-scoped idempotency key for a versioned request fingerprint:
-`Admitted` (the caller owns the operation under a fenced lease), `InFlight` (a live attempt owns it),
-`Replay` (a completed result is returned), or `Conflict` (the key is stored under a different
-fingerprint or result contract). An admitted operation's lease is granted under the fixed kind
-`headless.idempotency`, with the idempotency key as the lease's resource.
+`Admitted` (the caller owns the operation), `InFlight` (a live attempt owns it), `Replay` (a
+completed result is returned), or `Conflict` (the key is stored under a different fingerprint or
+result contract). An admitted operation holds its own lease on the key's record row: a generation
+drawn from the idempotency store's sequence plus a lease expiry decided by the database clock. Its
+renewal, fence, completion, and release name that generation, and the store refuses them once a later
+admission drew a newer one. Idempotency does not use Fencing's fenced leases.
 
 ## Startup validation
 

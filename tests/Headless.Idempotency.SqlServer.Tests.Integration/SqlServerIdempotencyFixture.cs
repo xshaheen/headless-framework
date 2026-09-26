@@ -2,7 +2,6 @@
 
 using System.Data;
 using System.Data.Common;
-using Headless.Fencing;
 using Headless.Idempotency;
 using Headless.Testing.Testcontainers;
 using Headless.UnitOfWork;
@@ -11,8 +10,8 @@ using Microsoft.Data.SqlClient;
 namespace Tests;
 
 /// <summary>
-/// SQL Server leaf fixture for the idempotency conformance suite: one container whose database holds both the fenced
-/// leases and the idempotency records, with read committed snapshot isolation off;
+/// SQL Server leaf fixture for the idempotency conformance suite: one container whose database holds the idempotency
+/// records, with read committed snapshot isolation off;
 /// <see cref="SqlServerRcsiIdempotencyFixture" /> runs the same storage with it on. Tests run serially because the
 /// blocking scenarios measure how long a call waits.
 /// </summary>
@@ -45,7 +44,6 @@ public sealed class SqlServerRcsiIdempotencyFixture
 public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture, IAsyncLifetime, IIdempotencyFixture
 {
     private const string _Records = $"[{IdempotencyStorageOptions.DefaultSchema}].[records]";
-    private const string _Leases = $"[{FencingStorageOptions.DefaultSchema}].[leases]";
 
     protected abstract string Database { get; }
 
@@ -86,10 +84,8 @@ public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture
         await using var reset = new SqlCommand(
             $"""
             IF OBJECT_ID(N'{IdempotencyStorageOptions.DefaultSchema}.records', N'U') IS NOT NULL DROP TABLE {_Records};
+            IF OBJECT_ID(N'{IdempotencyStorageOptions.DefaultSchema}.record_generations', N'SO') IS NOT NULL DROP SEQUENCE [{IdempotencyStorageOptions.DefaultSchema}].[record_generations];
             IF SCHEMA_ID(N'{IdempotencyStorageOptions.DefaultSchema}') IS NOT NULL EXEC(N'DROP SCHEMA [{IdempotencyStorageOptions.DefaultSchema}]');
-            IF OBJECT_ID(N'{FencingStorageOptions.DefaultSchema}.leases', N'U') IS NOT NULL DROP TABLE {_Leases};
-            IF OBJECT_ID(N'{FencingStorageOptions.DefaultSchema}.lease_generations', N'SO') IS NOT NULL DROP SEQUENCE [{FencingStorageOptions.DefaultSchema}].[lease_generations];
-            IF SCHEMA_ID(N'{FencingStorageOptions.DefaultSchema}') IS NOT NULL EXEC(N'DROP SCHEMA [{FencingStorageOptions.DefaultSchema}]');
             SELECT CAST(is_read_committed_snapshot_on AS int) FROM sys.databases WHERE database_id = DB_ID();
             """,
             connection
@@ -111,11 +107,6 @@ public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture
     // test from exhausting the container's worker threads instead of contending.
     private string PooledConnectionString =>
         new SqlConnectionStringBuilder(DatabaseConnectionString) { MaxPoolSize = 30 }.ToString();
-
-    public void ConfigureFencing(HeadlessFencingSetupBuilder setup)
-    {
-        setup.UseSqlServer(PooledConnectionString);
-    }
 
     public void ConfigureIdempotency(HeadlessIdempotencySetupBuilder setup)
     {
@@ -142,7 +133,8 @@ public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(
             $"""
-            SELECT [status], [fingerprint_algorithm], [fingerprint], [lease_generation], [result], [result_contract], [retention_until]
+            SELECT [status], [fingerprint_algorithm], [fingerprint], [generation], [lease_expires_at], [result],
+                [result_contract], [retention_until]
             FROM {_Records}
             WHERE [tenant_id] = @tenant AND [idempotency_key] = @recordKey
             """,
@@ -164,9 +156,12 @@ public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture
             await reader.IsDBNullAsync(3, cancellationToken) ? null : reader.GetInt64(3),
             await reader.IsDBNullAsync(4, cancellationToken)
                 ? null
-                : await reader.GetFieldValueAsync<byte[]>(4, cancellationToken),
-            await reader.IsDBNullAsync(5, cancellationToken) ? null : reader.GetString(5),
-            await reader.GetFieldValueAsync<DateTimeOffset>(6, cancellationToken)
+                : await reader.GetFieldValueAsync<DateTimeOffset>(4, cancellationToken),
+            await reader.IsDBNullAsync(5, cancellationToken)
+                ? null
+                : await reader.GetFieldValueAsync<byte[]>(5, cancellationToken),
+            await reader.IsDBNullAsync(6, cancellationToken) ? null : reader.GetString(6),
+            await reader.GetFieldValueAsync<DateTimeOffset>(7, cancellationToken)
         );
     }
 
@@ -192,33 +187,6 @@ public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture
         (await command.ExecuteNonQueryAsync(cancellationToken)).Should().Be(1, "the record to age must exist");
     }
 
-    public async Task<StoredLeaseRow?> ReadLeaseAsync(IdempotencyRecordKey key, CancellationToken cancellationToken)
-    {
-        await using var connection = new SqlConnection(DatabaseConnectionString);
-        await connection.OpenAsync(cancellationToken);
-        await using var command = new SqlCommand(
-            $"""
-            SELECT [generation], [state], [expires_at] FROM {_Leases}
-            WHERE [tenant_id] = @tenant AND [kind] = @kind AND [resource] = @recordKey
-            """,
-            connection
-        );
-        _AddLeaseKey(command, key);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            return null;
-        }
-
-        return new StoredLeaseRow(
-            reader.GetInt64(0),
-            (StoredLeaseRowState)reader.GetInt16(1),
-            await reader.GetFieldValueAsync<DateTimeOffset>(2, cancellationToken)
-        );
-    }
-
     public async Task ShiftLeaseIntoPastAsync(
         IdempotencyRecordKey key,
         TimeSpan by,
@@ -229,32 +197,33 @@ public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(
             $"""
-            UPDATE {_Leases}
-            SET [granted_at] = {_Shifted("[granted_at]")},
-                [expires_at] = {_Shifted("[expires_at]")},
-                [ended_at] = {_Shifted("[ended_at]")}
-            WHERE [tenant_id] = @tenant AND [kind] = @kind AND [resource] = @recordKey
+            UPDATE {_Records}
+            SET [lease_expires_at] = {_Shifted("[lease_expires_at]")}
+            WHERE [tenant_id] = @tenant AND [idempotency_key] = @recordKey AND [lease_expires_at] IS NOT NULL
             """,
             connection
         );
-        _AddLeaseKey(command, key);
+        _AddKey(command, key);
         _AddShift(command, by);
 
         (await command.ExecuteNonQueryAsync(cancellationToken)).Should().Be(1, "the lease to age must exist");
+    }
+
+    public async Task TouchAsync(IUnitOfWork unit, CancellationToken cancellationToken)
+    {
+        var resource = (IRelationalUnitOfWorkResource)unit.Resource!;
+        await using var command = new SqlCommand(
+            "SELECT 1;",
+            (SqlConnection)resource.Connection,
+            (SqlTransaction)resource.Transaction
+        );
+        await command.ExecuteScalarAsync(cancellationToken);
     }
 
     private static void _AddKey(SqlCommand command, IdempotencyRecordKey key)
     {
         command.Parameters.Add(new SqlParameter("tenant", SqlDbType.NVarChar, 128) { Value = key.TenantId });
         command.Parameters.Add(new SqlParameter("recordKey", SqlDbType.NVarChar, 256) { Value = key.Key });
-    }
-
-    private static void _AddLeaseKey(SqlCommand command, IdempotencyRecordKey key)
-    {
-        _AddKey(command, key);
-        command.Parameters.Add(
-            new SqlParameter("kind", SqlDbType.NVarChar, 64) { Value = IdempotentAdmission.LeaseKind }
-        );
     }
 
     // One DATEADD per unit, because a single int argument overflows in seconds or nanoseconds for long spans.

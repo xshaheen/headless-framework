@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using Headless.Fencing;
 using Headless.Idempotency;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -22,40 +21,38 @@ public sealed class IdempotencyRetentionServiceTests : TestBase
     };
 
     private readonly IIdempotencyRecordStore _store = Substitute.For<IIdempotencyRecordStore>();
-    private readonly IFencedLeases _leases = Substitute.For<IFencedLeases>();
     private readonly FakeTimeProvider _time = new();
 
     [Fact]
-    public async Task should_purge_record_batches_until_short_then_the_idempotency_leases()
+    public async Task should_purge_record_batches_until_one_comes_back_short()
     {
         // given
-        var log = new ConcurrentQueue<string>();
-        var leasesPurged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var log = new ConcurrentQueue<int>();
+        var shortBatch = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var batches = new Queue<int>([2, 1]);
         _store
             .PurgeAsync(TimeSpan.Zero, 2, Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
-                log.Enqueue("records");
-                return ValueTask.FromResult(batches.TryDequeue(out var deleted) ? deleted : 0);
-            });
-        _leases
-            .PurgeAsync(IdempotentAdmission.LeaseKind, TimeSpan.FromDays(3), Arg.Any<CancellationToken>())
-            .Returns(_ =>
-            {
-                log.Enqueue("leases");
-                leasesPurged.TrySetResult();
-                return ValueTask.FromResult(0);
+                var deleted = batches.TryDequeue(out var next) ? next : 0;
+                log.Enqueue(deleted);
+
+                if (deleted < 2)
+                {
+                    shortBatch.TrySetResult();
+                }
+
+                return ValueTask.FromResult(deleted);
             });
         using var service = _Service();
 
         // when
         await service.StartAsync(AbortToken);
-        await _AdvanceUntilAsync(leasesPurged.Task);
+        await _AdvanceUntilAsync(shortBatch.Task);
         await service.StopAsync(AbortToken);
 
-        // then — records go first, so no lease is purged while a record that names it survives
-        log.Take(3).Should().Equal("records", "records", "leases");
+        // then - a full batch is followed by another; the short one ends the run
+        log.Take(2).Should().Equal(2, 1);
     }
 
     [Fact]
@@ -116,7 +113,6 @@ public sealed class IdempotencyRetentionServiceTests : TestBase
 
         // then — a disabled purge keeps re-checking on a fixed cadence instead of exiting the hosted service
         _store.ReceivedCalls().Should().BeEmpty();
-        _leases.ReceivedCalls().Should().BeEmpty();
         service.ExecuteTask!.IsCompleted.Should().BeFalse();
 
         await service.StopAsync(AbortToken);
@@ -160,7 +156,6 @@ public sealed class IdempotencyRetentionServiceTests : TestBase
 
         return new IdempotencyRetentionService(
             _store,
-            _leases,
             monitor,
             _time,
             NullLogger<IdempotencyRetentionService>.Instance

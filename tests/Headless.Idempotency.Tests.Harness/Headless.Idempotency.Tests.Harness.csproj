@@ -9,7 +9,6 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Headless.Fencing.Core\Headless.Fencing.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\..\src\Headless.Idempotency.Core\Headless.Idempotency.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />

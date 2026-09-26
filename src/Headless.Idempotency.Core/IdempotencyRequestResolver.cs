@@ -110,11 +110,28 @@ internal sealed class IdempotencyRequestResolver(
         _EnsureNoSurroundingWhitespace(contract, "contract", paramName);
     }
 
-    /// <summary>Returns the admitted attempt's lease duration: the caller's, or the configured default.</summary>
-    /// <remarks>The fencing layer checks it against its own bounds.</remarks>
+    /// <summary>
+    /// Returns an admission or renewal lease duration, the caller's or the configured default, checked against the
+    /// configured bounds.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="leaseDuration" /> is outside the bounds.</exception>
     public TimeSpan LeaseDuration(TimeSpan? leaseDuration)
     {
-        return leaseDuration ?? options.CurrentValue.DefaultLeaseDuration;
+        // Read on every call so bounds and the default changed through options reload apply to the next call.
+        var current = options.CurrentValue;
+        var value = leaseDuration ?? current.DefaultLeaseDuration;
+
+        if (value < current.MinimumLeaseDuration || value > current.MaximumLeaseDuration)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(leaseDuration),
+                value,
+                $"A lease duration must be between {current.MinimumLeaseDuration} and "
+                    + $"{current.MaximumLeaseDuration}; configure the bounds through IdempotentOperationsOptions."
+            );
+        }
+
+        return value;
     }
 
     /// <summary>Returns the retention to apply: the caller's, or the configured default.</summary>

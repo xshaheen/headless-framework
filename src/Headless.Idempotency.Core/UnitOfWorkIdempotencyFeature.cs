@@ -2,22 +2,18 @@
 
 using System.Data.Common;
 using Headless.Checks;
-using Headless.Fencing;
 using Headless.UnitOfWork;
 
 namespace Headless.Idempotency;
 
 /// <summary>
 /// Enlisted idempotency: every call runs on the unit's own connection and transaction, so the unit's outcome decides
-/// whether it happened. Every call locks the key's record before it touches the key's fenced lease, the one order
-/// that keeps a fence, a completion, and a concurrent admission of the same key from deadlocking. Every refusal of the
-/// arguments or the unit happens before the store runs a command, and nothing here retries.
+/// whether it happened. The key's record carries its own lease, so every call locks exactly one row and decides from
+/// that row as the database clock sees it after the lock is held. Every refusal of the arguments or the unit happens
+/// before the store runs a command, and nothing here retries.
 /// </summary>
-internal sealed class UnitOfWorkIdempotencyFeature(
-    IdempotencyRequestResolver resolver,
-    IIdempotencyRecordStore store,
-    IUnitOfWorkLeases leases
-) : IUnitOfWorkIdempotency
+internal sealed class UnitOfWorkIdempotencyFeature(IdempotencyRequestResolver resolver, IIdempotencyRecordStore store)
+    : IUnitOfWorkIdempotency
 {
     private const string _Operation = "durable idempotency call";
 
@@ -45,9 +41,10 @@ internal sealed class UnitOfWorkIdempotencyFeature(
 
         var publicKey = recordKey.ToKey();
 
-        // Past retention the stored outcome no longer binds the key: the record is reused as if new, whatever
-        // fingerprint or result it held.
-        if (!record.Inserted && !record.IsRetentionElapsed)
+        // Past retention the stored outcome no longer binds the key and the record is reused as if new, whatever
+        // fingerprint or result it held. A live attempt keeps it bound even then: its lease may have been renewed past
+        // the retention, and resetting the record under it would hand the key to a second attempt.
+        if (!record.Inserted && (!record.IsRetentionElapsed || record.IsHeld))
         {
             if (!fingerprint.Matches(record.Fingerprint))
             {
@@ -58,28 +55,35 @@ internal sealed class UnitOfWorkIdempotencyFeature(
             {
                 return _Replay(publicKey, fingerprint, record, expectedContract);
             }
+
+            if (record.IsHeld)
+            {
+                return IdempotentAdmission.InFlight(
+                    publicKey,
+                    fingerprint,
+                    record.Generation!.Value,
+                    record.LeaseExpiresAt!.Value
+                );
+            }
         }
 
         // A pending record that still names an attempt means that attempt ended without completing or releasing (it
-        // crashed, outlived its lease, or a sweep abandoned it), so its partial side effects may exist. A released or
-        // just-inserted record names none.
-        var isTakeover =
-            record is { Inserted: false, Status: IdempotencyRecordStatus.Pending, LeaseGeneration: not null };
+        // crashed or outlived its lease), so its partial side effects may exist. A released or just-inserted record
+        // names none.
+        var isTakeover = record is { Inserted: false, Status: IdempotencyRecordStatus.Pending, Generation: not null };
 
-        var grant = await leases
-            .GrantAsync(unitOfWork, IdempotentAdmission.LeaseKind, recordKey.Key, lease, cancellationToken)
+        var grant = await store
+            .AdmitAsync(relational, recordKey, fingerprint, lease, keep, cancellationToken)
             .ConfigureAwait(false);
 
-        if (!grant.IsAcquired)
-        {
-            return IdempotentAdmission.InFlight(publicKey, fingerprint, grant.ExpiresAt);
-        }
-
-        await store
-            .AdmitAsync(relational, recordKey, fingerprint, grant.Lease.Generation, keep, cancellationToken)
-            .ConfigureAwait(false);
-
-        return IdempotentAdmission.Admitted(publicKey, fingerprint, grant.Lease, grant.ExpiresAt, isTakeover, keep);
+        return IdempotentAdmission.Admitted(
+            publicKey,
+            fingerprint,
+            grant.Generation,
+            grant.LeaseExpiresAt,
+            isTakeover,
+            keep
+        );
     }
 
     public async ValueTask CompleteAsync(
@@ -95,27 +99,20 @@ internal sealed class UnitOfWorkIdempotencyFeature(
         var recordKey = IdempotencyRequestResolver.ResolveAdmitted(admission);
         IdempotencyRequestResolver.ValidateContract(contract, nameof(contract));
         var keep = retention is null ? admission.Retention!.Value : resolver.Retention(retention);
-        var lease = admission.Lease!;
+        var generation = admission.Generation!.Value;
 
         var relational = _Enlist(unitOfWork, isWrite: true);
 
-        await _LockOwnRecordAsync(relational, recordKey, lease, cancellationToken).ConfigureAwait(false);
-
-        var settlement = await leases.SettleAsync(unitOfWork, lease, cancellationToken).ConfigureAwait(false);
-
-        // Settling is the attempt's last proof that it still owns the key; without it, a takeover's attempt owns the
-        // outcome, and writing this result would overwrite or pre-empt that attempt's.
-        if (settlement != LeaseSettlementStatus.Settled)
-        {
-            throw new StaleLeaseException(lease, _ToFenceStatus(settlement));
-        }
+        // Owning the key is the attempt's last proof that its result is the outcome: an expired lease may already be
+        // taken over, and a completed attempt already stored the result a retry must not overwrite.
+        await _LockOwnRecordAsync(relational, recordKey, admission, cancellationToken).ConfigureAwait(false);
 
         await store
-            .CompleteAsync(relational, recordKey, lease.Generation, result, contract, keep, cancellationToken)
+            .CompleteAsync(relational, recordKey, generation, result, contract, keep, cancellationToken)
             .ConfigureAwait(false);
     }
 
-    public async ValueTask<LeaseSettlementStatus> ReleaseAsync(
+    public async ValueTask<IdempotentLeaseStatus> ReleaseAsync(
         IUnitOfWork unitOfWork,
         IdempotentAdmission admission,
         CancellationToken cancellationToken = default
@@ -123,28 +120,25 @@ internal sealed class UnitOfWorkIdempotencyFeature(
     {
         Argument.IsNotNull(unitOfWork);
         var recordKey = IdempotencyRequestResolver.ResolveAdmitted(admission);
-        var lease = admission.Lease!;
+        var generation = admission.Generation!.Value;
 
         var relational = _Enlist(unitOfWork, isWrite: true);
 
         var record = await store.LockAsync(relational, recordKey, cancellationToken).ConfigureAwait(false);
+        var status = record?.ClassifyFor(generation) ?? IdempotentLeaseStatus.Stale;
 
-        if (record?.LeaseGeneration != lease.Generation)
+        if (status != IdempotentLeaseStatus.Current)
         {
-            // Another attempt owns the record now; releasing this generation's lease could not free it anyway.
-            return LeaseSettlementStatus.Stale;
+            // A released record reports success again, so a retried release that already committed is not an error;
+            // every other refusal writes nothing.
+            return status;
         }
 
-        var release = await leases.ReleaseAsync(unitOfWork, lease, cancellationToken).ConfigureAwait(false);
+        await store
+            .ReleaseAsync(relational, recordKey, generation, admission.Retention!.Value, cancellationToken)
+            .ConfigureAwait(false);
 
-        if (release == LeaseSettlementStatus.Released)
-        {
-            await store
-                .ReleaseAsync(relational, recordKey, lease.Generation, admission.Retention!.Value, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        return release;
+        return IdempotentLeaseStatus.Released;
     }
 
     public async ValueTask FenceAsync(
@@ -155,12 +149,10 @@ internal sealed class UnitOfWorkIdempotencyFeature(
     {
         Argument.IsNotNull(unitOfWork);
         var recordKey = IdempotencyRequestResolver.ResolveAdmitted(admission);
-        var lease = admission.Lease!;
 
         var relational = _Enlist(unitOfWork, isWrite: false);
 
-        await _LockOwnRecordAsync(relational, recordKey, lease, cancellationToken).ConfigureAwait(false);
-        await leases.FenceAsync(unitOfWork, lease, cancellationToken).ConfigureAwait(false);
+        await _LockOwnRecordAsync(relational, recordKey, admission, cancellationToken).ConfigureAwait(false);
     }
 
     private static IdempotentAdmission _Replay(
@@ -189,30 +181,21 @@ internal sealed class UnitOfWorkIdempotencyFeature(
     private async ValueTask _LockOwnRecordAsync(
         IRelationalUnitOfWorkResource relational,
         IdempotencyRecordKey recordKey,
-        FencedLease lease,
+        IdempotentAdmission admission,
         CancellationToken cancellationToken
     )
     {
+        var generation = admission.Generation!.Value;
         var record = await store.LockAsync(relational, recordKey, cancellationToken).ConfigureAwait(false);
 
-        // The record names the attempt that owns it. A record gone, released, or re-admitted under another generation
-        // belongs to no attempt holding this lease, so the lease is not even consulted.
-        if (record?.LeaseGeneration != lease.Generation)
-        {
-            throw new StaleLeaseException(lease, LeaseFenceStatus.Stale);
-        }
-    }
+        // The update-intent lock taken here lasts until the transaction ends, so the answer stays true for every write
+        // the unit makes after it: no admission can take the key over until this unit commits or rolls back.
+        var status = record?.ClassifyFor(generation) ?? IdempotentLeaseStatus.Stale;
 
-    private static LeaseFenceStatus _ToFenceStatus(LeaseSettlementStatus settlement)
-    {
-        return settlement switch
+        if (status != IdempotentLeaseStatus.Current)
         {
-            LeaseSettlementStatus.Expired => LeaseFenceStatus.Expired,
-            LeaseSettlementStatus.Released => LeaseFenceStatus.Released,
-            LeaseSettlementStatus.Abandoned => LeaseFenceStatus.Abandoned,
-            LeaseSettlementStatus.Settled => LeaseFenceStatus.Settled,
-            _ => LeaseFenceStatus.Stale,
-        };
+            throw new StaleAdmissionException(admission.Key, generation, status);
+        }
     }
 
     private IRelationalUnitOfWorkResource _Enlist(IUnitOfWork unitOfWork, bool isWrite)

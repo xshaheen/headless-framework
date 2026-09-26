@@ -35,7 +35,7 @@ Additional packages:
 - Use `UseHeadless()` for the default middleware order (`UseStatusCodePages()` before `UseExceptionHandler()`), then add auth/tenant middleware, then map endpoints. `UseHeadless` and `MapHeadlessEndpoints` are idempotent.
 - For tenant-aware HTTP apps, configure `builder.AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims()))` and place `app.UseHeadlessTenancy()` after app-owned `UseAuthentication()` and before app-owned `UseAuthorization()`.
 - For identifier-based (pre-auth) tenant resolution, add a `.Catalog(...)` store and `.Http(http => http.ResolveFromCatalog(sources => sources.AddHostSource("{tenant}.example.com")))` — or `AddRouteSource()`, `AddHeaderSource()`, `AddSource(context => ...)` — and place `app.UseHeadlessTenantCatalogResolution()` after `UseRouting()` and before `UseAuthentication()`, with `UseForwardedHeaders()` (behind a proxy), host filtering, and `UseCors()` ahead of it. Sources run in registration order; register the host source before a header source where hostnames carry perimeter controls. See [multi-tenancy.md](multi-tenancy.md#tenant-catalog).
-- For idempotent-replay middleware, register `services.AddHeadlessFencing(...)` and `services.AddHeadlessIdempotency(...)` with a relational provider (same database), then `services.AddIdempotency(o => { ... })`, and place `app.UseIdempotency()` AFTER `UseAuthorization()` and AFTER `UseHeadlessTenancy()`. The durable store scopes every admission by `ICurrentTenant.Id`; tenant and auth must be resolved first so unauthenticated/unauthorized requests do not admit a key. `InFlightStrategy = WaitAndReplay` polls the durable store with a bounded backoff — it has no `IDistributedLock` dependency.
+- For idempotent-replay middleware, register `services.AddHeadlessIdempotency(...)` with a relational provider, then `services.AddIdempotency(o => { ... })`, and place `app.UseIdempotency()` AFTER `UseAuthorization()` and AFTER `UseHeadlessTenancy()`. The durable store scopes every admission by `ICurrentTenant.Id`; tenant and auth must be resolved first so unauthenticated/unauthorized requests do not admit a key. `InFlightStrategy = WaitAndReplay` polls the durable store with a bounded backoff — it has no `IDistributedLock` dependency.
 - Basic and API-key handlers authenticate only credentials supplied for their own scheme. Do not rely on an existing cookie/bearer principal to satisfy an endpoint that explicitly requires `Basic` or `ApiKey`.
 - API-key query-string authentication is opt-in (`AllowApiKeyInQueryString = true`); the dynamic scheme provider ignores `?api_key=` unless the API-key handler would accept it.
 - Use `MapHeadlessEndpoints()` to expose `/health`, `/alive`, OpenAPI JSON, and static web assets. `AddHeadless()` registers a `self` health check tagged `live`.
@@ -714,7 +714,7 @@ Stripe-style HTTP idempotency middleware for ASP.NET Core. Admits each request t
 - Per-endpoint overrides via `.WithIdempotency(o => ...)`; `HeaderName` is excluded (see Design constraints).
 - Custom hooks: `KeyDeriver`, `RequestFingerprint`, `ShouldApply`, `ShouldCacheResponse`.
 - Default cache predicate: 2xx + selected 4xx; never 5xx, 1xx, 3xx, or transient 4xx (408/425/429).
-- A handler reached through the middleware reads its admission with `HttpContext.GetIdempotencyContext()` (`IIdempotencyContext`: `HeaderKey`, `Scope`, `Key`, `Admission`, `Lease`, `IsTakeover`) and fences its own writes with `unit.Idempotency.FenceAsync(context.Admission)`.
+- A handler reached through the middleware reads its admission with `HttpContext.GetIdempotencyContext()` (`IIdempotencyContext`: `HeaderKey`, `Scope`, `Key`, `Admission`, `Generation`, `IsTakeover`) and fences its own writes with `unit.Idempotency.FenceAsync(context.Admission)`.
 - `IdempotencyErrorCodes` static class: `KeyReused`, `InFlight`, `InFlightTimeout`, `BodyTooLarge`, `KeyMalformed` as `public const string`.
 
 ### Design constraints
@@ -733,13 +733,12 @@ dotnet add package Headless.Api.Idempotency
 
 ### Setup and use
 
-> Durable admission is a hard prerequisite. This package references only `Headless.Idempotency.Abstractions`, so the `IIdempotentOperations` the middleware admits, completes, and releases through comes from `AddHeadlessFencing(...)` (`UsePostgreSql` / `UseSqlServer`) and `AddHeadlessIdempotency(...)` with a matching provider, on the same database. `AddIdempotency` declares the dependency via `Headless.Hosting`'s `RequireRegisteredService<T>`, so a host without it is refused at startup with a `MissingRequiredServiceException` rather than failing on the first idempotent request. Registration order does not matter — the check runs at host start.
+> Durable admission is a hard prerequisite. This package references only `Headless.Idempotency.Abstractions`, so the `IIdempotentOperations` the middleware admits, completes, and releases through comes from `AddHeadlessIdempotency(...)` with a provider (`UsePostgreSql` / `UseSqlServer`). `AddIdempotency` declares the dependency via `Headless.Hosting`'s `RequireRegisteredService<T>`, so a host without it is refused at startup with a `MissingRequiredServiceException` rather than failing on the first idempotent request. Registration order does not matter — the check runs at host start.
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddHeadlessFencing(setup => setup.UsePostgreSql(connectionString)); // or setup.UseSqlServer(...)
-builder.Services.AddHeadlessIdempotency(setup => setup.UsePostgreSql(connectionString)); // same database as fencing
+builder.Services.AddHeadlessIdempotency(setup => setup.UsePostgreSql(connectionString)); // or setup.UseSqlServer(...)
 builder.Services.AddIdempotency(o =>
 {
     o.Retention = TimeSpan.FromHours(24);
@@ -780,7 +779,7 @@ app.MapPost("/disbursements", async (HttpContext http, IUnitOfWorkFactory factor
         db,
         async (unit, innerCt) =>
         {
-            await unit.Idempotency.FenceAsync(idem.Admission, innerCt); // throws StaleLeaseException past takeover
+            await unit.Idempotency.FenceAsync(idem.Admission, innerCt); // throws StaleAdmissionException past takeover
             // ... business writes ...
             return Results.Ok();
         },
@@ -817,7 +816,7 @@ app.MapPost("/disbursements", async (HttpContext http, IUnitOfWorkFactory factor
 - Buffers the request body via `HttpRequest.EnableBuffering`; bytes beyond `RequestBodyBufferThreshold` spill to a temporary file.
 - On replay, writes `Idempotent-Replayed: true` to the response. Pre-existing allowlisted response headers set by upstream middleware are removed before captured headers are written for byte-equivalent replay.
 - On admission, sets `IIdempotencyContext` as an `HttpContext` feature before invoking the handler, then renews the lease every third of `InFlightLease` while it runs; renewal stops before completion so it cannot race the settlement that ends the lease.
-- Completion runs after the handler's unit commits, with `CancellationToken.None` so a client disconnect cannot strand the admission until its lease expires. A `StaleLeaseException` there (the lease expired or was taken over while the handler ran) is logged, never thrown — only the owning attempt's result is ever stored.
+- Completion runs after the handler's unit commits, with `CancellationToken.None` so a client disconnect cannot strand the admission until its lease expires. A `StaleAdmissionException` there (the lease expired or was taken over while the handler ran) is logged, never thrown — only the owning attempt's result is ever stored.
 - When the **response** body exceeds `MaxBodySizeForHashing` (`captureStream.TruncatedCapture`), the completed response is not stored and replay does not apply. `OversizeBehavior` controls **request**-body handling only.
 
 ---

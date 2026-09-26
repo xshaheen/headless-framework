@@ -1,8 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Checks;
-using Headless.Fencing;
 using Headless.Hosting.Initialization;
+using Headless.MultiTenancy;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -17,31 +18,17 @@ public static class SetupHeadlessIdempotency
         /// <summary>
         /// Registers <see cref="IIdempotentOperations" />, the enlisted <c>unit.Idempotency</c> feature, the
         /// retention purge, and the chosen provider. Exactly one <c>setup.Use…</c> call (<c>UsePostgreSql</c> or
-        /// <c>UseSqlServer</c>) is required, and fenced leases must already be registered with
-        /// <c>AddHeadlessFencing</c> on the same database.
+        /// <c>UseSqlServer</c>) is required.
         /// </summary>
         /// <param name="configure">Chooses the provider and configures admission defaults, the purge, and storage.</param>
         /// <returns>The service collection, to allow chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
         /// <exception cref="InvalidOperationException">
-        /// Fenced leases are not registered, no provider or more than one provider was chosen, or idempotency was
-        /// already registered.
+        /// No provider or more than one provider was chosen, or idempotency was already registered.
         /// </exception>
         public IServiceCollection AddHeadlessIdempotency(Action<HeadlessIdempotencySetupBuilder> configure)
         {
             Argument.IsNotNull(configure);
-
-            // Every admission holds a fenced lease written in the same transaction as its record, so without fencing
-            // no admission can run. Failing here names the fix; failing at the first admission would only name a
-            // missing service.
-            if (!services.Any(static d => d.ServiceType == typeof(IFencedLeases)))
-            {
-                throw new InvalidOperationException(
-                    "Headless.Idempotency admits every operation under a fenced lease, but no fencing is registered. "
-                        + "Call AddHeadlessFencing (with UsePostgreSql or UseSqlServer, on the same database) before "
-                        + "AddHeadlessIdempotency."
-                );
-            }
 
             var setup = new HeadlessIdempotencySetupBuilder(services);
             configure(setup);
@@ -63,6 +50,12 @@ public static class SetupHeadlessIdempotency
 
             // Registered without a validator: the provider attaches the one that knows its identifier rules.
             services.AddOptions<IdempotencyStorageOptions>();
+
+            // Records are keyed by the current tenant, so ICurrentTenant must follow ICurrentTenant.Change. The
+            // NullCurrentTenant fallback ignores Change and would key every tenant's record on the host scope; this
+            // swaps it for the AsyncLocal-backed tenant unless the host registered a real one.
+            services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
+            services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
 
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<IdempotencyRequestResolver>();

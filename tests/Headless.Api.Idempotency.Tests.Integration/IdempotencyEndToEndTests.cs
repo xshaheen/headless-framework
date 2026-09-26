@@ -153,7 +153,7 @@ public sealed class IdempotencyEndToEndTests(ApiIdempotencyPostgreSqlFixture fix
     // ── handler sees IIdempotencyContext ────────────────────────────────────────
 
     [Fact]
-    public async Task should_expose_key_and_lease_to_the_handler_through_idempotency_context()
+    public async Task should_expose_key_and_generation_to_the_handler_through_idempotency_context()
     {
         var key = _UniqueKey();
         await using var app = await _CreateAppAsync();
@@ -164,7 +164,13 @@ public sealed class IdempotencyEndToEndTests(ApiIdempotencyPostgreSqlFixture fix
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var storeKey = response.Headers.GetValues("X-Idempotency-Key").Should().ContainSingle().Which;
         storeKey.Should().HaveLength(64).And.MatchRegex("^[0-9a-f]{64}$");
-        response.Headers.GetValues("X-Idempotency-Lease-Resource").Should().ContainSingle().Which.Should().Be(storeKey);
+        response.Headers.GetValues("X-Idempotency-Admission-Key").Should().ContainSingle().Which.Should().Be(storeKey);
+        long.Parse(
+                response.Headers.GetValues("X-Idempotency-Generation").Should().ContainSingle().Which,
+                CultureInfo.InvariantCulture
+            )
+            .Should()
+            .BePositive();
         response
             .Headers.GetValues("X-Idempotency-Takeover")
             .Should()

@@ -5,18 +5,17 @@ packages: Idempotency.Abstractions, Idempotency.Core, Idempotency.PostgreSql, Id
 
 # Idempotency
 
-> Durable, tenant-scoped idempotent admission over a fenced lease: admit a key once across processes, replay its stored result on retry, and refuse a stale attempt's completion.
+> Durable, tenant-scoped idempotent admission: admit a key once across processes, replay its stored result on retry, and refuse a stale attempt's completion. Each record row carries its own lease and generation.
 
 ## Orientation
 
-Every admission holds a fenced lease from [`Headless.Fencing`](fencing.md), so register fencing first, on the same database:
+Register one provider; nothing else is required:
 
 ```csharp
-builder.Services.AddHeadlessFencing(setup => setup.UsePostgreSql(connectionString));
-builder.Services.AddHeadlessIdempotency(setup => setup.UsePostgreSql(connectionString)); // same database as fencing
+builder.Services.AddHeadlessIdempotency(setup => setup.UsePostgreSql(connectionString));
 ```
 
-`AddHeadlessIdempotency` throws `InvalidOperationException` at startup if no `IFencedLeases` is registered yet.
+Each key's record row holds the admitted attempt's lease itself (a `generation` plus `lease_expires_at`), the same shape Stripe idempotency keys and AWS Powertools idempotency use. There is no second table, so every call locks exactly one row, and there is no lock order to get wrong. Idempotency does not depend on [`Headless.Fencing`](fencing.md).
 
 - **Autonomous** — inject `IIdempotentOperations` and call `AdmitAsync`, `CompleteAsync`, `ReleaseAsync`, `RenewAsync`, or `PeekAsync`. Admission and completion each commit before they return; `PeekAsync` is a cheap, lock-free status read with no transaction of its own.
 - **Enlisted** — `unit.Idempotency` (namespace `Headless.UnitOfWork`, added by `Headless.Idempotency.Abstractions`) runs `AdmitAsync`, `CompleteAsync`, `ReleaseAsync`, and `FenceAsync` inside the caller's own transaction, so a rollback leaves no record.
@@ -38,7 +37,7 @@ switch (admission.Disposition)
     case IdempotentDisposition.Admitted:
         return await factory.RunAsync(db, async (unit, ct) =>
         {
-            await unit.Idempotency.FenceAsync(admission, ct);   // record, then lease
+            await unit.Idempotency.FenceAsync(admission, ct);   // holds the record row until commit
             var receipt = DoWork();
             await unit.Idempotency.CompleteAsync(admission, receipt, ReceiptJsonContext.Default.Receipt, contract: "orders.receipt/v1", cancellationToken: ct);
             return receipt;
@@ -50,13 +49,13 @@ switch (admission.Disposition)
 
 ## Agent Rules
 
-- Fence an admitted operation's writes through `unit.Idempotency.FenceAsync(admission)`, never through `unit.Leases.FenceAsync(admission.Lease)` directly. Every idempotency call locks the key's record before its lease; locking them in the reverse order (lease, then record) deadlocks against a concurrent admission of the same key that is doing it the correct way round.
-- `IsTakeover` means an earlier attempt was admitted for this key and ended without completing or releasing — it crashed, stalled past its lease, or a sweep abandoned it. Its partial side effects may already exist. An operation that is not naturally safe to repeat must check `IsTakeover` before redoing them.
-- `CompleteAsync` and `ReleaseAsync` both take the whole `IdempotentAdmission`, not just the key — the admission carries the lease generation the completion is fenced against. A `StaleLeaseException` from `CompleteAsync` means a later admission already took the key over; nothing was stored, and only the winning attempt's result will be.
+- Fence an admitted operation's writes through `unit.Idempotency.FenceAsync(admission)` as the unit's first idempotency call. It takes the record row's update-intent lock (never a shared one) and holds it until the unit ends, so no admission can take the key over while the unit's writes are uncommitted.
+- `IsTakeover` means an earlier attempt was admitted for this key and ended without completing or releasing — it crashed or stalled past its lease. Its partial side effects may already exist. An operation that is not naturally safe to repeat must check `IsTakeover` before redoing them.
+- `CompleteAsync` and `ReleaseAsync` both take the whole `IdempotentAdmission`, not just the key — the admission carries the `Generation` the completion is fenced against. A `StaleAdmissionException` from `CompleteAsync` means the attempt no longer owns the key (`Reason`: `Expired`, `Stale` after a takeover or purge, `Completed` for a second completion by the same attempt, or `Released`); nothing was stored, and a stored result is never overwritten.
 - A stored fingerprint from an algorithm this version does not know (`IdempotencyFingerprint.IsKnownAlgorithm` is `false`) is refused with `NotSupportedException`, never recomputed — the request that produced it is gone, so guessing could replay a wrong result or reject a legitimate retry.
 - `expectedContract` on `AdmitAsync` is a read guard, not a write guard: a completed record stored under a different contract tag comes back as `Conflict` (`StoredContract` set) rather than a mis-typed replay. Pass the same contract tag to `AdmitAsync` and `CompleteAsync`.
-- `RenewAsync` touches only the lease, never the record — call it from a heartbeat loop without an owned unit or a record lock. It is the one autonomous-only member; there is no `unit.Idempotency.RenewAsync`.
-- The idempotency key, kind, and resource all pass through `IdempotencyFieldLimits` (`KeyMaxLength` 256, `ContractMaxLength` 256, `FingerprintAlgorithmMaxLength` 32, `FingerprintMaxLength` 64) and `FencingFieldLimits.ResourceMaxLength` (the key is also the lease's resource) before any SQL runs.
+- `RenewAsync` is one guarded single-row update the store commits on its own connection — call it from a heartbeat loop without an owned unit. It extends the lease only while the record is pending at the admission's generation with a live lease, and otherwise reports why (`IdempotentLeaseRenewal.Status`). It is the one autonomous-only member; there is no `unit.Idempotency.RenewAsync`.
+- The idempotency key, tenant id, and contract pass through `IdempotencyFieldLimits` (`TenantIdMaxLength` 128, `KeyMaxLength` 256, `ContractMaxLength` 256, `FingerprintAlgorithmMaxLength` 32, `FingerprintMaxLength` 64) before any SQL runs, and a lease duration must fall within `IdempotentOperationsOptions.MinimumLeaseDuration`/`MaximumLeaseDuration`.
 
 ## Core Concepts
 
@@ -66,12 +65,14 @@ switch (admission.Disposition)
 
 | Disposition | Meaning | What is set |
 | --- | --- | --- |
-| `Admitted` | The caller owns the operation under a fenced lease. | `Lease`, `LeaseExpiresAt`, `IsTakeover`, `Retention` |
-| `InFlight` | A live attempt owns the key; retry later. | `LeaseExpiresAt` (the live holder's) |
+| `Admitted` | The caller owns the operation under a lease on its record. | `Generation`, `LeaseExpiresAt`, `IsTakeover`, `Retention` |
+| `InFlight` | A live attempt owns the key; retry later. | `Generation` and `LeaseExpiresAt` (the live holder's) |
 | `Replay` | The operation already completed within retention. | `Result` (`IdempotentResult`: `Payload`, `Contract`) |
 | `Conflict` | The key is stored with a different fingerprint, or a completed result carries a contract the caller did not expect. | `StoredFingerprint`, and `StoredContract` for a contract mismatch |
 
-Under the hood, admission locks or inserts the key's record row, then decides in order: fingerprint mismatch → `Conflict`; `Completed` within retention → `Replay` (or contract `Conflict` if `expectedContract` does not match); otherwise it calls `unit.Leases.GrantAsync(kind: "headless.idempotency", resource: key)` — `Held` becomes `InFlight`, `Granted` or `Takeover` becomes `Admitted`. `IsTakeover` is set whenever the record was already `Pending` before this call, which covers both a crashed attempt and one a sweep abandoned.
+Under the hood, admission locks or inserts the key's record row (one row, one lock), reads the database clock after the lock is held, then decides in order: fingerprint mismatch → `Conflict`; `Completed` within retention → `Replay` (or contract `Conflict` if `expectedContract` does not match); `Pending` with a generation whose lease is still live → `InFlight`; otherwise it grants: draws the next generation from the store-wide `record_generations` sequence, sets `lease_expires_at` to the database clock plus the lease duration, and returns `Admitted`. A record past its retention is reset in place and granted, unless a live attempt still holds it (its lease was renewed past the retention). `IsTakeover` is set when the record was `Pending` with a generation before this call, meaning an attempt ended without completing or releasing.
+
+Generations only grow per key, even after the record is purged and the key admitted again, because they come from one sequence, drawn only after the row lock is held. A zombie attempt of a purged record can never match a new one.
 
 ### Fingerprint
 
@@ -83,18 +84,18 @@ Under the hood, admission locks or inserts the key's record row, then decides in
 
 ### Retention and purge
 
-`IdempotentOperationsOptions.DefaultRetention` (24 hours) is how long a completed record replays, and `DefaultLeaseDuration` (2 minutes) is how long an admitted attempt owns its key unless renewed — both apply when the caller does not pass an explicit value to `AdmitAsync`, and the lease duration must also fall within the fencing bounds (`FencingOptions.MinimumLeaseDuration`/`MaximumLeaseDuration`). `IdempotencyRetentionService`, a hosted service always registered by `AddHeadlessIdempotency`, deletes records past `retention_until` in batches of `PurgeBatchSize` (default 1000) every `PurgeInterval` (default 1 hour; `null` disables the service entirely), then purges the idempotency-kind leases those records left behind through `IFencedLeases.PurgeAsync`. Records are purged before their leases, so a lease is never deleted while a record that might still complete under it survives.
+`IdempotentOperationsOptions.DefaultRetention` (24 hours) is how long a completed record replays, and `DefaultLeaseDuration` (2 minutes) is how long an admitted attempt owns its key unless renewed — both apply when the caller does not pass an explicit value to `AdmitAsync`. Every admission and renewal duration must fall within `MinimumLeaseDuration` (1 second) and `MaximumLeaseDuration` (1 day). `IdempotencyRetentionService`, a hosted service always registered by `AddHeadlessIdempotency`, deletes records past `retention_until` whose lease is no longer live, in batches of `PurgeBatchSize` (default 1000) every `PurgeInterval` (default 1 hour; `null` disables the service entirely). A pending record whose attempt renewed its lease past the retention is kept until that lease expires, so a live attempt never loses the record it will complete.
 
-### Enlistment and lock order
+### Enlistment and the fence
 
-Enlisted calls (`unit.Idempotency.*`) follow the same rules as `unit.Leases` and `unit.Sequences` (see [unit-of-work.md](unit-of-work.md)): `RequireTransaction`, then `ValidateEnlistment`, then — for admit, complete, and release, never for the fence read — mark an observed-mode unit non-retryable. Every idempotency call, autonomous or enlisted, locks the key's record before its lease, in that fixed order; `unit.Idempotency.FenceAsync` preserves it (record, then lease) so it can never deadlock against a concurrent admission of the same key, which is why it exists instead of asking callers to fence the lease directly.
+Enlisted calls (`unit.Idempotency.*`) follow the same rules as `unit.Leases` and `unit.Sequences` (see [unit-of-work.md](unit-of-work.md)): `RequireTransaction`, then `ValidateEnlistment`, then — for admit, complete, and release, never for the fence read — mark an observed-mode unit non-retryable. `unit.Idempotency.FenceAsync` takes the record row with an update-intent lock (`FOR NO KEY UPDATE` on PostgreSQL, `UPDLOCK, HOLDLOCK, ROWLOCK` on SQL Server) held until the unit ends, then refuses with `StaleAdmissionException` unless the record is still pending at the admission's generation with a live lease by the database clock read after the lock. A concurrent admission of the key waits on that row and then sees the unit's committed outcome. The lock is never shared: a waiting admission would queue for the update lock behind it, and the fencing unit's own completion would then deadlock.
 
 ## HTTP composition
 
 `Headless.Api.Idempotency` is a thin HTTP adapter over this store — see [api.md § Headless.Api.Idempotency](api.md#headlessapiidempotency) for its options and setup. What it adds on top of `IIdempotentOperations`:
 
 - **Store key.** The SHA-256 hex of a derived scope string (user, method, path, query, header key) — always 64 characters, so a long path or a 255-character header value stays within `IdempotencyFieldLimits.KeyMaxLength`. The store separately scopes every key by the current tenant.
-- **Admitted.** The middleware runs the handler behind a lease-renewal loop (`RenewAsync` every third of the configured lease duration, each call bounded by that same interval, since a handler's own fenced transaction can block a renewal on the lease row), then completes with the captured response once `ShouldCacheResponse` accepts it, or releases otherwise.
+- **Admitted.** The middleware runs the handler behind a lease-renewal loop (`RenewAsync` every third of the configured lease duration, each call bounded by that same interval, since a handler's own fenced transaction can block a renewal on the record row), then completes with the captured response once `ShouldCacheResponse` accepts it, or releases otherwise.
 - **The post-commit completion window.** Completion runs *after* the handler's unit commits, not inside it — there is no enlisted HTTP completion today. A crash between the handler's commit and the middleware's completion call leaves the record `Pending`; the next request is `Admitted` as a takeover (`IsTakeover = true`) and re-runs the handler. A handler reads its admission with `HttpContext.GetIdempotencyContext()` (`IIdempotencyContext`) and either checks `IsTakeover` before repeating a side effect that is not safe to redo, or fences its own writes with `unit.Idempotency.FenceAsync(context.Admission)` so a still-running previous attempt (past its own takeover) cannot also commit.
 - **Replay.** Writes the stored response verbatim (status, allowlisted headers, body). **Conflict.** Returns the configured mismatch status.
 - **InFlight.** `Reject` (default): `409 g:idempotency_in_flight`. `WaitAndReplay`: each tick of a doubling backoff calls the cheap `PeekAsync` first and only re-runs the full, row-locking `AdmitAsync` when the peek shows the record settled or the holder's last-known lease expiry has passed — until `Replay`, `Admitted` (a takeover), or the configured timeout: `409 g:idempotency_in_flight_timeout`.
@@ -115,9 +116,10 @@ Reference it from code that admits, completes, or fences idempotent operations. 
 
 ### Design and runtime behavior
 
-- `IIdempotentOperations.AdmitAsync(key, fingerprint, expectedContract?, leaseDuration?, retention?, ct)` → `IdempotentAdmission`. `CompleteAsync(admission, result, contract, retention?, ct)` stores the result and settles the lease in one transaction; throws `StaleLeaseException` when the attempt no longer owns the key. `ReleaseAsync(admission, ct)` → `LeaseSettlementStatus`. `RenewAsync(admission, duration, ct)` → `LeaseRenewalResult` (autonomous only). `PeekAsync(key, ct)` → `IdempotencyPeekStatus` (`Absent`, `Pending`, `Completed`; a record past its retention reads as `Absent`) — no row lock, no lease read, and no full disposition; it exists to poll cheaply while waiting on another attempt, not to replace `AdmitAsync`.
-- `IdempotentAdmission`: `Disposition`, `Key` (`IdempotencyKey(TenantId, Key)`), `Fingerprint`, `Lease`/`LeaseExpiresAt` (when relevant), `IsTakeover`, `Retention`, `Result`, `StoredFingerprint`, `StoredContract`, and `IsAdmitted` (`[MemberNotNullWhen(true, nameof(Lease), nameof(Retention))]`). `IdempotentAdmission.LeaseKind` is the constant `"headless.idempotency"` every admission's lease is granted under.
-- `unit.Idempotency` (namespace `Headless.UnitOfWork`) returns a `UnitOfWorkIdempotency` bound to the unit; repeated reads on one unit return the same instance. It mirrors `AdmitAsync`/`CompleteAsync`/`ReleaseAsync` plus `FenceAsync(admission, ct)`, which throws `StaleLeaseException` rather than returning a status. There is no enlisted `RenewAsync`.
+- `IIdempotentOperations.AdmitAsync(key, fingerprint, expectedContract?, leaseDuration?, retention?, ct)` → `IdempotentAdmission`. `CompleteAsync(admission, result, contract, retention?, ct)` stores the result and ends the lease in one transaction; throws `StaleAdmissionException` when the attempt no longer owns the key. `ReleaseAsync(admission, ct)` → `IdempotentLeaseStatus` (`Released` on success or when the key is already released; `Expired`, `Stale`, or `Completed` for a refusal that wrote nothing). `RenewAsync(admission, duration, ct)` → `IdempotentLeaseRenewal(Status, ExpiresAt)`, with `IsRenewed` when `Status` is `Current` (autonomous only). `PeekAsync(key, ct)` → `IdempotencyPeekStatus` (`Absent`, `Pending`, `Completed`; a record past its retention reads as `Absent`) — no row lock, no lease read, and no full disposition; it exists to poll cheaply while waiting on another attempt, not to replace `AdmitAsync`.
+- `IdempotentAdmission`: `Disposition`, `Key` (`IdempotencyKey(TenantId, Key)`), `Fingerprint`, `Generation`/`LeaseExpiresAt` (when relevant), `IsTakeover`, `Retention`, `Result`, `StoredFingerprint`, `StoredContract`, and `IsAdmitted` (`[MemberNotNullWhen(true, nameof(Generation), nameof(LeaseExpiresAt), nameof(Retention))]`).
+- `IdempotentLeaseStatus` is what the store found for an attempt's generation: `Current`, `Expired`, `Stale`, `Completed`, or `Released`. `StaleAdmissionException` (an `InvalidOperationException`) carries the refused `Key`, `Generation`, and `Reason`.
+- `unit.Idempotency` (namespace `Headless.UnitOfWork`) returns a `UnitOfWorkIdempotency` bound to the unit; repeated reads on one unit return the same instance. It mirrors `AdmitAsync`/`CompleteAsync`/`ReleaseAsync` plus `FenceAsync(admission, ct)`, which throws `StaleAdmissionException` rather than returning a status. There is no enlisted `RenewAsync`.
 - `unit.Idempotency` throws `InvalidOperationException` naming `AddHeadlessIdempotency` when no provider registered the feature.
 
 ---
@@ -132,18 +134,18 @@ Registration, fingerprint and key resolution, admission orchestration, and the r
 dotnet add package Headless.Idempotency.Core
 ```
 
-Applications reach it through a provider package; call `AddHeadlessIdempotency` after `AddHeadlessFencing`, as shown in [Orientation](#orientation).
+Applications reach it through a provider package, as shown in [Orientation](#orientation).
 
 ### Configuration
 
 | Builder member | Effect |
 | --- | --- |
-| `ConfigureOptions(Action<IdempotentOperationsOptions>)` | Sets `DefaultRetention` (24 hours), `DefaultLeaseDuration` (2 minutes), `PurgeInterval` (1 hour; `null` disables the purge), `PurgeBatchSize` (1000) |
+| `ConfigureOptions(Action<IdempotentOperationsOptions>)` | Sets `DefaultRetention` (24 hours), `DefaultLeaseDuration` (2 minutes), `MinimumLeaseDuration` (1 second), `MaximumLeaseDuration` (1 day), `PurgeInterval` (1 hour; `null` disables the purge), `PurgeBatchSize` (1000) |
 | `ConfigureStorage(Action<IdempotencyStorageOptions>)` / `ConfigureStorage(IConfiguration)` | Sets `Schema` (default `"idempotency"`), the schema the record table lives in |
 
 ### Design and runtime behavior
 
-- `AddHeadlessIdempotency` throws `InvalidOperationException` at registration when no `IFencedLeases` is already registered, and requires exactly one `Use…` provider call.
+- `AddHeadlessIdempotency` requires exactly one `Use…` provider call and nothing else. It swaps the `NullCurrentTenant` fallback for the `AsyncLocal`-backed `CurrentTenant` unless the host registered its own, because records are keyed by the current tenant.
 - It registers `IIdempotentOperations`, `IUnitOfWorkIdempotency`, and `IdempotencyRequestResolver` as singletons, and always adds `IdempotencyRetentionService` as a hosted service — when `PurgeInterval` is `null` the service stays idle on a fixed one-minute re-check cadence instead of exiting, so a later reload back to a value resumes purging without restarting the host.
 - `IIdempotencyRecordStore` is the provider seam. Applications do not call it.
 
@@ -160,20 +162,21 @@ dotnet add package Headless.Idempotency.PostgreSql
 ```
 
 ```csharp
-builder.Services.AddHeadlessIdempotency(setup => setup.UsePostgreSql(connectionString)); // same database as AddHeadlessFencing
+builder.Services.AddHeadlessIdempotency(setup => setup.UsePostgreSql(connectionString));
 ```
 
 ### Configuration
 
 | Option | Default | Notes |
 | --- | --- | --- |
-| `ConnectionString` | required | Must be the same database `AddHeadlessFencing` uses — every admission, completion, and release writes its record and its lease in one transaction |
+| `ConnectionString` | required | The database that holds the records; an enlisted call is accepted only on a unit whose connection reaches it |
 | `CommandTimeout` | 30 seconds | Also bounds how long a concurrent admission of the same key waits behind an open enlisted admission, fence, or completion |
-| `InitializeOnStartup` | `true` | When `false`, the application creates the schema, record table, and index |
+| `InitializeOnStartup` | `true` | When `false`, the application creates the schema, generation sequence, record table, and index |
 
 ### Design and runtime behavior
 
-- Record insert-or-lock never raises a unique-violation: `INSERT … ON CONFLICT DO NOTHING` followed by `SELECT … FOR UPDATE`. Catching `23505` inside a unit would otherwise poison the PostgreSQL transaction (`25P02`).
+- Record insert-or-lock never raises a unique-violation: `INSERT … ON CONFLICT DO NOTHING` followed by `SELECT … FOR NO KEY UPDATE`. Catching `23505` inside a unit would otherwise poison the PostgreSQL transaction (`25P02`).
+- Every decision reads `clock_timestamp()` after the row lock, captured once per statement in a `MATERIALIZED` CTE — never `now()`, which is frozen at transaction start and would keep an expired lease looking live inside a long enlisted unit. `nextval()` runs only in a statement after the lock is held.
 - The autonomous path begins an owned unit through `IIdempotencyRecordStore.BeginOwnedUnitAsync` at READ COMMITTED; the enlisted path runs on the unit's own connection and transaction with no retry.
 - The initializer serializes concurrent hosts with an advisory lock and creates the schema and table idempotently.
 
@@ -190,19 +193,20 @@ dotnet add package Headless.Idempotency.SqlServer
 ```
 
 ```csharp
-builder.Services.AddHeadlessIdempotency(setup => setup.UseSqlServer(connectionString)); // same database as AddHeadlessFencing
+builder.Services.AddHeadlessIdempotency(setup => setup.UseSqlServer(connectionString));
 ```
 
 ### Configuration
 
 | Option | Default | Notes |
 | --- | --- | --- |
-| `ConnectionString` | required | Must be the same database `AddHeadlessFencing` uses — every admission, completion, and release writes its record and its lease in one transaction. Name the database explicitly (`Initial Catalog`) |
+| `ConnectionString` | required | The database that holds the records; an enlisted call is accepted only on a unit whose connection reaches it. Name the database explicitly (`Initial Catalog`) |
 | `CommandTimeout` | 30 seconds | Also bounds how long a concurrent admission of the same key waits behind an open enlisted admission, fence, or completion |
-| `InitializeOnStartup` | `true` | When `false`, the application creates the schema, record table, and index |
+| `InitializeOnStartup` | `true` | When `false`, the application creates the schema, generation sequence, record table, and index |
 
 ### Design and runtime behavior
 
-- Record insert-or-lock never raises a unique-violation: `SELECT … WITH (UPDLOCK, HOLDLOCK)` then `IF NOT EXISTS INSERT`, with no `TRY/CATCH` — a caught duplicate key would doom an `XACT_ABORT` caller transaction.
+- Record insert-or-lock never raises a unique-violation: `SELECT … WITH (UPDLOCK, HOLDLOCK, ROWLOCK)` then `IF NOT EXISTS INSERT`, with no `TRY/CATCH` — a caught duplicate key would doom an `XACT_ABORT` caller transaction.
+- Each batch captures `SYSUTCDATETIME()` into a variable after the locking read. A generation is drawn with `SET @g = NEXT VALUE FOR …` into a variable after the lock, because `NEXT VALUE FOR` is illegal inside `CASE`, `OUTPUT`, `WHERE`, subqueries, and `MERGE`.
 - The autonomous path begins an owned unit through `IIdempotencyRecordStore.BeginOwnedUnitAsync` at READ COMMITTED; the enlisted path runs on the unit's own connection and transaction with no retry.
 - The initializer serializes concurrent hosts with `sp_getapplock` and creates the schema and table idempotently.

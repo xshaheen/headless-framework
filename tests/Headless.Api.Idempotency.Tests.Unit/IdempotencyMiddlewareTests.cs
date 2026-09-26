@@ -4,7 +4,6 @@ using System.Security.Cryptography;
 using Headless.Abstractions;
 using Headless.Api.Idempotency;
 using Headless.Constants;
-using Headless.Fencing;
 using Headless.Idempotency;
 using Headless.MultiTenancy;
 using Headless.Primitives;
@@ -204,8 +203,8 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 
         seen.Should().NotBeNull();
         seen!.IsTakeover.Should().BeFalse();
-        seen.Lease.Kind.Should().Be(IdempotentAdmission.LeaseKind);
-        seen.Lease.Resource.Should().Be(seen.Key);
+        seen.Generation.Should().Be(seen.Admission.Generation);
+        seen.Admission.Key.Key.Should().Be(seen.Key);
         seen.Admission.IsAdmitted.Should().BeTrue();
 
         var complete = operations
@@ -329,7 +328,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         var operations = CreateAdmittingOperations();
         operations
             .ReleaseAsync(Arg.Any<IdempotentAdmission>(), Arg.Any<CancellationToken>())
-            .Returns<ValueTask<LeaseSettlementStatus>>(_ => throw new InvalidOperationException("store down"));
+            .Returns<ValueTask<IdempotentLeaseStatus>>(_ => throw new InvalidOperationException("store down"));
         var middleware = CreateMiddleware(operations: operations);
         var context = CreateContext(idempotencyKey: "k1");
         var originalBody = context.Response.Body;
@@ -352,7 +351,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         var operations = CreateAdmittingOperations();
         _CompleteThrows(
             operations,
-            new StaleLeaseException(new FencedLease(TestTenant, "k", "r", 1), LeaseFenceStatus.Stale)
+            new StaleAdmissionException(new IdempotencyKey(TestTenant, "k"), 1, IdempotentLeaseStatus.Stale)
         );
         var middleware = CreateMiddleware(
             options: Monitor(new IdempotencyOptions { OnStoreError = behavior }),
@@ -668,6 +667,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         var expiredHolder = IdempotentAdmission.InFlight(
             new IdempotencyKey(TestTenant, "k1"),
             IdempotencyFingerprint.Compute("any"),
+            5,
             DateTimeOffset.UtcNow.AddMilliseconds(-1)
         );
         AdmitReturns(
@@ -835,16 +835,17 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     }
 
     [Theory]
-    [InlineData(LeaseRenewalStatus.Expired)]
-    [InlineData(LeaseRenewalStatus.Stale)]
-    [InlineData(LeaseRenewalStatus.Abandoned)]
-    public async Task should_stop_renewing_when_lease_is_lost(LeaseRenewalStatus status)
+    [InlineData(IdempotentLeaseStatus.Expired)]
+    [InlineData(IdempotentLeaseStatus.Stale)]
+    [InlineData(IdempotentLeaseStatus.Completed)]
+    [InlineData(IdempotentLeaseStatus.Released)]
+    public async Task should_stop_renewing_when_lease_is_lost(IdempotentLeaseStatus status)
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var operations = CreateAdmittingOperations();
         operations
             .RenewAsync(Arg.Any<IdempotentAdmission>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
-            .Returns(new ValueTask<LeaseRenewalResult>(new LeaseRenewalResult(status, null)));
+            .Returns(new ValueTask<IdempotentLeaseRenewal>(new IdempotentLeaseRenewal(status, null)));
         var lease = TimeSpan.FromSeconds(30);
         var middleware = CreateMiddleware(
             options: Monitor(new IdempotencyOptions { InFlightLease = lease }),
@@ -874,7 +875,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     [Fact]
     public async Task should_not_stall_renewal_loop_when_a_renewal_blocks_past_its_timeout()
     {
-        // A handler holding its fenced transaction blocks the renewal on the lease row. The loop must give that call
+        // A handler holding its fenced transaction blocks the renewal on the record row. The loop must give that call
         // up at the timeout, cancel it, and renew again on the next tick.
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var operations = CreateAdmittingOperations();
@@ -888,10 +889,10 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
                 {
                     var token = ci.ArgAt<CancellationToken>(2);
                     token.Register(() => firstCallCancelled.TrySetResult());
-                    return new ValueTask<LeaseRenewalResult>(
+                    return new ValueTask<IdempotentLeaseRenewal>(
                         Task.Delay(Timeout.Infinite, token)
                             .ContinueWith(
-                                static _ => new LeaseRenewalResult(LeaseRenewalStatus.Renewed, null),
+                                static _ => new IdempotentLeaseRenewal(IdempotentLeaseStatus.Current, null),
                                 CancellationToken.None,
                                 TaskContinuationOptions.ExecuteSynchronously,
                                 TaskScheduler.Default
@@ -899,8 +900,8 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
                     );
                 }
 
-                return new ValueTask<LeaseRenewalResult>(
-                    new LeaseRenewalResult(LeaseRenewalStatus.Renewed, DateTimeOffset.UtcNow.AddMinutes(1))
+                return new ValueTask<IdempotentLeaseRenewal>(
+                    new IdempotentLeaseRenewal(IdempotentLeaseStatus.Current, DateTimeOffset.UtcNow.AddMinutes(1))
                 );
             });
         var lease = TimeSpan.FromSeconds(30);

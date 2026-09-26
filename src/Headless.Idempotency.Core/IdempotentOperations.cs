@@ -1,18 +1,16 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Fencing;
 using Headless.UnitOfWork;
 
 namespace Headless.Idempotency;
 
 /// <summary>
 /// Autonomous idempotency: each call runs the enlisted path in an owned unit the record store begins, so the record
-/// change and its fenced-lease change commit together, before the call returns.
+/// change commits before the call returns.
 /// </summary>
 internal sealed class IdempotentOperations(
     IUnitOfWorkIdempotency enlisted,
     IIdempotencyRecordStore store,
-    IFencedLeases leases,
     IdempotencyRequestResolver resolver
 ) : IIdempotentOperations
 {
@@ -86,13 +84,13 @@ internal sealed class IdempotentOperations(
                 throw;
             }
 
-            // The settlement and the result are the attempt's final writes; once written, a late cancel must not
+            // The result is the attempt's final write; once written, a late cancel must not
             // discard them.
             await unit.CompleteAsync(CancellationToken.None).ConfigureAwait(false);
         }
     }
 
-    public async ValueTask<LeaseSettlementStatus> ReleaseAsync(
+    public async ValueTask<IdempotentLeaseStatus> ReleaseAsync(
         IdempotentAdmission admission,
         CancellationToken cancellationToken = default
     )
@@ -101,7 +99,7 @@ internal sealed class IdempotentOperations(
 
         await using (unit.ConfigureAwait(false))
         {
-            LeaseSettlementStatus status;
+            IdempotentLeaseStatus status;
 
             try
             {
@@ -114,7 +112,7 @@ internal sealed class IdempotentOperations(
                 throw;
             }
 
-            if (status != LeaseSettlementStatus.Released)
+            if (status != IdempotentLeaseStatus.Released)
             {
                 await unit.RollbackAsync().ConfigureAwait(false);
 
@@ -127,17 +125,18 @@ internal sealed class IdempotentOperations(
         }
     }
 
-    public ValueTask<LeaseRenewalResult> RenewAsync(
+    public ValueTask<IdempotentLeaseRenewal> RenewAsync(
         IdempotentAdmission admission,
         TimeSpan duration,
         CancellationToken cancellationToken = default
     )
     {
-        IdempotencyRequestResolver.ResolveAdmitted(admission);
+        var recordKey = IdempotencyRequestResolver.ResolveAdmitted(admission);
+        var lease = resolver.LeaseDuration(duration);
 
-        // Renewal touches only the lease, never the record, so it needs no record lock and no owned unit: it is one
-        // autonomous lease call, which also keeps a heartbeat loop cheap.
-        return leases.RenewAsync(admission.Lease!, duration, cancellationToken);
+        // One guarded update the store runs and commits on its own connection, with no owned unit around it, which
+        // keeps a heartbeat loop cheap.
+        return store.RenewAsync(recordKey, admission.Generation!.Value, lease, cancellationToken);
     }
 
     public ValueTask<IdempotencyPeekStatus> PeekAsync(string key, CancellationToken cancellationToken = default)

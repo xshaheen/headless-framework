@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using Headless.Fencing;
 using Headless.Idempotency;
 using Headless.Testing.Testcontainers;
 using Headless.UnitOfWork;
@@ -12,8 +11,8 @@ using Testcontainers.PostgreSql;
 namespace Tests;
 
 /// <summary>
-/// PostgreSQL leaf fixture for the idempotency conformance suite: one container whose database holds both the fenced
-/// leases and the idempotency records. Tests run serially because the blocking scenarios measure how long a call
+/// PostgreSQL leaf fixture for the idempotency conformance suite: one container whose database holds the idempotency
+/// records. Tests run serially because the blocking scenarios measure how long a call
 /// waits.
 /// </summary>
 [UsedImplicitly]
@@ -24,7 +23,6 @@ public sealed class PostgreSqlIdempotencyFixture
         IIdempotencyFixture
 {
     private const string _Records = $"\"{IdempotencyStorageOptions.DefaultSchema}\".records";
-    private const string _Leases = $"\"{FencingStorageOptions.DefaultSchema}\".leases";
 
     public string ConnectionString => Container.GetConnectionString();
 
@@ -48,16 +46,10 @@ public sealed class PostgreSqlIdempotencyFixture
         await using var reset = new NpgsqlCommand(
             $"""
             DROP SCHEMA IF EXISTS "{IdempotencyStorageOptions.DefaultSchema}" CASCADE;
-            DROP SCHEMA IF EXISTS "{FencingStorageOptions.DefaultSchema}" CASCADE;
             """,
             connection
         );
         await reset.ExecuteNonQueryAsync(CancellationToken.None);
-    }
-
-    public void ConfigureFencing(HeadlessFencingSetupBuilder setup)
-    {
-        setup.UsePostgreSql(PooledConnectionString);
     }
 
     public void ConfigureIdempotency(HeadlessIdempotencySetupBuilder setup)
@@ -85,7 +77,8 @@ public sealed class PostgreSqlIdempotencyFixture
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(
             $"""
-            SELECT status, fingerprint_algorithm, fingerprint, lease_generation, result, result_contract, retention_until
+            SELECT status, fingerprint_algorithm, fingerprint, generation, lease_expires_at, result, result_contract,
+                retention_until
             FROM {_Records}
             WHERE tenant_id = @tenant AND idempotency_key = @recordKey
             """,
@@ -107,9 +100,12 @@ public sealed class PostgreSqlIdempotencyFixture
             await reader.IsDBNullAsync(3, cancellationToken) ? null : reader.GetInt64(3),
             await reader.IsDBNullAsync(4, cancellationToken)
                 ? null
-                : await reader.GetFieldValueAsync<byte[]>(4, cancellationToken),
-            await reader.IsDBNullAsync(5, cancellationToken) ? null : reader.GetString(5),
-            await reader.GetFieldValueAsync<DateTimeOffset>(6, cancellationToken)
+                : await reader.GetFieldValueAsync<DateTimeOffset>(4, cancellationToken),
+            await reader.IsDBNullAsync(5, cancellationToken)
+                ? null
+                : await reader.GetFieldValueAsync<byte[]>(5, cancellationToken),
+            await reader.IsDBNullAsync(6, cancellationToken) ? null : reader.GetString(6),
+            await reader.GetFieldValueAsync<DateTimeOffset>(7, cancellationToken)
         );
     }
 
@@ -134,33 +130,6 @@ public sealed class PostgreSqlIdempotencyFixture
         (await command.ExecuteNonQueryAsync(cancellationToken)).Should().Be(1, "the record to age must exist");
     }
 
-    public async Task<StoredLeaseRow?> ReadLeaseAsync(IdempotencyRecordKey key, CancellationToken cancellationToken)
-    {
-        await using var connection = new NpgsqlConnection(ConnectionString);
-        await connection.OpenAsync(cancellationToken);
-        await using var command = new NpgsqlCommand(
-            $"""
-            SELECT generation, state, expires_at FROM {_Leases}
-            WHERE tenant_id = @tenant AND kind = @kind AND resource = @recordKey
-            """,
-            connection
-        );
-        _AddLeaseKey(command, key);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            return null;
-        }
-
-        return new StoredLeaseRow(
-            reader.GetInt64(0),
-            (StoredLeaseRowState)reader.GetInt16(1),
-            await reader.GetFieldValueAsync<DateTimeOffset>(2, cancellationToken)
-        );
-    }
-
     public async Task ShiftLeaseIntoPastAsync(
         IdempotencyRecordKey key,
         TimeSpan by,
@@ -171,27 +140,31 @@ public sealed class PostgreSqlIdempotencyFixture
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(
             $"""
-            UPDATE {_Leases}
-            SET granted_at = granted_at - @age, expires_at = expires_at - @age, ended_at = ended_at - @age
-            WHERE tenant_id = @tenant AND kind = @kind AND resource = @recordKey
+            UPDATE {_Records} SET lease_expires_at = lease_expires_at - @age
+            WHERE tenant_id = @tenant AND idempotency_key = @recordKey AND lease_expires_at IS NOT NULL
             """,
             connection
         );
-        _AddLeaseKey(command, key);
+        _AddKey(command, key);
         command.Parameters.Add(new NpgsqlParameter<TimeSpan>("age", NpgsqlDbType.Interval) { TypedValue = by });
 
         (await command.ExecuteNonQueryAsync(cancellationToken)).Should().Be(1, "the lease to age must exist");
+    }
+
+    public async Task TouchAsync(IUnitOfWork unit, CancellationToken cancellationToken)
+    {
+        var resource = (IRelationalUnitOfWorkResource)unit.Resource!;
+        await using var command = new NpgsqlCommand(
+            "SELECT 1;",
+            (NpgsqlConnection)resource.Connection,
+            (NpgsqlTransaction)resource.Transaction
+        );
+        await command.ExecuteScalarAsync(cancellationToken);
     }
 
     private static void _AddKey(NpgsqlCommand command, IdempotencyRecordKey key)
     {
         command.Parameters.AddWithValue("tenant", key.TenantId);
         command.Parameters.AddWithValue("recordKey", key.Key);
-    }
-
-    private static void _AddLeaseKey(NpgsqlCommand command, IdempotencyRecordKey key)
-    {
-        _AddKey(command, key);
-        command.Parameters.AddWithValue("kind", IdempotentAdmission.LeaseKind);
     }
 }

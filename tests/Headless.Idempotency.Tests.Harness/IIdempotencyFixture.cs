@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using Headless.Fencing;
 using Headless.Idempotency;
 using Headless.MultiTenancy;
 using Headless.UnitOfWork;
@@ -11,16 +10,13 @@ using Microsoft.Extensions.Hosting;
 namespace Tests;
 
 /// <summary>
-/// What a provider leaf supplies to run <see cref="IdempotencyConformanceTests{TFixture}" />: fencing and idempotency
-/// registrations against one database, raw connections to it, the provider's raw-ADO unit entry point, and direct
-/// access to the stored record and lease rows.
+/// What a provider leaf supplies to run <see cref="IdempotencyConformanceTests{TFixture}" />: the idempotency
+/// registration against one database, raw connections to it, the provider's raw-ADO unit entry point, and direct
+/// access to the stored record rows.
 /// </summary>
 public interface IIdempotencyFixture
 {
-    /// <summary>Chooses the fencing provider under test, pointed at the shared database.</summary>
-    void ConfigureFencing(HeadlessFencingSetupBuilder setup);
-
-    /// <summary>Chooses the idempotency provider under test, pointed at the same database.</summary>
+    /// <summary>Chooses the idempotency provider under test, pointed at the shared database.</summary>
     void ConfigureIdempotency(HeadlessIdempotencySetupBuilder setup);
 
     /// <summary>Creates an unopened connection to the shared database.</summary>
@@ -45,11 +41,14 @@ public interface IIdempotencyFixture
     /// </summary>
     Task ShiftRecordIntoPastAsync(IdempotencyRecordKey key, TimeSpan by, CancellationToken cancellationToken);
 
-    /// <summary>Reads the committed idempotency lease of <paramref name="key" />, or <see langword="null" />.</summary>
-    Task<StoredLeaseRow?> ReadLeaseAsync(IdempotencyRecordKey key, CancellationToken cancellationToken);
-
-    /// <summary>Moves every stored instant of the key's idempotency lease back by <paramref name="by" />.</summary>
+    /// <summary>
+    /// Moves the record's <c>lease_expires_at</c> back by <paramref name="by" /> on an independent connection, so a test
+    /// can let an admitted attempt's lease expire without waiting.
+    /// </summary>
     Task ShiftLeaseIntoPastAsync(IdempotencyRecordKey key, TimeSpan by, CancellationToken cancellationToken);
+
+    /// <summary>Runs a trivial statement inside <paramref name="unit" />'s transaction, so the transaction has begun.</summary>
+    Task TouchAsync(IUnitOfWork unit, CancellationToken cancellationToken);
 }
 
 /// <summary>One stored idempotency record row.</summary>
@@ -57,23 +56,12 @@ public sealed record StoredRecord(
     IdempotencyRecordStatus Status,
     string FingerprintAlgorithm,
     byte[] Fingerprint,
-    long? LeaseGeneration,
+    long? Generation,
+    DateTimeOffset? LeaseExpiresAt,
     byte[]? Result,
     string? ResultContract,
     DateTimeOffset RetentionUntil
 );
-
-/// <summary>The stored state of an idempotency lease, as the fencing table holds it.</summary>
-public enum StoredLeaseRowState
-{
-    Active = 0,
-    Settled = 1,
-    Released = 2,
-    Abandoned = 3,
-}
-
-/// <summary>One stored idempotency lease row.</summary>
-public sealed record StoredLeaseRow(long Generation, StoredLeaseRowState State, DateTimeOffset ExpiresAt);
 
 public static class IdempotencyFixtureExtensions
 {
@@ -87,8 +75,8 @@ public static class IdempotencyFixtureExtensions
     public static readonly TimeSpan ReleaseTimeout = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// Builds an independent host (its own service provider and connection pool) with fencing and idempotency on the
-    /// provider under test, runs their storage initializers, and returns it. The retention purge is off unless
+    /// Builds an independent host (its own service provider and connection pool) with idempotency on the provider
+    /// under test, runs its storage initializer, and returns it. The retention purge is off unless
     /// <paramref name="configure" /> turns it on; the hosted service is never started by this method.
     /// </summary>
     public static async ValueTask<IdempotencyHost> CreateHostAsync(
@@ -99,7 +87,6 @@ public static class IdempotencyFixtureExtensions
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessFencing(fixture.ConfigureFencing);
         services.AddHeadlessIdempotency(setup =>
         {
             fixture.ConfigureIdempotency(setup);
@@ -149,8 +136,6 @@ public sealed class IdempotencyHost(ServiceProvider services) : IAsyncDisposable
     public IIdempotentOperations Operations { get; } = services.GetRequiredService<IIdempotentOperations>();
 
     public IIdempotencyRecordStore Store { get; } = services.GetRequiredService<IIdempotencyRecordStore>();
-
-    public IFencedLeases Leases { get; } = services.GetRequiredService<IFencedLeases>();
 
     public IUnitOfWorkFactory Factory { get; } = services.GetRequiredService<IUnitOfWorkFactory>();
 

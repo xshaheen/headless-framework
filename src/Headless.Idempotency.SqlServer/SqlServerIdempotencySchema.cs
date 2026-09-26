@@ -6,13 +6,15 @@ namespace Headless.Idempotency.SqlServer;
 internal static class SqlServerIdempotencySchema
 {
     public const string TableName = "records";
+    public const string SequenceName = "record_generations";
 
     public const string TenantId = "[tenant_id]";
     public const string Key = "[idempotency_key]";
     public const string Status = "[status]";
     public const string FingerprintAlgorithm = "[fingerprint_algorithm]";
     public const string Fingerprint = "[fingerprint]";
-    public const string LeaseGeneration = "[lease_generation]";
+    public const string Generation = "[generation]";
+    public const string LeaseExpiresAt = "[lease_expires_at]";
     public const string Result = "[result]";
     public const string ResultContract = "[result_contract]";
     public const string RetentionUntil = "[retention_until]";
@@ -30,5 +32,10 @@ internal static class SqlServerIdempotencySchema
     public static string QualifiedTable(string schema)
     {
         return $"[{schema}].[{TableName}]";
+    }
+
+    public static string QualifiedSequence(string schema)
+    {
+        return $"[{schema}].[{SequenceName}]";
     }
 }

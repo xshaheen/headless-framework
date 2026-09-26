@@ -796,13 +796,6 @@
           "morelinq": "[4.4.0, )"
         }
       },
-      "headless.fencing.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
-        }
-      },
       "headless.fluentvalidation": {
         "type": "Project",
         "dependencies": {
@@ -829,7 +822,6 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
-          "Headless.Fencing.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
         }
       },

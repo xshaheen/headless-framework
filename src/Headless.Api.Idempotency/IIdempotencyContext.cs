@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Fencing;
 using Headless.Idempotency;
 
 namespace Headless.Api.Idempotency;
@@ -37,8 +36,11 @@ public interface IIdempotencyContext
     /// <summary>Gets the admission the request holds.</summary>
     IdempotentAdmission Admission { get; }
 
-    /// <summary>Gets the fenced lease the admission holds while the handler runs.</summary>
-    FencedLease Lease { get; }
+    /// <summary>
+    /// Gets the admitted attempt's generation, the fencing token the admission holds on its record while the handler
+    /// runs. A later attempt of the same key always holds a higher one.
+    /// </summary>
+    long Generation { get; }
 
     /// <summary>
     /// Gets whether an earlier attempt with this key was admitted and ended without completing (it crashed or stalled
@@ -59,7 +61,7 @@ internal sealed class IdempotencyContext(string headerKey, string scope, string 
 
     public IdempotentAdmission Admission { get; } = admission;
 
-    public FencedLease Lease { get; } = admission.Lease!;
+    public long Generation { get; } = admission.Generation!.Value;
 
     public bool IsTakeover => Admission.IsTakeover;
 }

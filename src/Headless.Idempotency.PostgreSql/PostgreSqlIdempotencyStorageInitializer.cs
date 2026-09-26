@@ -10,7 +10,7 @@ using Npgsql;
 namespace Headless.Idempotency.PostgreSql;
 
 /// <summary>
-/// Creates the idempotency schema, record table, and retention index at host startup, once, before any call can reach
+/// Creates the idempotency schema, generation sequence, record table, and retention index at host startup, once, before any call can reach
 /// them.
 /// </summary>
 #pragma warning disable CA2100 // SQL text is built from the validated schema name plus internal object and column constants.
@@ -65,16 +65,22 @@ internal sealed partial class PostgreSqlIdempotencyStorageInitializer(
     private static string _CreateScript(string schema)
     {
         var table = PostgreSqlIdempotencySchema.QualifiedTable(schema);
+        var sequence = PostgreSqlIdempotencySchema.QualifiedSequence(schema);
         const string t = PostgreSqlIdempotencySchema.TableName;
 
         // Key columns compare with the "C" collation, so keys and tenant ids match ordinally (byte for byte) whatever
         // the database's default collation is. A completed record always carries its result and contract and a
-        // pending one never does, so a replay can never read a half-written outcome. The retention index serves the
-        // purge, which deletes by retention alone.
+        // pending one never does, so a replay can never read a half-written outcome. A pending record names an
+        // admitted attempt's generation exactly when it carries that attempt's lease expiry; a completed one keeps
+        // the generation that completed it and no lease. One store-wide sequence issues every generation, so a key
+        // admitted again after its record was purged still gets a generation above every earlier attempt's. The
+        // retention index serves the purge.
         return $"""
             SELECT pg_advisory_xact_lock(hashtextextended(@LockResource, 0));
 
             CREATE SCHEMA IF NOT EXISTS "{schema}";
+
+            CREATE SEQUENCE IF NOT EXISTS {sequence} AS bigint START WITH 1 INCREMENT BY 1 NO CYCLE;
 
             CREATE TABLE IF NOT EXISTS {table} (
                 {PostgreSqlIdempotencySchema.TenantId} varchar({IdempotencyFieldLimits.TenantIdMaxLength}) COLLATE "C" NOT NULL,
@@ -82,7 +88,8 @@ internal sealed partial class PostgreSqlIdempotencyStorageInitializer(
                 {PostgreSqlIdempotencySchema.Status} smallint NOT NULL,
                 {PostgreSqlIdempotencySchema.FingerprintAlgorithm} varchar({IdempotencyFieldLimits.FingerprintAlgorithmMaxLength}) COLLATE "C" NOT NULL,
                 {PostgreSqlIdempotencySchema.Fingerprint} bytea NOT NULL,
-                {PostgreSqlIdempotencySchema.LeaseGeneration} bigint NULL,
+                {PostgreSqlIdempotencySchema.Generation} bigint NULL,
+                {PostgreSqlIdempotencySchema.LeaseExpiresAt} timestamptz NULL,
                 {PostgreSqlIdempotencySchema.Result} bytea NULL,
                 {PostgreSqlIdempotencySchema.ResultContract} varchar({IdempotencyFieldLimits.ContractMaxLength}) COLLATE "C" NULL,
                 {PostgreSqlIdempotencySchema.RetentionUntil} timestamptz NOT NULL,
@@ -100,6 +107,15 @@ internal sealed partial class PostgreSqlIdempotencyStorageInitializer(
                     ({PostgreSqlIdempotencySchema.Status} = {PostgreSqlIdempotencySchema.Completed})
                         = ({PostgreSqlIdempotencySchema.Result} IS NOT NULL AND {PostgreSqlIdempotencySchema.ResultContract} IS NOT NULL)
                     AND ({PostgreSqlIdempotencySchema.Result} IS NULL) = ({PostgreSqlIdempotencySchema.ResultContract} IS NULL)
+                ),
+                CONSTRAINT "ck_{t}_lease" CHECK (
+                    ({PostgreSqlIdempotencySchema.Generation} IS NULL OR {PostgreSqlIdempotencySchema.Generation} > 0)
+                    AND CASE {PostgreSqlIdempotencySchema.Status}
+                        WHEN {PostgreSqlIdempotencySchema.Completed} THEN
+                            {PostgreSqlIdempotencySchema.Generation} IS NOT NULL AND {PostgreSqlIdempotencySchema.LeaseExpiresAt} IS NULL
+                        ELSE
+                            ({PostgreSqlIdempotencySchema.Generation} IS NULL) = ({PostgreSqlIdempotencySchema.LeaseExpiresAt} IS NULL)
+                    END
                 )
             );
 

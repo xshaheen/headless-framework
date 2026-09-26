@@ -41,6 +41,7 @@ public sealed class SetupIdempotencyTests : TestBase
         // then — the missing store surfaces at startup with the remedy, not at the first idempotent request
         var exception = (await act.Should().ThrowAsync<MissingRequiredServiceException>()).Which;
         exception.Message.Should().Contain("AddHeadlessIdempotency");
+        exception.Message.Should().NotContain("AddHeadlessFencing", "idempotency records carry their own lease");
         exception.MissingServices.Should().ContainSingle().Which.ServiceType.Should().Be<IIdempotentOperations>();
     }
 

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Fencing;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -8,19 +7,15 @@ using Microsoft.Extensions.Options;
 namespace Headless.Idempotency;
 
 /// <summary>
-/// Deletes idempotency records past their retention on a fixed interval, then the fenced leases those records left
-/// behind. Idle, on a fixed re-check cadence, while <see cref="IdempotentOperationsOptions.PurgeInterval" /> is
+/// Deletes idempotency records past their retention, and whose lease is no longer live, on a fixed interval. Idle, on a fixed re-check cadence, while <see cref="IdempotentOperationsOptions.PurgeInterval" /> is
 /// <see langword="null" />, so a reload back to a value resumes purging without restarting the host.
 /// </summary>
 /// <remarks>
-/// Records are purged before leases so a lease is never deleted while a record that may still be completed under it
-/// survives; the lease purge then removes terminal idempotency leases older than the default retention. The record
-/// store owns only its own table, so the lease half goes through the fencing API. A failed run is logged and retried
+/// A record carries its own lease, so deleting the record row is the whole purge. A failed run is logged and retried
 /// at the next interval rather than stopping the host.
 /// </remarks>
 internal sealed partial class IdempotencyRetentionService(
     IIdempotencyRecordStore store,
-    IFencedLeases leases,
     IOptionsMonitor<IdempotentOperationsOptions> options,
     TimeProvider timeProvider,
     ILogger<IdempotencyRetentionService> logger
@@ -80,20 +75,16 @@ internal sealed partial class IdempotencyRetentionService(
             records += deleted;
         } while (deleted >= current.PurgeBatchSize);
 
-        var purgedLeases = await leases
-            .PurgeAsync(IdempotentAdmission.LeaseKind, current.DefaultRetention, cancellationToken)
-            .ConfigureAwait(false);
-
-        LogPurged(logger, records, purgedLeases);
+        LogPurged(logger, records);
     }
 
     [LoggerMessage(
         EventId = 1,
         EventName = "IdempotencyPurged",
         Level = LogLevel.Debug,
-        Message = "Idempotency retention purge deleted {RecordCount} records and {LeaseCount} leases"
+        Message = "Idempotency retention purge deleted {RecordCount} records"
     )]
-    private static partial void LogPurged(ILogger logger, int recordCount, int leaseCount);
+    private static partial void LogPurged(ILogger logger, int recordCount);
 
     [LoggerMessage(
         EventId = 2,

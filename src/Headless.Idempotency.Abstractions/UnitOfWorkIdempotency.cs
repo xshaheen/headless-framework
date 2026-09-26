@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Fencing;
 using Headless.UnitOfWork;
 
 namespace Headless.Idempotency;
@@ -67,7 +66,7 @@ public sealed class UnitOfWorkIdempotency
     }
 
     /// <summary>
-    /// Stores the admitted operation's result and settles its lease inside the bound unit's transaction, so the
+    /// Stores the admitted operation's result and ends its lease inside the bound unit's transaction, so the
     /// result commits together with the operation's own writes.
     /// </summary>
     /// <param name="admission">The admitted operation.</param>
@@ -78,7 +77,7 @@ public sealed class UnitOfWorkIdempotency
     /// <returns>A task that completes when the result is written.</returns>
     /// <exception cref="ArgumentException">The admission is not admitted, or the contract is invalid.</exception>
     /// <exception cref="InvalidOperationException">The bound unit is no longer active or cannot host the write.</exception>
-    /// <exception cref="StaleLeaseException">
+    /// <exception cref="StaleAdmissionException">
     /// The attempt no longer owns the key; nothing was written. Let it roll the unit back.
     /// </exception>
     public ValueTask CompleteAsync(
@@ -95,10 +94,10 @@ public sealed class UnitOfWorkIdempotency
     /// <summary>Releases the admitted operation without a result inside the bound unit's transaction.</summary>
     /// <param name="admission">The admitted operation.</param>
     /// <param name="cancellationToken">Token used to cancel the database commands.</param>
-    /// <returns><see cref="LeaseSettlementStatus.Released" /> on success, or why the release was refused.</returns>
+    /// <returns><see cref="IdempotentLeaseStatus.Released" /> on success, or why the release was refused.</returns>
     /// <exception cref="ArgumentException">The admission is not admitted.</exception>
     /// <exception cref="InvalidOperationException">The bound unit is no longer active or cannot host the write.</exception>
-    public ValueTask<LeaseSettlementStatus> ReleaseAsync(
+    public ValueTask<IdempotentLeaseStatus> ReleaseAsync(
         IdempotentAdmission admission,
         CancellationToken cancellationToken = default
     )
@@ -111,16 +110,17 @@ public sealed class UnitOfWorkIdempotency
     /// until the unit commits.
     /// </summary>
     /// <remarks>
-    /// Call it before the writes it guards. It locks the key's record and then its lease until the unit ends, the same
-    /// order every other idempotency call uses, so it cannot deadlock against a concurrent admission of the key. Safe
-    /// to repeat, and never makes the unit non-retryable.
+    /// Call it before the writes it guards. It takes the key's record row with an update-intent lock held until the
+    /// unit ends, so a concurrent admission, renewal, or completion of the key waits for this unit's outcome instead
+    /// of deciding around it; the record is the only row any idempotency call locks, so there is no lock order to get
+    /// wrong. Safe to repeat, and never makes the unit non-retryable.
     /// </remarks>
     /// <param name="admission">The admitted operation.</param>
     /// <param name="cancellationToken">Token used to cancel the database commands.</param>
     /// <returns>A task that completes when the fence holds.</returns>
     /// <exception cref="ArgumentException">The admission is not admitted.</exception>
     /// <exception cref="InvalidOperationException">The bound unit is no longer active or cannot host the read.</exception>
-    /// <exception cref="StaleLeaseException">The attempt no longer owns the key.</exception>
+    /// <exception cref="StaleAdmissionException">The attempt no longer owns the key.</exception>
     public ValueTask FenceAsync(IdempotentAdmission admission, CancellationToken cancellationToken = default)
     {
         return _idempotency.FenceAsync(_unitOfWork, admission, cancellationToken);

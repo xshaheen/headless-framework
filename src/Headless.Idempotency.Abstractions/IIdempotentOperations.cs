@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Fencing;
-
 namespace Headless.Idempotency;
 
 /// <summary>
@@ -11,7 +9,7 @@ namespace Headless.Idempotency;
 /// <remarks>
 /// <para>
 /// An admission is keyed by the current tenant and the caller's idempotency key. Exactly one concurrent admission of
-/// a key is <see cref="IdempotentDisposition.Admitted" /> and holds a fenced lease; the rest see
+/// a key is <see cref="IdempotentDisposition.Admitted" /> and holds a lease on the key's record; the rest see
 /// <see cref="IdempotentDisposition.InFlight" /> until it completes, then <see cref="IdempotentDisposition.Replay" />.
 /// When the admitted attempt's lease expires without completing, the next admission takes the operation over, and the
 /// expired attempt's completion is refused.
@@ -54,7 +52,7 @@ public interface IIdempotentOperations
     );
 
     /// <summary>
-    /// Stores the admitted operation's result and settles its lease in one transaction, so later admissions replay it.
+    /// Stores the admitted operation's result and ends its lease in one transaction, so later admissions replay it.
     /// </summary>
     /// <param name="admission">The admitted operation.</param>
     /// <param name="result">The result bytes.</param>
@@ -63,8 +61,9 @@ public interface IIdempotentOperations
     /// <param name="cancellationToken">Token used to cancel the database calls before the commit.</param>
     /// <returns>A task that completes when the result is committed.</returns>
     /// <exception cref="ArgumentException">The admission is not admitted, or the contract is invalid.</exception>
-    /// <exception cref="StaleLeaseException">
-    /// The attempt no longer owns the key (its lease expired or was taken over); nothing was stored.
+    /// <exception cref="StaleAdmissionException">
+    /// The attempt no longer owns the key (its lease expired, it was taken over, or it already completed); nothing was
+    /// stored.
     /// </exception>
     ValueTask CompleteAsync(
         IdempotentAdmission admission,
@@ -78,11 +77,11 @@ public interface IIdempotentOperations
     /// <param name="admission">The admitted operation.</param>
     /// <param name="cancellationToken">Token used to cancel the database calls before the commit.</param>
     /// <returns>
-    /// <see cref="LeaseSettlementStatus.Released" /> on success, or why the release was refused; a refusal writes
-    /// nothing.
+    /// <see cref="IdempotentLeaseStatus.Released" /> on success, or when the key is already released; otherwise why
+    /// the release was refused, and nothing was written.
     /// </returns>
     /// <exception cref="ArgumentException">The admission is not admitted.</exception>
-    ValueTask<LeaseSettlementStatus> ReleaseAsync(
+    ValueTask<IdempotentLeaseStatus> ReleaseAsync(
         IdempotentAdmission admission,
         CancellationToken cancellationToken = default
     );
@@ -93,8 +92,10 @@ public interface IIdempotentOperations
     /// <param name="cancellationToken">Token used to cancel the database call.</param>
     /// <returns>The renewal's result; anything but renewed means the attempt no longer owns the key.</returns>
     /// <exception cref="ArgumentException">The admission is not admitted.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="duration" /> is outside the fencing bounds.</exception>
-    ValueTask<LeaseRenewalResult> RenewAsync(
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="duration" /> is outside the configured lease-duration bounds.
+    /// </exception>
+    ValueTask<IdempotentLeaseRenewal> RenewAsync(
         IdempotentAdmission admission,
         TimeSpan duration,
         CancellationToken cancellationToken = default

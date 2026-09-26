@@ -5,7 +5,6 @@ using System.Security.Cryptography;
 using Headless.Abstractions;
 using Headless.Api.Idempotency.Resources;
 using Headless.Constants;
-using Headless.Fencing;
 using Headless.Idempotency;
 using Headless.MultiTenancy;
 using Headless.Primitives;
@@ -18,8 +17,8 @@ using Microsoft.Extensions.Primitives;
 namespace Headless.Api.Idempotency;
 
 /// <summary>
-/// HTTP adapter over durable idempotent admission: admits the request's key, runs the handler behind a renewed
-/// fenced lease, and completes the admission with the captured response (or releases it), so a retry replays the
+/// HTTP adapter over durable idempotent admission: admits the request's key, runs the handler under the admission's
+/// renewed lease, and completes the admission with the captured response (or releases it), so a retry replays the
 /// stored response from any node.
 /// </summary>
 internal sealed partial class IdempotencyMiddleware(
@@ -435,7 +434,7 @@ internal sealed partial class IdempotencyMiddleware(
                 )
                 .ConfigureAwait(false);
         }
-        catch (StaleLeaseException staleEx)
+        catch (StaleAdmissionException staleEx)
         {
             // The lease expired or was taken over while the handler ran; the fence refused this result so only the
             // owning attempt's response is stored. Nothing the client can act on, so it is logged, never thrown.
@@ -462,7 +461,7 @@ internal sealed partial class IdempotencyMiddleware(
         try
         {
             var status = await operations.ReleaseAsync(admission, CancellationToken.None).ConfigureAwait(false);
-            if (status != LeaseSettlementStatus.Released)
+            if (status != IdempotentLeaseStatus.Released)
             {
                 LogReleaseRefused(key, status);
             }
@@ -489,7 +488,7 @@ internal sealed partial class IdempotencyMiddleware(
 
     /// <summary>
     /// Renews the admitted lease every third of its duration until stopped or the lease is lost. Each renewal is
-    /// bounded by the same interval: a handler that holds its fenced transaction blocks the renewal on the lease row,
+    /// bounded by the same interval: a handler that holds its fenced transaction blocks the renewal on the record row,
     /// and an unbounded call would stall the loop until that transaction ends.
     /// </summary>
     private async Task _RenewWhileRunningAsync(
@@ -509,7 +508,7 @@ internal sealed partial class IdempotencyMiddleware(
 
                 using var callCts = CancellationTokenSource.CreateLinkedTokenSource(stopToken);
                 var renewTask = operations.RenewAsync(admission, lease, callCts.Token).AsTask();
-                LeaseRenewalResult result;
+                IdempotentLeaseRenewal result;
 
                 try
                 {
@@ -912,7 +911,7 @@ internal sealed partial class IdempotencyMiddleware(
         Message = "Idempotency release refused for key {IdempotencyKey} with status {Status}"
     )]
     // ReSharper disable once InconsistentNaming
-    private partial void LogReleaseRefused(string idempotencyKey, LeaseSettlementStatus status);
+    private partial void LogReleaseRefused(string idempotencyKey, IdempotentLeaseStatus status);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Idempotency release failed for key {IdempotencyKey}")]
     // ReSharper disable once InconsistentNaming
@@ -934,7 +933,7 @@ internal sealed partial class IdempotencyMiddleware(
         Message = "Idempotency lease for key {IdempotencyKey} lost ({Status}); renewal stopped"
     )]
     // ReSharper disable once InconsistentNaming
-    private partial void LogLeaseLost(string idempotencyKey, LeaseRenewalStatus status);
+    private partial void LogLeaseLost(string idempotencyKey, IdempotentLeaseStatus status);
 
     [LoggerMessage(
         Level = LogLevel.Debug,

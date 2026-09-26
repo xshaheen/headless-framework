@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Fencing;
 using Headless.Idempotency;
 using Headless.Testing.Testcontainers;
 using Microsoft.Data.SqlClient;
@@ -54,20 +53,17 @@ public sealed class ApiIdempotencySqlServerFixture
         await using var reset = new SqlCommand(
             $"""
             IF OBJECT_ID(N'{IdempotencyStorageOptions.DefaultSchema}.records', N'U') IS NOT NULL DROP TABLE [{IdempotencyStorageOptions.DefaultSchema}].[records];
+            IF OBJECT_ID(N'{IdempotencyStorageOptions.DefaultSchema}.record_generations', N'SO') IS NOT NULL DROP SEQUENCE [{IdempotencyStorageOptions.DefaultSchema}].[record_generations];
             IF SCHEMA_ID(N'{IdempotencyStorageOptions.DefaultSchema}') IS NOT NULL EXEC(N'DROP SCHEMA [{IdempotencyStorageOptions.DefaultSchema}]');
-            IF OBJECT_ID(N'{FencingStorageOptions.DefaultSchema}.leases', N'U') IS NOT NULL DROP TABLE [{FencingStorageOptions.DefaultSchema}].[leases];
-            IF OBJECT_ID(N'{FencingStorageOptions.DefaultSchema}.lease_generations', N'SO') IS NOT NULL DROP SEQUENCE [{FencingStorageOptions.DefaultSchema}].[lease_generations];
-            IF SCHEMA_ID(N'{FencingStorageOptions.DefaultSchema}') IS NOT NULL EXEC(N'DROP SCHEMA [{FencingStorageOptions.DefaultSchema}]');
             """,
             connection
         );
         await reset.ExecuteNonQueryAsync(CancellationToken.None);
     }
 
-    /// <summary>Registers fencing and idempotency on this fixture's database.</summary>
+    /// <summary>Registers idempotency on this fixture's database.</summary>
     public void ConfigureStore(IServiceCollection services)
     {
-        services.AddHeadlessFencing(setup => setup.UseSqlServer(PooledConnectionString));
         services.AddHeadlessIdempotency(setup =>
         {
             setup.UseSqlServer(PooledConnectionString);

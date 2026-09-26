@@ -3,7 +3,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Headless.Checks;
-using Headless.Fencing;
 
 namespace Headless.Idempotency;
 
@@ -31,7 +30,7 @@ public static class IdempotentOperationsJsonExtensions
         /// <param name="cancellationToken">Token used to cancel the database calls before the commit.</param>
         /// <returns>A task that completes when the result is committed.</returns>
         /// <exception cref="ArgumentNullException">An argument is <see langword="null" />.</exception>
-        /// <exception cref="StaleLeaseException">The attempt no longer owns the key; nothing was stored.</exception>
+        /// <exception cref="StaleAdmissionException">The attempt no longer owns the key; nothing was stored.</exception>
         public ValueTask CompleteAsync<T>(
             IdempotentAdmission admission,
             T result,
@@ -65,7 +64,7 @@ public static class IdempotentOperationsJsonExtensions
         /// <param name="cancellationToken">Token used to cancel the database commands.</param>
         /// <returns>A task that completes when the result is written.</returns>
         /// <exception cref="ArgumentNullException">An argument is <see langword="null" />.</exception>
-        /// <exception cref="StaleLeaseException">The attempt no longer owns the key; nothing was written.</exception>
+        /// <exception cref="StaleAdmissionException">The attempt no longer owns the key; nothing was written.</exception>
         public ValueTask CompleteAsync<T>(
             IdempotentAdmission admission,
             T result,

@@ -118,13 +118,6 @@
       "headless.checks": {
         "type": "Project"
       },
-      "headless.fencing.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
-        }
-      },
       "headless.unitofwork.abstractions": {
         "type": "Project",
         "dependencies": {

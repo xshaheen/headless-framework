@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.ComponentModel;
-using Headless.Fencing;
 using Headless.UnitOfWork;
 
 namespace Headless.Idempotency;
@@ -13,8 +12,8 @@ namespace Headless.Idempotency;
 /// <remarks>
 /// A singleton registered by <c>AddHeadlessIdempotency</c>. It holds no unit: the caller's handle arrives per call,
 /// and the call refuses, before any command runs, a unit that is no longer active, carries no relational resource,
-/// carries a completed transaction, or carries a transaction the configured provider cannot write through. Every call
-/// locks the key's record before its lease. Enlisted calls are never retried. Application code reaches it through
+/// carries a completed transaction, or carries a transaction the configured provider cannot write through. The record row
+/// carries its own lease, so every call locks exactly one row. Enlisted calls are never retried. Application code reaches it through
 /// <c>unit.Idempotency</c> rather than directly.
 /// </remarks>
 [PublicAPI]
@@ -49,7 +48,7 @@ public interface IUnitOfWorkIdempotency : IUnitOfWorkFeature
     );
 
     /// <summary>
-    /// Stores the admitted operation's result and settles its lease inside <paramref name="unitOfWork" />'s
+    /// Stores the admitted operation's result and ends its lease inside <paramref name="unitOfWork" />'s
     /// transaction.
     /// </summary>
     /// <param name="unitOfWork">The unit whose transaction holds the completion.</param>
@@ -61,7 +60,7 @@ public interface IUnitOfWorkIdempotency : IUnitOfWorkFeature
     /// <returns>A task that completes when the result is written.</returns>
     /// <exception cref="ArgumentException">The admission is not admitted, or the contract is invalid.</exception>
     /// <exception cref="InvalidOperationException">The unit cannot host the write.</exception>
-    /// <exception cref="StaleLeaseException">The attempt no longer owns the key; nothing was written.</exception>
+    /// <exception cref="StaleAdmissionException">The attempt no longer owns the key; nothing was written.</exception>
     ValueTask CompleteAsync(
         IUnitOfWork unitOfWork,
         IdempotentAdmission admission,
@@ -75,10 +74,10 @@ public interface IUnitOfWorkIdempotency : IUnitOfWorkFeature
     /// <param name="unitOfWork">The unit whose transaction holds the release.</param>
     /// <param name="admission">The admitted operation.</param>
     /// <param name="cancellationToken">Token used to cancel the database commands.</param>
-    /// <returns><see cref="LeaseSettlementStatus.Released" /> on success, or why the release was refused.</returns>
+    /// <returns><see cref="IdempotentLeaseStatus.Released" /> on success, or why the release was refused.</returns>
     /// <exception cref="ArgumentException">The admission is not admitted.</exception>
     /// <exception cref="InvalidOperationException">The unit cannot host the write.</exception>
-    ValueTask<LeaseSettlementStatus> ReleaseAsync(
+    ValueTask<IdempotentLeaseStatus> ReleaseAsync(
         IUnitOfWork unitOfWork,
         IdempotentAdmission admission,
         CancellationToken cancellationToken = default
@@ -94,7 +93,7 @@ public interface IUnitOfWorkIdempotency : IUnitOfWorkFeature
     /// <returns>A task that completes when the fence holds.</returns>
     /// <exception cref="ArgumentException">The admission is not admitted.</exception>
     /// <exception cref="InvalidOperationException">The unit cannot host the read.</exception>
-    /// <exception cref="StaleLeaseException">The attempt no longer owns the key.</exception>
+    /// <exception cref="StaleAdmissionException">The attempt no longer owns the key.</exception>
     ValueTask FenceAsync(
         IUnitOfWork unitOfWork,
         IdempotentAdmission admission,

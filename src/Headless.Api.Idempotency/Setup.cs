@@ -15,7 +15,7 @@ namespace Headless.Api.Idempotency;
 /// </summary>
 /// <remarks>
 /// The middleware admits requests through the durable <see cref="IIdempotentOperations"/> store, so the host must
-/// also call <c>AddHeadlessFencing(...)</c> and <c>AddHeadlessIdempotency(...)</c> with a relational provider. The
+/// also call <c>AddHeadlessIdempotency(...)</c> with a relational provider. The
 /// host fails at startup when the store is missing.
 /// </remarks>
 [PublicAPI]
@@ -102,7 +102,7 @@ public static class SetupIdempotency
             // every idempotent request would fail.
             services.RequireRegisteredService<IIdempotentOperations>(
                 requiredBy: "Headless API idempotency",
-                remedy: "Call AddHeadlessFencing(...) and AddHeadlessIdempotency(...) with a provider (UsePostgreSql / UseSqlServer)."
+                remedy: "Call AddHeadlessIdempotency(...) with a provider (UsePostgreSql / UseSqlServer)."
             );
 
             return services;

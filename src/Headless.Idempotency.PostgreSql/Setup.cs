@@ -17,8 +17,7 @@ public static class SetupIdempotencyPostgreSql
     extension(HeadlessIdempotencySetupBuilder setup)
     {
         /// <summary>
-        /// Stores idempotency records in PostgreSQL, in the database named by <paramref name="connectionString" />,
-        /// which must be the database that holds the fenced leases.
+        /// Stores idempotency records in PostgreSQL, in the database named by <paramref name="connectionString" />.
         /// </summary>
         /// <param name="connectionString">The Npgsql connection string.</param>
         /// <returns>The builder, to allow chaining.</returns>

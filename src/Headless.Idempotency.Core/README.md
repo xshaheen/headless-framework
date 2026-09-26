@@ -1,10 +1,10 @@
 # Headless.Idempotency.Core
 
-Implements provider-agnostic durable idempotency over an `IIdempotencyRecordStore` and Headless fenced leases.
+Implements provider-agnostic durable idempotency over an `IIdempotencyRecordStore` whose records carry their own lease.
 
 ## Why use this package
 
-Provides `AddHeadlessIdempotency`, tenant-keyed idempotency records, the admission decision (admitted, in flight, replay, or conflict), fenced completion and release in one transaction with the lease, and the retention purge, without binding to a database provider.
+Provides `AddHeadlessIdempotency`, tenant-keyed idempotency records, the admission decision (admitted, in flight, replay, or conflict), fenced completion and release against the record's own lease, and the retention purge, without binding to a database provider.
 
 ## Install
 

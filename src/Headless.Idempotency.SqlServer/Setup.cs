@@ -17,8 +17,7 @@ public static class SetupIdempotencySqlServer
     extension(HeadlessIdempotencySetupBuilder setup)
     {
         /// <summary>
-        /// Stores idempotency records in SQL Server, in the database named by <paramref name="connectionString" />,
-        /// which must be the database that holds the fenced leases.
+        /// Stores idempotency records in SQL Server, in the database named by <paramref name="connectionString" />.
         /// </summary>
         /// <param name="connectionString">The SqlClient connection string.</param>
         /// <returns>The builder, to allow chaining.</returns>

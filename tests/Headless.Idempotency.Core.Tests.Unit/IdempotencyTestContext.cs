@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using Headless.Fencing;
 using Headless.Idempotency;
 using Headless.MultiTenancy;
 using Headless.UnitOfWork;
@@ -9,7 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace Tests;
 
-/// <summary>Builds the Core idempotency services over a substituted record store, lease feature, and tenant.</summary>
+/// <summary>Builds the Core idempotency services over a substituted record store and tenant.</summary>
 internal sealed class IdempotencyTestContext
 {
     public const string Key = "order-1";
@@ -20,7 +19,9 @@ internal sealed class IdempotencyTestContext
 
     public static readonly IdempotencyFingerprint OtherFingerprint = IdempotencyFingerprint.Compute("request-b");
 
-    public static readonly FencedLease Lease = new("t1", IdempotentAdmission.LeaseKind, Key, 7);
+    public const long Generation = 7;
+
+    public static IdempotencyRecordGrant Grant => new(Generation, ExpiresAt);
 
     public static readonly DateTimeOffset ExpiresAt = new(2026, 9, 26, 12, 0, 0, TimeSpan.Zero);
 
@@ -31,8 +32,8 @@ internal sealed class IdempotencyTestContext
         Tenant.Id = "t1";
 
         Resolver = new IdempotencyRequestResolver(Tenant, monitor);
-        Feature = new UnitOfWorkIdempotencyFeature(Resolver, Store, Leases);
-        Operations = new IdempotentOperations(Feature, Store, FencedLeases, Resolver);
+        Feature = new UnitOfWorkIdempotencyFeature(Resolver, Store);
+        Operations = new IdempotentOperations(Feature, Store, Resolver);
     }
 
     public IdempotentOperationsOptions Options { get; } = new();
@@ -40,10 +41,6 @@ internal sealed class IdempotencyTestContext
     public MutableCurrentTenant Tenant { get; } = new();
 
     public IIdempotencyRecordStore Store { get; } = Substitute.For<IIdempotencyRecordStore>();
-
-    public IUnitOfWorkLeases Leases { get; } = Substitute.For<IUnitOfWorkLeases>();
-
-    public IFencedLeases FencedLeases { get; } = Substitute.For<IFencedLeases>();
 
     public IdempotencyRequestResolver Resolver { get; }
 
@@ -76,17 +73,20 @@ internal sealed class IdempotencyTestContext
             Inserted: true,
             IdempotencyRecordStatus.Pending,
             Fingerprint,
-            LeaseGeneration: null,
+            Generation: null,
+            LeaseExpiresAt: null,
             Result: null,
             ExpiresAt.AddDays(1),
-            IsRetentionElapsed: false
+            IsRetentionElapsed: false,
+            IsLeaseLive: false
         );
     }
 
     public static IdempotencyRecordState Pending(
         long? generation,
         IdempotencyFingerprint? fingerprint = null,
-        bool isRetentionElapsed = false
+        bool isRetentionElapsed = false,
+        bool isLeaseLive = false
     )
     {
         return new(
@@ -94,9 +94,11 @@ internal sealed class IdempotencyTestContext
             IdempotencyRecordStatus.Pending,
             fingerprint ?? Fingerprint,
             generation,
+            generation is null ? null : ExpiresAt,
             Result: null,
             ExpiresAt.AddDays(1),
-            isRetentionElapsed
+            isRetentionElapsed,
+            IsLeaseLive: generation is not null && isLeaseLive
         );
     }
 
@@ -110,10 +112,12 @@ internal sealed class IdempotencyTestContext
             Inserted: false,
             IdempotencyRecordStatus.Completed,
             fingerprint ?? Fingerprint,
-            LeaseGeneration: 7,
+            Generation,
+            LeaseExpiresAt: null,
             result,
             ExpiresAt.AddDays(1),
-            isRetentionElapsed
+            isRetentionElapsed,
+            IsLeaseLive: false
         );
     }
 
@@ -122,7 +126,7 @@ internal sealed class IdempotencyTestContext
         return IdempotentAdmission.Admitted(
             new IdempotencyKey("t1", Key),
             Fingerprint,
-            Lease,
+            Generation,
             ExpiresAt,
             isTakeover,
             TimeSpan.FromDays(7)

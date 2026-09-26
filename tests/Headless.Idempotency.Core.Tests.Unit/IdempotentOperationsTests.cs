@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Fencing;
 using Headless.Idempotency;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
@@ -20,15 +19,17 @@ public sealed class IdempotentOperationsTests : TestBase
             .Store.LockOrInsertAsync(resource, RecordKey, Fingerprint, context.Retention, AbortToken)
             .Returns(Inserted());
         context
-            .Leases.GrantAsync(unit, IdempotentAdmission.LeaseKind, Key, context.LeaseDuration, AbortToken)
-            .Returns(LeaseGrantResult.Granted(Lease, ExpiresAt));
+            .Store.AdmitAsync(resource, RecordKey, Fingerprint, context.LeaseDuration, context.Retention, AbortToken)
+            .Returns(Grant);
 
         // when
         var admission = await context.Operations.AdmitAsync(Key, Fingerprint, cancellationToken: AbortToken);
 
-        // then — the lease grant and the record write share the owned unit, which commits once
+        // then - the lock and the lease grant share the owned unit, which commits once
         admission.Disposition.Should().Be(IdempotentDisposition.Admitted);
-        await context.Store.Received(1).AdmitAsync(resource, RecordKey, Fingerprint, 7, context.Retention, AbortToken);
+        await context
+            .Store.Received(1)
+            .AdmitAsync(resource, RecordKey, Fingerprint, context.LeaseDuration, context.Retention, AbortToken);
         await unit.Received(1).CompleteAsync(CancellationToken.None);
         await unit.DidNotReceive().RollbackAsync();
         unit.DidNotReceive().PreventRetry();
@@ -42,10 +43,7 @@ public sealed class IdempotentOperationsTests : TestBase
         var (unit, resource) = _GivenOwnedUnit(context);
         context
             .Store.LockOrInsertAsync(resource, RecordKey, Fingerprint, context.Retention, AbortToken)
-            .Returns(Pending(generation: 5));
-        context
-            .Leases.GrantAsync(unit, IdempotentAdmission.LeaseKind, Key, context.LeaseDuration, AbortToken)
-            .Returns(LeaseGrantResult.Held(5, ExpiresAt));
+            .Returns(Pending(generation: 5, isLeaseLive: true));
 
         // when
         var admission = await context.Operations.AdmitAsync(Key, Fingerprint, cancellationToken: AbortToken);
@@ -81,8 +79,9 @@ public sealed class IdempotentOperationsTests : TestBase
         // given
         var context = new IdempotencyTestContext();
         var (unit, resource) = _GivenOwnedUnit(context);
-        context.Store.LockAsync(resource, RecordKey, AbortToken).Returns(Pending(generation: 7));
-        context.Leases.SettleAsync(unit, Lease, AbortToken).Returns(LeaseSettlementStatus.Settled);
+        context
+            .Store.LockAsync(resource, RecordKey, AbortToken)
+            .Returns(Pending(generation: Generation, isLeaseLive: true));
 
         // when
         await context.Operations.CompleteAsync(Admitted(), new byte[] { 1 }, "c/v1", cancellationToken: AbortToken);
@@ -100,15 +99,16 @@ public sealed class IdempotentOperationsTests : TestBase
         // given
         var context = new IdempotencyTestContext();
         var (unit, resource) = _GivenOwnedUnit(context);
-        context.Store.LockAsync(resource, RecordKey, AbortToken).Returns(Pending(generation: 7));
-        context.Leases.SettleAsync(unit, Lease, AbortToken).Returns(LeaseSettlementStatus.Expired);
+        context
+            .Store.LockAsync(resource, RecordKey, AbortToken)
+            .Returns(Pending(generation: Generation, isLeaseLive: false));
 
         // when
         var act = async () =>
             await context.Operations.CompleteAsync(Admitted(), new byte[] { 1 }, "c/v1", cancellationToken: AbortToken);
 
         // then
-        await act.Should().ThrowAsync<StaleLeaseException>();
+        await act.Should().ThrowAsync<StaleAdmissionException>();
         await unit.Received(1).RollbackAsync();
         await unit.DidNotReceiveWithAnyArgs().CompleteAsync(AbortToken);
     }
@@ -121,30 +121,32 @@ public sealed class IdempotentOperationsTests : TestBase
         var (released, releasedResource) = ActiveUnit();
         var (refused, refusedResource) = ActiveUnit();
         context.Store.BeginOwnedUnitAsync(AbortToken).Returns(released, refused);
-        context.Store.LockAsync(releasedResource, RecordKey, AbortToken).Returns(Pending(generation: 7));
-        context.Store.LockAsync(refusedResource, RecordKey, AbortToken).Returns(Pending(generation: 7));
-        context.Leases.ReleaseAsync(released, Lease, AbortToken).Returns(LeaseSettlementStatus.Released);
-        context.Leases.ReleaseAsync(refused, Lease, AbortToken).Returns(LeaseSettlementStatus.Expired);
+        context
+            .Store.LockAsync(releasedResource, RecordKey, AbortToken)
+            .Returns(Pending(generation: Generation, isLeaseLive: true));
+        context
+            .Store.LockAsync(refusedResource, RecordKey, AbortToken)
+            .Returns(Pending(generation: Generation, isLeaseLive: false));
 
         // when
         var first = await context.Operations.ReleaseAsync(Admitted(), AbortToken);
         var second = await context.Operations.ReleaseAsync(Admitted(), AbortToken);
 
         // then
-        first.Should().Be(LeaseSettlementStatus.Released);
-        second.Should().Be(LeaseSettlementStatus.Expired);
+        first.Should().Be(IdempotentLeaseStatus.Released);
+        second.Should().Be(IdempotentLeaseStatus.Expired);
         await released.Received(1).CompleteAsync(CancellationToken.None);
         await refused.Received(1).RollbackAsync();
         await refused.DidNotReceiveWithAnyArgs().CompleteAsync(AbortToken);
     }
 
     [Fact]
-    public async Task should_renew_through_the_autonomous_lease_api()
+    public async Task should_renew_through_the_store_without_an_owned_unit()
     {
         // given
         var context = new IdempotencyTestContext();
-        var renewed = new LeaseRenewalResult(LeaseRenewalStatus.Renewed, ExpiresAt);
-        context.FencedLeases.RenewAsync(Lease, TimeSpan.FromMinutes(1), AbortToken).Returns(renewed);
+        var renewed = new IdempotentLeaseRenewal(IdempotentLeaseStatus.Current, ExpiresAt);
+        context.Store.RenewAsync(RecordKey, Generation, TimeSpan.FromMinutes(1), AbortToken).Returns(renewed);
 
         // when
         var result = await context.Operations.RenewAsync(Admitted(), TimeSpan.FromMinutes(1), AbortToken);
@@ -170,7 +172,21 @@ public sealed class IdempotentOperationsTests : TestBase
 
         // then
         await act.Should().ThrowAsync<ArgumentException>().WithMessage("*Replay*");
-        context.FencedLeases.ReceivedCalls().Should().BeEmpty();
+        context.Store.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_refuse_a_renewal_duration_outside_the_bounds_before_the_store()
+    {
+        // given
+        var context = new IdempotencyTestContext();
+
+        // when
+        var act = async () => await context.Operations.RenewAsync(Admitted(), TimeSpan.FromDays(2), AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+        context.Store.ReceivedCalls().Should().BeEmpty();
     }
 
     [Fact]

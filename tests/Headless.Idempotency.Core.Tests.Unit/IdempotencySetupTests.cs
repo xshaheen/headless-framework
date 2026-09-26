@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Fencing;
 using Headless.Idempotency;
+using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,22 +13,9 @@ namespace Tests;
 public sealed class IdempotencySetupTests : TestBase
 {
     [Fact]
-    public void should_name_add_headless_fencing_when_fencing_is_not_registered()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        var act = () => services.AddHeadlessIdempotency(static setup => setup.RegisterExtension(new FakeProvider()));
-
-        // then
-        act.Should().Throw<InvalidOperationException>().WithMessage("*AddHeadlessFencing*");
-    }
-
-    [Fact]
     public void should_name_the_provider_calls_when_no_provider_is_chosen()
     {
-        var services = _WithFencing();
+        var services = new ServiceCollection();
 
         var act = () => services.AddHeadlessIdempotency(static _ => { });
 
@@ -38,7 +25,7 @@ public sealed class IdempotencySetupTests : TestBase
     [Fact]
     public void should_refuse_two_providers()
     {
-        var services = _WithFencing();
+        var services = new ServiceCollection();
 
         var act = () =>
             services.AddHeadlessIdempotency(setup =>
@@ -53,8 +40,8 @@ public sealed class IdempotencySetupTests : TestBase
     [Fact]
     public void should_register_the_autonomous_operations_the_unit_feature_and_the_retention_service()
     {
-        // given
-        var services = _WithFencing();
+        // given - no other Headless feature is registered first
+        var services = new ServiceCollection();
 
         // when
         services.AddHeadlessIdempotency(static setup => setup.RegisterExtension(new FakeProvider()));
@@ -75,6 +62,14 @@ public sealed class IdempotencySetupTests : TestBase
         using var provider = services.BuildServiceProvider();
         provider.GetRequiredService<IIdempotentOperations>().Should().NotBeNull();
         provider.GetRequiredService<IUnitOfWorkIdempotency>().Should().NotBeNull();
+
+        // Records are keyed by the current tenant, so it must follow ICurrentTenant.Change rather than stay on the
+        // host scope.
+        var tenant = provider.GetRequiredService<ICurrentTenant>();
+        using (tenant.Change("t1"))
+        {
+            tenant.Id.Should().Be("t1");
+        }
     }
 
     [Fact]
@@ -84,6 +79,8 @@ public sealed class IdempotencySetupTests : TestBase
 
         options.DefaultRetention.Should().Be(TimeSpan.FromHours(24));
         options.DefaultLeaseDuration.Should().Be(TimeSpan.FromMinutes(2));
+        options.MinimumLeaseDuration.Should().Be(TimeSpan.FromSeconds(1));
+        options.MaximumLeaseDuration.Should().Be(TimeSpan.FromDays(1));
         options.PurgeInterval.Should().Be(TimeSpan.FromHours(1));
         options.PurgeBatchSize.Should().Be(1000);
     }
@@ -137,6 +134,18 @@ public sealed class IdempotencySetupTests : TestBase
     }
 
     [Fact]
+    public void should_reject_a_default_lease_duration_outside_the_bounds()
+    {
+        var options = _Options(setup => setup.ConfigureOptions(o => o.DefaultLeaseDuration = TimeSpan.FromDays(2)));
+
+        options
+            .Invoking(x => x.Value)
+            .Should()
+            .Throw<OptionsValidationException>()
+            .WithMessage($"*{nameof(IdempotentOperationsOptions.DefaultLeaseDuration)}*");
+    }
+
+    [Fact]
     public void should_default_the_storage_schema_and_apply_a_delegate_or_configuration()
     {
         // given
@@ -155,17 +164,9 @@ public sealed class IdempotencySetupTests : TestBase
         fromConfiguration.Schema.Should().Be("keys");
     }
 
-    private static ServiceCollection _WithFencing()
-    {
-        var services = new ServiceCollection();
-        services.AddHeadlessFencing(static setup => setup.RegisterExtension(new FakeFencingProvider()));
-
-        return services;
-    }
-
     private static IdempotencyStorageOptions _Storage(Action<HeadlessIdempotencySetupBuilder> configure)
     {
-        var services = _WithFencing();
+        var services = new ServiceCollection();
         services.AddHeadlessIdempotency(setup =>
         {
             setup.RegisterExtension(new FakeProvider());
@@ -177,7 +178,7 @@ public sealed class IdempotencySetupTests : TestBase
 
     private static IOptions<IdempotentOperationsOptions> _Options(Action<HeadlessIdempotencySetupBuilder> configure)
     {
-        var services = _WithFencing();
+        var services = new ServiceCollection();
         services.AddHeadlessIdempotency(setup =>
         {
             setup.RegisterExtension(new FakeProvider());
@@ -192,14 +193,6 @@ public sealed class IdempotencySetupTests : TestBase
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(Substitute.For<IIdempotencyRecordStore>());
-        }
-    }
-
-    private sealed class FakeFencingProvider : IFencingProviderOptionsExtension
-    {
-        public void AddServices(IServiceCollection services)
-        {
-            services.AddSingleton(Substitute.For<ILeaseStore>());
         }
     }
 }

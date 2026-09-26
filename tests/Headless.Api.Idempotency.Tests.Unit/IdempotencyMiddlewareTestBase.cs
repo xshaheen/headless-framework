@@ -4,7 +4,6 @@ using System.Security.Cryptography;
 using Headless.Abstractions;
 using Headless.Api.Idempotency;
 using Headless.Constants;
-using Headless.Fencing;
 using Headless.Idempotency;
 using Headless.MultiTenancy;
 using Headless.Primitives;
@@ -133,12 +132,12 @@ public abstract class IdempotencyMiddlewareTestBase : TestBase
             ));
         operations
             .ReleaseAsync(Arg.Any<IdempotentAdmission>(), Arg.Any<CancellationToken>())
-            .Returns(new ValueTask<LeaseSettlementStatus>(LeaseSettlementStatus.Released));
+            .Returns(new ValueTask<IdempotentLeaseStatus>(IdempotentLeaseStatus.Released));
         operations
             .RenewAsync(Arg.Any<IdempotentAdmission>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns(
-                new ValueTask<LeaseRenewalResult>(
-                    new LeaseRenewalResult(LeaseRenewalStatus.Renewed, DateTimeOffset.UtcNow.AddMinutes(1))
+                new ValueTask<IdempotentLeaseRenewal>(
+                    new IdempotentLeaseRenewal(IdempotentLeaseStatus.Current, DateTimeOffset.UtcNow.AddMinutes(1))
                 )
             );
         return operations;
@@ -194,7 +193,7 @@ public abstract class IdempotencyMiddlewareTestBase : TestBase
         return IdempotentAdmission.Admitted(
             new IdempotencyKey(TestTenant, key),
             fingerprint,
-            new FencedLease(TestTenant, IdempotentAdmission.LeaseKind, key, 7),
+            7,
             DateTimeOffset.UtcNow.AddMinutes(1),
             isTakeover,
             TimeSpan.FromHours(24)
@@ -206,6 +205,7 @@ public abstract class IdempotencyMiddlewareTestBase : TestBase
         return IdempotentAdmission.InFlight(
             new IdempotencyKey(TestTenant, key),
             IdempotencyFingerprint.Compute("any"),
+            5,
             DateTimeOffset.UtcNow.AddMinutes(1)
         );
     }

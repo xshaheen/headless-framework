@@ -7,7 +7,7 @@ namespace Headless.Idempotency;
 public enum IdempotentDisposition
 {
     /// <summary>
-    /// The caller now owns the operation under a fenced lease: run it, then complete or release the admission.
+    /// The caller now owns the operation under a lease on its record: run it, then complete or release the admission.
     /// </summary>
     Admitted = 0,
 

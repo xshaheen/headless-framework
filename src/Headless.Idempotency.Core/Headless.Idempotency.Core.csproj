@@ -1,8 +1,8 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Description>Provider-agnostic setup, admission decisions, enlisted and autonomous completion, and retention purge for Headless durable idempotency, built on Headless fenced leases, with exactly-one-provider registration.</Description>
-    <PackageTags>headless;idempotency;idempotency-key;fencing;dotnet</PackageTags>
+    <Description>Provider-agnostic setup, admission decisions, enlisted and autonomous completion, and retention purge for Headless durable idempotency, with each record carrying its own lease, and exactly-one-provider registration.</Description>
+    <PackageTags>headless;idempotency;idempotency-key;dotnet</PackageTags>
     <RootNamespace>Headless.Idempotency</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
@@ -18,7 +18,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
-    <ProjectReference Include="..\Headless.Fencing.Abstractions\Headless.Fencing.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.Idempotency.Abstractions\Headless.Idempotency.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.MultiTenancy.Abstractions\Headless.MultiTenancy.Abstractions.csproj" />

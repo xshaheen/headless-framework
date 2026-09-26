@@ -12,8 +12,8 @@ namespace Headless.Idempotency.PostgreSql;
 
 /// <summary>
 /// The PostgreSQL idempotency record store. Every verb that can wait on a record row first takes the row's
-/// <c>FOR UPDATE</c> lock and only then reads <c>clock_timestamp()</c>, so a retention decision is never made on a
-/// clock read from before a lock wait.
+/// <c>FOR NO KEY UPDATE</c> lock and only then reads <c>clock_timestamp()</c>, so a retention or lease decision is
+/// never made on a clock read from before a lock wait.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -24,15 +24,23 @@ namespace Headless.Idempotency.PostgreSql;
 /// </para>
 /// <para>
 /// <c>clock_timestamp()</c> is used, never <c>now()</c>: <c>now()</c> is frozen at transaction start, so inside a long
-/// enlisted unit it would keep a record past its retention looking retained.
+/// enlisted unit it would keep an expired lease looking live and a record past its retention looking retained. A
+/// statement that decides and writes captures it once, in a <c>MATERIALIZED</c> CTE, so every column it sets agrees.
+/// </para>
+/// <para>
+/// The lock is <c>FOR NO KEY UPDATE</c> rather than a shared lock. A fence holds it until the caller's transaction
+/// ends, and an admission, renewal, or completion waiting on it then sees the committed outcome; with a shared lock a
+/// waiting admission would queue for the update lock first, and the fencing transaction's own completion would then
+/// deadlock against it. Generations are drawn with <c>nextval()</c> only in a statement that runs after the row lock is
+/// held, so a generation is never lower than one a still-open admission already holds.
 /// </para>
 /// </remarks>
 #pragma warning disable CA2100 // SQL text is built from the validated schema name plus internal object and column constants.
 internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
 {
     // A deadlock or serialization failure is the one failure a fresh transaction can clear on its own; the first
-    // attempt plus two retries. Only the autonomous purge retries: an enlisted verb's failure has already rolled back
-    // the caller's transaction, so only the unit's owner can decide whether to run it again.
+    // attempt plus two retries. Only the autonomous renewal and purge retry: an enlisted verb's failure has already
+    // rolled back the caller's transaction, so only the unit's owner can decide whether to run it again.
     private const int _MaxAttempts = 3;
 
     // A lost insert race means another transaction committed the row between the insert and the locking read, so the
@@ -51,6 +59,7 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
     private readonly string _admitSql;
     private readonly string _completeSql;
     private readonly string _releaseSql;
+    private readonly string _renewSql;
     private readonly string _peekSql;
     private readonly string _purgeSql;
 
@@ -63,13 +72,16 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
         _options = options.Value;
         _unitOfWorkFactory = unitOfWorkFactory;
 
-        var table = PostgreSqlIdempotencySchema.QualifiedTable(storageOptions.Value.Schema);
+        var schema = storageOptions.Value.Schema;
+        var table = PostgreSqlIdempotencySchema.QualifiedTable(schema);
+        var sequence = PostgreSqlIdempotencySchema.QualifiedSequence(schema);
 
         _lockOrInsertSql = _BuildLockOrInsertSql(table);
-        _lockSql = _BuildLockSql(table);
-        _admitSql = _BuildAdmitSql(table);
+        _lockSql = _LockAndClockSql(table);
+        _admitSql = _BuildAdmitSql(table, sequence);
         _completeSql = _BuildCompleteSql(table);
         _releaseSql = _BuildReleaseSql(table);
+        _renewSql = _BuildRenewSql(table);
         _peekSql = _BuildPeekSql(table);
         _purgeSql = _BuildPurgeSql(table);
     }
@@ -201,18 +213,21 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
         long? generation = await reader.IsDBNullAsync(3, cancellationToken).ConfigureAwait(false)
             ? null
             : reader.GetInt64(3);
+        DateTimeOffset? leaseExpiresAt = await reader.IsDBNullAsync(4, cancellationToken).ConfigureAwait(false)
+            ? null
+            : await reader.GetFieldValueAsync<DateTimeOffset>(4, cancellationToken).ConfigureAwait(false);
         IdempotentResult? result = null;
 
         if (status == IdempotencyRecordStatus.Completed)
         {
             result = new IdempotentResult(
-                await reader.GetFieldValueAsync<byte[]>(4, cancellationToken).ConfigureAwait(false),
-                reader.GetString(5)
+                await reader.GetFieldValueAsync<byte[]>(5, cancellationToken).ConfigureAwait(false),
+                reader.GetString(6)
             );
         }
 
         var retentionUntil = await reader
-            .GetFieldValueAsync<DateTimeOffset>(6, cancellationToken)
+            .GetFieldValueAsync<DateTimeOffset>(7, cancellationToken)
             .ConfigureAwait(false);
 
         await reader.NextResultAsync(cancellationToken).ConfigureAwait(false);
@@ -224,9 +239,11 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
             status,
             fingerprint,
             generation,
+            leaseExpiresAt,
             result,
             retentionUntil,
-            IsRetentionElapsed: retentionUntil <= now
+            IsRetentionElapsed: retentionUntil <= now,
+            IsLeaseLive: leaseExpiresAt > now
         );
     }
 
@@ -234,11 +251,11 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
 
     #region Admit, complete, release
 
-    public async ValueTask AdmitAsync(
+    public async ValueTask<IdempotencyRecordGrant> AdmitAsync(
         IRelationalUnitOfWorkResource resource,
         IdempotencyRecordKey key,
         IdempotencyFingerprint fingerprint,
-        long leaseGeneration,
+        TimeSpan leaseDuration,
         TimeSpan retention,
         CancellationToken cancellationToken = default
     )
@@ -250,16 +267,26 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
         await using var command = _CreateCommand(_admitSql, connection, transaction, key);
         command.Parameters.Add(_TextParameter("FingerprintAlgorithm", fingerprint.Algorithm));
         command.Parameters.Add(_BytesParameter("Fingerprint", fingerprint.Hash));
-        command.Parameters.Add(_GenerationParameter(leaseGeneration));
+        command.Parameters.Add(_IntervalParameter("LeaseDuration", leaseDuration));
         command.Parameters.Add(_IntervalParameter("Retention", retention));
 
-        _EnsureWritten(await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false), key, "admit");
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw _NotWritten(key, "admit");
+        }
+
+        return new IdempotencyRecordGrant(
+            reader.GetInt64(0),
+            await reader.GetFieldValueAsync<DateTimeOffset>(1, cancellationToken).ConfigureAwait(false)
+        );
     }
 
     public async ValueTask CompleteAsync(
         IRelationalUnitOfWorkResource resource,
         IdempotencyRecordKey key,
-        long leaseGeneration,
+        long generation,
         ReadOnlyMemory<byte> result,
         string contract,
         TimeSpan retention,
@@ -271,7 +298,7 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
         var (connection, transaction) = _RequireLive(resource);
 
         await using var command = _CreateCommand(_completeSql, connection, transaction, key);
-        command.Parameters.Add(_GenerationParameter(leaseGeneration));
+        command.Parameters.Add(_GenerationParameter(generation));
         command.Parameters.Add(_BytesParameter("Result", result));
         command.Parameters.Add(_TextParameter("ResultContract", contract));
         command.Parameters.Add(_IntervalParameter("Retention", retention));
@@ -282,7 +309,7 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
     public async ValueTask ReleaseAsync(
         IRelationalUnitOfWorkResource resource,
         IdempotencyRecordKey key,
-        long leaseGeneration,
+        long generation,
         TimeSpan retention,
         CancellationToken cancellationToken = default
     )
@@ -291,7 +318,7 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
         var (connection, transaction) = _RequireLive(resource);
 
         await using var command = _CreateCommand(_releaseSql, connection, transaction, key);
-        command.Parameters.Add(_GenerationParameter(leaseGeneration));
+        command.Parameters.Add(_GenerationParameter(generation));
         command.Parameters.Add(_IntervalParameter("Retention", retention));
 
         _EnsureWritten(await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false), key, "release");
@@ -299,15 +326,92 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
 
     private static void _EnsureWritten(int affected, IdempotencyRecordKey key, string verb)
     {
-        // The caller locked the record and checked its generation in this transaction, so the row cannot have changed
-        // since; reaching here means the table was changed outside this provider or the caller skipped the lock.
         if (affected != 1)
         {
-            throw new InvalidOperationException(
-                $"Could not {verb} the idempotency record '{key.Key}': it was not found at the expected lease "
-                    + "generation inside the transaction that locked it."
-            );
+            throw _NotWritten(key, verb);
         }
+    }
+
+    private static InvalidOperationException _NotWritten(IdempotencyRecordKey key, string verb)
+    {
+        // The caller locked the record and checked its generation in this transaction, so the row cannot have changed
+        // since; reaching here means the table was changed outside this provider or the caller skipped the lock.
+        return new InvalidOperationException(
+            $"Could not {verb} the idempotency record '{key.Key}': it was not found at the expected generation "
+                + "inside the transaction that locked it."
+        );
+    }
+
+    #endregion
+
+    #region Renew
+
+    public ValueTask<IdempotentLeaseRenewal> RenewAsync(
+        IdempotencyRecordKey key,
+        long generation,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _RunAutonomousAsync(
+            async (connection, transaction, ct) =>
+            {
+                await using var command = _CreateCommand(_renewSql, connection, transaction, key);
+                command.Parameters.Add(_GenerationParameter(generation));
+                command.Parameters.Add(_IntervalParameter("LeaseDuration", leaseDuration));
+
+                await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+
+                // The first result set is the locking read; the decision is the second statement's single row.
+                await reader.NextResultAsync(ct).ConfigureAwait(false);
+                await reader.ReadAsync(ct).ConfigureAwait(false);
+
+                if (await reader.IsDBNullAsync(0, ct).ConfigureAwait(false))
+                {
+                    return new IdempotentLeaseRenewal(IdempotentLeaseStatus.Stale, ExpiresAt: null);
+                }
+
+                if (!await reader.IsDBNullAsync(4, ct).ConfigureAwait(false))
+                {
+                    var renewedUntil = await reader.GetFieldValueAsync<DateTimeOffset>(4, ct).ConfigureAwait(false);
+
+                    return new IdempotentLeaseRenewal(IdempotentLeaseStatus.Current, renewedUntil);
+                }
+
+                var status = (IdempotencyRecordStatus)reader.GetInt16(0);
+                long? recordGeneration = await reader.IsDBNullAsync(1, ct).ConfigureAwait(false)
+                    ? null
+                    : reader.GetInt64(1);
+                DateTimeOffset? expiresAt = await reader.IsDBNullAsync(2, ct).ConfigureAwait(false)
+                    ? null
+                    : await reader.GetFieldValueAsync<DateTimeOffset>(2, ct).ConfigureAwait(false);
+                var isLive = reader.GetBoolean(3);
+
+                return _Refused(
+                    IdempotencyLeaseClassifier.Classify(status, recordGeneration, isLive, generation),
+                    expiresAt,
+                    key
+                );
+            },
+            cancellationToken
+        );
+    }
+
+    private static IdempotentLeaseRenewal _Refused(
+        IdempotentLeaseStatus status,
+        DateTimeOffset? expiresAt,
+        IdempotencyRecordKey key
+    )
+    {
+        return status switch
+        {
+            IdempotentLeaseStatus.Expired => new IdempotentLeaseRenewal(status, expiresAt),
+            IdempotentLeaseStatus.Current => throw new InvalidOperationException(
+                $"The idempotency record '{key.Key}' held a live lease at the renewing generation, yet the renewal "
+                    + "changed nothing."
+            ),
+            _ => new IdempotentLeaseRenewal(status, ExpiresAt: null),
+        };
     }
 
     #endregion
@@ -320,7 +424,7 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
     )
     {
         // A brand-new connection and a plain SELECT: PostgreSQL's MVCC readers never wait on another transaction's
-        // FOR UPDATE row lock, so this never blocks behind a concurrent admission, fence, completion, or release.
+        // row lock, so this never blocks behind a concurrent admission, fence, completion, or release.
         await using var connection = _options.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
@@ -358,13 +462,42 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
 
     #region Purge
 
-    public async ValueTask<int> PurgeAsync(TimeSpan olderThan, int limit, CancellationToken cancellationToken = default)
+    public ValueTask<int> PurgeAsync(TimeSpan olderThan, int limit, CancellationToken cancellationToken = default)
     {
         Argument.IsPositiveOrZero(olderThan);
         Argument.IsPositive(limit);
 
         var age = olderThan > TimeSpan.FromDays(_MaxPurgeAgeDays) ? TimeSpan.FromDays(_MaxPurgeAgeDays) : olderThan;
 
+        return _RunAutonomousAsync(
+            async (connection, transaction, ct) =>
+            {
+                await using var command = new NpgsqlCommand(_purgeSql, connection, transaction)
+                {
+                    CommandTimeout = _options.CommandTimeoutSeconds,
+                };
+                command.Parameters.Add(_IntervalParameter("OlderThan", age));
+                command.Parameters.Add(new NpgsqlParameter<int>("Limit", NpgsqlDbType.Integer) { TypedValue = limit });
+
+                return await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            },
+            cancellationToken
+        );
+    }
+
+    #endregion
+
+    #region Helpers
+
+    /// <summary>
+    /// Runs <paramref name="work" /> in a fresh READ COMMITTED transaction on the provider's own connection and commits
+    /// it, retrying a deadlock or serialization failure in a new transaction.
+    /// </summary>
+    private async ValueTask<T> _RunAutonomousAsync<T>(
+        Func<NpgsqlConnection, NpgsqlTransaction, CancellationToken, Task<T>> work,
+        CancellationToken cancellationToken
+    )
+    {
         for (var attempt = 1; ; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -373,25 +506,18 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
             {
                 await using var connection = _options.CreateConnection();
                 await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-                // Explicit so the purge runs at READ COMMITTED even when the server's default isolation level is
+                // Explicit so the call runs at READ COMMITTED even when the server's default isolation level is
                 // stricter, where a skipped or concurrently changed row would surface as a serialization failure.
                 await using var transaction = await connection
                     .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
                     .ConfigureAwait(false);
 
-                await using var command = new NpgsqlCommand(_purgeSql, connection, transaction)
-                {
-                    CommandTimeout = _options.CommandTimeoutSeconds,
-                };
-                command.Parameters.Add(_IntervalParameter("OlderThan", age));
-                command.Parameters.Add(new NpgsqlParameter<int>("Limit", NpgsqlDbType.Integer) { TypedValue = limit });
+                var result = await work(connection, transaction, cancellationToken).ConfigureAwait(false);
 
-                var deleted = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-
-                // The delete already happened and the count describes it; a late cancel must not roll it back.
+                // The write already happened and the result describes it; a late cancel must not roll it back.
                 await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
 
-                return deleted;
+                return result;
             }
             catch (PostgresException ex) when (_IsRetryable(ex) && attempt < _MaxAttempts)
             {
@@ -405,10 +531,6 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
         return string.Equals(ex.SqlState, SqlErrorCodes.PostgreSql.DeadlockDetected, StringComparison.Ordinal)
             || string.Equals(ex.SqlState, SqlErrorCodes.PostgreSql.SerializationFailure, StringComparison.Ordinal);
     }
-
-    #endregion
-
-    #region Helpers
 
     private NpgsqlCommand _CreateCommand(
         string sql,
@@ -439,7 +561,7 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
 
     private static NpgsqlParameter<long> _GenerationParameter(long generation)
     {
-        return new NpgsqlParameter<long>("LeaseGeneration", NpgsqlDbType.Bigint) { TypedValue = generation };
+        return new NpgsqlParameter<long>("Generation", NpgsqlDbType.Bigint) { TypedValue = generation };
     }
 
     private static NpgsqlParameter<TimeSpan> _IntervalParameter(string name, TimeSpan value)
@@ -483,30 +605,36 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
 
     #region SQL
 
-    private const string _KeyPredicate = $"""
-        {PostgreSqlIdempotencySchema.TenantId} = @TenantId
-            AND {PostgreSqlIdempotencySchema.Key} = @Key
-        """;
+    private static string _KeyPredicate(string alias)
+    {
+        return $"""
+            {alias}.{PostgreSqlIdempotencySchema.TenantId} = @TenantId
+                AND {alias}.{PostgreSqlIdempotencySchema.Key} = @Key
+            """;
+    }
 
-    // Extends, never shortens: a retention already further out than this call's is kept.
-    private const string _ExtendedRetention = $"""
-        GREATEST({PostgreSqlIdempotencySchema.RetentionUntil}, clock_timestamp() + @Retention)
-        """;
+    private static string _LockSql(string table)
+    {
+        return $"""
+            SELECT r.{PostgreSqlIdempotencySchema.Status},
+                r.{PostgreSqlIdempotencySchema.FingerprintAlgorithm},
+                r.{PostgreSqlIdempotencySchema.Fingerprint},
+                r.{PostgreSqlIdempotencySchema.Generation},
+                r.{PostgreSqlIdempotencySchema.LeaseExpiresAt},
+                r.{PostgreSqlIdempotencySchema.Result},
+                r.{PostgreSqlIdempotencySchema.ResultContract},
+                r.{PostgreSqlIdempotencySchema.RetentionUntil}
+            FROM {table} AS r
+            WHERE {_KeyPredicate("r")}
+            FOR NO KEY UPDATE;
+            """;
+    }
 
     private static string _LockAndClockSql(string table)
     {
         // Two statements: the locking read waits out any other holder, and only then is the clock read.
         return $"""
-            SELECT {PostgreSqlIdempotencySchema.Status},
-                {PostgreSqlIdempotencySchema.FingerprintAlgorithm},
-                {PostgreSqlIdempotencySchema.Fingerprint},
-                {PostgreSqlIdempotencySchema.LeaseGeneration},
-                {PostgreSqlIdempotencySchema.Result},
-                {PostgreSqlIdempotencySchema.ResultContract},
-                {PostgreSqlIdempotencySchema.RetentionUntil}
-            FROM {table}
-            WHERE {_KeyPredicate}
-            FOR UPDATE;
+            {_LockSql(table)}
 
             SELECT clock_timestamp();
             """;
@@ -523,7 +651,8 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
                 {PostgreSqlIdempotencySchema.Status},
                 {PostgreSqlIdempotencySchema.FingerprintAlgorithm},
                 {PostgreSqlIdempotencySchema.Fingerprint},
-                {PostgreSqlIdempotencySchema.LeaseGeneration},
+                {PostgreSqlIdempotencySchema.Generation},
+                {PostgreSqlIdempotencySchema.LeaseExpiresAt},
                 {PostgreSqlIdempotencySchema.Result},
                 {PostgreSqlIdempotencySchema.ResultContract},
                 {PostgreSqlIdempotencySchema.RetentionUntil}
@@ -537,6 +666,7 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
                 NULL,
                 NULL,
                 NULL,
+                NULL,
                 clock_timestamp() + @Retention
             )
             ON CONFLICT ({PostgreSqlIdempotencySchema.TenantId}, {PostgreSqlIdempotencySchema.Key}) DO NOTHING
@@ -546,63 +676,111 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
             """;
     }
 
-    private static string _BuildLockSql(string table)
+    private static string _BuildAdmitSql(string table, string sequence)
     {
-        return _LockAndClockSql(table);
-    }
-
-    private static string _BuildAdmitSql(string table)
-    {
-        // Also the in-place reset of a record past its retention: every outcome column is overwritten.
+        // Runs on a row this transaction already locked, so its clock and its nextval() both come after any wait: a
+        // generation drawn before the lock could be lower than one a still-open admission already holds. Also the
+        // in-place reset of a record past its retention: every outcome column is overwritten. Retention extends,
+        // never shortens.
         return $"""
-            UPDATE {table}
+            WITH clock AS MATERIALIZED (SELECT clock_timestamp() AS now)
+            UPDATE {table} AS r
             SET {PostgreSqlIdempotencySchema.Status} = {PostgreSqlIdempotencySchema.Pending},
                 {PostgreSqlIdempotencySchema.FingerprintAlgorithm} = @FingerprintAlgorithm,
                 {PostgreSqlIdempotencySchema.Fingerprint} = @Fingerprint,
-                {PostgreSqlIdempotencySchema.LeaseGeneration} = @LeaseGeneration,
+                {PostgreSqlIdempotencySchema.Generation} = nextval('{sequence}'),
+                {PostgreSqlIdempotencySchema.LeaseExpiresAt} = clock.now + @LeaseDuration,
                 {PostgreSqlIdempotencySchema.Result} = NULL,
                 {PostgreSqlIdempotencySchema.ResultContract} = NULL,
-                {PostgreSqlIdempotencySchema.RetentionUntil} = {_ExtendedRetention}
-            WHERE {_KeyPredicate};
+                {PostgreSqlIdempotencySchema.RetentionUntil} = GREATEST(
+                    r.{PostgreSqlIdempotencySchema.RetentionUntil},
+                    clock.now + @Retention
+                )
+            FROM clock
+            WHERE {_KeyPredicate("r")}
+            RETURNING r.{PostgreSqlIdempotencySchema.Generation}, r.{PostgreSqlIdempotencySchema.LeaseExpiresAt};
             """;
     }
 
     private static string _BuildCompleteSql(string table)
     {
+        // The completing generation is kept, so a second completion by the same attempt finds its own completed
+        // record and is refused instead of overwriting the stored result.
         return $"""
-            UPDATE {table}
+            WITH clock AS MATERIALIZED (SELECT clock_timestamp() AS now)
+            UPDATE {table} AS r
             SET {PostgreSqlIdempotencySchema.Status} = {PostgreSqlIdempotencySchema.Completed},
+                {PostgreSqlIdempotencySchema.LeaseExpiresAt} = NULL,
                 {PostgreSqlIdempotencySchema.Result} = @Result,
                 {PostgreSqlIdempotencySchema.ResultContract} = @ResultContract,
-                {PostgreSqlIdempotencySchema.RetentionUntil} = {_ExtendedRetention}
-            WHERE {_KeyPredicate}
-                AND {PostgreSqlIdempotencySchema.LeaseGeneration} = @LeaseGeneration;
+                {PostgreSqlIdempotencySchema.RetentionUntil} = GREATEST(
+                    r.{PostgreSqlIdempotencySchema.RetentionUntil},
+                    clock.now + @Retention
+                )
+            FROM clock
+            WHERE {_KeyPredicate("r")}
+                AND r.{PostgreSqlIdempotencySchema.Generation} = @Generation;
             """;
     }
 
     private static string _BuildReleaseSql(string table)
     {
         return $"""
-            UPDATE {table}
+            WITH clock AS MATERIALIZED (SELECT clock_timestamp() AS now)
+            UPDATE {table} AS r
             SET {PostgreSqlIdempotencySchema.Status} = {PostgreSqlIdempotencySchema.Pending},
-                {PostgreSqlIdempotencySchema.LeaseGeneration} = NULL,
+                {PostgreSqlIdempotencySchema.Generation} = NULL,
+                {PostgreSqlIdempotencySchema.LeaseExpiresAt} = NULL,
                 {PostgreSqlIdempotencySchema.Result} = NULL,
                 {PostgreSqlIdempotencySchema.ResultContract} = NULL,
-                {PostgreSqlIdempotencySchema.RetentionUntil} = {_ExtendedRetention}
-            WHERE {_KeyPredicate}
-                AND {PostgreSqlIdempotencySchema.LeaseGeneration} = @LeaseGeneration;
+                {PostgreSqlIdempotencySchema.RetentionUntil} = GREATEST(
+                    r.{PostgreSqlIdempotencySchema.RetentionUntil},
+                    clock.now + @Retention
+                )
+            FROM clock
+            WHERE {_KeyPredicate("r")}
+                AND r.{PostgreSqlIdempotencySchema.Generation} = @Generation;
+            """;
+    }
+
+    private static string _BuildRenewSql(string table)
+    {
+        // The locking read waits out any holder first, so the guarded update's clock comes after the wait. The outer
+        // SELECT reads the row as it was before the update (the statement shares one snapshot), which classifies a
+        // refusal; the update's RETURNING reports whether it applied.
+        return $"""
+            {_LockSql(table)}
+
+            WITH clock AS MATERIALIZED (SELECT clock_timestamp() AS now),
+            changed AS (
+                UPDATE {table} AS r
+                SET {PostgreSqlIdempotencySchema.LeaseExpiresAt} = clock.now + @LeaseDuration
+                FROM clock
+                WHERE {_KeyPredicate("r")}
+                    AND r.{PostgreSqlIdempotencySchema.Generation} = @Generation
+                    AND r.{PostgreSqlIdempotencySchema.Status} = {PostgreSqlIdempotencySchema.Pending}
+                    AND r.{PostgreSqlIdempotencySchema.LeaseExpiresAt} > clock.now
+                RETURNING r.{PostgreSqlIdempotencySchema.LeaseExpiresAt}
+            )
+            SELECT r.{PostgreSqlIdempotencySchema.Status},
+                r.{PostgreSqlIdempotencySchema.Generation},
+                r.{PostgreSqlIdempotencySchema.LeaseExpiresAt},
+                COALESCE(r.{PostgreSqlIdempotencySchema.LeaseExpiresAt} > clock.now, false),
+                (SELECT c.{PostgreSqlIdempotencySchema.LeaseExpiresAt} FROM changed AS c)
+            FROM clock
+            LEFT JOIN {table} AS r ON {_KeyPredicate("r")};
             """;
     }
 
     private static string _BuildPeekSql(string table)
     {
-        // No FOR UPDATE: a plain MVCC snapshot read, so it never waits on the row lock every other verb takes.
+        // No row lock: a plain MVCC snapshot read, so it never waits on the lock every other verb takes.
         return $"""
-            SELECT {PostgreSqlIdempotencySchema.Status},
-                {PostgreSqlIdempotencySchema.RetentionUntil},
+            SELECT r.{PostgreSqlIdempotencySchema.Status},
+                r.{PostgreSqlIdempotencySchema.RetentionUntil},
                 clock_timestamp()
-            FROM {table}
-            WHERE {_KeyPredicate};
+            FROM {table} AS r
+            WHERE {_KeyPredicate("r")};
             """;
     }
 
@@ -610,13 +788,18 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
     {
         // SKIP LOCKED leaves a record an admission, fence, or completion holds for a later purge, so the purge never
         // waits on application work and never deletes a row under a transaction that is deciding on it. Since
-        // nothing waits, the clock can be read first.
+        // nothing waits, the clock can be read first. A live lease keeps its record even past retention, because its
+        // attempt may still complete.
         return $"""
             WITH clock AS MATERIALIZED (SELECT clock_timestamp() AS now),
             doomed AS (
                 SELECT r.{PostgreSqlIdempotencySchema.TenantId}, r.{PostgreSqlIdempotencySchema.Key}
                 FROM {table} AS r, clock
                 WHERE r.{PostgreSqlIdempotencySchema.RetentionUntil} <= clock.now - @OlderThan
+                    AND (
+                        r.{PostgreSqlIdempotencySchema.LeaseExpiresAt} IS NULL
+                        OR r.{PostgreSqlIdempotencySchema.LeaseExpiresAt} <= clock.now
+                    )
                 LIMIT @Limit
                 FOR UPDATE OF r SKIP LOCKED
             )

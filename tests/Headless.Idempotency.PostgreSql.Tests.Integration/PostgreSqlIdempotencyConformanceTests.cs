@@ -91,20 +91,44 @@ public sealed class PostgreSqlIdempotencyConformanceTests(PostgreSqlIdempotencyF
     }
 
     [Fact]
-    public override Task should_purge_only_records_past_retention_and_never_touch_leases()
+    public override Task should_purge_only_records_past_retention_whose_lease_is_not_live()
     {
-        return base.should_purge_only_records_past_retention_and_never_touch_leases();
+        return base.should_purge_only_records_past_retention_whose_lease_is_not_live();
     }
 
     [Fact]
-    public override Task should_refuse_a_live_attempt_whose_record_was_purged()
+    public override Task should_keep_a_live_attempt_record_past_retention_until_its_lease_expires()
     {
-        return base.should_refuse_a_live_attempt_whose_record_was_purged();
+        return base.should_keep_a_live_attempt_record_past_retention_until_its_lease_expires();
     }
 
     [Fact]
-    public override Task should_purge_records_and_then_their_ended_leases_from_the_retention_service()
+    public override Task should_purge_records_from_the_retention_service()
     {
-        return base.should_purge_records_and_then_their_ended_leases_from_the_retention_service();
+        return base.should_purge_records_from_the_retention_service();
+    }
+
+    [Fact]
+    public override Task should_refuse_a_second_completion_by_the_same_attempt()
+    {
+        return base.should_refuse_a_second_completion_by_the_same_attempt();
+    }
+
+    [Fact]
+    public override Task should_renew_only_while_the_attempt_owns_the_key()
+    {
+        return base.should_renew_only_while_the_attempt_owns_the_key();
+    }
+
+    [Fact]
+    public override Task should_refuse_a_fence_in_a_long_enlisted_unit_once_the_lease_expired()
+    {
+        return base.should_refuse_a_fence_in_a_long_enlisted_unit_once_the_lease_expired();
+    }
+
+    [Fact]
+    public override Task should_draw_a_higher_generation_after_the_record_was_purged()
+    {
+        return base.should_draw_a_higher_generation_after_the_record_was_purged();
     }
 }

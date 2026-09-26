@@ -15,10 +15,9 @@ namespace Headless.Idempotency.SqlServer;
 public sealed class SqlServerIdempotencyOptions
 {
     /// <summary>
-    /// Gets or sets the SqlClient connection string of the database that holds the idempotency records. It must also hold
-    /// the fenced leases, because every admission, completion, and release writes its record and its lease in one
-    /// transaction. Autonomous calls and the purge open their own connections with it, and an enlisted call is accepted
-    /// only on a unit whose connection reaches the same database, so name the database explicitly
+    /// Gets or sets the SqlClient connection string of the database that holds the idempotency records. Autonomous
+    /// calls, renewals, and the purge open their own connections with it, and an enlisted call is accepted only on a
+    /// unit whose connection reaches the same database, so name the database explicitly
     /// (<c>Initial Catalog</c>). Required.
     /// </summary>
     public string ConnectionString { get; set; } = string.Empty;

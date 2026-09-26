@@ -151,7 +151,10 @@ internal static class IdempotencyTestApp
                 }
 
                 ctx.Response.Headers["X-Idempotency-Key"] = idempotency.Key;
-                ctx.Response.Headers["X-Idempotency-Lease-Resource"] = idempotency.Lease.Resource;
+                ctx.Response.Headers["X-Idempotency-Admission-Key"] = idempotency.Admission.Key.Key;
+                ctx.Response.Headers["X-Idempotency-Generation"] = idempotency.Generation.ToString(
+                    CultureInfo.InvariantCulture
+                );
                 ctx.Response.Headers["X-Idempotency-Takeover"] = idempotency.IsTakeover.ToString();
                 ctx.Response.StatusCode = StatusCodes.Status201Created;
                 return Task.CompletedTask;

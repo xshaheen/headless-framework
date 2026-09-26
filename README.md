@@ -567,7 +567,7 @@ Durable, cross-process leases that fence a stale or zombie attempt's writes at t
 
 ### Idempotency
 
-Durable, tenant-scoped idempotent admission over a fenced lease: admit a key once across processes and replay its stored result on retry, independent of any cache TTL.
+Durable, tenant-scoped idempotent admission: admit a key once across processes and replay its stored result on retry, independent of any cache TTL. Each record row carries its own lease and generation.
 
 | Package | Description |
 |---------|-------------|
