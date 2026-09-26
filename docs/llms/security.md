@@ -55,6 +55,8 @@ $pbkdf2-sha256$i=600000,l=32$<salt>$<hash>
 
 ### Verification and rotation
 
+<!-- example: fragment -->
+
 ```csharp
 // sign-up or reset
 account.PinHash = hasher.Hash(pin);
@@ -211,8 +213,8 @@ builder.Services.AddHeadlessSecretHasher(setup =>
     setup.UseArgon2id(builder.Configuration.GetSection("Headless:SecretHasher:Argon2id"));
 });
 
-// Or PBKDF2, with no native dependency.
-builder.Services.AddHeadlessSecretHasher(setup => setup.UsePbkdf2Sha256());
+// Or PBKDF2, with no native dependency, in place of the call above; a second call throws.
+// builder.Services.AddHeadlessSecretHasher(setup => setup.UsePbkdf2Sha256());
 ```
 
 ### Configuration
@@ -281,6 +283,7 @@ dotnet add package Headless.Security.Argon2
 
 ### Setup and use
 
+<!-- example: boot -->
 ```csharp
 builder.Services.AddHeadlessSecretHasher(setup => setup.UseArgon2id(o => o.MemorySize = 47_104));
 ```

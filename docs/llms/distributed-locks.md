@@ -192,6 +192,8 @@ await using var write = await readerWriterLocks.AcquireWriteLockAsync(
 
 `IDistributedReadWriteLock` composes over a **mixed** set of read and write requests:
 
+<!-- example: fragment -->
+
 ```csharp
 Task<IDistributedLease?> TryAcquireAllAsync(IEnumerable<DistributedReadWriteLockRequest> requests, DistributedLockAcquireOptions? options = null, CancellationToken cancellationToken = default)
 Task<IDistributedLease>  AcquireAllAsync(IEnumerable<DistributedReadWriteLockRequest> requests, DistributedLockAcquireOptions? options = null, CancellationToken cancellationToken = default)
@@ -251,6 +253,8 @@ await using var slot = await semaphore.AcquireAsync(
 ### Semaphore Composite Acquisition
 
 Composite acquisition hangs off `IDistributedSemaphoreProvider`, not off `IDistributedSemaphore`:
+
+<!-- example: fragment -->
 
 ```csharp
 Task<IDistributedLease?> TryAcquireAllAsync(IEnumerable<DistributedSemaphoreRequest> requests, DistributedLockAcquireOptions? options = null, CancellationToken cancellationToken = default)
@@ -431,6 +435,8 @@ dotnet add package Headless.DistributedLocks.Core
 ### Setup and use
 
 ```csharp
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
+
 builder.Services.AddHeadlessDistributedLocks(setup =>
 {
     setup.ConfigureOptions(options =>
@@ -580,6 +586,7 @@ dotnet add package Headless.DistributedLocks.InMemory
 
 ### Setup and use
 
+<!-- example: boot -->
 ```csharp
 builder.Services.AddHeadlessDistributedLocks(setup =>
 {
@@ -731,6 +738,8 @@ await factory.RunAsync(
 
 ### Configuration
 
+<!-- example: fragment -->
+
 ```csharp
 options.ConnectionString = "..."; // required unless DataSource is set
 options.DataSource = dataSource; // preferred when already registered
@@ -880,6 +889,8 @@ await transaction.CommitAsync(ct);
 ```
 
 ### Configuration
+
+<!-- example: fragment -->
 
 ```csharp
 options.ConnectionString = "..."; // required
