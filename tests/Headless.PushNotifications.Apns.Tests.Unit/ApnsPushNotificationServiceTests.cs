@@ -269,6 +269,7 @@ public sealed class ApnsPushNotificationServiceTests : TestBase
         sent.Headers["apns-push-type"].Should().Be("voip");
         sent.Headers["apns-topic"].Should().Be($"{FakeApnsServer.BundleId}.voip");
         sent.Headers["apns-priority"].Should().Be("10");
+        sent.Headers["apns-expiration"].Should().Be("0", "a VoIP push with no time to live is sent deliver-once");
         sent.Body.Should().Be("""{"aps":{},"sync":"1"}""");
     }
 
@@ -533,6 +534,38 @@ public sealed class ApnsPushNotificationServiceTests : TestBase
         requests[0].Bearer.Should().Be(rejected);
         requests[1].Bearer.Should().NotBe(rejected);
         _server.VerifyJwt(requests[1].Bearer!).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_keep_the_caller_apns_id_on_the_resend_after_an_expired_token()
+    {
+        // given
+        var apnsId = Guid.Parse("0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d");
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 9, 25, 10, 0, 0, TimeSpan.Zero));
+        await using var provider = _server.CreateProvider(configureServices: s => s.AddSingleton<TimeProvider>(time));
+        var rejected = await _GetCurrentTokenAsync(provider);
+        _server.Responder = r =>
+            string.Equals(r.Bearer, rejected, StringComparison.Ordinal)
+                ? new FakeApnsReply(403, ApnsResponseMapper.ExpiredProviderTokenReason)
+                : FakeApnsReply.Ok;
+        time.Advance(TimeSpan.FromMinutes(25));
+        var service = provider.GetRequiredService<IApnsPushNotificationService>();
+        var notification = new ApnsAlertNotification
+        {
+            Alert = new ApnsAlert { Body = "Hi" },
+            ApnsId = apnsId,
+        };
+
+        // when
+        var result = await service.SendAsync(_DeviceToken, notification, AbortToken);
+
+        // then
+        result.Response.IsSucceeded().Should().BeTrue();
+        result.ApnsId.Should().Be("0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d");
+        _server
+            .Requests.Select(r => r.Headers["apns-id"])
+            .Should()
+            .Equal("0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d");
     }
 
     [Fact]

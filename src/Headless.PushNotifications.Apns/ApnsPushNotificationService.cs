@@ -2,6 +2,7 @@
 
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text.Json.Nodes;
 using Headless.Checks;
 using Headless.PushNotifications.Apns.Internals;
 using Microsoft.Extensions.Logging;
@@ -53,7 +54,8 @@ internal sealed class ApnsPushNotificationService(
         var options = optionsMonitor.Get(optionsName);
         var prepared = _Prepare(notification, options);
 
-        return await _SendOneAsync(options, deviceToken, prepared, cancellationToken).ConfigureAwait(false);
+        return await _SendOneAsync(options, deviceToken, prepared, notification.ApnsId, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async ValueTask<ApnsBatchSendResult> SendMulticastAsync(
@@ -63,6 +65,16 @@ internal sealed class ApnsPushNotificationService(
     )
     {
         _EnsureTokens(deviceTokens, nameof(deviceTokens));
+        Argument.IsNotNull(notification);
+
+        // APNs identifies each request by its apns-id, so one caller id cannot cover several tokens.
+        if (notification.ApnsId is not null)
+        {
+            throw new ArgumentException(
+                "An APNs multicast cannot use a caller-supplied ApnsId; every request needs its own id. Send to each token with SendAsync instead.",
+                nameof(notification)
+            );
+        }
 
         var options = optionsMonitor.Get(optionsName);
         var prepared = _Prepare(notification, options);
@@ -91,7 +103,8 @@ internal sealed class ApnsPushNotificationService(
 
         var options = optionsMonitor.Get(optionsName);
         var prepared = _Prepare(_Convert(request, options), options);
-        var result = await _SendOneAsync(options, clientIdentifier, prepared, cancellationToken).ConfigureAwait(false);
+        var result = await _SendOneAsync(options, clientIdentifier, prepared, apnsId: null, cancellationToken)
+            .ConfigureAwait(false);
 
         return result.Response;
     }
@@ -146,6 +159,8 @@ internal sealed class ApnsPushNotificationService(
             _ => null,
         };
 
+        var data = _ToJson(request.Data);
+
         if (!PushNotificationRequestValidation.IsDataOnly(request))
         {
             return new ApnsAlertNotification
@@ -153,7 +168,7 @@ internal sealed class ApnsPushNotificationService(
                 Alert = new ApnsAlert { Title = request.Title, Body = request.Body },
                 Badge = request.Badge,
                 Sound = request.Sound is null ? null : ApnsSound.Named(request.Sound),
-                Data = request.Data,
+                Data = data,
                 Priority = priority,
                 Expiration = expiration,
                 CollapseId = request.CollapseKey,
@@ -165,7 +180,7 @@ internal sealed class ApnsPushNotificationService(
         {
             return new ApnsVoipDataNotification
             {
-                Data = request.Data,
+                Data = data,
                 Priority = priority,
                 Expiration = expiration,
                 CollapseId = request.CollapseKey,
@@ -175,10 +190,28 @@ internal sealed class ApnsPushNotificationService(
         // Apple requires priority 5 for background pushes, so the request's priority does not apply here.
         return new ApnsBackgroundNotification
         {
-            Data = request.Data,
+            Data = data,
             Expiration = expiration,
             CollapseId = request.CollapseKey,
         };
+    }
+
+    private static JsonObject? _ToJson(IReadOnlyDictionary<string, string>? data)
+    {
+        if (data is null)
+        {
+            return null;
+        }
+
+        // The shared request carries string values only, because FCM data messages are string maps.
+        var json = new JsonObject();
+
+        foreach (var (key, value) in data)
+        {
+            json[key] = value;
+        }
+
+        return json;
     }
 
     #endregion
@@ -189,12 +222,14 @@ internal sealed class ApnsPushNotificationService(
         ApnsOptions options,
         string deviceToken,
         ApnsPreparedNotification prepared,
+        Guid? apnsId,
         CancellationToken cancellationToken
     )
     {
         var client = httpClientFactory.CreateClient(httpClientName);
 
-        return await _SendAsync(client, options, deviceToken, prepared, cancellationToken).ConfigureAwait(false);
+        return await _SendAsync(client, options, deviceToken, prepared, apnsId, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async ValueTask<ApnsSendResult[]> _SendManyAsync(
@@ -218,7 +253,14 @@ internal sealed class ApnsPushNotificationService(
                     CancellationToken = cancellationToken,
                 },
                 async (index, token) =>
-                    results[index] = await _SendAsync(client, options, deviceTokens[index], prepared, token)
+                    results[index] = await _SendAsync(
+                            client,
+                            options,
+                            deviceTokens[index],
+                            prepared,
+                            callerApnsId: null,
+                            token
+                        )
                         .ConfigureAwait(false)
             )
             .ConfigureAwait(false);
@@ -231,12 +273,13 @@ internal sealed class ApnsPushNotificationService(
         ApnsOptions options,
         string deviceToken,
         ApnsPreparedNotification prepared,
+        Guid? callerApnsId,
         CancellationToken cancellationToken
     )
     {
-        // Generated here rather than read from the response so a success always carries a message id, even when
-        // a proxy strips the echoed apns-id header.
-        var apnsId = Guid.NewGuid().ToString("D");
+        // Decided here rather than read from the response so a success always carries a message id, even when a
+        // proxy strips the echoed apns-id header; the expired-token resend reuses it so APNs sees one notification.
+        var apnsId = (callerApnsId ?? Guid.NewGuid()).ToString("D");
 
         try
         {

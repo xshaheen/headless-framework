@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Json.Nodes;
+
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.PushNotifications.Apns;
 
@@ -19,7 +21,8 @@ public abstract record ApnsNotification
 
     /// <summary>
     /// When APNs stops trying to deliver the notification, sent as <c>apns-expiration</c>. Default:
-    /// <see langword="null"/>, which sends no header so APNs applies its own storage policy.
+    /// <see langword="null"/>, which sends no header so APNs applies its own storage policy, except on VoIP and
+    /// push-to-talk pushes, where it sends <see cref="ApnsExpiration.DeliverOnce"/> as Apple instructs.
     /// </summary>
     public ApnsExpiration? Expiration { get; init; }
 
@@ -28,6 +31,14 @@ public abstract record ApnsNotification
     /// UTF-8 bytes.
     /// </summary>
     public string? CollapseId { get; init; }
+
+    /// <summary>
+    /// The identifier sent as <c>apns-id</c> and returned as <see cref="ApnsSendResult.ApnsId"/>. Default:
+    /// <see langword="null"/>, which sends a new random UUID. Set it to correlate the send with your own records; a
+    /// resend after an expired provider token keeps it.
+    /// </summary>
+    /// <remarks>Only a single-token send accepts it: a multicast refuses it, because every request needs its own id.</remarks>
+    public Guid? ApnsId { get; init; }
 }
 
 /// <summary>
@@ -71,8 +82,11 @@ public sealed record ApnsAlertNotification : ApnsNotification
     /// <summary>The identifier of the app window to bring forward, written as <c>aps.target-content-id</c>.</summary>
     public string? TargetContentId { get; init; }
 
-    /// <summary>Custom keys written beside <c>aps</c> at the payload's top level. The key <c>aps</c> is reserved.</summary>
-    public IReadOnlyDictionary<string, string>? Data { get; init; }
+    /// <summary>
+    /// Custom keys written beside <c>aps</c> at the payload's top level, each with any JSON value. The key
+    /// <c>aps</c> is reserved. Serialized once per send and never modified.
+    /// </summary>
+    public JsonObject? Data { get; init; }
 
     /// <summary>
     /// The delivery priority, sent as <c>apns-priority</c>. Default: <see langword="null"/>, which uses
@@ -92,8 +106,11 @@ public sealed record ApnsAlertNotification : ApnsNotification
 [PublicAPI]
 public sealed record ApnsBackgroundNotification : ApnsNotification
 {
-    /// <summary>Custom keys written beside <c>aps</c> at the payload's top level. The key <c>aps</c> is reserved.</summary>
-    public IReadOnlyDictionary<string, string>? Data { get; init; }
+    /// <summary>
+    /// Custom keys written beside <c>aps</c> at the payload's top level, each with any JSON value. The key
+    /// <c>aps</c> is reserved. Serialized once per send and never modified.
+    /// </summary>
+    public JsonObject? Data { get; init; }
 }
 
 /// <summary>
@@ -172,6 +189,12 @@ public sealed record ApnsLiveActivityNotification : ApnsNotification
     public JsonElement? Attributes { get; init; }
 
     /// <summary>
+    /// Whether the started activity reports a push token for its later updates, written as
+    /// <c>aps.input-push-token: 1</c>. Start only; iOS 18 and iPadOS 18 or later.
+    /// </summary>
+    public bool RequestPushToken { get; init; }
+
+    /// <summary>
     /// The delivery priority, sent as <c>apns-priority</c>. Default: <see langword="null"/>, which sends
     /// <see cref="ApnsPriority.PowerConsiderate"/>. Apple budgets <see cref="ApnsPriority.Immediate"/> Live Activity
     /// pushes per hour and does not allow <see cref="ApnsPriority.PowerPrioritized"/>.
@@ -191,8 +214,11 @@ public sealed record ApnsLiveActivityNotification : ApnsNotification
 [PublicAPI]
 public sealed record ApnsLocationNotification : ApnsNotification
 {
-    /// <summary>Custom keys written beside <c>aps</c> at the payload's top level. The key <c>aps</c> is reserved.</summary>
-    public IReadOnlyDictionary<string, string>? Data { get; init; }
+    /// <summary>
+    /// Custom keys written beside <c>aps</c> at the payload's top level, each with any JSON value. The key
+    /// <c>aps</c> is reserved. Serialized once per send and never modified.
+    /// </summary>
+    public JsonObject? Data { get; init; }
 
     /// <summary>
     /// The delivery priority, sent as <c>apns-priority</c>. Default: <see langword="null"/>, which sends
@@ -215,8 +241,11 @@ public sealed record ApnsLocationNotification : ApnsNotification
 [PublicAPI]
 public sealed record ApnsPushToTalkNotification : ApnsNotification
 {
-    /// <summary>Custom keys written beside <c>aps</c> at the payload's top level. The key <c>aps</c> is reserved.</summary>
-    public IReadOnlyDictionary<string, string>? Data { get; init; }
+    /// <summary>
+    /// Custom keys written beside <c>aps</c> at the payload's top level, each with any JSON value. The key
+    /// <c>aps</c> is reserved. Serialized once per send and never modified.
+    /// </summary>
+    public JsonObject? Data { get; init; }
 }
 
 /// <summary>
@@ -265,8 +294,11 @@ public sealed record ApnsControlsNotification : ApnsNotification
 [PublicAPI]
 public sealed record ApnsComplicationNotification : ApnsNotification
 {
-    /// <summary>Custom keys written beside <c>aps</c> at the payload's top level. The key <c>aps</c> is reserved.</summary>
-    public IReadOnlyDictionary<string, string>? Data { get; init; }
+    /// <summary>
+    /// Custom keys written beside <c>aps</c> at the payload's top level, each with any JSON value. The key
+    /// <c>aps</c> is reserved. Serialized once per send and never modified.
+    /// </summary>
+    public JsonObject? Data { get; init; }
 
     /// <summary>
     /// The delivery priority, sent as <c>apns-priority</c>. Default: <see langword="null"/>, which sends
@@ -295,6 +327,40 @@ public sealed record ApnsFileProviderNotification : ApnsNotification
     /// <summary>
     /// The delivery priority, sent as <c>apns-priority</c>. Default: <see langword="null"/>, which sends
     /// <see cref="ApnsPriority.Immediate"/>. <see cref="ApnsPriority.PowerPrioritized"/> is not allowed.
+    /// </summary>
+    public ApnsPriority? Priority { get; init; }
+}
+
+/// <summary>
+/// A notification whose payload is supplied as JSON and sent verbatim: the escape hatch for Apple payload keys the
+/// typed notifications do not model. <see cref="Type"/> decides the push type and with it every rule a typed
+/// notification of that type follows: the topic, the priority rules, the payload size limit, and whether a VoIP or
+/// certificate-authenticated instance can send it.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The payload is not validated beyond being a JSON object, so custom keys placed inside <c>aps</c> are sent as given
+/// even though APNs ignores them. <see cref="JsonElement"/> has no value equality, so two raw notifications with the
+/// same payload compare unequal.
+/// </para>
+/// <para>
+/// <see cref="ApnsNotificationType.Voip"/> needs an instance configured with <see cref="ApnsPushType.Voip"/>, which
+/// also sends <see cref="ApnsNotificationType.Alert"/> as a VoIP push, as it does for
+/// <see cref="ApnsAlertNotification"/>.
+/// </para>
+/// </remarks>
+[PublicAPI]
+public sealed record ApnsRawNotification : ApnsNotification
+{
+    /// <summary>The push type, which decides the <c>apns-push-type</c> header, the topic, and the push type's rules.</summary>
+    public required ApnsNotificationType Type { get; init; }
+
+    /// <summary>The complete payload, a JSON object written as is and counted against the push type's size limit.</summary>
+    public required JsonElement Payload { get; init; }
+
+    /// <summary>
+    /// The delivery priority, sent as <c>apns-priority</c>. Default: <see langword="null"/>, which uses the push
+    /// type's default. A priority the push type does not allow is refused, as it is for the typed notification.
     /// </summary>
     public ApnsPriority? Priority { get; init; }
 }

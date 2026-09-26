@@ -80,7 +80,20 @@ public sealed class ApnsCertificateAuthTests : TestBase
             new ApnsLiveActivityNotification { Event = ApnsLiveActivityEvent.End },
             new ApnsWidgetsNotification(),
             new ApnsControlsNotification(),
+            // A raw notification must not bypass the refusal: its Type decides the push type like a typed one.
+            _Raw(ApnsNotificationType.Location),
+            _Raw(ApnsNotificationType.FileProvider),
+            _Raw(ApnsNotificationType.LiveActivity),
+            _Raw(ApnsNotificationType.Widgets),
+            _Raw(ApnsNotificationType.Controls),
         };
+
+    private static ApnsRawNotification _Raw(ApnsNotificationType type)
+    {
+        using var document = JsonDocument.Parse("""{"aps":{}}""");
+
+        return new ApnsRawNotification { Type = type, Payload = document.RootElement.Clone() };
+    }
 
     [Theory]
     [MemberData(nameof(TokenOnlyNotifications))]

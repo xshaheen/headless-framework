@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Json.Nodes;
 using Headless.PushNotifications.Apns;
 using Headless.PushNotifications.Apns.Internals;
 using Headless.Testing.Tests;
@@ -29,11 +30,7 @@ public sealed class ApnsPushTypeCompletenessTests : TestBase
                 ApnsPushTypes.Alert
             ),
             [typeof(ApnsBackgroundNotification)] = (
-                static () =>
-                    new ApnsBackgroundNotification
-                    {
-                        Data = new Dictionary<string, string>(StringComparer.Ordinal) { ["sync"] = "1" },
-                    },
+                static () => new ApnsBackgroundNotification { Data = new JsonObject { ["sync"] = "1" } },
                 false,
                 ApnsPushTypes.Background
             ),
@@ -73,15 +70,50 @@ public sealed class ApnsPushTypeCompletenessTests : TestBase
                 ApnsPushTypes.FileProvider
             ),
             [typeof(ApnsVoipDataNotification)] = (
-                static () =>
-                    new ApnsVoipDataNotification
-                    {
-                        Data = new Dictionary<string, string>(StringComparer.Ordinal) { ["call"] = "1" },
-                    },
+                static () => new ApnsVoipDataNotification { Data = new JsonObject { ["call"] = "1" } },
                 true,
                 ApnsPushTypes.Voip
             ),
+            [typeof(ApnsRawNotification)] = (
+                static () => new ApnsRawNotification { Type = ApnsNotificationType.Alert, Payload = _EmptyAps() },
+                false,
+                ApnsPushTypes.Alert
+            ),
         };
+
+    [Fact]
+    public void should_prepare_a_raw_notification_for_every_notification_type()
+    {
+        // given
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 9, 25, 10, 0, 0, TimeSpan.Zero));
+
+        foreach (var type in Enum.GetValues<ApnsNotificationType>())
+        {
+            var voip = type == ApnsNotificationType.Voip;
+            var options = new ApnsOptions
+            {
+                BundleId = _BundleId,
+                PushType = voip ? ApnsPushType.Voip : ApnsPushType.Alert,
+            };
+            var notification = new ApnsRawNotification { Type = type, Payload = _EmptyAps() };
+
+            // when
+            var act = () => ApnsPayloadWriter.Prepare(notification, options, clock);
+
+            // then
+            act.Should()
+                .NotThrow($"raw notification type {type} must map to a push type")
+                .Subject.Payload.Should()
+                .NotBeEmpty();
+        }
+    }
+
+    private static JsonElement _EmptyAps()
+    {
+        using var document = JsonDocument.Parse("""{"aps":{}}""");
+
+        return document.RootElement.Clone();
+    }
 
     [Fact]
     public void should_prepare_every_concrete_push_type_with_its_push_type_header()
