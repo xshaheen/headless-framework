@@ -20,6 +20,11 @@ Install `Headless.Features.Abstractions` plus `Headless.Features.Core` and exact
 Typical registration:
 
 ```csharp
+// Required dependencies
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
+
 // 1. Register feature definitions
 builder.Services.AddFeatureDefinitionProvider<MyFeatureDefinitionProvider>();
 
@@ -255,6 +260,11 @@ Register the required services (`TimeProvider`, `ICache`, `IDistributedLock`, `I
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+// Required dependencies
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
+
 // Register feature definitions
 builder.Services.AddFeatureDefinitionProvider<MyFeatureDefinitionProvider>();
 
@@ -431,8 +441,11 @@ builder.Services.AddHeadlessFeatures(setup =>
     setup.ConfigureStorage(storage => storage.Schema = "features");
     setup.UsePostgreSql(connectionString);
 });
+```
 
-// Or with full option control:
+Or with full option control:
+
+```csharp
 builder.Services.AddHeadlessFeatures(setup =>
 {
     setup.UsePostgreSql(options =>
@@ -495,8 +508,11 @@ builder.Services.AddHeadlessFeatures(setup =>
     setup.ConfigureStorage(storage => storage.Schema = "features");
     setup.UseSqlServer(connectionString);
 });
+```
 
-// Or with full option control:
+Or with full option control:
+
+```csharp
 builder.Services.AddHeadlessFeatures(setup =>
 {
     setup.UseSqlServer(options =>

@@ -18,7 +18,8 @@ Install three packages: an abstractions package, the core implementation, and ex
 Minimal wiring:
 
 ```csharp
-builder.Services.AddCaching();
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
@@ -258,7 +259,8 @@ Register the required services (`TimeProvider`, `ICache`, `IDistributedLock`, `I
 var builder = WebApplication.CreateBuilder(args);
 
 // Required dependencies
-builder.Services.AddCaching();
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
@@ -439,7 +441,8 @@ builder.Services.AddDbContextFactory<AppDbContext>(options =>
     options.UseNpgsql(connectionString)
 );
 
-builder.Services.AddCaching();
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 builder.Services.AddStringEncryptionService(
     builder.Configuration.GetRequiredSection("Headless:StringEncryption")
@@ -504,7 +507,8 @@ dotnet add package Headless.Settings.Storage.PostgreSql
 Register the required services first — `TimeProvider`, caching, distributed lock, and `IStringEncryptionService`. `AddHeadlessSettings` then registers the management core automatically.
 
 ```csharp
-builder.Services.AddCaching();
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
@@ -513,8 +517,11 @@ builder.Services.AddHeadlessSettings(setup =>
     setup.ConfigureStorage(storage => storage.Schema = "settings");
     setup.UsePostgreSql(connectionString);
 });
+```
 
-// Or with full option control:
+Or with full option control:
+
+```csharp
 builder.Services.AddHeadlessSettings(setup =>
 {
     setup.UsePostgreSql(options =>
@@ -572,7 +579,8 @@ dotnet add package Headless.Settings.Storage.SqlServer
 Register the required services first — `TimeProvider`, caching, distributed lock, and `IStringEncryptionService`. `AddHeadlessSettings` then registers the management core automatically.
 
 ```csharp
-builder.Services.AddCaching();
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
@@ -581,8 +589,11 @@ builder.Services.AddHeadlessSettings(setup =>
     setup.ConfigureStorage(storage => storage.Schema = "settings");
     setup.UseSqlServer(connectionString);
 });
+```
 
-// Or with full option control:
+Or with full option control:
+
+```csharp
 builder.Services.AddHeadlessSettings(setup =>
 {
     setup.UseSqlServer(options =>
