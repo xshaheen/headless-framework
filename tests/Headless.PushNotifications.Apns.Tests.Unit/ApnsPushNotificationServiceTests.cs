@@ -369,11 +369,16 @@ public sealed class ApnsPushNotificationServiceTests : TestBase
         response.FailureError.Should().Contain("DeviceTokenNotForTopic");
     }
 
-    [Fact]
-    public async Task should_report_failure_naming_503_after_bounded_retries_when_apns_is_unavailable()
+    [Theory]
+    [InlineData(500, "InternalServerError")]
+    [InlineData(503, "ServiceUnavailable")]
+    public async Task should_report_failure_after_one_request_when_apns_answers_a_server_error(
+        int status,
+        string reason
+    )
     {
-        // given
-        _server.Responder = _ => new FakeApnsReply(503, "ServiceUnavailable");
+        // given - Apple asks senders to wait about 15 minutes before retrying a 5xx, so it is the caller's to retry.
+        _server.Responder = _ => new FakeApnsReply(status, reason);
         await using var provider = _server.CreateProvider();
         var service = provider.GetRequiredService<IPushNotificationService>();
 
@@ -382,8 +387,11 @@ public sealed class ApnsPushNotificationServiceTests : TestBase
 
         // then
         response.IsFailed().Should().BeTrue();
-        response.FailureError.Should().Contain("ServiceUnavailable").And.Contain("503");
-        _server.Requests.Should().HaveCount(3, "the initial attempt plus two retries");
+        response
+            .FailureError.Should()
+            .Contain(reason)
+            .And.Contain(status.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        _server.Requests.Should().ContainSingle();
     }
 
     [Fact]
@@ -405,11 +413,13 @@ public sealed class ApnsPushNotificationServiceTests : TestBase
     }
 
     [Fact]
-    public async Task should_succeed_when_apns_answers_503_once_then_200()
+    public async Task should_retry_and_succeed_when_the_first_connection_attempt_fails_before_sending()
     {
         // given
-        _server.Responder = r => r.Attempt == 1 ? new FakeApnsReply(503, "ServiceUnavailable") : FakeApnsReply.Ok;
-        await using var provider = _server.CreateProvider();
+        var connectFailures = new ConnectFailingHandler(failures: 1);
+        await using var provider = _server.CreateProvider(postConfigureServices: s =>
+            s.AddHttpClient(SetupApnsPushNotifications.HttpClientName).AddHttpMessageHandler(() => connectFailures)
+        );
         var service = provider.GetRequiredService<IPushNotificationService>();
 
         // when
@@ -417,7 +427,8 @@ public sealed class ApnsPushNotificationServiceTests : TestBase
 
         // then
         response.IsSucceeded().Should().BeTrue();
-        _server.Requests.Should().HaveCount(2);
+        connectFailures.Attempts.Should().Be(2);
+        _server.Requests.Should().ContainSingle();
     }
 
     [Theory]
@@ -558,11 +569,13 @@ public sealed class ApnsPushNotificationServiceTests : TestBase
     }
 
     [Fact]
-    public async Task should_report_failure_after_exactly_two_requests_when_apns_rejects_every_token_as_expired()
+    public async Task should_report_failure_after_one_request_when_a_token_younger_than_20_minutes_is_rejected_as_expired()
     {
-        // given
+        // given - inside the 20-minute limit no new token can be minted, and a byte-identical resend would be
+        // rejected the same way.
         _server.Responder = _ => new FakeApnsReply(403, ApnsResponseMapper.ExpiredProviderTokenReason);
-        await using var provider = _server.CreateProvider();
+        using var logs = new CapturingLoggerProvider();
+        await using var provider = _server.CreateProvider(loggerProvider: logs);
         var service = provider.GetRequiredService<IPushNotificationService>();
 
         // when
@@ -571,7 +584,73 @@ public sealed class ApnsPushNotificationServiceTests : TestBase
         // then
         response.IsFailed().Should().BeTrue();
         response.FailureError.Should().Contain(ApnsResponseMapper.ExpiredProviderTokenReason).And.Contain("403");
-        _server.Requests.Should().HaveCount(2);
+        _server.Requests.Should().ContainSingle();
+        logs.Entries.Should().NotContain(e => e.Contains("rejected as expired", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task should_report_failure_after_exactly_two_requests_when_apns_rejects_a_reminted_token_as_expired()
+    {
+        // given
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 9, 25, 10, 0, 0, TimeSpan.Zero));
+        await using var provider = _server.CreateProvider(configureServices: s => s.AddSingleton<TimeProvider>(time));
+        var rejected = await _GetCurrentTokenAsync(provider);
+        _server.Responder = _ => new FakeApnsReply(403, ApnsResponseMapper.ExpiredProviderTokenReason);
+        time.Advance(TimeSpan.FromMinutes(25));
+        var service = provider.GetRequiredService<IPushNotificationService>();
+
+        // when
+        var response = await service.SendToDeviceAsync(_DeviceToken, PushNotificationRequests.Valid(), AbortToken);
+
+        // then
+        response.IsFailed().Should().BeTrue();
+        response.FailureError.Should().Contain(ApnsResponseMapper.ExpiredProviderTokenReason).And.Contain("403");
+        var requests = _server.Requests;
+        requests.Should().HaveCount(2);
+        requests[0].Bearer.Should().Be(rejected);
+        requests[1].Bearer.Should().NotBe(rejected);
+    }
+
+    [Fact]
+    public async Task should_retry_once_with_the_newer_token_when_another_caller_minted_it_after_the_rejected_send()
+    {
+        // given - the first send carries generation 1; before its rejection is handled, another caller's rejection
+        // re-mints generation 2, so this send retries with that token even though its own re-mint is refused.
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 9, 25, 10, 0, 0, TimeSpan.Zero));
+        ApnsTokenSource? tokenSource = null;
+        ApnsOptions? options = null;
+        ApnsProviderToken? rejected = null;
+        string? newer = null;
+        var otherCaller = new AfterFirstResponseHandler(async cancellationToken =>
+            newer = (await tokenSource!.InvalidateAsync(options!, rejected!.Generation, cancellationToken)).Value
+        );
+        using var logs = new CapturingLoggerProvider();
+        await using var provider = _server.CreateProvider(
+            configureServices: s => s.AddSingleton<TimeProvider>(time),
+            loggerProvider: logs,
+            postConfigureServices: s =>
+                s.AddHttpClient(SetupApnsPushNotifications.HttpClientName).AddHttpMessageHandler(() => otherCaller)
+        );
+        tokenSource = provider.GetRequiredService<ApnsTokenSource>();
+        options = provider.GetRequiredService<IOptionsMonitor<ApnsOptions>>().Get(Options.DefaultName);
+        rejected = await tokenSource.GetTokenAsync(options, AbortToken);
+        time.Advance(TimeSpan.FromMinutes(25));
+        _server.Responder = r =>
+            string.Equals(r.Bearer, rejected.Value, StringComparison.Ordinal)
+                ? new FakeApnsReply(403, ApnsResponseMapper.ExpiredProviderTokenReason)
+                : FakeApnsReply.Ok;
+        var service = provider.GetRequiredService<IPushNotificationService>();
+
+        // when
+        var response = await service.SendToDeviceAsync(_DeviceToken, PushNotificationRequests.Valid(), AbortToken);
+
+        // then
+        response.IsSucceeded().Should().BeTrue();
+        var requests = _server.Requests;
+        requests.Should().HaveCount(2);
+        requests[0].Bearer.Should().Be(rejected.Value);
+        requests[1].Bearer.Should().Be(newer).And.NotBe(rejected.Value);
+        logs.Entries.Should().ContainSingle(e => e.Contains("rejected as expired", StringComparison.Ordinal));
     }
 
     #endregion
@@ -623,7 +702,7 @@ public sealed class ApnsPushNotificationServiceTests : TestBase
         result.Responses[1].IsUnregistered().Should().BeTrue();
         result.Responses[2].IsFailed().Should().BeTrue();
         result.Responses[3].IsFailed().Should().BeTrue();
-        _server.Requests.Count(r => r.DeviceToken == "broken").Should().Be(3);
+        _server.Requests.Count(r => r.DeviceToken == "broken").Should().Be(1);
     }
 
     [Fact]
@@ -642,8 +721,8 @@ public sealed class ApnsPushNotificationServiceTests : TestBase
         result.FailureCount.Should().Be(250);
         result.Responses.Select(r => r.ClientIdentifier).Should().Equal(tokens);
         result.Responses.Should().AllSatisfy(r => r.IsFailed().Should().BeTrue());
-        // Fewer requests than 250 x 3 attempts proves the breaker opened and its rejections became failures.
-        _server.Requests.Count.Should().BeLessThan(750);
+        // Fewer requests than tokens proves the breaker counts 5xx, opened, and its rejections became failures.
+        _server.Requests.Count.Should().BeLessThan(250);
         result.Responses.Should().Contain(r => r.FailureError!.Contains("BrokenCircuitException"));
     }
 
@@ -875,6 +954,47 @@ public sealed class ApnsPushNotificationServiceTests : TestBase
         listener.Stop();
 
         return port;
+    }
+
+    /// <summary>Fails the first <c>failures</c> attempts the way a refused TCP connect does, before any byte is sent.</summary>
+    private sealed class ConnectFailingHandler(int failures) : DelegatingHandler
+    {
+        private int _attempts;
+
+        public int Attempts => Volatile.Read(ref _attempts);
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        )
+        {
+            return Interlocked.Increment(ref _attempts) <= failures
+                ? Task.FromException<HttpResponseMessage>(
+                    new HttpRequestException(HttpRequestError.ConnectionError, "Connection refused.")
+                )
+                : base.SendAsync(request, cancellationToken);
+        }
+    }
+
+    /// <summary>Runs a callback once, after the first response arrives and before the service reads it.</summary>
+    private sealed class AfterFirstResponseHandler(Func<CancellationToken, Task> callback) : DelegatingHandler
+    {
+        private int _responses;
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        )
+        {
+            var response = await base.SendAsync(request, cancellationToken);
+
+            if (Interlocked.Increment(ref _responses) == 1)
+            {
+                await callback(cancellationToken);
+            }
+
+            return response;
+        }
     }
 
     private sealed class CapturingLoggerProvider : ILoggerProvider

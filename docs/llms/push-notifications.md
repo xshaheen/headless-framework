@@ -80,7 +80,7 @@ For pushes only APNs has — Live Activities, rich alert controls, background pu
 - An APNs instance authenticates with a `.p8` signing key (token mode) or a `.p12` provider certificate (certificate mode), never both. Certificate mode refuses `location`, `fileprovider`, `liveactivity`, `widgets`, and `controls` pushes with `ArgumentException`. Use token mode for those.
 - Rotating the APNs signing key requires a process restart: the provider caches the imported key and its provider token per `(team id, key id)` for the life of the container. Two option sets with the same team id and key id but different key text are refused, and every send through the second one returns `Failure`. A renewed certificate does not: when the configuration source reloads, new connections present it (see [Certificate authentication](#certificate-authentication)).
 - Every process that signs with the same APNs key mints its own provider token, and Apple rejects token updates for one key more often than once every 20 minutes with `TooManyProviderTokenUpdates`. Within one container the provider shares one token per key. Across many processes or hosts, prefer a separate key per environment or deployment.
-- APNs retries in-process only connection failures that happen before a request is sent (connect, DNS, TLS), HTTP 500, and HTTP 503, at most twice. A connection lost after a request was sent is not retried, because APNs does not deduplicate and a resend could show the notification twice; it becomes a `Failure` you may retry at the risk of a duplicate. Apple asks senders to wait about 15 minutes before retrying a 5xx, so retry a `Failure` later from your own queue or job rather than in a tight loop. Never retry an HTTP 429 `TooManyRequests` immediately: it throttles that one device token.
+- APNs retries in-process only connection failures that happen before a request is sent (connect, DNS, TLS), at most twice. A connection lost after a request was sent is not retried, because APNs does not deduplicate and a resend could show the notification twice; it becomes a `Failure` you may retry at the risk of a duplicate. An HTTP 5xx is never retried in-process and becomes a `Failure`: Apple asks senders to wait about 15 minutes before retrying one, so retry it later from your own queue or job rather than in a tight loop. Never retry an HTTP 429 `TooManyRequests` immediately: it throttles that one device token.
 
 ## Core Concepts
 
@@ -172,7 +172,7 @@ The `Unregistered` state is not a failure — it is a signal to clean up stale t
 | **Avoid when** | Local development (real credentials, real sends) | Android or Web clients; local development | Any production environment |
 | **Backend** | Firebase Cloud Messaging (FCM v1 API via `FirebaseAdmin`) | Apple Push Notification service over HTTP/2, called directly | In-process stub |
 | **Credentials** | Firebase service account JSON (`FirebaseOptions.Json`) | APNs `.p8` signing key plus key id and team id, or a `.p12` provider certificate; plus the bundle id | None |
-| **Retry** | Automatic exponential backoff for transient FCM errors | At most 2 short retries for pre-send connection failures, 500, and 503; long-delay retry is the caller's | N/A |
+| **Retry** | Automatic exponential backoff for transient FCM errors | At most 2 short retries for pre-send connection failures; a 5xx is a `Failure`, and the caller retries it after about 15 minutes | N/A |
 | **Trade-off** | Requires a Firebase project and service account | iOS only; one request per token (no batch endpoint); key rotation needs a restart | Zero external dependencies; always succeeds |
 
 ---
@@ -849,8 +849,9 @@ builder.Services.AddHeadlessPushNotifications(setup =>
 | HTTP 200 | `Success`; `MessageId` is the `apns-id` the provider generated |
 | HTTP 410 (any reason) | `Unregistered`; the typed API also sets `InvalidSince` from the body's `timestamp` |
 | HTTP 400 `BadDeviceToken` | `Failure`, or `Unregistered` when `TreatBadDeviceTokenAsUnregistered` is `true` |
-| HTTP 403 `ExpiredProviderToken` | Token mode: one token re-mint and one retry of the send; the token is never re-minted within 20 minutes of the last mint. A second rejection is a `Failure`. Certificate mode never retries |
+| HTTP 403 `ExpiredProviderToken` | Token mode: one token re-mint and one retry of the send with the new token. The token is never re-minted within 20 minutes of the last mint; in that window the send is not repeated and the rejection is a `Failure`. A second rejection is a `Failure`. Certificate mode never retries |
 | Any other rejection, including `DeviceTokenNotForTopic` | `Failure` with `FailureError` `"<reason> (HTTP <status>)"`, or `"APNs rejected the request (HTTP <status>)"` when the body has no reason |
+| HTTP 5xx | `Failure`, without an in-process retry. Apple asks senders to wait about 15 minutes before retrying it |
 | Transport fault after retries, open circuit breaker, rate-limiter rejection, timeout, refused endpoint | `Failure` with `FailureError` `"<ExceptionType>: <message>"` |
 | Caller cancellation | Throws `OperationCanceledException` |
 
@@ -858,9 +859,10 @@ builder.Services.AddHeadlessPushNotifications(setup =>
 
 The provider registers the standard `Microsoft.Extensions.Http.Resilience` handler on its HTTP client (named `Headless:Apns`, or `Headless:Apns:{name}` for a named instance), with these changes:
 
-- Retries only an `HttpRequestException` whose `HttpRequestError` is `ConnectionError`, `NameResolutionError`, or `SecureConnectionError` (the request never reached APNs), HTTP 500, and HTTP 503, at most 2 times. A connection lost after the request was sent is not retried: APNs does not deduplicate, so a resend could deliver the notification twice. Apple asks senders to wait about 15 minutes before retrying a 5xx, so in-process retry stays short and a longer retry belongs to the caller.
+- Retries only an `HttpRequestException` whose `HttpRequestError` is `ConnectionError`, `NameResolutionError`, or `SecureConnectionError` (the request never reached APNs), at most 2 times. A connection lost after the request was sent is not retried: APNs does not deduplicate, so a resend could deliver the notification twice.
+- Never retries an HTTP 5xx. It becomes a `Failure`, because Apple asks senders to wait about 15 minutes before retrying one; retry it from your own queue or job.
 - Never retries HTTP 429 `TooManyRequests`, which throttles one device token.
-- The circuit breaker counts the same outcomes plus attempt timeouts, not 429, so throttled tokens cannot open the breaker for the whole instance.
+- The circuit breaker counts the retried connection failures, HTTP 500, HTTP 503, and attempt timeouts, not 429, so throttled tokens cannot open the breaker for the whole instance.
 - The concurrency limiter queues up to 10 000 requests, so concurrent multicasts wait for a slot instead of being rejected.
 
 Pass `configureResilience` to change any of these.

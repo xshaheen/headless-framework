@@ -33,8 +33,10 @@ namespace Headless.PushNotifications;
 /// when its options reload, and is checked for expiry at host start and daily after that.
 /// </para>
 /// <para>
-/// The default resilience pipeline retries transport faults, HTTP 500, and HTTP 503 at most twice, and never
-/// retries HTTP 429, which throttles a single device token. Pass <c>configureResilience</c> to change it.
+/// The default resilience pipeline retries, at most twice, only connection failures that happen before a request
+/// is sent. It never retries an HTTP 5xx, because Apple asks senders to wait about 15 minutes before retrying one,
+/// and never retries HTTP 429, which throttles a single device token. HTTP 500 and 503 still count toward the
+/// circuit breaker. Pass <c>configureResilience</c> to change it.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -235,12 +237,16 @@ public static class SetupApnsPushNotifications
                 options.Retry.MaxRetryAttempts = 2;
                 // The default predicate also retries every 429, but APNs' TooManyRequests throttles one device
                 // token, so a retry would spend its backoff on a token that is still throttled.
-                options.Retry.ShouldHandle = static args => ValueTask.FromResult(_IsRetryable(args.Outcome));
+                // It also retries 5xx within seconds, but Apple asks senders to wait about 15 minutes before
+                // retrying one, so a 5xx is returned as a failure for the caller to retry later.
+                options.Retry.ShouldHandle = static args => ValueTask.FromResult(_IsPreSendFault(args.Outcome));
                 // The default also counts 429, so throttled device tokens would open the breaker for the whole
-                // instance.
+                // instance. A failing server still counts even though it is no longer retried.
                 options.CircuitBreaker.ShouldHandle = static args =>
                     ValueTask.FromResult(
-                        _IsRetryable(args.Outcome) || args.Outcome.Exception is TimeoutRejectedException
+                        _IsPreSendFault(args.Outcome)
+                            || _IsServerFailure(args.Outcome)
+                            || args.Outcome.Exception is TimeoutRejectedException
                     );
                 // The standard limiter has no queue, so concurrent multicasts on one instance would be rejected
                 // once they pass its permit count instead of waiting for a free slot.
@@ -357,25 +363,22 @@ public static class SetupApnsPushNotifications
         return handler;
     }
 
-    private static bool _IsRetryable(Outcome<HttpResponseMessage> outcome)
+    private static bool _IsPreSendFault(Outcome<HttpResponseMessage> outcome)
     {
         // Only failures that prove the request never reached APNs are retried. A connection lost after the request
         // was sent may follow an accepted notification, and APNs does not deduplicate, so resending it would show
         // the notification twice.
-        if (outcome.Exception is HttpRequestException requestException)
-        {
-            return requestException.HttpRequestError
+        return outcome.Exception is HttpRequestException requestException
+            && requestException.HttpRequestError
                 is HttpRequestError.ConnectionError
                     or HttpRequestError.NameResolutionError
                     or HttpRequestError.SecureConnectionError;
-        }
+    }
 
-        if (outcome.Exception is not null)
-        {
-            return false;
-        }
-
-        return outcome.Result?.StatusCode is HttpStatusCode.InternalServerError or HttpStatusCode.ServiceUnavailable;
+    private static bool _IsServerFailure(Outcome<HttpResponseMessage> outcome)
+    {
+        return outcome.Exception is null
+            && outcome.Result?.StatusCode is HttpStatusCode.InternalServerError or HttpStatusCode.ServiceUnavailable;
     }
 }
 

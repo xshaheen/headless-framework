@@ -34,7 +34,8 @@ internal interface IApnsAuthenticator
 
     /// <summary>
     /// Returns the credentials to retry with after APNs rejected <paramref name="rejected"/> as an expired provider
-    /// token, or <see langword="null"/> when the mode has no token to renew and the rejection is final.
+    /// token, or <see langword="null"/> when the rejection is final: the mode has no token to renew, or no newer
+    /// token could be minted yet.
     /// </summary>
     ValueTask<ApnsCredential?> RenewExpiredAsync(
         ApnsOptions options,
@@ -67,7 +68,9 @@ internal sealed class ApnsTokenAuthenticator(ApnsTokenSource tokenSource) : IApn
             .InvalidateAsync(options, rejected.Generation, cancellationToken)
             .ConfigureAwait(false);
 
-        return new ApnsCredential(token.Value, token.Generation);
+        // Inside the 20-minute limit the source hands back the rejected token itself, and APNs would refuse a
+        // byte-identical resend the same way, so the original rejection stands.
+        return token.Generation == rejected.Generation ? null : new ApnsCredential(token.Value, token.Generation);
     }
 }
 

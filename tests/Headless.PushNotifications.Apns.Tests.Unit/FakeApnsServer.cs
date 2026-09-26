@@ -236,7 +236,8 @@ public sealed class FakeApnsServer : IAsyncDisposable
         Action<IServiceCollection>? configureServices = null,
         Action<HttpStandardResilienceOptions>? configureResilience = null,
         ILoggerProvider? loggerProvider = null,
-        Action<HttpClient>? configureClient = null
+        Action<HttpClient>? configureClient = null,
+        Action<IServiceCollection>? postConfigureServices = null
     )
     {
         var services = new ServiceCollection();
@@ -271,6 +272,10 @@ public sealed class FakeApnsServer : IAsyncDisposable
                 }
             )
         );
+
+        // Runs after the provider registered its HTTP client, so a handler added here sits inside the resilience
+        // pipeline and sees every attempt.
+        postConfigureServices?.Invoke(services);
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
