@@ -26,13 +26,11 @@ internal sealed class TenantRequirementHandler(ICurrentTenant currentTenant) : A
             return Task.CompletedTask;
         }
 
-        // Stash a typed feature on the IFeatureCollection so StatusCodesRewriterMiddleware can
-        // substitute the structured g:tenant_required ProblemDetails body for the generic 403.
-        // Using a typed feature avoids the string-key collision risk of HttpContext.Items, and
-        // decouples the requirement from the authorization-result-handler pipeline — consumers can
-        // register their own IAuthorizationMiddlewareResultHandler in any order without disabling
-        // the discriminator.
-        httpContext?.Features.Set(new TenantContextRequiredFeature());
+        // Hand the rejection to StatusCodesRewriterMiddleware through the request feature rather than a
+        // result handler, so consumers can register their own IAuthorizationMiddlewareResultHandler in any
+        // order without disabling the g:tenant_required discriminator. TrySet keeps a rejection another
+        // handler already chose, such as the identifier mismatch.
+        httpContext?.TrySetStatusCodeRejection(TenantContextRequiredFeature.Instance);
 
         context.Fail(new AuthorizationFailureReason(this, TenantRequirement.FailureReason));
 

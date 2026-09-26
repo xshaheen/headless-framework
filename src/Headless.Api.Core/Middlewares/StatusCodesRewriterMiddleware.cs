@@ -1,11 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.Api.MultiTenancy;
-using Headless.Constants;
-using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Options;
 
 namespace Headless.Api.Middlewares;
 
@@ -14,21 +10,15 @@ namespace Headless.Api.Middlewares;
 /// as structured <c>application/problem+json</c> ProblemDetails responses.
 /// </summary>
 /// <remarks>
-/// For 403 responses that carry a <c>TenantContextRequiredFeature</c> on the request, the middleware
-/// clears any partial response and writes a <c>g:tenant_required</c> discriminator body, overriding
-/// any <c>Content-Type</c> or <c>Content-Length</c> set by upstream authorization middleware.
-/// A request carrying a <c>TenantIdentifierMismatchFeature</c> is rewritten whatever status the
-/// authorization pipeline produced — not only a bare 403, since a cookie-style scheme forbids with a
-/// 302 — because the secure-by-default mismatch rejection must stay byte-identical to the generic
-/// unknown/disabled rejection (<see cref="TenantCatalogRejectionWriter.RejectMismatchAsync"/>). Both the
-/// status and the body are overridden.
+/// A request carrying an <see cref="IStatusCodeRejectionFeature"/> is offered to that feature first,
+/// whatever status the pipeline produced and even when an upstream component already set a
+/// <c>Content-Type</c> or <c>Content-Length</c>: the handler that failed the request knows what its
+/// rejection must look like, and a feature that accepts owns the whole response. A feature that declines
+/// falls through to the bare-status rewrite below.
 /// All writes are routed through <see cref="Microsoft.AspNetCore.Http.IProblemDetailsService"/> when
 /// registered, falling back to <c>Results.Problem</c> for minimal-host scenarios.
 /// </remarks>
-internal sealed class StatusCodesRewriterMiddleware(
-    IProblemDetailsCreator problemDetailsCreator,
-    IOptions<TenantCatalogOptions> catalogOptions
-) : IMiddleware
+internal sealed class StatusCodesRewriterMiddleware(IProblemDetailsCreator problemDetailsCreator) : IMiddleware
 {
     /// <summary>Executes the middleware, rewriting qualifying error responses as ProblemDetails.</summary>
     /// <param name="context">The current HTTP context.</param>
@@ -42,24 +32,14 @@ internal sealed class StatusCodesRewriterMiddleware(
             return;
         }
 
-        // TenantIdentifierIntegrityHandler stashes this marker on an identifier/claim mismatch. The
-        // secure-by-default rejection must be byte-identical to the generic unknown/disabled rejection, so
-        // it is evaluated before — and independently of — the status-code switch below: the status the
-        // authorization pipeline produced is not necessarily a bare 403 (a cookie-style scheme forbids with
-        // a 302), and any surviving difference is exactly the enumeration signal the secure-by-default
-        // rejection is designed to remove. Both the status and the body are overridden here, not just the
-        // body.
-        if (context.Features.Get<TenantIdentifierMismatchFeature>() is not null)
+        // Evaluated before the status-code gate below: a rejection may need to override a status that is not
+        // an error at all (a cookie-style scheme forbids with a 302), and the rejection's owner, not this
+        // middleware, decides whether it applies.
+        if (
+            context.Features.Get<IStatusCodeRejectionFeature>() is { } rejection
+            && await rejection.TryWriteResponseAsync(context).ConfigureAwait(false)
+        )
         {
-            context.Response.Clear();
-
-            // RejectMismatchAsync also stamps Cache-Control: no-store — the same rejection path
-            // TenantResolutionMiddleware's claim-vs-feature fast path takes, so both mismatch rewrites stay
-            // byte-identical, headers included.
-            await TenantCatalogRejectionWriter
-                .RejectMismatchAsync(context, problemDetailsCreator, catalogOptions.Value.DetailedResolutionErrors)
-                .ConfigureAwait(false);
-
             return;
         }
 
@@ -70,19 +50,9 @@ internal sealed class StatusCodesRewriterMiddleware(
             return;
         }
 
-        // A consumer's IAuthorizationMiddlewareResultHandler may have already written a body (e.g.
-        // set Content-Type before the 403 status was committed). When the tenant feature is present
-        // we own the response — clear whatever partial headers were set and overwrite with the
-        // structured g:tenant_required body. For every other status we honour the existing
-        // Content-Type / Content-Length skip so we don't clobber intentional upstream responses.
-        var hasTenantFeature =
-            context.Response.StatusCode == StatusCodes.Status403Forbidden
-            && context.Features.Get<TenantContextRequiredFeature>() is not null;
-
-        if (
-            !hasTenantFeature
-            && (context.Response.ContentLength.HasValue || !string.IsNullOrEmpty(context.Response.ContentType))
-        )
+        // An upstream component (a consumer's IAuthorizationMiddlewareResultHandler, an endpoint) that already
+        // chose a body keeps it: rewriting would clobber an intentional response.
+        if (context.Response.ContentLength.HasValue || !string.IsNullOrEmpty(context.Response.ContentType))
         {
             return;
         }
@@ -90,55 +60,21 @@ internal sealed class StatusCodesRewriterMiddleware(
         // Every branch below writes through TenantCatalogRejectionWriter.WriteAsync, which assigns the
         // status code it is handed before writing. The status is already the one being rewritten here, so
         // passing context.Response.StatusCode re-asserts it rather than changing it.
-        switch (context.Response.StatusCode)
+        var problemDetails = context.Response.StatusCode switch
         {
-            case StatusCodes.Status401Unauthorized:
-            {
-                var problemDetails = problemDetailsCreator.Unauthorized();
+            StatusCodes.Status401Unauthorized => problemDetailsCreator.Unauthorized(),
+            StatusCodes.Status403Forbidden => problemDetailsCreator.Forbidden(),
+            StatusCodes.Status404NotFound => problemDetailsCreator.EndpointNotFound(),
+            _ => null,
+        };
 
-                await TenantCatalogRejectionWriter
-                    .WriteAsync(context, context.Response.StatusCode, problemDetails)
-                    .ConfigureAwait(false);
-
-                break;
-            }
-            case StatusCodes.Status403Forbidden:
-            {
-                // TenantRequirementHandler stashes this marker when it fails the request, so the
-                // bare 403 produced by ASP.NET Core's default IAuthorizationMiddlewareResultHandler
-                // can be enriched with the structured g:tenant_required discriminator here — no
-                // dependency on the consumer's IAuthorizationMiddlewareResultHandler registration
-                // order.
-                if (hasTenantFeature)
-                {
-                    context.Response.Clear();
-                    // Clear() resets StatusCode to 200; restore before writing.
-                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                }
-
-                var problemDetails = hasTenantFeature
-                    ? problemDetailsCreator.Forbidden(
-                        detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
-                        error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
-                    )
-                    : problemDetailsCreator.Forbidden();
-
-                await TenantCatalogRejectionWriter
-                    .WriteAsync(context, context.Response.StatusCode, problemDetails)
-                    .ConfigureAwait(false);
-
-                break;
-            }
-            case StatusCodes.Status404NotFound:
-            {
-                var problemDetails = problemDetailsCreator.EndpointNotFound();
-
-                await TenantCatalogRejectionWriter
-                    .WriteAsync(context, context.Response.StatusCode, problemDetails)
-                    .ConfigureAwait(false);
-
-                break;
-            }
+        if (problemDetails is null)
+        {
+            return;
         }
+
+        await TenantCatalogRejectionWriter
+            .WriteAsync(context, context.Response.StatusCode, problemDetails)
+            .ConfigureAwait(false);
     }
 }

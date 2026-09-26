@@ -18,8 +18,8 @@ namespace Headless.Api.MultiTenancy;
 /// </summary>
 /// <remarks>
 /// Handled by <c>TenantRequirementHandler</c>, which checks <see cref="Headless.MultiTenancy.ICurrentTenant.Id"/>.
-/// On failure it stashes <c>TenantContextRequiredFeature</c> on the request so
-/// <c>StatusCodesRewriterMiddleware</c> can emit the structured <c>g:tenant_required</c> 403 body.
+/// On failure it sets <c>TenantContextRequiredFeature</c> as the request's status-code rejection so
+/// <c>StatusCodesRewriterMiddleware</c> emits the structured <c>g:tenant_required</c> 403 body.
 /// Named-policy placement (<c>options.AddPolicy("name", ...)</c>) is NOT detected by the startup
 /// validator and does NOT satisfy the framework enforcement guarantee.
 /// </remarks>
