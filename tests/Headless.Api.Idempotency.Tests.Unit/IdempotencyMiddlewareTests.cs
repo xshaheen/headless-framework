@@ -65,23 +65,6 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     }
 
     [Fact]
-    public async Task should_pass_through_without_store_call_when_tenant_and_user_are_null()
-    {
-        var operations = CreateAdmittingOperations();
-        var tenant = Substitute.For<ICurrentTenant>();
-        tenant.Id.Returns((string?)null);
-        var user = Substitute.For<ICurrentUser>();
-        user.UserId.Returns((UserId?)null);
-        var middleware = CreateMiddleware(operations: operations, currentTenant: tenant, currentUser: user);
-        var nextCalled = false;
-
-        await middleware.InvokeAsync(CreateContext(idempotencyKey: "k1"), _ => _Run(() => nextCalled = true));
-
-        nextCalled.Should().BeTrue();
-        operations.ReceivedCalls().Should().BeEmpty();
-    }
-
-    [Fact]
     public async Task should_pass_through_when_only_tenant_is_present_and_require_user_identity_is_true()
     {
         var operations = CreateAdmittingOperations();

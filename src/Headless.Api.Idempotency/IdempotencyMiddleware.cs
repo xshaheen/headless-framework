@@ -204,8 +204,8 @@ internal sealed partial class IdempotencyMiddleware(
         CancellationToken ct
     )
     {
-        // The store keys the record by the current tenant, so run the call under the request's store tenant. The
-        // scope must stay open across the whole await: the store reads the tenant after its own first await.
+        // The store keys the record by the current tenant, so run the call under the request's store tenant, and
+        // hold the scope until the call completes so the handler that follows runs under the ambient tenant again.
         // Release, renewal, and completion key by the admission's recorded tenant and need no scope.
         using (currentTenant.Change(request.TenantId))
         {

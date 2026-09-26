@@ -8,6 +8,7 @@ using Headless.Constants;
 using Headless.Idempotency;
 using Headless.MultiTenancy;
 using Headless.Primitives;
+using Headless.Testing.Helpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 
@@ -74,10 +75,10 @@ public sealed class IdempotencyMiddlewareTenantScopeTests : IdempotencyMiddlewar
         using var ambient = _currentTenant.Change(_AmbientTenant);
         var operations = CreateAdmittingOperations();
         var seen = _RecordStoreTenants(operations);
-        var user = Substitute.For<ICurrentUser>();
-        user.IsAuthenticated.Returns(false);
-        user.UserId.Returns((UserId?)null);
-        user.Principal.Returns(new ClaimsPrincipal(new ClaimsIdentity([new Claim(UserClaimTypes.TenantId, "x")])));
+        var user = new TestCurrentUser
+        {
+            Principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(UserClaimTypes.TenantId, "x")])),
+        };
         var middleware = _CreateMiddleware(operations, user, requireUserIdentity: false);
 
         await middleware.InvokeAsync(CreateContext(idempotencyKey: "k1"), _ => Task.CompletedTask);
@@ -145,6 +146,55 @@ public sealed class IdempotencyMiddlewareTenantScopeTests : IdempotencyMiddlewar
         await middleware.InvokeAsync(CreateContext(idempotencyKey: "k1"), _ => Task.CompletedTask);
 
         seen.Should().Equal((string?)null);
+    }
+
+    [Fact]
+    public async Task should_admit_under_the_claim_tenant_when_a_key_deriver_serves_an_authenticated_request()
+    {
+        using var ambient = _currentTenant.Change(_AmbientTenant);
+        var operations = CreateAdmittingOperations();
+        var seen = _RecordStoreTenants(operations);
+        var options = new IdempotencyOptions { KeyDeriver = (_, key) => $"custom:{key}" };
+        var middleware = CreateMiddleware(
+            options: Monitor(options),
+            operations: operations,
+            currentTenant: _currentTenant,
+            currentUser: _Authenticated("u1", _ClaimTenant)
+        );
+
+        await middleware.InvokeAsync(CreateContext(idempotencyKey: "k1"), _ => Task.CompletedTask);
+
+        seen.Should().Equal(_ClaimTenant);
+    }
+
+    [Fact]
+    public async Task should_keep_the_claim_tenant_across_an_asynchronous_store_admission()
+    {
+        using var ambient = _currentTenant.Change(_AmbientTenant);
+        string? storeTenant = null;
+        var operations = CreateAdmittingOperations();
+        operations
+            .AdmitAsync(
+                Arg.Any<string>(),
+                Arg.Any<IdempotencyFingerprint>(),
+                Arg.Any<string?>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ci => admitAfterYieldAsync(ci.ArgAt<string>(0), ci.ArgAt<IdempotencyFingerprint>(1)));
+        var middleware = _CreateMiddleware(operations, _Authenticated("u1", _ClaimTenant));
+
+        await middleware.InvokeAsync(CreateContext(idempotencyKey: "k1"), _ => Task.CompletedTask);
+
+        storeTenant.Should().Be(_ClaimTenant, "a relational store reads the tenant after its first await");
+
+        async ValueTask<IdempotentAdmission> admitAfterYieldAsync(string key, IdempotencyFingerprint fingerprint)
+        {
+            await Task.Yield();
+            storeTenant = _currentTenant.Id;
+            return Admitted(key, fingerprint);
+        }
     }
 
     [Fact]
@@ -240,7 +290,7 @@ public sealed class IdempotencyMiddlewareTenantScopeTests : IdempotencyMiddlewar
         return seen;
     }
 
-    private static ICurrentUser _Authenticated(string userId, string? tenantClaim, params Claim[] extraClaims)
+    private static TestCurrentUser _Authenticated(string userId, string? tenantClaim, params Claim[] extraClaims)
     {
         List<Claim> claims = [new(UserClaimTypes.UserId, userId), .. extraClaims];
         if (tenantClaim is not null)
@@ -248,18 +298,16 @@ public sealed class IdempotencyMiddlewareTenantScopeTests : IdempotencyMiddlewar
             claims.Add(new Claim(UserClaimTypes.TenantId, tenantClaim));
         }
 
-        var user = Substitute.For<ICurrentUser>();
-        user.IsAuthenticated.Returns(true);
-        user.UserId.Returns(new UserId(userId));
-        user.Principal.Returns(new ClaimsPrincipal(new ClaimsIdentity(claims, "test")));
-        return user;
+        return new TestCurrentUser
+        {
+            IsAuthenticated = true,
+            UserId = new UserId(userId),
+            Principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "test")),
+        };
     }
 
-    private static ICurrentUser _Anonymous()
+    private static TestCurrentUser _Anonymous()
     {
-        var user = Substitute.For<ICurrentUser>();
-        user.IsAuthenticated.Returns(false);
-        user.UserId.Returns((UserId?)null);
-        return user;
+        return new TestCurrentUser();
     }
 }

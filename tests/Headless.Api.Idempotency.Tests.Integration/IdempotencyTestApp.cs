@@ -8,6 +8,7 @@ using Headless.Constants;
 using Headless.Core;
 using Headless.MultiTenancy;
 using Headless.Primitives;
+using Headless.Testing.Helpers;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -202,35 +203,24 @@ internal static class IdempotencyTestApp
 
         public ICurrentUser CurrentForRequest()
         {
-            return _anonymous ? new NullCurrentUser() : new TestCurrentUser(_DefaultUserId, _tenantClaim);
+            if (_anonymous)
+            {
+                return new NullCurrentUser();
+            }
+
+            List<Claim> claims = [new(UserClaimTypes.UserId, _DefaultUserId.ToString())];
+            if (_tenantClaim is not null)
+            {
+                claims.Add(new Claim(UserClaimTypes.TenantId, _tenantClaim));
+            }
+
+            return new TestCurrentUser
+            {
+                IsAuthenticated = true,
+                UserId = _DefaultUserId,
+                Principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "test")),
+            };
         }
-    }
-
-    private sealed class TestCurrentUser(UserId userId, string? tenantClaim) : ICurrentUser
-    {
-        public ClaimsPrincipal? Principal { get; } =
-            new(
-                new ClaimsIdentity(
-                    tenantClaim is null
-                        ? [new Claim(UserClaimTypes.UserId, userId.ToString())]
-                        :
-                        [
-                            new Claim(UserClaimTypes.UserId, userId.ToString()),
-                            new Claim(UserClaimTypes.TenantId, tenantClaim),
-                        ],
-                    authenticationType: "test"
-                )
-            );
-
-        public bool IsAuthenticated => UserId is not null;
-
-        public UserId? UserId { get; } = userId;
-
-        public string? AccountType => null;
-
-        public AccountId? AccountId => null;
-
-        public IReadOnlySet<string> Roles => ImmutableHashSet<string>.Empty;
     }
 
     private sealed class NullBuildInformationAccessor : IBuildInformationAccessor

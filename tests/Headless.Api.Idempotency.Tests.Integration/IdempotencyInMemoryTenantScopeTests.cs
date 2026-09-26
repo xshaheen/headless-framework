@@ -7,9 +7,7 @@ using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 
-// CA2025: `_PostAsync` builds an `HttpRequestMessage` under `using var` and awaits `SendAsync` inline, so the request
-// disposes only after the SendAsync task completes.
-#pragma warning disable CA2025
+#pragma warning disable CA2025 // False positive: _PostAsync awaits SendAsync before the request is disposed.
 
 namespace Tests;
 
@@ -96,6 +94,25 @@ public sealed class IdempotencyInMemoryTenantScopeTests : TestBase
             .Should()
             .BeTrue("both requests key under the claim tenant, so the header did not move the record");
         (await _BodyAsync(retry)).Should().Be(await _BodyAsync(first));
+    }
+
+    [Fact]
+    public async Task should_keep_records_of_different_claim_tenants_apart_for_the_same_user_and_key()
+    {
+        var key = _UniqueKey();
+        await using var app = await _CreateAppAsync();
+        using var client = IdempotencyTestApp.CreateClient(app);
+        var user = app.Services.GetRequiredService<IdempotencyTestApp.TestCurrentUserState>();
+
+        user.SetAuthenticated(tenantClaim: "tenant-a");
+        var first = await _PostAsync(client, key, tenant: "tenant-a");
+        user.SetAuthenticated(tenantClaim: "tenant-b");
+        var second = await _PostAsync(client, key, tenant: "tenant-a");
+
+        first.StatusCode.Should().Be(HttpStatusCode.Created);
+        second.StatusCode.Should().Be(HttpStatusCode.Created);
+        _IsReplay(second).Should().BeFalse("the claim tenant, not the shared user id or header, partitions the record");
+        (await _BodyAsync(second)).Should().NotBe(await _BodyAsync(first));
     }
 
     [Fact]
