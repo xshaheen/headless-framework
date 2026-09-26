@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
@@ -81,14 +82,16 @@ public sealed class FakeApnsServer : IAsyncDisposable
 
     private readonly ConcurrentQueue<FakeApnsRequest> _requests = new();
     private readonly ConcurrentDictionary<string, int> _attempts = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _acceptedClientThumbprints;
     private readonly ECDsa _key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
     private readonly WebApplication _app;
     private int _inFlight;
     private long _maxInFlight;
 
-    private FakeApnsServer(WebApplication app)
+    private FakeApnsServer(WebApplication app, ConcurrentDictionary<string, byte> acceptedClientThumbprints)
     {
         _app = app;
+        _acceptedClientThumbprints = acceptedClientThumbprints;
         PrivateKeyPem = _key.ExportPkcs8PrivateKeyPem();
     }
 
@@ -135,6 +138,13 @@ public sealed class FakeApnsServer : IAsyncDisposable
         CancellationToken cancellationToken
     )
     {
+        var acceptedClientThumbprints = new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
+
+        if (clientCertificateThumbprint is not null)
+        {
+            acceptedClientThumbprints[clientCertificateThumbprint] = 0;
+        }
+
         var builder = WebApplication.CreateSlimBuilder();
         builder.Logging.ClearProviders();
         builder.WebHost.ConfigureKestrel(kestrel =>
@@ -155,11 +165,7 @@ public sealed class FakeApnsServer : IAsyncDisposable
                                 https.ClientCertificateMode = ClientCertificateMode.RequireCertificate;
                                 // Kestrel rejects a self-signed client certificate unless a callback accepts it.
                                 https.ClientCertificateValidation = (certificate, _, _) =>
-                                    string.Equals(
-                                        certificate.Thumbprint,
-                                        clientCertificateThumbprint,
-                                        StringComparison.OrdinalIgnoreCase
-                                    );
+                                    acceptedClientThumbprints.ContainsKey(certificate.Thumbprint);
                             }
                         );
                     }
@@ -170,13 +176,22 @@ public sealed class FakeApnsServer : IAsyncDisposable
         });
 
         var app = builder.Build();
-        var server = new FakeApnsServer(app) { ServerCertificateThumbprint = serverCertificate?.Thumbprint };
+        var server = new FakeApnsServer(app, acceptedClientThumbprints)
+        {
+            ServerCertificateThumbprint = serverCertificate?.Thumbprint,
+        };
         app.Run(server._HandleAsync);
 
         await app.StartAsync(cancellationToken);
         server.BaseAddress = new Uri(app.Urls.First());
 
         return server;
+    }
+
+    /// <summary>Makes a TLS server also accept the client certificate whose thumbprint is <paramref name="thumbprint"/>.</summary>
+    public void AcceptClientCertificate(string thumbprint)
+    {
+        _acceptedClientThumbprints[thumbprint] = 0;
     }
 
     /// <summary>Returns the bearer values the server has seen, without duplicates, in arrival order.</summary>
@@ -273,6 +288,46 @@ public sealed class FakeApnsServer : IAsyncDisposable
         Action<IServiceCollection>? configureServices = null
     )
     {
+        return _CreateCertificateProvider(
+            (collection, name) =>
+                collection.Configure<ApnsOptions, ApnsOptionsValidator>(
+                    options =>
+                    {
+                        options.Certificate = certificate;
+                        options.CertificatePassword = certificatePassword;
+                        options.BundleId = BundleId;
+                        configure?.Invoke(options);
+                    },
+                    name
+                ),
+            configureServices,
+            newConnectionPerRequest: false
+        );
+    }
+
+    /// <summary>
+    /// Builds a certificate-mode container whose options bind <paramref name="configuration"/>, so reloading it
+    /// changes them. Every request opens a new TLS connection: a zero pooled-connection lifetime stands in for the
+    /// production six-hour recycle, so a test sees which certificate a new connection presents without waiting.
+    /// </summary>
+    public ServiceProvider CreateCertificateProvider(
+        IConfiguration configuration,
+        Action<IServiceCollection>? configureServices = null
+    )
+    {
+        return _CreateCertificateProvider(
+            (collection, name) => collection.Configure<ApnsOptions, ApnsOptionsValidator>(configuration, name),
+            configureServices,
+            newConnectionPerRequest: true
+        );
+    }
+
+    private ServiceProvider _CreateCertificateProvider(
+        Action<IServiceCollection, string?> configureOptions,
+        Action<IServiceCollection>? configureServices,
+        bool newConnectionPerRequest
+    )
+    {
         var serverThumbprint = ServerCertificateThumbprint;
         var services = new ServiceCollection();
         services.AddLogging();
@@ -284,27 +339,24 @@ public sealed class FakeApnsServer : IAsyncDisposable
                 SetupApnsPushNotifications.AddApnsCore(
                     s,
                     name: null,
-                    (collection, name) =>
-                        collection.Configure<ApnsOptions, ApnsOptionsValidator>(
-                            options =>
-                            {
-                                options.Certificate = certificate;
-                                options.CertificatePassword = certificatePassword;
-                                options.BundleId = BundleId;
-                                configure?.Invoke(options);
-                            },
-                            name
-                        ),
+                    configureOptions,
                     client => client.BaseAddress = BaseAddress,
                     resilience => resilience.Retry.Delay = TimeSpan.Zero,
                     handler =>
+                    {
                         handler.SslOptions.RemoteCertificateValidationCallback = (_, presented, _, _) =>
                             presented is not null
                             && string.Equals(
                                 presented.GetCertHashString(),
                                 serverThumbprint,
                                 StringComparison.OrdinalIgnoreCase
-                            )
+                            );
+
+                        if (newConnectionPerRequest)
+                        {
+                            handler.PooledConnectionLifetime = TimeSpan.Zero;
+                        }
+                    }
                 )
             )
         );

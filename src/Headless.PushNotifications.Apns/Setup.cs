@@ -29,7 +29,8 @@ namespace Headless.PushNotifications;
 /// </para>
 /// <para>
 /// The options choose the authentication mode when the service is first resolved. A certificate-mode instance
-/// presents its provider certificate during the TLS handshake and is checked for expiry at host start.
+/// presents its provider certificate during the TLS handshake, picks up a renewed certificate on new connections
+/// when its options reload, and is checked for expiry at host start and daily after that.
 /// </para>
 /// <para>
 /// The default resilience pipeline retries transport faults, HTTP 500, and HTTP 503 at most twice, and never
@@ -343,9 +344,12 @@ public static class SetupApnsPushNotifications
 
         if (serviceProvider.GetRequiredService<IOptionsMonitor<ApnsOptions>>().Get(name).UsesCertificate)
         {
-            // The holder owns the certificate and the container disposes it; the handler lives as long as the
-            // factory, since its lifetime is infinite.
-            handler.SslOptions.ClientCertificates = [ApnsCertificateHolder.Get(serviceProvider, name).Certificate];
+            // The holder owns the certificate and the container disposes it. The handler lives as long as the
+            // factory, since its lifetime is infinite, so it asks the holder at every TLS handshake instead of
+            // fixing one certificate: each new connection presents the current, possibly renewed, certificate, and
+            // the 6-hour PooledConnectionLifetime bounds how long an older connection keeps the replaced one.
+            var holder = ApnsCertificateHolder.Get(serviceProvider, name);
+            handler.SslOptions.LocalCertificateSelectionCallback = (_, _, _, _, _) => holder.Certificate;
         }
 
         configurePrimaryHandler?.Invoke(handler);

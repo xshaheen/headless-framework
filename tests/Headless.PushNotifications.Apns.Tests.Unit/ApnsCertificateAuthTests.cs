@@ -7,6 +7,7 @@ using Headless.PushNotifications;
 using Headless.PushNotifications.Apns;
 using Headless.PushNotifications.Apns.Internals;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -281,9 +282,10 @@ public sealed class ApnsCertificateAuthTests : TestBase
             Certificate = TestCertificates.ToPkcs12Base64(certificate, _Password),
             CertificatePassword = _Password,
         };
-        using var holder = new ApnsCertificateHolder(options);
+        var monitor = new TestOptionsMonitor(options);
+        using var holder = _CreateHolder(monitor, clock);
         var check = new ApnsCertificateExpiryCheck(
-            new StaticOptionsMonitor(options),
+            monitor,
             name: null,
             () => holder,
             clock,
@@ -311,7 +313,7 @@ public sealed class ApnsCertificateAuthTests : TestBase
             PrivateKey = "unused",
         };
         var check = new ApnsCertificateExpiryCheck(
-            new StaticOptionsMonitor(options),
+            new TestOptionsMonitor(options),
             name: null,
             () => throw new InvalidOperationException("The holder must not be resolved in token mode."),
             TimeProvider.System,
@@ -323,6 +325,311 @@ public sealed class ApnsCertificateAuthTests : TestBase
 
         // then
         await act.Should().NotThrowAsync();
+    }
+
+    #endregion
+
+    #region Rotation
+
+    [Fact]
+    public async Task should_present_the_renewed_certificate_on_new_connections_after_the_configuration_reloads()
+    {
+        // given
+        using var renewed = TestCertificates.CreateClient(
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddDays(365)
+        );
+        _server.AcceptClientCertificate(renewed.Thumbprint);
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [nameof(ApnsOptions.BundleId)] = FakeApnsServer.BundleId,
+                    [nameof(ApnsOptions.Certificate)] = _clientPkcs12,
+                    [nameof(ApnsOptions.CertificatePassword)] = _Password,
+                }
+            )
+            .Build();
+        // The provider opens a new connection per request, so each send shows the certificate a new connection
+        // presents at that moment.
+        await using var provider = _server.CreateCertificateProvider(configuration);
+        var service = provider.GetRequiredService<IApnsPushNotificationService>();
+        var notification = new ApnsAlertNotification { Alert = new ApnsAlert { Body = "Hi" } };
+        (await service.SendAsync(_DeviceToken, notification, AbortToken)).Response.IsSucceeded().Should().BeTrue();
+
+        // when
+        configuration[nameof(ApnsOptions.Certificate)] = TestCertificates.ToPkcs12Base64(renewed, "renewed-password");
+        configuration[nameof(ApnsOptions.CertificatePassword)] = "renewed-password";
+        configuration.Reload();
+        var result = await service.SendAsync(_DeviceToken, notification, AbortToken);
+
+        // then
+        result.Response.IsSucceeded().Should().BeTrue(result.Response.FailureError);
+        _server
+            .Requests.Select(r => r.ClientCertificateThumbprint)
+            .Should()
+            .Equal(_clientCertificate.Thumbprint, renewed.Thumbprint);
+    }
+
+    public static TheoryData<string> InvalidRenewals =>
+        new() { "expired", "wrong_password", "no_private_key", "not_base64", "no_certificate" };
+
+    [Theory]
+    [MemberData(nameof(InvalidRenewals))]
+    public void should_keep_the_current_certificate_and_log_an_error_when_the_renewed_certificate_is_invalid(
+        string scenario
+    )
+    {
+        // given
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var monitor = new TestOptionsMonitor(_CertificateOptions(_clientPkcs12));
+        using var logs = new CapturingLoggerProvider();
+        using var holder = _CreateHolder(monitor, clock, logs);
+        using var expired = TestCertificates.CreateClient(
+            clock.GetUtcNow().AddDays(-300),
+            clock.GetUtcNow().AddDays(-1)
+        );
+        const string renewedPassword = "renewed-password";
+        var renewed = scenario switch
+        {
+            "expired" => _CertificateOptions(
+                TestCertificates.ToPkcs12Base64(expired, renewedPassword),
+                renewedPassword
+            ),
+            "wrong_password" => _CertificateOptions(_clientPkcs12, renewedPassword),
+            "no_private_key" => _CertificateOptions(
+                TestCertificates.ToPublicOnlyPkcs12Base64(_clientCertificate, renewedPassword),
+                renewedPassword
+            ),
+            "not_base64" => _CertificateOptions("not base64 " + renewedPassword, renewedPassword),
+            "no_certificate" => new ApnsOptions
+            {
+                BundleId = FakeApnsServer.BundleId,
+                KeyId = FakeApnsServer.KeyId,
+                TeamId = FakeApnsServer.TeamId,
+                PrivateKey = renewedPassword,
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null),
+        };
+
+        // when
+        monitor.Change(renewed);
+
+        // then
+        holder.Certificate.Thumbprint.Should().Be(_clientCertificate.Thumbprint);
+        var error = logs.Entries.Should().ContainSingle(e => e.EventName == "ApnsCertificateReloadFailed").Subject;
+        error.Level.Should().Be(LogLevel.Error);
+        logs.Entries.Should().NotContain(e => e.Text.Contains(renewedPassword, StringComparison.Ordinal));
+        logs.Entries.Should().NotContain(e => e.Text.Contains(_Password, StringComparison.Ordinal));
+        var certificatePrefix = _clientPkcs12[..40];
+        logs.Entries.Should().NotContain(e => e.Text.Contains(certificatePrefix, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void should_swap_in_a_valid_renewed_certificate_and_keep_the_replaced_one_usable()
+    {
+        // given
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var monitor = new TestOptionsMonitor(_CertificateOptions(_clientPkcs12));
+        using var logs = new CapturingLoggerProvider();
+        using var holder = _CreateHolder(monitor, clock, logs);
+        var original = holder.Certificate;
+        using var renewed = TestCertificates.CreateClient(
+            clock.GetUtcNow().AddDays(-1),
+            clock.GetUtcNow().AddDays(365)
+        );
+
+        // when
+        monitor.Change(_CertificateOptions(TestCertificates.ToPkcs12Base64(renewed, _Password)));
+
+        // then
+        holder.Certificate.Thumbprint.Should().Be(renewed.Thumbprint);
+        // An in-flight handshake may still hold the replaced certificate, so it is not disposed yet.
+        original.HasPrivateKey.Should().BeTrue();
+        original.Thumbprint.Should().Be(_clientCertificate.Thumbprint);
+        logs.Entries.Should().ContainSingle(e => e.EventName == "ApnsCertificateReloaded");
+        logs.Entries.Should().NotContain(e => e.Text.Contains(_Password, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void should_not_reload_when_a_change_leaves_the_certificate_fields_alone()
+    {
+        // given
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var monitor = new TestOptionsMonitor(_CertificateOptions(_clientPkcs12));
+        using var logs = new CapturingLoggerProvider();
+        using var holder = _CreateHolder(monitor, clock, logs);
+        var original = holder.Certificate;
+        var changed = _CertificateOptions(_clientPkcs12);
+        changed.Environment = ApnsEnvironment.Sandbox;
+        changed.MaxConcurrency = 7;
+
+        // when
+        monitor.Change(changed);
+
+        // then
+        holder.Certificate.Should().BeSameAs(original);
+        logs.Entries.Should()
+            .NotContain(e =>
+                e.EventName != null && e.EventName.StartsWith("ApnsCertificate", StringComparison.Ordinal)
+            );
+    }
+
+    [Fact]
+    public void should_ignore_a_change_to_another_instance()
+    {
+        // given
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var monitor = new TestOptionsMonitor(_CertificateOptions(_clientPkcs12));
+        using var holder = _CreateHolder(monitor, clock);
+        var original = holder.Certificate;
+        using var renewed = TestCertificates.CreateClient(
+            clock.GetUtcNow().AddDays(-1),
+            clock.GetUtcNow().AddDays(365)
+        );
+
+        // when
+        monitor.Change(_CertificateOptions(TestCertificates.ToPkcs12Base64(renewed, _Password)), name: "other");
+
+        // then
+        holder.Certificate.Should().BeSameAs(original);
+    }
+
+    [Fact]
+    public void should_stop_observing_changes_when_disposed()
+    {
+        // given
+        var monitor = new TestOptionsMonitor(_CertificateOptions(_clientPkcs12));
+        var holder = _CreateHolder(monitor, TimeProvider.System);
+        monitor.ListenerCount.Should().Be(1);
+
+        // when
+        holder.Dispose();
+
+        // then
+        monitor.ListenerCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_never_construct_the_certificate_holder_when_using_token_mode()
+    {
+        // given: the holder refuses to build from token-mode options, so starting and sending prove it is never built
+        await using var server = await FakeApnsServer.StartAsync(AbortToken);
+        await using var provider = server.CreateProvider();
+        var monitor = provider.GetRequiredService<IOptionsMonitor<ApnsOptions>>();
+        var hostedServices = provider.GetServices<IHostedService>().ToList();
+
+        // when
+        foreach (var hosted in hostedServices)
+        {
+            await hosted.StartAsync(AbortToken);
+        }
+
+        var response = await provider
+            .GetRequiredService<IPushNotificationService>()
+            .SendToDeviceAsync(_DeviceToken, PushNotificationRequests.Valid(), AbortToken);
+
+        foreach (var hosted in hostedServices)
+        {
+            await hosted.StopAsync(AbortToken);
+        }
+
+        // then
+        response.IsSucceeded().Should().BeTrue(response.FailureError);
+        server.Requests.Should().ContainSingle().Which.Bearer.Should().NotBeNull();
+        var buildHolder = () => _CreateHolder(monitor, TimeProvider.System);
+        buildHolder.Should().Throw<InvalidOperationException>();
+    }
+
+    #endregion
+
+    #region Periodic expiry check
+
+    [Fact]
+    public async Task should_warn_on_a_later_check_once_30_days_remain_and_log_an_error_once_expired()
+    {
+        // given
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 9, 25, 10, 0, 0, TimeSpan.Zero));
+        using var certificate = TestCertificates.CreateClient(
+            clock.GetUtcNow().AddDays(-300),
+            clock.GetUtcNow().AddDays(32).AddHours(12)
+        );
+        var pkcs12 = TestCertificates.ToPkcs12Base64(certificate, _Password);
+        using var logs = new CapturingLoggerProvider();
+        using var host = _BuildHost(clock, pkcs12, logs);
+        await host.StartAsync(AbortToken);
+        logs.Entries.Should().NotContain(e => e.EventName == "ApnsCertificateExpiringSoon");
+
+        // when: two daily checks bring the expiry within 30 days
+        clock.Advance(ApnsCertificateExpiryCheck.RecheckPeriod);
+        clock.Advance(ApnsCertificateExpiryCheck.RecheckPeriod);
+        clock.Advance(ApnsCertificateExpiryCheck.RecheckPeriod);
+
+        // then
+        var warning = logs.Entries.Should().ContainSingle(e => e.EventName == "ApnsCertificateExpiringSoon").Subject;
+        warning.Level.Should().Be(LogLevel.Warning);
+
+        // when: the checks run past the expiry
+        for (var day = 0; day < 31; day++)
+        {
+            clock.Advance(ApnsCertificateExpiryCheck.RecheckPeriod);
+        }
+
+        // then
+        logs.Entries.Where(e => e.EventName == "ApnsCertificateExpired")
+            .Should()
+            .NotBeEmpty()
+            .And.OnlyContain(e => e.Level == LogLevel.Error);
+        logs.Entries.Should().NotContain(e => e.Text.Contains(_Password, StringComparison.Ordinal));
+        var certificatePrefix = pkcs12[..40];
+        logs.Entries.Should().NotContain(e => e.Text.Contains(certificatePrefix, StringComparison.Ordinal));
+
+        await host.StopAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_check_the_current_certificate_and_stop_checking_after_stop()
+    {
+        // given
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 9, 25, 10, 0, 0, TimeSpan.Zero));
+        using var certificate = TestCertificates.CreateClient(
+            clock.GetUtcNow().AddDays(-300),
+            clock.GetUtcNow().AddDays(20)
+        );
+        using var renewed = TestCertificates.CreateClient(
+            clock.GetUtcNow().AddDays(-1),
+            clock.GetUtcNow().AddDays(365)
+        );
+        var monitor = new TestOptionsMonitor(
+            _CertificateOptions(TestCertificates.ToPkcs12Base64(certificate, _Password))
+        );
+        using var logs = new CapturingLoggerProvider();
+        using var holder = _CreateHolder(monitor, clock, logs);
+        using var loggerFactory = new LoggerFactory([logs]);
+        using var check = new ApnsCertificateExpiryCheck(
+            monitor,
+            name: null,
+            () => holder,
+            clock,
+            loggerFactory.CreateLogger<ApnsCertificateExpiryCheck>()
+        );
+        await check.StartAsync(AbortToken);
+        logs.Entries.Count(e => e.EventName == "ApnsCertificateExpiringSoon").Should().Be(1);
+
+        // when: the certificate is renewed, so the next check reads the renewed one
+        monitor.Change(_CertificateOptions(TestCertificates.ToPkcs12Base64(renewed, _Password)));
+        clock.Advance(ApnsCertificateExpiryCheck.RecheckPeriod);
+
+        // then
+        logs.Entries.Count(e => e.EventName == "ApnsCertificateExpiringSoon").Should().Be(1);
+
+        // when: stopped, no later check runs even once the renewed certificate would warn
+        await check.StopAsync(AbortToken);
+        clock.Advance(TimeSpan.FromDays(400));
+
+        // then
+        logs.Entries.Count(e => e.EventName == "ApnsCertificateExpiringSoon").Should().Be(1);
+        logs.Entries.Should().NotContain(e => e.EventName == "ApnsCertificateExpired");
     }
 
     #endregion
@@ -414,18 +721,91 @@ public sealed class ApnsCertificateAuthTests : TestBase
         return builder.Build();
     }
 
-    private sealed class StaticOptionsMonitor(ApnsOptions options) : IOptionsMonitor<ApnsOptions>
+    private static ApnsCertificateHolder _CreateHolder(
+        IOptionsMonitor<ApnsOptions> monitor,
+        TimeProvider clock,
+        ILoggerProvider? logs = null
+    )
     {
-        public ApnsOptions CurrentValue => options;
+        ILoggerFactory loggerFactory = logs is null ? NullLoggerFactory.Instance : new LoggerFactory([logs]);
+
+        return new ApnsCertificateHolder(
+            monitor,
+            name: null,
+            clock,
+            loggerFactory.CreateLogger<ApnsCertificateHolder>()
+        );
+    }
+
+    private static ApnsOptions _CertificateOptions(string pkcs12, string? password = _Password)
+    {
+        return new ApnsOptions
+        {
+            BundleId = FakeApnsServer.BundleId,
+            Certificate = pkcs12,
+            CertificatePassword = password,
+        };
+    }
+
+    /// <summary>An options monitor whose value the test replaces, raising the change listeners on demand.</summary>
+    private sealed class TestOptionsMonitor(ApnsOptions options) : IOptionsMonitor<ApnsOptions>
+    {
+        private readonly Lock _gate = new();
+        private readonly List<Action<ApnsOptions, string?>> _listeners = [];
+        public ApnsOptions CurrentValue { get; private set; } = options;
+
+        public int ListenerCount
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _listeners.Count;
+                }
+            }
+        }
 
         public ApnsOptions Get(string? name)
         {
-            return options;
+            return CurrentValue;
         }
 
-        public IDisposable? OnChange(Action<ApnsOptions, string?> listener)
+        public IDisposable OnChange(Action<ApnsOptions, string?> listener)
         {
-            return null;
+            lock (_gate)
+            {
+                _listeners.Add(listener);
+            }
+
+            return new Subscription(this, listener);
+        }
+
+        /// <summary>Replaces the value and notifies the listeners for <paramref name="name"/>, as a reload does.</summary>
+        public void Change(ApnsOptions changed, string name = "")
+        {
+            CurrentValue = changed;
+            Action<ApnsOptions, string?>[] listeners;
+
+            lock (_gate)
+            {
+                listeners = [.. _listeners];
+            }
+
+            foreach (var listener in listeners)
+            {
+                listener(changed, name);
+            }
+        }
+
+        private sealed class Subscription(TestOptionsMonitor owner, Action<ApnsOptions, string?> listener) : IDisposable
+        {
+            public void Dispose()
+            {
+                lock (owner._gate)
+                {
+                    owner._listeners.Remove(listener);
+                }
+            }
         }
     }
 

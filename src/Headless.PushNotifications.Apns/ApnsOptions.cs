@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
 using FluentValidation;
 using FluentValidation.Results;
 using Headless.PushNotifications.Apns.Internals;
@@ -51,7 +50,9 @@ public sealed class ApnsOptions
     /// Contains sensitive private key data. Do not log or serialize. The certificate is presented during the TLS
     /// handshake instead of a provider token, and it cannot send <c>location</c>, <c>fileprovider</c>,
     /// <c>liveactivity</c>, <c>widgets</c>, or <c>controls</c> pushes. Apple certificates last one year; the host
-    /// logs a warning at startup when the certificate expires within 30 days and fails to start once it has expired.
+    /// fails to start once the certificate has expired, and logs a warning at startup and in a daily check when it
+    /// expires within 30 days. When bound configuration reloads with a renewed certificate, new connections present
+    /// it without a restart.
     /// </remarks>
     [JsonIgnore]
     public string? Certificate { get; set; }
@@ -249,48 +250,16 @@ internal sealed class ApnsOptionsValidator : AbstractValidator<ApnsOptions>
             return;
         }
 
-        X509Certificate2 certificate;
+        using var certificate = ApnsCertificateLoader.LoadValid(
+            certificateText,
+            options.CertificatePassword,
+            _timeProvider.GetUtcNow(),
+            out var errors
+        );
 
-        try
+        foreach (var error in errors)
         {
-            certificate = ApnsCertificateLoader.Load(certificateText, options.CertificatePassword);
-        }
-        catch (Exception e) when (e is FormatException or CryptographicException)
-        {
-            // FormatException: not base64. CryptographicException: not PKCS#12, or the password does not open it.
-            context.AddFailure(
-                new ValidationFailure(
-                    nameof(ApnsOptions.Certificate),
-                    "APNs Certificate must be the base64 text of a PKCS#12 (.p12) file that CertificatePassword opens."
-                )
-            );
-
-            return;
-        }
-
-        using (certificate)
-        {
-            if (!certificate.HasPrivateKey)
-            {
-                context.AddFailure(
-                    new ValidationFailure(
-                        nameof(ApnsOptions.Certificate),
-                        "APNs Certificate has no private key. Export the certificate together with its private key."
-                    )
-                );
-            }
-
-            var expiresAt = ApnsCertificateLoader.GetExpiresAt(certificate);
-
-            if (expiresAt <= _timeProvider.GetUtcNow())
-            {
-                context.AddFailure(
-                    new ValidationFailure(
-                        nameof(ApnsOptions.Certificate),
-                        $"APNs Certificate expired at {expiresAt.ToString("u", CultureInfo.InvariantCulture)}. Renew it in the Apple Developer account."
-                    )
-                );
-            }
+            context.AddFailure(new ValidationFailure(nameof(ApnsOptions.Certificate), error));
         }
     }
 
