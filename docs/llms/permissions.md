@@ -190,14 +190,15 @@ dotnet add package Headless.Permissions.Abstractions
 ```csharp
 public sealed class OrderService(IPermissionManager permissions, ICurrentUser currentUser)
 {
-    public async Task DeleteOrderAsync(Guid orderId, CancellationToken ct)
+    public async Task<ApiResult> DeleteOrderAsync(Guid orderId, CancellationToken ct)
     {
         var result = await permissions.GetAsync("Orders.Delete", currentUser, cancellationToken: ct);
 
         if (!result.IsGranted)
-            throw new ForbiddenException();
+            return ApiResult.Forbidden("Orders.Delete is not granted."); // maps to 403
 
         // Delete order...
+        return ApiResult.Ok();
     }
 }
 
@@ -313,6 +314,8 @@ builder.Services.AddHeadlessPermissions(setup => setup.UseEntityFramework<AppDbC
 #### ASP.NET Core Authorization Integration
 
 Use a defined permission name directly as the policy name. `AddHeadlessPermissions` registers `PermissionPolicyProvider`, so no `AddPolicy` call is needed:
+
+<!-- example: fragment -->
 
 ```csharp
 // Controllers

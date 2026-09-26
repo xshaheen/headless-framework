@@ -36,6 +36,15 @@ builder.AddHeadlessTenancy(tenancy =>
         .EntityFramework(ef => ef.GuardTenantWrites())
 );
 
+// RequireTenant() fails startup unless DefaultPolicy or FallbackPolicy carries TenantRequirement.
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .AddRequirements(new TenantRequirement())
+        .Build();
+});
+
 var app = builder.Build();
 
 app.UseHeadless();
@@ -180,7 +189,7 @@ publicGroup.MapGet("/status", () => Results.Ok());
 // MVC — controller (applies to all actions)
 [SkipTenantResolution]
 [Route("admin")]
-public sealed class AdminController : ControllerBase { ... }
+public sealed class AdminController : ControllerBase;
 
 // MVC — individual action
 [Route("users")]
@@ -361,13 +370,17 @@ No HTTP pipeline change is required for this — `TenantResolutionMiddleware` (t
 using Headless.MultiTenancy; // TenantInfo, Catalog(...)
 using Headless.Api;          // ResolveFromCatalog(...), AddHostSource(...), UseHeadlessTenantCatalogResolution()
 
+builder.Services.AddHeadlessCaching(caching => caching.UseInMemory()); // the catalog's hard prerequisite
+
 builder.AddHeadlessTenancy(tenancy =>
 {
     tenancy
         .Catalog(catalog =>
             catalog
                 .Configure(options => options.IgnoredIdentifiers.Add("www")) // www.example.com -> host context
-                .UseInMemory(options => options.Tenants.Add(/* ... */))
+                .UseInMemory(options =>
+                    options.Tenants.Add(new TenantInfo(id: "ten_123", identifier: "acme", name: "Acme Inc", isEnabled: true))
+                )
         )
         .Http(http =>
             http.ResolveFromCatalog(sources =>
@@ -379,6 +392,8 @@ builder.AddHeadlessTenancy(tenancy =>
             )
         );
 });
+
+builder.Services.AddAuthorization(); // UseAuthorization() below requires it
 
 var app = builder.Build();
 
@@ -570,6 +585,7 @@ Use fresh contexts and fresh Identity store/manager DI scopes across tenant chan
 
 The EF write guard is opt-in and disabled by default for compatibility. Enable it from the root tenancy surface:
 
+<!-- example: boot -->
 ```csharp
 builder.Services.AddHeadlessDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
 
@@ -632,6 +648,8 @@ Raw SQL requires explicit tenant predicates sourced from trusted context and aut
 
 `Headless.Permissions.Core` already scopes permission grant cache entries by tenant:
 
+<!-- example: fragment -->
+
 ```csharp
 () => $"t:{sp.GetRequiredService<ICurrentTenant>().Id}"
 ```
@@ -648,7 +666,9 @@ When no tenant is active, the cache scope is `t:`. This is expected host-level b
 using Headless.Jobs;
 
 builder.AddHeadlessTenancy(tenancy =>
-    tenancy.Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue())
+    tenancy
+        .Http(http => http.ResolveFromClaims()) // the ambient tenant that propagation captures
+        .Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue())
 );
 
 builder.Services.AddHeadlessJobs(options =>
@@ -656,7 +676,7 @@ builder.Services.AddHeadlessJobs(options =>
 });
 ```
 
-Register a real `ICurrentTenant` source (HTTP claim resolution, `AddHeadlessDbContextServices()`, or a custom implementation) before `AddHeadlessJobs` so propagation resolves a live tenant rather than the framework's `NullCurrentTenant` fallback. See [docs/llms/jobs.md](jobs.md#tenant-propagation) for the full resolution and chain-propagation semantics.
+Register a real `ICurrentTenant` source (HTTP claim resolution or a custom implementation) before `AddHeadlessJobs` so propagation resolves a live tenant rather than the framework's `NullCurrentTenant` fallback. See [docs/llms/jobs.md](jobs.md#tenant-propagation) for the full resolution and chain-propagation semantics.
 
 #### Automatic Propagation (`PropagateTenant`)
 
@@ -706,41 +726,40 @@ using Headless.MultiTenancy; // ITenantDirectory — only when a tenant catalog 
 // permission cache) observe the right tenant automatically.
 public sealed record TenantReportRequest(string ReportKind);
 
-[JobFunction("GenerateTenantReport")]
 public sealed class GenerateTenantReport(IReportService reports)
 {
+    [JobFunction("GenerateTenantReport")]
     public Task ExecuteAsync(JobFunctionContext<TenantReportRequest> context, CancellationToken ct) =>
         reports.BuildAsync(context.Request.ReportKind, ct);
 }
 
 // A system-scope cron that fans out one tenant-scoped time job per tenant.
-[JobFunction("NightlyReportFanOut", cronExpression: "0 2 * * *")]
-public static async Task FanOutAsync(IServiceProvider sp, CancellationToken ct)
+// ITenantDirectory is the framework's optional catalog enumeration capability (see
+// [Tenant Catalog](#tenant-catalog)) — available only when a tenant catalog store is
+// configured via `.Catalog(...)`. An app that has not configured a catalog enumerates
+// tenants through its own means instead (a direct query against its own tenant table, an
+// app-owned directory service, etc.) — the loop below is identical either way.
+public sealed class NightlyReportFanOut(IJobScheduler scheduler, ITenantDirectory tenants)
 {
-    var scheduler = sp.GetRequiredService<IJobScheduler>();
-
-    // ITenantDirectory is the framework's optional catalog enumeration capability (see
-    // [Tenant Catalog](#tenant-catalog)) — available only when a tenant catalog store is
-    // configured via `.Catalog(...)`. An app that has not configured a catalog enumerates
-    // tenants through its own means instead (a direct query against its own tenant table, an
-    // app-owned directory service, etc.) — the loop below is identical either way.
-    var tenants = sp.GetRequiredService<ITenantDirectory>();
-
-    foreach (var tenant in await tenants.GetAllAsync(ct))
+    [JobFunction("NightlyReportFanOut", cronExpression: "0 0 2 * * *")]
+    public async Task ExecuteAsync(CancellationToken ct)
     {
-        if (!tenant.IsEnabled)
+        foreach (var tenant in await tenants.GetAllAsync(ct))
         {
-            continue;
-        }
+            if (!tenant.IsEnabled)
+            {
+                continue;
+            }
 
-        // Explicit TenantId is REQUIRED: the cron handler runs system-scope, so there is no
-        // ambient tenant for PropagateTenant() to capture here. Relying on ambient capture
-        // inside a cron handler would silently persist tenantless jobs.
-        await scheduler.EnqueueAsync(
-            new TenantReportRequest("nightly"),
-            new JobOptions { TenantId = tenant.Id, Description = $"nightly-report-{tenant.Id}" },
-            ct
-        );
+            // Explicit TenantId is REQUIRED: the cron handler runs system-scope, so there is no
+            // ambient tenant for PropagateTenant() to capture here. Relying on ambient capture
+            // inside a cron handler would silently persist tenantless jobs.
+            await scheduler.EnqueueAsync(
+                new TenantReportRequest("nightly"),
+                new JobOptions { TenantId = tenant.Id, Description = $"nightly-report-{tenant.Id}" },
+                ct
+            );
+        }
     }
 }
 ```
@@ -770,7 +789,9 @@ For end-to-end propagation, opt in to the built-in middleware pair:
 using Headless.Messaging.MultiTenancy;
 
 builder.AddHeadlessTenancy(tenancy =>
-    tenancy.Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
+    tenancy
+        .Http(http => http.ResolveFromClaims()) // the ambient tenant that propagation captures
+        .Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
 );
 
 builder.Services.AddHeadlessMessaging(options =>
@@ -871,7 +892,7 @@ public sealed class OrderService(ICurrentTenant currentTenant)
 {
     public Order CreateOrder(CreateOrderRequest request)
     {
-        return new Order { Id = Guid.NewGuid(), TenantId = currentTenant.Id, ... };
+        return new Order { Id = Guid.NewGuid(), TenantId = currentTenant.Id };
     }
 
     // Scope a temporary tenant override — for example inside a background job or an admin tool.
@@ -953,6 +974,15 @@ builder.AddHeadlessTenancy(tenancy =>
         .EntityFramework(ef => ef.GuardTenantWrites())
 );
 
+// RequireTenant() fails startup unless DefaultPolicy or FallbackPolicy carries TenantRequirement.
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .AddRequirements(new TenantRequirement())
+        .Build();
+});
+
 var app = builder.Build();
 
 app.UseHeadless();
@@ -1021,6 +1051,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 builder.Services.AddDbContextFactory<AppDbContext>(options =>
     options.UseNpgsql(connectionString)
 );
+
+builder.Services.AddHeadlessCaching(caching => caching.UseInMemory()); // the catalog's hard prerequisite
 
 builder.AddHeadlessTenancy(tenancy =>
 {

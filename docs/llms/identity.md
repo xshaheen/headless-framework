@@ -46,12 +46,16 @@ Register with `services.AddHeadlessDbContext<TDbContext, TUser, TRole, TKey, ...
 
 The 8-type-parameter form is the convenience form:
 
+<!-- example: fragment -->
+
 ```csharp
 HeadlessIdentityDbContext<TUser, TRole, TKey, TUserClaim, TUserRole, TUserLogin, TRoleClaim, TUserToken>
 // Internally uses TUserPasskey = IdentityUserPasskey<TKey>
 ```
 
 The 9-type-parameter form (recommended for .NET 10 passkey-aware stores):
+
+<!-- example: fragment -->
 
 ```csharp
 HeadlessIdentityDbContext<TUser, TRole, TKey, TUserClaim, TUserRole, TUserLogin, TRoleClaim, TUserToken, TUserPasskey>
@@ -120,6 +124,7 @@ public class AppDbContext(HeadlessDbContextServices services, DbContextOptions<A
 
 #### Register
 
+<!-- example: boot -->
 ```csharp
 // Registration — all 9 type parameters are required for the explicit-passkey form
 builder.Services.AddHeadlessDbContext<
@@ -141,6 +146,7 @@ builder.Services.AddIdentityCore<AppUser>().AddRoles<AppRole>().AddEntityFramewo
 
 #### 8-type-parameter convenience form
 
+<!-- example: boot -->
 ```csharp
 // Equivalent — TUserPasskey is implicitly IdentityUserPasskey<TKey>
 public class AppDbContext(HeadlessDbContextServices services, DbContextOptions<AppDbContext> options)
@@ -167,6 +173,8 @@ builder.Services.AddHeadlessDbContext<
 
 `AddHeadlessDbContext` accepts an optional `Action<HeadlessDbContextOptions>` as a second parameter to configure the save-entry processor chain:
 
+<!-- example: fragment -->
+
 ```csharp
 builder.Services.AddHeadlessDbContext<AppDbContext, /* ... */>(
     options => options.UseNpgsql(connectionString),
@@ -186,6 +194,8 @@ Service lifetimes default to `ServiceLifetime.Scoped` for both the context and i
 
 The protected `ConfigureTenantOwnedIdentity(ModelBuilder)` helper is defined on the nine-type-parameter base and inherited by the convenience form. Call it in your context after the base model call:
 
+<!-- example: fragment -->
+
 ```csharp
 protected override void OnModelCreating(ModelBuilder modelBuilder)
 {
@@ -196,6 +206,7 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 
 Enable the write guard separately:
 
+<!-- example: boot -->
 ```csharp
 builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
 ```
