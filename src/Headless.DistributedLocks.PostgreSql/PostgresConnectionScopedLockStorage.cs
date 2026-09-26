@@ -256,6 +256,27 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
 
     /// <inheritdoc/>
     /// <remarks>
+    /// Local-only: looks the lease up in the in-process registry and checks the engine handle's lost token. The
+    /// engine only observes connection death when the lock was acquired with monitoring, so an unmonitored lock whose
+    /// connection died silently still reads as held here until its next command fails.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is already cancelled on entry.
+    /// </exception>
+    public ValueTask<bool> IsHeldAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var isHeld =
+            _heldByLockId.TryGetValue(leaseId, out var held)
+            && string.Equals(held.Resource, resource, StringComparison.Ordinal)
+            && !held.IsLost;
+
+        return ValueTask.FromResult(isHeld);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
     /// Returns only the locks held by this process. Because long resource names are hashed into advisory
     /// integer keys, <c>pg_locks</c> cannot reverse-map them to the original resource name; a
     /// database-wide listing is therefore not possible and the result is limited to the local
@@ -371,6 +392,8 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         public string Resource { get; } = resource;
 
         public string LeaseId { get; } = leaseId;
+
+        public bool IsLost => engineHandle.LostToken.IsCancellationRequested;
 
         public async ValueTask DisposeAsync()
         {

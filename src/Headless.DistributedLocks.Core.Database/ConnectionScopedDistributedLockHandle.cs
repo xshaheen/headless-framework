@@ -22,6 +22,10 @@ namespace Headless.DistributedLocks;
 /// <param name="releaseOnDispose">When <see langword="true"/>, <see cref="DisposeAsync"/> calls <see cref="ReleaseAsync"/> automatically.</param>
 /// <param name="timeProvider">Clock used to stamp <see cref="AcquiredAt"/>.</param>
 /// <param name="release">Callback invoked by <see cref="ReleaseAsync"/> to release the lock in the backing store.</param>
+/// <param name="isHeld">
+/// Callback that asks the backing store whether it still holds this lock, which also catches an out-of-band release
+/// by resource and lease id that this handle never saw.
+/// </param>
 /// <param name="logger">Logger used to emit release-failure diagnostics.</param>
 internal sealed class ConnectionScopedDistributedLockHandle(
     ConnectionScopedLockHandle handle,
@@ -30,6 +34,7 @@ internal sealed class ConnectionScopedDistributedLockHandle(
     bool releaseOnDispose,
     TimeProvider timeProvider,
     Func<ConnectionScopedLockHandle, CancellationToken, ValueTask> release,
+    Func<ConnectionScopedLockHandle, CancellationToken, ValueTask<bool>> isHeld,
     ILogger logger
 ) : IDistributedLease
 {
@@ -49,7 +54,7 @@ internal sealed class ConnectionScopedDistributedLockHandle(
     public string Resource => handle.Resource;
 
     /// <summary>
-    /// Always zero for connection-scoped locks because <see cref="RenewAsync"/> is a no-op (the advisory
+    /// Always zero for connection-scoped locks because <see cref="RenewAsync"/> only confirms ownership (the
     /// lock is held for the connection's lifetime and has no TTL to extend).
     /// </summary>
     public int RenewalCount => 0;
@@ -104,22 +109,27 @@ internal sealed class ConnectionScopedDistributedLockHandle(
     }
 
     /// <summary>
-    /// No-op for connection-scoped locks: the advisory lock is held for the connection's lifetime and has no
-    /// TTL to extend. <see cref="RenewalCount"/> stays at zero so monitoring sees no renewal activity.
-    /// Always returns <see langword="true"/>.
+    /// Confirms the lock is still held. A connection-scoped lock lives as long as its connection and has no TTL, so
+    /// nothing is extended and <see cref="RenewalCount"/> stays at zero; renewal answers only whether the lease is
+    /// still this handle's.
     /// </summary>
     /// <param name="timeUntilExpires">Ignored.</param>
-    /// <param name="cancellationToken">Token observed before returning.</param>
-    /// <returns><see langword="true"/> unconditionally.</returns>
+    /// <param name="cancellationToken">Token observed before the ownership check.</param>
+    /// <returns>
+    /// <see langword="false"/> after this handle was released, after its connection was observed lost, or when the
+    /// backing store no longer holds the lock; otherwise <see langword="true"/>.
+    /// </returns>
     /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is already cancelled.</exception>
     public Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
     {
-        // No-op for session-scoped locks: the advisory lock is held for the connection's lifetime,
-        // so there is no lease to extend. RenewalCount stays at 0 to avoid signalling monitoring
-        // that the lifetime was extended.
         cancellationToken.ThrowIfCancellationRequested();
 
-        return Task.FromResult(true);
+        if (Volatile.Read(ref _released) != 0 || handle.ConnectionLostToken.IsCancellationRequested)
+        {
+            return Task.FromResult(false);
+        }
+
+        return isHeld(handle, cancellationToken).AsTask();
     }
 
     /// <summary>
