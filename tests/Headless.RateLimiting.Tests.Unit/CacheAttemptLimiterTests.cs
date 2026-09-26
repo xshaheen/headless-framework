@@ -221,6 +221,22 @@ public sealed class CacheAttemptLimiterTests : TestBase
         act.Should().NotThrow();
     }
 
+    [Fact]
+    public async Task should_refuse_to_reset_a_result_without_a_reset_token()
+    {
+        // given
+        var limiter = _CreateLimiter();
+        var stub = new AttemptResult(_Purpose, count: 1, limit: 5, retryAfter: TimeSpan.FromSeconds(30));
+
+        // when
+        var act = async () => await limiter.ResetAsync(stub, AbortToken);
+
+        // then
+        (await act.Should().ThrowAsync<ArgumentException>())
+            .Which.ParamName.Should()
+            .Be("attempt");
+    }
+
     [Theory]
     [InlineData("", _Subject)]
     [InlineData(_Purpose, "")]

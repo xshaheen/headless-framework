@@ -59,5 +59,8 @@ public interface IAttemptLimiter
     /// <param name="attempt">A result returned by <see cref="AcquireAsync"/>.</param>
     /// <param name="cancellationToken">Cancels the counter-store call.</param>
     /// <exception cref="ArgumentNullException"><paramref name="attempt"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="attempt"/> has no <see cref="AttemptResult.ResetToken"/>, so it was not issued by a limiter.
+    /// </exception>
     ValueTask ResetAsync(AttemptResult attempt, CancellationToken cancellationToken = default);
 }

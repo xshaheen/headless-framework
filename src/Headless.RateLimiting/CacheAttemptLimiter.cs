@@ -48,14 +48,21 @@ internal sealed class CacheAttemptLimiter(
         // counter alive no longer than it can be read.
         var count = await cache.IncrementAsync(cacheKey, 1L, retryAfter, cancellationToken).ConfigureAwait(false);
 
-        return new AttemptResult(purpose, cacheKey, count, quota.Limit, retryAfter);
+        return new AttemptResult(purpose, count, quota.Limit, retryAfter, resetToken: cacheKey);
     }
 
     public async ValueTask ResetAsync(AttemptResult attempt, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(attempt);
 
-        await cache.RemoveAsync(attempt.CacheKey, cancellationToken).ConfigureAwait(false);
+        // A result without a token was built by hand (a test stub) or by another limiter; removing nothing would
+        // report a reset that never happened.
+        if (attempt.ResetToken is not { } cacheKey)
+        {
+            throw new ArgumentException("The attempt carries no reset token from this limiter.", nameof(attempt));
+        }
+
+        await cache.RemoveAsync(cacheKey, cancellationToken).ConfigureAwait(false);
     }
 
     private string _Fingerprint(string purpose, string subject)
