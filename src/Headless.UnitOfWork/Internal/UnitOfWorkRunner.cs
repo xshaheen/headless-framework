@@ -3,6 +3,7 @@
 using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Polly.Retry;
 
 namespace Headless.UnitOfWork.Internal;
 
@@ -92,6 +93,62 @@ internal static partial class UnitOfWorkRunner
 
         var outcome = await strategy
             .ExecuteAsync(ct => _RunAttemptAsync(begin, operation, unwind, logger, ct), cancellationToken)
+            .ConfigureAwait(false);
+
+        outcome.Error?.Throw();
+
+        return outcome.Result;
+    }
+
+    /// <summary>
+    /// Runs the owned block with a connection of its own per attempt: each attempt opens a connection, begins a
+    /// unit on it, runs the block with both, completes, and disposes the connection once the attempt's unit is
+    /// unwound. A replay therefore never reuses a connection a failed attempt left behind, and nothing can join
+    /// the attempt's unit from outside because the caller never holds its connection.
+    /// </summary>
+    /// <param name="factory">The factory whose host default applies when <paramref name="retry" /> is <see langword="null" />.</param>
+    /// <param name="openConnection">Returns a new, open connection the attempt owns.</param>
+    /// <param name="begin">Begins an owned unit on the attempt's connection and binds it there.</param>
+    /// <param name="operation">The caller's block.</param>
+    /// <param name="retry">The call's replay policy, overriding the host default.</param>
+    /// <param name="cancellationToken">Forwarded to the strategy, which hands it to each attempt.</param>
+    public static async Task<TResult> RunPerAttemptConnectionAsync<TConnection, TResult>(
+        IUnitOfWorkFactory factory,
+        Func<CancellationToken, ValueTask<TConnection>> openConnection,
+        Func<TConnection, CancellationToken, ValueTask<IUnitOfWork>> begin,
+        Func<IUnitOfWork, TConnection, CancellationToken, Task<TResult>> operation,
+        RetryStrategyOptions? retry,
+        CancellationToken cancellationToken
+    )
+        where TConnection : class, IAsyncDisposable
+    {
+        var strategy =
+            retry is not null ? ResiliencePipelineUnitOfWorkExecutionStrategy.Create(retry)
+            : factory is UnitOfWorkFactory owned ? owned.DefaultReplayStrategy
+            : NoReplayUnitOfWorkExecutionStrategy.Instance;
+        var logger = LoggerFor(factory);
+
+        var outcome = await strategy
+            .ExecuteAsync(
+                async ct =>
+                {
+                    var connection = await openConnection(ct).ConfigureAwait(false);
+
+                    // Disposed only after the attempt returns, which is after its unit was unwound or completed.
+                    await using (connection.ConfigureAwait(false))
+                    {
+                        return await _RunAttemptAsync(
+                                attemptCt => begin(connection, attemptCt),
+                                (unitOfWork, attemptCt) => operation(unitOfWork, connection, attemptCt),
+                                UnitOfWorkAttemptUnwind.RollBack,
+                                logger,
+                                ct
+                            )
+                            .ConfigureAwait(false);
+                    }
+                },
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         outcome.Error?.Throw();

@@ -4,6 +4,7 @@ using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
+using Polly.Retry;
 
 namespace Tests;
 
@@ -80,6 +81,94 @@ public sealed class PostgreSqlEntityFrameworkReplayConformanceTests(PostgreSqlUn
     public override Task should_replay_a_joined_block_only_with_its_owner()
     {
         return base.should_replay_a_joined_block_only_with_its_owner();
+    }
+}
+
+/// <summary>
+/// Runs the replay conformance suite against <c>RunAsync(NpgsqlDataSource, …)</c> with the replay policy configured
+/// as the host default.
+/// </summary>
+[Collection<PostgreSqlUnitOfWorkFixture>]
+public sealed class PostgreSqlDataSourceReplayConformanceTests(PostgreSqlUnitOfWorkFixture fixture)
+    : UnitOfWorkReplayConformanceTests(new PostgreSqlDataSourceReplayFixture(fixture))
+{
+    [Fact]
+    public override Task should_replay_a_fault_before_the_commit_only_when_the_spelling_replays()
+    {
+        return base.should_replay_a_fault_before_the_commit_only_when_the_spelling_replays();
+    }
+
+    [Fact]
+    public override Task should_not_replay_when_the_commit_faults()
+    {
+        return base.should_not_replay_when_the_commit_faults();
+    }
+
+    [Fact]
+    public override Task should_not_replay_after_the_block_prevents_retry()
+    {
+        return base.should_not_replay_after_the_block_prevents_retry();
+    }
+
+    [Fact]
+    public override Task should_return_the_result_when_the_drain_faults_after_a_durable_commit()
+    {
+        return base.should_return_the_result_when_the_drain_faults_after_a_durable_commit();
+    }
+
+    [Fact]
+    public override Task should_replay_a_joined_block_only_with_its_owner()
+    {
+        return base.should_replay_a_joined_block_only_with_its_owner();
+    }
+}
+
+/// <summary>
+/// <c>RunAsync(NpgsqlDataSource, …)</c>, with the replay policy registered as the host's
+/// <see cref="UnitOfWorkRetryOptions" />: replay every fault once with no delay, so a scenario proves that a refusal
+/// comes from the runner's policy and not from the classification.
+/// </summary>
+public sealed class PostgreSqlDataSourceReplayFixture(PostgreSqlUnitOfWorkFixture container) : IUnitOfWorkReplayFixture
+{
+    private readonly PostgreSqlConnectionReplayFixture _probes = new(container);
+
+    public bool ReplaysBeforeCommit => true;
+
+    public async Task<TResult> RunAsync<TResult>(
+        Func<IUnitOfWorkReplayContext, CancellationToken, Task<TResult>> operation,
+        CancellationToken cancellationToken
+    )
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddPostgreSqlUnitOfWork();
+        services.Configure<UnitOfWorkRetryOptions>(options =>
+            options.RetryStrategy = new RetryStrategyOptions
+            {
+                MaxRetryAttempts = 1,
+                Delay = TimeSpan.Zero,
+                ShouldHandle = static args => ValueTask.FromResult(args.Outcome.Exception is not null),
+            }
+        );
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        var factory = provider.GetRequiredService<IUnitOfWorkFactory>();
+        await using var dataSource = NpgsqlDataSource.Create(container.ConnectionString);
+
+        return await factory.RunAsync(
+            dataSource,
+            (unitOfWork, connection, ct) => operation(new PostgreSqlReplayContext(factory, connection, unitOfWork), ct),
+            cancellationToken: cancellationToken
+        );
+    }
+
+    public Task<int> CountProbeRowsAsync(CancellationToken cancellationToken)
+    {
+        return _probes.CountProbeRowsAsync(cancellationToken);
+    }
+
+    public Task ResetAsync(CancellationToken cancellationToken)
+    {
+        return _probes.ResetAsync(cancellationToken);
     }
 }
 
