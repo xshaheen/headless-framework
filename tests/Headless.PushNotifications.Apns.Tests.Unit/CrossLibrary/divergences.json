@@ -1,0 +1,395 @@
+{
+  "divergences": [
+    {
+      "library": "node-apn",
+      "scenario": "*",
+      "field": "headers.apns-id",
+      "ours": "<generated>",
+      "theirs": null,
+      "reason": "library default: node-apn sends no apns-id and lets APNs assign one; our send path stamps a fresh UUID on every request so the send result, logs, and the expired-token resend carry the same id. Apple allows both.",
+      "evidence": "https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns: apns-id is Optional; \"If you omit this header, APNs creates a UUID for you and returns it in its response.\" Best practices: \"Create a unique value for the `apns-id` header to track your push notification.\""
+    },
+    {
+      "library": "pushy",
+      "scenario": "*",
+      "field": "headers.apns-id",
+      "ours": "<generated>",
+      "theirs": null,
+      "reason": "library default: pushy sends no apns-id and lets APNs assign one; our send path stamps a fresh UUID on every request so the send result, logs, and the expired-token resend carry the same id. Apple allows both.",
+      "evidence": "https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns: apns-id is Optional; \"If you omit this header, APNs creates a UUID for you and returns it in its response.\" Best practices: \"Create a unique value for the `apns-id` header to track your push notification.\""
+    },
+    {
+      "library": "apns2",
+      "scenario": "*",
+      "field": "headers.apns-id",
+      "ours": "<generated>",
+      "theirs": null,
+      "reason": "library default: apns2 sends no apns-id and lets APNs assign one; our send path stamps a fresh UUID on every request so the send result, logs, and the expired-token resend carry the same id. Apple allows both.",
+      "evidence": "https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns: apns-id is Optional; \"If you omit this header, APNs creates a UUID for you and returns it in its response.\" Best practices: \"Create a unique value for the `apns-id` header to track your push notification.\""
+    },
+    {
+      "library": "pushy",
+      "scenario": "*",
+      "field": "headers.apns-expiration",
+      "ours": null,
+      "theirs": "<now+86400>",
+      "reason": "library default: pushy's SimpleApnsPushNotification sets the expiration to the send time plus one day when none is given; we send no header, so APNs applies its own storage policy.",
+      "evidence": "https://github.com/jchambers/pushy/blob/pushy-0.15.6/pushy/src/main/java/com/eatthepath/pushy/apns/util/SimpleApnsPushNotification.java#L56 `DEFAULT_EXPIRATION_PERIOD = Duration.ofDays(1)`; https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns: \"If you omit this header, APNs stores the push according to APNs storage policy.\""
+    },
+    {
+      "library": "apns2",
+      "scenario": "*",
+      "field": "headers.apns-priority",
+      "ours": "10",
+      "theirs": null,
+      "reason": "library default: apns2 omits apns-priority unless the caller sets one; APNs reads a missing header as 10, so the wire meaning matches ours.",
+      "evidence": "https://github.com/sideshow/apns2/blob/v0.25.0/client.go#L227 `if n.Priority > 0 {`; https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns: \"If you omit this header, APNs sets the notification priority to `10`.\""
+    },
+    {
+      "library": "node-apn",
+      "scenario": "alert-full",
+      "field": "payload.aps.alert.body",
+      "ours": "<absent>",
+      "theirs": "Your order #42 is on its way",
+      "reason": "library permissiveness: the scenario sets a literal and its localization key together, and the library sends both; our API refuses that pair (so the test sets only the keys), because Apple reads the key instead of the literal and which text shows is then undefined.",
+      "evidence": "https://developer.apple.com/documentation/usernotifications/generating-a-remote-notification Table 2: `title-loc-key` \"Specify this key instead of the `title` key to retrieve the title from your app’s `Localizable.strings` files.\"; `loc-key` \"Use this key, instead of the `body` key, to retrieve the message text\""
+    },
+    {
+      "library": "node-apn",
+      "scenario": "alert-full",
+      "field": "payload.aps.alert.title",
+      "ours": "<absent>",
+      "theirs": "Order shipped",
+      "reason": "library permissiveness: the scenario sets a literal and its localization key together, and the library sends both; our API refuses that pair (so the test sets only the keys), because Apple reads the key instead of the literal and which text shows is then undefined.",
+      "evidence": "https://developer.apple.com/documentation/usernotifications/generating-a-remote-notification Table 2: `title-loc-key` \"Specify this key instead of the `title` key to retrieve the title from your app’s `Localizable.strings` files.\"; `loc-key` \"Use this key, instead of the `body` key, to retrieve the message text\""
+    },
+    {
+      "library": "node-apn",
+      "scenario": "alert-full-without-target-content-id",
+      "field": "payload.aps.alert.body",
+      "ours": "<absent>",
+      "theirs": "Your order #42 is on its way",
+      "reason": "library permissiveness: the scenario sets a literal and its localization key together, and the library sends both; our API refuses that pair (so the test sets only the keys), because Apple reads the key instead of the literal and which text shows is then undefined.",
+      "evidence": "https://developer.apple.com/documentation/usernotifications/generating-a-remote-notification Table 2: `title-loc-key` \"Specify this key instead of the `title` key to retrieve the title from your app’s `Localizable.strings` files.\"; `loc-key` \"Use this key, instead of the `body` key, to retrieve the message text\""
+    },
+    {
+      "library": "node-apn",
+      "scenario": "alert-full-without-target-content-id",
+      "field": "payload.aps.alert.title",
+      "ours": "<absent>",
+      "theirs": "Order shipped",
+      "reason": "library permissiveness: the scenario sets a literal and its localization key together, and the library sends both; our API refuses that pair (so the test sets only the keys), because Apple reads the key instead of the literal and which text shows is then undefined.",
+      "evidence": "https://developer.apple.com/documentation/usernotifications/generating-a-remote-notification Table 2: `title-loc-key` \"Specify this key instead of the `title` key to retrieve the title from your app’s `Localizable.strings` files.\"; `loc-key` \"Use this key, instead of the `body` key, to retrieve the message text\""
+    },
+    {
+      "library": "pushy",
+      "scenario": "alert-full",
+      "field": "payload.aps.alert.body",
+      "ours": "<absent>",
+      "theirs": "Your order #42 is on its way",
+      "reason": "library permissiveness: the scenario sets a literal and its localization key together, and the library sends both; our API refuses that pair (so the test sets only the keys), because Apple reads the key instead of the literal and which text shows is then undefined.",
+      "evidence": "https://developer.apple.com/documentation/usernotifications/generating-a-remote-notification Table 2: `title-loc-key` \"Specify this key instead of the `title` key to retrieve the title from your app’s `Localizable.strings` files.\"; `loc-key` \"Use this key, instead of the `body` key, to retrieve the message text\""
+    },
+    {
+      "library": "pushy",
+      "scenario": "alert-full",
+      "field": "payload.aps.alert.title",
+      "ours": "<absent>",
+      "theirs": "Order shipped",
+      "reason": "library permissiveness: the scenario sets a literal and its localization key together, and the library sends both; our API refuses that pair (so the test sets only the keys), because Apple reads the key instead of the literal and which text shows is then undefined.",
+      "evidence": "https://developer.apple.com/documentation/usernotifications/generating-a-remote-notification Table 2: `title-loc-key` \"Specify this key instead of the `title` key to retrieve the title from your app’s `Localizable.strings` files.\"; `loc-key` \"Use this key, instead of the `body` key, to retrieve the message text\""
+    },
+    {
+      "library": "pushy",
+      "scenario": "alert-full-without-target-content-id",
+      "field": "payload.aps.alert.body",
+      "ours": "<absent>",
+      "theirs": "Your order #42 is on its way",
+      "reason": "library permissiveness: the scenario sets a literal and its localization key together, and the library sends both; our API refuses that pair (so the test sets only the keys), because Apple reads the key instead of the literal and which text shows is then undefined.",
+      "evidence": "https://developer.apple.com/documentation/usernotifications/generating-a-remote-notification Table 2: `title-loc-key` \"Specify this key instead of the `title` key to retrieve the title from your app’s `Localizable.strings` files.\"; `loc-key` \"Use this key, instead of the `body` key, to retrieve the message text\""
+    },
+    {
+      "library": "pushy",
+      "scenario": "alert-full-without-target-content-id",
+      "field": "payload.aps.alert.title",
+      "ours": "<absent>",
+      "theirs": "Order shipped",
+      "reason": "library permissiveness: the scenario sets a literal and its localization key together, and the library sends both; our API refuses that pair (so the test sets only the keys), because Apple reads the key instead of the literal and which text shows is then undefined.",
+      "evidence": "https://developer.apple.com/documentation/usernotifications/generating-a-remote-notification Table 2: `title-loc-key` \"Specify this key instead of the `title` key to retrieve the title from your app’s `Localizable.strings` files.\"; `loc-key` \"Use this key, instead of the `body` key, to retrieve the message text\""
+    },
+    {
+      "library": "apns2",
+      "scenario": "alert-full-without-target-content-id",
+      "field": "payload.aps.alert.body",
+      "ours": "<absent>",
+      "theirs": "Your order #42 is on its way",
+      "reason": "library permissiveness: the scenario sets a literal and its localization key together, and the library sends both; our API refuses that pair (so the test sets only the keys), because Apple reads the key instead of the literal and which text shows is then undefined.",
+      "evidence": "https://developer.apple.com/documentation/usernotifications/generating-a-remote-notification Table 2: `title-loc-key` \"Specify this key instead of the `title` key to retrieve the title from your app’s `Localizable.strings` files.\"; `loc-key` \"Use this key, instead of the `body` key, to retrieve the message text\""
+    },
+    {
+      "library": "apns2",
+      "scenario": "alert-full-without-target-content-id",
+      "field": "payload.aps.alert.title",
+      "ours": "<absent>",
+      "theirs": "Order shipped",
+      "reason": "library permissiveness: the scenario sets a literal and its localization key together, and the library sends both; our API refuses that pair (so the test sets only the keys), because Apple reads the key instead of the literal and which text shows is then undefined.",
+      "evidence": "https://developer.apple.com/documentation/usernotifications/generating-a-remote-notification Table 2: `title-loc-key` \"Specify this key instead of the `title` key to retrieve the title from your app’s `Localizable.strings` files.\"; `loc-key` \"Use this key, instead of the `body` key, to retrieve the message text\""
+    },
+    {
+      "library": "pushy",
+      "scenario": "fileprovider",
+      "field": "payload.aps",
+      "ours": "<absent>",
+      "theirs": {},
+      "reason": "library default: pushy's payload builder always writes an aps dictionary; Apple's File Provider payload is only the container and domain keys, which is what we send.",
+      "evidence": "https://github.com/jchambers/pushy/blob/pushy-0.15.6/pushy/src/main/java/com/eatthepath/pushy/apns/util/ApnsPayloadBuilder.java#L1043 `payload.put(APS_KEY, aps);`; https://developer.apple.com/documentation/fileprovider/using-push-notifications-to-signal-changes: \"The POST request’s content is a JSON dictionary that specifies the container and domain for the updated content.\" The sample body holds only `container-identifier` and `domain`."
+    },
+    {
+      "library": "apns2",
+      "scenario": "fileprovider",
+      "field": "payload.aps",
+      "ours": "<absent>",
+      "theirs": {},
+      "reason": "library default: apns2's NewPayload always starts with an aps dictionary; Apple's File Provider payload is only the container and domain keys, which is what we send.",
+      "evidence": "https://github.com/sideshow/apns2/blob/v0.25.0/payload/builder.go#L87-L93 `\"aps\": &aps{}`; https://developer.apple.com/documentation/fileprovider/using-push-notifications-to-signal-changes: \"The POST request’s content is a JSON dictionary that specifies the container and domain for the updated content.\" The sample body holds only `container-identifier` and `domain`."
+    },
+    {
+      "library": "node-apn",
+      "scenario": "liveactivity-start",
+      "field": "headers.apns-priority",
+      "ours": "5",
+      "theirs": "10",
+      "reason": "library default: node-apn sends Live Activity pushes at priority 10; we default them to 5, the priority Apple says to consider first because priority-10 Live Activity pushes count against an hourly budget.",
+      "evidence": "https://developer.apple.com/documentation/activitykit/starting-and-updating-live-activities-with-activitykit-push-notifications: \"If you don’t specify the `apns-priority` value, APNs delivers the ActivityKit push notification immediately with the default priority of `10` and counts it toward the notification budget\"; \"To avoid throttling, you can send a low-priority ActivityKit push notification that doesn’t count toward the budget by setting the HTTP header field `apns-priority` to `5`. Consider this lower priority first before using the priority of `10`.\""
+    },
+    {
+      "library": "pushy",
+      "scenario": "liveactivity-start",
+      "field": "headers.apns-priority",
+      "ours": "5",
+      "theirs": "10",
+      "reason": "library default: pushy sends Live Activity pushes at priority 10; we default them to 5, the priority Apple says to consider first because priority-10 Live Activity pushes count against an hourly budget.",
+      "evidence": "https://developer.apple.com/documentation/activitykit/starting-and-updating-live-activities-with-activitykit-push-notifications: \"If you don’t specify the `apns-priority` value, APNs delivers the ActivityKit push notification immediately with the default priority of `10` and counts it toward the notification budget\"; \"To avoid throttling, you can send a low-priority ActivityKit push notification that doesn’t count toward the budget by setting the HTTP header field `apns-priority` to `5`. Consider this lower priority first before using the priority of `10`.\""
+    },
+    {
+      "library": "apns2",
+      "scenario": "liveactivity-start",
+      "field": "headers.apns-priority",
+      "ours": "5",
+      "theirs": null,
+      "reason": "library default: apns2 sends Live Activity pushes at priority 10 (by omitting the header); we default them to 5, the priority Apple says to consider first because priority-10 Live Activity pushes count against an hourly budget.",
+      "evidence": "https://developer.apple.com/documentation/activitykit/starting-and-updating-live-activities-with-activitykit-push-notifications: \"If you don’t specify the `apns-priority` value, APNs delivers the ActivityKit push notification immediately with the default priority of `10` and counts it toward the notification budget\"; \"To avoid throttling, you can send a low-priority ActivityKit push notification that doesn’t count toward the budget by setting the HTTP header field `apns-priority` to `5`. Consider this lower priority first before using the priority of `10`.\""
+    },
+    {
+      "library": "node-apn",
+      "scenario": "liveactivity-update",
+      "field": "headers.apns-priority",
+      "ours": "5",
+      "theirs": "10",
+      "reason": "library default: node-apn sends Live Activity pushes at priority 10; we default them to 5, the priority Apple says to consider first because priority-10 Live Activity pushes count against an hourly budget.",
+      "evidence": "https://developer.apple.com/documentation/activitykit/starting-and-updating-live-activities-with-activitykit-push-notifications: \"If you don’t specify the `apns-priority` value, APNs delivers the ActivityKit push notification immediately with the default priority of `10` and counts it toward the notification budget\"; \"To avoid throttling, you can send a low-priority ActivityKit push notification that doesn’t count toward the budget by setting the HTTP header field `apns-priority` to `5`. Consider this lower priority first before using the priority of `10`.\""
+    },
+    {
+      "library": "pushy",
+      "scenario": "liveactivity-update",
+      "field": "headers.apns-priority",
+      "ours": "5",
+      "theirs": "10",
+      "reason": "library default: pushy sends Live Activity pushes at priority 10; we default them to 5, the priority Apple says to consider first because priority-10 Live Activity pushes count against an hourly budget.",
+      "evidence": "https://developer.apple.com/documentation/activitykit/starting-and-updating-live-activities-with-activitykit-push-notifications: \"If you don’t specify the `apns-priority` value, APNs delivers the ActivityKit push notification immediately with the default priority of `10` and counts it toward the notification budget\"; \"To avoid throttling, you can send a low-priority ActivityKit push notification that doesn’t count toward the budget by setting the HTTP header field `apns-priority` to `5`. Consider this lower priority first before using the priority of `10`.\""
+    },
+    {
+      "library": "apns2",
+      "scenario": "liveactivity-update",
+      "field": "headers.apns-priority",
+      "ours": "5",
+      "theirs": null,
+      "reason": "library default: apns2 sends Live Activity pushes at priority 10 (by omitting the header); we default them to 5, the priority Apple says to consider first because priority-10 Live Activity pushes count against an hourly budget.",
+      "evidence": "https://developer.apple.com/documentation/activitykit/starting-and-updating-live-activities-with-activitykit-push-notifications: \"If you don’t specify the `apns-priority` value, APNs delivers the ActivityKit push notification immediately with the default priority of `10` and counts it toward the notification budget\"; \"To avoid throttling, you can send a low-priority ActivityKit push notification that doesn’t count toward the budget by setting the HTTP header field `apns-priority` to `5`. Consider this lower priority first before using the priority of `10`.\""
+    },
+    {
+      "library": "node-apn",
+      "scenario": "liveactivity-end",
+      "field": "headers.apns-priority",
+      "ours": "5",
+      "theirs": "10",
+      "reason": "library default: node-apn sends Live Activity pushes at priority 10; we default them to 5, the priority Apple says to consider first because priority-10 Live Activity pushes count against an hourly budget.",
+      "evidence": "https://developer.apple.com/documentation/activitykit/starting-and-updating-live-activities-with-activitykit-push-notifications: \"If you don’t specify the `apns-priority` value, APNs delivers the ActivityKit push notification immediately with the default priority of `10` and counts it toward the notification budget\"; \"To avoid throttling, you can send a low-priority ActivityKit push notification that doesn’t count toward the budget by setting the HTTP header field `apns-priority` to `5`. Consider this lower priority first before using the priority of `10`.\""
+    },
+    {
+      "library": "pushy",
+      "scenario": "liveactivity-end",
+      "field": "headers.apns-priority",
+      "ours": "5",
+      "theirs": "10",
+      "reason": "library default: pushy sends Live Activity pushes at priority 10; we default them to 5, the priority Apple says to consider first because priority-10 Live Activity pushes count against an hourly budget.",
+      "evidence": "https://developer.apple.com/documentation/activitykit/starting-and-updating-live-activities-with-activitykit-push-notifications: \"If you don’t specify the `apns-priority` value, APNs delivers the ActivityKit push notification immediately with the default priority of `10` and counts it toward the notification budget\"; \"To avoid throttling, you can send a low-priority ActivityKit push notification that doesn’t count toward the budget by setting the HTTP header field `apns-priority` to `5`. Consider this lower priority first before using the priority of `10`.\""
+    },
+    {
+      "library": "apns2",
+      "scenario": "liveactivity-end",
+      "field": "headers.apns-priority",
+      "ours": "5",
+      "theirs": null,
+      "reason": "library default: apns2 sends Live Activity pushes at priority 10 (by omitting the header); we default them to 5, the priority Apple says to consider first because priority-10 Live Activity pushes count against an hourly budget.",
+      "evidence": "https://developer.apple.com/documentation/activitykit/starting-and-updating-live-activities-with-activitykit-push-notifications: \"If you don’t specify the `apns-priority` value, APNs delivers the ActivityKit push notification immediately with the default priority of `10` and counts it toward the notification budget\"; \"To avoid throttling, you can send a low-priority ActivityKit push notification that doesn’t count toward the budget by setting the HTTP header field `apns-priority` to `5`. Consider this lower priority first before using the priority of `10`.\""
+    },
+    {
+      "library": "node-apn",
+      "scenario": "liveactivity-start",
+      "field": "payload.aps.alert.sound",
+      "ours": "chime.caf",
+      "theirs": "<absent>",
+      "reason": "library bug: node-apn writes a Live Activity sound as aps.sound, where an ordinary alert keeps it; Apple's Live Activity payloads put it in aps.alert.sound, as we (and pushy) do.",
+      "evidence": "https://github.com/parse-community/node-apn/blob/8.1.0/lib/notification/apsProperties.js#L83-L85 `this.aps.sound = value`; https://developer.apple.com/documentation/activitykit/starting-and-updating-live-activities-with-activitykit-push-notifications: both sample payloads put the sound inside the alert: `\"alert\": { \"title\": {...}, \"body\": {...}, \"sound\": \"chime.aiff\" }`."
+    },
+    {
+      "library": "node-apn",
+      "scenario": "liveactivity-start",
+      "field": "payload.aps.sound",
+      "ours": "<absent>",
+      "theirs": "chime.caf",
+      "reason": "library bug: node-apn writes a Live Activity sound as aps.sound, where an ordinary alert keeps it; Apple's Live Activity payloads put it in aps.alert.sound, as we (and pushy) do.",
+      "evidence": "https://github.com/parse-community/node-apn/blob/8.1.0/lib/notification/apsProperties.js#L83-L85 `this.aps.sound = value`; https://developer.apple.com/documentation/activitykit/starting-and-updating-live-activities-with-activitykit-push-notifications: both sample payloads put the sound inside the alert: `\"alert\": { \"title\": {...}, \"body\": {...}, \"sound\": \"chime.aiff\" }`."
+    },
+    {
+      "library": "apns2",
+      "scenario": "liveactivity-start",
+      "field": "payload.aps.alert.sound",
+      "ours": "chime.caf",
+      "theirs": "<absent>",
+      "reason": "library bug: apns2 writes a Live Activity sound as aps.sound, where an ordinary alert keeps it; Apple's Live Activity payloads put it in aps.alert.sound, as we (and pushy) do.",
+      "evidence": "https://github.com/sideshow/apns2/blob/v0.25.0/payload/builder.go#L199-L200 `p.aps().Sound = sound`; https://developer.apple.com/documentation/activitykit/starting-and-updating-live-activities-with-activitykit-push-notifications: both sample payloads put the sound inside the alert: `\"alert\": { \"title\": {...}, \"body\": {...}, \"sound\": \"chime.aiff\" }`."
+    },
+    {
+      "library": "apns2",
+      "scenario": "liveactivity-start",
+      "field": "payload.aps.sound",
+      "ours": "<absent>",
+      "theirs": "chime.caf",
+      "reason": "library bug: apns2 writes a Live Activity sound as aps.sound, where an ordinary alert keeps it; Apple's Live Activity payloads put it in aps.alert.sound, as we (and pushy) do.",
+      "evidence": "https://github.com/sideshow/apns2/blob/v0.25.0/payload/builder.go#L199-L200 `p.aps().Sound = sound`; https://developer.apple.com/documentation/activitykit/starting-and-updating-live-activities-with-activitykit-push-notifications: both sample payloads put the sound inside the alert: `\"alert\": { \"title\": {...}, \"body\": {...}, \"sound\": \"chime.aiff\" }`."
+    },
+    {
+      "library": "node-apn",
+      "scenario": "pushtotalk",
+      "field": "headers.apns-expiration",
+      "ours": "0",
+      "theirs": null,
+      "reason": "library default: node-apn sends no expiration unless the caller sets one; we default push-to-talk to deliver-once, as Apple instructs.",
+      "evidence": "https://developer.apple.com/documentation/pushtotalk/creating-a-push-to-talk-app: \"Set the APNs priority to `10` to request immediate delivery, and set an expiration of `0` to prevent the system from delivering older pushes.\""
+    },
+    {
+      "library": "node-apn",
+      "scenario": "voip",
+      "field": "headers.apns-expiration",
+      "ours": "0",
+      "theirs": null,
+      "reason": "library default: node-apn sends no expiration unless the caller sets one; we default VoIP to deliver-once, as Apple instructs.",
+      "evidence": "https://developer.apple.com/documentation/pushkit/responding-to-voip-notifications-from-pushkit: \"Set the value of the `apns-expiration` header field to `0`, or to only a few seconds. Doing so prevents the system from delivering the notification at a much later time.\""
+    },
+    {
+      "library": "pushy",
+      "scenario": "pushtotalk",
+      "field": "headers.apns-expiration",
+      "ours": "0",
+      "theirs": "<now+86400>",
+      "reason": "library default: pushy sends its one-day default unless the caller sets one; we default push-to-talk to deliver-once, as Apple instructs.",
+      "evidence": "https://developer.apple.com/documentation/pushtotalk/creating-a-push-to-talk-app: \"Set the APNs priority to `10` to request immediate delivery, and set an expiration of `0` to prevent the system from delivering older pushes.\""
+    },
+    {
+      "library": "pushy",
+      "scenario": "voip",
+      "field": "headers.apns-expiration",
+      "ours": "0",
+      "theirs": "<now+86400>",
+      "reason": "library default: pushy sends its one-day default unless the caller sets one; we default VoIP to deliver-once, as Apple instructs.",
+      "evidence": "https://developer.apple.com/documentation/pushkit/responding-to-voip-notifications-from-pushkit: \"Set the value of the `apns-expiration` header field to `0`, or to only a few seconds. Doing so prevents the system from delivering the notification at a much later time.\""
+    },
+    {
+      "library": "apns2",
+      "scenario": "pushtotalk",
+      "field": "headers.apns-expiration",
+      "ours": "0",
+      "theirs": null,
+      "reason": "library default: apns2 sends no expiration unless the caller sets one; we default push-to-talk to deliver-once, as Apple instructs.",
+      "evidence": "https://developer.apple.com/documentation/pushtotalk/creating-a-push-to-talk-app: \"Set the APNs priority to `10` to request immediate delivery, and set an expiration of `0` to prevent the system from delivering older pushes.\""
+    },
+    {
+      "library": "apns2",
+      "scenario": "voip",
+      "field": "headers.apns-expiration",
+      "ours": "0",
+      "theirs": null,
+      "reason": "library default: apns2 sends no expiration unless the caller sets one; we default VoIP to deliver-once, as Apple instructs.",
+      "evidence": "https://developer.apple.com/documentation/pushkit/responding-to-voip-notifications-from-pushkit: \"Set the value of the `apns-expiration` header field to `0`, or to only a few seconds. Doing so prevents the system from delivering the notification at a much later time.\""
+    },
+    {
+      "library": "node-apn",
+      "scenario": "pushtotalk",
+      "field": "payload.aps",
+      "ours": {},
+      "theirs": "<absent>",
+      "reason": "ambiguous: we write an empty aps beside the custom keys and node-apn drops it. Apple's push-to-talk sample body has no aps, while the general payload rule says to include an aps key but with one or more keys, which an empty dictionary does not satisfy either.",
+      "evidence": "https://developer.apple.com/documentation/pushtotalk/creating-a-push-to-talk-app: sample body `{\"activeSpeaker\":\"The name of the active speaker\"}`; https://developer.apple.com/documentation/usernotifications/generating-a-remote-notification: \"Inside this dictionary, include an `aps` key whose value is a dictionary containing one or more additional Apple-defined keys\"; https://github.com/parse-community/node-apn/blob/8.1.0/lib/notification/index.js#L155-L158 drops an aps with no keys"
+    },
+    {
+      "library": "node-apn",
+      "scenario": "voip",
+      "field": "payload.aps",
+      "ours": {},
+      "theirs": "<absent>",
+      "reason": "ambiguous: we write an empty aps beside the call data and node-apn drops it. Apple's PushKit page shows no VoIP payload, and the general payload rule asks for an aps key with one or more keys, which neither an empty nor a missing aps satisfies.",
+      "evidence": "https://developer.apple.com/documentation/pushkit/responding-to-voip-notifications-from-pushkit: \"Include information about the incoming call to the JSON payload.\"; https://developer.apple.com/documentation/usernotifications/generating-a-remote-notification: \"Inside this dictionary, include an `aps` key whose value is a dictionary containing one or more additional Apple-defined keys\"; https://github.com/parse-community/node-apn/blob/8.1.0/lib/notification/index.js#L155-L158 drops an aps with no keys"
+    },
+    {
+      "library": "node-apn",
+      "scenario": "complication",
+      "field": "payload.aps",
+      "ours": {},
+      "theirs": "<absent>",
+      "reason": "ambiguous: we write an empty aps beside the custom keys and node-apn drops it. Apple documents no complication payload shape beyond the general rule, which asks for an aps key with one or more keys, which neither an empty nor a missing aps satisfies.",
+      "evidence": "https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns: `complication` \"The push type for notifications that contain update information for a watchOS app’s complications.\"; https://developer.apple.com/documentation/usernotifications/generating-a-remote-notification: \"Inside this dictionary, include an `aps` key whose value is a dictionary containing one or more additional Apple-defined keys\"; https://github.com/parse-community/node-apn/blob/8.1.0/lib/notification/index.js#L155-L158 drops an aps with no keys"
+    },
+    {
+      "library": "node-apn",
+      "scenario": "location",
+      "field": "payload",
+      "ours": {
+        "aps": {}
+      },
+      "theirs": null,
+      "reason": "library bug: node-apn drops an empty aps, compiles the payload to \"{}\", and then sends the request with no body at all; Apple's request carries a JSON payload in the body. We send {\"aps\":{}}, as pushy and apns2 do.",
+      "evidence": "https://github.com/parse-community/node-apn/blob/8.1.0/lib/client.js#L576 `if (notification.body !== '{}') {`; https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns: \"To create your POST notification, you must already have the following pieces of information: ... The notification’s payload, specified as JSON data\"; \"Put the JSON payload with the notification’s content into the body of your request.\""
+    },
+    {
+      "library": "node-apn",
+      "scenario": "custom-data-nested",
+      "field": "payload.aps.alert",
+      "ours": {
+        "body": "You have a new order"
+      },
+      "theirs": "You have a new order",
+      "reason": "library default: node-apn collapses an alert that has only a body into a plain string; Apple accepts both and recommends the dictionary, which we always send.",
+      "evidence": "https://github.com/parse-community/node-apn/blob/8.1.0/lib/notification/apsProperties.js#L13-L15 `if (typeof this.aps.alert !== 'object') { this.aps.alert = value;`; https://developer.apple.com/documentation/usernotifications/generating-a-remote-notification Table 1: `alert` \"Dictionary (or String) | The information for displaying an alert. A dictionary is recommended. If you specify a string, the alert displays your string as the body text.\""
+    },
+    {
+      "library": "node-apn",
+      "scenario": "jwt",
+      "field": "header.typ",
+      "ours": "<absent>",
+      "theirs": "JWT",
+      "reason": "library default: node-apn adds the optional JWT typ header; Apple's provider-token header is alg and kid only, which is what we send.",
+      "evidence": "https://developer.apple.com/documentation/usernotifications/establishing-a-token-based-connection-to-apns: \"The header of the token contains the encryption algorithm and Key ID, and the claims payload contains your Team ID and the token generation time.\" Its example header is `{ \"alg\" : \"ES256\", \"kid\" : \"ABC123DEFG\" }`."
+    },
+    {
+      "library": "pushy",
+      "scenario": "jwt",
+      "field": "header.typ",
+      "ours": "<absent>",
+      "theirs": "JWT",
+      "reason": "library default: pushy adds the optional JWT typ header; Apple's provider-token header is alg and kid only, which is what we send.",
+      "evidence": "https://developer.apple.com/documentation/usernotifications/establishing-a-token-based-connection-to-apns: \"The header of the token contains the encryption algorithm and Key ID, and the claims payload contains your Team ID and the token generation time.\" Its example header is `{ \"alg\" : \"ES256\", \"kid\" : \"ABC123DEFG\" }`."
+    }
+  ]
+}

@@ -224,6 +224,10 @@ dashboard-jobs: _node-check ## Rebuild the Jobs dashboard SPA (npm ci + vite bui
 dashboard-messaging: _node-check ## Rebuild the Messaging dashboard SPA (npm ci + vite build into wwwroot/dist).
 	cd "$(MESSAGING_DASHBOARD_DIR)" && $(NPM) ci --no-audit --no-fund && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
 
+.PHONY: apns-oracles
+apns-oracles: ## Regenerate the APNs cross-library oracle fixtures (needs Node, Java 17 + Maven, Docker; not run in CI).
+	eng/apns-oracles/run-all.sh
+
 .PHONY: format
 format: tools ## Format C# code with CSharpier.
 	$(DOTNET) csharpier format .

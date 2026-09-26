@@ -1,0 +1,12 @@
+{
+  "name": "apns-oracle-node-apn",
+  "private": true,
+  "type": "module",
+  "description": "Test-only oracle generator: records what @parse/node-apn sends for each APNs scenario.",
+  "scripts": {
+    "generate": "node generate.mjs"
+  },
+  "dependencies": {
+    "@parse/node-apn": "8.1.0"
+  }
+}
