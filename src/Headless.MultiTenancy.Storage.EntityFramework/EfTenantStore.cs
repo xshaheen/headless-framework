@@ -32,7 +32,13 @@ internal sealed class EfTenantStore<TContext>(IDbContextFactory<TContext> dbFact
             .FirstOrDefaultAsync(x => x.NormalizedIdentifier == normalizedIdentifier, cancellationToken)
             .ConfigureAwait(false);
 
-        return record is null ? null : _ToTenantInfo(record);
+        // The database compares under its column collation, which on a provider without a pinned collation can
+        // be case- or pad-insensitive; the ITenantStore contract is an ordinal match, so a near match is a miss.
+        return
+            record is null
+            || !string.Equals(record.NormalizedIdentifier, normalizedIdentifier, StringComparison.Ordinal)
+            ? null
+            : _ToTenantInfo(record);
     }
 
     /// <inheritdoc/>
@@ -47,7 +53,10 @@ internal sealed class EfTenantStore<TContext>(IDbContextFactory<TContext> dbFact
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
             .ConfigureAwait(false);
 
-        return record is null ? null : _ToTenantInfo(record);
+        // Id carries no pinned collation, so SQL Server's case-insensitive default matches a differently-cased id;
+        // the ITenantStore contract is an ordinal match, so that row is a miss rather than an answer the catalog
+        // service would refuse as another tenant's.
+        return record is null || !string.Equals(record.Id, id, StringComparison.Ordinal) ? null : _ToTenantInfo(record);
     }
 
     /// <inheritdoc/>

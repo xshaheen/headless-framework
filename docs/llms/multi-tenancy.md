@@ -547,9 +547,9 @@ await invalidator.InvalidateIdentifierAsync(oldIdentifier, cancellationToken);
 await invalidator.InvalidateIdentifierAsync(tenant.Identifier, cancellationToken);
 ```
 
-`InvalidateIdentifierAsync` trims and lowercases its argument the same way resolution does. Invalidate after the store write commits. A cache fault propagates, so a failed eviction is visible to the caller rather than silently leaving the entry cached.
+`InvalidateIdentifierAsync` trims and lowercases its argument the same way resolution does. Invalidate after the store write commits. A fault removing the entry from the cache propagates, so a failed eviction there is visible to the caller rather than silently leaving the entry cached.
 
-Eviction is not a hard cut-over. A lookup that read the store before the write can still write the old answer back after the eviction. On a hybrid cache, `RemoveAsync` tells peers to drop their local copy only when the shared (L2) cache actually held the key, so a peer whose L2 copy had already been evicted keeps serving its local copy until that copy expires. Both windows stay within the configured expirations, which is why the [identifier no-reuse rule](#core-concepts) still applies to re-pointing an identifier at a different tenant.
+Eviction is not a hard cut-over. A lookup that read the store before the write can still write the old answer back after the eviction, whether the change was a re-point, a disable, or a metadata edit. On a hybrid cache, `RemoveAsync` tells peers to drop their local copy only when the shared (L2) cache actually held the key, and a failed broadcast is logged (or queued for replay under auto-recovery) rather than thrown, so a peer can keep serving its local copy until that copy expires. Every one of these windows stays within the configured expirations, which is why the [identifier no-reuse rule](#core-concepts) still applies to re-pointing an identifier at a different tenant.
 
 ### DoS and rate limiting
 

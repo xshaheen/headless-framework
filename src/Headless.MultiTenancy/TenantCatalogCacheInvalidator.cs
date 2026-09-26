@@ -24,14 +24,16 @@ namespace Headless.MultiTenancy;
 /// </list>
 /// <para>
 /// Invalidate after the store write commits. A lookup that read the store before the commit can still write the
-/// old answer back after the eviction, and a hybrid cache tells peers to drop their local copy only when the
-/// shared (L2) cache actually held the key, so a peer whose L2 copy had already been evicted serves its local
-/// copy until that expires. Both windows are bounded by the configured expirations, which is why retiring an
+/// old answer back after the eviction, for a disable or metadata change as much as for a re-pointed identifier.
+/// A hybrid cache tells peers to drop their local copy only when the shared (L2) cache actually held the key, and
+/// it logs rather than throws when that broadcast fails, so a peer can keep serving its local copy until it
+/// expires. Every one of these windows is bounded by the configured expirations, which is why retiring an
 /// identifier for at least <see cref="TenantCatalogOptions.CacheExpiration"/> before reusing it stays the safe
 /// default.
 /// </para>
 /// <para>
-/// Cache faults propagate: an eviction that did not happen must not look like one that did.
+/// A fault removing the entry from the cache itself propagates, so an eviction that did not happen there does not
+/// look like one that did; a hybrid cache's peer broadcast is best-effort, as described above.
 /// </para>
 /// </remarks>
 [PublicAPI]

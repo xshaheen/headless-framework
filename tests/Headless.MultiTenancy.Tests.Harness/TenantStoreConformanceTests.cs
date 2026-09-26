@@ -101,6 +101,22 @@ public abstract class TenantStoreConformanceTests<TFixture>(TFixture fixture) : 
     }
 
     [Fact]
+    public async Task should_not_match_id_differing_only_by_case()
+    {
+        // given - the catalog service refuses an answer whose Id is not exactly the queried id, so a store
+        // that matched a differently-cased id (a database's case-insensitive default collation) would turn
+        // an id lookup into a fault instead of a miss.
+        var seed = TenantSeedFaker.Create(Faker);
+        var store = await fixture.SeedAsync([seed], AbortToken);
+
+        // when
+        var found = await store.FindByIdAsync(seed.Id.ToUpperInvariant(), AbortToken);
+
+        // then
+        found.Should().BeNull();
+    }
+
+    [Fact]
     public async Task should_answer_each_lookup_with_the_queried_tenant_when_several_are_seeded()
     {
         // given - the catalog service refuses a store answer whose Identifier or Id differs from the lookup
