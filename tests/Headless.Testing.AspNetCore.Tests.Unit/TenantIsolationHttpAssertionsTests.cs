@@ -17,8 +17,8 @@ public sealed class TenantIsolationHttpAssertionsTests : TestBase
     public async Task should_pass_when_bodies_differ_only_in_per_request_members()
     {
         using var client = _Client(
-            cross: _NotFound(traceId: "trace-1", timestamp: "2026-01-01T00:00:00Z", instance: _CrossTenantUri),
-            missing: _NotFound(traceId: "trace-2", timestamp: "2026-01-01T00:00:05Z", instance: _MissingUri)
+            cross: () => _NotFound(traceId: "trace-1", timestamp: "2026-01-01T00:00:00Z", instance: _CrossTenantUri),
+            missing: () => _NotFound(traceId: "trace-2", timestamp: "2026-01-01T00:00:05Z", instance: _MissingUri)
         );
 
         await _Assert(client);
@@ -28,8 +28,8 @@ public sealed class TenantIsolationHttpAssertionsTests : TestBase
     public async Task should_pass_when_plain_text_bodies_are_equal()
     {
         using var client = _Client(
-            cross: _Response(HttpStatusCode.NotFound, "not found", "text/plain"),
-            missing: _Response(HttpStatusCode.NotFound, "not found", "text/plain")
+            cross: () => _Response(HttpStatusCode.NotFound, "not found", "text/plain"),
+            missing: () => _Response(HttpStatusCode.NotFound, "not found", "text/plain")
         );
 
         await _Assert(client);
@@ -38,7 +38,10 @@ public sealed class TenantIsolationHttpAssertionsTests : TestBase
     [Fact]
     public async Task should_report_a_success_status_as_returning_another_tenants_resource()
     {
-        using var client = _Client(cross: _Json(HttpStatusCode.OK, """{"id":"owned-by-a"}"""), missing: _NotFound());
+        using var client = _Client(
+            cross: () => _Json(HttpStatusCode.OK, """{"id":"owned-by-a"}"""),
+            missing: () => _NotFound()
+        );
 
         var failure = await _Fails(client);
 
@@ -49,8 +52,8 @@ public sealed class TenantIsolationHttpAssertionsTests : TestBase
     public async Task should_report_a_bare_forbidden_as_an_existence_leak()
     {
         using var client = _Client(
-            cross: _Json(HttpStatusCode.Forbidden, """{"status":403,"title":"forbidden"}"""),
-            missing: _NotFound()
+            cross: () => _Json(HttpStatusCode.Forbidden, """{"status":403,"title":"forbidden"}"""),
+            missing: () => _NotFound()
         );
 
         var failure = await _Fails(client);
@@ -62,11 +65,12 @@ public sealed class TenantIsolationHttpAssertionsTests : TestBase
     public async Task should_not_call_the_framework_tenant_required_answer_a_leak()
     {
         using var client = _Client(
-            cross: _Json(
-                HttpStatusCode.Forbidden,
-                """{"status":403,"error":{"code":"g:tenant_required","description":"no tenant"}}"""
-            ),
-            missing: _NotFound()
+            cross: () =>
+                _Json(
+                    HttpStatusCode.Forbidden,
+                    """{"status":403,"error":{"code":"g:tenant_required","description":"no tenant"}}"""
+                ),
+            missing: () => _NotFound()
         );
 
         var failure = await _Fails(client);
@@ -79,11 +83,12 @@ public sealed class TenantIsolationHttpAssertionsTests : TestBase
     public async Task should_report_the_framework_cross_tenant_write_refusal_from_an_errors_array()
     {
         using var client = _Client(
-            cross: _Json(
-                HttpStatusCode.Conflict,
-                """{"status":409,"errors":[{"code":"g:cross_tenant_write","description":"refused"}]}"""
-            ),
-            missing: _NotFound()
+            cross: () =>
+                _Json(
+                    HttpStatusCode.Conflict,
+                    """{"status":409,"errors":[{"code":"g:cross_tenant_write","description":"refused"}]}"""
+                ),
+            missing: () => _NotFound()
         );
 
         var failure = await _Fails(client);
@@ -94,7 +99,7 @@ public sealed class TenantIsolationHttpAssertionsTests : TestBase
     [Fact]
     public async Task should_report_an_unexpected_status()
     {
-        using var client = _Client(cross: _Json(HttpStatusCode.BadRequest, "{}"), missing: _NotFound());
+        using var client = _Client(cross: () => _Json(HttpStatusCode.BadRequest, "{}"), missing: () => _NotFound());
 
         var failure = await _Fails(client);
 
@@ -104,7 +109,10 @@ public sealed class TenantIsolationHttpAssertionsTests : TestBase
     [Fact]
     public async Task should_show_both_bodies_when_the_not_found_bodies_differ()
     {
-        using var client = _Client(cross: _NotFound(detail: "order owned-by-a is private"), missing: _NotFound());
+        using var client = _Client(
+            cross: () => _NotFound(detail: "order owned-by-a is private"),
+            missing: () => _NotFound()
+        );
 
         var failure = await _Fails(client);
 
@@ -115,8 +123,8 @@ public sealed class TenantIsolationHttpAssertionsTests : TestBase
     public async Task should_fail_when_the_content_types_differ()
     {
         using var client = _Client(
-            cross: _Response(HttpStatusCode.NotFound, "not found", "text/plain"),
-            missing: _Response(HttpStatusCode.NotFound, "not found", "text/html")
+            cross: () => _Response(HttpStatusCode.NotFound, "not found", "text/plain"),
+            missing: () => _Response(HttpStatusCode.NotFound, "not found", "text/html")
         );
 
         var failure = await _Fails(client);
@@ -127,7 +135,7 @@ public sealed class TenantIsolationHttpAssertionsTests : TestBase
     [Fact]
     public async Task should_fail_when_the_missing_id_control_does_not_answer_not_found()
     {
-        using var client = _Client(cross: _NotFound(), missing: _Json(HttpStatusCode.OK, "{}"));
+        using var client = _Client(cross: () => _NotFound(), missing: () => _Json(HttpStatusCode.OK, "{}"));
 
         var failure = await _Fails(client);
 
@@ -138,8 +146,8 @@ public sealed class TenantIsolationHttpAssertionsTests : TestBase
     public async Task should_ignore_extra_members_the_caller_names()
     {
         using var client = _Client(
-            cross: _Json(HttpStatusCode.NotFound, """{"status":404,"correlationId":"a"}"""),
-            missing: _Json(HttpStatusCode.NotFound, """{"status":404,"correlationId":"b"}""")
+            cross: () => _Json(HttpStatusCode.NotFound, """{"status":404,"correlationId":"a"}"""),
+            missing: () => _Json(HttpStatusCode.NotFound, """{"status":404,"correlationId":"b"}""")
         );
 
         await TenantIsolationHttpAssertions.ShouldAnswerNotFoundAcrossTenantsAsync(
@@ -154,8 +162,8 @@ public sealed class TenantIsolationHttpAssertionsTests : TestBase
     [Fact]
     public async Task should_send_the_requests_the_factories_build()
     {
-        var handler = new _StubHandler(_NotFound(), _NotFound());
-        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://localhost") };
+        using var handler = new _StubHandler(() => _NotFound(), () => _NotFound());
+        using var client = new HttpClient(handler, disposeHandler: false) { BaseAddress = new Uri("http://localhost") };
 
         await TenantIsolationHttpAssertions.ShouldAnswerNotFoundAcrossTenantsAsync(
             client,
@@ -184,8 +192,15 @@ public sealed class TenantIsolationHttpAssertionsTests : TestBase
         return failure.Which.Message;
     }
 
-    private static HttpClient _Client(HttpResponseMessage cross, HttpResponseMessage missing) =>
-        new(new _StubHandler(cross, missing)) { BaseAddress = new Uri("http://localhost") };
+    private static HttpClient _Client(Func<HttpResponseMessage> cross, Func<HttpResponseMessage> missing)
+    {
+#pragma warning disable CA2000 // False positive: the returned client owns and disposes the handler.
+        return new HttpClient(new _StubHandler(cross, missing), disposeHandler: true)
+        {
+            BaseAddress = new Uri("http://localhost"),
+        };
+#pragma warning restore CA2000
+    }
 
     private static HttpResponseMessage _NotFound(
         string traceId = "trace",
@@ -209,7 +224,9 @@ public sealed class TenantIsolationHttpAssertionsTests : TestBase
         return new HttpResponseMessage(status) { Content = content };
     }
 
-    private sealed class _StubHandler(HttpResponseMessage cross, HttpResponseMessage missing) : HttpMessageHandler
+    // Builds each response on send, so the assertion under test owns and disposes every one it receives.
+    private sealed class _StubHandler(Func<HttpResponseMessage> cross, Func<HttpResponseMessage> missing)
+        : HttpMessageHandler
     {
         public List<HttpMethod> Methods { get; } = [];
 
@@ -221,7 +238,9 @@ public sealed class TenantIsolationHttpAssertionsTests : TestBase
             Methods.Add(request.Method);
             var path = request.RequestUri!.AbsolutePath;
 
-            return Task.FromResult(string.Equals(path, _CrossTenantUri, StringComparison.Ordinal) ? cross : missing);
+            return Task.FromResult(
+                string.Equals(path, _CrossTenantUri, StringComparison.Ordinal) ? cross() : missing()
+            );
         }
     }
 }

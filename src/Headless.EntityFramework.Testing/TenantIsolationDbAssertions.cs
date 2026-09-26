@@ -51,7 +51,7 @@ public static class TenantIsolationDbAssertions
     {
         await ShouldNotReadAcrossTenantsAsync<TEntity>(world, createContext, key, cancellationToken)
             .ConfigureAwait(false);
-        await ShouldRefuseWritesAcrossTenantsAsync<TEntity>(world, createContext, key, null, cancellationToken)
+        await ShouldRefuseWritesAcrossTenantsAsync<TEntity>(world, createContext, key, mutate: null, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -194,7 +194,7 @@ public static class TenantIsolationDbAssertions
             {
                 _Fail(
                     $"Expected owner {world.TenantA} to read {_Name<TEntity>()} {_Format(key)}, but it found nothing. "
-                        + $"Seed the row inside world.AsTenantA() first; a cross-tenant check against a row that does "
+                        + "Seed the row inside world.AsTenantA() first; a cross-tenant check against a row that does "
                         + "not exist proves nothing."
                 );
             }

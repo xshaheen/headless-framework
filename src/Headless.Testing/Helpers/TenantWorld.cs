@@ -79,7 +79,7 @@ public sealed class TenantWorld
     /// <summary>Clears the current tenant (host context) until the returned scope is disposed.</summary>
     /// <returns>A scope that restores the previous tenant when disposed.</returns>
     [MustDisposeResource]
-    public IDisposable AsHost() => CurrentTenant.Change(null);
+    public IDisposable AsHost() => CurrentTenant.Change(id: null);
 
     /// <summary>
     /// Creates an authenticated principal whose <see cref="UserClaimTypes.TenantId"/> claim names
