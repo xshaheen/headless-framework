@@ -694,6 +694,21 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
             .Be(LeaseSettlementStatus.Stale, "the purged attempt's generation never matches the new row");
     }
 
+    public virtual async Task should_purge_nothing_without_failing_when_the_age_exceeds_the_timestamp_range()
+    {
+        var kind = CreateKind();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        var resource = CreateResource();
+        var granted = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+        await host.Leases.SettleAsync(granted.Lease!, AbortToken);
+
+        var deleted = await host.Leases.PurgeAsync(kind, TimeSpan.MaxValue, AbortToken);
+
+        deleted.Should().Be(0, "no lease can have ended further back than the timestamp range reaches");
+        (await Fixture.ReadLeaseAsync(HostKey(kind, resource), AbortToken)).Should().NotBeNull();
+    }
+
     #endregion
 
     /// <summary>The stored key of a host-scope lease.</summary>

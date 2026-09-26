@@ -125,4 +125,10 @@ public sealed class SqlServerLeasesConformanceTests(SqlServerFencingFixture fixt
     {
         return base.should_purge_only_old_ended_leases_and_never_reissue_a_generation();
     }
+
+    [Fact]
+    public override Task should_purge_nothing_without_failing_when_the_age_exceeds_the_timestamp_range()
+    {
+        return base.should_purge_nothing_without_failing_when_the_age_exceeds_the_timestamp_range();
+    }
 }

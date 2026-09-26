@@ -43,6 +43,10 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
     // the next locking read finds it. Only a row purged again in that window could send the loop round once more.
     private const int _MaxGrantRounds = 5;
 
+    // timestamptz reaches back to 4713 BC, so a purge cutoff further back than this would overflow. No lease can
+    // have ended that long ago, so clamping the age deletes exactly the same rows.
+    private const int _MaxPurgeAgeDays = 700_000;
+
     private readonly PostgreSqlFencingOptions _options;
     private readonly IUnitOfWorkFactory _unitOfWorkFactory;
     private readonly string _grantExistingSql;
@@ -529,6 +533,7 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
         Argument.IsNotNull(kind);
         Argument.IsPositiveOrZero(olderThan);
 
+        var age = olderThan > TimeSpan.FromDays(_MaxPurgeAgeDays) ? TimeSpan.FromDays(_MaxPurgeAgeDays) : olderThan;
         var total = 0;
 
         while (true)
@@ -540,7 +545,7 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
                         command.CommandTimeout = _options.CommandTimeoutSeconds;
                         command.Parameters.Add(_TextParameter("Kind", kind));
                         command.Parameters.Add(
-                            new NpgsqlParameter<TimeSpan>("OlderThan", NpgsqlDbType.Interval) { TypedValue = olderThan }
+                            new NpgsqlParameter<TimeSpan>("OlderThan", NpgsqlDbType.Interval) { TypedValue = age }
                         );
                         command.Parameters.Add(
                             new NpgsqlParameter<int>("BatchSize", NpgsqlDbType.Integer) { TypedValue = _PurgeBatchSize }
