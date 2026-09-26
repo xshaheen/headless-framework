@@ -12,7 +12,8 @@ namespace Headless.Idempotency;
 internal sealed class IdempotentOperations(
     IUnitOfWorkIdempotency enlisted,
     IIdempotencyRecordStore store,
-    IFencedLeases leases
+    IFencedLeases leases,
+    IdempotencyRequestResolver resolver
 ) : IIdempotentOperations
 {
     public async ValueTask<IdempotentAdmission> AdmitAsync(
@@ -137,5 +138,14 @@ internal sealed class IdempotentOperations(
         // Renewal touches only the lease, never the record, so it needs no record lock and no owned unit: it is one
         // autonomous lease call, which also keeps a heartbeat loop cheap.
         return leases.RenewAsync(admission.Lease!, duration, cancellationToken);
+    }
+
+    public ValueTask<IdempotencyPeekStatus> PeekAsync(string key, CancellationToken cancellationToken = default)
+    {
+        var recordKey = resolver.ResolvePeek(key);
+
+        // No owned unit and no record lock: the store reads the row on its own connection, the same shape as its
+        // autonomous purge call.
+        return store.PeekAsync(recordKey, cancellationToken);
     }
 }

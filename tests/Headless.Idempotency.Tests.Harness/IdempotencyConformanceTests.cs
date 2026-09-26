@@ -534,6 +534,67 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
 
     #endregion
 
+    #region Peek
+
+    public virtual async Task should_peek_absent_pending_completed_and_respect_retention_and_tenant_scope()
+    {
+        var key = CreateKey();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        (await host.Operations.PeekAsync(key, AbortToken)).Should().Be(IdempotencyPeekStatus.Absent);
+
+        var admitted = await AdmitAsync(host, key);
+
+        (await host.Operations.PeekAsync(key, AbortToken)).Should().Be(IdempotencyPeekStatus.Pending);
+
+        await host.Operations.CompleteAsync(admitted, Payload("done"), Contract, cancellationToken: AbortToken);
+
+        (await host.Operations.PeekAsync(key, AbortToken)).Should().Be(IdempotencyPeekStatus.Completed);
+
+        await Fixture.ShiftRecordIntoPastAsync(HostKey(key), Retention + TimeSpan.FromHours(1), AbortToken);
+
+        (await host.Operations.PeekAsync(key, AbortToken))
+            .Should()
+            .Be(IdempotencyPeekStatus.Absent, "a record past its retention peeks as absent");
+
+        using (host.CurrentTenant.Change("tenant-a"))
+        {
+            (await host.Operations.PeekAsync(key, AbortToken))
+                .Should()
+                .Be(IdempotencyPeekStatus.Absent, "a peek is scoped to the current tenant");
+        }
+    }
+
+    /// <summary>
+    /// Holds the record under a write lock that outlives its own statement (an enlisted, uncommitted completion), so
+    /// only a provider whose reads never wait behind that lock returns before the unit ends.
+    /// </summary>
+    public virtual async Task should_peek_without_waiting_on_an_uncommitted_write_to_the_record()
+    {
+        var key = CreateKey();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+        var admitted = await AdmitAsync(host, key);
+
+        await using var unit = await Fixture.BeginUnitAsync(host, AbortToken);
+        await unit.Unit.Idempotency.FenceAsync(admitted, AbortToken);
+        await unit.Unit.Idempotency.CompleteAsync(admitted, Payload("done"), Contract, cancellationToken: AbortToken);
+
+        var peek = host.Operations.PeekAsync(key, AbortToken).AsTask();
+        var first = await Task.WhenAny(
+            peek,
+            Task.Delay(IdempotencyFixtureExtensions.BlockedObservationWindow, AbortToken)
+        );
+
+        first.Should().BeSameAs(peek, "a peek never takes or waits on the record's row lock");
+        (await peek).Should().Be(IdempotencyPeekStatus.Pending, "the completing transaction has not committed yet");
+
+        await unit.CommitAsync(AbortToken);
+
+        (await host.Operations.PeekAsync(key, AbortToken)).Should().Be(IdempotencyPeekStatus.Completed);
+    }
+
+    #endregion
+
     #region Purge
 
     public virtual async Task should_purge_only_records_past_retention_and_never_touch_leases()

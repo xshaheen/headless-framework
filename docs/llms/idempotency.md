@@ -18,7 +18,7 @@ builder.Services.AddHeadlessIdempotency(setup => setup.UsePostgreSql(connectionS
 
 `AddHeadlessIdempotency` throws `InvalidOperationException` at startup if no `IFencedLeases` is registered yet.
 
-- **Autonomous** — inject `IIdempotentOperations` and call `AdmitAsync`, `CompleteAsync`, `ReleaseAsync`, or `RenewAsync`. Admission and completion each commit before they return.
+- **Autonomous** — inject `IIdempotentOperations` and call `AdmitAsync`, `CompleteAsync`, `ReleaseAsync`, `RenewAsync`, or `PeekAsync`. Admission and completion each commit before they return; `PeekAsync` is a cheap, lock-free status read with no transaction of its own.
 - **Enlisted** — `unit.Idempotency` (namespace `Headless.UnitOfWork`, added by `Headless.Idempotency.Abstractions`) runs `AdmitAsync`, `CompleteAsync`, `ReleaseAsync`, and `FenceAsync` inside the caller's own transaction, so a rollback leaves no record.
 
 A message consumer admitting an operation once across redeliveries:
@@ -97,7 +97,7 @@ Enlisted calls (`unit.Idempotency.*`) follow the same rules as `unit.Leases` and
 - **Admitted.** The middleware runs the handler behind a lease-renewal loop (`RenewAsync` every third of the configured lease duration, each call bounded by that same interval, since a handler's own fenced transaction can block a renewal on the lease row), then completes with the captured response once `ShouldCacheResponse` accepts it, or releases otherwise.
 - **The post-commit completion window.** Completion runs *after* the handler's unit commits, not inside it — there is no enlisted HTTP completion today. A crash between the handler's commit and the middleware's completion call leaves the record `Pending`; the next request is `Admitted` as a takeover (`IsTakeover = true`) and re-runs the handler. A handler reads its admission with `HttpContext.GetIdempotencyContext()` (`IIdempotencyContext`) and either checks `IsTakeover` before repeating a side effect that is not safe to redo, or fences its own writes with `unit.Idempotency.FenceAsync(context.Admission)` so a still-running previous attempt (past its own takeover) cannot also commit.
 - **Replay.** Writes the stored response verbatim (status, allowlisted headers, body). **Conflict.** Returns the configured mismatch status.
-- **InFlight.** `Reject` (default): `409 g:idempotency_in_flight`. `WaitAndReplay`: polls admission with a doubling backoff until `Replay`, `Admitted` (a takeover), or the configured timeout: `409 g:idempotency_in_flight_timeout`.
+- **InFlight.** `Reject` (default): `409 g:idempotency_in_flight`. `WaitAndReplay`: each tick of a doubling backoff calls the cheap `PeekAsync` first and only re-runs the full, row-locking `AdmitAsync` when the peek shows the record settled or the holder's last-known lease expiry has passed — until `Replay`, `Admitted` (a takeover), or the configured timeout: `409 g:idempotency_in_flight_timeout`.
 
 ---
 
@@ -115,7 +115,7 @@ Reference it from code that admits, completes, or fences idempotent operations. 
 
 ### Design and runtime behavior
 
-- `IIdempotentOperations.AdmitAsync(key, fingerprint, expectedContract?, leaseDuration?, retention?, ct)` → `IdempotentAdmission`. `CompleteAsync(admission, result, contract, retention?, ct)` stores the result and settles the lease in one transaction; throws `StaleLeaseException` when the attempt no longer owns the key. `ReleaseAsync(admission, ct)` → `LeaseSettlementStatus`. `RenewAsync(admission, duration, ct)` → `LeaseRenewalResult` (autonomous only).
+- `IIdempotentOperations.AdmitAsync(key, fingerprint, expectedContract?, leaseDuration?, retention?, ct)` → `IdempotentAdmission`. `CompleteAsync(admission, result, contract, retention?, ct)` stores the result and settles the lease in one transaction; throws `StaleLeaseException` when the attempt no longer owns the key. `ReleaseAsync(admission, ct)` → `LeaseSettlementStatus`. `RenewAsync(admission, duration, ct)` → `LeaseRenewalResult` (autonomous only). `PeekAsync(key, ct)` → `IdempotencyPeekStatus` (`Absent`, `Pending`, `Completed`; a record past its retention reads as `Absent`) — no row lock, no lease read, and no full disposition; it exists to poll cheaply while waiting on another attempt, not to replace `AdmitAsync`.
 - `IdempotentAdmission`: `Disposition`, `Key` (`IdempotencyKey(TenantId, Key)`), `Fingerprint`, `Lease`/`LeaseExpiresAt` (when relevant), `IsTakeover`, `Retention`, `Result`, `StoredFingerprint`, `StoredContract`, and `IsAdmitted` (`[MemberNotNullWhen(true, nameof(Lease), nameof(Retention))]`). `IdempotentAdmission.LeaseKind` is the constant `"headless.idempotency"` every admission's lease is granted under.
 - `unit.Idempotency` (namespace `Headless.UnitOfWork`) returns a `UnitOfWorkIdempotency` bound to the unit; repeated reads on one unit return the same instance. It mirrors `AdmitAsync`/`CompleteAsync`/`ReleaseAsync` plus `FenceAsync(admission, ct)`, which throws `StaleLeaseException` rather than returning a status. There is no enlisted `RenewAsync`.
 - `unit.Idempotency` throws `InvalidOperationException` naming `AddHeadlessIdempotency` when no provider registered the feature.
@@ -144,7 +144,7 @@ Applications reach it through a provider package; call `AddHeadlessIdempotency` 
 ### Design and runtime behavior
 
 - `AddHeadlessIdempotency` throws `InvalidOperationException` at registration when no `IFencedLeases` is already registered, and requires exactly one `Use…` provider call.
-- It registers `IIdempotentOperations`, `IUnitOfWorkIdempotency`, and `IdempotencyRequestResolver` as singletons, and always adds `IdempotencyRetentionService` as a hosted service — the service itself exits immediately when `PurgeInterval` is `null`, so the switch is a plain option rather than a registration.
+- It registers `IIdempotentOperations`, `IUnitOfWorkIdempotency`, and `IdempotencyRequestResolver` as singletons, and always adds `IdempotencyRetentionService` as a hosted service — when `PurgeInterval` is `null` the service stays idle on a fixed one-minute re-check cadence instead of exiting, so a later reload back to a value resumes purging without restarting the host.
 - `IIdempotencyRecordStore` is the provider seam. Applications do not call it.
 
 ---

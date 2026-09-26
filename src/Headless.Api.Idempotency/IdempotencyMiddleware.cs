@@ -172,7 +172,7 @@ internal sealed partial class IdempotencyMiddleware(
         switch (admission.Disposition)
         {
             case IdempotentDisposition.InFlight when options.InFlightStrategy == InFlightStrategy.WaitAndReplay:
-                await _WaitAndReplayAsync(context, next, request, options, ct).ConfigureAwait(false);
+                await _WaitAndReplayAsync(context, next, request, admission, options, ct).ConfigureAwait(false);
                 return;
             case IdempotentDisposition.InFlight:
                 LogInFlightReject(request.Key);
@@ -247,19 +247,25 @@ internal sealed partial class IdempotencyMiddleware(
     }
 
     /// <summary>
-    /// Polls admission with a doubling, capped backoff until the running attempt settles or the wait budget ends. A
-    /// completed attempt replays; one that released the key or lost its lease admits this request as the new owner.
+    /// Polls with a doubling, capped backoff until the running attempt settles or the wait budget ends. Each tick
+    /// reads the cheap, lock-free <see cref="IIdempotentOperations.PeekAsync" /> instead of the full row-locking
+    /// admission; the full admission — the only call that can actually replay a result or take the key over — runs
+    /// only when the peek reports the record is no longer <see cref="IdempotencyPeekStatus.Pending" />, or when the
+    /// current holder's lease may already have expired, so a stalled attempt is taken over without waiting out the
+    /// rest of the poll budget on reads that could only ever confirm the same stale "in flight" status.
     /// </summary>
     private async Task _WaitAndReplayAsync(
         HttpContext context,
         RequestDelegate next,
         AdmissionRequest request,
+        IdempotentAdmission admission,
         IdempotencyOptions options,
         CancellationToken ct
     )
     {
         var startedAt = timeProvider.GetTimestamp();
         var delay = _InitialPollDelay;
+        var holderLeaseExpiresAt = admission.LeaseExpiresAt;
 
         while (true)
         {
@@ -272,10 +278,45 @@ internal sealed partial class IdempotencyMiddleware(
             await Task.Delay(delay < remaining ? delay : remaining, timeProvider, ct).ConfigureAwait(false);
             delay = delay * 2 < _MaxPollDelay ? delay * 2 : _MaxPollDelay;
 
-            IdempotentAdmission admission;
+            // Once the holder's last-known lease expiry has passed, a peek can only ever repeat the stale "in
+            // flight" status it read before that instant: skip straight to the full admission, which alone can
+            // renew, take over, or replay.
+            var leaseMayHaveExpired = holderLeaseExpiresAt is { } expiry && timeProvider.GetUtcNow() >= expiry;
+
+            if (!leaseMayHaveExpired)
+            {
+                IdempotencyPeekStatus peek;
+
+                try
+                {
+                    peek = await operations.PeekAsync(request.Key, ct).ConfigureAwait(false);
+                }
+                catch (Exception storeEx) when (_IsStoreFailure(storeEx, ct))
+                {
+                    LogStoreFailure("wait-peek", request.Key, options.OnStoreError.ToString(), storeEx);
+                    if (options.OnStoreError == OnStoreErrorBehavior.Throw)
+                    {
+                        throw;
+                    }
+
+                    // Another attempt holds the key, so running the handler here could execute the operation twice.
+                    // A recoverable 409 lets the client retry once the store is back.
+                    break;
+                }
+
+                if (peek == IdempotencyPeekStatus.Pending)
+                {
+                    // Nothing changed since the last admission: another tick of the cheap read is worth far less
+                    // than a row-locking write that would only confirm the same disposition.
+                    continue;
+                }
+            }
+
+            IdempotentAdmission reAdmission;
+
             try
             {
-                admission = await _AdmitAsync(request, options, ct).ConfigureAwait(false);
+                reAdmission = await _AdmitAsync(request, options, ct).ConfigureAwait(false);
             }
             catch (Exception storeEx) when (_IsStoreFailure(storeEx, ct))
             {
@@ -290,11 +331,13 @@ internal sealed partial class IdempotencyMiddleware(
                 break;
             }
 
-            if (admission.Disposition != IdempotentDisposition.InFlight)
+            if (reAdmission.Disposition != IdempotentDisposition.InFlight)
             {
-                await _DispatchSettledAsync(context, next, admission, request, options, ct).ConfigureAwait(false);
+                await _DispatchSettledAsync(context, next, reAdmission, request, options, ct).ConfigureAwait(false);
                 return;
             }
+
+            holderLeaseExpiresAt = reAdmission.LeaseExpiresAt;
         }
 
         LogInFlightTimeout(request.Key);

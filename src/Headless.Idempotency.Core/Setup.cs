@@ -69,8 +69,8 @@ public static class SetupHeadlessIdempotency
             services.TryAddSingleton<IUnitOfWorkIdempotency, UnitOfWorkIdempotencyFeature>();
             services.TryAddSingleton<IIdempotentOperations, IdempotentOperations>();
 
-            // Always registered; the service itself exits at once when PurgeInterval is null, so the switch stays an
-            // option that configuration can flip without re-registering services.
+            // Always registered; the service itself stays idle on a fixed re-check cadence when PurgeInterval is
+            // null, so the switch stays an option that configuration can flip without re-registering services.
             services.AddHostedService<IdempotencyRetentionService>();
 
             foreach (var extension in setup.Extensions)

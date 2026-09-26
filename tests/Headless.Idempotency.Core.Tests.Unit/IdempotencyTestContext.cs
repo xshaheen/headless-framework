@@ -32,7 +32,7 @@ internal sealed class IdempotencyTestContext
 
         Resolver = new IdempotencyRequestResolver(Tenant, monitor);
         Feature = new UnitOfWorkIdempotencyFeature(Resolver, Store, Leases);
-        Operations = new IdempotentOperations(Feature, Store, FencedLeases);
+        Operations = new IdempotentOperations(Feature, Store, FencedLeases, Resolver);
     }
 
     public IdempotentOperationsOptions Options { get; } = new();

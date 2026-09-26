@@ -9,7 +9,8 @@ namespace Headless.Idempotency;
 
 /// <summary>
 /// Deletes idempotency records past their retention on a fixed interval, then the fenced leases those records left
-/// behind. Disabled when <see cref="IdempotentOperationsOptions.PurgeInterval" /> is <see langword="null" />.
+/// behind. Idle, on a fixed re-check cadence, while <see cref="IdempotentOperationsOptions.PurgeInterval" /> is
+/// <see langword="null" />, so a reload back to a value resumes purging without restarting the host.
 /// </summary>
 /// <remarks>
 /// Records are purged before leases so a lease is never deleted while a record that may still be completed under it
@@ -25,6 +26,10 @@ internal sealed partial class IdempotencyRetentionService(
     ILogger<IdempotencyRetentionService> logger
 ) : BackgroundService
 {
+    // How often a disabled purge re-checks IdempotentOperationsOptions.PurgeInterval for a reload back to a value.
+    // Fixed rather than configurable: it only bounds how long a reload takes to resume purging, not a purge itself.
+    private static readonly TimeSpan _DisabledRecheckInterval = TimeSpan.FromMinutes(1);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
@@ -32,13 +37,16 @@ internal sealed partial class IdempotencyRetentionService(
             // Read on every round, so an interval changed through options reload applies to the next one.
             var interval = options.CurrentValue.PurgeInterval;
 
-            if (interval is null)
-            {
-                return;
-            }
-
             try
             {
+                if (interval is null)
+                {
+                    // Disabled for now, not forever: re-checking on a fixed cadence lets a reload back to a value
+                    // resume purging without restarting the host, rather than ending this hosted service for good.
+                    await Task.Delay(_DisabledRecheckInterval, timeProvider, stoppingToken).ConfigureAwait(false);
+                    continue;
+                }
+
                 // Waits first: at startup the provider's storage initializer may not have created the table yet.
                 await Task.Delay(interval.Value, timeProvider, stoppingToken).ConfigureAwait(false);
                 await _PurgeAsync(stoppingToken).ConfigureAwait(false);

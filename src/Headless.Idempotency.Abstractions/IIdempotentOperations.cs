@@ -99,4 +99,18 @@ public interface IIdempotentOperations
         TimeSpan duration,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    /// Reads <paramref name="key" />'s current status for the current tenant without taking a row lock or touching
+    /// its lease. Cheap enough to poll while waiting on another attempt; a caller that needs the live disposition,
+    /// the lease expiry, or the stored result still calls <see cref="AdmitAsync" />.
+    /// </summary>
+    /// <param name="key">The idempotency key.</param>
+    /// <param name="cancellationToken">Token used to cancel the database call.</param>
+    /// <returns>
+    /// <see cref="IdempotencyPeekStatus.Absent" /> when no record exists or its retention already elapsed;
+    /// otherwise <see cref="IdempotencyPeekStatus.Pending" /> or <see cref="IdempotencyPeekStatus.Completed" />.
+    /// </returns>
+    /// <exception cref="ArgumentException">The key or current tenant id is invalid.</exception>
+    ValueTask<IdempotencyPeekStatus> PeekAsync(string key, CancellationToken cancellationToken = default);
 }

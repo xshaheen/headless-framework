@@ -148,6 +148,20 @@ public interface IIdempotencyRecordStore
     );
 
     /// <summary>
+    /// Reads <paramref name="key" />'s status on the provider's own connection, without the row lock or the unit of
+    /// work every other verb takes: no <c>FOR UPDATE</c>/<c>UPDLOCK</c>, so it never waits behind a concurrent
+    /// admission, fence, completion, or release the way <see cref="LockAsync" /> would.
+    /// </summary>
+    /// <param name="key">The record key.</param>
+    /// <param name="cancellationToken">Token used to cancel the database call.</param>
+    /// <returns>
+    /// <see cref="IdempotencyPeekStatus.Absent" /> when the row does not exist or its <c>retention_until</c> is at or
+    /// before the database clock; otherwise the row's <see cref="IdempotencyRecordStatus" /> mapped to
+    /// <see cref="IdempotencyPeekStatus.Pending" /> or <see cref="IdempotencyPeekStatus.Completed" />.
+    /// </returns>
+    ValueTask<IdempotencyPeekStatus> PeekAsync(IdempotencyRecordKey key, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Deletes, on the provider's own connection and committed before returning, at most <paramref name="limit" />
     /// records, completed or pending, whose <c>retention_until</c> is at least <paramref name="olderThan" /> before the
     /// database clock. A record another transaction holds is skipped for a later purge rather than waited on.

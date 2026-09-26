@@ -608,6 +608,110 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     }
 
     [Fact]
+    public async Task should_peek_each_tick_and_skip_the_admission_while_still_pending()
+    {
+        var operations = Substitute.For<IIdempotentOperations>();
+        AdmitReturns(operations, InFlight);
+        PeekReturns(operations, IdempotencyPeekStatus.Pending);
+        var middleware = CreateMiddleware(
+            options: Monitor(_WaitAndReplay(TimeSpan.FromMilliseconds(300))),
+            operations: operations,
+            timeProvider: TimeProvider.System
+        );
+        var context = CreateContext(idempotencyKey: "k1");
+
+        await middleware.InvokeAsync(context, _ => Task.CompletedTask);
+
+        context.Response.StatusCode.Should().Be(409);
+        (await ReadResponseAsync(context)).Should().Contain(IdempotencyErrorCodes.InFlightTimeout);
+        AdmittedKeys(operations).Should().ContainSingle("every poll tick found the peek still pending");
+        CallCount(operations, nameof(IIdempotentOperations.PeekAsync))
+            .Should()
+            .BeGreaterThan(1, "the waiter peeks before giving up");
+    }
+
+    [Fact]
+    public async Task should_admit_again_only_once_the_peek_reports_the_key_settled()
+    {
+        var operations = Substitute.For<IIdempotentOperations>();
+        AdmitReturns(
+            operations,
+            InFlight,
+            key => Replay(key, new IdempotencyResponseSnapshot { StatusCode = 201, Body = [7] })
+        );
+        PeekReturns(
+            operations,
+            IdempotencyPeekStatus.Pending,
+            IdempotencyPeekStatus.Pending,
+            IdempotencyPeekStatus.Completed
+        );
+        var middleware = CreateMiddleware(
+            options: Monitor(_WaitAndReplay(TimeSpan.FromSeconds(10))),
+            operations: operations,
+            timeProvider: TimeProvider.System
+        );
+        var context = CreateContext(idempotencyKey: "k1");
+
+        await middleware.InvokeAsync(context, _ => Task.CompletedTask);
+
+        context.Response.StatusCode.Should().Be(201);
+        AdmittedKeys(operations)
+            .Should()
+            .HaveCount(2, "only the peek that reported a settled key triggers a re-admission");
+        CallCount(operations, nameof(IIdempotentOperations.PeekAsync)).Should().Be(3);
+    }
+
+    [Fact]
+    public async Task should_admit_directly_without_peeking_once_the_holders_lease_may_have_expired()
+    {
+        var operations = Substitute.For<IIdempotentOperations>();
+        var expiredHolder = IdempotentAdmission.InFlight(
+            new IdempotencyKey(TestTenant, "k1"),
+            IdempotencyFingerprint.Compute("any"),
+            DateTimeOffset.UtcNow.AddMilliseconds(-1)
+        );
+        AdmitReturns(
+            operations,
+            _ => expiredHolder,
+            key => Replay(key, new IdempotencyResponseSnapshot { StatusCode = 201, Body = [9] })
+        );
+        var middleware = CreateMiddleware(
+            options: Monitor(_WaitAndReplay(TimeSpan.FromSeconds(10))),
+            operations: operations,
+            timeProvider: TimeProvider.System
+        );
+        var context = CreateContext(idempotencyKey: "k1");
+
+        await middleware.InvokeAsync(context, _ => Task.CompletedTask);
+
+        context.Response.StatusCode.Should().Be(201);
+        CallCount(operations, nameof(IIdempotentOperations.PeekAsync))
+            .Should()
+            .Be(0, "an already-expired holder lease re-admits directly instead of peeking");
+        AdmittedKeys(operations).Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task should_propagate_peek_failure_when_on_store_error_is_throw()
+    {
+        var operations = Substitute.For<IIdempotentOperations>();
+        AdmitReturns(operations, InFlight);
+        operations
+            .PeekAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromException<IdempotencyPeekStatus>(new InvalidOperationException("store down")));
+        var middleware = CreateMiddleware(
+            options: Monitor(_WaitAndReplay(TimeSpan.FromSeconds(10))),
+            operations: operations,
+            timeProvider: TimeProvider.System
+        );
+
+        var act = async () =>
+            await middleware.InvokeAsync(CreateContext(idempotencyKey: "k1"), _ => Task.CompletedTask);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
     public async Task should_return_409_in_flight_timeout_without_running_handler_when_poll_fails_and_fail_open()
     {
         var operations = Substitute.For<IIdempotentOperations>();

@@ -111,13 +111,46 @@ public sealed class IdempotencyRetentionServiceTests : TestBase
 
         // when
         await service.StartAsync(AbortToken);
-        await service.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
         _time.Advance(TimeSpan.FromDays(1));
+        await Task.Delay(50, AbortToken);
 
-        // then
+        // then — a disabled purge keeps re-checking on a fixed cadence instead of exiting the hosted service
         _store.ReceivedCalls().Should().BeEmpty();
         _leases.ReceivedCalls().Should().BeEmpty();
+        service.ExecuteTask!.IsCompleted.Should().BeFalse();
+
         await service.StopAsync(AbortToken);
+        service.ExecuteTask!.IsCompletedSuccessfully.Should().BeTrue("it still stops cleanly on shutdown");
+    }
+
+    [Fact]
+    public async Task should_resume_purging_once_the_interval_reloads_from_null_to_a_value()
+    {
+        // given
+        _options.PurgeInterval = null;
+        var purged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _store
+            .PurgeAsync(TimeSpan.Zero, 2, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                purged.TrySetResult();
+                return ValueTask.FromResult(0);
+            });
+        using var service = _Service();
+
+        // when — still disabled: the re-check tick alone must not purge anything
+        await service.StartAsync(AbortToken);
+        _time.Advance(TimeSpan.FromDays(1));
+        await Task.Delay(50, AbortToken);
+        _store.ReceivedCalls().Should().BeEmpty("the interval is still null");
+
+        // and then the option reloads back to a value on the already-running service
+        _options.PurgeInterval = _Interval;
+        await _AdvanceUntilAsync(purged.Task);
+        await service.StopAsync(AbortToken);
+
+        // then
+        service.ExecuteTask!.IsCompletedSuccessfully.Should().BeTrue();
     }
 
     private IdempotencyRetentionService _Service()

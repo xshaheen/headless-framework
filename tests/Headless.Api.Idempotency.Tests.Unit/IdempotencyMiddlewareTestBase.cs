@@ -167,6 +167,19 @@ public abstract class IdempotencyMiddlewareTestBase : TestBase
             });
     }
 
+    /// <summary>Makes every peek return the given statuses in order (the last repeats).</summary>
+    internal static void PeekReturns(IIdempotentOperations operations, params IdempotencyPeekStatus[] steps)
+    {
+        var index = 0;
+        operations
+            .PeekAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                var step = steps[Math.Min(Interlocked.Increment(ref index) - 1, steps.Length - 1)];
+                return new ValueTask<IdempotencyPeekStatus>(step);
+            });
+    }
+
     internal static IdempotencyFingerprint FingerprintOf(byte[] body)
     {
         return IdempotencyFingerprint.Compute(SHA256.HashData(body));

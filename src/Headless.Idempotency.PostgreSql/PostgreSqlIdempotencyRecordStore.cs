@@ -51,6 +51,7 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
     private readonly string _admitSql;
     private readonly string _completeSql;
     private readonly string _releaseSql;
+    private readonly string _peekSql;
     private readonly string _purgeSql;
 
     public PostgreSqlIdempotencyRecordStore(
@@ -69,6 +70,7 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
         _admitSql = _BuildAdmitSql(table);
         _completeSql = _BuildCompleteSql(table);
         _releaseSql = _BuildReleaseSql(table);
+        _peekSql = _BuildPeekSql(table);
         _purgeSql = _BuildPurgeSql(table);
     }
 
@@ -310,6 +312,50 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
 
     #endregion
 
+    #region Peek
+
+    public async ValueTask<IdempotencyPeekStatus> PeekAsync(
+        IdempotencyRecordKey key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        // A brand-new connection and a plain SELECT: PostgreSQL's MVCC readers never wait on another transaction's
+        // FOR UPDATE row lock, so this never blocks behind a concurrent admission, fence, completion, or release.
+        await using var connection = _options.CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        await using var command = new NpgsqlCommand(_peekSql, connection)
+        {
+            CommandTimeout = _options.CommandTimeoutSeconds,
+        };
+        command.Parameters.Add(_TextParameter("TenantId", key.TenantId));
+        command.Parameters.Add(_TextParameter("Key", key.Key));
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return IdempotencyPeekStatus.Absent;
+        }
+
+        var status = (IdempotencyRecordStatus)reader.GetInt16(0);
+        var retentionUntil = await reader
+            .GetFieldValueAsync<DateTimeOffset>(1, cancellationToken)
+            .ConfigureAwait(false);
+        var now = await reader.GetFieldValueAsync<DateTimeOffset>(2, cancellationToken).ConfigureAwait(false);
+
+        if (retentionUntil <= now)
+        {
+            return IdempotencyPeekStatus.Absent;
+        }
+
+        return status == IdempotencyRecordStatus.Completed
+            ? IdempotencyPeekStatus.Completed
+            : IdempotencyPeekStatus.Pending;
+    }
+
+    #endregion
+
     #region Purge
 
     public async ValueTask<int> PurgeAsync(TimeSpan olderThan, int limit, CancellationToken cancellationToken = default)
@@ -545,6 +591,18 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
                 {PostgreSqlIdempotencySchema.RetentionUntil} = {_ExtendedRetention}
             WHERE {_KeyPredicate}
                 AND {PostgreSqlIdempotencySchema.LeaseGeneration} = @LeaseGeneration;
+            """;
+    }
+
+    private static string _BuildPeekSql(string table)
+    {
+        // No FOR UPDATE: a plain MVCC snapshot read, so it never waits on the row lock every other verb takes.
+        return $"""
+            SELECT {PostgreSqlIdempotencySchema.Status},
+                {PostgreSqlIdempotencySchema.RetentionUntil},
+                clock_timestamp()
+            FROM {table}
+            WHERE {_KeyPredicate};
             """;
     }
 

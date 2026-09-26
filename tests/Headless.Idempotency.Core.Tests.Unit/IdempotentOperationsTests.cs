@@ -173,6 +173,35 @@ public sealed class IdempotentOperationsTests : TestBase
         context.FencedLeases.ReceivedCalls().Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task should_peek_the_store_through_the_resolved_record_key()
+    {
+        // given
+        var context = new IdempotencyTestContext();
+        context.Store.PeekAsync(RecordKey, AbortToken).Returns(IdempotencyPeekStatus.Completed);
+
+        // when
+        var status = await context.Operations.PeekAsync(Key, AbortToken);
+
+        // then
+        status.Should().Be(IdempotencyPeekStatus.Completed);
+        await context.Store.DidNotReceiveWithAnyArgs().BeginOwnedUnitAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_refuse_to_peek_an_invalid_key()
+    {
+        // given
+        var context = new IdempotencyTestContext();
+
+        // when
+        var act = async () => await context.Operations.PeekAsync(" bad", AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>();
+        await context.Store.DidNotReceiveWithAnyArgs().PeekAsync(default, AbortToken);
+    }
+
     private (IUnitOfWork Unit, IRelationalUnitOfWorkResource Resource) _GivenOwnedUnit(IdempotencyTestContext context)
     {
         var (unit, resource) = ActiveUnit(isOwned: true);

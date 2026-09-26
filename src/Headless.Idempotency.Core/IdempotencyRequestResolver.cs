@@ -63,6 +63,19 @@ internal sealed class IdempotencyRequestResolver(
         return new IdempotencyRecordKey(tenantId, admission.Key.Key);
     }
 
+    /// <summary>Validates a peek's key and the current tenant, and returns the record key.</summary>
+    /// <exception cref="ArgumentException">The key or current tenant id is invalid.</exception>
+    public IdempotencyRecordKey ResolvePeek(string key)
+    {
+        _ValidateKey(key, nameof(key));
+
+        // Read on every call, never cached: the same singleton serves every tenant, and a caller may change tenant
+        // between two calls.
+        var tenantId = _NormalizeTenantId(currentTenant.Id, "The current tenant id", "tenantId");
+
+        return new IdempotencyRecordKey(tenantId, key);
+    }
+
     /// <summary>Refuses a fingerprint whose algorithm this version cannot compare or whose digest cannot be stored.</summary>
     /// <exception cref="ArgumentNullException"><paramref name="fingerprint" /> is <see langword="null" />.</exception>
     /// <exception cref="ArgumentException">The fingerprint's algorithm is unknown or its digest is too long.</exception>

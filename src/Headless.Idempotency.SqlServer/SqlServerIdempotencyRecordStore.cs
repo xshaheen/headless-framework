@@ -52,6 +52,7 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
     private readonly string _admitSql;
     private readonly string _completeSql;
     private readonly string _releaseSql;
+    private readonly string _peekSql;
 
     // Built once per store, after probing the record database's snapshot setting; null until the first purge.
     private string? _purgeSql;
@@ -71,6 +72,7 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
         _admitSql = _BuildAdmitSql(_table);
         _completeSql = _BuildCompleteSql(_table);
         _releaseSql = _BuildReleaseSql(_table);
+        _peekSql = _BuildPeekSql(_table);
     }
 
     #region Owned units and enlistment
@@ -308,6 +310,60 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
                     + "generation inside the transaction that locked it."
             );
         }
+    }
+
+    #endregion
+
+    #region Peek
+
+    public async ValueTask<IdempotencyPeekStatus> PeekAsync(
+        IdempotencyRecordKey key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var connection = _options.CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        // Explicit so the read runs at READ COMMITTED whatever isolation level a pooled session last used. No
+        // locking hint is added: under RCSI the row is read from its version store and never waits; without RCSI a
+        // plain read takes only a shared lock for the statement's own duration, which the winner's update-intent
+        // lock does not block, and only waits out the winner's exclusive lock while its write is still uncommitted.
+        await using var transaction = (SqlTransaction)
+            await connection
+                .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+                .ConfigureAwait(false);
+
+        await using var command = _CreateCommand(_peekSql, connection, transaction, key);
+
+        bool found;
+        IdempotencyRecordStatus status = default;
+        DateTimeOffset retentionUntil = default;
+        DateTimeOffset now = default;
+
+        await using (var reader = await _ExecuteReaderAsync(command, cancellationToken).ConfigureAwait(false))
+        {
+            found = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+
+            if (found)
+            {
+                status = (IdempotencyRecordStatus)reader.GetInt16(0);
+                retentionUntil = await reader
+                    .GetFieldValueAsync<DateTimeOffset>(1, cancellationToken)
+                    .ConfigureAwait(false);
+                now = await reader.GetFieldValueAsync<DateTimeOffset>(2, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        // The read already happened and nothing was written; a late cancel must not roll back a read.
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+
+        if (!found || retentionUntil <= now)
+        {
+            return IdempotencyPeekStatus.Absent;
+        }
+
+        return status == IdempotencyRecordStatus.Completed
+            ? IdempotencyPeekStatus.Completed
+            : IdempotencyPeekStatus.Pending;
     }
 
     #endregion
@@ -676,6 +732,18 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
                 AND {SqlServerIdempotencySchema.LeaseGeneration} = @LeaseGeneration;
 
             SELECT @@ROWCOUNT;
+            """;
+    }
+
+    private static string _BuildPeekSql(string table)
+    {
+        // No UPDLOCK/HOLDLOCK: a plain read at whatever isolation the caller's transaction set.
+        return $"""
+            SELECT {SqlServerIdempotencySchema.Status},
+                {SqlServerIdempotencySchema.RetentionUntil},
+                TODATETIMEOFFSET(SYSUTCDATETIME(), 0)
+            FROM {table}
+            WHERE {_KeyPredicate};
             """;
     }
 

@@ -79,6 +79,18 @@ public sealed class PostgreSqlIdempotencyConformanceTests(PostgreSqlIdempotencyF
     }
 
     [Fact]
+    public override Task should_peek_absent_pending_completed_and_respect_retention_and_tenant_scope()
+    {
+        return base.should_peek_absent_pending_completed_and_respect_retention_and_tenant_scope();
+    }
+
+    [Fact]
+    public override Task should_peek_without_waiting_on_an_uncommitted_write_to_the_record()
+    {
+        return base.should_peek_without_waiting_on_an_uncommitted_write_to_the_record();
+    }
+
+    [Fact]
     public override Task should_purge_only_records_past_retention_and_never_touch_leases()
     {
         return base.should_purge_only_records_past_retention_and_never_touch_leases();
