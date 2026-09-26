@@ -83,6 +83,13 @@ namespace Headless.Jobs.Console.Demo.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
+                    b.Property<string>("OnOverlap")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("Allow");
+
                     b.Property<DateTime>("ReconciledThroughUtc")
                         .HasColumnType("timestamp with time zone");
 

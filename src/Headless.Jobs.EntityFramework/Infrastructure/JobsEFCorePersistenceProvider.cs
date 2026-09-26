@@ -681,10 +681,21 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             .AsNoTracking()
             .SingleAsync(x => x.Id == cronJobId, cancellationToken)
             .ConfigureAwait(false);
-        nextOccurrence.SnapshotContract(contractDefinition);
-        nextOccurrence.CronJob = null!;
-        await dbContext.Set<CronJobOccurrenceEntity<TCronJob>>().AddAsync(nextOccurrence, cancellationToken);
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        if (
+            !await _DefersReplacementToMaterializationAsync(
+                    dbContext,
+                    cronJobId,
+                    contractDefinition.OnOverlap,
+                    cancellationToken
+                )
+                .ConfigureAwait(false)
+        )
+        {
+            nextOccurrence.SnapshotContract(contractDefinition);
+            nextOccurrence.CronJob = null!;
+            await dbContext.Set<CronJobOccurrenceEntity<TCronJob>>().AddAsync(nextOccurrence, cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
 
         var result = await dbContext
             .Set<TCronJob>()
@@ -695,6 +706,30 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
 
         return result;
+    }
+
+    /// <summary>
+    /// Whether a schedule edit or resume must leave its next occurrence to materialization instead of inserting it now.
+    /// </summary>
+    /// <remarks>
+    /// Under <see cref="CronOverlapPolicy.Skip"/>, a replacement inserted next to a still-unfinished occurrence would
+    /// later be claimed without any overlap check — the timed-out sweep takes every past-due idle row. Leaving the
+    /// instant empty lets materialization create it when due and judge overlap then, by which time the unfinished
+    /// occurrence may well have finished. The caller has already locked the definition row and retired its idle and
+    /// queued occurrences, so what remains unfinished here is an execution that is really running or awaiting retry.
+    /// </remarks>
+    private static async Task<bool> _DefersReplacementToMaterializationAsync(
+        DbContext dbContext,
+        Guid cronJobId,
+        CronOverlapPolicy onOverlap,
+        CancellationToken cancellationToken
+    )
+    {
+        return CronOverlapRule.ForbidsOverlap(onOverlap)
+            && await dbContext
+                .Set<CronJobOccurrenceEntity<TCronJob>>()
+                .AnyAsync(CronOverlapRule.UnfinishedOccurrenceOf<TCronJob>(cronJobId), cancellationToken)
+                .ConfigureAwait(false);
     }
 
     public async Task<TCronJob[]?> UpdateCronJobsAtomicallyAsync(
@@ -777,6 +812,10 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                             // revision fence used by recovery, without replacing the schedule occurrence.
                             .SetProperty(x => x.OnMissedRun, update.Definition.OnMissedRun)
                             .SetProperty(x => x.MissedRunGraceSeconds, update.Definition.MissedRunGraceSeconds)
+                            // Same authority rule, but no revision bump: materialization reads the overlap policy
+                            // from the definition row it has just locked, like OnNodeDeath, so no stale copy of it
+                            // travels on a dispatch candidate that a fence would need to reject.
+                            .SetProperty(x => x.OnOverlap, update.Definition.OnOverlap)
                             .SetProperty(
                                 x => x.ScheduleRevision,
                                 revisionChanged ? current.ScheduleRevision + 1 : current.ScheduleRevision
@@ -864,7 +903,16 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                     )
                     .ConfigureAwait(false);
 
-                if (!current.IsPaused)
+                if (
+                    !current.IsPaused
+                    && !await _DefersReplacementToMaterializationAsync(
+                            dbContext,
+                            current.Id,
+                            update.Definition.OnOverlap,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false)
+                )
                 {
                     replacement!.CronJobId = current.Id;
                     var contractDefinition = await dbContext

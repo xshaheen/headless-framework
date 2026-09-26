@@ -128,6 +128,10 @@ public static class SetupJobs
             "SchedulerOptionsBuilder.DefaultMissedRunGraceSeconds must be greater than zero."
         );
         Ensure.True(
+            schedulerOptionsBuilder.DefaultOverlapPolicy is CronOverlapPolicy.Allow or CronOverlapPolicy.Skip,
+            "SchedulerOptionsBuilder.DefaultOverlapPolicy must be a defined CronOverlapPolicy value."
+        );
+        Ensure.True(
             schedulerOptionsBuilder.FingerprintSweepInterval > TimeSpan.Zero,
             "SchedulerOptionsBuilder.FingerprintSweepInterval must be greater than zero."
         );

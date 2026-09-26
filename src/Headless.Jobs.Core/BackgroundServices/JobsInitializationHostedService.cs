@@ -228,9 +228,10 @@ internal sealed class JobsInitializationHostedService(
         var scopedProvider = scope.ServiceProvider;
         var internalJobsManager = scopedProvider.GetRequiredService<IInternalJobManager>();
 
-        // Resolve the recovery knobs HERE rather than in the provider: attribute value, else the scheduler-wide
-        // setting, else the framework default. The threshold has to be identical on every node — if each provider
-        // resolved it from local configuration, two nodes could disagree about whether the same instant misfired.
+        // Resolve the recovery and overlap knobs HERE rather than in the provider: attribute value, else the
+        // scheduler-wide setting, else the framework default. The threshold has to be identical on every node — if
+        // each provider resolved it from local configuration, two nodes could disagree about whether the same instant
+        // misfired.
         var functionsToSeed = functionRegistry
             .Functions.Where(x => !string.IsNullOrEmpty(x.Value.CronExpression))
             .Select(x => new CronSeedDefinition(
@@ -244,7 +245,10 @@ internal sealed class JobsInitializationHostedService(
                 ),
                 scopedProvider.GetRequiredService<CronScheduleCache>().ComputeEvaluationFingerprint(timeZoneId: null),
                 functionRegistry.Descriptors[x.Key].ContractVersion
-            ))
+            )
+            {
+                OnOverlap = _ResolveOverlapPolicy(x.Key, x.Value.OnOverlap, schedulerOptions.DefaultOverlapPolicy),
+            })
             .ToArray();
 
         // No lock configured (default): run the seed directly. Seeded rows carry a DETERMINISTIC primary key derived
@@ -294,6 +298,26 @@ internal sealed class JobsInitializationHostedService(
         {
             await internalJobsManager.MigrateDefinedCronJobs(functionsToSeed, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    private static CronOverlapPolicy _ResolveOverlapPolicy(
+        string function,
+        CronOverlapPolicy? fromAttribute,
+        CronOverlapPolicy schedulerWide
+    )
+    {
+        var resolved = fromAttribute ?? schedulerWide;
+        if (resolved is CronOverlapPolicy.Allow or CronOverlapPolicy.Skip)
+        {
+            return resolved;
+        }
+
+        throw new JobValidatorException(
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"Overlap policy value '{(int)resolved}' is not defined for function '{function}'."
+            )
+        );
     }
 
     private static MissedRunPolicy _ResolveMissedRunPolicy(

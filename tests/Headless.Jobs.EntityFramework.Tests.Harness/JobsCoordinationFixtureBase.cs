@@ -661,7 +661,8 @@ public static class JobsCoordinationFixtureExtensions
         bool isPaused = false,
         long scheduleRevision = 0L,
         int reconciledThroughOffsetSeconds = 0,
-        int nextDueOffsetSeconds = 60
+        int nextDueOffsetSeconds = 60,
+        CronOverlapPolicy onOverlap = CronOverlapPolicy.Allow
     )
     {
         await using var connection = fixture.CreateConnection();
@@ -669,12 +670,12 @@ public static class JobsCoordinationFixtureExtensions
         await using var command = connection.CreateCommand();
 
         command.CommandText =
-            $"INSERT INTO {fixture.QualifiedCronJobsTable} ({_CronInsertColumns}, \"ContractVersion\") "
+            $"INSERT INTO {fixture.QualifiedCronJobsTable} ({_CronInsertColumns}, \"ContractVersion\", \"OnOverlap\") "
             + "VALUES (@id, @function, @function, @expression, @timeZoneId, @isPaused, @scheduleRevision, 0, "
             + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, @onNodeDeath, "
             + $"{fixture.UtcNowOffsetSqlExpression(reconciledThroughOffsetSeconds)}, "
             + $"{fixture.UtcNowOffsetSqlExpression(nextDueOffsetSeconds)}, "
-            + "@missedRunGraceSeconds, @onMissedRun, '1');";
+            + "@missedRunGraceSeconds, @onMissedRun, '1', @onOverlap);";
 
         AddParameter(command, "@id", id);
         AddParameter(command, "@function", function);
@@ -685,6 +686,7 @@ public static class JobsCoordinationFixtureExtensions
         AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
         AddParameter(command, "@missedRunGraceSeconds", 0);
         AddParameter(command, "@onMissedRun", nameof(MissedRunPolicy.Coalesce));
+        AddParameter(command, "@onOverlap", onOverlap.ToString());
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

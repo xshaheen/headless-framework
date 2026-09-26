@@ -69,6 +69,16 @@ namespace Headless.Jobs.Api.Demo.Migrations
                 defaultValue: "Coalesce"
             );
 
+            migrationBuilder.AddColumn<string>(
+                name: "OnOverlap",
+                table: "CronJobs",
+                type: "character varying(32)",
+                maxLength: 32,
+                schema: "jobs",
+                nullable: false,
+                defaultValue: "Allow"
+            );
+
             migrationBuilder.AddColumn<DateTime>(
                 name: "ReconciledThroughUtc",
                 table: "CronJobs",
@@ -123,6 +133,7 @@ namespace Headless.Jobs.Api.Demo.Migrations
                            OR "MissedRunGraceSeconds" <> 0
                            OR "NextDueUtc" <> '-infinity'::timestamp with time zone
                            OR "OnMissedRun" <> 'Coalesce'
+                           OR "OnOverlap" <> 'Allow'
                            OR "ReconciledThroughUtc" <> '-infinity'::timestamp with time zone
                     ) OR EXISTS (
                         SELECT 1 FROM jobs."CronJobOccurrences" WHERE "RecoveredFromUtc" IS NOT NULL
@@ -154,6 +165,8 @@ namespace Headless.Jobs.Api.Demo.Migrations
             migrationBuilder.DropColumn(name: "NextDueUtc", table: "CronJobs", schema: "jobs");
 
             migrationBuilder.DropColumn(name: "OnMissedRun", table: "CronJobs", schema: "jobs");
+
+            migrationBuilder.DropColumn(name: "OnOverlap", table: "CronJobs", schema: "jobs");
 
             migrationBuilder.DropColumn(name: "ReconciledThroughUtc", table: "CronJobs", schema: "jobs");
 

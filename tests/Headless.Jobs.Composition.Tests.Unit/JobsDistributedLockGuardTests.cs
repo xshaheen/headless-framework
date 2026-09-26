@@ -166,6 +166,55 @@ public sealed class JobsDistributedLockGuardTests : TestBase
             .MigrateDefinedCronJobs(Arg.Any<CronSeedDefinition[]>(), Arg.Any<CancellationToken>());
     }
 
+    [Theory]
+    [InlineData(null, CronOverlapPolicy.Allow, CronOverlapPolicy.Allow)]
+    [InlineData(null, CronOverlapPolicy.Skip, CronOverlapPolicy.Skip)]
+    [InlineData(CronOverlapPolicy.Skip, CronOverlapPolicy.Allow, CronOverlapPolicy.Skip)]
+    [InlineData(CronOverlapPolicy.Allow, CronOverlapPolicy.Skip, CronOverlapPolicy.Allow)]
+    public async Task seed_resolves_the_overlap_policy_from_the_attribute_then_the_scheduler_default(
+        CronOverlapPolicy? fromAttribute,
+        CronOverlapPolicy schedulerDefault,
+        CronOverlapPolicy expected
+    )
+    {
+        var manager = Substitute.For<IInternalJobManager>();
+        var options = new SchedulerOptionsBuilder { UseStorageLock = false, DefaultOverlapPolicy = schedulerDefault };
+
+        await _InvokeSeedAsync(
+            manager,
+            options,
+            Substitute.For<IDistributedLock>(),
+            AbortToken,
+            _CronRegistry(onOverlap: fromAttribute)
+        );
+
+        await manager
+            .Received(1)
+            .MigrateDefinedCronJobs(
+                Arg.Is<CronSeedDefinition[]>(functions => functions.Length == 1 && functions[0].OnOverlap == expected),
+                AbortToken
+            );
+    }
+
+    [Fact]
+    public async Task seed_rejects_an_undefined_overlap_policy()
+    {
+        var manager = Substitute.For<IInternalJobManager>();
+        var act = () =>
+            _InvokeSeedAsync(
+                manager,
+                new SchedulerOptionsBuilder { UseStorageLock = false },
+                Substitute.For<IDistributedLock>(),
+                AbortToken,
+                _CronRegistry(onOverlap: (CronOverlapPolicy)999)
+            );
+
+        (await act.Should().ThrowAsync<JobValidatorException>()).WithMessage("*Overlap policy*not defined*");
+        await manager
+            .DidNotReceive()
+            .MigrateDefinedCronJobs(Arg.Any<CronSeedDefinition[]>(), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task seed_rejects_an_invalid_manually_registered_recovery_policy()
     {
@@ -385,7 +434,8 @@ public sealed class JobsDistributedLockGuardTests : TestBase
 
     private static JobFunctionRegistry _CronRegistry(
         MissedRunPolicy? onMissedRun = null,
-        int? missedRunGraceSeconds = null
+        int? missedRunGraceSeconds = null,
+        CronOverlapPolicy? onOverlap = null
     ) =>
         JobFunctionRegistryBuilder.Build(
             [
@@ -399,6 +449,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
                         MaxConcurrency = 0,
                         OnMissedRun = onMissedRun,
                         MissedRunGraceSeconds = missedRunGraceSeconds,
+                        OnOverlap = onOverlap,
                     }
                 ),
             ],

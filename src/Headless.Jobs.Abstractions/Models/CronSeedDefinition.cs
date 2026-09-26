@@ -6,7 +6,7 @@ namespace Headless.Jobs.Models;
 
 /// <summary>
 /// One code-declared cron function as startup reconciliation sees it: the durable name and expression, plus the
-/// recovery settings to stamp on the definition <b>if it has to be created</b>.
+/// recovery and overlap settings to stamp on the definition <b>if it has to be created</b>.
 /// </summary>
 /// <param name="Function">Unique function name; also the seed row's deterministic identity.</param>
 /// <param name="Expression">Six-field cron expression, already resolved from configuration when it was a <c>%</c> key.</param>
@@ -37,4 +37,8 @@ public readonly record struct CronSeedDefinition(
     int MissedRunGraceSeconds,
     string? EvaluationFingerprint = null,
     string ContractVersion = JobContract.InitialVersion
-);
+)
+{
+    /// <summary>Overlap policy to seed at creation, resolved by the caller like the recovery settings.</summary>
+    public CronOverlapPolicy OnOverlap { get; init; }
+}

@@ -47,6 +47,13 @@ public enum CronScheduleMaterializationOutcome
 
     /// <summary>An existing terminal occurrence already accounted for the instant and the new position committed.</summary>
     OccurrenceAlreadyTerminal = 4,
+
+    /// <summary>
+    /// The definition's overlap policy is <see cref="CronOverlapPolicy.Skip"/> and an earlier occurrence was still
+    /// unfinished, so a <see cref="JobStatus.Skipped"/> occurrence accounting for the instant and the new position
+    /// committed together. Nothing is left to claim.
+    /// </summary>
+    OccurrenceSkippedForOverlap = 5,
 }
 
 /// <summary>Explicit result of an atomic cron schedule-position and occurrence transition.</summary>

@@ -277,24 +277,6 @@ internal sealed class JobsExecutionTaskHandler
             // milliseconds, and no consumer expects negative lateness. For a recovery run this measures from the
             // first unaccounted-for missed instant, so it spans the unresolved outage rather than the dispatch delay.
             Lateness = _Lateness(context.ExecutionTime, _timeProvider.GetUtcNow().UtcDateTime),
-            CronOccurrenceOperations = new CronOccurrenceOperations(() =>
-            {
-                if (context.Type == JobType.TimeJob)
-                {
-                    return;
-                }
-
-                // Check for other running occurrences of the same parent (excluding self)
-                // Since we're already registered, we need to exclude ourselves from the check
-                var isRunning =
-                    context.ParentId.HasValue
-                    && _cancellationRegistry.IsParentRunningExcludingSelf(context.ParentId.Value, context.JobId);
-
-                if (isRunning)
-                {
-                    throw new TerminateExecutionException("Another CronOccurrence is already running!");
-                }
-            }),
         };
 
         // #316 sliding lease: renew this job's lease on a cadence for the whole execution (every retry attempt and
