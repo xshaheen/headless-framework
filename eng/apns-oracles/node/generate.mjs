@@ -22,6 +22,10 @@ const outPath = path.join(
   repoRoot,
   'tests/Headless.PushNotifications.Apns.Tests.Unit/CrossLibrary/Fixtures/node-apn.json'
 );
+const broadcastOutPath = path.join(
+  repoRoot,
+  'tests/Headless.PushNotifications.Apns.Tests.Unit/CrossLibrary/Fixtures/node-apn-broadcast.json'
+);
 
 const HEADER_NAMES = [
   'apns-push-type',
@@ -155,6 +159,8 @@ async function main() {
     port,
     ca: cert,
     production: false,
+    manageChannelsAddress: 'localhost',
+    manageChannelsPort: port,
   });
 
   const scenarios = [];
@@ -199,6 +205,8 @@ async function main() {
     jwt ??= decodeJwt(captured.headers.authorization);
   }
 
+  const broadcast = await captureBroadcast(provider, captures);
+
   provider.shutdown();
   server.close();
 
@@ -215,6 +223,72 @@ async function main() {
   };
   writeFileSync(outPath, JSON.stringify(output, null, 2) + '\n');
   console.log(`node-apn ${version}: wrote ${scenarios.length} scenarios to ${path.relative(repoRoot, outPath)}`);
+
+  const broadcastOutput = { library: '@parse/node-apn', version, generatedAt: spec.generatedAt, ...broadcast };
+  writeFileSync(broadcastOutPath, JSON.stringify(broadcastOutput, null, 2) + '\n');
+  console.log(`node-apn ${version}: wrote broadcast and channel requests to ${path.relative(repoRoot, broadcastOutPath)}`);
+}
+
+// iOS 18 broadcast and channel management: node-apn is the only surveyed library that implements them. Each call
+// goes through the real Provider to the local server, which records the request as it arrived.
+const BROADCAST_HEADER_NAMES = [
+  'apns-push-type',
+  'apns-priority',
+  'apns-expiration',
+  'apns-channel-id',
+  'apns-topic',
+  'apns-collapse-id',
+];
+
+async function captureBroadcast(provider, captures) {
+  const { bundleId, channelId, update } = spec.broadcast;
+
+  async function capture(label, call) {
+    const before = captures.length;
+    const result = await call();
+    if ((result.failed?.length ?? 0) > 0 || captures.length !== before + 1) {
+      throw new Error(`${label}: request failed ${JSON.stringify(result.failed)}`);
+    }
+    const c = captures[before];
+    return {
+      method: c.headers[':method'],
+      path: c.headers[':path'],
+      headers: Object.fromEntries(BROADCAST_HEADER_NAMES.map(h => [h, c.headers[h] ?? null])),
+      hasRequestId: typeof c.headers['apns-request-id'] === 'string',
+      body: c.body === '' ? null : sortKeys(JSON.parse(c.body)),
+    };
+  }
+
+  // The same update the .NET side broadcasts: priority 5 and expiration 0, which our provider sends by default.
+  const note = new apn.Notification();
+  note.channelId = channelId;
+  note.pushType = 'liveactivity';
+  note.priority = 5;
+  note.expiry = 0;
+  note.requestId = spec.broadcast.requestId;
+  for (const [k, v] of Object.entries(update.aps)) APS_SETTERS[k](note, v);
+  const send = await capture('broadcast', () => provider.broadcast(note, bundleId));
+
+  const createNote = new apn.Notification();
+  createNote.requestId = spec.broadcast.requestId;
+  createNote.payload = { 'message-storage-policy': 1 };
+  const create = await capture('create', () => provider.manageChannels(createNote, bundleId, 'create'));
+
+  const channelNote = () => {
+    const n = new apn.Notification();
+    n.requestId = spec.broadcast.requestId;
+    n.channelId = channelId;
+    return n;
+  };
+  const read = await capture('read', () => provider.manageChannels(channelNote(), bundleId, 'read'));
+  const readAll = await capture('readAll', () => {
+    const n = new apn.Notification();
+    n.requestId = spec.broadcast.requestId;
+    return provider.manageChannels(n, bundleId, 'readAll');
+  });
+  const del = await capture('delete', () => provider.manageChannels(channelNote(), bundleId, 'delete'));
+
+  return { broadcast: send, channels: { create, read, list: readAll, delete: del } };
 }
 
 await main();

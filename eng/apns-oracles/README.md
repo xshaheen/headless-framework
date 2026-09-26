@@ -10,13 +10,15 @@ We have no Apple credentials in tests, so we check our APNs wire contract agains
 
 Every header and payload in a fixture comes from the library's own request-building code. None of it is written by hand.
 
+The node generator also records iOS 18 broadcast and channel-management requests (`broadcast` in `scenarios.json`) into `Fixtures/node-apn-broadcast.json`, because node-apn is the only one of the three that implements them. `ApnsBroadcastCrossLibraryTests` compares ours against it.
+
 ## Regenerate
 
 ```bash
 make apns-oracles
 ```
 
-The command runs `run-all.sh`, which runs each generator in turn and overwrites `tests/Headless.PushNotifications.Apns.Tests.Unit/CrossLibrary/Fixtures/{node-apn,pushy,apns2}.json`. The output is deterministic, so a second run with the same pins produces byte-identical files. Commit the fixtures after you review the diff.
+The command runs `run-all.sh`, which runs each generator in turn and overwrites `tests/Headless.PushNotifications.Apns.Tests.Unit/CrossLibrary/Fixtures/{node-apn,node-apn-broadcast,pushy,apns2}.json`. The output is deterministic, so a second run with the same pins produces byte-identical files. Commit the fixtures after you review the diff.
 
 CI does not run the generators. It runs only the .NET comparison against the committed fixtures. Regenerate when you change `scenarios.json` or bump a library pin.
 

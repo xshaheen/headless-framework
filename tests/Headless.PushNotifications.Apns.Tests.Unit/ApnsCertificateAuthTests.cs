@@ -72,6 +72,49 @@ public sealed class ApnsCertificateAuthTests : TestBase
         request.Headers["apns-topic"].Should().Be(FakeApnsServer.BundleId);
     }
 
+    [Fact]
+    public async Task should_broadcast_and_manage_channels_with_the_client_certificate()
+    {
+        // given - Apple's broadcast and channel-management pages both show certificate-authenticated requests, so
+        // the device-push refusal of Live Activities in certificate mode does not apply to a channel.
+        _server.Responder = request =>
+            request.Path.EndsWith("/channels", StringComparison.Ordinal)
+                ? new FakeApnsReply(
+                    201,
+                    Headers: new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["apns-channel-id"] = "dHN0LXNyY2gtY2hubA==",
+                    }
+                )
+                : FakeApnsReply.Ok;
+        await using var provider = _server.CreateCertificateProvider(_clientPkcs12, _Password);
+        var channels = provider.GetRequiredService<IApnsBroadcastChannelService>();
+        var service = provider.GetRequiredService<IApnsPushNotificationService>();
+
+        // when
+        var channel = await channels.CreateAsync(ApnsChannelStoragePolicy.NoMessageStored, AbortToken);
+        var result = await service.SendBroadcastAsync(
+            channel.Id,
+            new ApnsLiveActivityNotification
+            {
+                Event = ApnsLiveActivityEvent.Update,
+                ContentState = System.Text.Json.JsonDocument.Parse("""{"score":1}""").RootElement.Clone(),
+            },
+            AbortToken
+        );
+
+        // then
+        result.IsSucceeded.Should().BeTrue();
+        _server.Requests.Should().HaveCount(2);
+        _server
+            .Requests.Should()
+            .AllSatisfy(request =>
+            {
+                request.ClientCertificateThumbprint.Should().BeEquivalentTo(_clientCertificate.Thumbprint);
+                request.Bearer.Should().BeNull();
+            });
+    }
+
     public static TheoryData<ApnsNotification> TokenOnlyNotifications =>
         new()
         {

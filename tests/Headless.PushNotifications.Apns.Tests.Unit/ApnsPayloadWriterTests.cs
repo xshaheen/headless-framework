@@ -1589,6 +1589,57 @@ public sealed class ApnsPayloadWriterTests : TestBase
         act.Should().Throw<ArgumentException>();
     }
 
+    [Fact]
+    public void should_write_input_push_channel_inside_aps_when_a_start_subscribes_to_a_channel()
+    {
+        // given
+        var notification = new ApnsLiveActivityNotification
+        {
+            Event = ApnsLiveActivityEvent.Start,
+            ContentState = _Element("""{"score":0}"""),
+            AttributesType = "MatchAttributes",
+            Attributes = _Element("""{"home":"A"}"""),
+            Alert = new ApnsAlert { Title = "Kickoff" },
+            InputPushChannel = "dHN0LXNyY2gtY2hubA==",
+        };
+
+        // when
+        var json = _Json(_Prepare(notification));
+
+        // then
+        json.Should()
+            .Be(
+                """{"aps":{"timestamp":1790330400,"event":"start","content-state":{"score":0},"input-push-channel":"dHN0LXNyY2gtY2hubA==","attributes-type":"MatchAttributes","attributes":{"home":"A"},"alert":{"title":"Kickoff"}}}"""
+            );
+    }
+
+    [Theory]
+    [InlineData(ApnsLiveActivityEvent.Update, "dHN0LXNyY2gtY2hubA==")]
+    [InlineData(ApnsLiveActivityEvent.End, "dHN0LXNyY2gtY2hubA==")]
+    [InlineData(ApnsLiveActivityEvent.Start, " ")]
+    public void should_throw_when_the_input_push_channel_is_not_on_a_start_or_is_blank(
+        ApnsLiveActivityEvent activityEvent,
+        string channel
+    )
+    {
+        // given
+        var notification = new ApnsLiveActivityNotification
+        {
+            Event = activityEvent,
+            ContentState = _Element("""{"score":1}"""),
+            AttributesType = activityEvent == ApnsLiveActivityEvent.Start ? "MatchAttributes" : null,
+            Attributes = activityEvent == ApnsLiveActivityEvent.Start ? _Element("""{"home":"A"}""") : null,
+            Alert = activityEvent == ApnsLiveActivityEvent.Start ? new ApnsAlert { Title = "Kickoff" } : null,
+            InputPushChannel = channel,
+        };
+
+        // when
+        var act = () => _Prepare(notification);
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
     #endregion
 
     #region Helpers
