@@ -45,6 +45,24 @@ public sealed class PostgreSqlDistributedLockConformanceTests : DistributedLockT
     }
 
     [Fact]
+    public override Task should_renew_held_lease()
+    {
+        return base.should_renew_held_lease();
+    }
+
+    [Fact]
+    public override Task should_not_renew_released_lease()
+    {
+        return base.should_not_renew_released_lease();
+    }
+
+    [Fact]
+    public override Task should_not_renew_unknown_lease_id()
+    {
+        return base.should_not_renew_unknown_lease_id();
+    }
+
+    [Fact]
     public override Task should_lock_with_try_acquire()
     {
         return base.should_lock_with_try_acquire();

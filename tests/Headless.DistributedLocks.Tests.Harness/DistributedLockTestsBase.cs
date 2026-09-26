@@ -331,6 +331,69 @@ public abstract class DistributedLockTestsBase : TestBase
         (await locker.IsLockedAsync(resource)).Should().BeFalse();
     }
 
+    /// <summary>
+    /// A held lease renews through both the provider and the handle. Connection-scoped providers extend nothing, but
+    /// they must still report ownership the same way TTL providers do.
+    /// </summary>
+    public virtual async Task should_renew_held_lease()
+    {
+        var locker = GetLockProvider();
+        var resource = Faker.Random.String2(3, 10);
+
+        await using var handle = await locker.AcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { TimeUntilExpires = TimeSpan.FromSeconds(30) },
+            AbortToken
+        );
+
+        (await locker.RenewAsync(resource, handle.LeaseId, TimeSpan.FromSeconds(30), AbortToken)).Should().BeTrue();
+        (await handle.RenewAsync(TimeSpan.FromSeconds(30), AbortToken)).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// The renew contract: a released lease reports <see langword="false"/> through both the provider and the handle,
+    /// so a caller that stops on a failed renewal behaves the same on every backend.
+    /// </summary>
+    public virtual async Task should_not_renew_released_lease()
+    {
+        var locker = GetLockProvider();
+        var resource = Faker.Random.String2(3, 10);
+
+        await using var handle = await locker.AcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { TimeUntilExpires = TimeSpan.FromSeconds(30) },
+            AbortToken
+        );
+        await handle.ReleaseAsync();
+
+        (await locker.RenewAsync(resource, handle.LeaseId, TimeSpan.FromSeconds(30), AbortToken)).Should().BeFalse();
+        (await handle.RenewAsync(TimeSpan.FromSeconds(30), AbortToken)).Should().BeFalse();
+    }
+
+    /// <summary>A lease id that does not hold the resource never renews, and the real holder keeps the lock.</summary>
+    public virtual async Task should_not_renew_unknown_lease_id()
+    {
+        var locker = GetLockProvider();
+        var resource = Faker.Random.String2(3, 10);
+
+        await using var handle = await locker.AcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { TimeUntilExpires = TimeSpan.FromSeconds(30) },
+            AbortToken
+        );
+
+        var renewed = await locker.RenewAsync(
+            resource,
+            Faker.Random.AlphaNumeric(32),
+            TimeSpan.FromSeconds(30),
+            AbortToken
+        );
+
+        renewed.Should().BeFalse();
+        (await locker.IsLockedAsync(resource, AbortToken)).Should().BeTrue();
+        (await handle.RenewAsync(TimeSpan.FromSeconds(30), AbortToken)).Should().BeTrue();
+    }
+
     public virtual async Task should_timeout_when_try_to_lock_acquired_resource()
     {
         var locker = GetLockProvider();
@@ -785,6 +848,39 @@ public abstract class DistributedLockTestsBase : TestBase
         lostToken
             .IsCancellationRequested.Should()
             .BeTrue("the lock-holding connection died and the probe should detect it");
+    }
+
+    /// <summary>
+    /// Once a connection-scoped provider has observed the holding connection die, renewal reports the loss through
+    /// both the handle and the provider instead of claiming a lock the database already dropped. Only wired by
+    /// providers that override <see cref="KillLockHoldingConnectionAsync"/>.
+    /// </summary>
+    public virtual async Task should_not_renew_after_lock_holding_connection_dies()
+    {
+        var locker = GetLockProvider();
+        var resource = Faker.Random.String2(3, 20);
+
+        await using var handle = await locker.AcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { Monitoring = LockMonitoringMode.Monitor, ReleaseOnDispose = false },
+            cancellationToken: AbortToken
+        );
+
+        (await handle.RenewAsync(cancellationToken: AbortToken)).Should().BeTrue();
+
+        await KillLockHoldingConnectionAsync(handle, AbortToken);
+
+        // Probe cadence is ~30s; poll generously for the loss to be observed before asserting on renewal.
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(40);
+
+        while (!handle.LostToken.IsCancellationRequested && DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(500), AbortToken);
+        }
+
+        handle.LostToken.IsCancellationRequested.Should().BeTrue("the probe should detect the dead connection");
+        (await handle.RenewAsync(cancellationToken: AbortToken)).Should().BeFalse();
+        (await locker.RenewAsync(resource, handle.LeaseId, cancellationToken: AbortToken)).Should().BeFalse();
     }
 
     #endregion

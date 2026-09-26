@@ -84,6 +84,30 @@ public sealed class SqlServerDistributedLockConformanceTests : DistributedLockTe
     }
 
     [Fact]
+    public override Task should_renew_held_lease()
+    {
+        return base.should_renew_held_lease();
+    }
+
+    [Fact]
+    public override Task should_not_renew_released_lease()
+    {
+        return base.should_not_renew_released_lease();
+    }
+
+    [Fact]
+    public override Task should_not_renew_unknown_lease_id()
+    {
+        return base.should_not_renew_unknown_lease_id();
+    }
+
+    [Fact]
+    public override Task should_not_renew_after_lock_holding_connection_dies()
+    {
+        return base.should_not_renew_after_lock_holding_connection_dies();
+    }
+
+    [Fact]
     public override Task should_lock_with_try_acquire()
     {
         return base.should_lock_with_try_acquire();
