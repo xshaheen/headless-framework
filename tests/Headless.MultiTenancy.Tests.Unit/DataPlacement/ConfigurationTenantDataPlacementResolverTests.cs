@@ -55,17 +55,21 @@ public sealed class ConfigurationTenantDataPlacementResolverTests : TestBase
     }
 
     [Theory]
-    [MemberData(nameof(InvalidOptions))]
-    public void should_reject_invalid_options(ConfigurationTenantDataPlacementOptions options)
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    public void should_reject_invalid_options(int caseIndex)
     {
-        var result = new ConfigurationTenantDataPlacementOptionsValidator().Validate(options);
+        var result = new ConfigurationTenantDataPlacementOptionsValidator().Validate(_InvalidOptions()[caseIndex]);
 
         result.IsValid.Should().BeFalse();
     }
 
-    public static TheoryData<ConfigurationTenantDataPlacementOptions> InvalidOptions() =>
-        new(
-            new ConfigurationTenantDataPlacementOptions
+    private static ConfigurationTenantDataPlacementOptions[] _InvalidOptions() =>
+        [
+            new()
             {
                 Tenants =
                 [
@@ -73,14 +77,11 @@ public sealed class ConfigurationTenantDataPlacementResolverTests : TestBase
                     new() { TenantId = "tenant-a", Schema = "b" },
                 ],
             },
-            new ConfigurationTenantDataPlacementOptions { Tenants = [new() { TenantId = "", Schema = "a" }] },
-            new ConfigurationTenantDataPlacementOptions { Tenants = [new() { TenantId = "tenant-a" }] },
-            new ConfigurationTenantDataPlacementOptions { Tenants = [new() { TenantId = "tenant-a", Schema = " " }] },
-            new ConfigurationTenantDataPlacementOptions
-            {
-                Tenants = [new() { TenantId = "tenant-a", ConnectionString = "" }],
-            }
-        );
+            new() { Tenants = [new() { TenantId = "", Schema = "a" }] },
+            new() { Tenants = [new() { TenantId = "tenant-a" }] },
+            new() { Tenants = [new() { TenantId = "tenant-a", Schema = " " }] },
+            new() { Tenants = [new() { TenantId = "tenant-a", ConnectionString = "" }] },
+        ];
 
     [Fact]
     public void should_accept_valid_options()

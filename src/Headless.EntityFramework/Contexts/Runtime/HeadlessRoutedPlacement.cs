@@ -208,7 +208,9 @@ internal sealed class HeadlessRoutedPlacement
         }
 
         // An unopened connection only parses its connection string, so building one per open is cheap.
+#pragma warning disable MA0045 // EF's synchronous ConnectionOpening hook calls this too; disposing an unopened connection does no I/O.
         using var expected = _CreateExpectedConnection(connection);
+#pragma warning restore MA0045
 
         if (!RelationalDatabaseIdentity.IsSameDatabase(expected, connection))
         {

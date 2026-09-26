@@ -34,7 +34,9 @@ public sealed class TenantRoutedContextGuardTests : TestBase
         var diagnostics = provider
             .GetServices<IHeadlessTenancyValidator>()
             .SelectMany(validator => validator.Validate(new(provider, new TenantPostureManifest())))
-            .Where(diagnostic => diagnostic.Code == "HEADLESS_TENANCY_ROUTED_CONTEXT_NOT_ALLOWED")
+            .Where(diagnostic =>
+                string.Equals(diagnostic.Code, "HEADLESS_TENANCY_ROUTED_CONTEXT_NOT_ALLOWED", StringComparison.Ordinal)
+            )
             .ToList();
 
         // then

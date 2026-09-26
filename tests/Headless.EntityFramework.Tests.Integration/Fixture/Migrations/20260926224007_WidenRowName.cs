@@ -12,10 +12,10 @@ public partial class WidenRowName : Migration
     {
         migrationBuilder.AlterColumn<string>(
             name: "Name",
-            schema: "app",
             table: "Rows",
             type: "character varying(200)",
             maxLength: 200,
+            schema: "app",
             nullable: false,
             oldClrType: typeof(string),
             oldType: "character varying(100)",
@@ -28,10 +28,10 @@ public partial class WidenRowName : Migration
     {
         migrationBuilder.AlterColumn<string>(
             name: "Name",
-            schema: "app",
             table: "Rows",
             type: "character varying(100)",
             maxLength: 100,
+            schema: "app",
             nullable: false,
             oldClrType: typeof(string),
             oldType: "character varying(200)",

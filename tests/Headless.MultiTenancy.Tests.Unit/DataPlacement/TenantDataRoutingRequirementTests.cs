@@ -40,7 +40,7 @@ public sealed class TenantDataRoutingRequirementTests : TestBase
         act.Should().Throw<ArgumentException>();
     }
 
-    private sealed class RoutedContext;
+    private static class RoutedContext;
 
-    private sealed class UnroutedContext;
+    private static class UnroutedContext;
 }

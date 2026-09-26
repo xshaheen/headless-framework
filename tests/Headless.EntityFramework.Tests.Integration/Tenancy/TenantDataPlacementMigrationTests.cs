@@ -239,7 +239,7 @@ public sealed class TenantDataPlacementMigrationTests(TenantMigrationFixture fix
         await connection.OpenAsync(AbortToken);
         await using var command = connection.CreateCommand();
         command.CommandText = "SELECT table_name FROM information_schema.tables WHERE table_schema = @schema";
-        command.Parameters.AddWithValue("schema", schema);
+        command.Parameters.AddWithValue(nameof(schema), schema);
         await using var reader = await command.ExecuteReaderAsync(AbortToken);
         var tables = new List<string>();
 

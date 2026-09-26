@@ -77,7 +77,7 @@ public sealed class CachingTenantDataPlacementResolverTests : TestBase
 
         // then
         result.Should().BeSameAs(placement);
-        await _inner.DidNotReceiveWithAnyArgs().ResolveAsync(default!, default);
+        await _inner.DidNotReceiveWithAnyArgs().ResolveAsync(default!, AbortToken);
     }
 
     [Fact]
@@ -96,7 +96,7 @@ public sealed class CachingTenantDataPlacementResolverTests : TestBase
         await _inner.Received(2).ResolveAsync(_TenantId, Arg.Any<CancellationToken>());
         await _cache
             .DidNotReceiveWithAnyArgs()
-            .UpsertAsync<TenantDataPlacementCacheItem>(default!, default, default, default);
+            .UpsertAsync<TenantDataPlacementCacheItem>(default!, default, default, AbortToken);
     }
 
     [Fact]
@@ -167,7 +167,7 @@ public sealed class CachingTenantDataPlacementResolverTests : TestBase
 
         // then
         await act.Should().ThrowAsync<OperationCanceledException>();
-        await _inner.DidNotReceiveWithAnyArgs().ResolveAsync(default!, default);
+        await _inner.DidNotReceiveWithAnyArgs().ResolveAsync(default!, AbortToken);
     }
 
     [Fact]
