@@ -149,13 +149,20 @@ public interface IIdempotencyRecordStore
 
     /// <summary>
     /// Deletes, on the provider's own connection and committed before returning, at most <paramref name="limit" />
-    /// records whose <c>retention_until</c> is at least <paramref name="olderThan" /> before the database clock:
-    /// completed records, and pending records no admitted attempt can still own.
+    /// records, completed or pending, whose <c>retention_until</c> is at least <paramref name="olderThan" /> before the
+    /// database clock. A record another transaction holds is skipped for a later purge rather than waited on.
     /// </summary>
     /// <remarks>
-    /// Only record rows are deleted. The provider decides from the record row alone whether a pending record's attempt
-    /// may still be live (a released or never-admitted record carries no lease generation) and never reads or deletes
-    /// fenced-lease rows; the retention service purges those through the fencing API.
+    /// <para>
+    /// A pending record past its retention is deleted even when its attempt may still be running, because retention is
+    /// extended on every admission and far outlasts any lease. Such an attempt cannot store an outcome afterwards: its
+    /// completion finds no record at its lease generation and is refused as stale, and a new admission of the key
+    /// inserts a fresh record but still sees the attempt's live lease and reports it in flight.
+    /// </para>
+    /// <para>
+    /// Only record rows are deleted; fenced-lease rows are never read or deleted here. The retention service purges
+    /// those through the fencing API.
+    /// </para>
     /// </remarks>
     /// <param name="olderThan">How long past its retention a record must be before it is deleted; zero or more.</param>
     /// <param name="limit">The most rows this call deletes; positive.</param>

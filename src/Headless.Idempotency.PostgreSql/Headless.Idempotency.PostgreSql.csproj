@@ -1,0 +1,19 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>PostgreSQL provider for Headless durable idempotency: an idempotency record table locked and written inside the same transaction as its fenced lease, with database-clock retention and a bounded retention purge.</Description>
+    <PackageTags>headless;idempotency;idempotency-key;fencing;postgresql;dotnet</PackageTags>
+    <RootNamespace>Headless.Idempotency.PostgreSql</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.Idempotency.Core\Headless.Idempotency.Core.csproj" />
+    <ProjectReference Include="..\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />
+    <ProjectReference Include="..\Headless.UnitOfWork.PostgreSql\Headless.UnitOfWork.PostgreSql.csproj" />
+  </ItemGroup>
+</Project>

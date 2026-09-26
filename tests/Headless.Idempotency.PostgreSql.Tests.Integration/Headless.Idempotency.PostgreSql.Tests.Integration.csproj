@@ -1,0 +1,19 @@
+<Project Sdk="Headless.NET.Sdk.Test">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Tests</RootNamespace>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.Fencing.PostgreSql\Headless.Fencing.PostgreSql.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Idempotency.PostgreSql\Headless.Idempotency.PostgreSql.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
+    <ProjectReference Include="..\..\src\Headless.UnitOfWork.PostgreSql\Headless.UnitOfWork.PostgreSql.csproj" />
+    <ProjectReference Include="..\Headless.Idempotency.Tests.Harness\Headless.Idempotency.Tests.Harness.csproj" />
+  </ItemGroup>
+</Project>
