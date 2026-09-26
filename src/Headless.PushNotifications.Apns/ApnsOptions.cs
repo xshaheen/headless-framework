@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net;
 using System.Security.Cryptography;
 using FluentValidation;
 using FluentValidation.Results;
@@ -101,13 +102,71 @@ public sealed class ApnsOptions
     /// </summary>
     public int MaxConcurrency { get; set; } = 100;
 
+    /// <summary>
+    /// Whether to deliver through port 2197 instead of 443. Default: <see langword="false"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Apple offers port 443 and port 2197 for both <c>api.push.apple.com</c> and
+    /// <c>api.sandbox.push.apple.com</c>; some networks that block 443 to non-web endpoints still allow 2197.
+    /// The flag applies to both environments and is part of the endpoint the HTTP client is built with.
+    /// </para>
+    /// <para>
+    /// Deliberately not a port number property: APNs accepts exactly two ports, so a boolean cannot express an
+    /// invalid endpoint.
+    /// </para>
+    /// </remarks>
+    public bool UseAlternativePort { get; set; }
+
+    /// <summary>
+    /// An optional proxy the underlying HTTP handler routes APNs requests through, such as a corporate egress
+    /// proxy. Default: <see langword="null"/>, which connects directly.
+    /// </summary>
+    /// <remarks>
+    /// Applied to the primary handler, so it covers every connection the pool opens, including HTTP/2 and TLS
+    /// ones. Not serializable: configuration cannot express a live <see cref="IWebProxy"/> instance, so set it from
+    /// code through <c>UseApns(options => …)</c>. Use <see cref="WebProxy"/> for an HTTP proxy; a SOCKS proxy needs
+    /// a SOCKS-capable <see cref="IWebProxy"/> implementation.
+    /// </remarks>
+    [JsonIgnore]
+    public IWebProxy? Proxy { get; set; }
+
+    /// <summary>
+    /// The maximum number of simultaneous TCP connections one instance opens to APNs. Default: 4. Valid range:
+    /// 1-1000.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// APNs starts each token-authenticated connection with a single stream until it has seen a valid provider
+    /// token, and a cold multicast under the default <see cref="MaxConcurrency"/> of 100 against such a server
+    /// opens a double-digit number of connections — measured between 7 and 30 across runs on this repository's
+    /// one-stream test double — because the runtime injects a new connection for every request still waiting once
+    /// the open ones advertise their single-stream limit. Unbounded growth spends file descriptors and TLS
+    /// handshakes on requests that a few warm connections would carry once APNs raises the stream limit.
+    /// </para>
+    /// <para>
+    /// The default of 4 follows the sizing advice of the mature APNs clients: pushy (Java) recommends "one or two
+    /// connections per thread, not to exceed more than two connections per server", and APNs serves each
+    /// environment from several servers behind one host name. Raise it when you saturate CPU or bandwidth before
+    /// connection capacity, and lower it to shrink the process's footprint; the bound trades peak cold-start
+    /// throughput for a predictable connection count.
+    /// </para>
+    /// <para>
+    /// Implemented with a <see cref="SocketsHttpHandler.ConnectCallback"/> permit, so a request waits for a free
+    /// permit — an idle connection's free stream or a closed connection's slot — instead of dialing. The runtime's
+    /// own <c>MaxConnectionsPerServer</c> cannot provide this bound: it is enforced only for HTTP/1.1, while APNs
+    /// speaks HTTP/2.
+    /// </para>
+    /// </remarks>
+    public int MaxConnections { get; set; } = 4;
+
     /// <summary>Whether these options select certificate mode rather than token mode.</summary>
     internal bool UsesCertificate => !string.IsNullOrWhiteSpace(Certificate);
 
     /// <inheritdoc />
     public override string ToString()
     {
-        return $"ApnsOptions {{ KeyId = {KeyId}, TeamId = {TeamId}, PrivateKey = [REDACTED], Certificate = [REDACTED], CertificatePassword = [REDACTED], BundleId = {BundleId}, Environment = {Environment} }}";
+        return $"ApnsOptions {{ KeyId = {KeyId}, TeamId = {TeamId}, PrivateKey = [REDACTED], Certificate = [REDACTED], CertificatePassword = [REDACTED], BundleId = {BundleId}, Environment = {Environment}, UseAlternativePort = {UseAlternativePort}, Proxy = {(Proxy is null ? "none" : "configured")} }}";
     }
 }
 
@@ -220,6 +279,10 @@ internal sealed class ApnsOptionsValidator : AbstractValidator<ApnsOptions>
         RuleFor(x => x.MaxConcurrency)
             .InclusiveBetween(1, 1000)
             .WithMessage("APNs MaxConcurrency must be between 1 and 1000.");
+
+        RuleFor(x => x.MaxConnections)
+            .InclusiveBetween(1, 1000)
+            .WithMessage("APNs MaxConnections must be between 1 and 1000.");
     }
 
     private static bool _UsesToken(ApnsOptions options)

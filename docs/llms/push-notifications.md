@@ -855,6 +855,9 @@ For certificate mode, set `Certificate` and, if the `.p12` has one, `Certificate
 | `Priority` | `ApnsPriority` | `Immediate` | `Immediate` (10), `PowerConsiderate` (5), or `PowerPrioritized` (1), sent as `apns-priority` on alert and VoIP pushes that set no per-message priority. Other push types use their own rules (see [Typed APNs API](#typed-apns-api)). |
 | `TreatBadDeviceTokenAsUnregistered` | `bool` | `false` | Report HTTP 400 `BadDeviceToken` as `Unregistered` instead of `Failure`. Leave off unless the environment is known to be right. |
 | `MaxConcurrency` | `int` | `100` | Maximum requests in flight during one multicast. Range 1–1000. |
+| `UseAlternativePort` | `bool` | `false` | Deliver through port 2197 instead of 443, in both environments. |
+| `Proxy` | `IWebProxy?` | `null` | Proxy applied to the primary handler, so every pooled connection uses it. `[JsonIgnore]`: set from code, not configuration. |
+| `MaxConnections` | `int` | `4` | Maximum simultaneous TCP connections one instance opens. Range 1–1000. See [Connections and the connection bound](#connections-and-the-connection-bound). |
 
 #### Resilience overrides
 
@@ -881,6 +884,53 @@ builder.Services.AddHeadlessPushNotifications(setup =>
 | HTTP 5xx | `Failure`, without an in-process retry. Apple asks senders to wait about 15 minutes before retrying it |
 | Transport fault after retries, open circuit breaker, rate-limiter rejection, timeout, refused endpoint | `Failure` with `FailureError` `"<ExceptionType>: <message>"` |
 | Caller cancellation | Throws `OperationCanceledException` |
+
+#### Failure classification
+
+The typed API classifies every failure. `ApnsSendResult.FailureKind` is an `ApnsFailureKind` — `DeviceTokenInvalid`, `Throttled`, `ServerError`, `Authentication`, `Configuration`, `Payload`, or `Transport` — derived from the status and the `reason`, following the retry guidance in Apple's "Handling notification responses from APNs":
+
+- **`DeviceTokenInvalid`** — `BadDeviceToken`, `ExpiredToken`, `Unregistered`, and any HTTP 410. Apple lists these among the codes never to retry: remove or correct the token.
+- **`Throttled`** — HTTP 429 `TooManyRequests`, which throttles one device token. Retryable with a delay.
+- **`ServerError`** — HTTP 5xx. Retryable after 15 minutes (`RetryAfter` carries `TimeSpan.FromMinutes(15)`), per Apple: "After 15 minutes, you can retry JSON payloads that receive response status codes that begin with 5XX."
+- **`Authentication`** — the provider token was rejected (`ExpiredProviderToken`, `InvalidProviderToken`, `MissingProviderToken`, `UnrelatedKeyIdInToken`, `BadEnvironmentKeyIdInToken`, `TooManyProviderTokenUpdates`). Only `ExpiredProviderToken` is retryable, and the provider already renewed and retried once; the rest need a key or token fix.
+- **`Configuration`** — the instance's APNs setup is wrong: `BadTopic`, `MissingTopic`, `TopicDisallowed`, `DeviceTokenNotForTopic` (the token belongs to another app than the instance's bundle id), `BadCertificate`, `BadCertificateEnvironment`, `Forbidden`.
+- **`Payload`** — the request is malformed or too large: `PayloadTooLarge`, `PayloadEmpty`, and the `Bad*`/`Missing*` header errors. Fixing the request is a new request, not a retry, so these are not retryable.
+- **`Transport`** — no answer arrived: a transport fault left after the provider's connection retries, an open circuit breaker, a timeout, or APNs' `IdleTimeout`. Retryable, with a duplicate risk the result's `IsRetryable` remarks explain: the fault may have happened after APNs accepted the notification, and APNs does not deduplicate.
+
+`IsRetryable` is `true` only for `ServerError`, `Throttled`, `Transport`, and a result whose reason is still `ExpiredProviderToken`. `RetryAfter` is `TimeSpan?`: 15 minutes for a 5xx, the `Retry-After` header's seconds for a 429 that carries one (Apple's response-header table does not list that header, so it is `null` without one), and `null` otherwise.
+
+An unknown reason — one Apple added later — maps by its status class: 5xx to `ServerError`, 410 to `DeviceTokenInvalid`, 429 to `Throttled`, 403 to `Authentication`, and any other 4xx to `Payload`. The shared `PushNotificationResponse` is unchanged; only the typed `ApnsSendResult` carries the classification.
+
+Two rejection groups log their own error events instead of the per-token warning: `InvalidProviderToken`, `MissingProviderToken`, and `UnrelatedKeyIdInToken` log a configuration error naming the reason, and `TooManyProviderTokenUpdates` logs one naming Apple's 20-minute rule.
+
+#### Connections and the connection bound
+
+Each instance owns one HTTP/2 connection pool and bounds how many TCP connections it opens with `ApnsOptions.MaxConnections` (default 4, range 1-1000). The runtime's own `MaxConnectionsPerServer` cannot provide the bound — it is enforced only for HTTP/1.1 — so the provider enforces it with a connect-callback permit: a dial waits for a free permit, and the connection's stream releases the permit when it is disposed, so a request waits for a free stream on an open connection or for a permit, never queueing blind dials.
+
+The default of 4 follows the connection sizing advice of the mature APNs clients: pushy recommends one or two connections per thread, not exceeding two per APNs server. A cold burst without the bound opened between 7 and 30 connections against a one-stream test server, because APNs allows one stream on a new token-authenticated connection until it sees a valid provider token. Raise `MaxConnections` when you saturate CPU or bandwidth before connection capacity; lower it to shrink the process's footprint.
+
+`ApnsOptions.UseAlternativePort` (default `false`) delivers through port 2197 instead of 443, in both environments, for networks that block 443 to non-web endpoints. `ApnsOptions.Proxy` (default `null`, `[JsonIgnore]`, set from code) applies an `IWebProxy` — such as a corporate egress proxy — to the primary handler, so every connection the pool opens uses it. A proxied HTTP/2 connection tunnels through the proxy with CONNECT, and the proxy's own dial also takes a permit, so leave `MaxConnections` above 1 when a proxy is set.
+
+#### Device tokens from client apps
+
+APNs accepts only the device's APNs token, and each token belongs to one environment. Store what the provider needs with every token:
+
+- **The token kind.** `firebase_messaging`'s `getToken()` returns an FCM registration token, which only Firebase accepts. `getAPNSToken()` returns the raw APNs token on iOS and macOS, and `null` elsewhere or before APNs registration. Never send an FCM token to APNs, and never send an APNs token to Firebase.
+- **The environment.** The app's `aps-environment` entitlement decides it: a development build signed from Xcode gets sandbox tokens, and TestFlight and App Store builds get production tokens. `firebase_messaging` mirrors this when it hands the token to Firebase, registering it as sandbox in `DEBUG` builds and as production otherwise. A token sent to the other environment's instance fails with `BadDeviceToken`. That is why `BadDeviceToken` does not mean unregistered by default.
+- **One casing.** `firebase_messaging` formats the APNs token as uppercase hex (`%02.2hhX`), while `flutter_apns` uses lowercase (`%02.2hhx`). Normalize to lowercase before storing and deduplicating, so one device is not stored twice.
+
+#### Metrics and tracing
+
+The provider emits OpenTelemetry-compatible metrics and traces through a meter and an activity source both named `Headless.PushNotifications.Apns`. Subscribe with `AddMeter("Headless.PushNotifications.Apns")` / `AddSource("Headless.PushNotifications.Apns")`, or `builder.Services.AddMetrics()` and a `MeterListener` in tests. The device token and payload are never a tag or a span attribute: the token is a stable device identifier.
+
+| Instrument | Kind | Tags |
+|---|---|---|
+| `headless.apns.sends` | Counter (`{send}`) | `headless.apns.outcome` (`succeeded` / `unregistered` / `failed`), `headless.apns.push_type`, `headless.apns.environment` (`production` / `sandbox`), and on a failure `headless.apns.failure_kind` (the `ApnsFailureKind` in lower snake case) and `headless.apns.reason` (the APNs reason, or `none` when no answer arrived) |
+| `headless.apns.send.duration` | Histogram (`ms`) | `headless.apns.push_type`, `headless.apns.environment` |
+| `headless.apns.provider_tokens.minted` | Counter (`{token}`) | none |
+| `headless.apns.certificates.reloaded` | Counter (`{reload}`) | `headless.apns.outcome` (`accepted` / `rejected`) |
+
+Every device send starts one `apns.send` activity (`ActivityKind.Client`) tagged with `headless.apns.push_type`, `headless.apns.environment`, `headless.apns.outcome`, and on a failure `headless.apns.failure_kind` and `headless.apns.reason`. The activity's status is `Ok` on success and `Error` with the status code and reason as the description on a failure.
 
 #### Retry policy
 

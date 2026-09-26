@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json.Nodes;
@@ -281,6 +283,18 @@ internal sealed class ApnsPushNotificationService(
         // proxy strips the echoed apns-id header; the expired-token resend reuses it so APNs sees one notification.
         var apnsId = (callerApnsId ?? Guid.NewGuid()).ToString("D");
 
+        // One activity per device send; the token and payload are never attached, because the token is a stable
+        // device identifier and the payload is message content.
+        using var activity = ApnsDiagnostics.Start("apns.send");
+        activity?.SetTag(ApnsTags.PushType, prepared.Headers.PushType);
+        activity?.SetTag(
+            ApnsTags.Environment,
+            options.Environment == ApnsEnvironment.Sandbox ? "sandbox" : "production"
+        );
+
+        var startedAt = timeProvider.GetTimestamp();
+        ApnsSendResult result;
+
         try
         {
             _EnsureSecureEndpoint(client.BaseAddress);
@@ -307,7 +321,7 @@ internal sealed class ApnsPushNotificationService(
                     .ConfigureAwait(false);
             }
 
-            var result = ApnsResponseMapper.CreateResult(
+            result = ApnsResponseMapper.CreateResult(
                 deviceToken,
                 apnsId,
                 answer.Status,
@@ -333,7 +347,16 @@ internal sealed class ApnsPushNotificationService(
                 );
             }
 
-            return result;
+            // Two authentication rejections say the instance's key or token configuration is wrong, not that one
+            // send failed, so they get their own error events instead of the per-token rejection warning.
+            if (ApnsFailureClassifier.IsTokenConfigurationProblem(answer.Error.Reason))
+            {
+                logger.LogTokenConfigurationError(answer.Error.Reason!, _Mask(deviceToken));
+            }
+            else if (string.Equals(answer.Error.Reason, "TooManyProviderTokenUpdates", StringComparison.Ordinal))
+            {
+                logger.LogProviderTokenUpdatedTooOften();
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -349,11 +372,55 @@ internal sealed class ApnsPushNotificationService(
                 logger.LogSendFailed(e, _Mask(deviceToken));
             }
 
-            return new ApnsSendResult
+            result = new ApnsSendResult
             {
+                // The duplicate risk of retrying a transport failure is documented on ApnsFailureKind.Transport;
+                // FailureError keeps its documented "<ExceptionType>: <message>" shape.
                 Response = PushNotificationResponse.Failed(deviceToken, ApnsResponseMapper.DescribeException(e)),
+                FailureKind = ApnsFailureKind.Transport,
             };
         }
+
+        if (result.Response.IsSucceeded())
+        {
+            activity?.SetStatus(ActivityStatusCode.Ok);
+        }
+        else
+        {
+            activity?.SetStatus(
+                ActivityStatusCode.Error,
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{(int?)result.StatusCode ?? 0} {result.Reason ?? result.Response.FailureError}"
+                )
+            );
+        }
+
+        activity?.SetTag(ApnsTags.Outcome, _OutcomeTag(result));
+        activity?.SetTag(ApnsTags.FailureKind, result.FailureKind is { } kind ? ApnsMetrics.ToTagValue(kind) : null);
+        activity?.SetTag(ApnsTags.Reason, result.Reason);
+
+        if (ApnsMetrics.AnyEnabled)
+        {
+            ApnsMetrics.RecordSend(result, prepared.Headers.PushType, options.Environment);
+            ApnsMetrics.RecordSendDuration(
+                timeProvider.GetElapsedTime(startedAt),
+                prepared.Headers.PushType,
+                options.Environment
+            );
+        }
+
+        return result;
+    }
+
+    private static string _OutcomeTag(ApnsSendResult result)
+    {
+        return result.Response.Status switch
+        {
+            PushNotificationResponseStatus.Success => "succeeded",
+            PushNotificationResponseStatus.Unregistered => "unregistered",
+            _ => "failed",
+        };
     }
 
     private static async ValueTask<ApnsAnswer> _PostAsync(
@@ -395,7 +462,34 @@ internal sealed class ApnsPushNotificationService(
 
         var body = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
 
-        return new ApnsAnswer(response.StatusCode, ApnsResponseMapper.ReadError(body), uniqueId);
+        return new ApnsAnswer(
+            response.StatusCode,
+            ApnsResponseMapper.ReadError(body) with
+            {
+                RetryAfter = _ReadRetryAfter(response.Headers),
+            },
+            uniqueId
+        );
+    }
+
+    /// <summary>
+    /// Reads the <c>Retry-After</c> header as a delay. Apple's response-header table does not list it, but a
+    /// throttling answer may carry one; a date-form or unparsable value reads as absent rather than failing the
+    /// send it was meant to guide.
+    /// </summary>
+    private static TimeSpan? _ReadRetryAfter(HttpResponseHeaders headers)
+    {
+        if (
+            !headers.TryGetValues("Retry-After", out var values)
+            || values.FirstOrDefault() is not { } text
+            || !int.TryParse(text.AsSpan().Trim(), CultureInfo.InvariantCulture, out var seconds)
+            || seconds < 0
+        )
+        {
+            return null;
+        }
+
+        return TimeSpan.FromSeconds(seconds);
     }
 
     #endregion
