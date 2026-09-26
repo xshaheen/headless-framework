@@ -47,11 +47,11 @@ public sealed class ConfigurationTenantDataPlacementResolverTests : TestBase
     }
 
     [Fact]
-    public void should_compare_tenant_ids_ordinally()
+    public async Task should_compare_tenant_ids_ordinally()
     {
         var sut = _Create(new ConfigurationTenantDataPlacement { TenantId = "Tenant-A", Schema = "tenant_a" });
 
-        sut.ResolveAsync("tenant-a", AbortToken).Result.Should().BeNull();
+        (await sut.ResolveAsync("tenant-a", AbortToken)).Should().BeNull();
     }
 
     [Theory]

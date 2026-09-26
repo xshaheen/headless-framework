@@ -6,6 +6,7 @@ using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Infrastructure;
 using Headless.Jobs.Interfaces;
+using Headless.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,6 +27,8 @@ internal static class ServiceBuilder
     {
         builder.ConfigureServices = (services) =>
         {
+            services.RequireUnroutedTenantDataContext(typeof(TContext), "Jobs UseApplicationDbContext");
+
             if (configurationType == ConfigurationType.UseModelCustomizer)
             {
                 var originalDescriptor =

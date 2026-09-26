@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Headless.MultiTenancy;
 using Headless.Permissions.Internal;
 using Headless.Permissions.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -55,6 +56,7 @@ public static class SetupPermissionsEntityFramework
     {
         public void AddServices(IServiceCollection services)
         {
+            services.RequireUnroutedTenantDataContext(dbContextType, "Permissions UseEntityFramework");
             services.AddOptions<PermissionsStorageOptions, EntityFrameworkPermissionsStorageOptionsValidator>();
             services.TryAddSingleton(
                 typeof(IPermissionGrantRepository),

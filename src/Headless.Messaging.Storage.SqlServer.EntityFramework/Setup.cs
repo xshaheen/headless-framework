@@ -9,6 +9,7 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Runtime;
 using Headless.Messaging.Storage.SqlServer;
 using Headless.Messaging.Storage.SqlServer.EntityFramework;
+using Headless.MultiTenancy;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -59,6 +60,7 @@ public static class SetupSqlServerEntityFrameworkMessaging
     {
         public void AddServices(IServiceCollection services)
         {
+            services.RequireUnroutedTenantDataContext(typeof(TContext), "Messaging SqlServer UseEntityFramework");
             new SetupSqlServerMessaging.SqlServerMessagesOptionsExtension(storageServices =>
                 storageServices.Configure<SqlServerOptions, SqlServerOptionsValidator>(storageOptions =>
                 {

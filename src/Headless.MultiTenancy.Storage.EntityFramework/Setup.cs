@@ -54,6 +54,7 @@ public static class SetupTenantCatalogEntityFramework
         public void AddServices(IServiceCollection services)
         {
             var storeType = typeof(EfTenantStore<>).MakeGenericType(dbContextType);
+            services.RequireUnroutedTenantDataContext(dbContextType, "Tenant catalog UseEntityFramework");
 
             // Singleton, matching Headless.Settings.Storage.EntityFramework's EfSettingValueRecordRepository:
             // the store only wraps a thread-safe IDbContextFactory<TContext>, never a scoped DbContext

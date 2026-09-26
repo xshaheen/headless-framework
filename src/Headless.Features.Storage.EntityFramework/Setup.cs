@@ -3,6 +3,7 @@
 using FluentValidation;
 using Headless.Features.Internal;
 using Headless.Features.Repositories;
+using Headless.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -40,6 +41,7 @@ public static class SetupFeaturesEntityFramework
         /// <inheritdoc/>
         public void AddServices(IServiceCollection services)
         {
+            services.RequireUnroutedTenantDataContext(dbContextType, "Features UseEntityFramework");
             services.AddOptions<FeaturesStorageOptions, EntityFrameworkFeaturesStorageOptionsValidator>();
             services.TryAddSingleton(
                 typeof(IFeatureValueRecordRepository),

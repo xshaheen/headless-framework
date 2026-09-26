@@ -9,6 +9,7 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Runtime;
 using Headless.Messaging.Storage.PostgreSql;
 using Headless.Messaging.Storage.PostgreSql.EntityFramework;
+using Headless.MultiTenancy;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -61,6 +62,7 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
     {
         public void AddServices(IServiceCollection services)
         {
+            services.RequireUnroutedTenantDataContext(typeof(TContext), "Messaging PostgreSql UseEntityFramework");
             new SetupPostgreSqlMessaging.PostgreSqlMessagesOptionsExtension(storageServices =>
                 storageServices.Configure<PostgreSqlOptions, PostgreSqlOptionsValidator>(storageOptions =>
                 {

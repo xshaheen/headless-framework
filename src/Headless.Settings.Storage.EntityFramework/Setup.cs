@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Headless.MultiTenancy;
 using Headless.Settings.Internal;
 using Headless.Settings.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -47,6 +48,7 @@ public static class SetupSettingsEntityFramework
         /// <inheritdoc/>
         public void AddServices(IServiceCollection services)
         {
+            services.RequireUnroutedTenantDataContext(dbContextType, "Settings UseEntityFramework");
             services.AddOptions<SettingsStorageOptions, EntityFrameworkSettingsStorageOptionsValidator>();
             services.TryAddSingleton(
                 typeof(ISettingValueRecordRepository),
