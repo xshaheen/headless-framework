@@ -78,6 +78,11 @@ public sealed class TenantCatalogOptions
     /// existence of an <em>enabled</em> tenant — that request proceeds to the endpoint and returns the
     /// application's own status, which already differs from the 404 an unknown identifier receives.
     /// Enabling this option gives up the rejection-indistinguishability guarantee only.
+    /// <para>
+    /// Indistinguishable means byte-identical, not timing-identical: a recently resolved disabled tenant answers
+    /// from the cache, while an unknown identifier outside its negative-cache window costs a store round trip.
+    /// The catalog does not equalize response timing; rate limiting caps how many samples a caller can take.
+    /// </para>
     /// </remarks>
     public bool DetailedResolutionErrors { get; set; }
 }
