@@ -13,18 +13,13 @@ internal sealed class JobsExecutionCancellationRegistry
 {
     private readonly Lock _mutationLock = new();
     private readonly ConcurrentDictionary<Guid, JobsExecutionCancellationRegistration> _registrations = new();
-    private readonly ConcurrentDictionary<Guid, ConcurrentDictionary<Guid, byte>> _parentIndex = new();
 
     public JobsExecutionCancellationRegistration Register(
         CancellationTokenSource cancellationSource,
         JobExecutionState context
     )
     {
-        var registration = new JobsExecutionCancellationRegistration(
-            context.JobId,
-            context.ParentId ?? Guid.Empty,
-            cancellationSource
-        );
+        var registration = new JobsExecutionCancellationRegistration(context.JobId, cancellationSource);
 
         lock (_mutationLock)
         {
@@ -38,21 +33,10 @@ internal sealed class JobsExecutionCancellationRegistry
 
                 replaced.TrySignal(JobsExecutionCancellationCause.LeaseLost);
                 _registrations[context.JobId] = registration;
-                if (replaced.ParentId != registration.ParentId)
-                {
-                    _RemoveFromParentIndex(replaced.ParentId, registration.JobId);
-                }
             }
             else
             {
                 _registrations.TryAdd(context.JobId, registration);
-            }
-
-            if (registration.ParentId != Guid.Empty)
-            {
-                _parentIndex
-                    .GetOrAdd(registration.ParentId, static _ => new ConcurrentDictionary<Guid, byte>())
-                    .TryAdd(registration.JobId, 0);
             }
         }
 
@@ -102,61 +86,22 @@ internal sealed class JobsExecutionCancellationRegistry
             }
 
             _registrations.TryRemove(registration.JobId, out _);
-            _RemoveFromParentIndex(registration.ParentId, registration.JobId);
             return true;
-        }
-    }
-
-    public bool IsParentRunning(Guid parentId)
-    {
-        lock (_mutationLock)
-        {
-            return _parentIndex.ContainsKey(parentId);
-        }
-    }
-
-    public bool IsParentRunningExcludingSelf(Guid parentId, Guid excludedJobId)
-    {
-        lock (_mutationLock)
-        {
-            return _parentIndex.TryGetValue(parentId, out var jobs)
-                && (jobs.Count > 1 || (jobs.Count == 1 && !jobs.ContainsKey(excludedJobId)));
         }
     }
 
     private bool _IsCurrent(JobsExecutionCancellationRegistration registration) =>
         _registrations.TryGetValue(registration.JobId, out var current) && ReferenceEquals(current, registration);
-
-    private void _RemoveFromParentIndex(Guid parentId, Guid jobId)
-    {
-        if (parentId == Guid.Empty || !_parentIndex.TryGetValue(parentId, out var jobs))
-        {
-            return;
-        }
-
-        jobs.TryRemove(jobId, out _);
-        if (jobs.IsEmpty)
-        {
-            ((ICollection<KeyValuePair<Guid, ConcurrentDictionary<Guid, byte>>>)_parentIndex).Remove(
-                new KeyValuePair<Guid, ConcurrentDictionary<Guid, byte>>(parentId, jobs)
-            );
-        }
-    }
 }
 
 /// <summary>Opaque identity for one execution-owned cancellation registration.</summary>
-internal sealed class JobsExecutionCancellationRegistration(
-    Guid jobId,
-    Guid parentId,
-    CancellationTokenSource cancellationSource
-)
+internal sealed class JobsExecutionCancellationRegistration(Guid jobId, CancellationTokenSource cancellationSource)
 {
     private int _cause;
     private int _state;
     private readonly Lock _syncRoot = new();
 
     public Guid JobId { get; } = jobId;
-    public Guid ParentId { get; } = parentId;
     public JobsExecutionCancellationCause Cause => (JobsExecutionCancellationCause)Volatile.Read(ref _cause);
     private CancellationTokenSource CancellationSource { get; } = cancellationSource;
     internal bool IsCompleting => Volatile.Read(ref _state) == (int)RegistrationState.Completing;

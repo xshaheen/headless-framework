@@ -180,6 +180,13 @@ internal static class DiagnosticDescriptors
         DiagnosticSeverity.Error
     );
 
+    public static readonly DiagnosticDescriptor InvalidOverlapPolicy = _Create(
+        "HF022",
+        "InvalidOverlapPolicyTitle",
+        "InvalidOverlapPolicyMessage",
+        DiagnosticSeverity.Error
+    );
+
     private static DiagnosticDescriptor _Create(
         string id,
         string titleResourceName,

@@ -468,6 +468,16 @@ public sealed class SchedulerOptionsBuilder
     public int DefaultMissedRunGraceSeconds { get; set; } = JobsRecoveryDefaults.MissedRunGraceSeconds;
 
     /// <summary>
+    /// Overlap policy seeded onto cron definitions created without one on their <c>[JobFunction]</c> attribute.
+    /// Defaults to <see cref="CronOverlapPolicy.Allow"/>.
+    /// </summary>
+    /// <remarks>
+    /// Same creation-only rule as <see cref="DefaultMissedRunPolicy"/>: changing it later does not alter existing
+    /// definitions.
+    /// </remarks>
+    public CronOverlapPolicy DefaultOverlapPolicy { get; set; } = CronOverlapPolicy.Allow;
+
+    /// <summary>
     /// How long a per-row pickup lease is held before it expires and the row becomes re-claimable. Stamped as
     /// <c>LockedUntil = now + LeaseDuration</c> on every claim. In-memory storage uses the injected
     /// <see cref="TimeProvider"/>; relational storage translates the claim expression to the database UTC clock so

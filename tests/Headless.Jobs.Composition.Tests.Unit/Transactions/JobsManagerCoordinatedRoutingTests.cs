@@ -1185,6 +1185,33 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
     }
 
     [Fact]
+    public async Task cron_add_rejects_an_undefined_overlap_policy_before_persistence()
+    {
+        var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
+        var cron = _CronJob();
+        cron.OnOverlap = (CronOverlapPolicy)999;
+
+        var act = () => sut.Cron.AddAsync(cron, AbortToken);
+
+        (await act.Should().ThrowAsync<JobValidatorException>()).WithMessage("*Overlap policy*not defined*");
+        await sut.Persistence.DidNotReceive().InsertCronJobsAsync(Arg.Any<CronJobEntity[]>(), AbortToken);
+    }
+
+    [Fact]
+    public async Task cron_update_rejects_an_undefined_overlap_policy_before_reading_storage()
+    {
+        var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
+        var cron = _CronJob();
+        cron.OnOverlap = (CronOverlapPolicy)999;
+
+        var result = await sut.Cron.UpdateAsync(cron, AbortToken);
+
+        result.IsSucceeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<JobValidatorException>().Which.Message.Should().Contain("Overlap policy");
+        await sut.Persistence.DidNotReceive().GetCronJobByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task cron_update_rejects_non_positive_missed_run_grace_before_reading_storage()
     {
         var sut = _CreateSut(CoordinatorMode.None, withWriter: false);

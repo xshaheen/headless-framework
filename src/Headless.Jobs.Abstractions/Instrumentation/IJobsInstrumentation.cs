@@ -52,6 +52,25 @@ internal interface IJobsInstrumentation
     );
 
     /// <summary>
+    /// Records that a due cron occurrence was recorded as skipped instead of running, because its definition forbids
+    /// overlap and an earlier occurrence was still unfinished.
+    /// </summary>
+    /// <param name="cronJobId">The definition whose occurrence was skipped.</param>
+    /// <param name="functionName">Its registered function name.</param>
+    /// <param name="occurrenceId">The skipped occurrence row.</param>
+    /// <param name="executionTimeUtc">The scheduled instant the skipped occurrence accounts for.</param>
+    /// <param name="isRecoveryRun">
+    /// Whether the skipped occurrence was the run a missed-run recovery produced, rather than an ordinary tick.
+    /// </param>
+    void LogCronOccurrenceSkippedForOverlap(
+        Guid cronJobId,
+        string functionName,
+        Guid occurrenceId,
+        DateTime executionTimeUtc,
+        bool isRecoveryRun
+    );
+
+    /// <summary>
     /// Records that a definition was positioned under schedule-interpretation rules that have since changed, and was
     /// rebased under the current ones.
     /// </summary>

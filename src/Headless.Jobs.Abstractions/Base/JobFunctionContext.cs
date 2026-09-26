@@ -59,7 +59,6 @@ public class JobFunctionContext
         CorrelationId = other.CorrelationId;
         CausationId = other.CausationId;
         TenantId = other.TenantId;
-        CronOccurrenceOperations = other.CronOccurrenceOperations;
     }
 
     internal AsyncServiceScope ServiceScope { get; set; }
@@ -132,9 +131,6 @@ public class JobFunctionContext
     /// <summary>The registered function name that identifies this job handler.</summary>
     public required string FunctionName { get; init; }
 
-    /// <summary>Operations specific to cron occurrence execution (e.g., skip-if-already-running).</summary>
-    public required CronOccurrenceOperations CronOccurrenceOperations { get; init; }
-
     /// <summary>
     /// Durably requests cooperative cancellation of this time job. The current owner observes the persisted request;
     /// this method does not directly signal process-local execution state.
@@ -156,37 +152,5 @@ public class JobFunctionContext
     internal void SetServiceScope(AsyncServiceScope serviceScope)
     {
         ServiceScope = serviceScope;
-    }
-}
-
-/// <summary>
-/// Cron-specific runtime operations available to a job function during execution. Instances are
-/// constructed by the scheduler runtime, which wires the skip callback; consumers only call
-/// <see cref="SkipIfAlreadyRunning"/>.
-/// </summary>
-[PublicAPI]
-public sealed class CronOccurrenceOperations
-{
-    private readonly Action _skipIfAlreadyRunning;
-
-    /// <summary>
-    /// Wires the delegate invoked by <see cref="SkipIfAlreadyRunning"/> to mark the current occurrence
-    /// as skipped when another occurrence of the same cron job is already executing on this node.
-    /// Internal: the scheduler runtime is the only producer of execution contexts.
-    /// </summary>
-    /// <param name="skipIfAlreadyRunning">Callback that skips the occurrence when a sibling is running.</param>
-    internal CronOccurrenceOperations(Action skipIfAlreadyRunning)
-    {
-        _skipIfAlreadyRunning = skipIfAlreadyRunning;
-    }
-
-    /// <summary>
-    /// Marks this cron occurrence as <c>Skipped</c> and stops execution if another occurrence of the
-    /// same cron job is currently running on this node. Use this to prevent overlapping executions for
-    /// long-running cron jobs.
-    /// </summary>
-    public void SkipIfAlreadyRunning()
-    {
-        _skipIfAlreadyRunning();
     }
 }

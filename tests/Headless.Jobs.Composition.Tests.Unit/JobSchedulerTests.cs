@@ -64,7 +64,6 @@ public sealed class JobSchedulerTests : TestBase
             Id = Guid.NewGuid(),
             FunctionName = "parent",
             CorrelationId = parentCorrelation,
-            CronOccurrenceOperations = new CronOccurrenceOperations(() => { }),
         };
         using var trace = new Activity("unrelated-diagnostic-trace");
         trace.Start();
