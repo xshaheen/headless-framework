@@ -204,11 +204,7 @@ public sealed class TenantRestoreExecuteMiddlewareTests : TestBase
     private static JobExecuteContext _Context(string? tenantId)
     {
         var execution = new JobExecutionState { FunctionName = _Function, TenantId = tenantId };
-        var functionContext = new JobFunctionContext
-        {
-            FunctionName = _Function,
-            CronOccurrenceOperations = new CronOccurrenceOperations(() => { }),
-        };
+        var functionContext = new JobFunctionContext { FunctionName = _Function };
 
         return new JobExecuteContext(_Descriptor, execution, functionContext, attempt: 0, NullServiceProvider.Instance);
     }

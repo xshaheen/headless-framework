@@ -781,6 +781,16 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             );
         }
 
+        if (cronJob.OnOverlap is not CronOverlapPolicy.Allow and not CronOverlapPolicy.Skip)
+        {
+            errors.Add(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Overlap policy value '{(int)cronJob.OnOverlap}' is not defined for function '{cronJob.Function}'."
+                )
+            );
+        }
+
         if (cronJob.MissedRunGraceSeconds <= 0)
         {
             errors.Add(

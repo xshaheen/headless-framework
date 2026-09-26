@@ -224,4 +224,36 @@ public abstract class FeaturesStorageConformanceTests<TFixture>(TFixture fixture
         var stored = await repository.GetListAsync("Tenant", "t1", AbortToken);
         stored.Should().ContainSingle().Which.Value.Should().MatchRegex("^v[0-7]$");
     }
+
+    [Fact]
+    public async Task should_refuse_a_padded_provider_key_and_leave_the_unpadded_row_intact()
+    {
+        // given a stored "acme" row; SQL Server compares "acme " equal to it, PostgreSQL does not
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
+        var store = new FeatureValueStore(
+            Substitute.For<IFeatureDefinitionManager>(),
+            repository,
+            new SequentialGuidGenerator(SequentialGuidType.Version7),
+            host.Services.GetRequiredService<ICache>()
+        );
+        await repository.InsertAsync(
+            new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "true", "Tenant", "acme"),
+            AbortToken
+        );
+
+        // when
+        var set = async () => await store.SetAsync("Checkout.Enabled", "false", "Tenant", "acme ", AbortToken);
+        var get = async () => await store.GetOrDefaultAsync("Checkout.Enabled", "Tenant", "acme ", AbortToken);
+        var delete = async () => await store.DeleteAsync("Checkout.Enabled", "Tenant", "acme ", AbortToken);
+
+        // then
+        await set.Should().ThrowExactlyAsync<ArgumentException>();
+        await get.Should().ThrowExactlyAsync<ArgumentException>();
+        await delete.Should().ThrowExactlyAsync<ArgumentException>();
+        var stored = await repository.GetListAsync("Tenant", "acme", AbortToken);
+        stored.Should().ContainSingle().Which.Value.Should().Be("true");
+    }
 }

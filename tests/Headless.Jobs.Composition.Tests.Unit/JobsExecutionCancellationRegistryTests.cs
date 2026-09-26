@@ -233,28 +233,6 @@ public sealed class JobsExecutionCancellationRegistryTests : TestBase
         registry.TryRemove(completing).Should().BeTrue();
     }
 
-    [Fact]
-    public void replacement_moves_the_parent_index_without_stale_cleanup_clobbering_it()
-    {
-        var registry = new JobsExecutionCancellationRegistry();
-        var jobId = Guid.NewGuid();
-        var staleParentId = Guid.NewGuid();
-        var currentParentId = Guid.NewGuid();
-        using var staleSource = new CancellationTokenSource();
-        using var currentSource = new CancellationTokenSource();
-        var stale = registry.Register(staleSource, _Context(jobId, staleParentId));
-        var current = registry.Register(currentSource, _Context(jobId, currentParentId));
-
-        registry.IsParentRunning(staleParentId).Should().BeFalse();
-        registry.IsParentRunning(currentParentId).Should().BeTrue();
-        registry.IsParentRunningExcludingSelf(currentParentId, jobId).Should().BeFalse();
-
-        registry.TryRemove(stale).Should().BeFalse();
-        registry.IsParentRunning(currentParentId).Should().BeTrue();
-        registry.TryRemove(current).Should().BeTrue();
-        registry.IsParentRunning(currentParentId).Should().BeFalse();
-    }
-
     private static JobExecutionState _Context(Guid jobId, Guid? parentId = null) =>
         new()
         {

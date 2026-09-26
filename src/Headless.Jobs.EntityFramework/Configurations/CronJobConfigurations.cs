@@ -58,6 +58,13 @@ public class CronJobConfigurations<TCronJob>(string schema, string? contractColl
             .HasMaxLength(32)
             .HasDefaultValue(MissedRunPolicy.Coalesce);
 
+        // Same valid-enum-name default rule as OnMissedRun.
+        builder
+            .Property(e => e.OnOverlap)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(CronOverlapPolicy.Allow);
+
         builder.Property(e => e.EvaluationFingerprint).HasMaxLength(128);
         builder.Property(e => e.FingerprintFailureCount).HasDefaultValue(0);
         builder.Property(e => e.FingerprintRetryAfterUtc).HasConversion(nullableUtcDateTimeConverter);

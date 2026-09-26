@@ -25,7 +25,6 @@ public sealed class JobFunctionContextTests : Headless.Testing.Tests.TestBase
             CorrelationId = "root-business-occurrence",
             CausationId = "direct-parent-occurrence",
             TenantId = "tenant-7",
-            CronOccurrenceOperations = new CronOccurrenceOperations(() => { }),
         };
 
         var request = new TestRequest { Value = 42 };
@@ -44,7 +43,6 @@ public sealed class JobFunctionContextTests : Headless.Testing.Tests.TestBase
         genericContext.CorrelationId.Should().Be("root-business-occurrence");
         genericContext.CausationId.Should().Be("direct-parent-occurrence");
         genericContext.TenantId.Should().Be("tenant-7");
-        genericContext.CronOccurrenceOperations.Should().BeSameAs(baseContext.CronOccurrenceOperations);
         genericContext.Request.Should().Be(request);
     }
 
@@ -61,7 +59,6 @@ public sealed class JobFunctionContextTests : Headless.Testing.Tests.TestBase
             Id = id,
             Type = JobType.TimeJob,
             FunctionName = "TestFunction",
-            CronOccurrenceOperations = new CronOccurrenceOperations(() => { }),
         };
         context.SetServiceScope(scope);
 

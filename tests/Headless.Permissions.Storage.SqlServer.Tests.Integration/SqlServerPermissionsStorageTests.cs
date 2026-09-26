@@ -1,15 +1,21 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.Caching;
 using Headless.Hosting.Initialization;
 using Headless.MultiTenancy;
 using Headless.Permissions;
+using Headless.Permissions.Definitions;
 using Headless.Permissions.Entities;
+using Headless.Permissions.Grants;
+using Headless.Permissions.Models;
 using Headless.Permissions.Repositories;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Tests;
 
@@ -275,6 +281,42 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
         remaining.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task should_refuse_a_padded_provider_key_and_leave_the_unpadded_grant_intact()
+    {
+        // given a stored grant for "acme"; SQL Server compares "acme " equal to it, PostgreSQL does not
+        await _DropSchemaAsync();
+        using var host = _CreateHost();
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<IPermissionGrantRepository>();
+        var store = new PermissionGrantStore(
+            Substitute.For<IPermissionDefinitionManager>(),
+            repository,
+            new SequentialGuidGenerator(SequentialGuidType.Version7),
+            Substitute.For<ICache<PermissionGrantCacheItem>>(),
+            Substitute.For<ICurrentTenant>(),
+            Options.Create(new PermissionManagementOptions()),
+            NullLogger<PermissionGrantStore>.Instance
+        );
+        await repository.InsertAsync(
+            new PermissionGrantRecord(Guid.NewGuid(), "Users.Create", "Role", "acme", isGranted: true),
+            AbortToken
+        );
+
+        // when
+        var revoke = async () => await store.RevokeAsync("Users.Create", "Role", "acme ", AbortToken);
+        var isGranted = async () => await store.IsGrantedAsync("Users.Create", "Role", "acme ", AbortToken);
+        var grantToPaddedTenant = async () =>
+            await store.GrantAsync("Users.Delete", "Role", "acme", tenantId: "t1 ", AbortToken);
+
+        // then
+        await revoke.Should().ThrowExactlyAsync<ArgumentException>();
+        await isGranted.Should().ThrowExactlyAsync<ArgumentException>();
+        await grantToPaddedTenant.Should().ThrowExactlyAsync<ArgumentException>();
+        var stored = await repository.GetListAsync("Role", "acme", AbortToken);
+        stored.Should().ContainSingle().Which.IsGranted.Should().BeTrue();
+    }
+
     private IHost _CreateHost(ICurrentTenant? currentTenant = null)
     {
         var builder = Host.CreateApplicationBuilder();
@@ -285,6 +327,8 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
 
         // unify: management-core deps
         builder.Services.AddSingleton(TimeProvider.System);
+        // Grant caching is required, and the host refuses to start without a registered cache.
+        builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
         builder.Services.AddHeadlessPermissions(setup =>
         {
             setup.ConfigureStorage(options => options.Schema = _Schema);

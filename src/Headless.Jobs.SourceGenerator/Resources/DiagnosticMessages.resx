@@ -102,4 +102,10 @@
   <data name="InvalidMissedRunGraceMessage" xml:space="preserve">
     <value>The missed-run grace value '{0}' must be greater than zero seconds</value>
   </data>
+  <data name="InvalidOverlapPolicyTitle" xml:space="preserve">
+    <value>Invalid overlap policy</value>
+  </data>
+  <data name="InvalidOverlapPolicyMessage" xml:space="preserve">
+    <value>The overlap policy value '{0}' is not defined</value>
+  </data>
 </root>

@@ -9,10 +9,10 @@ namespace Headless.Jobs.Exceptions;
 /// scheduler infer it from a generic exception. The default status is <see cref="JobStatus.Skipped"/>.
 /// </summary>
 /// <remarks>
-/// This is the mechanism used by <c>CronOccurrenceOperations.SkipIfAlreadyRunning</c> to mark an
-/// occurrence as <see cref="JobStatus.Skipped"/> when a sibling is already executing on the same node.
 /// Throwing this exception from a job function bypasses the built-in retry logic: the scheduler
-/// stamps the requested status directly and does not re-enqueue the job.
+/// stamps the requested status directly and does not re-enqueue the job. To keep cron occurrences from overlapping,
+/// set the definition's overlap policy instead of checking for a running sibling here; the policy is enforced
+/// cluster-wide before the occurrence starts.
 /// </remarks>
 public sealed class TerminateExecutionException : Exception
 {

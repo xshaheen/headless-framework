@@ -117,11 +117,7 @@ public sealed class JobsTenancyRegistrationTests : TestBase
             new JobExecuteContext(
                 _Descriptor,
                 new JobExecutionState { FunctionName = _Descriptor.FunctionName },
-                new JobFunctionContext
-                {
-                    FunctionName = _Descriptor.FunctionName,
-                    CronOccurrenceOperations = new CronOccurrenceOperations(() => { }),
-                },
+                new JobFunctionContext { FunctionName = _Descriptor.FunctionName },
                 attempt: 0,
                 provider
             ),

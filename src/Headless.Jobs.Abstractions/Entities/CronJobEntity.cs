@@ -102,6 +102,17 @@ public class CronJobEntity : BaseJobEntity
     public virtual MissedRunPolicy OnMissedRun { get; set; } = MissedRunPolicy.Coalesce;
 
     /// <summary>
+    /// Policy applied when an occurrence becomes due while an earlier occurrence of this definition is unfinished.
+    /// Seeded from the job function attribute at creation and never reapplied afterwards, so any later value is an
+    /// operator override.
+    /// </summary>
+    /// <remarks>
+    /// Read by the provider inside the same transaction that materializes the occurrence, so every node applies the
+    /// value that is persisted at that moment rather than one it cached.
+    /// </remarks>
+    public virtual CronOverlapPolicy OnOverlap { get; set; } = CronOverlapPolicy.Allow;
+
+    /// <summary>
     /// Optional serialized request payload (JSON, optionally GZip-compressed) propagated to every
     /// generated occurrence.
     /// </summary>

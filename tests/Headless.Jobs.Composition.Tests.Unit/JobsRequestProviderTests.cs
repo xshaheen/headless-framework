@@ -39,7 +39,6 @@ public sealed class JobsRequestProviderTests : TestBase
             Id = Guid.NewGuid(),
             Type = JobType.TimeJob,
             FunctionName = "typed-function",
-            CronOccurrenceOperations = new CronOccurrenceOperations(() => { }),
         };
         _context.SetServiceScope(_scope);
     }
