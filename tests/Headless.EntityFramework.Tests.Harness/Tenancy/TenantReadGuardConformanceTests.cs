@@ -69,6 +69,10 @@ public abstract class ReadGuardTenantFixture(TenantDatabaseProvider provider) : 
 public abstract class TenantReadGuardConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : ReadGuardTenantFixture
 {
+    private static readonly Func<ReadGuardTenantContext, Task<int>> _CompiledRowCount = EF.CompileAsyncQuery(
+        (ReadGuardTenantContext db) => db.Set<ReadGuardRow>().Count()
+    );
+
     public override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
@@ -106,6 +110,37 @@ public abstract class TenantReadGuardConformanceTests<TFixture>(TFixture fixture
         }
 
         (await _CountAllRowsAsync()).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_throw_unwrapped_when_bulk_updating_required_tenant_rows_without_tenant()
+    {
+        await _SeedAsync("tenant-a");
+        fixture.CurrentTenant.Id = null;
+        await using var scope = fixture.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ReadGuardTenantContext>();
+
+        var act = () =>
+            db.Set<ReadGuardRow>()
+                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.TenantId, "tenant-b"), AbortToken);
+
+        await act.Should().ThrowExactlyAsync<MissingTenantContextException>();
+    }
+
+    [Fact]
+    public async Task should_check_tenant_on_each_execution_of_a_compiled_query()
+    {
+        await _SeedAsync("tenant-a");
+        await using var scope = fixture.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ReadGuardTenantContext>();
+        fixture.CurrentTenant.Id = "tenant-a";
+        (await _CompiledRowCount(db)).Should().Be(1);
+
+        // A compiled query skips the tenant-keyed query cache, so only per-execution evaluation can throw here.
+        fixture.CurrentTenant.Id = null;
+        var act = async () => await _CompiledRowCount(db);
+
+        await act.Should().ThrowExactlyAsync<MissingTenantContextException>();
     }
 
     [Fact]
