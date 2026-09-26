@@ -625,6 +625,7 @@ Base classes, builders, fixtures, and Testcontainers integration for real-databa
 | [Headless.Testing](src/Headless.Testing/README.md) | Testing utilities and base classes |
 | [Headless.Testing.AspNetCore](src/Headless.Testing.AspNetCore/README.md) | ASP.NET Core integration-test server with time control and DB reset |
 | [Headless.Testing.Testcontainers](src/Headless.Testing.Testcontainers/README.md) | Testcontainers fixtures |
+| [Headless.EntityFramework.Testing](src/Headless.EntityFramework.Testing/README.md) | Tenant-isolation assertions for EF Core: cross-tenant reads empty, cross-tenant writes refused |
 
 ### TUS (Resumable Uploads)
 
