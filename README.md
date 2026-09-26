@@ -313,6 +313,7 @@ One blob storage interface with providers for every major cloud and protocol.
 | [Headless.Blobs.FileSystem](src/Headless.Blobs.FileSystem/README.md) | Local filesystem storage |
 | [Headless.Blobs.Redis](src/Headless.Blobs.Redis/README.md) | Redis blob storage |
 | [Headless.Blobs.SshNet](src/Headless.Blobs.SshNet/README.md) | SFTP blob storage |
+| [Headless.Api.Blobs](src/Headless.Api.Blobs/README.md) | Signed download and upload URLs for blob stores without native presign |
 
 ### Caching
 

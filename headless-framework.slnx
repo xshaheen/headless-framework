@@ -60,6 +60,7 @@
         <Project Path="tests\Headless.Tus.Tests.Unit\Headless.Tus.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Blobs/">
+        <Project Path="src\Headless.Api.Blobs\Headless.Api.Blobs.csproj" />
         <Project Path="src\Headless.Blobs.Abstractions\Headless.Blobs.Abstractions.csproj" />
         <Project Path="src\Headless.Blobs.Aws\Headless.Blobs.Aws.csproj" />
         <Project Path="src\Headless.Blobs.Azure\Headless.Blobs.Azure.csproj" />
@@ -71,6 +72,7 @@
     </Folder>
     <Folder Name="/Blobs/Tests/">
         <Project Path="benchmarks/Headless.Blobs.Benchmarks/Headless.Blobs.Benchmarks.csproj" />
+        <Project Path="tests\Headless.Api.Blobs.Tests.Unit\Headless.Api.Blobs.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Blobs.Abstractions.Tests.Unit\Headless.Blobs.Abstractions.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Blobs.Aws.Tests.Integration\Headless.Blobs.Aws.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Blobs.Aws.Tests.Unit\Headless.Blobs.Aws.Tests.Unit.csproj" />
