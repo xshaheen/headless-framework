@@ -288,7 +288,7 @@ Core hosting utilities and extensions for ASP.NET Core applications.
 
 ### API and behavior
 
-- DI extensions: `AddIf`, `AddIfElse`, `AddOrReplace*`, `Unregister<T>`
+- DI extensions: `AddIf`, `AddIfElse`, `AddOrReplace*`, `Unregister<T>`, and decorators (`Decorate`/`TryDecorate` for unkeyed registrations, `TryDecorateKeyed` for one service key) that preserve each registration's lifetime
 - Startup validators (`IHeadlessStartupValidator`, `AddStartupValidator`) that run before any hosted service starts and report every failure together
 - Required-service declarations (`RequireRegisteredService<T>`) that fail the host at startup instead of at first use
 - Options validation with FluentValidation
@@ -370,6 +370,18 @@ services.AddOrReplaceSingleton<IService>(sp => new Impl(sp.GetRequired<IDep>()))
 // package wants to swap only those defaults.
 services.AddOrReplaceFallbackSingleton<IService, NullFallback, DefaultImpl>();
 ```
+
+#### Decorators
+
+```csharp
+// Wraps every unkeyed IService registration; the factory receives the original instance.
+services.TryDecorate<IService>((inner, sp) => new LoggingService(inner));
+
+// Wraps only the registrations under one key; other keys and the unkeyed registration are untouched.
+services.TryDecorateKeyed<IService>("reports", (inner, sp) => new LoggingService(inner));
+```
+
+A decorator that returns a different instance owns disposing the inner one, because the container only tracks what the factory returns. `TryDecorateKeyed` does not decorate a `KeyedService.AnyKey` registration, which serves every key.
 
 #### Startup Validators
 
