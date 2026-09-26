@@ -71,7 +71,9 @@ public sealed class EntityFrameworkFeaturesFactoryLifetimeTests : TestBase
             .SelectMany(missing => missing.MissingServices)
             .Should()
             .Contain(missing => missing.ServiceType == typeof(IDbContextFactory<FeaturesDbContext>));
-        failures.Should().NotContain(failure => failure is InvalidServiceLifetimeException);
+        // The entity validator leaves the missing factory to the required-service check, so it must not add a
+        // failure of its own (a dropped guard would surface here as a NullReferenceException).
+        failures.Should().AllSatisfy(failure => failure.Should().BeOfType<MissingRequiredServiceException>());
     }
 
     private static ServiceCollection _CreateServices()
