@@ -70,7 +70,8 @@ public static class HeadlessRequiredServiceExtensions
             // Idempotent by validator type, so one check covers every requirement declared in the host.
             services.AddStartupValidator<RequiredServiceStartupValidator>();
 
-            _GetOrAddRegistry(services).Add(new RequiredServiceRegistration(serviceType, requiredBy, remedy));
+            _GetOrAddRegistry(services, static () => new RequiredServiceRegistry())
+                .Add(new RequiredServiceRegistration(serviceType, requiredBy, remedy));
 
             return services;
         }
@@ -115,46 +116,29 @@ public static class HeadlessRequiredServiceExtensions
             // Idempotent by validator type, so one check covers every singleton requirement declared in the host.
             services.AddStartupValidator<SingletonServiceStartupValidator>();
 
-            _GetOrAddSingletonRegistry(services).Add(new RequiredServiceRegistration(serviceType, requiredBy, remedy));
+            _GetOrAddRegistry(services, () => new SingletonServiceRegistry(services))
+                .Add(new RequiredServiceRegistration(serviceType, requiredBy, remedy));
 
             return services;
         }
     }
 
-    private static SingletonServiceRegistry _GetOrAddSingletonRegistry(IServiceCollection services)
-    {
-        var existing = services.FirstOrDefault(static descriptor =>
-            descriptor.ServiceType == typeof(SingletonServiceRegistry)
-        );
-
-        if (existing?.ImplementationInstance is SingletonServiceRegistry registry)
-        {
-            return registry;
-        }
-
-        registry = new SingletonServiceRegistry(services);
-        services.AddSingleton(registry);
-
-        return registry;
-    }
-
     /// <summary>
-    /// Returns the registry instance already registered on this collection, or registers a fresh one. The
-    /// singleton is registered as an instance precisely so later <c>Add…</c> calls can keep appending to the
-    /// object the container will hand to <see cref="RequiredServiceStartupValidator"/>.
+    /// Returns the <typeparamref name="TRegistry"/> instance already registered on this collection, or registers the
+    /// one <paramref name="create"/> builds. The registry is registered as an instance precisely so later <c>Add…</c>
+    /// calls keep appending to the object the container hands to the startup validator.
     /// </summary>
-    private static RequiredServiceRegistry _GetOrAddRegistry(IServiceCollection services)
+    private static TRegistry _GetOrAddRegistry<TRegistry>(IServiceCollection services, Func<TRegistry> create)
+        where TRegistry : class
     {
-        var existing = services.FirstOrDefault(static descriptor =>
-            descriptor.ServiceType == typeof(RequiredServiceRegistry)
-        );
+        var existing = services.FirstOrDefault(static descriptor => descriptor.ServiceType == typeof(TRegistry));
 
-        if (existing?.ImplementationInstance is RequiredServiceRegistry registry)
+        if (existing?.ImplementationInstance is TRegistry registry)
         {
             return registry;
         }
 
-        registry = new RequiredServiceRegistry();
+        registry = create();
         services.AddSingleton(registry);
 
         return registry;

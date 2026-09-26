@@ -11,31 +11,14 @@ namespace Headless.Hosting.DependencyInjection;
 /// </summary>
 internal sealed class SingletonServiceRegistry(IServiceCollection services)
 {
-    private readonly List<RequiredServiceRegistration> _ordered = [];
-    private readonly HashSet<RequiredServiceRegistration> _seen = [];
-    private readonly Lock _gate = new();
+    private readonly RequiredServiceRegistry _registrations = new();
 
     public IServiceCollection Services { get; } = services;
 
+    public IReadOnlyList<RequiredServiceRegistration> Registrations => _registrations.Registrations;
+
     public void Add(RequiredServiceRegistration registration)
     {
-        lock (_gate)
-        {
-            if (_seen.Add(registration))
-            {
-                _ordered.Add(registration);
-            }
-        }
-    }
-
-    public IReadOnlyList<RequiredServiceRegistration> Registrations
-    {
-        get
-        {
-            lock (_gate)
-            {
-                return [.. _ordered];
-            }
-        }
+        _registrations.Add(registration);
     }
 }
