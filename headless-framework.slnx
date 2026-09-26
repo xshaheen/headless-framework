@@ -231,6 +231,13 @@
         <Project Path="tests/Headless.Identity.Storage.EntityFramework.Tests.Harness/Headless.Identity.Storage.EntityFramework.Tests.Harness.csproj" />
         <Project Path="tests/Headless.Identity.Storage.EntityFramework.Tests.Integration/Headless.Identity.Storage.EntityFramework.Tests.Integration.csproj" />
     </Folder>
+    <Folder Name="/Idempotency/">
+        <Project Path="src\Headless.Idempotency.Abstractions\Headless.Idempotency.Abstractions.csproj" />
+        <Project Path="src\Headless.Idempotency.Core\Headless.Idempotency.Core.csproj" />
+    </Folder>
+    <Folder Name="/Idempotency/Tests/">
+        <Project Path="tests\Headless.Idempotency.Core.Tests.Unit\Headless.Idempotency.Core.Tests.Unit.csproj" />
+    </Folder>
     <Folder Name="/Imaging/">
         <Project Path="src\Headless.Imaging.Abstractions\Headless.Imaging.Abstractions.csproj" />
         <Project Path="src\Headless.Imaging.Core\Headless.Imaging.Core.csproj" />
