@@ -8,12 +8,18 @@ namespace Headless.Fencing.InMemory;
 /// <param name="GrantedAt">When the last grant happened, by the store's clock.</param>
 /// <param name="ExpiresAt">When the active attempt's lease expires, by the store's clock.</param>
 /// <param name="EndedAt">When the attempt settled, was released, or was abandoned; <see langword="null" /> while active.</param>
+/// <param name="TakeoverCount">Takeovers and abandonments since the lease last settled or was released.</param>
+/// <param name="Progress">
+/// The last progress a successful renewal recorded; immutable, so rows share it. Cleared by a settlement or release.
+/// </param>
 internal sealed record InMemoryLease(
     long Generation,
     InMemoryLeaseState State,
     DateTimeOffset GrantedAt,
     DateTimeOffset ExpiresAt,
-    DateTimeOffset? EndedAt
+    DateTimeOffset? EndedAt,
+    int TakeoverCount,
+    LeaseProgress? Progress
 );
 
 /// <summary>The stored state of a lease.</summary>

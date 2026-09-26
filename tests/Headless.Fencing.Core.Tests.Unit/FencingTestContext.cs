@@ -4,6 +4,7 @@ using System.Data.Common;
 using Headless.Fencing;
 using Headless.MultiTenancy;
 using Headless.UnitOfWork;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Tests;
@@ -19,8 +20,9 @@ internal sealed class FencingTestContext
         monitor.CurrentValue.Returns(_ => Options);
 
         Resolver = new LeaseRequestResolver(Tenant, monitor);
-        Feature = new UnitOfWorkLeasesFeature(Resolver, Store);
-        Leases = new FencedLeases(Resolver, Store);
+        Alerts = new LeaseTakeoverAlerts(monitor, Logger);
+        Feature = new UnitOfWorkLeasesFeature(Resolver, Store, Alerts);
+        Leases = new FencedLeases(Resolver, Store, Alerts);
     }
 
     public FencingOptions Options { get; } = new();
@@ -30,6 +32,10 @@ internal sealed class FencingTestContext
     public ILeaseStore Store { get; } = Substitute.For<ILeaseStore>();
 
     public LeaseRequestResolver Resolver { get; }
+
+    public CapturingLogger<LeaseTakeoverAlerts> Logger { get; } = new();
+
+    public LeaseTakeoverAlerts Alerts { get; }
 
     public UnitOfWorkLeasesFeature Feature { get; }
 
@@ -70,5 +76,33 @@ internal sealed class MutableCurrentTenant : ICurrentTenant
     private sealed class Restore(MutableCurrentTenant tenant, string? previous) : IDisposable
     {
         public void Dispose() => tenant.Id = previous;
+    }
+}
+
+/// <summary>Records every entry logged through it, so a test can assert on the level, event, and message.</summary>
+internal sealed class CapturingLogger<T> : ILogger<T>
+{
+    public List<(LogLevel Level, EventId EventId, string Message)> Entries { get; } = [];
+
+    public IDisposable? BeginScope<TState>(TState state)
+        where TState : notnull
+    {
+        return null;
+    }
+
+    public bool IsEnabled(LogLevel logLevel)
+    {
+        return true;
+    }
+
+    public void Log<TState>(
+        LogLevel logLevel,
+        EventId eventId,
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter
+    )
+    {
+        Entries.Add((logLevel, eventId, formatter(state, exception)));
     }
 }

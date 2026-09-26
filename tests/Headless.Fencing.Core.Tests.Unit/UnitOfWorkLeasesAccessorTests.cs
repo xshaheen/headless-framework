@@ -38,12 +38,14 @@ public sealed class UnitOfWorkLeasesAccessorTests : TestBase
         var unit = _UnitWithUnitLocalState(feature);
         var lease = new FencedLease(null, "job", "order-1", 3);
         var duration = TimeSpan.FromSeconds(10);
+        var progress = new LeaseProgress([1, 2, 3], "exports.cursor/v1");
 
         // when
         var first = unit.Leases;
         var second = unit.Leases;
         await first.GrantAsync("job", "order-1", duration, AbortToken);
         await first.RenewAsync(lease, duration, AbortToken);
+        await first.RenewAsync(lease, duration, progress, AbortToken);
         await first.SettleAsync(lease, AbortToken);
         await first.ReleaseAsync(lease, AbortToken);
         await first.FenceAsync(lease, AbortToken);
@@ -51,7 +53,8 @@ public sealed class UnitOfWorkLeasesAccessorTests : TestBase
         // then
         second.Should().BeSameAs(first);
         await feature.Received(1).GrantAsync(unit, "job", "order-1", duration, AbortToken);
-        await feature.Received(1).RenewAsync(unit, lease, duration, AbortToken);
+        await feature.Received(1).RenewAsync(unit, lease, duration, null, AbortToken);
+        await feature.Received(1).RenewAsync(unit, lease, duration, progress, AbortToken);
         await feature.Received(1).SettleAsync(unit, lease, AbortToken);
         await feature.Received(1).ReleaseAsync(unit, lease, AbortToken);
         await feature.Received(1).FenceAsync(unit, lease, AbortToken);

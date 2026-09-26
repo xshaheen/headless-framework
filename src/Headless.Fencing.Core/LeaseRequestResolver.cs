@@ -73,6 +73,33 @@ internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOption
         return duration;
     }
 
+    /// <summary>Checks a renewal's progress against the size limits, before anything is written.</summary>
+    /// <exception cref="ArgumentException"><paramref name="progress" /> exceeds a limit.</exception>
+    public static LeaseProgress? ValidateProgress(LeaseProgress? progress)
+    {
+        if (progress is null)
+        {
+            return null;
+        }
+
+        if (progress.Payload.Length > FencingFieldLimits.ProgressMaxBytes)
+        {
+            throw new ArgumentException(
+                $"A progress payload is {progress.Payload.Length} bytes; a renewal records at most "
+                    + $"{FencingFieldLimits.ProgressMaxBytes}. Record a resume cursor, not the work's result.",
+                nameof(progress)
+            );
+        }
+
+        Argument.HasMaxLength(
+            progress.Contract,
+            FencingFieldLimits.ProgressContractMaxLength,
+            paramName: nameof(progress)
+        );
+
+        return progress;
+    }
+
     private static void _ValidateKind(string kind, string paramName)
     {
         Argument.IsNotNullOrWhiteSpace(kind, paramName: paramName);

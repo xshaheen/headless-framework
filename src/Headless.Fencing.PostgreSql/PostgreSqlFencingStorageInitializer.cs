@@ -71,7 +71,7 @@ internal sealed partial class PostgreSqlFencingStorageInitializer(
         // byte) whatever the database's default collation is. One store-wide sequence issues every generation, so a
         // lease granted again after its row was purged still gets a generation above every earlier one. The active
         // index serves the sweep's keyset walk in (expires_at, tenant_id, resource) order; the ended index serves
-        // purge.
+        // purge. Progress and its contract are stored together or not at all.
         return $"""
             SELECT pg_advisory_xact_lock(hashtextextended(@LockResource, 0));
 
@@ -88,6 +88,9 @@ internal sealed partial class PostgreSqlFencingStorageInitializer(
                 {PostgreSqlFencingSchema.GrantedAt} timestamptz NOT NULL,
                 {PostgreSqlFencingSchema.ExpiresAt} timestamptz NOT NULL,
                 {PostgreSqlFencingSchema.EndedAt} timestamptz NULL,
+                {PostgreSqlFencingSchema.TakeoverCount} integer NOT NULL DEFAULT 0,
+                {PostgreSqlFencingSchema.Progress} bytea NULL,
+                {PostgreSqlFencingSchema.ProgressContract} varchar({FencingFieldLimits.ProgressContractMaxLength}) NULL,
                 CONSTRAINT "pk_{PostgreSqlFencingSchema.TableName}" PRIMARY KEY (
                     {PostgreSqlFencingSchema.TenantId},
                     {PostgreSqlFencingSchema.Kind},
@@ -99,6 +102,10 @@ internal sealed partial class PostgreSqlFencingStorageInitializer(
                 ),
                 CONSTRAINT "ck_{PostgreSqlFencingSchema.TableName}_ended_at" CHECK (
                     ({PostgreSqlFencingSchema.State} = {PostgreSqlFencingSchema.Active}) = ({PostgreSqlFencingSchema.EndedAt} IS NULL)
+                ),
+                CONSTRAINT "ck_{PostgreSqlFencingSchema.TableName}_takeover_count" CHECK ({PostgreSqlFencingSchema.TakeoverCount} >= 0),
+                CONSTRAINT "ck_{PostgreSqlFencingSchema.TableName}_progress" CHECK (
+                    ({PostgreSqlFencingSchema.Progress} IS NULL) = ({PostgreSqlFencingSchema.ProgressContract} IS NULL)
                 )
             );
 

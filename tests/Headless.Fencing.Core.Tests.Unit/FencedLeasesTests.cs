@@ -3,6 +3,7 @@
 using Headless.Fencing;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
+using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
@@ -35,7 +36,7 @@ public sealed class FencedLeasesTests : TestBase
         // given
         var context = new FencingTestContext();
         context
-            .Store.RenewAsync(_Key, 7, FencingTestContext.Duration, AbortToken)
+            .Store.RenewAsync(_Key, 7, FencingTestContext.Duration, null, AbortToken)
             .Returns(new LeaseRenewalResult(LeaseRenewalStatus.Stale, null));
         context.Store.SettleAsync(_Key, 7, AbortToken).Returns(LeaseSettlementStatus.Expired);
         context.Store.ReleaseAsync(_Key, 7, AbortToken).Returns(LeaseSettlementStatus.Released);
@@ -49,6 +50,40 @@ public sealed class FencedLeasesTests : TestBase
         renewal.Status.Should().Be(LeaseRenewalStatus.Stale);
         settlement.Should().Be(LeaseSettlementStatus.Expired);
         release.Should().Be(LeaseSettlementStatus.Released);
+    }
+
+    [Fact]
+    public async Task should_forward_the_renewal_progress_to_the_store()
+    {
+        // given
+        var context = new FencingTestContext();
+        var progress = new LeaseProgress([1, 2, 3], "exports.cursor/v1");
+        context
+            .Store.RenewAsync(_Key, 7, FencingTestContext.Duration, progress, AbortToken)
+            .Returns(new LeaseRenewalResult(LeaseRenewalStatus.Renewed, DateTimeOffset.UnixEpoch));
+
+        // when
+        var renewal = await context.Leases.RenewAsync(_Lease, FencingTestContext.Duration, progress, AbortToken);
+
+        // then
+        renewal.Status.Should().Be(LeaseRenewalStatus.Renewed);
+        await context.Store.Received(1).RenewAsync(_Key, 7, FencingTestContext.Duration, progress, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_reject_oversized_or_null_progress_before_the_store()
+    {
+        var context = new FencingTestContext();
+        var oversized = new LeaseProgress(new byte[FencingFieldLimits.ProgressMaxBytes + 1], "exports.cursor/v1");
+
+        var tooLarge = async () =>
+            await context.Leases.RenewAsync(_Lease, FencingTestContext.Duration, oversized, AbortToken);
+        var missing = async () =>
+            await context.Leases.RenewAsync(_Lease, FencingTestContext.Duration, (LeaseProgress)null!, AbortToken);
+
+        await tooLarge.Should().ThrowAsync<ArgumentException>().WithParameterName("progress");
+        await missing.Should().ThrowAsync<ArgumentNullException>();
+        context.Store.ReceivedCalls().Should().BeEmpty();
     }
 
     [Fact]
@@ -215,6 +250,33 @@ public sealed class FencedLeasesTests : TestBase
         // then
         await act.Should().ThrowAsync<OperationCanceledException>();
         await units[0].Unit.DidNotReceiveWithAnyArgs().CompleteAsync(default);
+    }
+
+    [Fact]
+    public async Task should_warn_about_a_committed_abandonment_at_the_takeover_threshold_only()
+    {
+        // given
+        var context = new FencingTestContext();
+        context.Options.TakeoverWarningThreshold = 2;
+        var below = _Expired("a", 1) with { TakeoverCount = 1 };
+        var atThreshold = _Expired("b", 2) with { TakeoverCount = 2 };
+        var failing = _Expired("c", 3) with { TakeoverCount = 5 };
+        _QueueUnits(context, 4);
+        _QueueClaims(context, below, atThreshold, failing, null);
+
+        // when
+        await context.Leases.SweepExpiredAsync(
+            "job",
+            (lease, _, _) => lease == failing ? throw new InvalidOperationException("boom") : ValueTask.CompletedTask,
+            limit: 10,
+            AbortToken
+        );
+
+        // then — a claim its handler rolled back never counted, so it is not reported
+        var entry = context.Logger.Entries.Should().ContainSingle().Subject;
+        entry.Level.Should().Be(LogLevel.Warning);
+        entry.EventId.Name.Should().Be("FencedLeaseAbandonThresholdReached");
+        entry.Message.Should().Contain("job/b").And.Contain(" 2 ");
     }
 
     [Fact]

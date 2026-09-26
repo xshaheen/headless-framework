@@ -31,9 +31,16 @@ public readonly record struct LeaseKey(string TenantId, string Kind, string Reso
     /// <summary>Returns the expired attempt this key carries, as handed to a sweep handler.</summary>
     /// <param name="generation">The abandoned attempt's generation.</param>
     /// <param name="expiresAt">When the attempt's lease expired.</param>
+    /// <param name="takeoverCount">The lease's takeover count, including this abandonment.</param>
+    /// <param name="progress">The last progress an attempt recorded, if any.</param>
     /// <returns>The expired lease, with the host scope mapped back to a <see langword="null" /> tenant.</returns>
-    public ExpiredLease ToExpiredLease(long generation, DateTimeOffset expiresAt)
+    public ExpiredLease ToExpiredLease(
+        long generation,
+        DateTimeOffset expiresAt,
+        int takeoverCount,
+        LeaseProgress? progress
+    )
     {
-        return new ExpiredLease(PublicTenantId, Kind, Resource, generation, expiresAt);
+        return new ExpiredLease(PublicTenantId, Kind, Resource, generation, expiresAt, takeoverCount, progress);
     }
 }

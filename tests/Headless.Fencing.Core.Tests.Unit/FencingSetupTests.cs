@@ -137,6 +137,42 @@ public sealed class FencingSetupTests : TestBase
     }
 
     [Fact]
+    public void should_leave_the_takeover_warning_off_by_default()
+    {
+        var options = _Options(static _ => { });
+
+        options.Value.TakeoverWarningThreshold.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void should_reject_a_takeover_warning_threshold_that_is_not_positive(int threshold)
+    {
+        var options = _Options(setup => setup.ConfigureOptions(o => o.TakeoverWarningThreshold = threshold));
+
+        options
+            .Invoking(x => x.Value)
+            .Should()
+            .Throw<OptionsValidationException>()
+            .WithMessage("*TakeoverWarningThreshold*");
+    }
+
+    [Fact]
+    public void should_register_the_takeover_alerts_as_a_singleton()
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessFencing(static setup => setup.RegisterExtension(new FakeProvider()));
+
+        services
+            .Should()
+            .ContainSingle(d => d.ServiceType == typeof(LeaseTakeoverAlerts))
+            .Which.Lifetime.Should()
+            .Be(ServiceLifetime.Singleton);
+        services.BuildServiceProvider().GetRequiredService<IFencedLeases>().Should().NotBeNull();
+    }
+
+    [Fact]
     public void should_default_the_storage_schema_to_fencing()
     {
         var services = new ServiceCollection();

@@ -50,6 +50,7 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
     private readonly string _grantExistingSql;
     private readonly string _grantInsertSql;
     private readonly string _renewSql;
+    private readonly string _renewWithProgressSql;
     private readonly string _settleSql;
     private readonly string _releaseSql;
     private readonly string _fenceSql;
@@ -75,14 +76,18 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
         _grantExistingSql = _BuildGrantExistingSql(table, sequence);
         _grantInsertSql = _BuildGrantInsertSql(table, sequence);
         _renewSql = _BuildTransitionSql(table, $"{PostgreSqlFencingSchema.ExpiresAt} = clock.now + @Duration");
-        _settleSql = _BuildTransitionSql(
+
+        // Progress rides in the renewal's own guarded update, so it lands only when the renewal does.
+        _renewWithProgressSql = _BuildTransitionSql(
             table,
-            $"{PostgreSqlFencingSchema.State} = {PostgreSqlFencingSchema.Settled}, {PostgreSqlFencingSchema.EndedAt} = clock.now"
+            $"""
+            {PostgreSqlFencingSchema.ExpiresAt} = clock.now + @Duration,
+                    {PostgreSqlFencingSchema.Progress} = @Progress,
+                    {PostgreSqlFencingSchema.ProgressContract} = @ProgressContract
+            """
         );
-        _releaseSql = _BuildTransitionSql(
-            table,
-            $"{PostgreSqlFencingSchema.State} = {PostgreSqlFencingSchema.Released}, {PostgreSqlFencingSchema.EndedAt} = clock.now"
-        );
+        _settleSql = _BuildTransitionSql(table, _EndSetClause(PostgreSqlFencingSchema.Settled));
+        _releaseSql = _BuildTransitionSql(table, _EndSetClause(PostgreSqlFencingSchema.Released));
         _fenceSql = _BuildFenceSql(table);
         _claimFirstSql = _BuildClaimSql(table, withCursor: false);
         _claimAfterSql = _BuildClaimSql(table, withCursor: true);
@@ -187,6 +192,7 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
                 await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
                 LeaseRow? existing = null;
+                var existingTakeoverCount = 0;
 
                 if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
@@ -196,6 +202,7 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
                         await reader.GetFieldValueAsync<DateTimeOffset>(2, cancellationToken).ConfigureAwait(false),
                         IsLive: false
                     );
+                    existingTakeoverCount = reader.GetInt32(3);
                 }
 
                 await reader.NextResultAsync(cancellationToken).ConfigureAwait(false);
@@ -205,17 +212,19 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
                     if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                     {
                         // The takeover statement matched nothing, so the row is a live active lease.
-                        return LeaseGrantResult.Held(row.Generation, row.ExpiresAt);
+                        return LeaseGrantResult.Held(row.Generation, row.ExpiresAt, existingTakeoverCount);
                     }
 
                     var lease = key.ToLease(reader.GetInt64(0));
                     var expiresAt = await reader
                         .GetFieldValueAsync<DateTimeOffset>(1, cancellationToken)
                         .ConfigureAwait(false);
+                    var takeoverCount = reader.GetInt32(2);
+                    var progress = await _ReadProgressAsync(reader, 3, cancellationToken).ConfigureAwait(false);
 
                     return row.State == PostgreSqlFencingSchema.Active
-                        ? LeaseGrantResult.Takeover(lease, expiresAt, row.Generation)
-                        : LeaseGrantResult.Granted(lease, expiresAt);
+                        ? LeaseGrantResult.Takeover(lease, expiresAt, row.Generation, takeoverCount, progress)
+                        : LeaseGrantResult.Granted(lease, expiresAt, takeoverCount, progress);
                 }
             }
 
@@ -254,11 +263,13 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
         LeaseKey key,
         long generation,
         TimeSpan duration,
+        LeaseProgress? progress,
         CancellationToken cancellationToken = default
     )
     {
         return _RunAutonomousAsync(
-            (connection, transaction, ct) => _RenewAsync(connection, transaction, key, generation, duration, ct),
+            (connection, transaction, ct) =>
+                _RenewAsync(connection, transaction, key, generation, duration, progress, ct),
             cancellationToken
         );
     }
@@ -268,13 +279,14 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
         LeaseKey key,
         long generation,
         TimeSpan duration,
+        LeaseProgress? progress,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNull(unitOfWork);
         var (connection, transaction) = _RequireLive(_Relational(unitOfWork));
 
-        return await _RenewAsync(connection, transaction, key, generation, duration, cancellationToken)
+        return await _RenewAsync(connection, transaction, key, generation, duration, progress, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -354,16 +366,18 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
         LeaseKey key,
         long generation,
         TimeSpan duration,
+        LeaseProgress? progress,
         CancellationToken cancellationToken
     )
     {
         var (row, changedExpiresAt) = await _TransitionAsync(
                 connection,
                 transaction,
-                _renewSql,
+                progress is null ? _renewSql : _renewWithProgressSql,
                 key,
                 generation,
                 duration,
+                progress,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -401,6 +415,7 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
                 key,
                 generation,
                 duration: null,
+                progress: null,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -430,6 +445,7 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
         LeaseKey key,
         long generation,
         TimeSpan? duration,
+        LeaseProgress? progress,
         CancellationToken cancellationToken
     )
     {
@@ -439,6 +455,17 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
         if (duration is { } value)
         {
             command.Parameters.Add(_DurationParameter(value));
+        }
+
+        if (progress is not null)
+        {
+            command.Parameters.Add(
+                new NpgsqlParameter<ReadOnlyMemory<byte>>("Progress", NpgsqlDbType.Bytea)
+                {
+                    TypedValue = progress.Payload,
+                }
+            );
+            command.Parameters.Add(_TextParameter("ProgressContract", progress.Contract));
         }
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -523,8 +550,10 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
         var key = new LeaseKey(reader.GetString(0), kind, reader.GetString(1));
         var generation = reader.GetInt64(2);
         var expiresAt = await reader.GetFieldValueAsync<DateTimeOffset>(3, cancellationToken).ConfigureAwait(false);
+        var takeoverCount = reader.GetInt32(4);
+        var progress = await _ReadProgressAsync(reader, 5, cancellationToken).ConfigureAwait(false);
 
-        return key.ToExpiredLease(generation, expiresAt);
+        return key.ToExpiredLease(generation, expiresAt, takeoverCount, progress);
     }
 
     public async ValueTask<int> PurgeAsync(
@@ -667,6 +696,23 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
         return new LeaseRow(generation, state, expiresAt, reader.GetBoolean(3));
     }
 
+    /// <summary>Reads a progress payload and its contract from two adjacent columns; both are null when none is stored.</summary>
+    private static async Task<LeaseProgress?> _ReadProgressAsync(
+        DbDataReader reader,
+        int payloadOrdinal,
+        CancellationToken cancellationToken
+    )
+    {
+        if (await reader.IsDBNullAsync(payloadOrdinal, cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var payload = await reader.GetFieldValueAsync<byte[]>(payloadOrdinal, cancellationToken).ConfigureAwait(false);
+
+        return new LeaseProgress(payload, reader.GetString(payloadOrdinal + 1));
+    }
+
     private static LeaseFenceStatus _Classify(LeaseRow? row, long generation)
     {
         if (row is not { } value || value.Generation != generation)
@@ -682,7 +728,7 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
             PostgreSqlFencingSchema.Active when value.IsLive => LeaseFenceStatus.Current,
             PostgreSqlFencingSchema.Active => LeaseFenceStatus.Expired,
             _ => throw new InvalidOperationException(
-                $"The lease row carries an unknown state {value.State}; the table was changed outside this provider."
+                $"The lease row carries an unknown state {value.State.ToString(CultureInfo.InvariantCulture)}; the table was changed outside this provider."
             ),
         };
     }
@@ -750,9 +796,11 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
     private static string _LockSql(string table)
     {
         // Takes the row's update-intent lock and nothing else. Every decision reads the clock in a later statement,
-        // after this one has waited out any other holder.
+        // after this one has waited out any other holder. The takeover count is read here for a held grant, which
+        // updates nothing; the progress is not, so a renewal never ships the stored payload back.
         return $"""
-            SELECT l.{PostgreSqlFencingSchema.Generation}, l.{PostgreSqlFencingSchema.State}, l.{PostgreSqlFencingSchema.ExpiresAt}
+            SELECT l.{PostgreSqlFencingSchema.Generation}, l.{PostgreSqlFencingSchema.State}, l.{PostgreSqlFencingSchema.ExpiresAt},
+                l.{PostgreSqlFencingSchema.TakeoverCount}
             FROM {table} AS l
             WHERE {_KeyPredicate("l")}
             FOR NO KEY UPDATE;
@@ -762,7 +810,10 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
     private static string _BuildGrantExistingSql(string table, string sequence)
     {
         // nextval() sits in the SET list, so it is drawn only for a row the WHERE accepts, and only after the
-        // preceding read holds the lock.
+        // preceding read holds the lock. SET expressions read the row as it was, so the CASE sees the old state: only
+        // a takeover of an expired active attempt counts one more, because a sweep already counted an abandoned one
+        // and a settlement or release reset the count. Progress is left as it is, so the new attempt can resume from
+        // it and a later takeover still finds it until the work settles.
         return $"""
             {_LockSql(table)}
 
@@ -772,14 +823,23 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
                 {PostgreSqlFencingSchema.State} = {PostgreSqlFencingSchema.Active},
                 {PostgreSqlFencingSchema.GrantedAt} = clock.now,
                 {PostgreSqlFencingSchema.ExpiresAt} = clock.now + @Duration,
-                {PostgreSqlFencingSchema.EndedAt} = NULL
+                {PostgreSqlFencingSchema.EndedAt} = NULL,
+                {PostgreSqlFencingSchema.TakeoverCount} = CASE
+                    WHEN l.{PostgreSqlFencingSchema.State} = {PostgreSqlFencingSchema.Active}
+                        THEN l.{PostgreSqlFencingSchema.TakeoverCount} + 1
+                    ELSE l.{PostgreSqlFencingSchema.TakeoverCount}
+                END
             FROM clock
             WHERE {_KeyPredicate("l")}
                 AND NOT (
                     l.{PostgreSqlFencingSchema.State} = {PostgreSqlFencingSchema.Active}
                     AND l.{PostgreSqlFencingSchema.ExpiresAt} > clock.now
                 )
-            RETURNING l.{PostgreSqlFencingSchema.Generation}, l.{PostgreSqlFencingSchema.ExpiresAt};
+            RETURNING l.{PostgreSqlFencingSchema.Generation},
+                l.{PostgreSqlFencingSchema.ExpiresAt},
+                l.{PostgreSqlFencingSchema.TakeoverCount},
+                l.{PostgreSqlFencingSchema.Progress},
+                l.{PostgreSqlFencingSchema.ProgressContract};
             """;
     }
 
@@ -803,6 +863,19 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
             ON CONFLICT ({PostgreSqlFencingSchema.TenantId}, {PostgreSqlFencingSchema.Kind}, {PostgreSqlFencingSchema.Resource})
             DO NOTHING
             RETURNING {PostgreSqlFencingSchema.Generation}, {PostgreSqlFencingSchema.ExpiresAt};
+            """;
+    }
+
+    private static string _EndSetClause(short state)
+    {
+        // An ended attempt's progress and takeover count belong to work that is finished, so the next grant starts
+        // clean.
+        return $"""
+            {PostgreSqlFencingSchema.State} = {state.ToString(CultureInfo.InvariantCulture)},
+                    {PostgreSqlFencingSchema.EndedAt} = clock.now,
+                    {PostgreSqlFencingSchema.TakeoverCount} = 0,
+                    {PostgreSqlFencingSchema.Progress} = NULL,
+                    {PostgreSqlFencingSchema.ProgressContract} = NULL
             """;
     }
 
@@ -854,7 +927,8 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
         // SKIP LOCKED passes over a lease another sweeper is claiming or a fence is holding, so concurrent sweepers
         // never hand one lease to two handlers and never wait on each other. The keyset cursor walks the active
         // expiry index; a lease the caller already visited is behind it, so a lease whose handler threw is left
-        // for a later call.
+        // for a later call. Abandoning counts one takeover and keeps the progress, so the handler can route a
+        // resumable attempt and the next grant resumes it.
         var cursor = withCursor
             ? $"""
                 AND (l.{PostgreSqlFencingSchema.ExpiresAt}, l.{PostgreSqlFencingSchema.TenantId}, l.{PostgreSqlFencingSchema.Resource})
@@ -877,7 +951,8 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
             )
             UPDATE {table} AS l
             SET {PostgreSqlFencingSchema.State} = {PostgreSqlFencingSchema.Abandoned},
-                {PostgreSqlFencingSchema.EndedAt} = clock.now
+                {PostgreSqlFencingSchema.EndedAt} = clock.now,
+                {PostgreSqlFencingSchema.TakeoverCount} = l.{PostgreSqlFencingSchema.TakeoverCount} + 1
             FROM candidate, clock
             WHERE l.{PostgreSqlFencingSchema.TenantId} = candidate.{PostgreSqlFencingSchema.TenantId}
                 AND l.{PostgreSqlFencingSchema.Kind} = @Kind
@@ -885,7 +960,10 @@ internal sealed class PostgreSqlLeaseStore : ILeaseStore
             RETURNING l.{PostgreSqlFencingSchema.TenantId},
                 l.{PostgreSqlFencingSchema.Resource},
                 l.{PostgreSqlFencingSchema.Generation},
-                l.{PostgreSqlFencingSchema.ExpiresAt};
+                l.{PostgreSqlFencingSchema.ExpiresAt},
+                l.{PostgreSqlFencingSchema.TakeoverCount},
+                l.{PostgreSqlFencingSchema.Progress},
+                l.{PostgreSqlFencingSchema.ProgressContract};
             """;
     }
 

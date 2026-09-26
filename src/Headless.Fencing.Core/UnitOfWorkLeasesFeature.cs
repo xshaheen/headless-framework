@@ -10,7 +10,11 @@ namespace Headless.Fencing;
 /// transaction), so the unit's outcome decides whether it happened. Every refusal happens before the store runs a
 /// command, and nothing here retries.
 /// </summary>
-internal sealed class UnitOfWorkLeasesFeature(LeaseRequestResolver resolver, ILeaseStore store) : IUnitOfWorkLeases
+internal sealed class UnitOfWorkLeasesFeature(
+    LeaseRequestResolver resolver,
+    ILeaseStore store,
+    LeaseTakeoverAlerts alerts
+) : IUnitOfWorkLeases
 {
     /// <summary>What an enlisted lease call is called in refusal messages; relational stores reuse it.</summary>
     internal const string Operation = "fenced lease";
@@ -29,24 +33,29 @@ internal sealed class UnitOfWorkLeasesFeature(LeaseRequestResolver resolver, ILe
 
         _Enlist(unitOfWork, isWrite: true);
 
-        return await store.GrantEnlistedAsync(unitOfWork, key, duration, cancellationToken).ConfigureAwait(false);
+        var result = await store.GrantEnlistedAsync(unitOfWork, key, duration, cancellationToken).ConfigureAwait(false);
+        alerts.OnGranted(result);
+
+        return result;
     }
 
     public async ValueTask<LeaseRenewalResult> RenewAsync(
         IUnitOfWork unitOfWork,
         FencedLease lease,
         TimeSpan duration,
+        LeaseProgress? progress,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNull(unitOfWork);
         var key = LeaseRequestResolver.ResolveLease(lease);
         resolver.ValidateDuration(duration);
+        LeaseRequestResolver.ValidateProgress(progress);
 
         _Enlist(unitOfWork, isWrite: true);
 
         return await store
-            .RenewEnlistedAsync(unitOfWork, key, lease.Generation, duration, cancellationToken)
+            .RenewEnlistedAsync(unitOfWork, key, lease.Generation, duration, progress, cancellationToken)
             .ConfigureAwait(false);
     }
 

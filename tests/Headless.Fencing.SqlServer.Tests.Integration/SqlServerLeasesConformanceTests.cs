@@ -131,4 +131,40 @@ public sealed class SqlServerLeasesConformanceTests(SqlServerFencingFixture fixt
     {
         return base.should_purge_nothing_without_failing_when_the_age_exceeds_the_timestamp_range();
     }
+
+    [Fact]
+    public override Task should_return_the_last_renewed_progress_to_a_takeover()
+    {
+        return base.should_return_the_last_renewed_progress_to_a_takeover();
+    }
+
+    [Fact]
+    public override Task should_not_let_a_stale_or_expired_renewal_overwrite_the_progress()
+    {
+        return base.should_not_let_a_stale_or_expired_renewal_overwrite_the_progress();
+    }
+
+    [Fact]
+    public override Task should_reject_oversized_progress_before_any_write()
+    {
+        return base.should_reject_oversized_progress_before_any_write();
+    }
+
+    [Fact]
+    public override Task should_record_enlisted_progress_only_when_the_unit_commits()
+    {
+        return base.should_record_enlisted_progress_only_when_the_unit_commits();
+    }
+
+    [Fact]
+    public override Task should_count_consecutive_takeovers_and_reset_on_settle_or_release()
+    {
+        return base.should_count_consecutive_takeovers_and_reset_on_settle_or_release();
+    }
+
+    [Fact]
+    public override Task should_hand_the_sweep_the_progress_and_count_an_abandoned_lease_once()
+    {
+        return base.should_hand_the_sweep_the_progress_and_count_an_abandoned_lease_once();
+    }
 }

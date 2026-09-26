@@ -59,7 +59,8 @@ internal sealed class SqlServerFencingStorageInitializer(
         // grants of a new key. The key-part limits total 448 nvarchar characters, under the 900-byte clustered key
         // limit. One store-wide sequence issues every generation, so a lease granted again after its row was purged
         // still gets a generation above every earlier one. The active index serves the sweep's keyset walk in
-        // (expires_at, tenant_id, resource) order; the ended index serves purge.
+        // (expires_at, tenant_id, resource) order; the ended index serves purge. Progress and its contract are stored
+        // together or not at all.
         return $"""
             DECLARE @lockResult int;
             EXEC @lockResult = sp_getapplock @Resource = @LockResource, @LockMode = N'Exclusive', @LockOwner = N'Session', @LockTimeout = 30000;
@@ -96,6 +97,9 @@ internal sealed class SqlServerFencingStorageInitializer(
                             {SqlServerFencingSchema.GrantedAt} datetimeoffset(7) NOT NULL,
                             {SqlServerFencingSchema.ExpiresAt} datetimeoffset(7) NOT NULL,
                             {SqlServerFencingSchema.EndedAt} datetimeoffset(7) NULL,
+                            {SqlServerFencingSchema.TakeoverCount} int NOT NULL CONSTRAINT [DF_{t}_takeover_count] DEFAULT 0,
+                            {SqlServerFencingSchema.Progress} varbinary(max) NULL,
+                            {SqlServerFencingSchema.ProgressContract} nvarchar({FencingFieldLimits.ProgressContractMaxLength}) NULL,
                             CONSTRAINT [PK_{t}] PRIMARY KEY CLUSTERED (
                                 {SqlServerFencingSchema.TenantId} ASC,
                                 {SqlServerFencingSchema.Kind} ASC,
@@ -108,6 +112,11 @@ internal sealed class SqlServerFencingStorageInitializer(
                             CONSTRAINT [CK_{t}_ended_at] CHECK (
                                 ({SqlServerFencingSchema.State} = {SqlServerFencingSchema.Active} AND {SqlServerFencingSchema.EndedAt} IS NULL)
                                 OR ({SqlServerFencingSchema.State} <> {SqlServerFencingSchema.Active} AND {SqlServerFencingSchema.EndedAt} IS NOT NULL)
+                            ),
+                            CONSTRAINT [CK_{t}_takeover_count] CHECK ({SqlServerFencingSchema.TakeoverCount} >= 0),
+                            CONSTRAINT [CK_{t}_progress] CHECK (
+                                ({SqlServerFencingSchema.Progress} IS NULL AND {SqlServerFencingSchema.ProgressContract} IS NULL)
+                                OR ({SqlServerFencingSchema.Progress} IS NOT NULL AND {SqlServerFencingSchema.ProgressContract} IS NOT NULL)
                             )
                         );
                     END;

@@ -36,14 +36,14 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
         var context = new FencingTestContext();
         var (unit, _) = FencingTestContext.ActiveUnit();
         context
-            .Store.RenewEnlistedAsync(unit, _Key, 7, FencingTestContext.Duration, AbortToken)
+            .Store.RenewEnlistedAsync(unit, _Key, 7, FencingTestContext.Duration, null, AbortToken)
             .Returns(new LeaseRenewalResult(LeaseRenewalStatus.Renewed, DateTimeOffset.UnixEpoch));
         context.Store.SettleEnlistedAsync(unit, _Key, 7, AbortToken).Returns(LeaseSettlementStatus.Settled);
         context.Store.ReleaseEnlistedAsync(unit, _Key, 7, AbortToken).Returns(LeaseSettlementStatus.Released);
         context.Store.FenceEnlistedAsync(unit, _Key, 7, AbortToken).Returns(LeaseFenceStatus.Current);
 
         // when
-        var renewal = await context.Feature.RenewAsync(unit, _Lease, FencingTestContext.Duration, AbortToken);
+        var renewal = await context.Feature.RenewAsync(unit, _Lease, FencingTestContext.Duration, null, AbortToken);
         var settlement = await context.Feature.SettleAsync(unit, _Lease, AbortToken);
         var release = await context.Feature.ReleaseAsync(unit, _Lease, AbortToken);
         await context.Feature.FenceAsync(unit, _Lease, AbortToken);
@@ -53,6 +53,31 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
         settlement.Should().Be(LeaseSettlementStatus.Settled);
         release.Should().Be(LeaseSettlementStatus.Released);
         await context.Store.Received(1).FenceEnlistedAsync(unit, _Key, 7, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_forward_the_renewal_progress_and_reject_an_oversized_one_before_enlisting()
+    {
+        // given
+        var context = new FencingTestContext();
+        var (unit, _) = FencingTestContext.ActiveUnit(isOwned: false);
+        var progress = new LeaseProgress([4, 5], "exports.cursor/v1");
+        var oversized = new LeaseProgress(new byte[FencingFieldLimits.ProgressMaxBytes + 1], "exports.cursor/v1");
+        context
+            .Store.RenewEnlistedAsync(unit, _Key, 7, FencingTestContext.Duration, progress, AbortToken)
+            .Returns(new LeaseRenewalResult(LeaseRenewalStatus.Renewed, DateTimeOffset.UnixEpoch));
+
+        // when
+        var tooLarge = async () =>
+            await context.Feature.RenewAsync(unit, _Lease, FencingTestContext.Duration, oversized, AbortToken);
+
+        // then
+        await tooLarge.Should().ThrowAsync<ArgumentException>().WithParameterName("progress");
+        context.Store.ReceivedCalls().Should().BeEmpty();
+        unit.DidNotReceive().PreventRetry();
+
+        var renewal = await context.Feature.RenewAsync(unit, _Lease, FencingTestContext.Duration, progress, AbortToken);
+        renewal.Status.Should().Be(LeaseRenewalStatus.Renewed);
     }
 
     [Theory]
@@ -110,7 +135,7 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
         [
             async () =>
                 await context.Feature.GrantAsync(unit, "job", "order-1", FencingTestContext.Duration, AbortToken),
-            async () => await context.Feature.RenewAsync(unit, _Lease, FencingTestContext.Duration, AbortToken),
+            async () => await context.Feature.RenewAsync(unit, _Lease, FencingTestContext.Duration, null, AbortToken),
             async () => await context.Feature.SettleAsync(unit, _Lease, AbortToken),
             async () => await context.Feature.ReleaseAsync(unit, _Lease, AbortToken),
             async () => await context.Feature.FenceAsync(unit, _Lease, AbortToken),
@@ -177,7 +202,8 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
         // when
         var tooShort = async () =>
             await context.Feature.GrantAsync(unit, "job", "order-1", TimeSpan.FromMilliseconds(10), AbortToken);
-        var tooLong = async () => await context.Feature.RenewAsync(unit, _Lease, TimeSpan.FromDays(2), AbortToken);
+        var tooLong = async () =>
+            await context.Feature.RenewAsync(unit, _Lease, TimeSpan.FromDays(2), null, AbortToken);
 
         // then
         await tooShort.Should().ThrowAsync<ArgumentOutOfRangeException>();
@@ -250,7 +276,7 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
         var (unit, _) = FencingTestContext.ActiveUnit(isOwned: false);
 
         // when
-        await context.Feature.RenewAsync(unit, _Lease, FencingTestContext.Duration, AbortToken);
+        await context.Feature.RenewAsync(unit, _Lease, FencingTestContext.Duration, null, AbortToken);
         await context.Feature.SettleAsync(unit, _Lease, AbortToken);
         await context.Feature.ReleaseAsync(unit, _Lease, AbortToken);
 
