@@ -1,0 +1,19 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>SQL Server provider for Headless fenced leases: database-clock grants with store-wide generations, update-locked fence reads inside the caller's unit of work, and read-past expired-lease sweeps.</Description>
+    <PackageTags>headless;fencing;lease;fencing-token;sql-server;dotnet</PackageTags>
+    <RootNamespace>Headless.Fencing.SqlServer</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
+    <ProjectReference Include="..\Headless.Fencing.Core\Headless.Fencing.Core.csproj" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />
+    <ProjectReference Include="..\Headless.UnitOfWork.SqlServer\Headless.UnitOfWork.SqlServer.csproj" />
+  </ItemGroup>
+</Project>

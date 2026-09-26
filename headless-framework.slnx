@@ -208,10 +208,12 @@
         <Project Path="src\Headless.Fencing.Abstractions\Headless.Fencing.Abstractions.csproj" />
         <Project Path="src\Headless.Fencing.Core\Headless.Fencing.Core.csproj" />
         <Project Path="src\Headless.Fencing.PostgreSql\Headless.Fencing.PostgreSql.csproj" />
+        <Project Path="src\Headless.Fencing.SqlServer\Headless.Fencing.SqlServer.csproj" />
     </Folder>
     <Folder Name="/Fencing/Tests/">
         <Project Path="tests\Headless.Fencing.Core.Tests.Unit\Headless.Fencing.Core.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Fencing.PostgreSql.Tests.Integration\Headless.Fencing.PostgreSql.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Fencing.SqlServer.Tests.Integration\Headless.Fencing.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Fencing.Tests.Harness\Headless.Fencing.Tests.Harness.csproj" />
     </Folder>
     <Folder Name="/Generators/">
