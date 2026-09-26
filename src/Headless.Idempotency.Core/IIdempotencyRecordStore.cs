@@ -7,7 +7,7 @@ namespace Headless.Idempotency;
 
 /// <summary>
 /// The provider seam behind durable idempotency: the record table, whose rows carry their own lease, read and written
-/// inside a unit of work's transaction.
+/// inside a unit of work.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -18,8 +18,9 @@ namespace Headless.Idempotency;
 /// time comparison uses the database clock read after the row lock is held, never the application clock.
 /// </para>
 /// <para>
-/// Every enlisted verb runs on the resource's connection and transaction, never commits, and never retries; each is
-/// preceded by <see cref="ValidateEnlistment" />. Every verb that reads or writes a record takes, or already holds, an
+/// Every enlisted verb runs inside the unit (a relational provider on its connection and transaction), never commits,
+/// and never retries; each is preceded by <see cref="ValidateEnlistment" />, which decides what kind of unit the
+/// provider can write through. Every verb that reads or writes a record takes, or already holds, an
 /// update-intent row lock that lasts until the transaction ends, so admissions, fences, renewals, completions, and
 /// releases of one key serialize on that single row. Every write that sets <c>retention_until</c> sets it to the later
 /// of its current value and the database clock plus the given retention, so retention is only ever extended. Argument,
@@ -32,20 +33,21 @@ namespace Headless.Idempotency;
 public interface IIdempotencyRecordStore
 {
     /// <summary>
-    /// Begins an owned unit of work on a new connection to the provider's configured database, so an autonomous call
-    /// can change the record in a transaction it commits.
+    /// Begins an owned unit of work the enlisted verbs accept (for a relational provider, on a new connection to its
+    /// configured database), so an autonomous call can change the record in a unit it commits.
     /// </summary>
     /// <param name="cancellationToken">Token used to cancel opening the connection and beginning the transaction.</param>
-    /// <returns>The begun unit; its resource is relational and owned.</returns>
+    /// <returns>The begun unit, which <see cref="ValidateEnlistment" /> accepts.</returns>
     ValueTask<IUnitOfWork> BeginOwnedUnitAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Throws when <paramref name="resource" /> cannot host this provider's commands: its transaction belongs to
-    /// another provider, it targets a different database than the one configured, or its connection is not open.
+    /// Throws when <paramref name="unitOfWork" /> cannot host this provider's commands. A relational provider refuses a
+    /// unit without a live transaction of its own provider, on a different database than the one configured, or on a
+    /// connection that is not open; an in-process provider refuses a unit whose work commits in a database.
     /// </summary>
-    /// <param name="resource">The unit of work's relational resource.</param>
-    /// <exception cref="InvalidOperationException">The resource cannot host the command.</exception>
-    void ValidateEnlistment(IRelationalUnitOfWorkResource resource);
+    /// <param name="unitOfWork">The active unit of work.</param>
+    /// <exception cref="InvalidOperationException">The unit cannot host the command.</exception>
+    void ValidateEnlistment(IUnitOfWork unitOfWork);
 
     /// <summary>
     /// Locks the record for update, inserting it first when absent, and returns it. Never raises a unique-key
@@ -57,14 +59,14 @@ public interface IIdempotencyRecordStore
     /// generation or lease, no result, and <c>retention_until</c> at the database clock plus
     /// <paramref name="retention" />. An existing row is returned unchanged.
     /// </remarks>
-    /// <param name="resource">The unit of work's relational resource, already accepted by <see cref="ValidateEnlistment" />.</param>
+    /// <param name="unitOfWork">The unit of work, already accepted by <see cref="ValidateEnlistment" />.</param>
     /// <param name="key">The record key.</param>
     /// <param name="fingerprint">The fingerprint an inserted row carries.</param>
     /// <param name="retention">The inserted row's retention from the database clock.</param>
     /// <param name="cancellationToken">Token used to cancel the database commands.</param>
     /// <returns>The locked record.</returns>
     ValueTask<IdempotencyRecordState> LockOrInsertAsync(
-        IRelationalUnitOfWorkResource resource,
+        IUnitOfWork unitOfWork,
         IdempotencyRecordKey key,
         IdempotencyFingerprint fingerprint,
         TimeSpan retention,
@@ -76,12 +78,12 @@ public interface IIdempotencyRecordStore
     /// and lasts until the transaction ends: a fence holds it while its unit writes, and an admission waiting behind a
     /// shared lock would deadlock against that unit's own completion.
     /// </summary>
-    /// <param name="resource">The unit of work's relational resource, already accepted by <see cref="ValidateEnlistment" />.</param>
+    /// <param name="unitOfWork">The unit of work, already accepted by <see cref="ValidateEnlistment" />.</param>
     /// <param name="key">The record key.</param>
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
     /// <returns>The locked record, or <see langword="null" /> when none exists.</returns>
     ValueTask<IdempotencyRecordState?> LockAsync(
-        IRelationalUnitOfWorkResource resource,
+        IUnitOfWork unitOfWork,
         IdempotencyRecordKey key,
         CancellationToken cancellationToken = default
     );
@@ -92,7 +94,7 @@ public interface IIdempotencyRecordStore
     /// <see cref="IdempotencyRecordStatus.Pending" />, <paramref name="fingerprint" /> and its algorithm, no result or
     /// contract, and retention extended. A record past its retention is reset in place this way.
     /// </summary>
-    /// <param name="resource">The unit of work's relational resource, already accepted by <see cref="ValidateEnlistment" />.</param>
+    /// <param name="unitOfWork">The unit of work, already accepted by <see cref="ValidateEnlistment" />.</param>
     /// <param name="key">The record key.</param>
     /// <param name="fingerprint">The admitted request's fingerprint.</param>
     /// <param name="leaseDuration">How long the admitted attempt owns the key, from the database clock.</param>
@@ -100,7 +102,7 @@ public interface IIdempotencyRecordStore
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
     /// <returns>The granted generation and lease expiry.</returns>
     ValueTask<IdempotencyRecordGrant> AdmitAsync(
-        IRelationalUnitOfWorkResource resource,
+        IUnitOfWork unitOfWork,
         IdempotencyRecordKey key,
         IdempotencyFingerprint fingerprint,
         TimeSpan leaseDuration,
@@ -113,7 +115,7 @@ public interface IIdempotencyRecordStore
     /// <paramref name="generation" />: state <see cref="IdempotencyRecordStatus.Completed" />, the result bytes and
     /// contract, no lease expiry (the generation is kept), and retention extended.
     /// </summary>
-    /// <param name="resource">The unit of work's relational resource, already accepted by <see cref="ValidateEnlistment" />.</param>
+    /// <param name="unitOfWork">The unit of work, already accepted by <see cref="ValidateEnlistment" />.</param>
     /// <param name="key">The record key.</param>
     /// <param name="generation">The completing attempt's generation.</param>
     /// <param name="result">The result bytes.</param>
@@ -122,7 +124,7 @@ public interface IIdempotencyRecordStore
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
     /// <returns>A task that completes when the row is written.</returns>
     ValueTask CompleteAsync(
-        IRelationalUnitOfWorkResource resource,
+        IUnitOfWork unitOfWork,
         IdempotencyRecordKey key,
         long generation,
         ReadOnlyMemory<byte> result,
@@ -136,14 +138,14 @@ public interface IIdempotencyRecordStore
     /// admission: state <see cref="IdempotencyRecordStatus.Pending" /> with no generation or lease, and retention
     /// extended.
     /// </summary>
-    /// <param name="resource">The unit of work's relational resource, already accepted by <see cref="ValidateEnlistment" />.</param>
+    /// <param name="unitOfWork">The unit of work, already accepted by <see cref="ValidateEnlistment" />.</param>
     /// <param name="key">The record key.</param>
     /// <param name="generation">The releasing attempt's generation.</param>
     /// <param name="retention">The retention to extend to, from the database clock.</param>
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
     /// <returns>A task that completes when the row is written.</returns>
     ValueTask ReleaseAsync(
-        IRelationalUnitOfWorkResource resource,
+        IUnitOfWork unitOfWork,
         IdempotencyRecordKey key,
         long generation,
         TimeSpan retention,

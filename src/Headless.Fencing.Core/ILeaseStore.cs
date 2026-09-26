@@ -6,8 +6,8 @@ using Headless.UnitOfWork;
 namespace Headless.Fencing;
 
 /// <summary>
-/// The provider seam behind fenced leases: each verb is one statement on one database-clock snapshot, run either on
-/// the provider's own connection (autonomous) or on a unit of work's transaction (enlisted).
+/// The provider seam behind fenced leases: each verb is one decision on one clock snapshot of the store, run either
+/// on the provider's own connection (autonomous) or inside a unit of work (enlisted).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -17,11 +17,12 @@ namespace Headless.Fencing;
 /// earlier one for that key, including after the row was purged.
 /// </para>
 /// <para>
-/// Autonomous verbs open their own connection at READ COMMITTED, commit before returning, and retry only deadlocks.
-/// Enlisted verbs run on the resource's connection and transaction, never commit, and never retry. Argument, tenant,
-/// duration, and unit-state checks happen before a call reaches the store, and every enlisted call is preceded by
-/// <see cref="ValidateEnlistment" />. A provider package registers the implementation; application code never calls
-/// it.
+/// Autonomous verbs commit before returning; a relational provider opens its own connection at READ COMMITTED and
+/// retries only deadlocks. Enlisted verbs run inside the unit (a relational provider on its connection and
+/// transaction), never commit, and never retry. Argument, tenant, duration, and unit-state checks happen before a call
+/// reaches the store, and every enlisted call is preceded by <see cref="ValidateEnlistment" />, which decides what kind
+/// of unit the provider can write through. A provider package registers the implementation; application code never
+/// calls it.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -29,20 +30,21 @@ namespace Headless.Fencing;
 public interface ILeaseStore
 {
     /// <summary>
-    /// Begins an owned unit of work on a new connection to the provider's configured database, so a sweep can claim a
-    /// lease and run its handler in one transaction the sweep commits.
+    /// Begins an owned unit of work the enlisted verbs accept (for a relational provider, on a new connection to its
+    /// configured database), so a sweep can claim a lease and run its handler in one unit the sweep commits.
     /// </summary>
     /// <param name="cancellationToken">Token used to cancel opening the connection and beginning the transaction.</param>
-    /// <returns>The begun unit; its resource is relational and owned.</returns>
+    /// <returns>The begun unit, which <see cref="ValidateEnlistment" /> accepts.</returns>
     ValueTask<IUnitOfWork> BeginOwnedUnitAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Throws when <paramref name="resource" /> cannot host this provider's commands: its transaction belongs to
-    /// another provider, it targets a different database than the one configured, or its connection is not open.
+    /// Throws when <paramref name="unitOfWork" /> cannot host this provider's commands. A relational provider refuses a
+    /// unit without a live transaction of its own provider, on a different database than the one configured, or on a
+    /// connection that is not open; an in-process provider refuses a unit whose work commits in a database.
     /// </summary>
-    /// <param name="resource">The unit of work's relational resource.</param>
-    /// <exception cref="InvalidOperationException">The resource cannot host the command.</exception>
-    void ValidateEnlistment(IRelationalUnitOfWorkResource resource);
+    /// <param name="unitOfWork">The active unit of work.</param>
+    /// <exception cref="InvalidOperationException">The unit cannot host the command.</exception>
+    void ValidateEnlistment(IUnitOfWork unitOfWork);
 
     /// <summary>Grants the lease on the provider's own connection and commits before returning.</summary>
     /// <param name="key">The lease key.</param>
@@ -56,16 +58,16 @@ public interface ILeaseStore
     );
 
     /// <summary>
-    /// Grants the lease inside <paramref name="resource" />'s transaction, without committing. The row stays locked
+    /// Grants the lease inside <paramref name="unitOfWork" />, without committing. The row stays locked
     /// until that transaction ends.
     /// </summary>
-    /// <param name="resource">The unit of work's relational resource, already accepted by <see cref="ValidateEnlistment" />.</param>
+    /// <param name="unitOfWork">The unit of work, already accepted by <see cref="ValidateEnlistment" />.</param>
     /// <param name="key">The lease key.</param>
     /// <param name="duration">The lease's time to live from the database's clock.</param>
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
     /// <returns>The grant's result; an expired active lease is taken over.</returns>
     ValueTask<LeaseGrantResult> GrantEnlistedAsync(
-        IRelationalUnitOfWorkResource resource,
+        IUnitOfWork unitOfWork,
         LeaseKey key,
         TimeSpan duration,
         CancellationToken cancellationToken = default
@@ -84,15 +86,15 @@ public interface ILeaseStore
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Renews the lease inside <paramref name="resource" />'s transaction, without committing.</summary>
-    /// <param name="resource">The unit of work's relational resource, already accepted by <see cref="ValidateEnlistment" />.</param>
+    /// <summary>Renews the lease inside <paramref name="unitOfWork" />, without committing.</summary>
+    /// <param name="unitOfWork">The unit of work, already accepted by <see cref="ValidateEnlistment" />.</param>
     /// <param name="key">The lease key.</param>
     /// <param name="generation">The caller's generation.</param>
     /// <param name="duration">The new time to live from the database's clock.</param>
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
     /// <returns>The renewal's result; an absent row is <see cref="LeaseRenewalStatus.Stale" />.</returns>
     ValueTask<LeaseRenewalResult> RenewEnlistedAsync(
-        IRelationalUnitOfWorkResource resource,
+        IUnitOfWork unitOfWork,
         LeaseKey key,
         long generation,
         TimeSpan duration,
@@ -113,14 +115,14 @@ public interface ILeaseStore
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Settles the lease inside <paramref name="resource" />'s transaction, without committing.</summary>
-    /// <param name="resource">The unit of work's relational resource, already accepted by <see cref="ValidateEnlistment" />.</param>
+    /// <summary>Settles the lease inside <paramref name="unitOfWork" />, without committing.</summary>
+    /// <param name="unitOfWork">The unit of work, already accepted by <see cref="ValidateEnlistment" />.</param>
     /// <param name="key">The lease key.</param>
     /// <param name="generation">The caller's generation.</param>
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
     /// <returns>The same outcomes as <see cref="SettleAsync" />.</returns>
     ValueTask<LeaseSettlementStatus> SettleEnlistedAsync(
-        IRelationalUnitOfWorkResource resource,
+        IUnitOfWork unitOfWork,
         LeaseKey key,
         long generation,
         CancellationToken cancellationToken = default
@@ -140,43 +142,43 @@ public interface ILeaseStore
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Releases the lease inside <paramref name="resource" />'s transaction, without committing.</summary>
-    /// <param name="resource">The unit of work's relational resource, already accepted by <see cref="ValidateEnlistment" />.</param>
+    /// <summary>Releases the lease inside <paramref name="unitOfWork" />, without committing.</summary>
+    /// <param name="unitOfWork">The unit of work, already accepted by <see cref="ValidateEnlistment" />.</param>
     /// <param name="key">The lease key.</param>
     /// <param name="generation">The caller's generation.</param>
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
     /// <returns>The same outcomes as <see cref="ReleaseAsync" />.</returns>
     ValueTask<LeaseSettlementStatus> ReleaseEnlistedAsync(
-        IRelationalUnitOfWorkResource resource,
+        IUnitOfWork unitOfWork,
         LeaseKey key,
         long generation,
         CancellationToken cancellationToken = default
     );
 
     /// <summary>
-    /// Reads the lease row inside <paramref name="resource" />'s transaction with an update-intent lock that holds
+    /// Reads the lease row inside <paramref name="unitOfWork" /> with an update-intent lock that holds
     /// until the transaction ends, and reports whether <paramref name="generation" /> is current, active, and
     /// unexpired. A shared lock is not enough: a waiting grant would take the update lock first, and the fencing
     /// transaction's own later settle would deadlock against it.
     /// </summary>
-    /// <param name="resource">The unit of work's relational resource, already accepted by <see cref="ValidateEnlistment" />.</param>
+    /// <param name="unitOfWork">The unit of work, already accepted by <see cref="ValidateEnlistment" />.</param>
     /// <param name="key">The lease key.</param>
     /// <param name="generation">The caller's generation.</param>
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
     /// <returns>What the read found; an absent row is <see cref="LeaseFenceStatus.Stale" />.</returns>
     ValueTask<LeaseFenceStatus> FenceEnlistedAsync(
-        IRelationalUnitOfWorkResource resource,
+        IUnitOfWork unitOfWork,
         LeaseKey key,
         long generation,
         CancellationToken cancellationToken = default
     );
 
     /// <summary>
-    /// Claims one expired, active lease of <paramref name="kind" /> inside <paramref name="resource" />'s transaction,
+    /// Claims one expired, active lease of <paramref name="kind" /> inside <paramref name="unitOfWork" />,
     /// skipping rows another transaction has locked, and marks it abandoned in the same statement. Leases are visited
     /// in <c>(expires_at, tenant_id, resource)</c> order, strictly after <paramref name="after" />.
     /// </summary>
-    /// <param name="resource">An owned unit's relational resource, from <see cref="BeginOwnedUnitAsync" />.</param>
+    /// <param name="unitOfWork">An owned unit from <see cref="BeginOwnedUnitAsync" />.</param>
     /// <param name="kind">The lease kind to sweep.</param>
     /// <param name="after">
     /// The last lease this sweep call visited, or <see langword="null" /> to start from the earliest expiry. Its
@@ -185,7 +187,7 @@ public interface ILeaseStore
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
     /// <returns>The claimed lease, or <see langword="null" /> when none is left after the cursor.</returns>
     ValueTask<ExpiredLease?> ClaimExpiredEnlistedAsync(
-        IRelationalUnitOfWorkResource resource,
+        IUnitOfWork unitOfWork,
         string kind,
         ExpiredLease? after,
         CancellationToken cancellationToken = default

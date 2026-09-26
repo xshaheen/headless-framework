@@ -13,6 +13,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Api.Idempotency\Headless.Api.Idempotency.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Idempotency.InMemory\Headless.Idempotency.InMemory.csproj" />
     <ProjectReference Include="..\..\src\Headless.Idempotency.PostgreSql\Headless.Idempotency.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.Idempotency.SqlServer\Headless.Idempotency.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />

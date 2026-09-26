@@ -14,12 +14,12 @@ public sealed class IdempotentOperationsTests : TestBase
     {
         // given
         var context = new IdempotencyTestContext();
-        var (unit, resource) = _GivenOwnedUnit(context);
+        var unit = _GivenOwnedUnit(context);
         context
-            .Store.LockOrInsertAsync(resource, RecordKey, Fingerprint, context.Retention, AbortToken)
+            .Store.LockOrInsertAsync(unit, RecordKey, Fingerprint, context.Retention, AbortToken)
             .Returns(Inserted());
         context
-            .Store.AdmitAsync(resource, RecordKey, Fingerprint, context.LeaseDuration, context.Retention, AbortToken)
+            .Store.AdmitAsync(unit, RecordKey, Fingerprint, context.LeaseDuration, context.Retention, AbortToken)
             .Returns(Grant);
 
         // when
@@ -29,7 +29,7 @@ public sealed class IdempotentOperationsTests : TestBase
         admission.Disposition.Should().Be(IdempotentDisposition.Admitted);
         await context
             .Store.Received(1)
-            .AdmitAsync(resource, RecordKey, Fingerprint, context.LeaseDuration, context.Retention, AbortToken);
+            .AdmitAsync(unit, RecordKey, Fingerprint, context.LeaseDuration, context.Retention, AbortToken);
         await unit.Received(1).CompleteAsync(CancellationToken.None);
         await unit.DidNotReceive().RollbackAsync();
         unit.DidNotReceive().PreventRetry();
@@ -40,9 +40,9 @@ public sealed class IdempotentOperationsTests : TestBase
     {
         // given
         var context = new IdempotencyTestContext();
-        var (unit, resource) = _GivenOwnedUnit(context);
+        var unit = _GivenOwnedUnit(context);
         context
-            .Store.LockOrInsertAsync(resource, RecordKey, Fingerprint, context.Retention, AbortToken)
+            .Store.LockOrInsertAsync(unit, RecordKey, Fingerprint, context.Retention, AbortToken)
             .Returns(Pending(generation: 5, isLeaseLive: true));
 
         // when
@@ -59,9 +59,9 @@ public sealed class IdempotentOperationsTests : TestBase
     {
         // given
         var context = new IdempotencyTestContext();
-        var (unit, resource) = _GivenOwnedUnit(context);
+        var unit = _GivenOwnedUnit(context);
         context
-            .Store.LockOrInsertAsync(resource, RecordKey, Fingerprint, context.Retention, AbortToken)
+            .Store.LockOrInsertAsync(unit, RecordKey, Fingerprint, context.Retention, AbortToken)
             .Returns(Pending(generation: 5, new IdempotencyFingerprint("v9", [1])));
 
         // when
@@ -78,9 +78,9 @@ public sealed class IdempotentOperationsTests : TestBase
     {
         // given
         var context = new IdempotencyTestContext();
-        var (unit, resource) = _GivenOwnedUnit(context);
+        var unit = _GivenOwnedUnit(context);
         context
-            .Store.LockAsync(resource, RecordKey, AbortToken)
+            .Store.LockAsync(unit, RecordKey, AbortToken)
             .Returns(Pending(generation: Generation, isLeaseLive: true));
 
         // when
@@ -98,9 +98,9 @@ public sealed class IdempotentOperationsTests : TestBase
     {
         // given
         var context = new IdempotencyTestContext();
-        var (unit, resource) = _GivenOwnedUnit(context);
+        var unit = _GivenOwnedUnit(context);
         context
-            .Store.LockAsync(resource, RecordKey, AbortToken)
+            .Store.LockAsync(unit, RecordKey, AbortToken)
             .Returns(Pending(generation: Generation, isLeaseLive: false));
 
         // when
@@ -118,14 +118,14 @@ public sealed class IdempotentOperationsTests : TestBase
     {
         // given
         var context = new IdempotencyTestContext();
-        var (released, releasedResource) = ActiveUnit();
-        var (refused, refusedResource) = ActiveUnit();
+        var (released, _) = ActiveUnit();
+        var (refused, _) = ActiveUnit();
         context.Store.BeginOwnedUnitAsync(AbortToken).Returns(released, refused);
         context
-            .Store.LockAsync(releasedResource, RecordKey, AbortToken)
+            .Store.LockAsync(released, RecordKey, AbortToken)
             .Returns(Pending(generation: Generation, isLeaseLive: true));
         context
-            .Store.LockAsync(refusedResource, RecordKey, AbortToken)
+            .Store.LockAsync(refused, RecordKey, AbortToken)
             .Returns(Pending(generation: Generation, isLeaseLive: false));
 
         // when
@@ -218,11 +218,11 @@ public sealed class IdempotentOperationsTests : TestBase
         await context.Store.DidNotReceiveWithAnyArgs().PeekAsync(default, AbortToken);
     }
 
-    private (IUnitOfWork Unit, IRelationalUnitOfWorkResource Resource) _GivenOwnedUnit(IdempotencyTestContext context)
+    private IUnitOfWork _GivenOwnedUnit(IdempotencyTestContext context)
     {
-        var (unit, resource) = ActiveUnit(isOwned: true);
+        var (unit, _) = ActiveUnit(isOwned: true);
         context.Store.BeginOwnedUnitAsync(AbortToken).Returns(unit);
 
-        return (unit, resource);
+        return unit;
     }
 }

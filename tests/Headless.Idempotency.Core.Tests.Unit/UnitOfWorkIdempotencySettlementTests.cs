@@ -17,10 +17,10 @@ public sealed class UnitOfWorkIdempotencySettlementTests : TestBase
     {
         // given
         var context = new IdempotencyTestContext();
-        var (unit, resource) = ActiveUnit();
+        var (unit, _) = ActiveUnit();
         var admission = Admitted();
         context
-            .Store.LockAsync(resource, RecordKey, AbortToken)
+            .Store.LockAsync(unit, RecordKey, AbortToken)
             .Returns(Pending(generation: Generation, isLeaseLive: true));
 
         // when
@@ -29,9 +29,9 @@ public sealed class UnitOfWorkIdempotencySettlementTests : TestBase
         // then - the admission's own retention applies when the caller passes none
         Received.InOrder(() =>
         {
-            _ = context.Store.LockAsync(resource, RecordKey, AbortToken);
+            _ = context.Store.LockAsync(unit, RecordKey, AbortToken);
             _ = context.Store.CompleteAsync(
-                resource,
+                unit,
                 RecordKey,
                 Generation,
                 Arg.Is<ReadOnlyMemory<byte>>(m => _Result.SequenceEqual(m.ToArray())),
@@ -61,8 +61,8 @@ public sealed class UnitOfWorkIdempotencySettlementTests : TestBase
     {
         // given
         var context = new IdempotencyTestContext();
-        var (unit, resource) = ActiveUnit();
-        context.Store.LockAsync(resource, RecordKey, AbortToken).Returns(record);
+        var (unit, _) = ActiveUnit();
+        context.Store.LockAsync(unit, RecordKey, AbortToken).Returns(record);
 
         // when
         var act = async () =>
@@ -83,8 +83,8 @@ public sealed class UnitOfWorkIdempotencySettlementTests : TestBase
     {
         // given - the record already completed under this admission's generation
         var context = new IdempotencyTestContext();
-        var (unit, resource) = ActiveUnit();
-        context.Store.LockAsync(resource, RecordKey, AbortToken).Returns(Completed(_Stored));
+        var (unit, _) = ActiveUnit();
+        context.Store.LockAsync(unit, RecordKey, AbortToken).Returns(Completed(_Stored));
 
         // when
         var act = async () =>
@@ -127,9 +127,9 @@ public sealed class UnitOfWorkIdempotencySettlementTests : TestBase
     {
         // given
         var context = new IdempotencyTestContext();
-        var (unit, resource) = ActiveUnit();
+        var (unit, _) = ActiveUnit();
         context
-            .Store.LockAsync(resource, RecordKey, AbortToken)
+            .Store.LockAsync(unit, RecordKey, AbortToken)
             .Returns(Pending(generation: Generation, isLeaseLive: true));
 
         // when
@@ -139,8 +139,8 @@ public sealed class UnitOfWorkIdempotencySettlementTests : TestBase
         status.Should().Be(IdempotentLeaseStatus.Released);
         Received.InOrder(() =>
         {
-            _ = context.Store.LockAsync(resource, RecordKey, AbortToken);
-            _ = context.Store.ReleaseAsync(resource, RecordKey, Generation, TimeSpan.FromDays(7), AbortToken);
+            _ = context.Store.LockAsync(unit, RecordKey, AbortToken);
+            _ = context.Store.ReleaseAsync(unit, RecordKey, Generation, TimeSpan.FromDays(7), AbortToken);
         });
     }
 
@@ -164,8 +164,8 @@ public sealed class UnitOfWorkIdempotencySettlementTests : TestBase
     {
         // given
         var context = new IdempotencyTestContext();
-        var (unit, resource) = ActiveUnit();
-        context.Store.LockAsync(resource, RecordKey, AbortToken).Returns(record);
+        var (unit, _) = ActiveUnit();
+        context.Store.LockAsync(unit, RecordKey, AbortToken).Returns(record);
 
         // when
         var status = await context.Feature.ReleaseAsync(unit, Admitted(), AbortToken);
@@ -180,16 +180,16 @@ public sealed class UnitOfWorkIdempotencySettlementTests : TestBase
     {
         // given
         var context = new IdempotencyTestContext();
-        var (unit, resource) = ActiveUnit(isOwned: false);
+        var (unit, _) = ActiveUnit(isOwned: false);
         context
-            .Store.LockAsync(resource, RecordKey, AbortToken)
+            .Store.LockAsync(unit, RecordKey, AbortToken)
             .Returns(Pending(generation: Generation, isLeaseLive: true));
 
         // when
         await context.Feature.FenceAsync(unit, Admitted(), AbortToken);
 
         // then
-        await context.Store.Received(1).LockAsync(resource, RecordKey, AbortToken);
+        await context.Store.Received(1).LockAsync(unit, RecordKey, AbortToken);
         unit.DidNotReceive().PreventRetry();
     }
 
@@ -202,8 +202,8 @@ public sealed class UnitOfWorkIdempotencySettlementTests : TestBase
     {
         // given
         var context = new IdempotencyTestContext();
-        var (unit, resource) = ActiveUnit();
-        context.Store.LockAsync(resource, RecordKey, AbortToken).Returns(record);
+        var (unit, _) = ActiveUnit();
+        context.Store.LockAsync(unit, RecordKey, AbortToken).Returns(record);
 
         // when
         var act = async () => await context.Feature.FenceAsync(unit, Admitted(), AbortToken);

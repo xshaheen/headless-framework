@@ -6,6 +6,7 @@
     <RootNamespace>Headless.Idempotency</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Idempotency.InMemory" />
     <InternalsVisibleTo Include="Headless.Idempotency.PostgreSql" />
     <InternalsVisibleTo Include="Headless.Idempotency.SqlServer" />
     <InternalsVisibleTo Include="Headless.Idempotency.Core.Tests.Unit" />

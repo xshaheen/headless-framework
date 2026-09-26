@@ -16,7 +16,7 @@ public static class HeadlessUnitOfWorkIdempotencyExtensions
 {
     private const string _NotRegisteredMessage =
         "No idempotency provider is registered for this unit of work. Configure AddHeadlessIdempotency with "
-        + "UsePostgreSql or UseSqlServer.";
+        + "UseInMemory, UsePostgreSql, or UseSqlServer.";
 
     extension(IUnitOfWork unitOfWork)
     {

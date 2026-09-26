@@ -16,7 +16,7 @@ public static class HeadlessUnitOfWorkLeasesExtensions
 {
     private const string _NotRegisteredMessage =
         "No fencing provider is registered for this unit of work. Configure AddHeadlessFencing with "
-        + "UsePostgreSql or UseSqlServer.";
+        + "UseInMemory, UsePostgreSql, or UseSqlServer.";
 
     extension(IUnitOfWork unitOfWork)
     {

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
+using System.Data.Common;
 using Headless.Checks;
 using Headless.Constants;
 using Headless.UnitOfWork;
@@ -114,11 +115,14 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
         }
     }
 
-    public void ValidateEnlistment(IRelationalUnitOfWorkResource resource)
+    public void ValidateEnlistment(IUnitOfWork unitOfWork)
     {
-        Argument.IsNotNull(resource);
+        Argument.IsNotNull(unitOfWork);
 
-        var (connection, _) = _RequireLive(resource);
+        // The gate every enlisted idempotency call passed before this store judged the unit: an active unit carrying a
+        // live relational transaction. Which provider and database that transaction belongs to is checked below.
+        UnitOfWorkTransactions.RequireTransaction<DbTransaction>(unitOfWork, UnitOfWorkIdempotencyFeature.Operation);
+        var (connection, _) = _RequireLive(_Relational(unitOfWork));
 
         using var configured = _options.CreateConnection();
 
@@ -138,20 +142,20 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
     #region Lock
 
     public async ValueTask<IdempotencyRecordState> LockOrInsertAsync(
-        IRelationalUnitOfWorkResource resource,
+        IUnitOfWork unitOfWork,
         IdempotencyRecordKey key,
         IdempotencyFingerprint fingerprint,
         TimeSpan retention,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(resource);
+        Argument.IsNotNull(unitOfWork);
         Argument.IsNotNull(fingerprint);
 
         // Re-checked here rather than trusted from validation: the caller may have ended the transaction or closed the
         // connection in between, and a statement on either would fail with a less useful message or, worse, run
         // outside the unit.
-        var (connection, transaction) = _RequireLive(resource);
+        var (connection, transaction) = _RequireLive(_Relational(unitOfWork));
 
         await using var command = _CreateCommand(_lockOrInsertSql, connection, transaction, key);
         _AddFingerprintParameters(command, fingerprint);
@@ -164,13 +168,13 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
     }
 
     public async ValueTask<IdempotencyRecordState?> LockAsync(
-        IRelationalUnitOfWorkResource resource,
+        IUnitOfWork unitOfWork,
         IdempotencyRecordKey key,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(resource);
-        var (connection, transaction) = _RequireLive(resource);
+        Argument.IsNotNull(unitOfWork);
+        var (connection, transaction) = _RequireLive(_Relational(unitOfWork));
 
         await using var command = _CreateCommand(_lockSql, connection, transaction, key);
 
@@ -235,7 +239,7 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
     #region Admit, complete, release
 
     public async ValueTask<IdempotencyRecordGrant> AdmitAsync(
-        IRelationalUnitOfWorkResource resource,
+        IUnitOfWork unitOfWork,
         IdempotencyRecordKey key,
         IdempotencyFingerprint fingerprint,
         TimeSpan leaseDuration,
@@ -243,9 +247,9 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(resource);
+        Argument.IsNotNull(unitOfWork);
         Argument.IsNotNull(fingerprint);
-        var (connection, transaction) = _RequireLive(resource);
+        var (connection, transaction) = _RequireLive(_Relational(unitOfWork));
 
         await using var command = _CreateCommand(_admitSql, connection, transaction, key);
         _AddFingerprintParameters(command, fingerprint);
@@ -267,7 +271,7 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
     }
 
     public async ValueTask CompleteAsync(
-        IRelationalUnitOfWorkResource resource,
+        IUnitOfWork unitOfWork,
         IdempotencyRecordKey key,
         long generation,
         ReadOnlyMemory<byte> result,
@@ -276,9 +280,9 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(resource);
+        Argument.IsNotNull(unitOfWork);
         Argument.IsNotNull(contract);
-        var (connection, transaction) = _RequireLive(resource);
+        var (connection, transaction) = _RequireLive(_Relational(unitOfWork));
 
         await using var command = _CreateCommand(_completeSql, connection, transaction, key);
         command.Parameters.Add(_GenerationParameter(generation));
@@ -295,15 +299,15 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
     }
 
     public async ValueTask ReleaseAsync(
-        IRelationalUnitOfWorkResource resource,
+        IUnitOfWork unitOfWork,
         IdempotencyRecordKey key,
         long generation,
         TimeSpan retention,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(resource);
-        var (connection, transaction) = _RequireLive(resource);
+        Argument.IsNotNull(unitOfWork);
+        var (connection, transaction) = _RequireLive(_Relational(unitOfWork));
 
         await using var command = _CreateCommand(_releaseSql, connection, transaction, key);
         command.Parameters.Add(_GenerationParameter(generation));
@@ -645,6 +649,12 @@ internal sealed class SqlServerIdempotencyRecordStore : IIdempotencyRecordStore
         command.Parameters.Add(new SqlParameter($"{prefix}Days", SqlDbType.Int) { Value = days });
         command.Parameters.Add(new SqlParameter($"{prefix}Seconds", SqlDbType.Int) { Value = wholeSeconds });
         command.Parameters.Add(new SqlParameter($"{prefix}Nanoseconds", SqlDbType.Int) { Value = nanoseconds });
+    }
+
+    private static IRelationalUnitOfWorkResource _Relational(IUnitOfWork unitOfWork)
+    {
+        // Enlisted verbs run only on a unit ValidateEnlistment accepted, whose resource is relational.
+        return (IRelationalUnitOfWorkResource)unitOfWork.Resource!;
     }
 
     private static (SqlConnection Connection, SqlTransaction Transaction) _RequireLive(

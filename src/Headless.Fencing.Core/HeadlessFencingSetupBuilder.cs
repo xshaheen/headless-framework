@@ -8,8 +8,8 @@ namespace Headless.Fencing;
 
 /// <summary>
 /// Configures fenced leases during <c>AddHeadlessFencing(setup =&gt; …)</c>: the lease-duration bounds, the storage
-/// schema, and exactly one provider chosen through a <c>Use…</c> call such as <c>UsePostgreSql</c> or
-/// <c>UseSqlServer</c>.
+/// schema, and exactly one provider chosen through a <c>Use…</c> call such as <c>UseInMemory</c>,
+/// <c>UsePostgreSql</c>, or <c>UseSqlServer</c>.
 /// </summary>
 [PublicAPI]
 public sealed class HeadlessFencingSetupBuilder

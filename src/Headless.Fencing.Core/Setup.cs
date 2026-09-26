@@ -17,7 +17,8 @@ public static class SetupFencing
     {
         /// <summary>
         /// Registers <see cref="IFencedLeases" />, the enlisted <c>unit.Leases</c> feature, and the chosen provider.
-        /// Exactly one <c>setup.Use…</c> call (<c>UsePostgreSql</c> or <c>UseSqlServer</c>) is required.
+        /// Exactly one <c>setup.Use…</c> call (<c>UseInMemory</c>, <c>UsePostgreSql</c>, or <c>UseSqlServer</c>) is
+        /// required.
         /// </summary>
         /// <param name="configure">Chooses the provider and configures duration bounds and storage.</param>
         /// <returns>The service collection, to allow chaining.</returns>
@@ -36,7 +37,7 @@ public static class SetupFencing
                 setup.Extensions.Count,
                 setup.Extensions.Count == 1 ? setup.Extensions[0].GetType().FullName ?? "unknown" : "unknown",
                 "Headless.Fencing",
-                ["UsePostgreSql", "UseSqlServer"],
+                ["UseInMemory", "UsePostgreSql", "UseSqlServer"],
                 static name => new FencingProviderRegistration(name)
             );
 

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data.Common;
 using Headless.Checks;
 using Headless.UnitOfWork;
 
@@ -12,8 +11,6 @@ namespace Headless.Fencing;
 /// </summary>
 internal sealed class FencedLeases(LeaseRequestResolver resolver, ILeaseStore store) : IFencedLeases
 {
-    private const string _SweepOperation = "lease sweep";
-
     public async ValueTask<LeaseGrantResult> GrantAsync(
         string kind,
         string resource,
@@ -126,11 +123,9 @@ internal sealed class FencedLeases(LeaseRequestResolver resolver, ILeaseStore st
 
         await using (unit.ConfigureAwait(false))
         {
-            UnitOfWorkTransactions.RequireTransaction<DbTransaction>(unit, _SweepOperation);
-            var relational = (IRelationalUnitOfWorkResource)unit.Resource!;
-
+            // The store began the unit itself, so it needs no enlistment check before the claim runs in it.
             var lease = await store
-                .ClaimExpiredEnlistedAsync(relational, kind, cursor, cancellationToken)
+                .ClaimExpiredEnlistedAsync(unit, kind, cursor, cancellationToken)
                 .ConfigureAwait(false);
 
             if (lease is null)

@@ -19,6 +19,13 @@ public interface IIdempotencyFixture
     /// <summary>Chooses the idempotency provider under test, pointed at the shared database.</summary>
     void ConfigureIdempotency(HeadlessIdempotencySetupBuilder setup);
 
+    /// <summary>
+    /// Whether the provider's units run on a database connection. A provider without a database (in memory) returns
+    /// <see langword="false" />: the suite then begins its units resource-less, and the leaf omits the scenarios that
+    /// need a connection or a database clock frozen at transaction start.
+    /// </summary>
+    bool RunsUnitsOnConnections => true;
+
     /// <summary>Creates an unopened connection to the shared database.</summary>
     DbConnection CreateConnection();
 
@@ -104,13 +111,25 @@ public static class IdempotencyFixtureExtensions
         return new IdempotencyHost(provider);
     }
 
-    /// <summary>Begins an owned unit on a new connection to the shared database.</summary>
+    /// <summary>
+    /// Begins an owned unit on a new connection to the shared database, or a resource-less unit when the provider runs
+    /// its units on no connection.
+    /// </summary>
     public static async ValueTask<IdempotencyUnit> BeginUnitAsync(
         this IIdempotencyFixture fixture,
         IdempotencyHost host,
         CancellationToken cancellationToken = default
     )
     {
+        if (!fixture.RunsUnitsOnConnections)
+        {
+            var resourceLess = await host
+                .Factory.BeginAsync(cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            return new IdempotencyUnit(resourceLess, connection: null);
+        }
+
         var connection = fixture.CreateConnection();
 
         try
@@ -155,8 +174,8 @@ public sealed class IdempotencyHost(ServiceProvider services) : IAsyncDisposable
     }
 }
 
-/// <summary>An owned unit of work over a raw connection, disposing the connection with it.</summary>
-public sealed class IdempotencyUnit(IUnitOfWork unit, DbConnection connection) : IAsyncDisposable
+/// <summary>An owned unit of work over a raw connection, or a resource-less one, disposing the connection with it.</summary>
+public sealed class IdempotencyUnit(IUnitOfWork unit, DbConnection? connection) : IAsyncDisposable
 {
     public IUnitOfWork Unit { get; } = unit;
 
@@ -173,6 +192,10 @@ public sealed class IdempotencyUnit(IUnitOfWork unit, DbConnection connection) :
     public async ValueTask DisposeAsync()
     {
         await Unit.DisposeAsync().ConfigureAwait(false);
-        await connection.DisposeAsync().ConfigureAwait(false);
+
+        if (connection is not null)
+        {
+            await connection.DisposeAsync().ConfigureAwait(false);
+        }
     }
 }

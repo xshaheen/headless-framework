@@ -134,9 +134,9 @@ public sealed class FencedLeasesTests : TestBase
         // then — a failed lease still moves the cursor, so this call never re-claims it
         Received.InOrder(() =>
         {
-            _ = context.Store.ClaimExpiredEnlistedAsync(units[0].Resource, "job", null, AbortToken);
-            _ = context.Store.ClaimExpiredEnlistedAsync(units[1].Resource, "job", first, AbortToken);
-            _ = context.Store.ClaimExpiredEnlistedAsync(units[2].Resource, "job", second, AbortToken);
+            _ = context.Store.ClaimExpiredEnlistedAsync(units[0].Unit, "job", null, AbortToken);
+            _ = context.Store.ClaimExpiredEnlistedAsync(units[1].Unit, "job", first, AbortToken);
+            _ = context.Store.ClaimExpiredEnlistedAsync(units[2].Unit, "job", second, AbortToken);
         });
     }
 
@@ -258,7 +258,7 @@ public sealed class FencedLeasesTests : TestBase
         var queue = new Queue<ExpiredLease?>(claims);
         context
             .Store.ClaimExpiredEnlistedAsync(
-                Arg.Any<IRelationalUnitOfWorkResource>(),
+                Arg.Any<IUnitOfWork>(),
                 "job",
                 Arg.Any<ExpiredLease?>(),
                 Arg.Any<CancellationToken>()

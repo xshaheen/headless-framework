@@ -163,8 +163,8 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Distributed locks | `AddHeadlessDistributedLocks` | `UseInMemory`, `UseRedis`, `UsePostgreSql`, `UseSqlServer` |
 | Node membership | `AddHeadlessCoordination` | `UseRedis`, `UsePostgreSql`, `UseSqlServer` |
 | Sequences | `AddHeadlessSequences` | `UsePostgreSql`, `UseSqlServer` |
-| Fencing (durable leases) | `AddHeadlessFencing` | `UsePostgreSql`, `UseSqlServer` |
-| Idempotency | `AddHeadlessIdempotency` | `UsePostgreSql`, `UseSqlServer` |
+| Fencing (durable leases) | `AddHeadlessFencing` | `UsePostgreSql`, `UseSqlServer`, `UseInMemory` |
+| Idempotency | `AddHeadlessIdempotency` | `UsePostgreSql`, `UseSqlServer`, `UseInMemory` |
 | Feature flags | `AddHeadlessFeatures` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
 | Dynamic settings | `AddHeadlessSettings` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
 | Permissions | `AddHeadlessPermissions` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
@@ -562,6 +562,7 @@ Durable, cross-process leases that fence a stale or zombie attempt's writes at t
 |---------|-------------|
 | [Headless.Fencing.Abstractions](src/Headless.Fencing.Abstractions/README.md) | `IFencedLeases`, `FencedLease`, and the `unit.Leases` accessor |
 | [Headless.Fencing.Core](src/Headless.Fencing.Core/README.md) | Registration, key resolution, and the expired-lease sweep |
+| [Headless.Fencing.InMemory](src/Headless.Fencing.InMemory/README.md) | In-process leases for tests and single-instance hosts |
 | [Headless.Fencing.PostgreSql](src/Headless.Fencing.PostgreSql/README.md) | PostgreSQL leases with a `SKIP LOCKED` sweep |
 | [Headless.Fencing.SqlServer](src/Headless.Fencing.SqlServer/README.md) | SQL Server leases with a `READPAST` sweep |
 
@@ -573,6 +574,7 @@ Durable, tenant-scoped idempotent admission: admit a key once across processes a
 |---------|-------------|
 | [Headless.Idempotency.Abstractions](src/Headless.Idempotency.Abstractions/README.md) | `IIdempotentOperations`, `IdempotentAdmission`, and the `unit.Idempotency` accessor |
 | [Headless.Idempotency.Core](src/Headless.Idempotency.Core/README.md) | Registration, admission orchestration, and the retention purge |
+| [Headless.Idempotency.InMemory](src/Headless.Idempotency.InMemory/README.md) | In-process idempotency records for tests and single-instance hosts |
 | [Headless.Idempotency.PostgreSql](src/Headless.Idempotency.PostgreSql/README.md) | PostgreSQL idempotency records |
 | [Headless.Idempotency.SqlServer](src/Headless.Idempotency.SqlServer/README.md) | SQL Server idempotency records |
 

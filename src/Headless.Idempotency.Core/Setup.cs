@@ -17,8 +17,8 @@ public static class SetupHeadlessIdempotency
     {
         /// <summary>
         /// Registers <see cref="IIdempotentOperations" />, the enlisted <c>unit.Idempotency</c> feature, the
-        /// retention purge, and the chosen provider. Exactly one <c>setup.Use…</c> call (<c>UsePostgreSql</c> or
-        /// <c>UseSqlServer</c>) is required.
+        /// retention purge, and the chosen provider. Exactly one <c>setup.Use…</c> call (<c>UseInMemory</c>,
+        /// <c>UsePostgreSql</c>, or <c>UseSqlServer</c>) is required.
         /// </summary>
         /// <param name="configure">Chooses the provider and configures admission defaults, the purge, and storage.</param>
         /// <returns>The service collection, to allow chaining.</returns>
@@ -37,7 +37,7 @@ public static class SetupHeadlessIdempotency
                 setup.Extensions.Count,
                 setup.Extensions.Count == 1 ? setup.Extensions[0].GetType().FullName ?? "unknown" : "unknown",
                 "Headless.Idempotency",
-                ["UsePostgreSql", "UseSqlServer"],
+                ["UseInMemory", "UsePostgreSql", "UseSqlServer"],
                 static name => new IdempotencyProviderRegistration(name)
             );
 

@@ -111,11 +111,14 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
         }
     }
 
-    public void ValidateEnlistment(IRelationalUnitOfWorkResource resource)
+    public void ValidateEnlistment(IUnitOfWork unitOfWork)
     {
-        Argument.IsNotNull(resource);
+        Argument.IsNotNull(unitOfWork);
 
-        var (connection, _) = _RequireLive(resource);
+        // The gate every enlisted lease call passed before this store judged the unit: an active unit carrying a
+        // live relational transaction. Which provider and database that transaction belongs to is checked below.
+        UnitOfWorkTransactions.RequireTransaction<DbTransaction>(unitOfWork, UnitOfWorkLeasesFeature.Operation);
+        var (connection, _) = _RequireLive(_Relational(unitOfWork));
 
         using var configured = _options.CreateConnection();
 
@@ -147,19 +150,19 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
     }
 
     public async ValueTask<LeaseGrantResult> GrantEnlistedAsync(
-        IRelationalUnitOfWorkResource resource,
+        IUnitOfWork unitOfWork,
         LeaseKey key,
         TimeSpan duration,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(resource);
+        Argument.IsNotNull(unitOfWork);
 
         // Re-checked here rather than trusted from validation: the caller may have ended the transaction or closed
         // the connection in between, and a statement on either would fail with a less useful message or, worse, run
         // outside the unit. No retry: a deadlock has already rolled back the caller's transaction, so only the unit's
         // owner can decide whether to run the whole unit again.
-        var (connection, transaction) = _RequireLive(resource);
+        var (connection, transaction) = _RequireLive(_Relational(unitOfWork));
 
         return await _GrantAsync(connection, transaction, key, duration, cancellationToken).ConfigureAwait(false);
     }
@@ -208,15 +211,15 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
     }
 
     public async ValueTask<LeaseRenewalResult> RenewEnlistedAsync(
-        IRelationalUnitOfWorkResource resource,
+        IUnitOfWork unitOfWork,
         LeaseKey key,
         long generation,
         TimeSpan duration,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(resource);
-        var (connection, transaction) = _RequireLive(resource);
+        Argument.IsNotNull(unitOfWork);
+        var (connection, transaction) = _RequireLive(_Relational(unitOfWork));
 
         return await _RenewAsync(connection, transaction, key, generation, duration, cancellationToken)
             .ConfigureAwait(false);
@@ -236,14 +239,14 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
     }
 
     public async ValueTask<LeaseSettlementStatus> SettleEnlistedAsync(
-        IRelationalUnitOfWorkResource resource,
+        IUnitOfWork unitOfWork,
         LeaseKey key,
         long generation,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(resource);
-        var (connection, transaction) = _RequireLive(resource);
+        Argument.IsNotNull(unitOfWork);
+        var (connection, transaction) = _RequireLive(_Relational(unitOfWork));
 
         return await _EndAsync(
                 connection,
@@ -271,14 +274,14 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
     }
 
     public async ValueTask<LeaseSettlementStatus> ReleaseEnlistedAsync(
-        IRelationalUnitOfWorkResource resource,
+        IUnitOfWork unitOfWork,
         LeaseKey key,
         long generation,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(resource);
-        var (connection, transaction) = _RequireLive(resource);
+        Argument.IsNotNull(unitOfWork);
+        var (connection, transaction) = _RequireLive(_Relational(unitOfWork));
 
         return await _EndAsync(
                 connection,
@@ -401,14 +404,14 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
     #region Fence
 
     public async ValueTask<LeaseFenceStatus> FenceEnlistedAsync(
-        IRelationalUnitOfWorkResource resource,
+        IUnitOfWork unitOfWork,
         LeaseKey key,
         long generation,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(resource);
-        var (connection, transaction) = _RequireLive(resource);
+        Argument.IsNotNull(unitOfWork);
+        var (connection, transaction) = _RequireLive(_Relational(unitOfWork));
 
         await using var command = _CreateCommand(_fenceSql, connection, transaction, key);
         await using var reader = await _ExecuteReaderAsync(command, cancellationToken).ConfigureAwait(false);
@@ -422,15 +425,15 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
     #region Sweep and purge
 
     public async ValueTask<ExpiredLease?> ClaimExpiredEnlistedAsync(
-        IRelationalUnitOfWorkResource resource,
+        IUnitOfWork unitOfWork,
         string kind,
         ExpiredLease? after,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(resource);
+        Argument.IsNotNull(unitOfWork);
         Argument.IsNotNull(kind);
-        var (connection, transaction) = _RequireLive(resource);
+        var (connection, transaction) = _RequireLive(_Relational(unitOfWork));
 
         var statements = await _GetSweepStatementsAsync(connection, transaction, cancellationToken)
             .ConfigureAwait(false);
@@ -713,6 +716,12 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
         return new InvalidOperationException(
             $"The lease '{key.Kind}/{key.Resource}' was live at the caller's generation but not updated."
         );
+    }
+
+    private static IRelationalUnitOfWorkResource _Relational(IUnitOfWork unitOfWork)
+    {
+        // Enlisted verbs run only on a unit ValidateEnlistment accepted, whose resource is relational.
+        return (IRelationalUnitOfWorkResource)unitOfWork.Resource!;
     }
 
     private static (SqlConnection Connection, SqlTransaction Transaction) _RequireLive(

@@ -20,6 +20,13 @@ public interface ILeasesFixture
     /// <summary>Chooses the provider under test on the fencing builder, pointed at the lease database.</summary>
     void ConfigureProvider(HeadlessFencingSetupBuilder setup);
 
+    /// <summary>
+    /// Whether the provider's units run on a database connection. A provider without a database (in memory) returns
+    /// <see langword="false" />: the suite then begins its units resource-less, and the leaf omits the scenarios that
+    /// need a connection, an observed transaction, or a second database.
+    /// </summary>
+    bool RunsUnitsOnConnections => true;
+
     /// <summary>Creates an unopened connection to the database that holds the leases.</summary>
     DbConnection CreateConnection();
 
@@ -134,14 +141,25 @@ public static class LeasesFixtureExtensions
         return new LeasesHost(provider);
     }
 
-    /// <summary>Begins an owned unit on a new connection to the lease database.</summary>
-    public static ValueTask<LeasesUnit> BeginUnitAsync(
+    /// <summary>
+    /// Begins an owned unit on a new connection to the lease database, or a resource-less unit when the provider runs
+    /// its units on no connection.
+    /// </summary>
+    public static async ValueTask<LeasesUnit> BeginUnitAsync(
         this ILeasesFixture fixture,
         LeasesHost host,
         CancellationToken cancellationToken = default
     )
     {
-        return _BeginOwnedAsync(fixture, host, fixture.CreateConnection(), cancellationToken);
+        if (!fixture.RunsUnitsOnConnections)
+        {
+            var unit = await host.Factory.BeginAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            return new LeasesUnit(unit, connection: null, transaction: null);
+        }
+
+        return await _BeginOwnedAsync(fixture, host, fixture.CreateConnection(), cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>Begins an owned unit on a new connection to the other database.</summary>
@@ -254,10 +272,10 @@ public sealed class LeasesHost(ServiceProvider services) : IAsyncDisposable
 /// </summary>
 public sealed class LeasesUnit : IAsyncDisposable
 {
-    private readonly DbConnection _connection;
+    private readonly DbConnection? _connection;
     private readonly DbTransaction? _transaction;
 
-    internal LeasesUnit(IUnitOfWork unit, DbConnection connection, DbTransaction? transaction)
+    internal LeasesUnit(IUnitOfWork unit, DbConnection? connection, DbTransaction? transaction)
     {
         Unit = unit;
         _connection = connection;
@@ -295,6 +313,9 @@ public sealed class LeasesUnit : IAsyncDisposable
             await _transaction.DisposeAsync().ConfigureAwait(false);
         }
 
-        await _connection.DisposeAsync().ConfigureAwait(false);
+        if (_connection is not null)
+        {
+            await _connection.DisposeAsync().ConfigureAwait(false);
+        }
     }
 }

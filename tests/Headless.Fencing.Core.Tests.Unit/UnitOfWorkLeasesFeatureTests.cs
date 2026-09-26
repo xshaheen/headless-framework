@@ -17,9 +17,9 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
         // given
         var context = new FencingTestContext();
         context.Tenant.Id = "t1";
-        var (unit, resource) = FencingTestContext.ActiveUnit();
+        var (unit, _) = FencingTestContext.ActiveUnit();
         var expected = LeaseGrantResult.Granted(_Lease, DateTimeOffset.UnixEpoch);
-        context.Store.GrantEnlistedAsync(resource, _Key, FencingTestContext.Duration, AbortToken).Returns(expected);
+        context.Store.GrantEnlistedAsync(unit, _Key, FencingTestContext.Duration, AbortToken).Returns(expected);
 
         // when
         var result = await context.Feature.GrantAsync(unit, "job", "order-1", FencingTestContext.Duration, AbortToken);
@@ -34,13 +34,13 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
     {
         // given
         var context = new FencingTestContext();
-        var (unit, resource) = FencingTestContext.ActiveUnit();
+        var (unit, _) = FencingTestContext.ActiveUnit();
         context
-            .Store.RenewEnlistedAsync(resource, _Key, 7, FencingTestContext.Duration, AbortToken)
+            .Store.RenewEnlistedAsync(unit, _Key, 7, FencingTestContext.Duration, AbortToken)
             .Returns(new LeaseRenewalResult(LeaseRenewalStatus.Renewed, DateTimeOffset.UnixEpoch));
-        context.Store.SettleEnlistedAsync(resource, _Key, 7, AbortToken).Returns(LeaseSettlementStatus.Settled);
-        context.Store.ReleaseEnlistedAsync(resource, _Key, 7, AbortToken).Returns(LeaseSettlementStatus.Released);
-        context.Store.FenceEnlistedAsync(resource, _Key, 7, AbortToken).Returns(LeaseFenceStatus.Current);
+        context.Store.SettleEnlistedAsync(unit, _Key, 7, AbortToken).Returns(LeaseSettlementStatus.Settled);
+        context.Store.ReleaseEnlistedAsync(unit, _Key, 7, AbortToken).Returns(LeaseSettlementStatus.Released);
+        context.Store.FenceEnlistedAsync(unit, _Key, 7, AbortToken).Returns(LeaseFenceStatus.Current);
 
         // when
         var renewal = await context.Feature.RenewAsync(unit, _Lease, FencingTestContext.Duration, AbortToken);
@@ -52,7 +52,7 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
         renewal.Status.Should().Be(LeaseRenewalStatus.Renewed);
         settlement.Should().Be(LeaseSettlementStatus.Settled);
         release.Should().Be(LeaseSettlementStatus.Released);
-        await context.Store.Received(1).FenceEnlistedAsync(resource, _Key, 7, AbortToken);
+        await context.Store.Received(1).FenceEnlistedAsync(unit, _Key, 7, AbortToken);
     }
 
     [Theory]
@@ -65,8 +65,8 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
     {
         // given
         var context = new FencingTestContext();
-        var (unit, resource) = FencingTestContext.ActiveUnit();
-        context.Store.FenceEnlistedAsync(resource, _Key, 7, AbortToken).Returns(status);
+        var (unit, _) = FencingTestContext.ActiveUnit();
+        context.Store.FenceEnlistedAsync(unit, _Key, 7, AbortToken).Returns(status);
 
         // when
         var act = async () => await context.Feature.FenceAsync(unit, _Lease, AbortToken);
@@ -78,13 +78,32 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
     }
 
     [Fact]
-    public async Task should_refuse_every_verb_on_a_unit_without_a_transaction_before_the_store()
+    public async Task should_leave_the_unit_shape_to_the_store_and_keep_a_resource_less_unit_replayable()
     {
-        // given
+        // given — what a unit must carry is the provider's to judge, so a resource-less unit reaches the store
         var context = new FencingTestContext();
         var unit = Substitute.For<IUnitOfWork>();
         unit.State.Returns(UnitOfWorkState.Active);
         unit.Resource.Returns((IUnitOfWorkResource?)null);
+
+        // when
+        await context.Feature.GrantAsync(unit, "job", "order-1", FencingTestContext.Duration, AbortToken);
+        await context.Feature.SettleAsync(unit, _Lease, AbortToken);
+
+        // then — no execution strategy replays a resource-less unit, so nothing marks it
+        context.Store.Received(2).ValidateEnlistment(unit);
+        unit.DidNotReceive().PreventRetry();
+    }
+
+    [Fact]
+    public async Task should_refuse_every_verb_the_store_cannot_host_before_any_command()
+    {
+        // given
+        var context = new FencingTestContext();
+        var (unit, _) = FencingTestContext.ActiveUnit(isOwned: false);
+        context
+            .Store.When(store => store.ValidateEnlistment(unit))
+            .Do(_ => throw new InvalidOperationException("no relational resource"));
 
         // when
         Func<Task>[] calls =
@@ -100,10 +119,14 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
         // then
         foreach (var call in calls)
         {
-            await call.Should().ThrowAsync<InvalidOperationException>().WithMessage("*relational resource*");
+            await call.Should().ThrowAsync<InvalidOperationException>().WithMessage("no relational resource");
         }
 
-        _AssertStoreUntouched(context);
+        context
+            .Store.ReceivedCalls()
+            .Select(static c => c.GetMethodInfo().Name)
+            .Should()
+            .OnlyContain(static name => name == nameof(ILeaseStore.ValidateEnlistment));
         unit.DidNotReceive().PreventRetry();
     }
 
@@ -123,23 +146,6 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage($"*{state}*fenced lease*");
-        _AssertStoreUntouched(context);
-        unit.DidNotReceive().PreventRetry();
-    }
-
-    [Fact]
-    public async Task should_refuse_a_unit_whose_transaction_completed_before_the_store()
-    {
-        // given
-        var context = new FencingTestContext();
-        var (unit, resource) = FencingTestContext.ActiveUnit(isOwned: false);
-        resource.IsTransactionCompleted.Returns(true);
-
-        // when
-        var act = async () => await context.Feature.SettleAsync(unit, _Lease, AbortToken);
-
-        // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*already completed*");
         _AssertStoreUntouched(context);
         unit.DidNotReceive().PreventRetry();
     }
@@ -196,9 +202,9 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
     {
         // given
         var context = new FencingTestContext();
-        var (unit, resource) = FencingTestContext.ActiveUnit(isOwned: false);
+        var (unit, _) = FencingTestContext.ActiveUnit(isOwned: false);
         context
-            .Store.When(store => store.ValidateEnlistment(resource))
+            .Store.When(store => store.ValidateEnlistment(unit))
             .Do(_ => throw new InvalidOperationException("different database"));
 
         // when
@@ -216,7 +222,7 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
     {
         // given
         var context = new FencingTestContext();
-        var (unit, resource) = FencingTestContext.ActiveUnit(isOwned: false);
+        var (unit, _) = FencingTestContext.ActiveUnit(isOwned: false);
 
         // when
         await context.Feature.GrantAsync(unit, "job", "order-1", FencingTestContext.Duration, AbortToken);
@@ -225,10 +231,10 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
         unit.Received(1).PreventRetry();
         Received.InOrder(() =>
         {
-            context.Store.ValidateEnlistment(resource);
+            context.Store.ValidateEnlistment(unit);
             unit.PreventRetry();
             _ = context.Store.GrantEnlistedAsync(
-                resource,
+                unit,
                 Arg.Any<LeaseKey>(),
                 Arg.Any<TimeSpan>(),
                 Arg.Any<CancellationToken>()
@@ -257,7 +263,7 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
     {
         // given
         var context = new FencingTestContext();
-        var (unit, resource) = FencingTestContext.ActiveUnit(isOwned: true);
+        var (unit, _) = FencingTestContext.ActiveUnit(isOwned: true);
 
         // when
         await context.Feature.GrantAsync(unit, "job", "order-1", FencingTestContext.Duration, AbortToken);
@@ -265,7 +271,7 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
 
         // then
         unit.DidNotReceive().PreventRetry();
-        context.Store.Received(2).ValidateEnlistment(resource);
+        context.Store.Received(2).ValidateEnlistment(unit);
     }
 
     [Fact]
@@ -273,15 +279,15 @@ public sealed class UnitOfWorkLeasesFeatureTests : TestBase
     {
         // given — the fence only reads, so a replay re-runs it harmlessly
         var context = new FencingTestContext();
-        var (unit, resource) = FencingTestContext.ActiveUnit(isOwned: false);
-        context.Store.FenceEnlistedAsync(resource, _Key, 7, AbortToken).Returns(LeaseFenceStatus.Current);
+        var (unit, _) = FencingTestContext.ActiveUnit(isOwned: false);
+        context.Store.FenceEnlistedAsync(unit, _Key, 7, AbortToken).Returns(LeaseFenceStatus.Current);
 
         // when
         await context.Feature.FenceAsync(unit, _Lease, AbortToken);
 
         // then
         unit.DidNotReceive().PreventRetry();
-        context.Store.Received(1).ValidateEnlistment(resource);
+        context.Store.Received(1).ValidateEnlistment(unit);
     }
 
     [Fact]
