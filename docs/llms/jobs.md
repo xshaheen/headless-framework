@@ -1244,6 +1244,7 @@ Entity Framework Core persistence provider for `Headless.Jobs` — durable, dist
 - **Fail-fast coordination check**: startup throws `InvalidOperationException` when no coordination provider is registered.
 - **Cron-expression caching**: reuses the host's `ICache` (optional). No `ICache` → reads from DB, cache invalidation is skipped. Cache failures are fail-open.
 - **DbContext pool**: configurable via `SetDbContextPoolSize(n)` (default 1024).
+- **DbContext factory lifetime**: Jobs registers a pooled singleton `IDbContextFactory<TContext>` with `TryAdd`, so a factory the application registered first wins. It must be a singleton, because the persistence provider and claim strategies are singletons over it; a scoped or transient one fails host startup with `InvalidServiceLifetimeException`.
 - **Custom schema**: `ConfigureStorage(storage => storage.Schema = "custom_schema")` on the Jobs options builder (default `"jobs"`). The schema is owned by the feature, not by this provider, so one setting moves every Jobs table — the idempotency reservation table included — on the dedicated-context, application-context, and consumer-managed model paths alike. The value is validated at startup against cross-provider identifier rules.
 
 ### Design constraints
