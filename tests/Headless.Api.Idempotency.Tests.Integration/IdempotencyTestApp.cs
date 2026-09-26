@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Security.Claims;
 using Headless.Abstractions;
 using Headless.Api.Abstractions;
 using Headless.Api.Idempotency;
+using Headless.Constants;
 using Headless.Core;
 using Headless.MultiTenancy;
 using Headless.Primitives;
@@ -46,10 +48,9 @@ internal static class IdempotencyTestApp
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddSingleton<IProblemDetailsCreator, ProblemDetailsCreator>();
 
-        // Tenant: a context-driven singleton so tests can switch tenants per request
-        var tenantState = new TestTenantState(tenantHeaderName);
-        builder.Services.AddSingleton(tenantState);
-        builder.Services.AddScoped<ICurrentTenant>(_ => tenantState.CurrentForRequest());
+        // Tenant: the framework's AsyncLocal-backed tenant, so a per-request Change reaches the durable store the
+        // same way it does in a host.
+        builder.Services.AddSingleton<ICurrentTenant>(new CurrentTenant(AsyncLocalCurrentTenantAccessor.Instance));
 
         // Current user: a context-driven singleton so tests can swap user identity
         // per request. Defaults to an authenticated test user — the default key
@@ -78,22 +79,22 @@ internal static class IdempotencyTestApp
 
         var app = builder.Build();
 
-        // Tenant resolution from a custom header BEFORE idempotency (so the store key sees the tenant)
+        // Ambient tenant from a caller-controlled header BEFORE idempotency, the way pre-auth catalog resolution
+        // sets it from a host or header.
         if (tenantHeaderName is not null)
         {
             app.Use(
                 async (ctx, next) =>
                 {
-                    if (ctx.Request.Headers.TryGetValue(tenantHeaderName, out var t) && !string.IsNullOrWhiteSpace(t))
-                    {
-                        tenantState.SetForCurrentRequest(t.ToString());
-                    }
-                    else
-                    {
-                        tenantState.SetForCurrentRequest(null);
-                    }
+                    var tenant =
+                        ctx.Request.Headers.TryGetValue(tenantHeaderName, out var t) && !string.IsNullOrWhiteSpace(t)
+                            ? t.ToString()
+                            : null;
 
-                    await next();
+                    using (ctx.RequestServices.GetRequiredService<ICurrentTenant>().Change(tenant))
+                    {
+                        await next();
+                    }
                 }
             );
         }
@@ -172,37 +173,6 @@ internal static class IdempotencyTestApp
         return new() { BaseAddress = new Uri(app.Urls.Single()) };
     }
 
-    public sealed class TestTenantState(string? tenantHeaderName)
-    {
-        private readonly AsyncLocal<string?> _current = new();
-
-        public string? HeaderName { get; } = tenantHeaderName;
-
-        public void SetForCurrentRequest(string? id)
-        {
-            _current.Value = id;
-        }
-
-        public ICurrentTenant CurrentForRequest()
-        {
-            return new TestCurrentTenant(_current.Value);
-        }
-    }
-
-    private sealed class TestCurrentTenant(string? id) : ICurrentTenant
-    {
-        public bool IsAvailable => Id is not null;
-
-        public string? Id { get; } = id;
-
-        public string? Name => null;
-
-        public IDisposable Change(string? id, string? name = null)
-        {
-            return DisposableFactory.Empty;
-        }
-    }
-
     /// <summary>
     /// User identity state for the harness. Defaults to an authenticated test user so existing
     /// tests without explicit tenant context still satisfy the middleware's "tenant OR user
@@ -216,26 +186,41 @@ internal static class IdempotencyTestApp
     {
         private static readonly UserId _DefaultUserId = new("test-user");
         private bool _anonymous;
+        private string? _tenantClaim;
 
         public void SetAnonymous()
         {
             _anonymous = true;
         }
 
-        public void SetAuthenticated()
+        /// <summary>Authenticates the test user, optionally carrying a tenant claim.</summary>
+        public void SetAuthenticated(string? tenantClaim = null)
         {
             _anonymous = false;
+            _tenantClaim = tenantClaim;
         }
 
         public ICurrentUser CurrentForRequest()
         {
-            return _anonymous ? new NullCurrentUser() : new TestCurrentUser(_DefaultUserId);
+            return _anonymous ? new NullCurrentUser() : new TestCurrentUser(_DefaultUserId, _tenantClaim);
         }
     }
 
-    private sealed class TestCurrentUser(UserId? userId) : ICurrentUser
+    private sealed class TestCurrentUser(UserId userId, string? tenantClaim) : ICurrentUser
     {
-        public System.Security.Claims.ClaimsPrincipal? Principal => null;
+        public ClaimsPrincipal? Principal { get; } =
+            new(
+                new ClaimsIdentity(
+                    tenantClaim is null
+                        ? [new Claim(UserClaimTypes.UserId, userId.ToString())]
+                        :
+                        [
+                            new Claim(UserClaimTypes.UserId, userId.ToString()),
+                            new Claim(UserClaimTypes.TenantId, tenantClaim),
+                        ],
+                    authenticationType: "test"
+                )
+            );
 
         public bool IsAuthenticated => UserId is not null;
 
