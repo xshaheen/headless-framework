@@ -132,14 +132,12 @@ internal sealed class IdempotencyRequestResolver(
 
         // Empty is refused along with whitespace because the empty string is the stored host-scope key: accepting it
         // would merge a tenant's records into the host's.
-        if (string.IsNullOrWhiteSpace(tenantId))
-        {
-            throw new ArgumentException(
-                $"{what} is empty or whitespace-only, so no idempotency record can be keyed by it. Use a real tenant "
-                    + "id, or null for the host scope.",
-                paramName
-            );
-        }
+        Argument.IsNotNullOrWhiteSpace(
+            tenantId,
+            $"{what} is empty or whitespace-only, so no idempotency record can be keyed by it. Use a real tenant "
+                + "id, or null for the host scope.",
+            paramName
+        );
 
         if (tenantId.Length > IdempotencyFieldLimits.TenantIdMaxLength)
         {

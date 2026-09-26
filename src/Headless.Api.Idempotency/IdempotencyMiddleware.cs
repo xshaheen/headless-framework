@@ -575,7 +575,7 @@ internal sealed partial class IdempotencyMiddleware(
         var descriptor = IdempotencyMessageDescriber.KeyReused();
 
         var pd =
-            options.MismatchStatusCode == 409
+            options.MismatchStatusCode == StatusCodes.Status409Conflict
                 ? problemDetailsCreator.Conflict(descriptor)
                 : problemDetailsCreator.UnprocessableEntity(
                     new Dictionary<string, IReadOnlyList<ErrorDescriptor>>(StringComparer.Ordinal)
