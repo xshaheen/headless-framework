@@ -858,24 +858,40 @@ internal sealed class AwsBlobStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return _GetPresignedUrlAsync(location, expiry, HttpVerb.GET, cancellationToken);
+        return _GetPresignedUrlAsync(location, expiry, HttpVerb.GET, contentType: null, cancellationToken);
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// A <see cref="PresignedUploadConstraints.ContentType"/> is signed into the URL, so the upload must send that exact
+    /// <c>Content-Type</c> header or S3 rejects the signature. S3 cannot bound the size of a presigned PUT, so a
+    /// <see cref="PresignedUploadConstraints.MaxLength"/> is refused rather than ignored.
+    /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="expiry"/> is not positive.</exception>
+    /// <exception cref="NotSupportedException">Thrown when <paramref name="constraints"/> sets a maximum length.</exception>
     public ValueTask<Uri> GetPresignedUploadUrlAsync(
         BlobLocation location,
         TimeSpan expiry,
+        PresignedUploadConstraints? constraints = null,
         CancellationToken cancellationToken = default
     )
     {
-        return _GetPresignedUrlAsync(location, expiry, HttpVerb.PUT, cancellationToken);
+        if (constraints?.MaxLength is not null)
+        {
+            throw new NotSupportedException(
+                "S3 presigned PUT URLs cannot limit the upload size. Enforce the limit after upload, or use a "
+                    + "presigned POST policy outside this abstraction."
+            );
+        }
+
+        return _GetPresignedUrlAsync(location, expiry, HttpVerb.PUT, constraints?.ContentType, cancellationToken);
     }
 
     private async ValueTask<Uri> _GetPresignedUrlAsync(
         BlobLocation location,
         TimeSpan expiry,
         HttpVerb verb,
+        string? contentType,
         CancellationToken cancellationToken
     )
     {
@@ -894,6 +910,11 @@ internal sealed class AwsBlobStorage(
             // SigV4 presigning is performed locally; Expires is the absolute deadline.
             Expires = timeProvider.GetUtcNow().Add(expiry).UtcDateTime,
         };
+
+        if (contentType is not null)
+        {
+            request.ContentType = contentType;
+        }
 
         // Honor the configured endpoint scheme. When the client targets a plaintext http:// endpoint (an
         // S3-compatible emulator such as LocalStack/MinIO), the SDK would otherwise rewrite the signed URL

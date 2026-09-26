@@ -659,14 +659,28 @@ internal sealed class AzureBlobStorage(
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// A SAS grants write permission but cannot constrain the request's content type or size, so any
+    /// <paramref name="constraints"/> restriction is refused rather than ignored.
+    /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="expiry"/> is not positive.</exception>
     /// <exception cref="InvalidOperationException">Thrown when the <see cref="BlobServiceClient"/> cannot generate a SAS URI (no account key or user-delegation credentials).</exception>
+    /// <exception cref="NotSupportedException">Thrown when <paramref name="constraints"/> sets a content type or a maximum length.</exception>
     public ValueTask<Uri> GetPresignedUploadUrlAsync(
         BlobLocation location,
         TimeSpan expiry,
+        PresignedUploadConstraints? constraints = null,
         CancellationToken cancellationToken = default
     )
     {
+        if (constraints is { ContentType: not null } or { MaxLength: not null })
+        {
+            throw new NotSupportedException(
+                "Azure SAS upload URLs cannot constrain the content type or size of the upload. Validate the blob "
+                    + "after upload instead."
+            );
+        }
+
         return _GetPresignedUrlAsync(
             location,
             expiry,

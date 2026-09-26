@@ -58,6 +58,24 @@ public sealed class AzureBlobStoragePresignedTests : TestBase
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Unable to generate a presigned URL*");
     }
 
+    [Theory]
+    [InlineData("image/png", null)]
+    [InlineData(null, 1024L)]
+    public async Task upload_presigned_refuses_constraints_a_sas_cannot_enforce(string? contentType, long? maxLength)
+    {
+        var sut = _CreateStorageWithoutSigningCredentials();
+
+        var act = async () =>
+            await sut.GetPresignedUploadUrlAsync(
+                new BlobLocation("mycontainer", "file.png"),
+                TimeSpan.FromMinutes(5),
+                new PresignedUploadConstraints { ContentType = contentType, MaxLength = maxLength },
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<NotSupportedException>();
+    }
+
     [Fact]
     public async Task presigned_throws_on_non_positive_expiry()
     {
