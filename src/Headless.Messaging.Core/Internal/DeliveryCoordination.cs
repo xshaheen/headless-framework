@@ -3,6 +3,7 @@
 using System.Data.Common;
 using Headless.Checks;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Persistence;
 using Headless.UnitOfWork;
 
 namespace Headless.Messaging.Internal;
@@ -83,13 +84,15 @@ internal readonly record struct DeliveryCoordination
         DeliveryCoordinationStatus status,
         DeliveryCoordinationMismatch mismatch,
         IUnitOfWork? unitOfWork,
-        DbTransaction? transaction
+        DbTransaction? transaction,
+        IDataStorage? storage = null
     )
     {
         Status = status;
         Mismatch = mismatch;
         UnitOfWork = unitOfWork;
         Transaction = transaction;
+        Storage = storage;
     }
 
     internal static DeliveryCoordination None => default;
@@ -105,6 +108,25 @@ internal readonly record struct DeliveryCoordination
     /// scope whose storage captures rows on the unit of work itself (see <see cref="ICoordinatedMessageStore" />).
     /// </summary>
     internal DbTransaction? Transaction { get; }
+
+    /// <summary>
+    /// The additional outbox storage whose database the unit's transaction belongs to, or <see langword="null" />
+    /// when the row goes to the primary storage.
+    /// </summary>
+    internal IDataStorage? Storage { get; }
+
+    /// <summary>Routes a compatible coordination to the additional outbox storage that resolved it.</summary>
+    internal DeliveryCoordination WithStorage(IDataStorage storage)
+    {
+        Argument.IsNotNull(storage);
+
+        if (Status is not DeliveryCoordinationStatus.Compatible)
+        {
+            throw new InvalidOperationException("Only a compatible coordination can be routed to an outbox storage.");
+        }
+
+        return new DeliveryCoordination(Status, Mismatch, UnitOfWork, Transaction, storage);
+    }
 
     internal static DeliveryCoordination Compatible(IUnitOfWork unitOfWork, DbTransaction? transaction)
     {

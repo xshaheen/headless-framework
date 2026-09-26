@@ -111,8 +111,17 @@ internal sealed class Bootstrapper(
 
             try
             {
+                // Resolved first so an invalid AddOutbox() registration fails before any schema work.
+                var secondaries = serviceProvider.GetService<MessagingOutboxes>()?.Secondaries ?? [];
                 var storageInitializer = serviceProvider.GetRequiredService<IStorageInitializer>();
                 await storageInitializer.InitializeAsync(startupToken).ConfigureAwait(false);
+
+                // Each additional outbox creates its own published table. Like the primary, an outbox whose database
+                // cannot be initialized fails startup rather than accepting publishes it could not store.
+                foreach (var outbox in secondaries)
+                {
+                    await outbox.Initializer.InitializeAsync(startupToken).ConfigureAwait(false);
+                }
             }
             catch (Exception e) when (e is not InvalidOperationException)
             {

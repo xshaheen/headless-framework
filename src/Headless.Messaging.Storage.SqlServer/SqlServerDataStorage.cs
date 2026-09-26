@@ -41,7 +41,8 @@ internal sealed partial class SqlServerDataStorage(
         ITransactionalInboxStorage,
         IInboxOperationsApi,
         IScheduledDeliveryOperationsApi,
-        IDeliveryCoordinationResolver
+        IDeliveryCoordinationResolver,
+        IRelationalOutboxStorage
 {
     /// <summary>
     /// Reusable WHERE-clause fragment that refuses updates to rows already in a terminal state
@@ -74,6 +75,9 @@ internal sealed partial class SqlServerDataStorage(
 
     private readonly string _publishedTable = initializer.GetPublishedTableName();
     private readonly string _receivedTable = initializer.GetReceivedTableName();
+
+    DbConnection IRelationalOutboxStorage.CreateIdentityConnection() =>
+        new SqlConnection(options.Value.ConnectionString);
 
     DeliveryCoordination IDeliveryCoordinationResolver.Resolve(IUnitOfWork unitOfWork)
     {

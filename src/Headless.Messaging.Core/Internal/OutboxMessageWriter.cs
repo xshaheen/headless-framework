@@ -66,6 +66,7 @@ internal sealed class OutboxMessageWriter(
             // No active unit of work (or no relational transaction on it): commit the durable row first.
             // Dispatch after this boundary is non-blocking acceleration; retry/delayed pickup owns recovery.
             var immediateMessage = await _StoreMessageAsync(
+                    storage,
                     publishRequest,
                     decision,
                     transaction: null,
@@ -110,7 +111,9 @@ internal sealed class OutboxMessageWriter(
     {
         if (decision.Coordination.Transaction is { } transaction)
         {
-            return _StoreMessageAsync(publishRequest, decision, transaction, cancellationToken);
+            return decision.Coordination.Storage is { } outboxStorage
+                ? _StoreInOutboxAsync(outboxStorage, publishRequest, decision, transaction, cancellationToken)
+                : _StoreMessageAsync(storage, publishRequest, decision, transaction, cancellationToken);
         }
 
         // A compatible unit without a relational handle is only valid for a storage that captures rows on the
@@ -132,7 +135,25 @@ internal sealed class OutboxMessageWriter(
         );
     }
 
-    private ValueTask<MediumMessage> _StoreMessageAsync(
+    // The unit's transaction belongs to an additional outbox's database: the row is written there, and the stamp
+    // routes the relay's later state changes of this row back to the same database.
+    private static async ValueTask<MediumMessage> _StoreInOutboxAsync(
+        IDataStorage outboxStorage,
+        PreparedPublishMessage publishRequest,
+        DeliveryDecision decision,
+        System.Data.Common.DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        var message = await _StoreMessageAsync(outboxStorage, publishRequest, decision, transaction, cancellationToken)
+            .ConfigureAwait(false);
+        message.OutboxStorage = outboxStorage;
+
+        return message;
+    }
+
+    private static ValueTask<MediumMessage> _StoreMessageAsync(
+        IDataStorage target,
         PreparedPublishMessage publishRequest,
         DeliveryDecision decision,
         System.Data.Common.DbTransaction? transaction,
@@ -141,14 +162,14 @@ internal sealed class OutboxMessageWriter(
     {
         var envelope = _CreateStorageEnvelope(publishRequest);
         return decision.PublishAt is { } publishAt
-            ? storage.StoreScheduledMessageAsync(
+            ? target.StoreScheduledMessageAsync(
                 publishRequest.MessageName,
                 envelope,
                 publishAt,
                 transaction,
                 cancellationToken
             )
-            : storage.StoreMessageAsync(publishRequest.MessageName, envelope, transaction, cancellationToken);
+            : target.StoreMessageAsync(publishRequest.MessageName, envelope, transaction, cancellationToken);
     }
 
     private static MediumMessage _CreateStorageEnvelope(PreparedPublishMessage publishRequest)

@@ -19,6 +19,12 @@ internal sealed class PostgreSqlStorageInitializer(
     IOptions<MessagingOptions> messagingOptions
 ) : IStorageInitializer
 {
+    /// <summary>
+    /// Creates only the published table and its indexes. Set for an additional outbox, whose database holds
+    /// published rows only: the inbox, its history, and its readiness state stay in the primary storage's database.
+    /// </summary>
+    internal bool OutboxOnly { get; set; }
+
     // Timeout budget for schema-init DDL — the CONCURRENTLY index builds/drops, the CREATE EXTENSION
     // probe, and the advisory-lock waits that gate them. Decoupled from the OLTP CommandTimeout because
     // these can run for minutes-to-hours on a large table. null (default) => TimeSpan.Zero => Npgsql
@@ -135,13 +141,16 @@ internal sealed class PostgreSqlStorageInitializer(
 
         try
         {
-            await _EnsureRetryPickupIndexConcurrentlyAsync(
-                    connection,
-                    GetReceivedTableName(),
-                    indexName: "idx_received_Version_NextRetryAt",
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            if (!OutboxOnly)
+            {
+                await _EnsureRetryPickupIndexConcurrentlyAsync(
+                        connection,
+                        GetReceivedTableName(),
+                        indexName: "idx_received_Version_NextRetryAt",
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
 
             await _EnsureRetryPickupIndexConcurrentlyAsync(
                     connection,
@@ -156,13 +165,16 @@ internal sealed class PostgreSqlStorageInitializer(
             // completes; dashboard content search stays off until a DBA installs pg_trgm.
             if (trgmAvailable)
             {
-                await _EnsureContentTrgmIndexConcurrentlyAsync(
-                        connection,
-                        GetReceivedTableName(),
-                        indexName: "idx_received_Content_trgm",
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
+                if (!OutboxOnly)
+                {
+                    await _EnsureContentTrgmIndexConcurrentlyAsync(
+                            connection,
+                            GetReceivedTableName(),
+                            indexName: "idx_received_Content_trgm",
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+                }
 
                 await _EnsureContentTrgmIndexConcurrentlyAsync(
                         connection,
@@ -177,13 +189,16 @@ internal sealed class PostgreSqlStorageInitializer(
                 logger.LogTrgmContentIndexSkipped();
             }
 
-            await _EnsureOwnerIndexConcurrentlyAsync(
-                    connection,
-                    GetReceivedTableName(),
-                    indexName: "idx_received_Owner_not_null",
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            if (!OutboxOnly)
+            {
+                await _EnsureOwnerIndexConcurrentlyAsync(
+                        connection,
+                        GetReceivedTableName(),
+                        indexName: "idx_received_Owner_not_null",
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
 
             await _EnsureOwnerIndexConcurrentlyAsync(
                     connection,
@@ -193,27 +208,35 @@ internal sealed class PostgreSqlStorageInitializer(
                 )
                 .ConfigureAwait(false);
 
-            // History tables can already contain an unbounded backlog on an existing schema.
-            foreach (
-                var (indexName, table, columns) in new[]
-                {
-                    ("idx_inbox_receipts_type_created", "inbox_operation_receipts", "\"OperationType\",\"CreatedAt\""),
-                    ("idx_inbox_audit_type_created", "inbox_audit", "\"OperationType\",\"CreatedAt\""),
-                    ("idx_inbox_audit_operation", "inbox_audit", "\"OperationId\""),
-                }
-            )
+            // An additional outbox has no inbox: its history tables and readiness state live in the primary database.
+            if (!OutboxOnly)
             {
-                await _DropInvalidIndexConcurrentlyAsync(connection, indexName, cancellationToken)
-                    .ConfigureAwait(false);
-                await connection
-                    .ExecuteNonQueryAsync(
-                        $"CREATE INDEX CONCURRENTLY IF NOT EXISTS \"{indexName}\" ON \"{storageOptions.Value.Schema}\".\"{table}\" ({columns});",
-                        commandTimeout: _GetDdlCommandTimeout(),
-                        cancellationToken: cancellationToken
-                    )
-                    .ConfigureAwait(false);
+                // History tables can already contain an unbounded backlog on an existing schema.
+                foreach (
+                    var (indexName, table, columns) in new[]
+                    {
+                        (
+                            "idx_inbox_receipts_type_created",
+                            "inbox_operation_receipts",
+                            "\"OperationType\",\"CreatedAt\""
+                        ),
+                        ("idx_inbox_audit_type_created", "inbox_audit", "\"OperationType\",\"CreatedAt\""),
+                        ("idx_inbox_audit_operation", "inbox_audit", "\"OperationId\""),
+                    }
+                )
+                {
+                    await _DropInvalidIndexConcurrentlyAsync(connection, indexName, cancellationToken)
+                        .ConfigureAwait(false);
+                    await connection
+                        .ExecuteNonQueryAsync(
+                            $"CREATE INDEX CONCURRENTLY IF NOT EXISTS \"{indexName}\" ON \"{storageOptions.Value.Schema}\".\"{table}\" ({columns});",
+                            commandTimeout: _GetDdlCommandTimeout(),
+                            cancellationToken: cancellationToken
+                        )
+                        .ConfigureAwait(false);
+                }
+                await _PublishInboxSchemaReadinessAsync(connection, cancellationToken).ConfigureAwait(false);
             }
-            await _PublishInboxSchemaReadinessAsync(connection, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -475,9 +498,16 @@ internal sealed class PostgreSqlStorageInitializer(
 
     private string _CreateDbTablesScript(string schema)
     {
-        var batchSql = string.Create(
-            CultureInfo.InvariantCulture,
-            $"""
+        // An additional outbox gets the schema and its published table only; see OutboxOnly.
+        return OutboxOnly
+            ? _CreateSchemaScript(schema) + _CreatePublishedTableScript()
+            : _CreateSchemaScript(schema) + _CreateInboxTablesScript(schema) + _CreatePublishedTableScript();
+    }
+
+    // The messaging schema itself, shared by the inbox and published tables.
+    private static string _CreateSchemaScript(string schema)
+    {
+        return $"""
             -- #507 — pg_trgm (required by the Content GIN trigram indexes for dashboard search) is NOT
             -- created here. CREATE EXTENSION needs a privilege managed PostgreSQL withholds, and a failure
             -- inside this transaction would roll back the whole schema batch. It is instead ensured
@@ -485,6 +515,15 @@ internal sealed class PostgreSqlStorageInitializer(
             -- skipped when it is absent.
             CREATE SCHEMA IF NOT EXISTS "{schema}";
 
+            """;
+    }
+
+    // The received table, the inbox history tables, and the schema readiness state.
+    private string _CreateInboxTablesScript(string schema)
+    {
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
             DO $inbox_schema_guard$
             DECLARE current_schema_version integer;
             BEGIN
@@ -642,6 +681,16 @@ internal sealed class PostgreSqlStorageInitializer(
             );
             DELETE FROM "{schema}"."schema_state" WHERE "Component"='inbox';
 
+            """
+        );
+    }
+
+    // The published (outbox) table and its indexes.
+    private string _CreatePublishedTableScript()
+    {
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
             CREATE TABLE IF NOT EXISTS {GetPublishedTableName()}(
                 "Id" UUID PRIMARY KEY NOT NULL,
                 "Version" VARCHAR(20) NOT NULL,
@@ -676,7 +725,5 @@ internal sealed class PostgreSqlStorageInitializer(
 
             """
         );
-
-        return batchSql;
     }
 }

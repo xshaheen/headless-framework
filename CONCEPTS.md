@@ -126,11 +126,19 @@ The publish surface reached from a unit of work as `unit.Outbox` (contract in
 `Headless.Messaging.Abstractions`, implementation in `Headless.Messaging.Core`, resolved from the unit
 as a [unit-of-work feature](#unit-local-state)). Every publish through it writes its durable row inside
 that unit's transaction: the row becomes visible when the unit completes and is discarded when it
-rolls back. It refuses rather than degrades — when the configured storage cannot join the given unit
-the call throws before any storage or transport effect, instead of writing a standalone row. Its
+rolls back. It refuses rather than degrades — when no configured outbox can join the given unit
+the call throws before any storage or transport effect, instead of writing a standalone row. With
+[additional outboxes](#additional-outbox), it writes to the outbox whose database matches the unit. Its
 counterpart is the autonomous pair `IBus`/`IQueue`, whose rows survive the caller's rollback.
 Whether a stored row was written this way is recorded on the row as a nullable
 `IsCoordinated`/`headless-delivery-coordinated` fact, where absent means unrecorded, not "no".
+
+### Additional outbox
+A messaging storage registered with `setup.AddOutbox().Use…()` for a database other than the primary
+storage's, so a unit of work on that database can publish through the [enlisted outbox](#enlisted-outbox).
+It holds only published rows and relays them under its own lease; the inbox, received-message retry state,
+and the dashboard stay on the primary storage. At most one outbox, the primary included, may resolve to
+each database. Contract in [messaging.md § Additional outboxes](docs/llms/messaging.md#additional-outboxes).
 
 ### Operator ledger
 One generalized receipt-and-audit ledger, shared by the inbox operator surface and the

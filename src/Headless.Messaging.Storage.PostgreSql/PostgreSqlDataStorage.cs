@@ -42,7 +42,8 @@ internal sealed partial class PostgreSqlDataStorage(
         ITransactionalInboxStorage,
         IInboxOperationsApi,
         IScheduledDeliveryOperationsApi,
-        IDeliveryCoordinationResolver
+        IDeliveryCoordinationResolver,
+        IRelationalOutboxStorage
 {
     /// <summary>
     /// Reusable WHERE-clause fragment that refuses updates to rows already in a terminal state
@@ -108,6 +109,8 @@ internal sealed partial class PostgreSqlDataStorage(
 
         return DeliveryCoordination.Compatible(unitOfWork, transaction);
     }
+
+    DbConnection IRelationalOutboxStorage.CreateIdentityConnection() => postgreSqlOptions.Value.CreateConnection();
 
     /// <summary>
     /// Returns the monitoring API for querying message statistics and dashboard data against this PostgreSQL storage.

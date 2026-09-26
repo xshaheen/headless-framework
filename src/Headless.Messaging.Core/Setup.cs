@@ -106,6 +106,14 @@ public static class SetupMessaging
     )
     {
         var options = setup.Options;
+
+        if (setup.OutboxBuilders.Exists(static builder => !builder.IsConfigured))
+        {
+            throw new InvalidOperationException(
+                "AddOutbox() was called without a storage. Chain UseEntityFramework<TContext>(), UsePostgreSql(...), or UseSqlServer(...) on it."
+            );
+        }
+
         services.TryAddSingleton(new MessagingMarkerService("Messaging"));
         MessagingBuilder.GetOrAddMiddlewareDescriptorRegistry(services);
         services.AddHeadlessGuidGenerator();
@@ -139,6 +147,9 @@ public static class SetupMessaging
             sp.GetService<ILogger<MessagingTelemetry>>()
         ));
 
+        // The primary storage plus every AddOutbox() registration. Resolving it validates them together, so the
+        // bootstrapper resolves it before storage initialization and a misconfiguration fails host startup.
+        services.TryAddSingleton(MessagingOutboxes.Create);
         services.TryAddSingleton<OutboxMessageWriter>();
         services.TryAddSingleton<IMessageRevoker, MessageRevoker>();
         services.TryAddSingleton<IRuntimeConsumerRegistry, RuntimeConsumerRegistry>();
@@ -233,7 +244,7 @@ public static class SetupMessaging
                 sp.GetRequiredService<IPublishMiddlewarePipeline>(),
                 sp.GetRequiredService<TimeProvider>(),
                 sp.GetRequiredService<IMessageCapabilityGate>(),
-                () => sp.GetService<IDeliveryCoordinationResolver>(),
+                () => sp.GetService<MessagingOutboxes>(),
                 () => sp.GetService<OutboxMessageWriter>(),
                 sp.GetService<MessagingTelemetry>(),
                 options.TransportPublishTimeout,
