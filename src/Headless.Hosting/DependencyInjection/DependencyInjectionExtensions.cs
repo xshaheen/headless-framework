@@ -237,8 +237,15 @@ public static class DependencyInjectionExtensions
     /// <returns><see langword="true"/> if at least one registration was decorated; otherwise <see langword="false"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
     /// <remarks>
+    /// <para>
     /// A registration under <see cref="KeyedService.AnyKey"/> is not decorated: it serves every key, so decorating it
     /// for one key would change what the others resolve.
+    /// </para>
+    /// <para>
+    /// The decorated registration is a factory, so the container disposes whatever it returns. An instance registered
+    /// with <c>AddKeyedSingleton(key, instance)</c> was never disposed by the container before; after decoration it is,
+    /// either directly or through a decorator that disposes the instance it wraps.
+    /// </para>
     /// </remarks>
     public static bool TryDecorateKeyed<TService>(
         this IServiceCollection services,

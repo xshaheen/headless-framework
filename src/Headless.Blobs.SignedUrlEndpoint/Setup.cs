@@ -22,7 +22,8 @@ public static class SetupBlobSignedUrl
         /// <returns>The builder for chaining.</returns>
         /// <remarks>
         /// The tokens are ASP.NET Core data-protection payloads, so every replica that mints or serves them must share
-        /// one persisted key ring, and a URL outlives no key it was protected with.
+        /// one persisted key ring, and a URL outlives no key it was protected with. A store registered as an instance
+        /// becomes container-disposed once it is decorated.
         /// </remarks>
         public HeadlessBlobsSetupBuilder UseSignedUrlEndpoint(Action<BlobSignedUrlOptions> setupAction)
         {

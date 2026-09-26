@@ -381,7 +381,7 @@ services.TryDecorate<IService>((inner, sp) => new LoggingService(inner));
 services.TryDecorateKeyed<IService>("reports", (inner, sp) => new LoggingService(inner));
 ```
 
-A decorator that returns a different instance owns disposing the inner one, because the container only tracks what the factory returns. `TryDecorateKeyed` does not decorate a `KeyedService.AnyKey` registration, which serves every key.
+A decorator that returns a different instance owns disposing the inner one, because the container only tracks what the factory returns. Decorating turns every registration into a factory, so an instance the application registered and owned (`AddSingleton(instance)`) becomes container-disposed. `TryDecorateKeyed` does not decorate a `KeyedService.AnyKey` registration, which serves every key.
 
 #### Startup Validators
 

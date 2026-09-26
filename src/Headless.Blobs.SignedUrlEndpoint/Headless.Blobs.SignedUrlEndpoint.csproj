@@ -2,7 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Description>Signed download and upload URLs for Headless blob stores that have no native presign, served by an ASP.NET Core endpoint.</Description>
-    <PackageTags>headless;api;blobs;presigned-url;dotnet</PackageTags>
+    <PackageTags>headless;blobs;presigned-url;aspnetcore;dotnet</PackageTags>
     <RootNamespace>Headless.Blobs</RootNamespace>
   </PropertyGroup>
   <ItemGroup>

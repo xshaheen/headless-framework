@@ -12,7 +12,8 @@
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Headless.Api.Blobs\Headless.Api.Blobs.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Api.DataProtection\Headless.Api.DataProtection.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Blobs.SignedUrlEndpoint\Headless.Blobs.SignedUrlEndpoint.csproj" />
     <ProjectReference Include="..\..\src\Headless.Blobs.FileSystem\Headless.Blobs.FileSystem.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>

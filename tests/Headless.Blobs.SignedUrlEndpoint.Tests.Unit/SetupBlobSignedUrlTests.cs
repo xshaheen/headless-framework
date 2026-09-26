@@ -124,6 +124,13 @@ public sealed class SetupBlobSignedUrlTests : TestBase
                 new PresignedUploadConstraints { ContentType = "not a media type" },
                 AbortToken
             );
+        var wildcardType = async () =>
+            await presigned.GetPresignedUploadUrlAsync(
+                location,
+                TimeSpan.FromMinutes(1),
+                new PresignedUploadConstraints { ContentType = "image/*" },
+                AbortToken
+            );
         var badLength = async () =>
             await presigned.GetPresignedUploadUrlAsync(
                 location,
@@ -135,6 +142,7 @@ public sealed class SetupBlobSignedUrlTests : TestBase
 
         // then
         await badType.Should().ThrowAsync<ArgumentException>();
+        await wildcardType.Should().ThrowAsync<ArgumentException>();
         await badLength.Should().ThrowAsync<ArgumentException>();
         await badExpiry.Should().ThrowAsync<ArgumentException>();
     }

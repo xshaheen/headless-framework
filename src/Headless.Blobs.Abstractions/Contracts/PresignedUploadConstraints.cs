@@ -11,7 +11,7 @@ namespace Headless.Blobs;
 /// A backend enforces each constraint it can and throws <see cref="NotSupportedException"/> for one it cannot, so a
 /// constraint is never silently dropped. S3 and Cloudflare R2 sign <see cref="ContentType"/> into the URL but cannot
 /// bound the size of a presigned PUT; Azure SAS supports neither; the signed-URL endpoint in
-/// <c>Headless.Api.Blobs</c> enforces both.
+/// <c>Headless.Blobs.SignedUrlEndpoint</c> enforces both.
 /// </remarks>
 [PublicAPI]
 public sealed record PresignedUploadConstraints

@@ -4,6 +4,7 @@ using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Blobs;
@@ -32,7 +33,7 @@ internal sealed record BlobSignedUrlGrant(
 /// <c>ITimeLimitedDataProtector</c>, which reads the system clock directly.
 /// </remarks>
 internal sealed class BlobSignedUrlSigner(
-    IDataProtectionProvider dataProtectionProvider,
+    IServiceProvider serviceProvider,
     TimeProvider timeProvider,
     IOptions<BlobSignedUrlOptions> options
 )
@@ -40,7 +41,12 @@ internal sealed class BlobSignedUrlSigner(
     // Bumping the version invalidates every URL minted with the previous payload layout instead of misreading it.
     private const byte _PayloadVersion = 1;
 
-    private readonly IDataProtector _protector = dataProtectionProvider.CreateProtector("Headless.Blobs.SignedUrl");
+    // Resolved on first use, not at construction. The signer is built while its store is being built, and a key ring
+    // persisted to blob storage (PersistKeysToBlobStorage) resolves that same store when data protection starts, so an
+    // eager dependency would deadlock the container on the half-built singleton.
+    private readonly Lazy<IDataProtector> _protector = new(() =>
+        serviceProvider.GetRequiredService<IDataProtectionProvider>().CreateProtector("Headless.Blobs.SignedUrl")
+    );
 
     public Uri CreateUrl(
         BlobSignedUrlAccess access,
@@ -59,7 +65,7 @@ internal sealed class BlobSignedUrlSigner(
             constraints?.MaxLength
         );
 
-        var token = Base64Url.EncodeToString(_protector.Protect(_Serialize(grant)));
+        var token = Base64Url.EncodeToString(_protector.Value.Protect(_Serialize(grant)));
         var settings = options.Value;
 
         return new Uri(
@@ -81,7 +87,7 @@ internal sealed class BlobSignedUrlSigner(
 
         try
         {
-            candidate = _Deserialize(_protector.Unprotect(Base64Url.DecodeFromChars(token)));
+            candidate = _Deserialize(_protector.Value.Unprotect(Base64Url.DecodeFromChars(token)));
         }
         catch (Exception e)
             when (e is FormatException or CryptographicException or EndOfStreamException or ArgumentException)

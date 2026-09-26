@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Api.DataProtection;
 using Headless.Blobs;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
@@ -33,7 +34,16 @@ internal sealed class SignedUrlTestApp : IAsyncDisposable
 
     public IBlobStorage NamedStorage => App.Services.GetRequiredKeyedService<IBlobStorage>(NamedStore);
 
-    public static async Task<SignedUrlTestApp> StartAsync(CancellationToken cancellationToken)
+    /// <summary>Starts the test host with both stores' containers provisioned.</summary>
+    /// <param name="cancellationToken">Cancels startup and container provisioning.</param>
+    /// <param name="persistKeysToBlobStorage">
+    /// Persist the data-protection key ring to the default store instead of using an ephemeral provider, the pairing
+    /// the Blobs guide recommends for multi-replica hosts.
+    /// </param>
+    public static async Task<SignedUrlTestApp> StartAsync(
+        CancellationToken cancellationToken,
+        bool persistKeysToBlobStorage = false
+    )
     {
         var time = new FakeTimeProvider(DateTimeOffset.Parse("2026-09-26T10:00:00Z", CultureInfo.InvariantCulture));
         var root = Path.Combine(Path.GetTempPath(), "headless-signed-url-" + Guid.NewGuid().ToString("N"));
@@ -41,7 +51,16 @@ internal sealed class SignedUrlTestApp : IAsyncDisposable
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseTestServer();
         builder.Services.AddSingleton<TimeProvider>(time);
-        builder.Services.AddSingleton<IDataProtectionProvider>(new EphemeralDataProtectionProvider());
+
+        if (persistKeysToBlobStorage)
+        {
+            builder.Services.AddDataProtection().PersistKeysToBlobStorage();
+        }
+        else
+        {
+            builder.Services.AddSingleton<IDataProtectionProvider>(new EphemeralDataProtectionProvider());
+        }
+
         builder.Services.AddHeadlessBlobs(setup =>
         {
             setup.UseFileSystem(options => options.BaseDirectoryPath = Path.Combine(root, "default"));

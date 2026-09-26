@@ -10,7 +10,7 @@ namespace Headless.Blobs;
 /// <para>
 /// This is a capability interface, not part of <see cref="IBlobStorage"/>: backends with a native signing mechanism
 /// implement it (S3 SigV4 for AWS and Cloudflare R2, SAS for Azure). Backends with no URL concept (file system, Redis,
-/// SSH) gain it only when <c>Headless.Api.Blobs</c> wraps them in a signed-URL endpoint that streams the bytes through
+/// SSH) gain it only when <c>Headless.Blobs.SignedUrlEndpoint</c> wraps them in a signed-URL endpoint that streams the bytes through
 /// the application.
 /// </para>
 /// <para>

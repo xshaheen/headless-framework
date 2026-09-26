@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Net.Http.Headers;
 using Headless.Checks;
+using Microsoft.Net.Http.Headers;
 
 namespace Headless.Blobs;
 
@@ -52,9 +52,21 @@ internal sealed class SignedUrlBlobStorage(IBlobStorage inner, string? store, Bl
             Argument.IsPositive(maxLength, paramName: nameof(constraints));
         }
 
-        if (constraints?.ContentType is { } contentType && !MediaTypeHeaderValue.TryParse(contentType, out _))
+        // Parse with the same parser the endpoint compares with, and refuse wildcards: the endpoint matches one exact
+        // type, so an 'image/*' URL could never accept an upload.
+        if (
+            constraints?.ContentType is { } contentType
+            && (
+                !MediaTypeHeaderValue.TryParse(contentType, out var mediaType)
+                || mediaType.MatchesAllTypes
+                || mediaType.MatchesAllSubTypes
+            )
+        )
         {
-            throw new ArgumentException($"'{contentType}' is not a valid media type.", nameof(constraints));
+            throw new ArgumentException(
+                $"'{contentType}' is not a single media type such as 'application/pdf'.",
+                nameof(constraints)
+            );
         }
 
         return ValueTask.FromResult(signer.CreateUrl(BlobSignedUrlAccess.Upload, store, location, expiry, constraints));
