@@ -203,6 +203,7 @@ public static class SetupEntityFramework
             options.RegisterServices(services);
 
             services.AddOptions<TenantWriteGuardOptions>();
+            services.AddOptions<TenantReadGuardOptions>();
             services.TryAddScoped<HeadlessDbContextServices>();
             services.TryAddScoped<IHeadlessSaveChangesPipeline, HeadlessSaveChangesPipeline>();
             // The save pipeline enlists its transaction in the scoped unit of work and resolves the unit bound
@@ -252,6 +253,31 @@ public static class SetupEntityFramework
 
             return services;
         }
+
+        /// <summary>
+        /// Enables the EF Core tenant read guard, which makes queries over tenant-owned entities with a
+        /// required tenant column throw when no ambient tenant is set. Also implicitly calls
+        /// <c>AddHeadlessDbContextServices()</c> when needed.
+        /// </summary>
+        /// <returns>The service collection.</returns>
+        internal IServiceCollection AddHeadlessTenantReadGuard()
+        {
+            services.AddHeadlessDbContextServices();
+
+            // Register enablement once so repeated builder calls remain idempotent.
+            if (services.Any(d => d.ServiceType == typeof(HeadlessTenantReadGuardSentinel)))
+            {
+                return services;
+            }
+
+            services.AddSingleton<HeadlessTenantReadGuardSentinel>();
+
+            // PostConfigure for the same reason as the write guard: the seam's opt-in must win over any
+            // host-side Configure<TenantReadGuardOptions>(...).
+            services.PostConfigure<TenantReadGuardOptions>(options => options.IsEnabled = true);
+
+            return services;
+        }
     }
 
     /// <summary>
@@ -285,3 +311,6 @@ public static class SetupEntityFramework
 
 /// <summary>Sentinel marker for one-shot tenant-write-guard PostConfigure registration.</summary>
 internal sealed class HeadlessTenantWriteGuardSentinel;
+
+/// <summary>Sentinel marker for one-shot tenant-read-guard PostConfigure registration.</summary>
+internal sealed class HeadlessTenantReadGuardSentinel;
