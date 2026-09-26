@@ -188,7 +188,7 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 - HTTP tenant catalog resolution (pre-authentication): `ResolveFromCatalog(...)`, `UseHeadlessTenantCatalogResolution()`, `ITenantIdentifierSource` returning `TenantIdentifierSourceResult` (`None` / `Found` / `Invalid`), and the `HeadlessTenantCatalogResolutionBuilder` members `AddHostSource(...)`, `AddRouteSource(...)`, `AddHeaderSource(...)`, `AddSource<T>()`, `AddSource(instance)`, `AddSource(Func<HttpContext, string?>)` with options `HostTenantIdentifierSourceOptions` (`Templates`), `RouteTenantIdentifierSourceOptions` (`RouteValueName`, `PromoteAmbientRouteValue`), and `HeaderTenantIdentifierSourceOptions` (`HeaderNames`, `DefaultHeaderName` = `X-Tenant`)
 - HTTP tenant authorization: `TenantRequirement`, `[AllowMissingTenant]`, `.AllowMissingTenant()`, `[RequireTenant]`, `.RequireTenant()`
 - `AddHeadlessAuthorizationDenialAudit<TContext>()` — opt-in; wraps `IAuthorizationMiddlewareResultHandler` and writes an `authorization.challenged` or `authorization.forbidden` audit entry (method, route template, policy names; never the body or path) through `IAuditLogWriter<TContext>`. Requires an audit log storage provider; see [Authorization denial entries](audit-log.md#authorization-denial-entries)
-- `AddHeadlessCors(IConfiguration | Action<HeadlessCorsOptions> | Action<HeadlessCorsOptions, IServiceProvider>)` — registers the `HeadlessCorsConstants.RestrictedCors` policy from validated `HeadlessCorsOptions` and the development-only `HeadlessCorsConstants.AllowAnyCors` policy (any origin, header, and method; never credentials). Opt-in; `AddHeadless()` does not call it
+- `AddHeadlessCors(IConfiguration | Action<HeadlessCorsOptions> | Action<HeadlessCorsOptions, IServiceProvider>)` — registers the `HeadlessCorsConstants.RestrictedCors` policy from validated `HeadlessCorsOptions` and the development-only `HeadlessCorsConstants.AllowAnyCors` policy (any origin, header, and method; never credentials; shares the configured `ExposedHeaders` and `MaxAge`). Opt-in; `AddHeadless()` does not call it
 - Diagnostic listeners: `AddHeadlessApiDiagnosticListeners()`, `BadRequestDiagnosticAdapter`, `MiddlewareAnalysisDiagnosticAdapter`
 
 ### Design constraints
@@ -345,13 +345,13 @@ Ignored identifiers (for example `www`) stay on `TenantCatalogOptions.IgnoredIde
 
 | Property | Default | Notes |
 |---|---|---|
-| `AllowedOrigins` | `[]` | Exact serialized origins: `http` or `https`, host, optional port. |
+| `AllowedOrigins` | `[]` | Exact serialized origins: scheme, host, optional port. Hybrid mobile webview origins such as `capacitor://localhost` and `ionic://localhost` are accepted. |
 | `AllowedOriginTemplates` | `[]` | `https://*.example.com` matches any subdomain at any depth with the same scheme and port, never the bare suffix. |
 | `AllowCredentials` | `false` | Sends `Access-Control-Allow-Credentials: true`. |
 | `AllowedHeaders` | `[]` = any | A `*` entry also means any. |
 | `AllowedMethods` | `[]` = any | A `*` entry also means any. |
-| `ExposedHeaders` | `[]` | Response headers scripts may read. |
-| `MaxAge` | `null` (no header) | Preflight cache lifetime; browsers cap it (Chromium at two hours). |
+| `ExposedHeaders` | `[]` | Response headers scripts may read. Also applied to `AllowAnyCors`. |
+| `MaxAge` | `null` (no header) | Preflight cache lifetime; browsers cap it (Chromium at two hours). Also applied to `AllowAnyCors`. |
 
 ```json
 {
@@ -367,7 +367,7 @@ Startup fails with `OptionsValidationException` when:
 
 - `AllowedOrigins` and `AllowedOriginTemplates` are both empty, with or without credentials. The restricted policy is never unrestricted; use `AllowAnyCors` in development.
 - An origin contains `*`. Wildcards belong in `AllowedOriginTemplates`; any-origin access belongs to `AllowAnyCors`.
-- An origin or template is not a bare `http`/`https` origin: it carries a path or trailing slash, user info, a query, a fragment, or surrounding whitespace, or is not absolute (including the literal `null`). The browser's `Origin` header never carries these parts, so such an entry would silently match nothing.
+- An origin or template is not a bare `scheme://host[:port]` origin: it carries a path or trailing slash, user info, a query, a fragment, or surrounding whitespace, has no host, is a `file:` URL, or is not absolute (including the literal `null`). The browser's `Origin` header never carries these parts, so such an entry would silently match nothing.
 - A template does not start with `<scheme>://*.`, has a second `*`, or has a literal suffix of fewer than two labels (`https://*`, `https://*.`, `https://*.com`). A two-label public suffix such as `https://*.co.uk` passes and admits every site under it; never configure one.
 - A header, method, or exposed-header entry is blank, or `MaxAge` is zero or negative.
 

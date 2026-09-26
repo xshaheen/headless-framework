@@ -61,7 +61,7 @@ public sealed class SetupCorsTests : TestBase
     }
 
     [Fact]
-    public async Task should_register_an_any_origin_policy_without_credentials()
+    public async Task should_register_an_any_origin_policy_without_credentials_sharing_exposed_headers()
     {
         var policy = await _GetPolicyAsync(
             HeadlessCorsConstants.AllowAnyCors,
@@ -69,11 +69,29 @@ public sealed class SetupCorsTests : TestBase
             {
                 options.AllowedOrigins = ["https://app.example.com"];
                 options.AllowCredentials = true;
+                options.AllowedMethods = ["GET"];
+                options.ExposedHeaders = ["ETag", "Link"];
+                options.MaxAge = TimeSpan.FromMinutes(10);
             }
         );
 
         policy.AllowAnyOrigin.Should().BeTrue();
         policy.SupportsCredentials.Should().BeFalse();
+        policy.AllowAnyMethod.Should().BeTrue();
+        policy.ExposedHeaders.Should().Equal("ETag", "Link");
+        policy.PreflightMaxAge.Should().Be(TimeSpan.FromMinutes(10));
+    }
+
+    [Fact]
+    public async Task should_match_a_hybrid_mobile_webview_origin()
+    {
+        var policy = await _GetPolicyAsync(
+            HeadlessCorsConstants.RestrictedCors,
+            options => options.AllowedOrigins = ["capacitor://localhost"]
+        );
+
+        policy.IsOriginAllowed("capacitor://localhost").Should().BeTrue();
+        policy.IsOriginAllowed("ionic://localhost").Should().BeFalse();
     }
 
     [Fact]

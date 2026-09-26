@@ -11,14 +11,16 @@ namespace Headless.Api.Cors;
 /// <remarks>
 /// The policy is restricted by construction: it names at least one origin or origin template, and startup fails
 /// otherwise. For a development-only policy that allows any origin, use
-/// <see cref="HeadlessCorsConstants.AllowAnyCors"/>, which never allows credentials.
+/// <see cref="HeadlessCorsConstants.AllowAnyCors"/>, which never allows credentials and takes only
+/// <see cref="ExposedHeaders"/> and <see cref="MaxAge"/> from these options.
 /// </remarks>
 [PublicAPI]
 public sealed class HeadlessCorsOptions
 {
     /// <summary>
     /// Exact origins allowed to call the API, such as <c>https://app.example.com</c> or
-    /// <c>http://localhost:5173</c>. Each is a scheme, host, and optional port, with no path, trailing slash,
+    /// <c>http://localhost:5173</c>, or a hybrid mobile webview origin such as <c>capacitor://localhost</c>. Each is
+    /// a scheme, host, and optional port, with no path, trailing slash,
     /// query, fragment, or user info, because the browser's <c>Origin</c> header never carries them and an entry
     /// that does silently matches nothing.
     /// </summary>
@@ -165,15 +167,16 @@ internal sealed class HeadlessCorsOptionsValidator : AbstractValidator<HeadlessC
             return "must not contain leading or trailing whitespace.";
         }
 
+        // Any scheme with a host is a real origin: hybrid mobile webviews send 'capacitor://localhost' or
+        // 'ionic://localhost'. A file URL serializes to the opaque origin 'null', so it can never match.
         if (
-            !Uri.TryCreate(origin, UriKind.Absolute, out var uri)
-            || (
-                !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.Ordinal)
-                && !string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.Ordinal)
-            )
+            !origin.Contains("://", StringComparison.Ordinal)
+            || !Uri.TryCreate(origin, UriKind.Absolute, out var uri)
+            || string.IsNullOrEmpty(uri.Host)
+            || string.Equals(uri.Scheme, Uri.UriSchemeFile, StringComparison.Ordinal)
         )
         {
-            return "must be an absolute http or https origin, such as 'https://app.example.com'.";
+            return "must be an absolute origin with a scheme and host, such as 'https://app.example.com'.";
         }
 
         if (!string.IsNullOrEmpty(uri.UserInfo))

@@ -95,10 +95,15 @@ internal sealed class ConfigureHeadlessCorsPolicies(IOptions<HeadlessCorsOptions
 
         // Any origin, never credentials: ASP.NET rejects the credentialed combination, and a reflected-origin
         // workaround would hand every site the user's session.
-        options.AddPolicy(
-            HeadlessCorsConstants.AllowAnyCors,
-            static policy => policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()
-        );
+        options.AddPolicy(HeadlessCorsConstants.AllowAnyCors, policy => _BuildAllowAny(policy, settings));
+    }
+
+    // A development frontend reads the same response headers as production (ETag, Link, rate-limit headers), so
+    // the any-origin policy shares the exposed headers and preflight max age.
+    private static void _BuildAllowAny(CorsPolicyBuilder policy, HeadlessCorsOptions settings)
+    {
+        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+        _ApplyShared(policy, settings);
     }
 
     private static void _BuildRestricted(CorsPolicyBuilder policy, HeadlessCorsOptions settings)
@@ -128,15 +133,7 @@ internal sealed class ConfigureHeadlessCorsPolicies(IOptions<HeadlessCorsOptions
             policy.WithMethods([.. settings.AllowedMethods]);
         }
 
-        if (settings.ExposedHeaders.Count > 0)
-        {
-            policy.WithExposedHeaders([.. settings.ExposedHeaders]);
-        }
-
-        if (settings.MaxAge is { } maxAge)
-        {
-            policy.SetPreflightMaxAge(maxAge);
-        }
+        _ApplyShared(policy, settings);
 
         if (settings.AllowCredentials)
         {
@@ -145,6 +142,19 @@ internal sealed class ConfigureHeadlessCorsPolicies(IOptions<HeadlessCorsOptions
         else
         {
             policy.DisallowCredentials();
+        }
+    }
+
+    private static void _ApplyShared(CorsPolicyBuilder policy, HeadlessCorsOptions settings)
+    {
+        if (settings.ExposedHeaders.Count > 0)
+        {
+            policy.WithExposedHeaders([.. settings.ExposedHeaders]);
+        }
+
+        if (settings.MaxAge is { } maxAge)
+        {
+            policy.SetPreflightMaxAge(maxAge);
         }
     }
 

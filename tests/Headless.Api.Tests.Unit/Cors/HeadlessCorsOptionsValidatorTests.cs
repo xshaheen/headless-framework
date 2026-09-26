@@ -50,9 +50,10 @@ public sealed class HeadlessCorsOptionsValidatorTests : TestBase
     [InlineData("https://user:pass@app.example.com", "user info")]
     [InlineData("https://app.example.com?x=1", "query")]
     [InlineData("https://app.example.com#top", "fragment")]
-    [InlineData("ftp://app.example.com", "absolute http or https")]
-    [InlineData("app.example.com", "absolute http or https")]
-    [InlineData("null", "absolute http or https")]
+    [InlineData("file://localhost", "absolute origin")]
+    [InlineData("mailto:admin@example.com", "absolute origin")]
+    [InlineData("app.example.com", "absolute origin")]
+    [InlineData("null", "absolute origin")]
     [InlineData(" https://app.example.com", "whitespace")]
     [InlineData("", "empty")]
     public void should_reject_an_origin_that_is_not_a_bare_serialized_origin(string origin, string reason)
@@ -69,7 +70,7 @@ public sealed class HeadlessCorsOptionsValidatorTests : TestBase
     [InlineData("https://*", "'*.'")]
     [InlineData("https://*.com", "two labels")]
     [InlineData("https://*.example.com.", "two labels")]
-    [InlineData("https://*.", "absolute http or https")]
+    [InlineData("https://*.", "absolute origin")]
     [InlineData("https://example.com", "'*.'")]
     [InlineData("https://app.*.example.com", "'*.'")]
     [InlineData("*.example.com", "'*.'")]
@@ -84,6 +85,19 @@ public sealed class HeadlessCorsOptionsValidatorTests : TestBase
 
         var failure = result.Errors.Should().ContainSingle().Subject;
         failure.ErrorMessage.Should().Contain(template).And.Contain(reason);
+    }
+
+    [Theory]
+    [InlineData("capacitor://localhost")]
+    [InlineData("ionic://localhost")]
+    [InlineData("http://127.0.0.1:8080")]
+    public void should_accept_a_non_http_or_loopback_origin(string origin)
+    {
+        var options = new HeadlessCorsOptions { AllowedOrigins = [origin] };
+
+        var result = _sut.TestValidate(options);
+
+        result.ShouldNotHaveAnyValidationErrors();
     }
 
     [Fact]
