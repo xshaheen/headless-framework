@@ -35,6 +35,10 @@ public static class TenantIsolationHttpAssertions
     // Codes are literals so this package does not reference Headless.Api.Core or Headless.MultiTenancy.
     private const string _TenantRequiredCode = "g:tenant_required";
     private const string _CrossTenantWriteCode = "g:cross_tenant_write";
+    private const string _TenantResolutionFailedCode = "g:tenant_resolution_failed";
+
+    // Stands in for each response's own request path, which framework 404 details quote.
+    private const string _PathPlaceholder = "{path}";
 
     /// <summary>Top-level JSON members removed from both bodies before they are compared.</summary>
     public static IReadOnlyList<string> DefaultIgnoredMembers => _DefaultIgnoredMembers;
@@ -102,6 +106,11 @@ public static class TenantIsolationHttpAssertions
         // The control runs first: when a missing id is not a 404, an equal cross-tenant answer proves nothing.
         var missing = await _SendAsync(client, missingRequest, cancellationToken).ConfigureAwait(false);
 
+        if (_DescribeTenantContext(missing) is { } missingContext)
+        {
+            _Fail(missingContext);
+        }
+
         if (missing.Status != HttpStatusCode.NotFound)
         {
             _Fail(
@@ -112,6 +121,11 @@ public static class TenantIsolationHttpAssertions
         }
 
         var cross = await _SendAsync(client, crossTenantRequest, cancellationToken).ConfigureAwait(false);
+
+        if (_DescribeTenantContext(cross) is { } crossContext)
+        {
+            _Fail(crossContext);
+        }
 
         if (cross.Status != HttpStatusCode.NotFound)
         {
@@ -127,14 +141,15 @@ public static class TenantIsolationHttpAssertions
             );
         }
 
-        var crossBody = _Normalize(cross.Body, ignored);
-        var missingBody = _Normalize(missing.Body, ignored);
+        var crossBody = _Normalize(cross, ignored);
+        var missingBody = _Normalize(missing, ignored);
 
         if (!_BodiesEqual(crossBody, missingBody))
         {
             _Fail(
                 $"Expected {cross.Target} to answer like the missing id {missing.Target}, but the 404 bodies differ "
-                    + $"after removing [{string.Join(", ", ignored)}]. A difference lets a caller tell another "
+                    + $"after removing [{string.Join(", ", ignored)}] and replacing each request's path with "
+                    + $"{_PathPlaceholder}. A difference lets a caller tell another "
                     + $"tenant's id from a missing one.{Environment.NewLine}Cross-tenant: {_Display(crossBody)}"
                     + $"{Environment.NewLine}Missing id:   {_Display(missingBody)}"
             );
@@ -147,16 +162,9 @@ public static class TenantIsolationHttpAssertions
         var status = _Format(cross.Status);
         var prefix = $"Expected {cross.Target} to answer 404 like a missing id, but it answered {status}";
 
-        if ((int)cross.Status is >= 200 and < 300)
+        if (cross.Status.IsSuccessStatusCode())
         {
             return $"{prefix}: it returned another tenant's resource.";
-        }
-
-        if (cross.Status == HttpStatusCode.Forbidden && code.Contains(_TenantRequiredCode, StringComparer.Ordinal))
-        {
-            return $"{prefix} {_TenantRequiredCode}. That is the framework's answer to a request with no tenant "
-                + "context, not a cross-tenant leak: the request never reached the cross-tenant lookup. Authenticate "
-                + "the client as the probing tenant so the request carries a tenant.";
         }
 
         if (cross.Status == HttpStatusCode.Conflict && code.Contains(_CrossTenantWriteCode, StringComparer.Ordinal))
@@ -175,6 +183,31 @@ public static class TenantIsolationHttpAssertions
         return $"{prefix}.";
     }
 
+    // Framework answers that mean the request never reached the endpoint in the probing tenant's context. They are
+    // test-setup problems, not leaks, and a 404 one would otherwise match the other request and pass.
+    private static string? _DescribeTenantContext(Answer answer)
+    {
+        var codes = _ErrorCodes(answer.Body);
+        var status = _Format(answer.Status);
+
+        if (codes.Contains(_TenantRequiredCode, StringComparer.Ordinal))
+        {
+            return $"Expected {answer.Target} to reach the endpoint as the probing tenant, but it answered {status} "
+                + $"{_TenantRequiredCode}. That is the framework's answer to a request with no tenant context, not a "
+                + "cross-tenant leak. Authenticate the client as the probing tenant so the request carries a tenant.";
+        }
+
+        if (codes.Contains(_TenantResolutionFailedCode, StringComparer.Ordinal))
+        {
+            return $"Expected {answer.Target} to reach the endpoint as the probing tenant, but it answered {status} "
+                + $"{_TenantResolutionFailedCode}. Tenant resolution rejected the request before the endpoint ran, so "
+                + "matching 404s would prove nothing. Seed the probing tenant in the tenant catalog, or send the "
+                + "request under an identifier that matches the client's tenant claim.";
+        }
+
+        return null;
+    }
+
     private static async Task<Answer> _SendAsync(
         HttpClient client,
         Func<HttpRequestMessage> createRequest,
@@ -186,20 +219,33 @@ public static class TenantIsolationHttpAssertions
         using var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
         var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
-        return new Answer(target, response.StatusCode, response.Content.Headers.ContentType?.MediaType, body);
+        // HttpClient resolves a relative URI against its base address while sending, so the URI is absolute here.
+        var uri = request.RequestUri;
+        var path =
+            uri is null ? ""
+            : uri.IsAbsoluteUri ? uri.AbsolutePath
+            : uri.OriginalString.Split('?')[0];
+
+        return new Answer(target, path, response.StatusCode, response.Content.Headers.ContentType?.MediaType, body);
     }
 
-    private static object _Normalize(string body, string[] ignored)
+    private static object _Normalize(Answer answer, string[] ignored)
     {
+        // The two requests name different ids, so a detail that quotes the request path (the framework's
+        // endpoint-not-found text does) differs for that reason alone. A root path is too short to replace safely.
+        string[] paths = answer.Path.Length > 1 ? [answer.Path, Uri.UnescapeDataString(answer.Path)] : [];
         JsonNode? node;
 
         try
         {
-            node = JsonNode.Parse(body);
+            node = JsonNode.Parse(answer.Body);
         }
         catch (JsonException)
         {
-            return body;
+            return paths.Aggregate(
+                answer.Body,
+                (text, path) => text.Replace(path, _PathPlaceholder, StringComparison.Ordinal)
+            );
         }
 
         if (node is JsonObject json)
@@ -210,7 +256,54 @@ public static class TenantIsolationHttpAssertions
             }
         }
 
-        return (object?)node ?? body;
+        foreach (var path in paths)
+        {
+            _ReplacePath(node, path);
+        }
+
+        return (object?)node ?? answer.Body;
+    }
+
+    private static void _ReplacePath(JsonNode? node, string path)
+    {
+        if (node is JsonObject json)
+        {
+            foreach (var name in json.Select(member => member.Key).ToArray())
+            {
+                if (_WithoutPath(json[name], path) is { } replaced)
+                {
+                    json[name] = replaced;
+                }
+                else
+                {
+                    _ReplacePath(json[name], path);
+                }
+            }
+        }
+        else if (node is JsonArray array)
+        {
+            for (var i = 0; i < array.Count; i++)
+            {
+                if (_WithoutPath(array[i], path) is { } replaced)
+                {
+                    array[i] = replaced;
+                }
+                else
+                {
+                    _ReplacePath(array[i], path);
+                }
+            }
+        }
+    }
+
+    private static JsonValue? _WithoutPath(JsonNode? node, string path)
+    {
+        return
+            node is JsonValue value
+            && value.TryGetValue<string>(out var text)
+            && text.Contains(path, StringComparison.Ordinal)
+            ? JsonValue.Create(text.Replace(path, _PathPlaceholder, StringComparison.Ordinal))
+            : null;
     }
 
     private static bool _BodiesEqual(object cross, object missing)
@@ -271,5 +364,5 @@ public static class TenantIsolationHttpAssertions
         throw new InvalidOperationException(message);
     }
 
-    private sealed record Answer(string Target, HttpStatusCode Status, string? MediaType, string Body);
+    private sealed record Answer(string Target, string Path, HttpStatusCode Status, string? MediaType, string Body);
 }

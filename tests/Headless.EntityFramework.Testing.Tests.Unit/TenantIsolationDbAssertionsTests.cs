@@ -177,6 +177,77 @@ public sealed class TenantIsolationDbAssertionsTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_mistake_tenant_bs_own_row_with_the_same_key_for_tenant_as()
+    {
+        // Per-tenant placement lets keys repeat: tenant B's database holds its own row under tenant A's key.
+        var (world, owner) = await _WorldAsync(guardWrites: true);
+        var id = await _SeedOwnedAsync(world, owner);
+        var (_, other) = await _WorldAsync(guardWrites: true, world.CurrentTenant);
+
+        using (world.AsTenantB())
+        await using (var db = other())
+        {
+            db.Add(new OwnedNote { Id = id, Owner = world.TenantB });
+            await db.SaveChangesAsync(AbortToken);
+        }
+
+        NotesContext placed() =>
+            string.Equals(world.CurrentTenant.Id, world.TenantB, StringComparison.Ordinal) ? other() : owner();
+
+        await TenantIsolationDbAssertions.ShouldNotSeeAcrossTenantsAsync<OwnedNote>(world, placed, id, AbortToken);
+
+        using (world.AsTenantB())
+        await using (var db = other())
+        {
+            (await db.Set<OwnedNote>().SingleAsync(x => x.Id == id, AbortToken)).Text.Should().Be("original");
+        }
+    }
+
+    [Fact]
+    public async Task should_fail_the_write_check_when_an_app_defined_filter_hides_the_row()
+    {
+        var (world, create) = await _WorldAsync(guardWrites: false);
+        Guid id;
+
+        using (world.AsTenantA())
+        await using (var db = create())
+        {
+            var note = new FilteredNote { Owner = world.TenantA };
+            db.Add(note);
+            await db.SaveChangesAsync(AbortToken);
+            id = note.Id;
+        }
+
+        var act = () =>
+            TenantIsolationDbAssertions.ShouldRefuseWritesAcrossTenantsAsync<FilteredNote>(
+                world,
+                create,
+                id,
+                cancellationToken: AbortToken
+            );
+
+        (await act.Should().ThrowAsync<Exception>()).Which.Message.Should().Contain("another query filter");
+    }
+
+    [Fact]
+    public async Task should_name_an_unexpected_save_failure()
+    {
+        var (world, create) = await _WorldAsync(guardWrites: false);
+        var id = await _SeedOwnedAsync(world, create);
+
+        var act = () =>
+            TenantIsolationDbAssertions.ShouldRefuseWritesAcrossTenantsAsync<OwnedNote>(
+                world,
+                create,
+                id,
+                note => note.Text = null!,
+                AbortToken
+            );
+
+        (await act.Should().ThrowAsync<Exception>()).Which.Message.Should().Contain(nameof(DbUpdateException));
+    }
+
+    [Fact]
     public async Task should_dispose_every_context_it_creates()
     {
         var (world, create) = await _WorldAsync(guardWrites: true);
@@ -275,6 +346,8 @@ public sealed class NotesContext(HeadlessDbContextServices services, DbContextOp
         base.OnModelCreating(modelBuilder);
         modelBuilder.Entity<OwnedNote>().IsTenantOwned(nameof(OwnedNote.Owner));
         modelBuilder.Entity<SharedNote>();
+        // An application-owned tenant filter the framework's guard knows nothing about.
+        modelBuilder.Entity<FilteredNote>().HasQueryFilter(x => x.Owner == TenantId);
         var composite = modelBuilder.Entity<CompositeNote>();
         composite.HasKey(x => new { x.Id, x.Part });
         composite.IsTenantOwned(nameof(CompositeNote.Owner));
@@ -292,6 +365,12 @@ public sealed class SharedNote
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Text { get; set; } = "original";
+}
+
+public sealed class FilteredNote
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string? Owner { get; set; }
 }
 
 public sealed class CompositeNote

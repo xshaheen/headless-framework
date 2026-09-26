@@ -500,11 +500,12 @@ await TenantIsolationDbAssertions.ShouldNotSeeAcrossTenantsAsync<Order>(
 ```
 
 - `ShouldNotReadAcrossTenantsAsync<TEntity>` fails when tenant B's untracked query finds the row: the entity has no tenant query filter.
-- `ShouldRefuseWritesAcrossTenantsAsync<TEntity>` loads the row as tenant B with only `HeadlessQueryFilters.MultiTenancyFilter` ignored, then expects `CrossTenantWriteException` from an update (an optional `Action<TEntity>` mutates the row first) and from a delete. It fails when either save succeeds, which means `GuardTenantWrites()` is off.
+- `ShouldRefuseWritesAcrossTenantsAsync<TEntity>` loads the row as tenant B with only `HeadlessQueryFilters.MultiTenancyFilter` ignored, then expects `CrossTenantWriteException` from an update (an optional `Action<TEntity>` mutates the row first) and from a delete. It fails when either save succeeds, which means `GuardTenantWrites()` is off, and names any other exception a save throws.
 - `ShouldNotSeeAcrossTenantsAsync<TEntity>` runs both.
 - Every assertion first reads the row as tenant A and fails when it finds nothing, so a wrong key or a row seeded under the wrong tenant cannot pass.
 - The key is the entity's single primary-key value, of the key property's CLR type. Composite keys are rejected with `ArgumentException`.
-- The context factory is called inside each tenant scope and must return a new context each call; the assertion disposes it. A factory that picks a schema or database by the current tenant gets the probing tenant's placement. When tenant B's context cannot reach the row even with the tenant filter off, the data is physically separate and the write check passes without writing.
+- The context factory is called inside each tenant scope and must return a new context each call; the assertion disposes it. A factory that picks a schema or database by the current tenant gets the probing tenant's placement.
+- Tenant B's probes identify tenant A's row by key and tenant, so under per-tenant placement a row tenant B owns under the same key is not mistaken for tenant A's. When tenant B's context cannot reach tenant A's row with every query filter off, the data is physically separate and the write check passes without writing. When another query filter hides the row from tenant B, the write check fails: the tenant write guard covers only entities marked `IsTenantOwned(...)` or implementing `IMultiTenant`.
 
 ### HTTP assertion
 
@@ -520,9 +521,11 @@ await TenantIsolationHttpAssertions.ShouldAnswerNotFoundAcrossTenantsAsync(
 ```
 
 - The missing-id request runs first as a control and must answer 404; otherwise the comparison proves nothing.
-- The cross-tenant request must answer 404 with the same content type and the same body once `traceId`, `timestamp`, and `instance` are removed. Pass `ignoredMembers` for application-specific per-request members.
+- Either request answering `g:tenant_required` (no tenant context) or `g:tenant_resolution_failed` (tenant resolution rejected it) fails the assertion as a test-setup problem, because the request never reached the endpoint as the probing tenant. Two identical tenant-resolution 404s would otherwise pass. Seed the probing tenant in the catalog, and authenticate the client as that tenant.
+- The cross-tenant request must answer 404 with the same content type and the same body once `traceId`, `timestamp`, and `instance` are removed and each request's own path is replaced with a placeholder, because the framework's endpoint-not-found detail quotes the path. Pass `ignoredMembers` for application-specific per-request members.
 - The `Func<HttpRequestMessage>` overload sends any verb or body.
 - Failure messages name the cause: a 2xx returned another tenant's resource; a bare 403 is an existence leak under the convention; 403 `g:tenant_required` and 409 `g:cross_tenant_write` are reported as the framework answers they are.
+- Build the test host with a production-style environment. The common ASP.NET pattern calls `UseExceptionHandler()` only outside Development, so a Development host answers framework exceptions with the developer error page instead of the ProblemDetails bodies this assertion reads.
 
 ---
 ## Headless.EntityFramework.Testing

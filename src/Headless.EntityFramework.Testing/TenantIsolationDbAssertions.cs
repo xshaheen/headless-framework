@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
 using System.Linq.Expressions;
 using AwesomeAssertions;
 using Headless.Checks;
@@ -23,8 +22,10 @@ namespace Headless.EntityFramework.Testing;
 /// <para>
 /// <c>createContext</c> is called inside each tenant scope and must return a new context each time; the assertion
 /// disposes it. A context whose schema or database depends on the current tenant therefore gets the probing
-/// tenant's placement. When tenant B's context cannot reach the row at all, even with the tenant filter off, the
-/// data is physically isolated and the write check passes without writing.
+/// tenant's placement. Tenant B's probes match tenant A's row by key and tenant, so a row tenant B owns under the
+/// same key is not tenant A's. When tenant B's context cannot reach tenant A's row with every query filter off, the
+/// data is physically isolated and the write check passes without writing; when another query filter hides it, the
+/// write check fails, because the tenant write guard covers only tenant-owned entities.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -49,9 +50,11 @@ public static class TenantIsolationDbAssertions
     )
         where TEntity : class
     {
-        await ShouldNotReadAcrossTenantsAsync<TEntity>(world, createContext, key, cancellationToken)
+        _CheckArguments(world, createContext, key);
+        await _EnsureOwnerReadsAsync<TEntity>(world, createContext, key, cancellationToken).ConfigureAwait(false);
+        await _EnsureNotReadAcrossTenantsAsync<TEntity>(world, createContext, key, cancellationToken)
             .ConfigureAwait(false);
-        await ShouldRefuseWritesAcrossTenantsAsync<TEntity>(world, createContext, key, mutate: null, cancellationToken)
+        await _EnsureWritesRefusedAsync<TEntity>(world, createContext, key, mutate: null, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -75,28 +78,8 @@ public static class TenantIsolationDbAssertions
     {
         _CheckArguments(world, createContext, key);
         await _EnsureOwnerReadsAsync<TEntity>(world, createContext, key, cancellationToken).ConfigureAwait(false);
-
-        using var _ = world.AsTenantB();
-        var db = _Create(createContext);
-
-        await using (db.ConfigureAwait(false))
-        {
-            // No tracking, so a row cached by an earlier query cannot stand in for what the filter returns.
-            var visible = await _ByKey<TEntity>(db, key)
-                .AsNoTracking()
-                .AnyAsync(cancellationToken)
-                .ConfigureAwait(false);
-
-            if (visible)
-            {
-                _Fail(
-                    $"Expected {world.TenantB} not to read {world.TenantA}'s {_Name<TEntity>()} {_Format(key)}, but "
-                        + $"{world.TenantB} read {world.TenantA}'s {_Name<TEntity>()} {_Format(key)}. The entity has no "
-                        + "tenant query filter: mark it IsTenantOwned(...) or implement IMultiTenant, and do not ignore "
-                        + "HeadlessQueryFilters.MultiTenancyFilter on this path."
-                );
-            }
-        }
+        await _EnsureNotReadAcrossTenantsAsync<TEntity>(world, createContext, key, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -125,19 +108,55 @@ public static class TenantIsolationDbAssertions
     {
         _CheckArguments(world, createContext, key);
         await _EnsureOwnerReadsAsync<TEntity>(world, createContext, key, cancellationToken).ConfigureAwait(false);
+        await _EnsureWritesRefusedAsync(world, createContext, key, mutate, cancellationToken).ConfigureAwait(false);
+    }
 
+    private static async Task _EnsureNotReadAcrossTenantsAsync<TEntity>(
+        TenantWorld world,
+        Func<DbContext> createContext,
+        object key,
+        CancellationToken cancellationToken
+    )
+        where TEntity : class
+    {
+        using var _ = world.AsTenantB();
+
+        if (await _IsVisibleAsync<TEntity>(createContext, key, world.TenantA, cancellationToken).ConfigureAwait(false))
+        {
+            _Fail(
+                $"Expected {world.TenantB} not to read {world.TenantA}'s {_Name<TEntity>()} {_Format(key)}, but "
+                    + $"{world.TenantB} read {world.TenantA}'s {_Name<TEntity>()} {_Format(key)}. The entity has no "
+                    + "tenant query filter: mark it IsTenantOwned(...) or implement IMultiTenant, and do not ignore "
+                    + "HeadlessQueryFilters.MultiTenancyFilter on this path."
+            );
+        }
+    }
+
+    private static async Task _EnsureWritesRefusedAsync<TEntity>(
+        TenantWorld world,
+        Func<DbContext> createContext,
+        object key,
+        Action<TEntity>? mutate,
+        CancellationToken cancellationToken
+    )
+        where TEntity : class
+    {
         using var _ = world.AsTenantB();
 
         var update = _Create(createContext);
 
         await using (update.ConfigureAwait(false))
         {
-            var entity = await _LoadAcrossTenantsAsync<TEntity>(update, key, cancellationToken).ConfigureAwait(false);
+            var entity = await _LoadAcrossTenantsAsync<TEntity>(world, update, key, cancellationToken)
+                .ConfigureAwait(false);
 
             if (entity is null)
             {
-                // The owner reads the row but tenant B's context cannot reach it even with the tenant filter off:
-                // the row lives in a schema or database tenant B's context does not use, so no write can target it.
+                await _EnsureNotHiddenByOtherFiltersAsync<TEntity>(world, update, key, cancellationToken)
+                    .ConfigureAwait(false);
+
+                // The owner reads the row but tenant B's context cannot reach it with every filter off: the row lives
+                // in a schema or database tenant B's context does not use, so no write can target it.
                 return;
             }
 
@@ -157,7 +176,8 @@ public static class TenantIsolationDbAssertions
 
         await using (delete.ConfigureAwait(false))
         {
-            var entity = await _LoadAcrossTenantsAsync<TEntity>(delete, key, cancellationToken).ConfigureAwait(false);
+            var entity = await _LoadAcrossTenantsAsync<TEntity>(world, delete, key, cancellationToken)
+                .ConfigureAwait(false);
 
             if (entity is null)
             {
@@ -181,27 +201,39 @@ public static class TenantIsolationDbAssertions
         where TEntity : class
     {
         using var _ = world.AsTenantA();
+
+        if (!await _IsVisibleAsync<TEntity>(createContext, key, owner: null, cancellationToken).ConfigureAwait(false))
+        {
+            _Fail(
+                $"Expected owner {world.TenantA} to read {_Name<TEntity>()} {_Format(key)}, but it found nothing. "
+                    + "Seed the row inside world.AsTenantA() first; a cross-tenant check against a row that does "
+                    + "not exist proves nothing."
+            );
+        }
+    }
+
+    private static async Task<bool> _IsVisibleAsync<TEntity>(
+        Func<DbContext> createContext,
+        object key,
+        string? owner,
+        CancellationToken cancellationToken
+    )
+        where TEntity : class
+    {
         var db = _Create(createContext);
 
         await using (db.ConfigureAwait(false))
         {
-            var visible = await _ByKey<TEntity>(db, key)
+            // No tracking, so a row cached by an earlier query cannot stand in for what the filter returns.
+            return await _ByKey<TEntity>(db, key, owner)
                 .AsNoTracking()
                 .AnyAsync(cancellationToken)
                 .ConfigureAwait(false);
-
-            if (!visible)
-            {
-                _Fail(
-                    $"Expected owner {world.TenantA} to read {_Name<TEntity>()} {_Format(key)}, but it found nothing. "
-                        + "Seed the row inside world.AsTenantA() first; a cross-tenant check against a row that does "
-                        + "not exist proves nothing."
-                );
-            }
         }
     }
 
     private static Task<TEntity?> _LoadAcrossTenantsAsync<TEntity>(
+        TenantWorld world,
         DbContext db,
         object key,
         CancellationToken cancellationToken
@@ -209,9 +241,36 @@ public static class TenantIsolationDbAssertions
         where TEntity : class
     {
         // Only the tenant filter is lifted, so the row is reachable exactly when the tenant boundary alone hides it.
-        return _ByKey<TEntity>(db, key)
-            .IgnoreQueryFilters([HeadlessQueryFilters.MultiTenancyFilter])
+        return _ByKey<TEntity>(db, key, world.TenantA)
+            .IgnoreMultiTenancyFilter()
             .SingleOrDefaultAsync(cancellationToken);
+    }
+
+    private static async Task _EnsureNotHiddenByOtherFiltersAsync<TEntity>(
+        TenantWorld world,
+        DbContext db,
+        object key,
+        CancellationToken cancellationToken
+    )
+        where TEntity : class
+    {
+        // The owner read passed with every filter on, so a filter that hides the row from tenant B alone is a tenant
+        // filter the framework does not own; its write guard never sees the entity, and "unreachable" would be a lie.
+        var hidden = await _ByKey<TEntity>(db, key, world.TenantA)
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .AnyAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (hidden)
+        {
+            _Fail(
+                $"Expected {world.TenantB}'s context either to reach {world.TenantA}'s {_Name<TEntity>()} "
+                    + $"{_Format(key)} with HeadlessQueryFilters.MultiTenancyFilter lifted or not to hold it at all, but "
+                    + "another query filter hides it. The tenant write guard covers only entities marked "
+                    + "IsTenantOwned(...) or implementing IMultiTenant, so this check cannot prove writes are refused."
+            );
+        }
     }
 
     private static async Task _ExpectRefusedAsync<TEntity>(
@@ -247,7 +306,9 @@ public static class TenantIsolationDbAssertions
         );
     }
 
-    private static IQueryable<TEntity> _ByKey<TEntity>(DbContext db, object key)
+    // With an owner, a row is identified by key and tenant: under per-tenant placement keys repeat across tenants, and
+    // tenant B's own row with tenant A's key is not tenant A's row.
+    private static IQueryable<TEntity> _ByKey<TEntity>(DbContext db, object key, string? owner = null)
         where TEntity : class
     {
         var entityType =
@@ -287,10 +348,26 @@ public static class TenantIsolationDbAssertions
             parameter,
             Expression.Constant(property.Name)
         );
-        var predicate = Expression.Lambda<Func<TEntity, bool>>(
-            Expression.Equal(read, Expression.Constant(key, property.ClrType)),
-            parameter
-        );
+        Expression body = Expression.Equal(read, Expression.Constant(key, property.ClrType));
+
+        if (
+            owner is not null
+            && entityType.GetTenantPropertyName() is { } tenantName
+            && entityType.FindProperty(tenantName) is { } tenantProperty
+        )
+        {
+            var tenantType = tenantProperty.ClrType;
+            var tenant = Expression.Call(
+                typeof(EF),
+                nameof(EF.Property),
+                [tenantType],
+                parameter,
+                Expression.Constant(tenantName)
+            );
+            body = Expression.AndAlso(body, Expression.Equal(tenant, Expression.Constant(owner, tenantType)));
+        }
+
+        var predicate = Expression.Lambda<Func<TEntity, bool>>(body, parameter);
 
         return db.Set<TEntity>().Where(predicate);
     }
@@ -307,7 +384,7 @@ public static class TenantIsolationDbAssertions
 
     private static string _Name<TEntity>() => typeof(TEntity).Name;
 
-    private static string _Format(object key) => Convert.ToString(key, CultureInfo.InvariantCulture) ?? "";
+    private static string _Format(object key) => key.ToInvariantString() ?? "";
 
     [DoesNotReturn]
     private static void _Fail(string message)

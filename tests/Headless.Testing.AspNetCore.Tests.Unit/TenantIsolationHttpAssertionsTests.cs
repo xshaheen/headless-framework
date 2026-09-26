@@ -97,6 +97,48 @@ public sealed class TenantIsolationHttpAssertionsTests : TestBase
     }
 
     [Fact]
+    public async Task should_diagnose_a_client_without_tenant_context_at_the_control()
+    {
+        const string body = """{"status":403,"error":{"code":"g:tenant_required","description":"no tenant"}}""";
+        using var client = _Client(
+            cross: () => _Json(HttpStatusCode.Forbidden, body),
+            missing: () => _Json(HttpStatusCode.Forbidden, body)
+        );
+
+        var failure = await _Fails(client);
+
+        failure.Should().Contain(_MissingUri).And.Contain("g:tenant_required").And.Contain("not a cross-tenant leak");
+        failure.Should().NotContain("proves nothing");
+    }
+
+    [Fact]
+    public async Task should_fail_when_tenant_resolution_rejects_both_requests()
+    {
+        // Identical 404s from tenant resolution would otherwise pass without the endpoint ever running.
+        const string body =
+            """{"status":404,"title":"not-found","error":{"code":"g:tenant_resolution_failed","description":"x"}}""";
+        using var client = _Client(
+            cross: () => _Json(HttpStatusCode.NotFound, body),
+            missing: () => _Json(HttpStatusCode.NotFound, body)
+        );
+
+        var failure = await _Fails(client);
+
+        failure.Should().Contain("g:tenant_resolution_failed").And.Contain("Seed the probing tenant");
+    }
+
+    [Fact]
+    public async Task should_pass_when_details_differ_only_by_the_quoted_request_path()
+    {
+        using var client = _Client(
+            cross: () => _NotFound(detail: $"The requested endpoint '{_CrossTenantUri}' was not found."),
+            missing: () => _NotFound(detail: $"The requested endpoint '{_MissingUri}' was not found.")
+        );
+
+        await _Assert(client);
+    }
+
+    [Fact]
     public async Task should_report_an_unexpected_status()
     {
         using var client = _Client(cross: () => _Json(HttpStatusCode.BadRequest, "{}"), missing: () => _NotFound());
