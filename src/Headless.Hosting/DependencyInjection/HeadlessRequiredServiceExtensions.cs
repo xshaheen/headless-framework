@@ -74,6 +74,68 @@ public static class HeadlessRequiredServiceExtensions
 
             return services;
         }
+
+        /// <summary>
+        /// Declares that <typeparamref name="T"/> must be registered as a singleton by the time the host starts,
+        /// and fails the host with an actionable message if it is missing, scoped, or transient.
+        /// </summary>
+        /// <typeparam name="T">The service contract a singleton in this feature injects.</typeparam>
+        /// <param name="requiredBy">User-facing name of the feature whose singleton captures the service.</param>
+        /// <param name="remedy">The concrete registration that satisfies the requirement, quoted verbatim in the failure message.</param>
+        /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
+        /// <remarks>
+        /// Use it when a singleton injects a service the application registers. A scoped or transient registration
+        /// would be captured by that singleton for the life of the host. Scope validation reports the scoped case
+        /// only when it is switched on and never reports the transient one, so this check reads the lifetime of the
+        /// registration the container would resolve and refuses in every environment. A missing registration is
+        /// reported as a <see cref="MissingRequiredServiceException"/>. The check never resolves the service.
+        /// </remarks>
+        /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+        /// <exception cref="ArgumentException"><paramref name="requiredBy"/> or <paramref name="remedy"/> is empty or whitespace.</exception>
+        public IServiceCollection RequireSingletonService<T>(string requiredBy, string remedy)
+            where T : class
+        {
+            return services.RequireSingletonService(typeof(T), requiredBy, remedy);
+        }
+
+        /// <summary>
+        /// Declares that <paramref name="serviceType"/> must be registered as a singleton by the time the host
+        /// starts, and fails the host with an actionable message if it is missing, scoped, or transient.
+        /// </summary>
+        /// <param name="serviceType">The service contract a singleton in this feature injects.</param>
+        /// <param name="requiredBy">User-facing name of the feature whose singleton captures the service.</param>
+        /// <param name="remedy">The concrete registration that satisfies the requirement, quoted verbatim in the failure message.</param>
+        /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
+        /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+        /// <exception cref="ArgumentException"><paramref name="requiredBy"/> or <paramref name="remedy"/> is empty or whitespace.</exception>
+        public IServiceCollection RequireSingletonService(Type serviceType, string requiredBy, string remedy)
+        {
+            services.RequireRegisteredService(serviceType, requiredBy, remedy);
+
+            // Idempotent by validator type, so one check covers every singleton requirement declared in the host.
+            services.AddStartupValidator<SingletonServiceStartupValidator>();
+
+            _GetOrAddSingletonRegistry(services).Add(new RequiredServiceRegistration(serviceType, requiredBy, remedy));
+
+            return services;
+        }
+    }
+
+    private static SingletonServiceRegistry _GetOrAddSingletonRegistry(IServiceCollection services)
+    {
+        var existing = services.FirstOrDefault(static descriptor =>
+            descriptor.ServiceType == typeof(SingletonServiceRegistry)
+        );
+
+        if (existing?.ImplementationInstance is SingletonServiceRegistry registry)
+        {
+            return registry;
+        }
+
+        registry = new SingletonServiceRegistry(services);
+        services.AddSingleton(registry);
+
+        return registry;
     }
 
     /// <summary>

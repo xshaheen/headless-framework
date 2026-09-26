@@ -427,6 +427,22 @@ services.RequireRegisteredService<ICache<SettingValueCacheItem>>(
 
 `Headless.MultiTenancy`, `Headless.Settings.Core`, `Headless.Permissions.Core`, `Headless.Features.Core`, and `Headless.Api.Idempotency` all use this to require a caching provider.
 
+`RequireSingletonService<T>(requiredBy, remedy)` (and the `Type` overload) goes one step further for a service that a feature's *singleton* injects but the application registers:
+
+```csharp
+services.RequireSingletonService(
+    typeof(IDbContextFactory<>).MakeGenericType(dbContextType),
+    requiredBy: "Headless settings EF storage",
+    remedy: "Register the factory with AddDbContextFactory<TContext>() or AddPooledDbContextFactory<TContext>() at the default singleton lifetime."
+);
+```
+
+- **Refuses a captive dependency in every environment.** A scoped or transient registration would be captured by the singleton for the life of the host. Scope validation catches the scoped case only while it is on (the development default) and never catches the transient one, so the check reads the lifetime from the service collection instead and throws `InvalidServiceLifetimeException` (`Headless.Hosting.DependencyInjection`) listing every violation.
+- **Judges the registration the container resolves.** The last unkeyed registration of the closed type wins; with none, the last unkeyed open-generic registration of its definition decides. Keyed registrations are ignored. Registrations added after the declaration are seen, and the service is never resolved.
+- **Also requires the registration.** It declares `RequireRegisteredService` for the same type, so a missing registration still fails with `MissingRequiredServiceException`.
+
+The EF storage providers of `Headless.MultiTenancy`, `Headless.Settings`, `Headless.Features`, `Headless.Permissions`, `Headless.AuditLog`, and `Headless.Jobs` use it to require a singleton `IDbContextFactory<TContext>`.
+
 ### Configuration
 
 No configuration required.
