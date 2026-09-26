@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Jobs.SourceGenerator.Utilities;
+using Headless.SourceGenerators;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -13,25 +14,41 @@ namespace Headless.Jobs.SourceGenerator.Validation;
 internal static class JobFunctionValidator
 {
     /// <summary>
-    /// Validates class and method accessibility for JobFunction usage.
+    /// Validates class and method accessibility, and that the declaring class is not abstract.
     /// </summary>
     public static void ValidateClassAndMethod(
         ClassDeclarationSyntax classDeclaration,
         MethodDeclarationSyntax methodDeclaration,
-        Compilation compilation,
-        SourceProductionContext context
+        INamedTypeSymbol? classSymbol,
+        ICollection<DiagnosticInfo> diagnostics
     )
     {
-        _ValidateClassAccessibility(classDeclaration, context);
-        _ValidateMethodAccessibility(methodDeclaration, context);
+        if (!_IsPublicOrInternal(classDeclaration.Modifiers))
+        {
+            diagnostics.Add(
+                DiagnosticInfo.Create(
+                    DiagnosticDescriptors.ClassAccessibility,
+                    classDeclaration.Identifier.GetLocation(),
+                    classDeclaration.Identifier.Text
+                )
+            );
+        }
 
-        var semanticModel = compilation.GetSemanticModel(methodDeclaration.SyntaxTree);
-        var classSymbol = semanticModel.GetDeclaredSymbol(classDeclaration);
+        if (!_IsPublicOrInternal(methodDeclaration.Modifiers))
+        {
+            diagnostics.Add(
+                DiagnosticInfo.Create(
+                    DiagnosticDescriptors.MethodAccessibility,
+                    methodDeclaration.Identifier.GetLocation(),
+                    methodDeclaration.Identifier.Text
+                )
+            );
+        }
 
         if (classSymbol?.IsAbstract == true)
         {
-            context.ReportDiagnostic(
-                Diagnostic.Create(
+            diagnostics.Add(
+                DiagnosticInfo.Create(
                     DiagnosticDescriptors.AbstractClass,
                     classDeclaration.Identifier.GetLocation(),
                     classDeclaration.Identifier.Text
@@ -41,78 +58,24 @@ internal static class JobFunctionValidator
     }
 
     /// <summary>
-    /// Validates that a class has appropriate accessibility for JobFunction usage.
-    /// </summary>
-    private static void _ValidateClassAccessibility(
-        ClassDeclarationSyntax classDeclaration,
-        SourceProductionContext context
-    )
-    {
-        var hasPublicOrInternal = classDeclaration.Modifiers.Any(m =>
-            m.IsKind(SyntaxKind.PublicKeyword) || m.IsKind(SyntaxKind.InternalKeyword)
-        );
-
-        if (!hasPublicOrInternal)
-        {
-            context.ReportDiagnostic(
-                Diagnostic.Create(
-                    DiagnosticDescriptors.ClassAccessibility,
-                    classDeclaration.Identifier.GetLocation(),
-                    classDeclaration.Identifier.Text
-                )
-            );
-        }
-    }
-
-    /// <summary>
-    /// Validates that a method has appropriate accessibility for JobFunction usage.
-    /// </summary>
-    private static void _ValidateMethodAccessibility(
-        MethodDeclarationSyntax methodDeclaration,
-        SourceProductionContext context
-    )
-    {
-        var hasPublicOrInternal = methodDeclaration.Modifiers.Any(m =>
-            m.IsKind(SyntaxKind.PublicKeyword) || m.IsKind(SyntaxKind.InternalKeyword)
-        );
-
-        if (!hasPublicOrInternal)
-        {
-            context.ReportDiagnostic(
-                Diagnostic.Create(
-                    DiagnosticDescriptors.MethodAccessibility,
-                    methodDeclaration.Identifier.GetLocation(),
-                    methodDeclaration.Identifier.Text
-                )
-            );
-        }
-    }
-
-    /// <summary>
-    /// Validates cron expression format and correctness.
+    /// Validates cron expression format; configuration placeholders (<c>%Key%</c>) are resolved at runtime and skipped.
     /// </summary>
     public static void ValidateCronExpression(
         string? cronExpression,
         string className,
         Location attributeLocation,
-        SourceProductionContext context
+        ICollection<DiagnosticInfo> diagnostics
     )
     {
-        // Skip validation if cron expression is null or empty (function name only attribute)
-        if (string.IsNullOrEmpty(cronExpression))
+        if (string.IsNullOrEmpty(cronExpression) || _IsConfigurationExpression(cronExpression!))
         {
             return;
         }
 
-        if (_IsConfigurationExpression(cronExpression))
-        {
-            return; // Skip validation for configuration expressions
-        }
-
         if (!CronValidator.IsValidCronExpression(cronExpression!))
         {
-            context.ReportDiagnostic(
-                Diagnostic.Create(
+            diagnostics.Add(
+                DiagnosticInfo.Create(
                     DiagnosticDescriptors.InvalidCronExpression,
                     attributeLocation,
                     cronExpression,
@@ -123,30 +86,17 @@ internal static class JobFunctionValidator
     }
 
     /// <summary>
-    /// Determines if a cron expression is a configuration placeholder.
-    /// </summary>
-    private static bool _IsConfigurationExpression(string? cronExpression)
-    {
-        if (string.IsNullOrEmpty(cronExpression))
-        {
-            return false;
-        }
-
-        return cronExpression!.StartsWith(SourceGeneratorConstants.ConfigExpressionPrefix, StringComparison.Ordinal)
-            && cronExpression.EndsWith(SourceGeneratorConstants.ConfigExpressionSuffix, StringComparison.Ordinal)
-            && cronExpression.Length >= SourceGeneratorConstants.MinConfigExpressionLength;
-    }
-
-    /// <summary>
     /// Validates that a class is not nested.
     /// </summary>
-    public static void ValidateNotNestedClass(ClassDeclarationSyntax classDeclaration, SourceProductionContext context)
+    public static void ValidateNotNestedClass(
+        ClassDeclarationSyntax classDeclaration,
+        ICollection<DiagnosticInfo> diagnostics
+    )
     {
-        // Check if the class is nested (has a parent class)
         if (classDeclaration.Parent is ClassDeclarationSyntax)
         {
-            context.ReportDiagnostic(
-                Diagnostic.Create(
+            diagnostics.Add(
+                DiagnosticInfo.Create(
                     DiagnosticDescriptors.NestedClass,
                     classDeclaration.Identifier.GetLocation(),
                     classDeclaration.Identifier.Text
@@ -160,90 +110,74 @@ internal static class JobFunctionValidator
     /// </summary>
     public static void ValidateMethodParameters(
         MethodDeclarationSyntax methodDeclaration,
-        IMethodSymbol? methodSymbol,
-        SourceProductionContext context
+        IMethodSymbol methodSymbol,
+        ICollection<DiagnosticInfo> diagnostics
     )
     {
-        if (methodSymbol == null)
-        {
-            return;
-        }
-
         foreach (var parameter in methodSymbol.Parameters)
         {
-            var parameterType = parameter.Type;
-            var parameterTypeString = parameterType.ToDisplayString();
+            var parameterTypeString = parameter.Type.ToDisplayString();
+            if (_IsAllowedParameterType(parameter.Type, parameterTypeString))
+            {
+                continue;
+            }
 
-            // Check if parameter is one of the allowed types
-            var isValidParameter = false;
+            var parameterSyntax = methodDeclaration.ParameterList.Parameters.FirstOrDefault(p =>
+                string.Equals(p.Identifier.Text, parameter.Name, StringComparison.Ordinal)
+            );
 
-            // Check for CancellationToken
-            if (
-                string.Equals(
-                    parameterTypeString,
-                    SourceGeneratorConstants.CancellationTokenTypeName,
-                    StringComparison.Ordinal
+            diagnostics.Add(
+                DiagnosticInfo.Create(
+                    DiagnosticDescriptors.InvalidMethodParameter,
+                    parameterSyntax?.GetLocation() ?? methodDeclaration.Identifier.GetLocation(),
+                    methodDeclaration.Identifier.Text,
+                    parameter.Name,
+                    parameterTypeString
                 )
-            )
-            {
-                isValidParameter = true;
-            }
-            // Check for non-generic JobFunctionContext
-            else if (
-                string.Equals(
-                    parameterTypeString,
-                    SourceGeneratorConstants.BaseJobFunctionContextTypeName,
-                    StringComparison.Ordinal
-                )
-            )
-            {
-                isValidParameter = true;
-            }
-            // Check for generic JobFunctionContext<T>
-            else if (
-                parameterType is INamedTypeSymbol { IsGenericType: true } namedType
-                && string.Equals(
-                    namedType.ConstructedFrom?.ToDisplayString(),
-                    "Headless.Jobs.Base.JobFunctionContext<T>",
-                    StringComparison.Ordinal
-                )
-            )
-            {
-                isValidParameter = true;
-            }
-            // Also check by namespace and name for more robust detection
-            else if (parameterType is INamedTypeSymbol namedType2)
-            {
-                var namespaceName = namedType2.ContainingNamespace?.ToDisplayString();
-                var typeName = namedType2.Name;
-
-                if (
-                    (
-                        string.Equals(namespaceName, "Headless.Jobs", StringComparison.Ordinal)
-                        || string.Equals(namespaceName, "Headless.Jobs.Base", StringComparison.Ordinal)
-                    ) && string.Equals(typeName, "JobFunctionContext", StringComparison.Ordinal)
-                )
-                {
-                    isValidParameter = true;
-                }
-            }
-
-            if (!isValidParameter)
-            {
-                var parameterSyntax = methodDeclaration.ParameterList.Parameters.FirstOrDefault(p =>
-                    string.Equals(p.Identifier.Text, parameter.Name, StringComparison.Ordinal)
-                );
-
-                context.ReportDiagnostic(
-                    Diagnostic.Create(
-                        DiagnosticDescriptors.InvalidMethodParameter,
-                        parameterSyntax?.GetLocation() ?? methodDeclaration.Identifier.GetLocation(),
-                        methodDeclaration.Identifier.Text,
-                        parameter.Name,
-                        parameterTypeString
-                    )
-                );
-            }
+            );
         }
     }
+
+    private static bool _IsAllowedParameterType(ITypeSymbol parameterType, string parameterTypeString)
+    {
+        if (
+            string.Equals(
+                parameterTypeString,
+                SourceGeneratorConstants.CancellationTokenTypeName,
+                StringComparison.Ordinal
+            )
+            || string.Equals(
+                parameterTypeString,
+                SourceGeneratorConstants.BaseJobFunctionContextTypeName,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return true;
+        }
+
+        if (
+            parameterType is INamedTypeSymbol { IsGenericType: true } genericType
+            && string.Equals(
+                genericType.ConstructedFrom.ToDisplayString(),
+                "Headless.Jobs.Base.JobFunctionContext<T>",
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return true;
+        }
+
+        return parameterType is INamedTypeSymbol namedType
+            && string.Equals(namedType.Name, "JobFunctionContext", StringComparison.Ordinal)
+            && namedType.ContainingNamespace?.ToDisplayString() is "Headless.Jobs" or "Headless.Jobs.Base";
+    }
+
+    private static bool _IsPublicOrInternal(SyntaxTokenList modifiers) =>
+        modifiers.Any(m => m.IsKind(SyntaxKind.PublicKeyword) || m.IsKind(SyntaxKind.InternalKeyword));
+
+    private static bool _IsConfigurationExpression(string cronExpression) =>
+        cronExpression.StartsWith(SourceGeneratorConstants.ConfigExpressionPrefix, StringComparison.Ordinal)
+        && cronExpression.EndsWith(SourceGeneratorConstants.ConfigExpressionSuffix, StringComparison.Ordinal)
+        && cronExpression.Length >= SourceGeneratorConstants.MinConfigExpressionLength;
 }

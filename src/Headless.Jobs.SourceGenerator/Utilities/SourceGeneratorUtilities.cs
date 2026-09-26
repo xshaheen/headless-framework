@@ -2,7 +2,6 @@
 
 using System.Globalization;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Headless.Jobs.SourceGenerator.Utilities;
@@ -34,7 +33,6 @@ internal static class SourceGeneratorUtilities
             return namespaceDeclaration.Name.ToString();
         }
 
-        // Check for file-scoped namespace
         var fileScopedNamespace = classDeclaration
             .Ancestors()
             .OfType<FileScopedNamespaceDeclarationSyntax>()
@@ -56,7 +54,7 @@ internal static class SourceGeneratorUtilities
     }
 
     /// <summary>
-    /// Determines if a method is awaitable (returns Task or Task<T>).</T>
+    /// Determines if a method is awaitable (returns <c>Task</c> or <c>Task&lt;T&gt;</c>).
     /// </summary>
     public static bool IsMethodAwaitable(MethodDeclarationSyntax methodDeclaration)
     {
@@ -64,31 +62,47 @@ internal static class SourceGeneratorUtilities
         return returnType.StartsWith("Task", StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// Formats the generated code using Roslyn's syntax tree formatting.
-    /// </summary>
-    public static string FormatCode(string code)
+    public static bool IsJobFunctionAttribute(AttributeData attribute) =>
+        string.Equals(
+            attribute.AttributeClass?.ToDisplayString(),
+            SourceGeneratorConstants.JobFunctionAttributeMetadataName,
+            StringComparison.Ordinal
+        );
+
+    public static bool IsJobsConstructorAttribute(AttributeData attribute)
     {
-        try
+        var attributeClass = attribute.AttributeClass;
+        if (attributeClass == null)
         {
-            var tree = CSharpSyntaxTree.ParseText(code);
-#pragma warning disable MA0045 // Formatting is part of the synchronous source-generation pipeline.
-            var root = tree.GetRoot();
-#pragma warning restore MA0045
-            var formatted = root.NormalizeWhitespace();
-            return formatted.ToFullString();
+            return false;
         }
-#pragma warning disable ERP022
-        catch
-        {
-            // If formatting fails, return the original code
-            return code;
-        }
-#pragma warning restore ERP022
+
+        var attributeName = attributeClass.Name;
+        var fullName = attributeClass.ToDisplayString();
+
+        return string.Equals(attributeName, "JobsConstructorAttribute", StringComparison.Ordinal)
+            || string.Equals(attributeName, "JobsConstructor", StringComparison.Ordinal)
+            || string.Equals(fullName, "Headless.Jobs.Base.JobsConstructorAttribute", StringComparison.Ordinal)
+            || string.Equals(fullName, "Headless.Jobs.Base.JobsConstructor", StringComparison.Ordinal);
+    }
+
+    public static bool IsFromKeyedServicesAttribute(AttributeData attribute)
+    {
+        var name = attribute.AttributeClass?.Name;
+        var fullName = attribute.AttributeClass?.ToDisplayString();
+        return string.Equals(name, SourceGeneratorConstants.FromKeyedServicesAttributeName, StringComparison.Ordinal)
+            || string.Equals(name, "FromKeyedServices", StringComparison.Ordinal)
+            || string.Equals(
+                fullName,
+                "Microsoft.Extensions.DependencyInjection.FromKeyedServicesAttribute",
+                StringComparison.Ordinal
+            )
+            || fullName?.EndsWith(SourceGeneratorConstants.FromKeyedServicesAttributeName, StringComparison.Ordinal)
+                == true;
     }
 
     /// <summary>
-    /// Gets the service key from a FromKeyedServicesAttribute.
+    /// Gets the service key from a FromKeyedServicesAttribute as a C# expression.
     /// </summary>
     public static string? GetServiceKey(AttributeData keyedServiceAttribute)
     {
@@ -109,9 +123,6 @@ internal static class SourceGeneratorUtilities
         return null;
     }
 
-    /// <summary>
-    /// Formats a service key value for C# code generation.
-    /// </summary>
     private static string _FormatServiceKeyValue(object value)
     {
         return value switch
@@ -126,74 +137,5 @@ internal static class SourceGeneratorUtilities
             bool b => b ? "true" : "false",
             _ => value.ToString(),
         };
-    }
-
-    /// <summary>
-    /// Creates type aliases for complex nested types and returns a dictionary of full type name to alias.
-    /// </summary>
-    public static Dictionary<string, string> CreateTypeAliases(IEnumerable<string> typeNames)
-    {
-        var aliases = new Dictionary<string, string>(StringComparer.Ordinal);
-        var usedAliases = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var typeName in typeNames.Where(t => !string.IsNullOrEmpty(t)))
-        {
-            // Create aliases for types that:
-            // 1. Have at least one dot (are qualified)
-            // 2. Are not in the same namespace as the target (to avoid conflicts)
-            if (typeName.Contains('.'))
-            {
-                var alias = _GenerateTypeAlias(typeName, usedAliases);
-                aliases[typeName] = alias;
-                usedAliases.Add(alias);
-            }
-        }
-
-        return aliases;
-    }
-
-    /// <summary>
-    /// Generates a unique type alias for a complex type name.
-    /// </summary>
-    private static string _GenerateTypeAlias(string fullTypeName, HashSet<string> usedAliases)
-    {
-        // Extract the simple type name from the end
-        var parts = fullTypeName.Split('.');
-        var simpleName = parts[parts.Length - 1]; // Last part
-
-        // If the simple name is unique, use it
-        if (!usedAliases.Contains(simpleName))
-        {
-            return simpleName;
-        }
-
-        // If not unique, try using just the parent namespace first (cleaner)
-        if (parts.Length > 1)
-        {
-            var parentName = parts[parts.Length - 2];
-            var parentAlias = $"{parentName}Alias";
-            if (!usedAliases.Contains(parentAlias))
-            {
-                return parentAlias;
-            }
-
-            // If parent name is also taken, combine parent + simple name
-            var combinedName = string.Concat(parentName, simpleName);
-            if (!usedAliases.Contains(combinedName))
-            {
-                return combinedName;
-            }
-        }
-
-        // If still not unique, add a number suffix
-        var counter = 1;
-        string candidate;
-        do
-        {
-            candidate = string.Concat(simpleName, counter.ToString(CultureInfo.InvariantCulture));
-            counter++;
-        } while (usedAliases.Contains(candidate));
-
-        return candidate;
     }
 }

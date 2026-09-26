@@ -1,0 +1,15 @@
+<Project>
+  <!--
+    Shared incremental-generator infrastructure, compiled into each Headless source generator as internal source.
+    Source inclusion rather than a project reference: an analyzer's own dependencies are not loaded from NuGet by the
+    compiler, so a separate assembly would have to be packed into every generator package and could version-conflict
+    between two generators loaded side by side.
+  -->
+  <ItemGroup>
+    <Compile
+      Include="$(MSBuildThisFileDirectory)**\*.cs"
+      Exclude="$(MSBuildThisFileDirectory)bin\**;$(MSBuildThisFileDirectory)obj\**"
+      Link="Shared\%(RecursiveDir)%(Filename)%(Extension)"
+    />
+  </ItemGroup>
+</Project>
