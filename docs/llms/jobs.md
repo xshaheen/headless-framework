@@ -469,6 +469,71 @@ public async Task RunAsync(JobFunctionContext context, CancellationToken cancell
 `Lateness` reports how late the run actually started. For a recovery run it measures from the first unaccounted-for
 missed instant, so it spans the unresolved part of the outage rather than the dispatch delay. It never goes negative.
 
+## Overlap policy
+
+A cron definition's **overlap policy** decides what happens when one of its occurrences becomes due while an earlier
+occurrence of the same definition is still unfinished. It is independent of the missed-run policy, which decides how
+many runs a backlog produces, and of the function's `MaxConcurrency`.
+
+| Policy | Behaviour |
+|---|---|
+| `Allow` (default) | Occurrences materialize on schedule whether or not an earlier one is unfinished. |
+| `Skip` | The due occurrence is written as `Skipped` instead of running, and the watermark moves past it. The instant counts as handled, so recovery never replays it. |
+
+An earlier occurrence is **unfinished** while it is `Idle`, `Queued`, or `InProgress`. That includes an `Idle`
+occurrence waiting to re-run after its node died and an `InProgress` occurrence whose lease has lapsed but which the
+reclaim sweep has not yet resolved. Under `NodeDeathPolicy.Retry` both run again, so treating them as finished would
+start the next occurrence alongside them.
+
+Example, an hourly definition with `Skip`: the 02:00 occurrence is still `InProgress` at 03:00. The 03:00 occurrence is
+written as `Skipped` with the reason `"Skipped by overlap policy: an earlier occurrence was still unfinished"`. If the
+02:00 run finishes at 03:40, the 04:00 occurrence runs normally.
+
+The policy is enforced **cluster-wide**, when the occurrence falls due, inside the same transaction that moves the
+watermark and while the definition row is locked. Every scheduler path that creates an occurrence takes that lock
+first, so two nodes cannot both decide an instant is free. The policy covers:
+
+- **Ordinary ticks.** The due occurrence is created as `Skipped` instead of `Idle`.
+- **Missed-run recovery.** The single run a recovery produces is judged after recovery retires the backlog, and is
+  written as `Skipped` if an execution that started before the outage is still unfinished.
+- **Schedule edits and resumes.** These normally create the next occurrence ahead of time. Under `Skip`, while an
+  occurrence is unfinished, they leave that instant empty instead, and materialization creates and judges it when it
+  falls due. A row created ahead of time and still `Idle` when its instant falls due is also judged then.
+
+`MaxConcurrency` is a different control. It caps concurrent executions of one **function** on one **node**, and it is
+applied later, at admission. The two never contradict: the overlap policy decides whether an occurrence exists to run,
+and `MaxConcurrency` decides when a node starts the ones that do. An occurrence waiting in `Queued` for a
+`MaxConcurrency` slot is unfinished, so under `Skip` it blocks the next instant.
+
+Not covered: an on-demand run started from the dashboard is an explicit operator action and is not subject to the
+policy, although it does count as unfinished for the next scheduled instant. Cancelling the running occurrence in
+favour of the new one (`Replace`) is not offered, because cron occurrences have no durable cross-node cancellation to
+build it on.
+
+### Configuring it
+
+```csharp
+[JobFunction("reports.nightly", "0 0 2 * * *", OnOverlap = CronOverlapPolicy.Skip)]
+public Task RunAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+```
+
+```csharp
+builder.ConfigureScheduler(scheduler => scheduler.DefaultOverlapPolicy = CronOverlapPolicy.Skip);
+```
+
+The configuration surface is the missed-run policy's: the attribute seeds the definition at creation only, the
+scheduler-wide `DefaultOverlapPolicy` applies when the attribute leaves it unset, and the persisted `OnOverlap` value
+on the definition is the authority. Change it at runtime through `ICronJobManager.UpdateAsync`; a change takes effect
+on the next materialization without bumping the schedule revision.
+
+### Observing it
+
+- The skipped occurrence stays visible as a `Skipped` row with the overlap reason, including on the dashboard.
+- The `headless.jobs.cron.occurrences.skipped` counter on the `Headless.Jobs` meter counts skipped occurrences, tagged
+  with `headless.jobs.skip_reason` (`overlap`, or `missed_run` for occurrences a recovery retired) and
+  `headless.jobs.function`.
+- Each overlap skip is logged at `Information` level with event ID 3242.
+
 ### Schedule-interpretation drift
 
 An expression and a timezone identifier can stay byte-identical while the instant they resolve to moves — a tzdata
@@ -538,7 +603,7 @@ Contracts, entity types, manager interfaces, and execution primitives for the Jo
 - **Scheduling options**: `JobOptions` and `RecurringJobOptions` map description, durable retry count/intervals, node-death policy, and the `Enlistment: TransactionEnlistment` requirement; recurring options also accept a nullable IANA `TimeZoneId`. Priority remains generated function metadata.
 - **Manager interfaces**: `ITimeJobManager<TTimeJob>` and `ICronJobManager<TCronJob>` with `AddAsync`, `AddBatchAsync`, `UpdateAsync`, `UpdateBatchAsync`, `DeleteAsync`, `DeleteBatchAsync`.
 - **Entity types**: `TimeJobEntity` / `TimeJobEntity<TTicker>` (parent–child chains), `CronJobEntity`, `CronJobOccurrenceEntity`, and `BaseJobEntity`. New entities keep `Id`, `CreatedAt`, and `UpdatedAt` unset until a Jobs manager stamps them during `AddAsync` / `AddBatchAsync`.
-- **Execution context**: `JobFunctionContext` and `JobFunctionContext<TRequest>` — exposes `Id`, `Type`, `RetryCount`, `IsDue`, `ScheduledFor`, `FunctionName`, `CronOccurrenceOperations`, and durable `RequestCancellationAsync()` for time jobs.
+- **Execution context**: `JobFunctionContext` and `JobFunctionContext<TRequest>` — exposes `Id`, `Type`, `RetryCount`, `IsDue`, `ScheduledFor`, `FunctionName`, and durable `RequestCancellationAsync()` for time jobs.
 - **Generated execution delegate**: `JobFunctionDelegate(IServiceProvider, JobFunctionContext, CancellationToken)` keeps the cancellation token last. The generator emits this delegate shape for the runtime.
 - **Attribute types**: `JobFunctionAttribute` (`[JobFunction]`) for function/cron registration; `JobsConstructorAttribute` (`[JobsConstructor]`) for custom DI injection.
 - **Retry primitives**: `TimeJobEntity.Retries`, `RetryIntervals`, `RetryCount`; `CronJobEntity.Retries`, `RetryIntervals`.
@@ -1415,21 +1480,9 @@ Overloads:
 
 #### Cron Occurrence Skipping
 
-Prevent overlapping cron runs:
-
-```csharp
-[JobFunction("LongCron", cronExpression: "0 * * * *")]
-public sealed class LongRunningCronJob
-{
-    public async Task ExecuteAsync(JobFunctionContext context, CancellationToken ct)
-    {
-        context.CronOccurrenceOperations.SkipIfAlreadyRunning();
-        await RunLongTaskAsync(ct);
-    }
-}
-```
-
-`SkipIfAlreadyRunning()` transitions the occurrence to `Skipped` status if another occurrence of the same cron job is currently `InProgress`.
+To keep occurrences of one cron definition from overlapping, set its [overlap policy](#overlap-policy) to `Skip`. The
+policy is enforced cluster-wide before the occurrence starts. A job body should not check for a running sibling
+itself: a check made inside the job sees only the current node.
 
 #### Job Status Reference
 
@@ -1442,7 +1495,7 @@ public sealed class LongRunningCronJob
 | `DueDone` | Cron occurrence completed within its due window |
 | `Failed` | Retries exhausted or unhandled exception |
 | `Cancelled` | Idle cancellation was accepted, or an executing time job cooperatively exited after observing durable `CancelRequested`; host shutdown and lease loss do not write this status |
-| `Skipped` | `TerminateExecutionException` or `SkipIfAlreadyRunning()` |
+| `Skipped` | `TerminateExecutionException`, or the scheduler retired the occurrence before it ran (pause, definition update, missed-run recovery, overlap policy, dead owner) |
 
 #### Node-Death Policy (OnNodeDeath)
 

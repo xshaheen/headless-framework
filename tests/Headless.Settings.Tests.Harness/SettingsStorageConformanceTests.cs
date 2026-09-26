@@ -173,4 +173,37 @@ public abstract class SettingsStorageConformanceTests<TFixture>(TFixture fixture
         var stored = await repository.GetListAsync("Tenant", "t1", AbortToken);
         stored.Should().ContainSingle().Which.Value.Should().MatchRegex("^v[0-7]$");
     }
+
+    [Fact]
+    public async Task should_refuse_a_padded_provider_key_and_leave_the_unpadded_row_intact()
+    {
+        // given a stored "acme" row; SQL Server compares "acme " equal to it, PostgreSQL does not
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<ISettingValueRecordRepository>();
+        var store = new SettingValueStore(
+            repository,
+            Substitute.For<ISettingDefinitionManager>(),
+            new SequentialGuidGenerator(SequentialGuidType.Version7),
+            host.Services.GetRequiredService<ICache<SettingValueCacheItem>>(),
+            Options.Create(new SettingManagementOptions())
+        );
+        await repository.InsertAsync(
+            new SettingValueRecord(Guid.NewGuid(), "Theme", "Dark", "Tenant", "acme"),
+            AbortToken
+        );
+
+        // when
+        var set = async () => await store.SetAsync("Theme", "Light", "Tenant", "acme ", AbortToken);
+        var get = async () => await store.GetOrDefaultAsync("Theme", "Tenant", "acme ", AbortToken);
+        var delete = async () => await store.DeleteAsync("Theme", "Tenant", "acme ", AbortToken);
+
+        // then
+        await set.Should().ThrowExactlyAsync<ArgumentException>();
+        await get.Should().ThrowExactlyAsync<ArgumentException>();
+        await delete.Should().ThrowExactlyAsync<ArgumentException>();
+        var stored = await repository.GetListAsync("Tenant", "acme", AbortToken);
+        stored.Should().ContainSingle().Which.Value.Should().Be("Dark");
+    }
 }

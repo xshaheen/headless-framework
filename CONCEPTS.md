@@ -344,6 +344,13 @@ An opaque hash of the rules a projection was derived under — cron-library sema
 effective timezone's DST rules. Only equality is meaningful: a mismatch means an identical
 expression and timezone would now resolve to a different instant.
 
+### Unfinished occurrence
+
+An occurrence of a cron definition that is `Idle`, `Queued`, or `InProgress`, whatever its lease
+state. The overlap policy decides whether a newly due occurrence of the same definition may run while
+one exists. An idle retry after a node death and an in-progress row with a lapsed lease both count,
+because either can run again.
+
 ## Jobs (chains)
 
 ### Job chain

@@ -349,6 +349,19 @@ public sealed class JobsOptionsBuilderTests
         act.Should().Throw<InvalidOperationException>().WithMessage("*DefaultMissedRunPolicy*");
     }
 
+    [Fact]
+    public void add_headless_jobs_rejects_an_undefined_default_overlap_policy()
+    {
+        var services = new ServiceCollection();
+
+        var act = () =>
+            services.AddHeadlessJobs(options =>
+                options.ConfigureScheduler(scheduler => scheduler.DefaultOverlapPolicy = (CronOverlapPolicy)999)
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*DefaultOverlapPolicy*");
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]

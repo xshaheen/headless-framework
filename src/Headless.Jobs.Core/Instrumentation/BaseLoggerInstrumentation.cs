@@ -68,6 +68,17 @@ internal abstract class JobsBaseLoggerInstrumentation(ILogger logger, IJobsOwner
         );
     }
 
+    public virtual void LogCronOccurrenceSkippedForOverlap(
+        Guid cronJobId,
+        string functionName,
+        Guid occurrenceId,
+        DateTime executionTimeUtc,
+        bool isRecoveryRun
+    )
+    {
+        logger.CronOccurrenceSkippedForOverlap(cronJobId, functionName, occurrenceId, executionTimeUtc, isRecoveryRun);
+    }
+
     public virtual void LogCronFingerprintRebased(
         Guid cronJobId,
         string functionName,
@@ -181,6 +192,21 @@ internal static partial class JobsBaseLoggerInstrumentationLog
         DateTime earliestMissedUtc,
         DateTime latestMissedUtc,
         int skippedOccurrenceCount
+    );
+
+    [LoggerMessage(
+        EventId = 3242,
+        Level = LogLevel.Information,
+        Message = "Cron {Function} ({CronJobId}) occurrence {OccurrenceId} at {ExecutionTimeUtc:O} skipped by overlap "
+            + "policy: an earlier occurrence was still unfinished (recovery run: {IsRecoveryRun})."
+    )]
+    public static partial void CronOccurrenceSkippedForOverlap(
+        this ILogger logger,
+        Guid cronJobId,
+        string function,
+        Guid occurrenceId,
+        DateTime executionTimeUtc,
+        bool isRecoveryRun
     );
 
     [LoggerMessage(

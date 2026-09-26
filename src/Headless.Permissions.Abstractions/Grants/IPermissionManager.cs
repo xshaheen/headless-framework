@@ -94,5 +94,8 @@ public interface IPermissionManager
     /// Removes every permission grant (both grants and explicit prohibitions) recorded for the given provider
     /// target. Typically called when a user or role itself is deleted.
     /// </summary>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="providerName"/> or <paramref name="providerKey"/> starts or ends with white space.
+    /// </exception>
     Task DeleteAsync(string providerName, string providerKey, CancellationToken cancellationToken = default);
 }

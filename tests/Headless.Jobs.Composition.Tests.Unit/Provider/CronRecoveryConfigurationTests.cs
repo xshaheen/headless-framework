@@ -32,7 +32,7 @@ public sealed class CronRecoveryConfigurationTests : TestBase
         var provider = _Create();
 
         await provider.MigrateDefinedCronJobsAsync(
-            [new CronSeedDefinition("seeded", "0 * * * * *", MissedRunPolicy.Skip, 300)],
+            [new CronSeedDefinition("seeded", "0 * * * * *", MissedRunPolicy.Skip, 300, CronOverlapPolicy.Allow)],
             AbortToken
         );
 
@@ -56,7 +56,7 @@ public sealed class CronRecoveryConfigurationTests : TestBase
 
         // Boot 1: the attribute seeds Coalesce/60.
         await provider.MigrateDefinedCronJobsAsync(
-            [new CronSeedDefinition("seeded", "0 * * * * *", MissedRunPolicy.Coalesce, 60)],
+            [new CronSeedDefinition("seeded", "0 * * * * *", MissedRunPolicy.Coalesce, 60, CronOverlapPolicy.Allow)],
             AbortToken
         );
         var created = (await provider.GetCronJobsAsync(predicate: null, AbortToken)).Single();
@@ -74,7 +74,7 @@ public sealed class CronRecoveryConfigurationTests : TestBase
 
         // Boot 2: the application restarts and reconciles the same declared function, attribute values unchanged.
         await provider.MigrateDefinedCronJobsAsync(
-            [new CronSeedDefinition("seeded", "0 * * * * *", MissedRunPolicy.Coalesce, 60)],
+            [new CronSeedDefinition("seeded", "0 * * * * *", MissedRunPolicy.Coalesce, 60, CronOverlapPolicy.Allow)],
             AbortToken
         );
 
@@ -90,7 +90,7 @@ public sealed class CronRecoveryConfigurationTests : TestBase
     {
         var provider = _Create();
         await provider.MigrateDefinedCronJobsAsync(
-            [new CronSeedDefinition("seeded", "0 * * * * *", MissedRunPolicy.Coalesce, 60)],
+            [new CronSeedDefinition("seeded", "0 * * * * *", MissedRunPolicy.Coalesce, 60, CronOverlapPolicy.Allow)],
             AbortToken
         );
         var created = (await provider.GetCronJobsAsync(predicate: null, AbortToken)).Single();
@@ -105,7 +105,7 @@ public sealed class CronRecoveryConfigurationTests : TestBase
 
         // A code change alters the declared expression — the reconciliation path that DOES mutate the row.
         await provider.MigrateDefinedCronJobsAsync(
-            [new CronSeedDefinition("seeded", "0 */5 * * * *", MissedRunPolicy.Coalesce, 60)],
+            [new CronSeedDefinition("seeded", "0 */5 * * * *", MissedRunPolicy.Coalesce, 60, CronOverlapPolicy.Allow)],
             AbortToken
         );
 

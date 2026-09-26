@@ -37,8 +37,8 @@ public enum JobStatus
     Cancelled = 6,
 
     /// <summary>
-    /// Execution was intentionally skipped — for example via <c>CronOccurrenceOperations.SkipIfAlreadyRunning</c>
-    /// or by throwing <c>TerminateExecutionException</c> with this status.
+    /// Execution was intentionally skipped — by a job function throwing <c>TerminateExecutionException</c>, or by the
+    /// scheduler (a paused or updated definition, a missed-run recovery, or a cron overlap policy) before it ran.
     /// </summary>
     Skipped = 7,
 }

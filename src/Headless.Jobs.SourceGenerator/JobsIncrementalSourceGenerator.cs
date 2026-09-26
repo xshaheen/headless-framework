@@ -235,6 +235,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                 attributeValues.cronExpression,
                 attributeValues.onMissedRun,
                 attributeValues.missedRunGraceSeconds,
+                attributeValues.onOverlap,
                 jobFunctionAttributeData.NamedArguments.Any(x =>
                     string.Equals(x.Key, "ContractVersion", StringComparison.Ordinal)
                 )
@@ -262,6 +263,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         string? cronExpression,
         int? onMissedRun,
         int? missedRunGraceSeconds,
+        int? onOverlap,
         string contractVersion,
         string assemblyName,
         HashSet<string>? typeNameConflicts = null
@@ -281,6 +283,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             cronExpression!,
             onMissedRun,
             missedRunGraceSeconds,
+            onOverlap,
             assemblyName,
             typeNameConflicts
         );

@@ -12,14 +12,15 @@ internal static class ExtractAttributeExtensions
         int taskPriority,
         int maxConcurrency,
         int? onMissedRun,
-        int? missedRunGraceSeconds
+        int? missedRunGraceSeconds,
+        int? onOverlap
     ) GetJobFunctionAttributeValues(this AttributeData attrData)
     {
         // If for some reason there is no ctor (should be rare), return defaults
         var ctor = attrData.AttributeConstructor;
         if (ctor == null)
         {
-            return (null, null, 0, 0, null, null);
+            return (null, null, 0, 0, null, null, null);
         }
 
         var parameters = ctor.Parameters;
@@ -65,6 +66,7 @@ internal static class ExtractAttributeExtensions
         // that difference because attribute arguments cannot be nullable value types.
         int? onMissedRun = null;
         int? missedRunGraceSeconds = null;
+        int? onOverlap = null;
 
         foreach (var named in attrData.NamedArguments)
         {
@@ -76,6 +78,12 @@ internal static class ExtractAttributeExtensions
                         onMissedRun = policyValue;
                     }
                     break;
+                case "OnOverlap":
+                    if (named.Value.Value is int overlapValue)
+                    {
+                        onOverlap = overlapValue;
+                    }
+                    break;
                 case "MissedRunGraceSeconds":
                     if (named.Value.Value is int graceValue)
                     {
@@ -85,6 +93,14 @@ internal static class ExtractAttributeExtensions
             }
         }
 
-        return (functionName, cronExpression, taskPriority, maxConcurrency, onMissedRun, missedRunGraceSeconds);
+        return (
+            functionName,
+            cronExpression,
+            taskPriority,
+            maxConcurrency,
+            onMissedRun,
+            missedRunGraceSeconds,
+            onOverlap
+        );
     }
 }

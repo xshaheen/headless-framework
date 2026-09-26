@@ -1427,6 +1427,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 expression,
                 onMissedRun,
                 missedRunGraceSeconds,
+                onOverlap,
                 evaluationFingerprint,
                 contractVersion
             ) in cronJobs
@@ -1509,6 +1510,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 // construction — which is why no provenance marker is persisted.
                 OnMissedRun = onMissedRun,
                 MissedRunGraceSeconds = missedRunGraceSeconds,
+                OnOverlap = onOverlap,
                 EvaluationFingerprint = evaluationFingerprint,
             };
 
@@ -1841,6 +1843,31 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 skippedCount++;
             }
 
+            CronJobOccurrenceEntity<TCronJob>? overlapSkippedRun = null;
+
+            // Judged after the backlog is resolved, as in the relational provider: rows just retired no longer count,
+            // and whatever is still unfinished was started before this recovery and would overlap the coalesced run.
+            if (
+                coalescedRun is not null
+                && CronOverlapRule.ForbidsOverlap(current.OnOverlap)
+                && _cronOccurrences.Values.Any(x =>
+                    x.CronJobId == request.CronJobId
+                    && x.Id != coalescedRun.Id
+                    && CronOverlapRule.IsUnfinished(x.Status)
+                )
+            )
+            {
+                var skippedRun = _CloneCronOccurrence(_cronOccurrences[coalescedRun.Id]);
+                skippedRun.Status = JobStatus.Skipped;
+                skippedRun.ExecutedAt = request.OperationTimeUtc;
+                skippedRun.UpdatedAt = request.OperationTimeUtc;
+                skippedRun.SkippedReason = CronOverlapRule.SkippedReason;
+                skippedRun.Disposition = CronOccurrenceDisposition.Accounted;
+                _cronOccurrences[skippedRun.Id] = skippedRun;
+                overlapSkippedRun = _CloneCronOccurrence(skippedRun);
+                coalescedRun = null;
+            }
+
             var updated = _CloneCronJob(current);
             updated.ReconciledThroughUtc = resolution.ReconciledThroughUtc;
             updated.NextDueUtc = resolution.NextDueUtc;
@@ -1851,6 +1878,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 {
                     CoalescedRun = coalescedRun,
                     SkippedOccurrenceCount = skippedCount,
+                    OverlapSkippedRun = overlapSkippedRun,
                     ReconciledThroughUtc = updated.ReconciledThroughUtc,
                     NextDueUtc = updated.NextDueUtc,
                 }
@@ -2055,6 +2083,12 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             {
                 // Nothing here accounts for the instant — either no row at all, or only rows a seeding migration
                 // retired without a replacement. Both owe the fire, so both materialize.
+                // The per-definition lock held here is the materialization mutex the overlap rule relies on.
+                var skipForOverlap =
+                    CronOverlapRule.ForbidsOverlap(current.OnOverlap)
+                    && _cronOccurrences.Values.Any(x =>
+                        x.CronJobId == current.Id && CronOverlapRule.IsUnfinished(x.Status)
+                    );
                 CronJobOccurrenceEntity<TCronJob> created;
 
                 do
@@ -2065,19 +2099,29 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         CronJobId = current.Id,
                         CronJob = current,
                         ExecutionTime = materialization.ExecutionTimeUtc,
-                        Status = JobStatus.Idle,
+                        Status = skipForOverlap ? JobStatus.Skipped : JobStatus.Idle,
                         OwnerId = null,
                         LockedUntil = null,
                         OnNodeDeath = current.OnNodeDeath,
                         CreatedAt = storeUtcNow,
                         UpdatedAt = storeUtcNow,
                     };
+
+                    if (skipForOverlap)
+                    {
+                        created.ExecutedAt = storeUtcNow;
+                        created.SkippedReason = CronOverlapRule.SkippedReason;
+                        created.Disposition = CronOccurrenceDisposition.Accounted;
+                    }
+
                     created.SnapshotContract(current);
                 } while (!_cronOccurrences.TryAdd(created.Id, created));
 
                 occurrenceId = created.Id;
                 occurrenceCreatedAt = created.CreatedAt;
-                outcome = CronScheduleMaterializationOutcome.OccurrenceCreated;
+                outcome = skipForOverlap
+                    ? CronScheduleMaterializationOutcome.OccurrenceSkippedForOverlap
+                    : CronScheduleMaterializationOutcome.OccurrenceCreated;
             }
             else
             {
@@ -2086,6 +2130,31 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 outcome = existing.IsLive
                     ? CronScheduleMaterializationOutcome.OccurrenceExists
                     : CronScheduleMaterializationOutcome.OccurrenceAlreadyTerminal;
+
+                // A live row created ahead of its instant is judged for overlap now, when due; only a still-idle row
+                // is retired, as in the relational provider.
+                var existingId = existing.Id;
+                if (
+                    existing.IsLive
+                    && CronOverlapRule.ForbidsOverlap(current.OnOverlap)
+                    && _cronOccurrences.TryGetValue(existingId, out var existingRow)
+                    && existingRow.Status == JobStatus.Idle
+                    && _cronOccurrences.Values.Any(x =>
+                        x.CronJobId == current.Id && x.Id != existingId && CronOverlapRule.IsUnfinished(x.Status)
+                    )
+                )
+                {
+                    var retired = _CloneCronOccurrence(existingRow);
+                    retired.Status = JobStatus.Skipped;
+                    retired.OwnerId = null;
+                    retired.LockedUntil = null;
+                    retired.ExecutedAt = storeUtcNow;
+                    retired.UpdatedAt = storeUtcNow;
+                    retired.SkippedReason = CronOverlapRule.SkippedReason;
+                    retired.Disposition = CronOccurrenceDisposition.Accounted;
+                    _cronOccurrences[existingId] = retired;
+                    outcome = CronScheduleMaterializationOutcome.OccurrenceSkippedForOverlap;
+                }
             }
 
             // No cancellation or fallible work is allowed between publishing the durable outcome and advancing the
@@ -2202,10 +2271,14 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.FingerprintFailureCount = 0;
             updated.FingerprintRetryAfterUtc = null;
 
-            var replacement = _CloneCronOccurrence(nextOccurrence);
-            replacement.CronJob = updated;
-            replacement.SnapshotContract(updated);
-            _cronOccurrences[nextOccurrence.Id] = replacement;
+            if (!_DefersReplacementToMaterialization(cronJobId, updated.OnOverlap))
+            {
+                var replacement = _CloneCronOccurrence(nextOccurrence);
+                replacement.CronJob = updated;
+                replacement.SnapshotContract(updated);
+                _cronOccurrences[nextOccurrence.Id] = replacement;
+            }
+
             _SetCronJob(updated);
 
             return Task.FromResult<TCronJob?>(_CloneCronJob(updated));
@@ -2354,7 +2427,11 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         _cronOccurrences[pair.Key] = skipped;
                     }
 
-                    if (replacement is not null)
+                    // Judged after the idle and queued rows above are retired, as in the relational provider.
+                    if (
+                        replacement is not null
+                        && !_DefersReplacementToMaterialization(definition.Id, definition.OnOverlap)
+                    )
                     {
                         _cronOccurrences[replacement.Id] = replacement;
                     }
@@ -3484,6 +3561,15 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             _cronJobsByNextDue.Remove(entry);
         }
     }
+
+    /// <summary>
+    /// Whether a schedule edit or resume must leave its next occurrence to materialization instead of inserting it now,
+    /// because the definition forbids overlap and an occurrence is still unfinished. See the relational provider's
+    /// <c>_DefersReplacementToMaterializationAsync</c> for why the pre-created row would otherwise escape the policy.
+    /// </summary>
+    private bool _DefersReplacementToMaterialization(Guid cronJobId, CronOverlapPolicy onOverlap) =>
+        CronOverlapRule.ForbidsOverlap(onOverlap)
+        && _cronOccurrences.Values.Any(x => x.CronJobId == cronJobId && CronOverlapRule.IsUnfinished(x.Status));
 
     private static TCronJob _CloneCronJob(TCronJob job)
     {
