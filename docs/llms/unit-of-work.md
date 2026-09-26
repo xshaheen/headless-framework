@@ -206,15 +206,15 @@ using Headless.UnitOfWork;  // IUnitOfWorkFactory and the unit.Outbox / unit.Job
 
 public sealed class PlaceOrderHandler(IUnitOfWorkFactory factory, AppDbContext db)
 {
-    public async Task<Result<OrderId>> Handle(PlaceOrder cmd, CancellationToken ct)
+    public async Task<OrderId> Handle(PlaceOrder cmd, CancellationToken ct)
     {
         await using var unit = await factory.BeginAsync(db, cancellationToken: ct); // the EF provider's overload
         db.Orders.Add(order);
         await db.SaveChangesAsync(ct);
         await unit.Outbox.PublishAsync(new OrderPlaced(orderId), ct);              // row inside this unit's transaction
-        await unit.Jobs.ScheduleAsync(ExpireReservation, orderId, dueAt, ct);      // job row inside the same transaction
+        await unit.Jobs.ScheduleAsync(new ExpireReservation(orderId), dueAt, ct);  // job row inside the same transaction
         await unit.CompleteAsync(ct);                                              // commit, then dispatch both
-        return Result.Ok(orderId);
+        return orderId;
     }
 }
 ```
@@ -342,13 +342,16 @@ if (db.UnitOfWork() is { } bound)
 // Or wrap your own work in RunAsync as if you owned the transaction: under a caller that already began on
 // this context, the block joins that unit (receives the same handle, commits nothing itself); with no caller
 // unit, it begins and commits its own. Either way the service composes.
-public Task ReserveStockAsync(OrderId id, CancellationToken ct) =>
-    factory.RunAsync(db, async (unit, ct) =>
-    {
-        db.Reservations.Add(new Reservation(id));
-        await db.SaveChangesAsync(ct);
-        await unit.Jobs.ScheduleAsync(new ReleaseReservation(id), dueAt, ct);
-    }, cancellationToken: ct);
+public sealed class StockService(IUnitOfWorkFactory factory, MyDbContext db)
+{
+    public Task ReserveStockAsync(OrderId id, DateTimeOffset dueAt, CancellationToken ct) =>
+        factory.RunAsync(db, async (unit, ct) =>
+        {
+            db.Reservations.Add(new Reservation(id));
+            await db.SaveChangesAsync(ct);
+            await unit.Jobs.ScheduleAsync(new ReleaseReservation(id), dueAt, ct);
+        }, cancellationToken: ct);
+}
 ```
 
 The same shapes apply to a `HeadlessDbContext` and a `HeadlessIdentityDbContext` (in `Headless.EntityFramework`) and to a plain `DbContext` alike: the receiver is always the singleton `IUnitOfWorkFactory`, never the context.
@@ -455,7 +458,8 @@ using Microsoft.Data.SqlClient;
 
 services.AddSqlServerUnitOfWork();
 
-// factory is the singleton IUnitOfWorkFactory.
+// factory is the singleton IUnitOfWorkFactory; BeginAsync opens a closed connection.
+await using var connection = new SqlConnection(connectionString);
 await using var unit = await factory.BeginAsync(connection, cancellationToken: ct);
 var relational = (IRelationalUnitOfWorkResource)unit.Resource!;
 await using (var command = new SqlCommand("INSERT INTO orders (id) VALUES (@id)", connection, (SqlTransaction)relational.Transaction))
@@ -470,6 +474,10 @@ await unit.CompleteAsync(ct);
 Observed mode, for a transaction you own:
 
 ```csharp
+using Microsoft.Data.SqlClient;
+
+await using var connection = new SqlConnection(connectionString);
+await connection.OpenAsync(ct);
 await using var tx = (SqlTransaction)await connection.BeginTransactionAsync(ct);
 await using var unit = factory.Enlist(connection, tx);
 // ... raw-ADO work + unit.Outbox publishes ...

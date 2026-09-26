@@ -235,6 +235,7 @@ dotnet add package Headless.EntityFramework
 
 ### Setup and use
 
+<!-- example: boot -->
 ```csharp
 public sealed class AppDbContext(
     HeadlessDbContextServices services,
@@ -341,6 +342,7 @@ The raw PostgreSQL and SQL Server audit packages are storage providers. They can
 
 Disabled by default. `TenantWriteGuardOptions.IsEnabled` is read-only to consumers. Enable validation and tenant stamping through the tenancy builder:
 
+<!-- example: boot -->
 ```csharp
 builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
 ```
@@ -373,6 +375,8 @@ Bulk `ExecuteUpdate` and `ExecuteDelete` use query filters but skip the save gua
 #### Tenant ownership
 
 Configure ownership after the base model call. These declarations take effect at model finalization, after application mappings:
+
+<!-- example: fragment -->
 
 ```csharp
 protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -416,6 +420,8 @@ Existing `IMultiTenant` columns gain tenant concurrency-token metadata without f
 
 Each feature-storage EF package exposes a `ModelBuilder` extension. Call them inside `OnModelCreating` after `base.OnModelCreating(modelBuilder)`:
 
+<!-- example: fragment -->
+
 ```csharp
 protected override void OnModelCreating(ModelBuilder modelBuilder)
 {
@@ -431,7 +437,10 @@ These read `Schema` and `*TableName` from validated `*StorageOptions` and apply 
 
 #### Custom Save Processors
 
+<!-- example: boot -->
 ```csharp
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+
 public sealed class AppSaveEntryProcessor : IHeadlessSaveEntryProcessor
 {
     public void Process(EntityEntry entry, HeadlessSaveEntryContext context)
@@ -566,21 +575,26 @@ dotnet add package Headless.Couchbase
 ### Setup and use
 
 ```csharp
-// Define a typed bucket context
+using Couchbase;
+using Couchbase.Linq;
+using Couchbase.Transactions;
+
+// Define a typed bucket context; the provider wires each attributed IDocumentSet<T> property to its collection
 public sealed class AppBucketContext(
     IBucket bucket,
     Transactions transactions,
     ILogger<CouchbaseBucketContext> logger
 ) : CouchbaseBucketContext(bucket, transactions, logger)
 {
-    public DocumentSet<Product> Products => GetDocumentSet<Product>("products");
+    [CouchbaseCollection("_default", "products")]
+    public IDocumentSet<Product> Products { get; set; } = null!;
 }
 
 // Resolve context via the provider (typically injected via ICouchbaseClustersProvider + IBucketContextProvider)
 var context = await bucketContextProvider.GetAsync<AppBucketContext>(
     clusterKey: "default",
     bucketName: "app",
-    defaultScopeName: "_default"
+    defaultScopeName: null // use each document set's declared scope
 );
 
 // KV operations via DocumentSetExtensions
@@ -608,6 +622,7 @@ await context.ExecuteTransactionAsync(async attempt =>
 - Resolve `IBucketContextProvider` from DI to get typed bucket contexts.
 - Use `ICouchbaseManager` during application startup or `IInitializer` to bootstrap scopes, collections, and indexes idempotently.
 
+<!-- example: boot -->
 ```csharp
 // Supply the two application-specific providers (or register the shipped defaults):
 services.AddSingleton<ICouchbaseClusterOptionsProvider, MyClusterOptionsProvider>();
