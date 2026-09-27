@@ -22,7 +22,9 @@ namespace Headless.Abstractions;
 /// rejection only when none is already present. ASP.NET Core keeps invoking authorization handlers after
 /// one fails, so a later handler that overwrote the slot would replace the response the earlier failure
 /// chose — including the tenant identifier mismatch rejection, which exists to stay indistinguishable
-/// from an unknown tenant.
+/// from an unknown tenant. Ownership is decided when the rejection is set, not when the response is
+/// written: a rejection that later declines the final status still keeps a later handler's rejection out,
+/// and the rewriter then applies its default handling.
 /// </para>
 /// </remarks>
 [PublicAPI]
