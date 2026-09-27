@@ -20,6 +20,8 @@ builder.Services.AddHeadlessCoordination(setup => setup.UsePostgreSql(connection
 // Jobs setup with a PostgreSQL operational store.
 builder.Services.AddHeadlessJobs(options =>
 {
+    // Registers this project's [JobFunction] methods; add one module per assembly that declares jobs.
+    options.AddModule<Headless.Jobs.Api.Demo.JobsModule>();
     options.UseEntityFramework(efOptions =>
     {
         efOptions.UseJobsDbContext<JobsDbContext>(dbOptions =>

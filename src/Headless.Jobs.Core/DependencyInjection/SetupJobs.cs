@@ -59,8 +59,8 @@ public static class SetupJobs
     /// the <c>IJobScheduler</c> facade, background services (unless disabled), the in-memory persistence
     /// default (replaced by durable providers such as <c>UseEntityFramework</c>), and the per-host
     /// <see cref="JobsRequestSerializationOptions"/> singleton. The <paramref name="optionsBuilder"/>
-    /// callback also completes job-function discovery: every <c>AddJobsDiscovery</c> assembly must be
-    /// registered inside it, after which the host's function registry is frozen.
+    /// callback also completes job-function discovery: every generated module must be added inside it with
+    /// <c>AddModule</c>, after which the host's function registry is frozen.
     /// </summary>
     /// <typeparam name="TTimeJob">The application's concrete time job entity type.</typeparam>
     /// <typeparam name="TCronJob">The application's concrete cron job entity type.</typeparam>

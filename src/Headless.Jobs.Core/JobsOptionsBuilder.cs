@@ -13,8 +13,8 @@ namespace Headless.Jobs;
 
 /// <summary>
 /// Fluent builder for configuring the Jobs subsystem, returned by the operational-store registration
-/// extension (e.g., <c>UseEntityFramework</c>) and passed to optional add-ons such as
-/// <c>AddDashboard</c> and <c>AddJobsDiscovery</c>.
+/// extension (e.g., <c>UseEntityFramework</c>) and passed to optional add-ons such as <c>AddDashboard</c>.
+/// Generated job modules are added with <see cref="AddModule{TModule}"/>.
 /// </summary>
 /// <typeparam name="TTimeJob">The application's concrete time job entity type.</typeparam>
 /// <typeparam name="TCronJob">The application's concrete cron job entity type.</typeparam>
@@ -26,6 +26,28 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     private JobOptions _jobDefaults = new();
     private readonly Dictionary<Type, JobOptions> _jobOptionsByRequest = [];
     private readonly Dictionary<JobFunctionDescriptor, JobOptions> _jobOptionsByDescriptor = [];
+
+    /// <summary>
+    /// Adds one assembly's generated job functions and middleware, for example
+    /// <c>AddModule&lt;Billing.JobsModule&gt;()</c>. Call it inside the <c>AddHeadlessJobs</c> callback once for every
+    /// assembly the host runs jobs or middleware from, including the host's own assembly.
+    /// </summary>
+    /// <remarks>
+    /// The job catalog is process-wide and frozen when the first host completes its <c>AddHeadlessJobs</c> callback.
+    /// Adding a module that an earlier host already added is a no-op, so every host may list the same modules; adding
+    /// one no earlier host added fails, because it can no longer join the frozen catalog.
+    /// </remarks>
+    /// <typeparam name="TModule">The generated <see cref="IJobsModule"/> of the assembly.</typeparam>
+    /// <returns>This builder, for chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The module was not already registered and the process-wide catalog is closed.
+    /// </exception>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> AddModule<TModule>()
+        where TModule : IJobsModule
+    {
+        JobFunctionProvider.RegisterModule(typeof(TModule), static () => TModule.Register());
+        return this;
+    }
 
     /// <summary>Sets retry, node-death, and atomic-enlistment defaults for this host. Invocation metadata is not accepted.</summary>
     public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureDefaults(JobOptions options)

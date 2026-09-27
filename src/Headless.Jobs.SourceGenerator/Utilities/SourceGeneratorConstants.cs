@@ -21,7 +21,7 @@ internal static class SourceGeneratorConstants
     /// </summary>
     public const string ExcludedAssemblyName = "Jobs";
 
-    public const string GeneratedFileName = "JobsInstanceFactory.g.cs";
+    public const string GeneratedFileName = "JobsModule.g.cs";
     public const string ConfigExpressionPrefix = "%";
     public const string ConfigExpressionSuffix = "%";
     public const int MinConfigExpressionLength = 2;

@@ -1,4 +1,4 @@
-﻿//HintName: JobsInstanceFactory.g.cs
+﻿//HintName: JobsModule.g.cs
 //Jobs readonly auto-generated file.
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
@@ -16,10 +16,12 @@ using Jobs.SourceGenerator.Tests;
 [assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute("invoice.create", "schema-v2")]
 namespace Jobs.SourceGenerator.Tests
 {
-    internal static class JobsInstanceFactoryExtensions
+    /// <summary>Generated Jobs registration for this assembly. Add it with <c>AddModule&lt;JobsModule&gt;()</c> inside <c>AddHeadlessJobs</c>.</summary>
+    public sealed class JobsModule : global::Headless.Jobs.IJobsModule
     {
-        [global::System.Runtime.CompilerServices.ModuleInitializer]
-        public static void Initialize()
+        private JobsModule() { }
+
+        static void global::Headless.Jobs.IJobsModule.Register()
         {
             var jobFunctionDelegateDict = new Dictionary<string, JobFunctionRegistration>(2);
             jobFunctionDelegateDict.Add("invoice.create", new JobFunctionRegistration { CronExpression = "0 */5 * * * *", Priority = (JobPriority)1, Delegate = new JobFunctionDelegate(async (serviceProvider, context, cancellationToken) =>

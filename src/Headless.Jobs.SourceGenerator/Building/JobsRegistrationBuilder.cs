@@ -47,7 +47,12 @@ internal static class JobsRegistrationBuilder
             assemblyName,
             diagnostics
         );
-        var model = new JobsRegistrationModel(assemblyName, functionModels, registrations);
+        // An assembly that declares nothing gets no module: a public JobsModule type would otherwise appear in every
+        // project that references Jobs.
+        var model =
+            functionModels.Count == 0 && registrations.Count == 0
+                ? null
+                : new JobsRegistrationModel(assemblyName, functionModels, registrations);
 
         // One class can hold several functions, so class-level diagnostics arrive once per function.
         return new(model, diagnostics.Distinct().ToEquatableArray());

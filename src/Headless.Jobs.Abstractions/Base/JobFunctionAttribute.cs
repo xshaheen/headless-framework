@@ -9,9 +9,9 @@ namespace Headless.Jobs.Base;
 /// </summary>
 /// <remarks>
 /// Apply this attribute to a <see langword="public"/> or <see langword="internal"/> method on a non-nested,
-/// non-abstract class. The source generator emits a <c>ModuleInitializer</c>-based registration (via
-/// <c>JobFunctionProvider.RegisterFunctions</c>) that wires the method delegate into the scheduler at
-/// application startup — no manual <c>AddJobsDiscovery</c> call is needed for each function.
+/// non-abstract class. The source generator emits the method's delegate into the assembly's generated
+/// <c>JobsModule</c>; the host registers every function in the assembly at once with
+/// <c>AddModule&lt;TAssemblyNamespace.JobsModule&gt;()</c> inside <c>AddHeadlessJobs</c>.
 /// <para>
 /// The method may accept a <c>JobFunctionContext</c>, <c>JobFunctionContext&lt;T&gt;</c>, or
 /// <c>CancellationToken</c> parameter, or have no parameters at all.

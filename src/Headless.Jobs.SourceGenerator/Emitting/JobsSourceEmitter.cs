@@ -16,6 +16,9 @@ namespace Headless.Jobs.SourceGenerator.Emitting;
 /// </summary>
 internal static class JobsSourceEmitter
 {
+    /// <summary>The generated module's type name, in the namespace named after the assembly.</summary>
+    public const string ModuleClassName = "JobsModule";
+
     public static string Emit(JobsRegistrationModel model)
     {
         var writer = new SourceWriter();
@@ -32,14 +35,18 @@ internal static class JobsSourceEmitter
 
         writer.WriteLine($"namespace {model.AssemblyName}");
         writer.OpenBlock();
-        // Internal: this registration class is invoked only by its own [ModuleInitializer], so it never needs to
-        // appear on the consuming assembly's public surface.
-        writer.WriteLine("internal static class JobsInstanceFactoryExtensions");
+        // Public so the host assembly can name it in AddModule<T>(); the registration itself is an explicit interface
+        // implementation, reachable only through that call, which runs it once per process.
+        writer.WriteLine(
+            "/// <summary>Generated Jobs registration for this assembly. Add it with <c>AddModule&lt;JobsModule&gt;()</c> inside <c>AddHeadlessJobs</c>.</summary>"
+        );
+        writer.WriteLine($"public sealed class {ModuleClassName} : global::Headless.Jobs.IJobsModule");
         writer.OpenBlock();
 
         var members = new List<Action<SourceWriter>>
         {
-            w => _WriteInitialize(w, model),
+            w => w.WriteLine($"private {ModuleClassName}() {{ }}"),
+            w => _WriteRegister(w, model),
             w => _WriteDescriptorRegistration(w, functions),
         };
         foreach (var jobClass in _ConstructedClasses(functions))
@@ -95,11 +102,10 @@ internal static class JobsSourceEmitter
         writer.WriteLine();
     }
 
-    private static void _WriteInitialize(SourceWriter writer, JobsRegistrationModel model)
+    private static void _WriteRegister(SourceWriter writer, JobsRegistrationModel model)
     {
         var functions = model.Functions;
-        writer.WriteLine("[global::System.Runtime.CompilerServices.ModuleInitializer]");
-        writer.WriteLine("public static void Initialize()");
+        writer.WriteLine("static void global::Headless.Jobs.IJobsModule.Register()");
         writer.OpenBlock();
 
         if (functions.Count > 0)

@@ -227,9 +227,9 @@ public sealed class GeneratedSourceSnapshotTests
     }
 
     [Fact]
-    public Task should_emit_an_empty_registration_when_no_function_is_declared()
+    public void should_emit_no_module_when_no_function_or_middleware_is_declared()
     {
-        return _VerifyGenerated(
+        var driver = GeneratorTestHelper.Run(
             """
             namespace Demo.Empty;
 
@@ -237,8 +237,43 @@ public sealed class GeneratedSourceSnapshotTests
             {
                 public void Run() { }
             }
-            """
+            """,
+            out var diagnostics
         );
+
+        diagnostics.Should().NotContain(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        driver.GetRunResult().GeneratedTrees.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_emit_a_module_the_host_adds_and_no_module_initializer()
+    {
+        var driver = GeneratorTestHelper.Run(
+            """
+            using Headless.Jobs.Base;
+
+            namespace Demo;
+
+            public sealed class Jobs
+            {
+                [JobFunction("module.run")]
+                public void Run() { }
+            }
+
+            public static class Host
+            {
+                public static void Configure(Headless.Jobs.JobsOptionsBuilder<Headless.Jobs.Entities.TimeJobEntity, Headless.Jobs.Entities.CronJobEntity> jobs) =>
+                    jobs.AddModule<global::Jobs.SourceGenerator.Tests.JobsModule>();
+            }
+            """,
+            out var diagnostics
+        );
+
+        diagnostics.Should().NotContain(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var generated = driver.GetRunResult().GeneratedTrees.Single().ToString();
+        generated.Should().Contain("public sealed class JobsModule : global::Headless.Jobs.IJobsModule");
+        generated.Should().Contain("static void global::Headless.Jobs.IJobsModule.Register()");
+        generated.Should().NotContain("ModuleInitializer");
     }
 
     private static Task _VerifyGenerated(string source, params MetadataReference[] references)

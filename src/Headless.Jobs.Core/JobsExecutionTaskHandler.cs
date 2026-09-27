@@ -1475,8 +1475,8 @@ internal static partial class JobsExecutionTaskHandlerLog
         EventName = "JobFunctionNotRegisteredOnNode",
         Level = LogLevel.Error,
         Message = "Job {JobId} references function '{Function}' which is not registered on this node; the row was "
-            + "released for another node to claim. Ensure every scheduler node loads the assembly that declares the "
-            + "function (AddJobsDiscovery), or expect claim churn until one does."
+            + "released for another node to claim. Ensure every scheduler node adds the generated module of the "
+            + "assembly that declares the function (AddModule), or expect claim churn until one does."
     )]
     public static partial void LogJobFunctionNotRegisteredOnNode(this ILogger logger, Guid jobId, string function);
 

@@ -24,6 +24,8 @@ using Polly.Retry;
 
 builder.Services.AddHeadlessJobs(options =>
 {
+    // One generated module per assembly that declares [JobFunction] methods or Jobs middleware.
+    options.AddModule<MyApp.JobsModule>();
     options.ConfigureScheduler(scheduler =>
     {
         scheduler.MaxConcurrency = 10;
@@ -37,12 +39,14 @@ For durable persistence register a coordination provider first, then add the EF 
 
 ```csharp
 builder.Services.AddHeadlessCoordination(c => c.UseSqlServer(conn));
-builder
-    .Services.AddHeadlessJobs()
-    .UseEntityFramework(ef => ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(conn)));
+builder.Services.AddHeadlessJobs(options =>
+{
+    options.AddModule<MyApp.JobsModule>();
+    options.UseEntityFramework(ef => ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(conn)));
+});
 ```
 
-Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpression: "* * * * *")]` for cron) and add `Jobs.SourceGenerator` for compile-time zero-reflection discovery.
+Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpression: "0 * * * * *")]` for cron; expressions have six fields, seconds first) and add `Jobs.SourceGenerator`. The generator emits one `JobsModule` class per assembly, in the namespace named after the assembly (`MyApp.JobsModule` for assembly `MyApp`), and the host registers it with `AddModule`.
 
 ## Agent Rules
 
@@ -50,7 +54,7 @@ Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpr
 - Do NOT use Hangfire or Quartz — use `Headless.Jobs` for all background jobs in this framework.
 - The registration attribute is `[JobFunction]` (`JobFunctionAttribute` in `Headless.Jobs.Base`). The first positional argument is the function name; `cronExpression` is a named parameter. Add `Headless.Jobs.SourceGenerator` to the project for compile-time registration.
 - Call `AddHeadlessJobs()` on `IServiceCollection`. There is no `app.UseJobs()` call — the scheduler starts automatically through `IHostedService` registered by `AddHeadlessJobs`.
-- Configure every `AddJobsDiscovery(...)` assembly inside the `AddHeadlessJobs` callback. Jobs loads those assemblies before freezing the process-wide generated catalog; late generated registrations fail deterministically. Runtime services and Dashboard use an immutable configuration-resolved registry owned by each `IHost`.
+- Add every generated module inside the `AddHeadlessJobs` callback with `options.AddModule<TAssembly.JobsModule>()`, including the host's own assembly. Nothing registers implicitly: an assembly whose module is not added contributes no functions or middleware, even when it is loaded. The first host's callback freezes the process-wide catalog; a later host in the same process may add the same modules again (a no-op) but cannot add one no earlier host added. Runtime services and Dashboard use an immutable configuration-resolved registry owned by each `IHost`.
 - Use `Jobs.EntityFramework` for durable persistence. Without it, jobs live in memory and are lost on restart.
 - Prefer `jobs.UsePostgreSql<AppDbContext>(coordination => coordination.ClusterName = "orders")` or the SQL Server sibling after registering the application context. These configure models, native claims, same-database cluster membership, and the EF Core unit-of-work provider that gives coordinated writes a transaction to enlist in. For advanced composition, configure `UsePostgreSqlClaims()` or `UseSqlServerClaims()` inside the existing `UseEntityFramework` builder. Configure only one. Omitting both deliberately keeps the portable EF optimistic-CAS claim path. The selected package also fixes the GUID ordering every EF Jobs row is keyed with — SQL Server comb, PostgreSQL UUIDv7 — so occurrence ids stay index-friendly on the paths that do not run through the native claim strategy.
 - The EF store creates a cron definition at runtime by reading the backend's **current statement** clock, and only PostgreSQL and SQL Server have one. On any other EF backend `ICronJobManager.AddAsync` / `AddBatchAsync` (coordinated or not) throws `NotSupportedException`; time jobs and the unseeded `IJobPersistenceProvider.InsertCronJobsAsync(jobs, ct)` overload still work. Seed cron definitions from `[JobFunction]` attributes or position rows yourself on such a backend.
@@ -92,10 +96,10 @@ Both types share `BaseJobEntity` (`Id`, `Function`, `Description`, `CreatedAt`, 
 ### The `[JobFunction]` Attribute and Source Generator
 
 The source generator (`Headless.Jobs.SourceGenerator`) scans for `JobFunctionAttribute` (`[JobFunction]`) on methods and generates:
-- A module initializer that auto-registers job delegates with the Jobs runtime before `Main` runs.
+- A public `JobsModule` class (an `IJobsModule`) in the namespace named after the assembly. The host passes it to `AddModule<…JobsModule>()`, which registers the assembly's delegates, request types, descriptors, and middleware once per process.
 - A delegate-free `JobFunctionDescriptor` for every function, frozen by `JobFunctionProvider` into name and typed-request indexes.
 - Factory delegates for every job method.
-- Constructor injection code (using the `[JobsConstructor]` constructor if present, otherwise the first public constructor).
+- Constructor injection code (using the primary constructor, otherwise the `[JobsConstructor]` constructor, otherwise the first public constructor).
 
 Attribute signatures (from `Headless.Jobs.Base.JobFunctionAttribute`):
 
@@ -111,7 +115,7 @@ public async Task ExecuteAsync(JobFunctionContext<OrderRequest> context, Cancell
 
 The first positional argument is the durable function identity. `IJobScheduler` obtains it from the generated descriptor, while low-level manager callers set the entity `Function` directly. Priority (`JobPriority.Normal` / `High` / `Low` / `LongRunning`) and max-concurrency are optional attribute parameters.
 
-Typed functions are indexed by both function name and exact request `Type`; requestless descriptors have `RequestType = null` and do not appear in the inverse type index. HF005 rejects duplicate function names and HF011 rejects duplicate typed request mappings in one compilation. Cross-assembly collisions fail `JobFunctionProvider.Build()` with a deterministic ordinal-sorted report rather than choosing the first initializer. The public descriptor indexes are the configuration-independent canonical catalog; Core derives one configuration-resolved runtime registry per `IHost` after all configured `AddJobsDiscovery(...)` assemblies load.
+Typed functions are indexed by both function name and exact request `Type`; requestless descriptors have `RequestType = null` and do not appear in the inverse type index. HF005 rejects duplicate function names and HF011 rejects duplicate typed request mappings in one compilation. Cross-assembly collisions fail `JobFunctionProvider.Build()` with a deterministic ordinal-sorted report rather than choosing the first registration. The public descriptor indexes are the configuration-independent canonical catalog; Core derives one configuration-resolved runtime registry per `IHost` after the options callback has added every module.
 
 ### Typed Job Chains
 
@@ -798,7 +802,7 @@ The scheduler's wake and restart path lives in that same store domain. Every due
 
 `SchedulerOptionsBuilder.NodeId` is used as the row owner only on the in-memory single-process path (defaults to `Environment.MachineName`). On the durable path this value is overridden by `JobsOwnerIdentityAdapter` which reads the `node@incarnation` string from `Headless.Coordination`; `NodeId` becomes a pre-registration display fallback only.
 
-Generated module initializers populate one process-wide canonical catalog. `AddHeadlessJobs` invokes the options callback first so every `AddJobsDiscovery(...)` assembly is loaded, then freezes that catalog exactly once. Repeated builds are idempotent; registrations attempted after discovery or freeze fail deterministically instead of disappearing. `JobFunctionProvider.JobFunctionDescriptors` remains the public configuration-independent descriptor lookup for requestless scheduling.
+Generated modules populate one process-wide canonical catalog. `AddHeadlessJobs` invokes the options callback first so every `AddModule<…>()` call registers its module, then freezes that catalog exactly once. A module registers at most once per process, so later hosts may list the same modules; adding a module after the catalog froze, or any other late registration, fails deterministically instead of disappearing. `JobFunctionProvider.JobFunctionDescriptors` remains the public configuration-independent descriptor lookup for requestless scheduling.
 
 Each `IHost` receives its own immutable runtime registry projected from the canonical catalog and that host's `IConfiguration`. Cron configuration tokens are resolved only in this host-owned registry. Scheduling, execution, seeding, fallback, managers, and Dashboard operations all consume the injected registry, so multiple hosts in one process can use different configuration without resetting or replacing one another.
 
@@ -922,7 +926,7 @@ builder.Services.AddScoped<ExternalInvoiceMiddleware>();
 builder.Services.AddScoped<InvoiceExecutionMiddleware>();
 ```
 
-The generic constraint requires schedule and execute middleware to implement their matching interfaces. Declarations are ordered by ascending priority, then middleware type identity. The generated dispatcher is direct-call/AOT-safe: runtime plugin discovery, class-handler targeting, and registration after `JobFunctionProvider.Build()` are unsupported. Include function or middleware-only assemblies in `AddJobsDiscovery` when the runtime would not otherwise load them before startup registration freezes.
+The generic constraint requires schedule and execute middleware to implement their matching interfaces. Declarations are ordered by ascending priority, then middleware type identity. The generated dispatcher is direct-call/AOT-safe: runtime plugin discovery, class-handler targeting, and registration after `JobFunctionProvider.Build()` are unsupported. Middleware is registered by the module of the assembly that declares it, so add that module with `AddModule` even for a middleware-only assembly.
 
 ### Configuration
 
@@ -1085,7 +1089,7 @@ Roslyn incremental source generator that eliminates reflection and manual job re
 
 - **Versioned descriptors**: `JobFunctionAttribute.ContractVersion` (default `"1"`) is emitted into assembly metadata and immutable runtime descriptors. Explicit function name and version remain stable through CLR class/method renames and source/reference reordering. Duplicate function names remain invalid even when their versions differ; versioning does not create a second dispatch registry.
 - **Zero reflection**: all dispatch delegates are generated as strongly-typed lambdas.
-- **Auto-registration**: a `[ModuleInitializer]` in the generated file (`JobsInstanceFactory.g.cs`) registers job delegates before any host startup code runs.
+- **Explicit registration**: the generated file (`JobsModule.g.cs`) declares `<AssemblyName>.JobsModule`, and nothing is registered until a host calls `AddModule<…JobsModule>()`. There is no module initializer and no runtime assembly loading. An assembly that declares no job function or middleware gets no module.
 - **Descriptor indexes**: generates delegate-free descriptors for every typed and requestless function; the provider exposes frozen indexes by name and by typed request `Type`.
 - **Type safety**: compile-time validation of job method signatures and cron expression syntax.
 - **DI constructor injection**: generates one factory per job class. It calls the primary constructor when the class has one, otherwise the constructor marked `[JobsConstructor]`, otherwise the first public constructor; constructors in every part of a partial class count. Parameters resolve through `GetService<T>()`, or `GetKeyedService<T>(key)` for `[FromKeyedServices]`, and a parameter named `serviceProvider` receives the provider itself.
@@ -1171,16 +1175,16 @@ public static Task ExecuteAsync(IServiceProvider sp, CancellationToken ct) => Ta
 
 The generator also emits a public static `AppJobs` catalog for requestless functions in the same assembly namespace as its registration class. Each getter returns the immutable canonical descriptor used during module registration. Alphanumeric contract names preserve their spelling (`Cleanup`); keywords are escaped (`@class`). Underscores, punctuation, non-ASCII characters, leading digits, and the first character of reserved member names are encoded as `_uXXXX_` UTF-16 code units. For example, `invoice.send` becomes `AppJobs.invoice_u002E_send`; literal underscores are encoded too, preventing escape-lookalike collisions. The catalog is sorted by ordinal contract name and is independent of CLR handler names and source ordering.
 
-No runtime configuration. Attributes are the sole interface. Generated output file: `JobsInstanceFactory.g.cs` (a `[ModuleInitializer]` in the consuming assembly).
+No generator configuration: attributes are the sole input. Generated output file: `JobsModule.g.cs`, added to the consuming assembly.
 
 `[JobFunction]` remains the sole handler discovery model. Requestless descriptors use `RequestType = null`; typed functions are indexed by both durable function name and exact request `Type`. Attribute priority and maximum concurrency remain descriptor metadata, not per-schedule options.
 
 ### Runtime behavior
 
-Emits `JobsInstanceFactory.g.cs` at compile time. The generated file:
-- Contains a `[ModuleInitializer]` that registers job delegates, request-type mappings, and delegate-free descriptors with the Jobs runtime.
-- Contains constructor factory lambdas for each discovered job class.
-- Has no effect at runtime beyond the one-time module initializer invocation.
+Emits `JobsModule.g.cs` at compile time. The generated file:
+- Declares `JobsModule : IJobsModule`, whose explicitly implemented `Register` adds job delegates, request-type mappings, delegate-free descriptors, and middleware to the Jobs runtime. Only `AddModule<JobsModule>()` calls it.
+- Contains constructor factory methods for each discovered job class.
+- Has no effect at runtime until a host adds the module.
 
 ---
 

@@ -832,6 +832,12 @@
           "Headless.Jobs.Core": "[1.0.0, )"
         }
       },
+      "headless.jobs.discoveryfixture": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Jobs.Core": "[1.0.0, )"
+        }
+      },
       "headless.jobs.entityframework": {
         "type": "Project",
         "dependencies": {
@@ -843,6 +849,12 @@
           "Headless.Jobs.Core": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.12, )",
           "Polly.Core": "[8.7.0, )"
+        }
+      },
+      "headless.jobs.generateddiscoveryfixture": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Jobs.Core": "[1.0.0, )"
         }
       },
       "headless.jobs.tests.harness": {
