@@ -5,8 +5,6 @@ using Headless.PushNotifications;
 using Headless.PushNotifications.Firebase;
 using Headless.PushNotifications.Firebase.Internals;
 using Headless.Testing.Tests;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Tests.Fakes;
 
 namespace Tests;
@@ -18,30 +16,42 @@ namespace Tests;
 /// </summary>
 public sealed class FcmMessageSenderTests : TestBase
 {
-    private static readonly FcmMessageContent _Content = new("title", "body", null);
+    private static readonly FcmMessage _Message = new()
+    {
+        Notification = new FcmNotification { Title = "title", Body = "body" },
+    };
 
-    private readonly RecordingTimeProvider _time = new();
+    private readonly FcmTestRig _rig = new();
+    private readonly RecordingTimeProvider _time;
     private readonly FakeFcmHttpHandler _http;
 
     public FcmMessageSenderTests()
     {
-        _http = new FakeFcmHttpHandler(_time);
+        _time = _rig.Time;
+        _http = _rig.Http;
+    }
+
+    protected override ValueTask DisposeAsyncCore()
+    {
+        _rig.Dispose();
+
+        return base.DisposeAsyncCore();
     }
 
     [Fact]
     public async Task should_return_succeeded_with_the_fcm_message_name_when_fcm_accepts_the_send()
     {
         // given
-        using var sender = _CreateSender();
+        var sender = _CreateSender();
 
         // when
-        var result = await sender.SendAsync(_Content, "fid-1", AbortToken);
+        var result = await _SendAsync(sender, "fid-1", AbortToken);
 
         // then
         result.IsSucceeded().Should().BeTrue();
         result.MessageId.Should().Be("projects/test-project/messages/fid-1");
         _http.Requests.Should().ContainSingle().Which.Target.Should().Be("fid-1");
-        _http.TokenRequests.Should().BeGreaterThan(0, "the credential exchange must run against the fake, not Google");
+        _http.TokenRequests.Should().BePositive("the credential exchange must run against the fake, not Google");
     }
 
     [Fact]
@@ -49,10 +59,10 @@ public sealed class FcmMessageSenderTests : TestBase
     {
         // given
         _http.Responder = static (_, _) => Task.FromResult(FakeFcmHttpHandler.Error("UNREGISTERED"));
-        using var sender = _CreateSender();
+        var sender = _CreateSender();
 
         // when
-        var result = await sender.SendAsync(_Content, "fid-1", AbortToken);
+        var result = await _SendAsync(sender, "fid-1", AbortToken);
 
         // then
         result.IsUnregistered().Should().BeTrue();
@@ -69,11 +79,11 @@ public sealed class FcmMessageSenderTests : TestBase
     {
         // given
         _http.Responder = static (_, _) => Task.FromResult(FakeFcmHttpHandler.Error("SENDER_ID_MISMATCH"));
-        using var sender = _CreateSender(o => o.TreatSenderIdMismatchAsUnregistered = treatAsUnregistered);
+        var sender = _CreateSender(o => o.TreatSenderIdMismatchAsUnregistered = treatAsUnregistered);
 
         // when
-        var single = await sender.SendAsync(_Content, "fid-1", AbortToken);
-        var batch = await sender.SendBatchAsync(_Content, ["fid-2"], AbortToken);
+        var single = await _SendAsync(sender, "fid-1", AbortToken);
+        var batch = await _SendBatchAsync(sender, ["fid-2"], AbortToken);
 
         // then
         single.Status.Should().Be(expected);
@@ -85,10 +95,10 @@ public sealed class FcmMessageSenderTests : TestBase
     {
         // given
         _http.Responder = static (_, _) => Task.FromResult(FakeFcmHttpHandler.Error("INVALID_ARGUMENT"));
-        using var sender = _CreateSender();
+        var sender = _CreateSender();
 
         // when
-        var result = await sender.SendAsync(_Content, "fid-1", AbortToken);
+        var result = await _SendAsync(sender, "fid-1", AbortToken);
 
         // then
         result.IsFailed().Should().BeTrue();
@@ -105,10 +115,10 @@ public sealed class FcmMessageSenderTests : TestBase
             Task.FromResult(
                 new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("not found") }
             );
-        using var sender = _CreateSender();
+        var sender = _CreateSender();
 
         // when
-        var result = await sender.SendAsync(_Content, "fid-1", AbortToken);
+        var result = await _SendAsync(sender, "fid-1", AbortToken);
 
         // then
         result.IsFailed().Should().BeTrue();
@@ -123,10 +133,10 @@ public sealed class FcmMessageSenderTests : TestBase
             Task.FromResult(
                 request.Attempt == 1 ? FakeFcmHttpHandler.Error("INTERNAL") : FakeFcmHttpHandler.Success(request.Target)
             );
-        using var sender = _CreateSender();
+        var sender = _CreateSender();
 
         // when
-        var send = sender.SendAsync(_Content, "fid-1", AbortToken);
+        var send = _SendAsync(sender, "fid-1", AbortToken);
         var delay = await _time.WaitForTimerAsync(1, AbortToken);
 
         // then
@@ -153,10 +163,10 @@ public sealed class FcmMessageSenderTests : TestBase
                     ? FakeFcmHttpHandler.Error("QUOTA_EXCEEDED", TimeSpan.FromSeconds(120))
                     : FakeFcmHttpHandler.Success(request.Target)
             );
-        using var sender = _CreateSender();
+        var sender = _CreateSender();
 
         // when
-        var send = sender.SendAsync(_Content, "fid-1", AbortToken);
+        var send = _SendAsync(sender, "fid-1", AbortToken);
         var delay = await _time.WaitForTimerAsync(1, AbortToken);
 
         // then
@@ -188,10 +198,10 @@ public sealed class FcmMessageSenderTests : TestBase
                     ? FakeFcmHttpHandler.Error("QUOTA_EXCEEDED", retryAfter)
                     : FakeFcmHttpHandler.Success(request.Target)
             );
-        using var sender = _CreateSender();
+        var sender = _CreateSender();
 
         // when
-        var send = sender.SendAsync(_Content, "fid-1", AbortToken);
+        var send = _SendAsync(sender, "fid-1", AbortToken);
         var delay = await _time.WaitForTimerAsync(1, AbortToken);
         _time.Advance(delay);
         var result = await send.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
@@ -207,10 +217,10 @@ public sealed class FcmMessageSenderTests : TestBase
         // given
         _http.Responder = static (_, _) =>
             Task.FromResult(FakeFcmHttpHandler.Error("QUOTA_EXCEEDED", TimeSpan.FromMinutes(10)));
-        using var sender = _CreateSender();
+        var sender = _CreateSender();
 
         // when
-        var result = await sender.SendAsync(_Content, "fid-1", AbortToken);
+        var result = await _SendAsync(sender, "fid-1", AbortToken);
 
         // then
         result.IsFailed().Should().BeTrue();
@@ -224,10 +234,10 @@ public sealed class FcmMessageSenderTests : TestBase
     {
         // given
         _http.Responder = static (_, _) => Task.FromResult(FakeFcmHttpHandler.Error("INTERNAL"));
-        using var sender = _CreateSender(o => o.Retry.MaxAttempts = 2);
+        var sender = _CreateSender(o => o.Retry.MaxAttempts = 2);
 
         // when
-        var send = sender.SendAsync(_Content, "fid-1", AbortToken);
+        var send = _SendAsync(sender, "fid-1", AbortToken);
         _time.Advance(await _time.WaitForTimerAsync(1, AbortToken));
         _time.Advance(await _time.WaitForTimerAsync(2, AbortToken));
         var result = await send.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
@@ -245,11 +255,11 @@ public sealed class FcmMessageSenderTests : TestBase
     {
         // given
         _http.Responder = static (_, _) => Task.FromResult(FakeFcmHttpHandler.Error("INTERNAL"));
-        using var sender = _CreateSender(o => o.Retry.MaxAttempts = 0);
+        var sender = _CreateSender(o => o.Retry.MaxAttempts = 0);
 
         // when
-        var single = await sender.SendAsync(_Content, "fid-1", AbortToken);
-        var batch = await sender.SendBatchAsync(_Content, ["fid-2", "fid-3"], AbortToken);
+        var single = await _SendAsync(sender, "fid-1", AbortToken);
+        var batch = await _SendBatchAsync(sender, ["fid-2", "fid-3"], AbortToken);
 
         // then
         single.IsFailed().Should().BeTrue();
@@ -265,12 +275,10 @@ public sealed class FcmMessageSenderTests : TestBase
         // a 1-second Retry-After keeps that real wait at 4 seconds
         _http.Responder = static (_, _) =>
             Task.FromResult(FakeFcmHttpHandler.Error("UNAVAILABLE", TimeSpan.FromSeconds(1)));
-        using var sender = _CreateSender();
+        var sender = _CreateSender();
 
         // when
-        var result = await sender
-            .SendAsync(_Content, "fid-1", AbortToken)
-            .WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+        var result = await _SendAsync(sender, "fid-1", AbortToken).WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
 
         // then 1 request plus the SDK's 4 retries, and no retry delay of ours
         result.IsFailed().Should().BeTrue();
@@ -287,12 +295,10 @@ public sealed class FcmMessageSenderTests : TestBase
             request.Attempt == 1
                 ? throw new HttpRequestException("connection reset")
                 : Task.FromResult(FakeFcmHttpHandler.Success(request.Target));
-        using var sender = _CreateSender();
+        var sender = _CreateSender();
 
         // when
-        var result = await sender
-            .SendAsync(_Content, "fid-1", AbortToken)
-            .WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+        var result = await _SendAsync(sender, "fid-1", AbortToken).WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
 
         // then
         result.IsSucceeded().Should().BeTrue();
@@ -306,12 +312,10 @@ public sealed class FcmMessageSenderTests : TestBase
         // given an HttpClient timeout, which surfaces as a TaskCanceledException the caller did not ask for
         _http.Responder = static (_, _) =>
             throw new TaskCanceledException("The request timed out.", new TimeoutException());
-        using var sender = _CreateSender();
+        var sender = _CreateSender();
 
         // when
-        var result = await sender
-            .SendAsync(_Content, "fid-1", AbortToken)
-            .WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+        var result = await _SendAsync(sender, "fid-1", AbortToken).WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
 
         // then
         result.IsFailed().Should().BeTrue();
@@ -324,11 +328,11 @@ public sealed class FcmMessageSenderTests : TestBase
     public async Task should_return_failed_when_the_credentials_cannot_be_loaded()
     {
         // given
-        using var sender = _CreateSender(o => o.Json = "{}");
+        var sender = _CreateSender(o => o.Json = "{}");
 
         // when
-        var single = await sender.SendAsync(_Content, "fid-1", AbortToken);
-        var batch = await sender.SendBatchAsync(_Content, ["fid-2", "fid-3"], AbortToken);
+        var single = await _SendAsync(sender, "fid-1", AbortToken);
+        var batch = await _SendBatchAsync(sender, ["fid-2", "fid-3"], AbortToken);
 
         // then
         single.IsFailed().Should().BeTrue();
@@ -346,11 +350,11 @@ public sealed class FcmMessageSenderTests : TestBase
 
             throw new InvalidOperationException("unreachable");
         };
-        using var sender = _CreateSender();
+        var sender = _CreateSender();
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
 
         // when
-        var send = sender.SendAsync(_Content, "fid-1", cts.Token);
+        var send = sender.SendAsync(_Message, FcmTarget.Token("fid-1"), cts.Token);
         await _http.WaitForRequestsAsync(1, AbortToken);
         await cts.CancelAsync();
         var action = async () => await send.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
@@ -374,11 +378,11 @@ public sealed class FcmMessageSenderTests : TestBase
                     _ => FakeFcmHttpHandler.Success(request.Target),
                 }
             );
-        using var sender = _CreateSender();
+        var sender = _CreateSender();
         string[] fids = ["fid-ok", "fid-unregistered", "fid-internal", "fid-quota", "fid-invalid"];
 
         // when
-        var send = sender.SendBatchAsync(_Content, fids, AbortToken);
+        var send = _SendBatchAsync(sender, fids, AbortToken);
         var delay = await _time.WaitForTimerAsync(1, AbortToken);
         _time.Advance(delay);
         var results = await send.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
@@ -414,11 +418,11 @@ public sealed class FcmMessageSenderTests : TestBase
 
             throw new InvalidOperationException("unreachable");
         };
-        using var sender = _CreateSender();
+        var sender = _CreateSender();
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
 
         // when
-        var send = sender.SendBatchAsync(_Content, ["fid-1", "fid-2"], cts.Token);
+        var send = sender.SendBatchAsync(_Message, ["fid-1", "fid-2"], cts.Token);
         await _http.WaitForRequestsAsync(2, AbortToken);
         await cts.CancelAsync();
         var action = async () => await send.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
@@ -429,17 +433,28 @@ public sealed class FcmMessageSenderTests : TestBase
 
     private FcmMessageSender _CreateSender(Action<FirebaseOptions>? configure = null)
     {
-        var options = new FirebaseOptions { Json = FakeServiceAccount.Json };
-        configure?.Invoke(options);
-        var monitor = Substitute.For<IOptionsMonitor<FirebaseOptions>>();
-        monitor.Get(Arg.Any<string?>()).Returns(options);
+        return _rig.CreateSender(configure);
+    }
 
-        return new FcmMessageSender(
-            monitor,
-            optionsName: null,
-            _time,
-            NullLogger<FcmMessageSender>.Instance,
-            new FakeHttpClientFactory(_http)
-        );
+    private static async Task<PushNotificationResponse> _SendAsync(
+        FcmMessageSender sender,
+        string fid,
+        CancellationToken cancellationToken
+    )
+    {
+        var result = await sender.SendAsync(_Message, FcmTarget.Token(fid), cancellationToken);
+
+        return result.Response;
+    }
+
+    private static async Task<IReadOnlyList<PushNotificationResponse>> _SendBatchAsync(
+        FcmMessageSender sender,
+        IReadOnlyList<string> fids,
+        CancellationToken cancellationToken
+    )
+    {
+        var results = await sender.SendBatchAsync(_Message, fids, cancellationToken);
+
+        return [.. results.Select(static r => r.Response)];
     }
 }

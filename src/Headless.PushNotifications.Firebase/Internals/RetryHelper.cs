@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FirebaseAdmin;
 using FirebaseAdmin.Messaging;
 
 namespace Headless.PushNotifications.Firebase.Internals;
@@ -65,7 +66,7 @@ internal static class RetryHelper
     /// Reads the Retry-After header of the FCM response, as delta-seconds or an HTTP date, or returns
     /// <see langword="null"/> when there is none or it has already passed.
     /// </summary>
-    internal static TimeSpan? GetRetryAfter(FirebaseMessagingException exception, TimeProvider timeProvider)
+    internal static TimeSpan? GetRetryAfter(FirebaseException exception, TimeProvider timeProvider)
     {
         var retryAfter = exception.HttpResponse?.Headers.RetryAfter;
 

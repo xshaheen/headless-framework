@@ -18,9 +18,15 @@ namespace Headless.PushNotifications;
 /// <see cref="SetupFirebasePushNotificationsNamed"/>.
 /// </summary>
 /// <remarks>
+/// <para>
+/// Registers <see cref="IPushNotificationService"/> and <see cref="IFcmPushNotificationService"/>, both resolving to
+/// one service instance: unkeyed for the default, keyed by name for a named instance.
+/// </para>
+/// <para>
 /// The Firebase app and credentials are created lazily on the first send (not during registration), so
 /// configuration errors surface through the options validator at startup rather than as registration-time
 /// side effects, and several hosts can coexist in one process with different credentials.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public static class SetupFirebasePushNotifications
@@ -108,6 +114,8 @@ public static class SetupFirebasePushNotifications
         configureOptions(services, name);
         services.TryAddSingleton(TimeProvider.System);
 
+        // One instance serves both service types, so the typed and shared paths share its sender, Firebase app,
+        // credentials, and options.
         if (name is null)
         {
             services.TryAddSingleton<IFcmMessageSender>(static sp => new FcmMessageSender(
@@ -117,7 +125,16 @@ public static class SetupFirebasePushNotifications
                 sp.GetRequiredService<ILogger<FcmMessageSender>>()
             ));
 
-            services.AddSingleton<IPushNotificationService, FcmPushNotificationService>();
+            services.AddSingleton(static sp => new FcmPushNotificationService(
+                sp.GetRequiredService<IFcmMessageSender>(),
+                sp.GetRequiredService<TimeProvider>()
+            ));
+            services.AddSingleton<IPushNotificationService>(static sp =>
+                sp.GetRequiredService<FcmPushNotificationService>()
+            );
+            services.AddSingleton<IFcmPushNotificationService>(static sp =>
+                sp.GetRequiredService<FcmPushNotificationService>()
+            );
 
             return;
         }
@@ -133,9 +150,21 @@ public static class SetupFirebasePushNotifications
                 )
         );
 
+        services.AddKeyedSingleton(
+            name,
+            static (sp, key) =>
+                new FcmPushNotificationService(
+                    sp.GetRequiredKeyedService<IFcmMessageSender>(key),
+                    sp.GetRequiredService<TimeProvider>()
+                )
+        );
         services.AddKeyedSingleton<IPushNotificationService>(
             name,
-            static (sp, key) => new FcmPushNotificationService(sp.GetRequiredKeyedService<IFcmMessageSender>(key))
+            static (sp, key) => sp.GetRequiredKeyedService<FcmPushNotificationService>(key)
+        );
+        services.AddKeyedSingleton<IFcmPushNotificationService>(
+            name,
+            static (sp, key) => sp.GetRequiredKeyedService<FcmPushNotificationService>(key)
         );
     }
 

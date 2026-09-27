@@ -9,7 +9,7 @@ packages: PushNotifications.Abstractions, PushNotifications.Core, PushNotificati
 
 ## Orientation
 
-Install `Headless.PushNotifications.Abstractions` plus one provider package. Register with `AddHeadlessPushNotifications(setup => setup.Use…())` — at most one **default** `Use*` provider per call (the default is optional; a named-only host is supported), plus any number of **named** services via `setup.AddNamed(name, i => i.Use…())`. Code against `IPushNotificationService` for the default; resolve named services with `IPushNotificationServiceProvider.GetService("name")` or `[FromKeyedServices("name")] IPushNotificationService`. Never reference provider-specific types in application code — swap providers by changing DI registration only. The one exception is `IApnsPushNotificationService`, for pushes only APNs can send.
+Install `Headless.PushNotifications.Abstractions` plus one provider package. Register with `AddHeadlessPushNotifications(setup => setup.Use…())` — at most one **default** `Use*` provider per call (the default is optional; a named-only host is supported), plus any number of **named** services via `setup.AddNamed(name, i => i.Use…())`. Code against `IPushNotificationService` for the default; resolve named services with `IPushNotificationServiceProvider.GetService("name")` or `[FromKeyedServices("name")] IPushNotificationService`. Never reference provider-specific types in application code — swap providers by changing DI registration only. The two exceptions are `IApnsPushNotificationService`, for pushes only APNs can send, and `IFcmPushNotificationService`, for FCM topics, conditions, and platform options.
 
 ```csharp
 // Production — Firebase Cloud Messaging (default)
@@ -45,6 +45,8 @@ A request is either a notification (title and body) or a data-only message (data
 
 For pushes only APNs has — Live Activities, rich alert controls, background pushes with APNs details, location, push-to-talk, widgets, controls, complications, and File Provider — inject `IApnsPushNotificationService` from `Headless.PushNotifications.Apns`. It resolves wherever the APNs `IPushNotificationService` does, and returns the APNs status, reason, and ids with each result.
 
+For what only FCM has — topic and condition sends, Android channel, visibility, and icon options, web push links, a raw APNs payload through the Firebase bridge, analytics labels, and dry runs — inject `IFcmPushNotificationService` from `Headless.PushNotifications.Firebase`. It resolves wherever the Firebase `IPushNotificationService` does, and returns each result's FCM error code, failure kind, and retry guidance.
+
 ## Agent Rules
 
 - Register at most one **default** provider per container: `services.AddHeadlessPushNotifications(setup => setup.Use…())`. The default is optional — zero defaults is allowed (a named-only host). Multiple default providers in one delegate, or a repeated `AddHeadlessPushNotifications` on the same `IServiceCollection`, throws `InvalidOperationException` at registration time. The available default `Use*` calls are `UseFirebase`, `UseApns`, and `UseNoop` — the same set is available on each named instance.
@@ -53,13 +55,14 @@ For pushes only APNs has — Live Activities, rich alert controls, background pu
 - Registration is deferred: provider contributions are queued and nothing touches the `IServiceCollection` until the gates pass, so a setup that throws leaves the collection unchanged. The same provider can back two different names with fully independent options.
 - Each named Firebase instance isolates its own options (validated per name via FluentValidation + `ValidateOnStart`), its own retry settings, and its own lazily-created `FirebaseApp`. Keyed DI does not cascade the key to constructor dependencies, so named services never read the default configuration (a keyed sender reads `IOptionsMonitor.Get(name)`, never `CurrentValue`).
 - Each named APNs instance likewise owns its options (validated per name at startup), its own HTTP client and resilience pipeline (named `Headless:Apns:{name}`), and its keyed service. It shares only the provider-token cache, which is keyed by team id and key id.
-- Always code against `IPushNotificationService` from `Headless.PushNotifications.Abstractions`. Never reference `FcmPushNotificationService` or other concrete types in application code. The one provider-specific interface is `IApnsPushNotificationService`: take it only for APNs-only push types or APNs response details, and keep plain alerts and data-only messages on `IPushNotificationService` so the provider stays swappable.
+- Always code against `IPushNotificationService` from `Headless.PushNotifications.Abstractions`. Never reference `FcmPushNotificationService` or other concrete types in application code. The provider-specific interfaces are `IApnsPushNotificationService` and `IFcmPushNotificationService`: take one only for push types, targets, or options the shared request cannot express, or for the provider's failure details, and keep plain alerts and data-only messages on `IPushNotificationService` so the provider stays swappable.
 - A `PushNotificationRequest` is a notification (non-blank `Title` and `Body`) or a data-only message (no `Title`, no `Body`, at least one `Data` entry, no `Badge`, no `Sound`). Every other combination, a negative `Badge` or `TimeToLive`, a `TimeToLive` over 28 days, a blank `Sound`, or an undefined `Priority` throws `ArgumentException` before any network call. `UseNoop()` does not validate.
 - A data-only message is a background push. iOS throttles background pushes and may drop them, so never rely on one arriving.
 - On APNs, a data-only message always goes at priority 5, whatever `Priority` says, because Apple requires 5 for background pushes. A VoIP-configured instance is the exception: it sends a data-only message as a VoIP push and honors `Priority`.
 - `Badge = 0` clears the badge on iOS. Android cannot clear a badge, so Firebase sends no Android count for 0.
 - Use `Headless.PushNotifications.Dev` (`UseNoop()`) in development and testing environments to avoid sending real notifications. Switch on `builder.Environment.IsDevelopment()`.
-- Do NOT call the Firebase Admin SDK (`FirebaseAdmin`, `FirebaseMessaging`) directly. Route all sends through `IPushNotificationService`.
+- Do NOT call the Firebase Admin SDK (`FirebaseAdmin`, `FirebaseMessaging`) directly. Route all sends through `IPushNotificationService`, or `IFcmPushNotificationService` for topics, conditions, and FCM-only options. The typed API exposes no SDK types.
+- Pass an FCM topic without the `/topics/` prefix; `SendToTopicAsync` throws `ArgumentException` for the prefix or for a character outside `[a-zA-Z0-9-_.~%]`. A condition passed to `SendToConditionAsync` must name between one and five topics.
 - After every send, check `PushNotificationResponse.Status`. Three distinct states exist — `Success`, `Failure`, and `Unregistered` — and `IsSucceeded()` / `IsFailed()` both return `false` for an unregistered token. Use `IsUnregistered()` explicitly and remove that token from your store.
 - FCM limits only the whole message payload (4 096 bytes), not the title or body. The provider does not check the size; FCM rejects an oversized message with `InvalidArgument`, which comes back as a `Failure`.
 - FCM data payload keys `from`, `notification`, `message_type`, and any key starting with `google.` or `gcm.` are reserved. A key that only starts with `google` or `gcm`, such as `googleId`, is allowed. Passing a reserved key throws `ArgumentException` from `SendToDeviceAsync` / `SendMulticastAsync` before any network call.
@@ -67,7 +70,8 @@ For pushes only APNs has — Live Activities, rich alert controls, background pu
 - The FirebaseAdmin SDK retries HTTP 503 `Unavailable` and network errors itself, up to 4 times; that is not configurable. The provider adds retries only for HTTP 500 `Internal` and HTTP 429 `QuotaExceeded`, 2 by default, following Google's guidance: at least 10 seconds with jitter for `Internal`, and the longer of Retry-After and 60 seconds for `QuotaExceeded`. See [Retried errors](#retried-errors).
 - FCM has no idempotency key, so a retried message can arrive twice. Set `Retry.MaxAttempts = 0` when you retry from your own queue instead.
 - Firebase does not retry permanent errors (`Unregistered`, `InvalidArgument`, `SenderIdMismatch`, `ThirdPartyAuthError`). `Unregistered` is returned as `PushNotificationResponseStatus.Unregistered`, not as a failure. `SenderIdMismatch` is a `Failure` unless `FirebaseOptions.TreatSenderIdMismatchAsUnregistered` is `true`, because a host signed in to the wrong Firebase project gets it for every token.
-- A Firebase send never throws for one token's failure. A timeout, a credential error, or any other exception becomes a `Failure`; only the caller's own cancellation throws `OperationCanceledException`, from a single send and from a multicast alike.
+- A Firebase send never throws for one token's failure. A timeout, a credential error, or any other exception becomes a `Failure`; only the caller's own cancellation throws `OperationCanceledException`, from a single send and from a multicast alike. Topic and condition sends keep the same promise.
+- Decide whether to retry a Firebase failure from `FcmSendResult.IsRetryable` and `RetryAfter`, not from the error text. `FcmSendResult.FailureKind` classifies every failure; see [Failure classification](#failure-classification).
 - `FirebaseOptions.Json` contains sensitive private-key material. Do not log it, serialize it, or store it in configuration as plain text in production. The `ToString()` override on `FirebaseOptions` redacts it.
 - `PushNotificationRequest.CollapseKey` is limited to 64 UTF-8 bytes by both production providers, because Apple caps the `apns-collapse-id` header at 64 bytes. A longer key throws `ArgumentException` before any network call.
 - APNs reports a token as `Unregistered` only on HTTP 410. `BadDeviceToken` (HTTP 400) is a `Failure` by default, because Apple returns it both for a malformed token and for a valid token sent to the wrong environment. A host pointed at the wrong `ApnsOptions.Environment` would discard every valid token it holds if that rejection meant unregistered. Set `TreatBadDeviceTokenAsUnregistered = true` only when the environment is known to be right.
@@ -351,7 +355,9 @@ Firebase Cloud Messaging (FCM) implementation of `IPushNotificationService` for 
 
 ### API and behavior
 
-- FCM-backed `IPushNotificationService` implementation (`FcmPushNotificationService`)
+- FCM-backed `IPushNotificationService` implementation (`FcmPushNotificationService`), which also implements the typed `IFcmPushNotificationService`
+- Typed FCM API: device, multicast, topic, and condition sends of an `FcmMessage` with Android, web push, and APNs-bridge options, returning `FcmSendResult` with the FCM error code, `FcmFailureKind`, `IsRetryable`, and `RetryAfter`. See [Typed FCM API](#typed-fcm-api)
+- Metrics and traces on the `Headless.PushNotifications.Firebase` meter and activity source. See [Telemetry](#telemetry)
 - Selectable as the default (`setup.UseFirebase(…)`) or as a named instance (`setup.AddNamed("name", i => i.UseFirebase(…))`), each isolating its own options, retry settings, and `FirebaseApp`
 - Single-device (`SendToDeviceAsync`) and multicast (`SendMulticastAsync`) delivery
 - Automatic chunking of multicast sends into batches of ≤ 500 tokens (FCM hard limit)
@@ -375,6 +381,107 @@ The Firebase Admin SDK `FirebaseApp` is created **lazily on the first send**, no
 Each named instance reads its own options snapshot (`IOptionsMonitor<FirebaseOptions>.Get(name)`), retry settings included; the default reads the unnamed options. Keyed DI does not cascade the key to constructor dependencies, so a keyed sender never reads `CurrentValue` (which binds the default) — the sender is registered through an explicit factory that passes its own name.
 
 When `Priority` is `null`, Android messages are sent at high priority and the APNs bridge sends no `apns-priority` header. When `Badge` is `null`, no badge is sent on either platform.
+
+### Typed FCM API
+
+`IFcmPushNotificationService` sends an `FcmMessage`, the FCM v1 message with the options the shared request cannot express:
+
+| Method | Target | Returns |
+|---|---|---|
+| `SendAsync(fid, message, ct)` | One device's FID or registration token (`message.fid`) | `FcmSendResult` |
+| `SendMulticastAsync(fids, message, ct)` | Many devices, in batches of at most 500 | `FcmBatchSendResult` (`SuccessCount`, `FailureCount`, `Results` in input order) |
+| `SendToTopicAsync(topic, message, ct)` | Every device subscribed to the topic (`message.topic`) | `FcmSendResult` whose client identifier is the topic |
+| `SendToConditionAsync(condition, message, ct)` | Every device whose subscriptions satisfy the condition (`message.condition`) | `FcmSendResult` whose client identifier is the condition |
+
+Every method validates the message and target before any request and throws `ArgumentException` for invalid input. Every send goes through the same retry loop and never throws for the target's failure; only the caller's cancellation throws. A topic message is limited to 2048 bytes by FCM, which reports an oversized one as `Payload`.
+
+```csharp
+public sealed class ShippingPusher(IFcmPushNotificationService fcm)
+{
+    public async Task NotifyAsync(string fid, CancellationToken ct)
+    {
+        var result = await fcm.SendAsync(
+            fid,
+            new FcmMessage
+            {
+                Notification = new FcmNotification { Title = "Order shipped", Body = "Your order is on its way." },
+                Data = new Dictionary<string, string> { ["orderId"] = "1234" },
+                Android = new FcmAndroidOptions
+                {
+                    ChannelId = "shipping",
+                    Priority = FcmAndroidPriority.High,
+                    Visibility = FcmAndroidVisibility.Public,
+                },
+                Webpush = new FcmWebpushOptions { Link = new Uri("https://example.com/orders/1234") },
+                Apns = new FcmApnsOptions
+                {
+                    Payload = new JsonObject { ["aps"] = new JsonObject { ["interruption-level"] = "time-sensitive" } },
+                },
+                AnalyticsLabel = "order_shipped",
+            },
+            ct
+        );
+
+        if (result.Response.IsUnregistered())
+        {
+            // Delete the FID from your store.
+        }
+        else if (result.IsRetryable)
+        {
+            // Requeue after result.RetryAfter.
+        }
+    }
+}
+```
+
+#### Message fields
+
+| Field | Sent as | Rules |
+|---|---|---|
+| `Notification` (`Title`, `Body`, `Image`) | `notification` | `Image` must be an absolute URL. `null` sends a data message |
+| `Data` | `data` | Same reserved keys as the shared request |
+| `Android.Priority`, `TimeToLive`, `CollapseKey`, `DirectBootOk` | `android.priority`, `ttl`, `collapse_key`, `direct_boot_ok` | `TimeToLive` from 0 to 28 days; `Priority` a defined `FcmAndroidPriority` |
+| `Android.ChannelId`, `Tag`, `Color`, `Icon`, `ClickAction`, `Sound`, `NotificationCount`, `Visibility`, `Image` | `android.notification.*` | Sent only when one is set. `Color` is `#RRGGBB`; `NotificationCount` is 0 or more; `Image` is absolute |
+| `Webpush.Link`, `Headers`, `Data` | `webpush.fcm_options.link`, `headers`, `data` | `Link` must be an absolute HTTPS URL |
+| `Apns.Headers`, `Payload` | `apns.headers`, `apns.payload` | `Payload` is the whole APNs payload as a `JsonObject` and must hold an `aps` object; custom top-level keys pass through. FCM merges `Notification` into `aps.alert` |
+| `AnalyticsLabel` | `fcm_options.analytics_label`, on every message of a multicast | Matches `^[a-zA-Z0-9-_.~%]{1,50}$` |
+| `DryRun` | `validate_only` | FCM validates without delivering; a valid message succeeds with a placeholder message id |
+
+The shared `IPushNotificationService` converts each `PushNotificationRequest` into an `FcmMessage` and sends it through the same mapping, so both paths produce the same FCM JSON for the same fields.
+
+#### Failure classification
+
+`FcmSendResult` holds the provider-agnostic `Response` plus `ErrorCode` (the wire code, such as `QUOTA_EXCEEDED`; `null` on success or when no answer arrived), `FailureKind`, `IsRetryable`, and `RetryAfter`.
+
+| Cause | `ErrorCode` | `FailureKind` | Status | `IsRetryable` | `RetryAfter` |
+|---|---|---|---|---|---|
+| `UNREGISTERED` | `UNREGISTERED` | `TokenInvalid` | `Unregistered` | No | — |
+| `SENDER_ID_MISMATCH` | `SENDER_ID_MISMATCH` | `Configuration`, or `TokenInvalid` with `TreatSenderIdMismatchAsUnregistered` | `Failure`, or `Unregistered` | No | — |
+| `INVALID_ARGUMENT` | `INVALID_ARGUMENT` | `Payload`; never a dead token | `Failure` | No | — |
+| `THIRD_PARTY_AUTH_ERROR` | `THIRD_PARTY_AUTH_ERROR` | `Authentication` | `Failure` | No | — |
+| `QUOTA_EXCEEDED` | `QUOTA_EXCEEDED` | `Throttled` | `Failure` | Yes | Retry-After, else 60s |
+| `INTERNAL`, `UNAVAILABLE` | `INTERNAL`, `UNAVAILABLE` | `ServerError` | `Failure` | Yes | Retry-After, else 10s |
+| No FCM code: 400 | `INVALID_ARGUMENT` | `Payload` | `Failure` | No | — |
+| No FCM code: 401 | `UNAUTHENTICATED` | `Authentication` | `Failure` | No | — |
+| No FCM code: 403, 404 | `PERMISSION_DENIED`, `NOT_FOUND` | `Configuration`; never a dead token | `Failure` | No | — |
+| No FCM code: 429 | `RESOURCE_EXHAUSTED` | `Throttled` | `Failure` | Yes | Retry-After, else 60s |
+| No FCM code: 409 or 5xx | `CONFLICT`, `INTERNAL`, `UNAVAILABLE`, `UNKNOWN` | `ServerError` | `Failure` | Yes | Retry-After, else 10s |
+| Network failure after the SDK's retries, or a timeout | `null` | `Transport` | `Failure` | Yes | — |
+| Service-account JSON cannot be loaded, or the token exchange is refused | `null` | `Authentication` | `Failure` | No | — |
+
+The result reflects the last attempt, after the provider's own retries. A `Transport` retry can deliver twice, because FCM has no idempotency key.
+
+### Telemetry
+
+Subscribe to `FcmDiagnostics.SourceName` (`Headless.PushNotifications.Firebase`) with `AddMeter` and `AddSource`. Attribute names are the `FcmTags` constants.
+
+| Instrument | Unit | Records | Tags |
+|---|---|---|---|
+| `headless.fcm.sends` | `{send}` | One final outcome per target, after retries | `headless.fcm.instance`, `headless.fcm.outcome` (`succeeded`, `unregistered`, `failed`), `headless.fcm.target_kind` (`token`, `topic`, `condition`); on a failure also `headless.fcm.failure_kind` and `headless.fcm.error_code` (`none` without an answer) |
+| `headless.fcm.send.duration` | `s` | One request round: a single send attempt or one multicast round | `headless.fcm.instance`, `headless.fcm.target_kind`, `headless.fcm.operation` (`send`, `multicast`) |
+| `headless.fcm.retries` | `{retry}` | One in-process resend of one target | `headless.fcm.instance`, `headless.fcm.target_kind`, `headless.fcm.failure_kind`, `headless.fcm.error_code` |
+
+`headless.fcm.instance` is the named instance, or `default` for the unkeyed one. Traces: one `fcm.send` client activity per device, topic, or condition send, spanning its retries, with the outcome, failure kind, error code, retry count, and dry-run flag; it is marked as an error only for a `Failure`. A multicast emits one `fcm.multicast` activity per round of at most 500 devices, tagged with the batch size, the retry round, and the success count, rather than one activity per device. Tokens, topic and condition text, and message content are never tags.
 
 ### Install
 
@@ -500,7 +607,7 @@ A multicast never resends the whole batch. After each round it resends only the 
 
 ### Runtime behavior
 
-- Registers `IPushNotificationService` as singleton (`FcmPushNotificationService`) for the default, or a keyed singleton under the instance name for a named instance
+- Registers `IPushNotificationService` and `IFcmPushNotificationService` as singletons for the default, or keyed singletons under the instance name for a named instance. Both resolve to the same `FcmPushNotificationService` instance. `IPushNotificationServiceProvider` returns only `IPushNotificationService`, so resolve a named typed service through keyed DI (`[FromKeyedServices("driver-app")] IFcmPushNotificationService`)
 - Registers `TimeProvider.System` as singleton (if not already registered)
 - The Firebase Admin SDK `FirebaseApp` is created lazily on first send; registration has no network side effects
 ---

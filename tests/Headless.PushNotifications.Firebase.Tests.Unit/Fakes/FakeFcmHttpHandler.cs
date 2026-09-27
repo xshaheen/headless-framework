@@ -11,7 +11,9 @@ using Google.Apis.Http;
 namespace Tests.Fakes;
 
 /// <summary>One FCM v1 send the fake handler received.</summary>
-/// <param name="Target">The <c>message.fid</c> or <c>message.token</c> the request addressed.</param>
+/// <param name="Target">
+/// The <c>message.fid</c>, <c>message.token</c>, <c>message.topic</c>, or <c>message.condition</c> the request addressed.
+/// </param>
 /// <param name="Attempt">1-based count of requests for this target, including this one.</param>
 /// <param name="ReceivedAt">The fake clock's time when the request arrived.</param>
 /// <param name="Body">The raw JSON request body.</param>
@@ -37,6 +39,17 @@ internal sealed class FakeFcmHttpHandler(TimeProvider timeProvider) : HttpMessag
     public Func<FcmRecordedRequest, CancellationToken, Task<HttpResponseMessage>> Responder { get; set; } =
         static (request, _) => Task.FromResult(Success(request.Target));
 
+    /// <summary>
+    /// Produces the OAuth2 token-exchange response. Defaults to a valid access token; a test replaces it to make the
+    /// credential exchange fail.
+    /// </summary>
+    public Func<HttpResponseMessage> TokenResponder { get; set; } =
+        static () =>
+            _Json(
+                HttpStatusCode.OK,
+                """{"access_token":"fake-access-token","expires_in":3600,"token_type":"Bearer"}"""
+            );
+
     public IReadOnlyList<FcmRecordedRequest> Requests => [.. _requests];
 
     public int TokenRequests => Volatile.Read(ref _tokenRequests);
@@ -60,7 +73,11 @@ internal sealed class FakeFcmHttpHandler(TimeProvider timeProvider) : HttpMessag
 
     public static HttpResponseMessage Success(string target)
     {
-        return _Json(HttpStatusCode.OK, $$"""{"name":"projects/test-project/messages/{{target}}"}""");
+        // Built as a node so a condition target's quotes are escaped.
+        return _Json(
+            HttpStatusCode.OK,
+            new JsonObject { ["name"] = $"projects/test-project/messages/{target}" }.ToJsonString()
+        );
     }
 
     /// <summary>A google.rpc error body carrying an FCM error code, with the HTTP status FCM pairs it with.</summary>
@@ -99,6 +116,22 @@ internal sealed class FakeFcmHttpHandler(TimeProvider timeProvider) : HttpMessag
         return response;
     }
 
+    /// <summary>A google.rpc error body with no FCM error code, so the SDK derives only the platform code.</summary>
+    public static HttpResponseMessage PlatformError(HttpStatusCode status, string rpcStatus)
+    {
+        var body = new JsonObject
+        {
+            ["error"] = new JsonObject
+            {
+                ["code"] = (int)status,
+                ["message"] = $"Simulated {rpcStatus}",
+                ["status"] = rpcStatus,
+            },
+        };
+
+        return _Json(status, body.ToJsonString());
+    }
+
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken
@@ -108,16 +141,18 @@ internal sealed class FakeFcmHttpHandler(TimeProvider timeProvider) : HttpMessag
         {
             Interlocked.Increment(ref _tokenRequests);
 
-            return _Json(
-                HttpStatusCode.OK,
-                """{"access_token":"fake-access-token","expires_in":3600,"token_type":"Bearer"}"""
-            );
+            return TokenResponder();
         }
 
         var json = await request.Content!.ReadAsStringAsync(cancellationToken);
         var body = JsonNode.Parse(json)!.AsObject();
         var message = body["message"]!.AsObject();
-        var target = (string?)message["fid"] ?? (string?)message["token"] ?? "<none>";
+        var target =
+            (string?)message["fid"]
+            ?? (string?)message["token"]
+            ?? (string?)message["topic"]
+            ?? (string?)message["condition"]
+            ?? "<none>";
         var attempt = _attempts.AddOrUpdate(target, 1, static (_, count) => count + 1);
         var recorded = new FcmRecordedRequest(target, attempt, timeProvider.GetUtcNow(), body);
 

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Globalization;
-using FirebaseAdmin.Messaging;
+using System.Text.Json.Nodes;
 using Headless.PushNotifications;
 using Headless.PushNotifications.Firebase;
 using Headless.PushNotifications.Firebase.Internals;
@@ -21,160 +21,149 @@ public sealed class FcmPushNotificationServiceTests : TestBase
     private readonly IFcmMessageSender _sender = Substitute.For<IFcmMessageSender>();
 
     [Fact]
-    public void should_build_a_plain_notification_without_badge_or_apns_headers()
+    public void should_build_a_plain_notification_without_badge_or_apns_block()
     {
         // when
-        var single = FcmMessageSender.BuildMessage(new FcmMessageContent("title", "body", null), "fid-1", _Now);
-        var multicast = FcmMessageSender.BuildMulticastMessage(
-            new FcmMessageContent("title", "body", null),
-            ["fid-1"],
-            _Now
-        );
+        var message = _Convert(_Request());
 
         // then
-        single.Notification.Title.Should().Be("title");
-        single.Notification.Body.Should().Be("body");
-        single.Android.Priority.Should().Be(Priority.High);
-        single.Android.TimeToLive.Should().BeNull();
-        single.Android.Notification.Should().BeNull();
-        single.Apns.Aps.Should().BeNull();
-        single.Apns.Headers.Should().BeNull();
-        multicast.Notification.Title.Should().Be("title");
-        multicast.Android.Priority.Should().Be(Priority.High);
-        multicast.Apns.Aps.Should().BeNull();
-        multicast.Apns.Headers.Should().BeNull();
+        message.Notification!.Title.Should().Be("title");
+        message.Notification.Body.Should().Be("body");
+        message.Android!.Priority.Should().Be(FcmAndroidPriority.High);
+        message.Android.TimeToLive.Should().BeNull();
+        message.Android.NotificationCount.Should().BeNull();
+        message.Android.Sound.Should().BeNull();
+        message.Apns.Should().BeNull();
     }
 
     [Fact]
     public void should_send_data_only_message_as_content_available_with_apns_priority_5()
     {
-        // given
-        var content = new FcmMessageContent(null, null, _SyncData);
-
         // when
-        var single = FcmMessageSender.BuildMessage(content, "fid-1", _Now);
-        var multicast = FcmMessageSender.BuildMulticastMessage(content, ["fid-1"], _Now);
+        var message = _Convert(new PushNotificationRequest { Data = _SyncData });
 
         // then
-        single.Notification.Should().BeNull();
-        single.Data.Should().Contain("sync", "1");
-        single.Android.Priority.Should().Be(Priority.High);
-        single.Android.Notification.Should().BeNull();
-        single.Apns.Aps.ContentAvailable.Should().BeTrue();
-        single.Apns.Aps.Badge.Should().BeNull();
-        single.Apns.Headers.Should().Contain("apns-priority", "5");
-        multicast.Notification.Should().BeNull();
-        multicast.Apns.Aps.ContentAvailable.Should().BeTrue();
-        multicast.Apns.Aps.Badge.Should().BeNull();
-        multicast.Apns.Headers.Should().Contain("apns-priority", "5");
+        message.Notification.Should().BeNull();
+        message.Data.Should().Contain("sync", "1");
+        message.Android!.Priority.Should().Be(FcmAndroidPriority.High);
+        message.Android.NotificationCount.Should().BeNull();
+        _Aps(message)["content-available"]!.GetValue<int>().Should().Be(1);
+        _Aps(message).Should().NotContainKey("badge");
+        message.Apns!.Headers.Should().Contain("apns-priority", "5");
     }
 
     [Fact]
     public void should_keep_apns_priority_5_for_data_only_message_even_when_high_is_requested()
     {
         // when
-        var message = FcmMessageSender.BuildMessage(
-            new FcmMessageContent(null, null, _SyncData, Priority: PushNotificationPriority.High),
-            "fid-1",
-            _Now
+        var message = _Convert(
+            new PushNotificationRequest { Data = _SyncData, Priority = PushNotificationPriority.High }
         );
 
         // then
-        message.Apns.Headers.Should().Contain("apns-priority", "5");
-        message.Android.Priority.Should().Be(Priority.High);
+        message.Apns!.Headers.Should().Contain("apns-priority", "5");
+        message.Android!.Priority.Should().Be(FcmAndroidPriority.High);
     }
 
     [Theory]
-    [InlineData(PushNotificationPriority.Normal, Priority.Normal, "5")]
-    [InlineData(PushNotificationPriority.High, Priority.High, "10")]
+    [InlineData(PushNotificationPriority.Normal, FcmAndroidPriority.Normal, "5")]
+    [InlineData(PushNotificationPriority.High, FcmAndroidPriority.High, "10")]
     public void should_map_priority_to_android_and_apns(
         PushNotificationPriority requested,
-        Priority expectedAndroid,
+        FcmAndroidPriority expectedAndroid,
         string expectedApns
     )
     {
-        // given
-        var content = new FcmMessageContent("title", "body", null, Priority: requested);
-
         // when
-        var single = FcmMessageSender.BuildMessage(content, "fid-1", _Now);
-        var multicast = FcmMessageSender.BuildMulticastMessage(content, ["fid-1"], _Now);
+        var message = _Convert(_Request() with { Priority = requested });
 
         // then
-        single.Android.Priority.Should().Be(expectedAndroid);
-        single.Apns.Headers.Should().Contain("apns-priority", expectedApns);
-        multicast.Android.Priority.Should().Be(expectedAndroid);
-        multicast.Apns.Headers.Should().Contain("apns-priority", expectedApns);
+        message.Android!.Priority.Should().Be(expectedAndroid);
+        message.Apns!.Headers.Should().Contain("apns-priority", expectedApns);
     }
 
     [Fact]
     public void should_map_time_to_live_to_android_ttl_and_apns_expiration()
     {
         // given
-        var content = new FcmMessageContent("title", "body", null, TimeToLive: TimeSpan.FromHours(1));
         var expected = _Now.AddHours(1).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
 
         // when
-        var single = FcmMessageSender.BuildMessage(content, "fid-1", _Now);
-        var multicast = FcmMessageSender.BuildMulticastMessage(content, ["fid-1"], _Now);
+        var message = _Convert(_Request() with { TimeToLive = TimeSpan.FromHours(1) });
 
         // then
-        single.Android.TimeToLive.Should().Be(TimeSpan.FromHours(1));
-        single.Apns.Headers.Should().Contain("apns-expiration", expected);
-        multicast.Android.TimeToLive.Should().Be(TimeSpan.FromHours(1));
-        multicast.Apns.Headers.Should().Contain("apns-expiration", expected);
+        message.Android!.TimeToLive.Should().Be(TimeSpan.FromHours(1));
+        message.Apns!.Headers.Should().Contain("apns-expiration", expected);
     }
 
     [Fact]
     public void should_send_apns_expiration_zero_when_time_to_live_is_zero()
     {
         // when
-        var message = FcmMessageSender.BuildMessage(
-            new FcmMessageContent("title", "body", null, TimeToLive: TimeSpan.Zero),
-            "fid-1",
-            _Now
-        );
+        var message = _Convert(_Request() with { TimeToLive = TimeSpan.Zero });
 
         // then
-        message.Android.TimeToLive.Should().Be(TimeSpan.Zero);
-        message.Apns.Headers.Should().Contain("apns-expiration", "0");
+        message.Android!.TimeToLive.Should().Be(TimeSpan.Zero);
+        message.Apns!.Headers.Should().Contain("apns-expiration", "0");
     }
 
     [Fact]
     public void should_map_badge_and_sound_to_aps_and_android_notification()
     {
-        // given
-        var content = new FcmMessageContent("title", "body", null, Badge: 3, Sound: "default");
-
         // when
-        var single = FcmMessageSender.BuildMessage(content, "fid-1", _Now);
-        var multicast = FcmMessageSender.BuildMulticastMessage(content, ["fid-1"], _Now);
+        var message = _Convert(_Request() with { Badge = 3, Sound = "default" });
 
         // then
-        single.Apns.Aps.Badge.Should().Be(3);
-        single.Apns.Aps.Sound.Should().Be("default");
-        single.Apns.Aps.ContentAvailable.Should().BeFalse();
-        single.Android.Notification.NotificationCount.Should().Be(3);
-        single.Android.Notification.Sound.Should().Be("default");
-        multicast.Apns.Aps.Badge.Should().Be(3);
-        multicast.Apns.Aps.Sound.Should().Be("default");
-        multicast.Android.Notification.NotificationCount.Should().Be(3);
-        multicast.Android.Notification.Sound.Should().Be("default");
+        _Aps(message)["badge"]!.GetValue<int>().Should().Be(3);
+        _Aps(message)["sound"]!.GetValue<string>().Should().Be("default");
+        _Aps(message).Should().NotContainKey("content-available");
+        message.Android!.NotificationCount.Should().Be(3);
+        message.Android.Sound.Should().Be("default");
     }
 
     [Fact]
     public void should_clear_the_ios_badge_but_leave_the_android_count_unset_when_badge_is_zero()
     {
         // when
-        var message = FcmMessageSender.BuildMessage(
-            new FcmMessageContent("title", "body", null, Badge: 0),
-            "fid-1",
-            _Now
-        );
+        var message = _Convert(_Request() with { Badge = 0 });
 
         // then
-        message.Apns.Aps.Badge.Should().Be(0);
-        message.Android.Notification.Should().BeNull();
+        _Aps(message)["badge"]!.GetValue<int>().Should().Be(0);
+        message.Android!.NotificationCount.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_target_the_fid_field()
+    {
+        // when
+        var message = FcmMessageMapper.ToMessage(_Convert(_Request()), FcmTarget.Token("fid-1"));
+        var messages = FcmMessageMapper.ToMessages(_Convert(_Request()), ["fid-1", "fid-2"]);
+
+        // then
+        message.Fid.Should().Be("fid-1");
+        messages.Select(m => m.Fid).Should().Equal("fid-1", "fid-2");
+    }
+
+    [Fact]
+    public void should_set_collapse_key_for_android_and_apns()
+    {
+        // when
+        var message = _Convert(_Request() with { CollapseKey = "order-42" });
+
+        // then
+        message.Android!.CollapseKey.Should().Be("order-42");
+        message.Apns!.Headers.Should().Contain("apns-collapse-id", "order-42");
+    }
+
+    [Fact]
+    public void should_leave_collapse_key_unset_when_request_has_none()
+    {
+        // when
+        var message = _Convert(_Request());
+
+        // then
+        message.Android!.CollapseKey.Should().BeNull();
+        message.Apns.Should().BeNull();
     }
 
     [Theory]
@@ -200,14 +189,10 @@ public sealed class FcmPushNotificationServiceTests : TestBase
         await multicast.Should().ThrowAsync<ArgumentException>();
         await _sender
             .DidNotReceive()
-            .SendAsync(Arg.Any<FcmMessageContent>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            .SendAsync(Arg.Any<FcmMessage>(), Arg.Any<FcmTarget>(), Arg.Any<CancellationToken>());
         await _sender
             .DidNotReceive()
-            .SendBatchAsync(
-                Arg.Any<FcmMessageContent>(),
-                Arg.Any<IReadOnlyList<string>>(),
-                Arg.Any<CancellationToken>()
-            );
+            .SendBatchAsync(Arg.Any<FcmMessage>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -215,8 +200,8 @@ public sealed class FcmPushNotificationServiceTests : TestBase
     {
         // given
         _sender
-            .SendAsync(Arg.Any<FcmMessageContent>(), "fid", Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(PushNotificationResponse.Succeeded("fid", "msg-1")));
+            .SendAsync(Arg.Any<FcmMessage>(), FcmTarget.Token("fid"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(_Succeeded("fid", "msg-1")));
         var request = _Request() with
         {
             Badge = 3,
@@ -232,13 +217,13 @@ public sealed class FcmPushNotificationServiceTests : TestBase
         await _sender
             .Received(1)
             .SendAsync(
-                Arg.Is<FcmMessageContent>(c =>
-                    c.Badge == 3
-                    && c.Sound == "default"
-                    && c.Priority == PushNotificationPriority.Normal
-                    && c.TimeToLive == TimeSpan.FromHours(1)
+                Arg.Is<FcmMessage>(m =>
+                    m.Android!.NotificationCount == 3
+                    && m.Android.Sound == "default"
+                    && m.Android.Priority == FcmAndroidPriority.Normal
+                    && m.Android.TimeToLive == TimeSpan.FromHours(1)
                 ),
-                "fid",
+                FcmTarget.Token("fid"),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -248,8 +233,8 @@ public sealed class FcmPushNotificationServiceTests : TestBase
     {
         // given
         _sender
-            .SendAsync(Arg.Any<FcmMessageContent>(), "fid", Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(PushNotificationResponse.Succeeded("fid", "msg-1")));
+            .SendAsync(Arg.Any<FcmMessage>(), FcmTarget.Token("fid"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(_Succeeded("fid", "msg-1")));
         var request = new PushNotificationRequest { Data = _SyncData };
 
         // when
@@ -260,8 +245,8 @@ public sealed class FcmPushNotificationServiceTests : TestBase
         await _sender
             .Received(1)
             .SendAsync(
-                Arg.Is<FcmMessageContent>(c => c.Title == null && c.Body == null && c.Data == _SyncData),
-                "fid",
+                Arg.Is<FcmMessage>(m => m.Notification == null && m.Data == _SyncData),
+                FcmTarget.Token("fid"),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -288,78 +273,6 @@ public sealed class FcmPushNotificationServiceTests : TestBase
     }
 
     [Fact]
-    public void should_target_fid_for_single_send()
-    {
-        // when
-        var message = FcmMessageSender.BuildMessage(new FcmMessageContent("title", "body", null), "fid-1", _Now);
-
-        // then
-        message.Fid.Should().Be("fid-1");
-    }
-
-    [Fact]
-    public void should_target_fids_for_multicast_send()
-    {
-        // when
-        var message = FcmMessageSender.BuildMulticastMessage(
-            new FcmMessageContent("title", "body", null),
-            ["fid-1", "fid-2"],
-            _Now
-        );
-
-        // then
-        message.Fids.Should().Equal("fid-1", "fid-2");
-    }
-
-    [Fact]
-    public void should_set_collapse_key_for_android_and_apns_on_single_send()
-    {
-        // when
-        var message = FcmMessageSender.BuildMessage(
-            new FcmMessageContent("title", "body", null, CollapseKey: "order-42"),
-            "fid-1",
-            _Now
-        );
-
-        // then
-        message.Android.CollapseKey.Should().Be("order-42");
-        message.Apns.Headers.Should().Contain("apns-collapse-id", "order-42");
-    }
-
-    [Fact]
-    public void should_set_collapse_key_for_android_and_apns_on_multicast_send()
-    {
-        // when
-        var message = FcmMessageSender.BuildMulticastMessage(
-            new FcmMessageContent("title", "body", null, CollapseKey: "order-42"),
-            ["fid-1", "fid-2"],
-            _Now
-        );
-
-        // then
-        message.Android.CollapseKey.Should().Be("order-42");
-        message.Apns.Headers.Should().Contain("apns-collapse-id", "order-42");
-    }
-
-    [Fact]
-    public void should_leave_collapse_key_unset_when_request_has_none()
-    {
-        // when
-        var single = FcmMessageSender.BuildMessage(new FcmMessageContent("title", "body", null), "fid-1", _Now);
-        var multicast = FcmMessageSender.BuildMulticastMessage(
-            new FcmMessageContent("title", "body", null),
-            ["fid-1"],
-            _Now
-        );
-
-        // then
-        single.Android.CollapseKey.Should().BeNull();
-        single.Apns.Headers.Should().BeNull();
-        multicast.Android.CollapseKey.Should().BeNull();
-        multicast.Apns.Headers.Should().BeNull();
-    }
-
-    [Fact]
     public async Task should_throw_when_collapse_key_exceeds_64_utf8_bytes()
     {
         // given 33 two-byte characters = 66 UTF-8 bytes, though only 33 chars
@@ -375,7 +288,7 @@ public sealed class FcmPushNotificationServiceTests : TestBase
         await action.Should().ThrowAsync<ArgumentException>();
         await _sender
             .DidNotReceive()
-            .SendAsync(Arg.Any<FcmMessageContent>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            .SendAsync(Arg.Any<FcmMessage>(), Arg.Any<FcmTarget>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -383,8 +296,8 @@ public sealed class FcmPushNotificationServiceTests : TestBase
     {
         // given
         _sender
-            .SendAsync(Arg.Any<FcmMessageContent>(), "fid", Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(PushNotificationResponse.Succeeded("fid", "msg-1")));
+            .SendAsync(Arg.Any<FcmMessage>(), FcmTarget.Token("fid"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(_Succeeded("fid", "msg-1")));
         var request = _Request() with { CollapseKey = "order-42" };
 
         // when
@@ -394,15 +307,30 @@ public sealed class FcmPushNotificationServiceTests : TestBase
         await _sender
             .Received(1)
             .SendAsync(
-                Arg.Is<FcmMessageContent>(c => c.CollapseKey == "order-42"),
-                "fid",
+                Arg.Is<FcmMessage>(m => m.Android!.CollapseKey == "order-42"),
+                FcmTarget.Token("fid"),
                 Arg.Any<CancellationToken>()
             );
     }
 
     private FcmPushNotificationService _CreateService()
     {
-        return new(_sender);
+        return new(_sender, TimeProvider.System);
+    }
+
+    private static FcmMessage _Convert(PushNotificationRequest request)
+    {
+        return FcmPushNotificationService.ToFcmMessage(request, _Now);
+    }
+
+    private static JsonObject _Aps(FcmMessage message)
+    {
+        return message.Apns!.Payload!["aps"]!.AsObject();
+    }
+
+    private static FcmSendResult _Succeeded(string fid, string messageId)
+    {
+        return new FcmSendResult { Response = PushNotificationResponse.Succeeded(fid, messageId) };
     }
 
     private static PushNotificationRequest _Request(
@@ -424,8 +352,8 @@ public sealed class FcmPushNotificationServiceTests : TestBase
     {
         // given
         _sender
-            .SendAsync(Arg.Any<FcmMessageContent>(), "fid", Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(PushNotificationResponse.Succeeded("fid", "msg-1")));
+            .SendAsync(Arg.Any<FcmMessage>(), FcmTarget.Token("fid"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(_Succeeded("fid", "msg-1")));
 
         // when
         var result = await _CreateService().SendToDeviceAsync("fid", _Request(), AbortToken);
@@ -472,8 +400,8 @@ public sealed class FcmPushNotificationServiceTests : TestBase
     {
         // given
         _sender
-            .SendAsync(Arg.Any<FcmMessageContent>(), "fid", Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(PushNotificationResponse.Succeeded("fid", "msg-1")));
+            .SendAsync(Arg.Any<FcmMessage>(), FcmTarget.Token("fid"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(_Succeeded("fid", "msg-1")));
         var data = new Dictionary<string, string>(StringComparer.Ordinal) { [key] = "value" };
 
         // when
@@ -488,8 +416,8 @@ public sealed class FcmPushNotificationServiceTests : TestBase
     {
         // given FCM limits only the whole payload, and reports an oversized one itself
         _sender
-            .SendAsync(Arg.Any<FcmMessageContent>(), "fid", Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(PushNotificationResponse.Succeeded("fid", "msg-1")));
+            .SendAsync(Arg.Any<FcmMessage>(), FcmTarget.Token("fid"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(_Succeeded("fid", "msg-1")));
         var request = _Request(title: new string('a', 101), body: new string('b', 4001));
 
         // when
@@ -504,8 +432,8 @@ public sealed class FcmPushNotificationServiceTests : TestBase
     {
         // given
         _sender
-            .SendAsync(Arg.Any<FcmMessageContent>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<PushNotificationResponse>(new OperationCanceledException()));
+            .SendAsync(Arg.Any<FcmMessage>(), Arg.Any<FcmTarget>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<FcmSendResult>(new OperationCanceledException()));
 
         // when
         var action = async () => await _CreateService().SendToDeviceAsync("fid", _Request(), AbortToken);
@@ -518,18 +446,11 @@ public sealed class FcmPushNotificationServiceTests : TestBase
     {
         // given
         _sender
-            .SendBatchAsync(
-                Arg.Any<FcmMessageContent>(),
-                Arg.Any<IReadOnlyList<string>>(),
-                Arg.Any<CancellationToken>()
-            )
+            .SendBatchAsync(Arg.Any<FcmMessage>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 var fids = ci.Arg<IReadOnlyList<string>>();
-                IReadOnlyList<PushNotificationResponse> outcomes =
-                [
-                    .. fids.Select(fid => PushNotificationResponse.Succeeded(fid, "id")),
-                ];
+                IReadOnlyList<FcmSendResult> outcomes = [.. fids.Select(fid => _Succeeded(fid, "id"))];
                 return Task.FromResult(outcomes);
             });
         var fids = Enumerable.Range(0, 501).Select(i => $"fid-{i}").ToList();
@@ -542,11 +463,7 @@ public sealed class FcmPushNotificationServiceTests : TestBase
         result.Responses.Should().HaveCount(501);
         await _sender
             .Received(2)
-            .SendBatchAsync(
-                Arg.Any<FcmMessageContent>(),
-                Arg.Any<IReadOnlyList<string>>(),
-                Arg.Any<CancellationToken>()
-            );
+            .SendBatchAsync(Arg.Any<FcmMessage>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -555,21 +472,17 @@ public sealed class FcmPushNotificationServiceTests : TestBase
         // given
         var call = 0;
         _sender
-            .SendBatchAsync(
-                Arg.Any<FcmMessageContent>(),
-                Arg.Any<IReadOnlyList<string>>(),
-                Arg.Any<CancellationToken>()
-            )
+            .SendBatchAsync(Arg.Any<FcmMessage>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 var fids = ci.Arg<IReadOnlyList<string>>();
                 var succeed = Interlocked.Increment(ref call) == 1;
-                IReadOnlyList<PushNotificationResponse> outcomes =
+                IReadOnlyList<FcmSendResult> outcomes =
                 [
                     .. fids.Select(fid =>
                         succeed
-                            ? PushNotificationResponse.Succeeded(fid, "id")
-                            : PushNotificationResponse.Failed(fid, "boom")
+                            ? _Succeeded(fid, "id")
+                            : new FcmSendResult { Response = PushNotificationResponse.Failed(fid, "boom") }
                     ),
                 ];
                 return Task.FromResult(outcomes);

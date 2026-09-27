@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
+using System.Diagnostics;
 using FirebaseAdmin;
 using FirebaseAdmin.Messaging;
 using Google.Apis.Auth.OAuth2;
@@ -32,11 +32,12 @@ namespace Headless.PushNotifications.Firebase.Internals;
 /// </remarks>
 internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
 {
-    private const string _ApnsNormalPriority = "5";
-    private const string _ApnsHighPriority = "10";
+    private const string _SendActivityName = "fcm.send";
+    private const string _MulticastActivityName = "fcm.multicast";
 
     private readonly ILogger<FcmMessageSender> _logger;
     private readonly TimeProvider _timeProvider;
+    private readonly string _instance;
     private readonly FirebaseRetryOptions _retry;
     private readonly bool _senderIdMismatchIsUnregistered;
     private readonly Lazy<FirebaseMessaging> _messaging;
@@ -45,7 +46,7 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
     /// <summary>Creates a sender for the <paramref name="optionsName"/> Firebase options.</summary>
     /// <param name="options">The Firebase options monitor.</param>
     /// <param name="optionsName">The named options to read; <see langword="null"/> for the default instance.</param>
-    /// <param name="timeProvider">The clock that retry delays wait on.</param>
+    /// <param name="timeProvider">The clock that retry delays wait on and durations are measured with.</param>
     /// <param name="logger">The logger.</param>
     /// <param name="httpClientFactory">
     /// Test seam: the factory both the Firebase app and its credential build their HTTP clients from, so a test can
@@ -61,6 +62,7 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
     {
         Argument.IsNotNull(options);
         _timeProvider = Argument.IsNotNull(timeProvider);
+        _instance = optionsName ?? FcmDiagnostics.DefaultInstanceName;
         _logger = Argument.IsNotNull(logger);
 
         var snapshot = options.Get(optionsName);
@@ -71,7 +73,17 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
 
         _messaging = new Lazy<FirebaseMessaging>(() =>
         {
-            var credential = CredentialFactory.FromJson<ServiceAccountCredential>(json).ToGoogleCredential();
+            GoogleCredential credential;
+
+            try
+            {
+                credential = CredentialFactory.FromJson<ServiceAccountCredential>(json).ToGoogleCredential();
+            }
+            catch (Exception e)
+            {
+                // Marked so the failure classifies as an authentication problem, not by its general exception type.
+                throw new FcmCredentialException(e);
+            }
 
             if (httpClientFactory is not null)
             {
@@ -91,81 +103,144 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
         });
     }
 
-    public async Task<PushNotificationResponse> SendAsync(
-        FcmMessageContent content,
-        string fid,
+    public async Task<FcmSendResult> SendAsync(
+        FcmMessage message,
+        FcmTarget target,
         CancellationToken cancellationToken
     )
     {
-        // Built once, so every retry carries the same absolute APNs expiration as the first attempt.
-        var message = BuildMessage(content, fid, _timeProvider.GetUtcNow());
+        var sdkMessage = FcmMessageMapper.ToMessage(message, target);
+        using var activity = FcmDiagnostics.ActivitySource.StartActivity(_SendActivityName, ActivityKind.Client);
+        activity?.SetTag(FcmTags.Instance, _instance);
+        activity?.SetTag(FcmTags.TargetKind, FcmTarget.ToTagValue(target.Kind));
+        activity?.SetTag(FcmTags.DryRun, message.DryRun);
+
+        FcmSendResult result;
 
         for (var retry = 0; ; retry++)
         {
             Exception failure;
+            var started = _timeProvider.GetTimestamp();
 
             try
             {
-                var messageId = await _messaging.Value.SendAsync(message, cancellationToken).ConfigureAwait(false);
+                var messageId = await _messaging
+                    .Value.SendAsync(sdkMessage, message.DryRun, cancellationToken)
+                    .ConfigureAwait(false);
 
-                return PushNotificationResponse.Succeeded(fid, messageId);
+                FcmMetrics.RecordDuration(
+                    _instance,
+                    _timeProvider.GetElapsedTime(started),
+                    target.Kind,
+                    multicast: false
+                );
+                result = new FcmSendResult { Response = PushNotificationResponse.Succeeded(target.Value, messageId) };
+
+                break;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                activity?.SetStatus(ActivityStatusCode.Error, "cancelled");
+
                 throw;
             }
             catch (Exception e)
             {
-                // One token's outcome: a timeout, a credential error, or any other failure is a Failed result.
+                // One target's outcome: a timeout, a credential error, or any other failure is a result, not a throw.
                 failure = e;
             }
 
-            if (_GetRetryDelay(failure, retry) is not { } delay)
+            FcmMetrics.RecordDuration(_instance, _timeProvider.GetElapsedTime(started), target.Kind, multicast: false);
+            result = FcmFailureClassifier.Classify(
+                target.Value,
+                failure,
+                _senderIdMismatchIsUnregistered,
+                _timeProvider
+            );
+
+            if (result.Response.IsUnregistered() || _GetRetryDelay(failure, retry) is not { } delay)
             {
-                return _ToFailedResponse(fid, failure, log: true);
+                if (result.Response.IsFailed())
+                {
+                    _logger.FailedToSendPushNotification(failure, _Mask(target.Value));
+                }
+
+                break;
             }
 
+            FcmMetrics.RecordRetry(_instance, result, target.Kind);
+            activity?.SetTag(FcmTags.Retry, retry + 1);
             _logger.LogRetryAttempt(retry + 1, delay.TotalSeconds, failure.Message);
             await Task.Delay(delay, _timeProvider, cancellationToken).ConfigureAwait(false);
         }
+
+        FcmMetrics.RecordSend(_instance, result, target.Kind);
+        _CompleteActivity(activity, result);
+
+        return result;
     }
 
-    public async Task<IReadOnlyList<PushNotificationResponse>> SendBatchAsync(
-        FcmMessageContent content,
+    public async Task<IReadOnlyList<FcmSendResult>> SendBatchAsync(
+        FcmMessage message,
         IReadOnlyList<string> fids,
         CancellationToken cancellationToken
     )
     {
-        var now = _timeProvider.GetUtcNow();
-        var results = new PushNotificationResponse[fids.Count];
-        IReadOnlyList<int> pending = [.. Enumerable.Range(0, fids.Count)];
+        var results = new FcmSendResult[fids.Count];
+        List<int> pending = [.. Enumerable.Range(0, fids.Count)];
 
         for (var retry = 0; ; retry++)
         {
-            var failures = await _SendRoundAsync(content, fids, pending, now, cancellationToken).ConfigureAwait(false);
-
             var retryIndices = new List<int>();
             var roundDelay = TimeSpan.Zero;
 
-            foreach (var (index, response, failure) in failures)
+            using (var activity = _StartMulticastActivity(pending.Count, retry, message.DryRun))
             {
-                if (response is not null)
+                var outcomes = await _SendRoundAsync(message, fids, pending, cancellationToken).ConfigureAwait(false);
+                var successCount = 0;
+
+                foreach (var (index, messageId, failure) in outcomes)
                 {
-                    results[index] = response;
+                    if (messageId is not null)
+                    {
+                        results[index] = new FcmSendResult
+                        {
+                            Response = PushNotificationResponse.Succeeded(fids[index], messageId),
+                        };
+                        successCount++;
+
+                        continue;
+                    }
+
+                    var result = FcmFailureClassifier.Classify(
+                        fids[index],
+                        failure,
+                        _senderIdMismatchIsUnregistered,
+                        _timeProvider
+                    );
+
+                    if (!result.Response.IsUnregistered() && _GetRetryDelay(failure, retry) is { } delay)
+                    {
+                        retryIndices.Add(index);
+                        roundDelay = delay > roundDelay ? delay : roundDelay;
+                        FcmMetrics.RecordRetry(_instance, result, FcmTargetKind.Token);
+                    }
+                    else
+                    {
+                        results[index] = result;
+                    }
                 }
-                else if (_GetRetryDelay(failure, retry) is { } delay)
-                {
-                    retryIndices.Add(index);
-                    roundDelay = delay > roundDelay ? delay : roundDelay;
-                }
-                else
-                {
-                    results[index] = _ToFailedResponse(fids[index], failure, log: false);
-                }
+
+                activity?.SetTag(FcmTags.SuccessCount, successCount);
             }
 
             if (retryIndices.Count == 0)
             {
+                foreach (var result in results)
+                {
+                    FcmMetrics.RecordSend(_instance, result, FcmTargetKind.Token);
+                }
+
                 return results;
             }
 
@@ -177,25 +252,27 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
     }
 
     /// <summary>
-    /// Sends one multicast to the <paramref name="pending"/> indices of <paramref name="fids"/> and returns, per
-    /// index, either the final response (success or unregistered) or the failure to classify.
+    /// Sends one round to the <paramref name="pending"/> indices of <paramref name="fids"/> and returns, per index,
+    /// either the message id FCM accepted it with or the failure to classify.
     /// </summary>
-    private async Task<List<(int Index, PushNotificationResponse? Response, Exception? Failure)>> _SendRoundAsync(
-        FcmMessageContent content,
+    private async Task<List<(int Index, string? MessageId, Exception? Failure)>> _SendRoundAsync(
+        FcmMessage message,
         IReadOnlyList<string> fids,
-        IReadOnlyList<int> pending,
-        DateTimeOffset now,
+        List<int> pending,
         CancellationToken cancellationToken
     )
     {
-        var outcomes = new List<(int, PushNotificationResponse?, Exception?)>(pending.Count);
+        var outcomes = new List<(int, string?, Exception?)>(pending.Count);
         BatchResponse? batch = null;
         Exception? batchFailure = null;
+        var started = _timeProvider.GetTimestamp();
 
         try
         {
-            var message = BuildMulticastMessage(content, [.. pending.Select(i => fids[i])], now);
-            batch = await _messaging.Value.SendEachForMulticastAsync(message, cancellationToken).ConfigureAwait(false);
+            var messages = FcmMessageMapper.ToMessages(message, pending.Select(i => fids[i]));
+            batch = await _messaging
+                .Value.SendEachAsync(messages, message.DryRun, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -207,6 +284,13 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
             batchFailure = e;
             _logger.FailedToSendPushNotification(e, $"multicast:{pending.Count}");
         }
+
+        FcmMetrics.RecordDuration(
+            _instance,
+            _timeProvider.GetElapsedTime(started),
+            FcmTargetKind.Token,
+            multicast: true
+        );
 
         // The SDK turns a cancelled send into a per-message failure rather than throwing, so the caller's
         // cancellation has to be observed here.
@@ -221,21 +305,13 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
 
         for (var i = 0; i < pending.Count; i++)
         {
-            var index = pending[i];
             var response = batch?.Responses[i];
 
-            if (response is { IsSuccess: true })
-            {
-                outcomes.Add((index, PushNotificationResponse.Succeeded(fids[index], response.MessageId), null));
-            }
-            else if (_IsUnregistered(response?.Exception))
-            {
-                outcomes.Add((index, PushNotificationResponse.Unregistered(fids[index]), null));
-            }
-            else
-            {
-                outcomes.Add((index, null, (Exception?)response?.Exception ?? batchFailure));
-            }
+            outcomes.Add(
+                response is { IsSuccess: true }
+                    ? (pending[i], response.MessageId, null)
+                    : (pending[i], null, (Exception?)response?.Exception ?? batchFailure)
+            );
         }
 
         return outcomes;
@@ -248,140 +324,39 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
             : null;
     }
 
-    private bool _IsUnregistered(Exception? exception)
+    private Activity? _StartMulticastActivity(int batchSize, int retry, bool dryRun)
     {
-        return exception is FirebaseMessagingException { MessagingErrorCode: { } code }
-            && (
-                code is MessagingErrorCode.Unregistered
-                || (code is MessagingErrorCode.SenderIdMismatch && _senderIdMismatchIsUnregistered)
-            );
+        var activity = FcmDiagnostics.ActivitySource.StartActivity(_MulticastActivityName, ActivityKind.Client);
+
+        activity?.SetTag(FcmTags.Instance, _instance);
+        activity?.SetTag(FcmTags.TargetKind, FcmTarget.ToTagValue(FcmTargetKind.Token));
+        activity?.SetTag(FcmTags.BatchSize, batchSize);
+        activity?.SetTag(FcmTags.Retry, retry);
+        activity?.SetTag(FcmTags.DryRun, dryRun);
+
+        return activity;
     }
 
-    private PushNotificationResponse _ToFailedResponse(string fid, Exception? failure, bool log)
+    private static void _CompleteActivity(Activity? activity, FcmSendResult result)
     {
-        if (_IsUnregistered(failure))
+        if (activity is null)
         {
-            return PushNotificationResponse.Unregistered(fid);
+            return;
         }
 
-        if (log && failure is not null)
+        activity.SetTag(FcmTags.Outcome, FcmMetrics.OutcomeTag(result.Response.Status));
+
+        if (result.FailureKind is { } kind)
         {
-            _logger.FailedToSendPushNotification(failure, _Mask(fid));
+            activity.SetTag(FcmTags.FailureKind, FcmMetrics.ToTagValue(kind));
+            activity.SetTag(FcmTags.ErrorCode, result.ErrorCode ?? "none");
         }
 
-        return PushNotificationResponse.Failed(fid, _Describe(failure));
-    }
-
-    internal static Message BuildMessage(FcmMessageContent content, string fid, DateTimeOffset now)
-    {
-        return new Message
+        // An unregistered token is an answer the caller acts on, not an error of the send.
+        if (result.Response.IsFailed())
         {
-            Fid = fid,
-            Data = content.Data,
-            Notification = _BuildNotification(content),
-            Android = _BuildAndroidConfig(content),
-            Apns = _BuildApnsConfig(content, now),
-        };
-    }
-
-    internal static MulticastMessage BuildMulticastMessage(
-        FcmMessageContent content,
-        IReadOnlyList<string> fids,
-        DateTimeOffset now
-    )
-    {
-        return new MulticastMessage
-        {
-            Fids = [.. fids],
-            Data = content.Data,
-            Notification = _BuildNotification(content),
-            Android = _BuildAndroidConfig(content),
-            Apns = _BuildApnsConfig(content, now),
-        };
-    }
-
-    private static Notification? _BuildNotification(FcmMessageContent content)
-    {
-        // Without a notification block FCM delivers a data message, which the app handles in the background.
-        return content.IsDataOnly ? null : new Notification { Title = content.Title, Body = content.Body };
-    }
-
-    private static AndroidConfig _BuildAndroidConfig(FcmMessageContent content)
-    {
-        // Android cannot clear a badge, so a zero count means "not set" there, as it does in FCM itself.
-        var count = content.Badge is > 0 ? content.Badge : null;
-
-        return new AndroidConfig
-        {
-            // High stays the default so callers that never set a priority keep today's delivery.
-            Priority = content.Priority is PushNotificationPriority.Normal ? Priority.Normal : Priority.High,
-            CollapseKey = content.CollapseKey,
-            TimeToLive = content.TimeToLive,
-            Notification =
-                count is null && content.Sound is null
-                    ? null
-                    : new AndroidNotification { NotificationCount = count, Sound = content.Sound },
-        };
-    }
-
-    private static ApnsConfig _BuildApnsConfig(FcmMessageContent content, DateTimeOffset now)
-    {
-        var headers = new Dictionary<string, string>(StringComparer.Ordinal);
-
-        if (content.CollapseKey is not null)
-        {
-            headers["apns-collapse-id"] = content.CollapseKey;
+            activity.SetStatus(ActivityStatusCode.Error, FcmMetrics.ToTagValue(result.FailureKind!.Value));
         }
-
-        if (content.IsDataOnly)
-        {
-            // Apple requires priority 5 for a background (content-available) push and rejects 10 for it.
-            headers["apns-priority"] = _ApnsNormalPriority;
-        }
-        else if (content.Priority is { } priority)
-        {
-            headers["apns-priority"] =
-                priority is PushNotificationPriority.High ? _ApnsHighPriority : _ApnsNormalPriority;
-        }
-
-        if (content.TimeToLive is { } timeToLive)
-        {
-            // APNs reads 0 as "attempt once, do not store", so a zero lifetime must not become the current time.
-            headers["apns-expiration"] =
-                timeToLive == TimeSpan.Zero
-                    ? "0"
-                    : (now + timeToLive).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
-        }
-
-        return new ApnsConfig { Aps = _BuildAps(content), Headers = headers.Count == 0 ? null : headers };
-    }
-
-    private static Aps? _BuildAps(FcmMessageContent content)
-    {
-        if (content.IsDataOnly)
-        {
-            return new Aps { ContentAvailable = true };
-        }
-
-        if (content.Badge is null && content.Sound is null)
-        {
-            return null;
-        }
-
-        return new Aps { Badge = content.Badge, Sound = content.Sound };
-    }
-
-    private static string _Describe(Exception? exception)
-    {
-        // Prefer the FCM code, then the platform code the SDK always sets, then the exception type, so the
-        // description never starts with an empty code.
-        return exception switch
-        {
-            null => "Unknown error",
-            FirebaseMessagingException { MessagingErrorCode: { } code } => $"{code}: {exception.Message}",
-            FirebaseException firebase => $"{firebase.ErrorCode}: {exception.Message}",
-            _ => $"{exception.GetType().Name}: {exception.Message}",
-        };
     }
 
     private static string _Mask(string clientIdentifier)
@@ -391,9 +366,7 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
 
     public void Dispose()
     {
-        if (_messaging.IsValueCreated)
-        {
-            _app?.Delete();
-        }
+        // Idempotent: the container and a test may both dispose the sender, and the app must be deleted once.
+        Interlocked.Exchange(ref _app, value: null)?.Delete();
     }
 }
