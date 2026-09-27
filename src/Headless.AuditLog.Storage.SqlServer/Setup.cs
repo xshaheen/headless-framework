@@ -163,6 +163,7 @@ public static class SetupAuditLogSqlServer
         {
             RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.SqlServer);
             RuleFor(x => x.TableName).IsValidIdentifierFor(StorageProvider.SqlServer);
+            RuleFor(x => x.TableName).FitsDerivedStorageNames();
             // SqlServer only supports NvarcharMax; Jsonb/Json are PostgreSQL column types.
             When(
                 x => x.JsonColumnType.HasValue,

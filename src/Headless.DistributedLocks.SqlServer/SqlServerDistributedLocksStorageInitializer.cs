@@ -71,7 +71,10 @@ internal sealed class SqlServerDistributedLocksStorageInitializer(
     )
     {
         var sequenceName = SqlServerIdentifier.FenceSequenceName(options.KeyPrefix);
-        var lockResource = SqlServerResourceName.Encode($"{options.KeyPrefix}init:{schema}.{sequenceName}");
+        // Kept out of the application's KeyPrefix namespace: an application lock named "init:<schema>.<sequence>"
+        // would otherwise be the same app lock and stall fencing initialization until it timed out. The sequence name
+        // already carries the KeyPrefix, so replicas with different prefixes still take different init locks.
+        var lockResource = SqlServerResourceName.Encode($"headless_distributed_locks_init:{schema}.{sequenceName}");
         var qualifiedSequence = $"{SqlServerIdentifier.Quote(schema)}.{SqlServerIdentifier.Quote(sequenceName)}";
         var lockTimeoutMs =
             options.CommandTimeout.TotalMilliseconds >= int.MaxValue

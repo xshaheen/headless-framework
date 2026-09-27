@@ -20,7 +20,7 @@ internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options)
         // Composite PK for partition-readiness (time-range partitioning by CreatedAt).
         // Note: SQLite does not support autoincrement on composite keys. Consumers
         // targeting SQLite must override the key configuration (e.g. single-column PK on Id).
-        builder.HasKey(e => new { e.CreatedAt, e.Id });
+        builder.HasKey(e => new { e.CreatedAt, e.Id }).HasName(AuditLogStorageNames.PrimaryKey(options.TableName));
 
         builder.Property(e => e.Id).ValueGeneratedOnAdd();
         builder.Property(e => e.CreatedAt).HasConversion(v => v, v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
@@ -85,7 +85,7 @@ internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options)
                 e.CreatedAt,
                 e.Id,
             })
-            .HasDatabaseName("ix_audit_log_tenant_time");
+            .HasDatabaseName(AuditLogStorageNames.TenantTimeIndex(options.TableName));
         builder
             .HasIndex(e => new
             {
@@ -94,7 +94,7 @@ internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options)
                 e.CreatedAt,
                 e.Id,
             })
-            .HasDatabaseName("ix_audit_log_tenant_action_time");
+            .HasDatabaseName(AuditLogStorageNames.TenantActionTimeIndex(options.TableName));
         builder
             .HasIndex(e => new
             {
@@ -104,7 +104,7 @@ internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options)
                 e.CreatedAt,
                 e.Id,
             })
-            .HasDatabaseName("ix_audit_log_tenant_entity_time");
+            .HasDatabaseName(AuditLogStorageNames.TenantEntityTimeIndex(options.TableName));
         builder
             .HasIndex(e => new
             {
@@ -113,7 +113,7 @@ internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options)
                 e.CreatedAt,
                 e.Id,
             })
-            .HasDatabaseName("ix_audit_log_tenant_actor_time");
+            .HasDatabaseName(AuditLogStorageNames.TenantActorTimeIndex(options.TableName));
         builder
             .HasIndex(e => new
             {
@@ -122,7 +122,7 @@ internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options)
                 e.CreatedAt,
                 e.Id,
             })
-            .HasDatabaseName("ix_audit_log_tenant_account_time");
+            .HasDatabaseName(AuditLogStorageNames.TenantAccountTimeIndex(options.TableName));
         builder
             .HasIndex(e => new
             {
@@ -130,6 +130,6 @@ internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options)
                 e.CreatedAt,
                 e.Id,
             })
-            .HasDatabaseName("ix_audit_log_correlation");
+            .HasDatabaseName(AuditLogStorageNames.CorrelationIndex(options.TableName));
     }
 }

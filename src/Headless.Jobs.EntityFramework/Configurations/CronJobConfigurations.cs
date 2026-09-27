@@ -95,7 +95,7 @@ public class CronJobConfigurations<TCronJob>(string schema, string? contractColl
         builder.HasIndex("Expression").HasDatabaseName("IX_CronJobs_Expression");
 
         // Index for common lookups by function + expression
-        builder.HasIndex("Function", "Expression").HasDatabaseName("IX_Function_Expression");
+        builder.HasIndex("Function", "Expression").HasDatabaseName("IX_CronJobs_Function_Expression");
 
         builder.ToTable("CronJobs", schema);
     }

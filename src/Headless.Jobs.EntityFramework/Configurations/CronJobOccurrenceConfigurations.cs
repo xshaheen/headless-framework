@@ -74,7 +74,7 @@ public class CronJobOccurrenceConfigurations<TCronJob>(string schema, string? co
             .HasIndex("CronJobId", "ExecutionTime")
             .IsUnique()
             .HasFilter("\"Status\" IN ('Idle', 'Queued', 'InProgress')")
-            .HasDatabaseName("UQ_CronJobId_ExecutionTime");
+            .HasDatabaseName("UQ_CronJobOccurrences_CronJobId_ExecutionTime");
 
         builder.ToTable("CronJobOccurrences", schema);
     }

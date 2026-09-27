@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using Headless.AuditLog;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -115,6 +116,58 @@ public sealed class AuditLogSetupTests
     public void should_default_the_storage_schema_to_the_shared_headless_schema()
     {
         new AuditLogStorageOptions().Schema.Should().Be("headless");
+    }
+
+    [Fact]
+    public void should_derive_every_storage_object_name_from_the_table_name()
+    {
+        AuditLogStorageNames.PrimaryKey("audit_log").Should().Be("PK_audit_log");
+        AuditLogStorageNames.TenantTimeIndex("audit_log").Should().Be("ix_audit_log_tenant_time");
+        AuditLogStorageNames.TenantActionTimeIndex("audit_log").Should().Be("ix_audit_log_tenant_action_time");
+        AuditLogStorageNames.TenantEntityTimeIndex("audit_log").Should().Be("ix_audit_log_tenant_entity_time");
+        AuditLogStorageNames.TenantActorTimeIndex("audit_log").Should().Be("ix_audit_log_tenant_actor_time");
+        AuditLogStorageNames.TenantAccountTimeIndex("audit_log").Should().Be("ix_audit_log_tenant_account_time");
+        AuditLogStorageNames.CorrelationIndex("audit_log").Should().Be("ix_audit_log_correlation");
+    }
+
+    [Theory]
+    [InlineData("audit_log")]
+    [InlineData("tenant_audit_archive")]
+    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")] // 40 characters: the longest derived name is exactly 63
+    public void should_accept_a_table_name_whose_derived_names_fit_the_identifier_limit(string tableName)
+    {
+        // when
+        var result = new TableNameValidator().Validate(new AuditLogStorageOptions { TableName = tableName });
+
+        // then
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_reject_a_table_name_whose_derived_index_name_exceeds_the_identifier_limit()
+    {
+        // given — 41 characters push "ix_<table>_tenant_account_time" to 64 bytes.
+        var options = new AuditLogStorageOptions { TableName = new string('a', 41) };
+
+        // when
+        var result = new TableNameValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result
+            .Errors.Should()
+            .ContainSingle()
+            .Which.ErrorMessage.Should()
+            .Contain("40 characters")
+            .And.Contain("63 bytes");
+    }
+
+    private sealed class TableNameValidator : AbstractValidator<AuditLogStorageOptions>
+    {
+        public TableNameValidator()
+        {
+            RuleFor(x => x.TableName).FitsDerivedStorageNames();
+        }
     }
 
     private sealed class NoopStorageExtension : IAuditLogStorageOptionsExtension

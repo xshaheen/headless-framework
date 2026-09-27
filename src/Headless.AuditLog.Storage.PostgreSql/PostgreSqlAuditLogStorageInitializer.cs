@@ -106,6 +106,7 @@ internal sealed partial class PostgreSqlAuditLogStorageInitializer(
     private static string _CreateSchemaAndTableScript(AuditLogStorageOptions options)
     {
         var table = Qualified(options);
+        var primaryKey = AuditLogStorageNames.PrimaryKey(options.TableName);
         var createSchema = $"""CREATE SCHEMA IF NOT EXISTS "{options.Schema}";""";
         var jsonColumnType = (options.JsonColumnType ?? AuditLogJsonColumnType.Jsonb).ToSqlFragment();
         var createdAtColumnType = string.IsNullOrWhiteSpace(options.CreatedAtColumnType)
@@ -142,7 +143,7 @@ internal sealed partial class PostgreSqlAuditLogStorageInitializer(
                 "ChangedFields" {jsonColumnType},
                 "Success" boolean NOT NULL,
                 "ErrorCode" character varying({AuditLogFieldLimits.ErrorCode}),
-                CONSTRAINT "PK_{options.TableName}" PRIMARY KEY ("CreatedAt", "Id")
+                CONSTRAINT "{primaryKey}" PRIMARY KEY ("CreatedAt", "Id")
             );
             """;
     }
@@ -150,6 +151,12 @@ internal sealed partial class PostgreSqlAuditLogStorageInitializer(
     private static string _CreateIndexesScript(AuditLogStorageOptions options)
     {
         var table = Qualified(options);
+        var tenantTime = AuditLogStorageNames.TenantTimeIndex(options.TableName);
+        var tenantActionTime = AuditLogStorageNames.TenantActionTimeIndex(options.TableName);
+        var tenantEntityTime = AuditLogStorageNames.TenantEntityTimeIndex(options.TableName);
+        var tenantActorTime = AuditLogStorageNames.TenantActorTimeIndex(options.TableName);
+        var tenantAccountTime = AuditLogStorageNames.TenantAccountTimeIndex(options.TableName);
+        var correlation = AuditLogStorageNames.CorrelationIndex(options.TableName);
 
         // Re-acquire the advisory lock so multi-replica races on CREATE INDEX serialize the same
         // way as the table-create path. Released automatically on COMMIT/ROLLBACK.
@@ -161,12 +168,12 @@ internal sealed partial class PostgreSqlAuditLogStorageInitializer(
         return $"""
             {acquireLock}
 
-            CREATE INDEX IF NOT EXISTS "ix_audit_log_tenant_time" ON {table} ("TenantId", "CreatedAt", "Id");
-            CREATE INDEX IF NOT EXISTS "ix_audit_log_tenant_action_time" ON {table} ("TenantId", "Action", "CreatedAt", "Id");
-            CREATE INDEX IF NOT EXISTS "ix_audit_log_tenant_entity_time" ON {table} ("TenantId", "EntityType", "EntityId", "CreatedAt", "Id");
-            CREATE INDEX IF NOT EXISTS "ix_audit_log_tenant_actor_time" ON {table} ("TenantId", "UserId", "CreatedAt", "Id");
-            CREATE INDEX IF NOT EXISTS "ix_audit_log_tenant_account_time" ON {table} ("TenantId", "AccountId", "CreatedAt", "Id");
-            CREATE INDEX IF NOT EXISTS "ix_audit_log_correlation" ON {table} ("CorrelationId", "CreatedAt", "Id");
+            CREATE INDEX IF NOT EXISTS "{tenantTime}" ON {table} ("TenantId", "CreatedAt", "Id");
+            CREATE INDEX IF NOT EXISTS "{tenantActionTime}" ON {table} ("TenantId", "Action", "CreatedAt", "Id");
+            CREATE INDEX IF NOT EXISTS "{tenantEntityTime}" ON {table} ("TenantId", "EntityType", "EntityId", "CreatedAt", "Id");
+            CREATE INDEX IF NOT EXISTS "{tenantActorTime}" ON {table} ("TenantId", "UserId", "CreatedAt", "Id");
+            CREATE INDEX IF NOT EXISTS "{tenantAccountTime}" ON {table} ("TenantId", "AccountId", "CreatedAt", "Id");
+            CREATE INDEX IF NOT EXISTS "{correlation}" ON {table} ("CorrelationId", "CreatedAt", "Id");
             """;
     }
 

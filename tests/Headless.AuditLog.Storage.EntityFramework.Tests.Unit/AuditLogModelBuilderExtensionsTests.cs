@@ -80,7 +80,21 @@ public sealed class HeadlessAuditLogModelBuilderExtensionsTests : TestBase
             .Properties.Select(property => property.Name)
             .Should()
             .Equal(nameof(AuditLogEntry.CreatedAt), nameof(AuditLogEntry.Id));
-        entity.GetIndexes().Should().HaveCount(6);
+        entity.FindPrimaryKey()!.GetName().Should().Be($"PK_{tableName}");
+        // Index names are unique per schema on PostgreSQL, so they carry the table name to let two audit
+        // tables share one schema.
+        entity
+            .GetIndexes()
+            .Select(index => index.GetDatabaseName())
+            .Should()
+            .BeEquivalentTo(
+                $"ix_{tableName}_tenant_time",
+                $"ix_{tableName}_tenant_action_time",
+                $"ix_{tableName}_tenant_entity_time",
+                $"ix_{tableName}_tenant_actor_time",
+                $"ix_{tableName}_tenant_account_time",
+                $"ix_{tableName}_correlation"
+            );
     }
 
     private static void _AssertAuditPolicy(IEntityType entity, bool expected)

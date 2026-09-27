@@ -36,6 +36,7 @@ internal sealed class SqlServerAuditLogStorageInitializer(
     {
         var table = Qualified(options);
         var objectName = ObjectName(options);
+        var primaryKey = AuditLogStorageNames.PrimaryKey(options.TableName);
         var jsonColumnType = (options.JsonColumnType ?? AuditLogJsonColumnType.NvarcharMax).ToSqlFragment();
         var createdAtColumnType = string.IsNullOrWhiteSpace(options.CreatedAtColumnType)
             ? "datetime2"
@@ -83,7 +84,7 @@ internal sealed class SqlServerAuditLogStorageInitializer(
                         [ChangedFields] {jsonColumnType} NULL,
                         [Success] bit NOT NULL,
                         [ErrorCode] nvarchar({AuditLogFieldLimits.ErrorCode}) NULL,
-                        CONSTRAINT [PK_{options.TableName}] PRIMARY KEY CLUSTERED ([CreatedAt] ASC, [Id] ASC)
+                        CONSTRAINT [{primaryKey}] PRIMARY KEY CLUSTERED ([CreatedAt] ASC, [Id] ASC)
                     );
                 END;
             END TRY
@@ -102,37 +103,37 @@ internal sealed class SqlServerAuditLogStorageInitializer(
             new[]
             {
                 _IndexStatement(
-                    "ix_audit_log_tenant_time",
+                    AuditLogStorageNames.TenantTimeIndex(options.TableName),
                     table,
                     objectName,
                     "[TenantId] ASC, [CreatedAt] ASC, [Id] ASC"
                 ),
                 _IndexStatement(
-                    "ix_audit_log_tenant_action_time",
+                    AuditLogStorageNames.TenantActionTimeIndex(options.TableName),
                     table,
                     objectName,
                     "[TenantId] ASC, [Action] ASC, [CreatedAt] ASC, [Id] ASC"
                 ),
                 _IndexStatement(
-                    "ix_audit_log_tenant_entity_time",
+                    AuditLogStorageNames.TenantEntityTimeIndex(options.TableName),
                     table,
                     objectName,
                     "[TenantId] ASC, [EntityType] ASC, [EntityId] ASC, [CreatedAt] ASC, [Id] ASC"
                 ),
                 _IndexStatement(
-                    "ix_audit_log_tenant_actor_time",
+                    AuditLogStorageNames.TenantActorTimeIndex(options.TableName),
                     table,
                     objectName,
                     "[TenantId] ASC, [UserId] ASC, [CreatedAt] ASC, [Id] ASC"
                 ),
                 _IndexStatement(
-                    "ix_audit_log_tenant_account_time",
+                    AuditLogStorageNames.TenantAccountTimeIndex(options.TableName),
                     table,
                     objectName,
                     "[TenantId] ASC, [AccountId] ASC, [CreatedAt] ASC, [Id] ASC"
                 ),
                 _IndexStatement(
-                    "ix_audit_log_correlation",
+                    AuditLogStorageNames.CorrelationIndex(options.TableName),
                     table,
                     objectName,
                     "[CorrelationId] ASC, [CreatedAt] ASC, [Id] ASC"

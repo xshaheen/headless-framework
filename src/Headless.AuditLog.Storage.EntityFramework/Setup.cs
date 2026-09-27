@@ -74,6 +74,7 @@ public static class SetupAuditLogEntityFramework
         {
             RuleFor(x => x.Schema).IsValidCrossProviderIdentifier();
             RuleFor(x => x.TableName).IsValidCrossProviderIdentifier();
+            RuleFor(x => x.TableName).FitsDerivedStorageNames();
             RuleFor(x => x.JsonColumnType).IsInEnum().When(x => x.JsonColumnType.HasValue);
             RuleFor(x => x.CreatedAtColumnType)
                 .MaximumLength(64)

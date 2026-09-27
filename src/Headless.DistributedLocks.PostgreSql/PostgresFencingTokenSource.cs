@@ -119,7 +119,8 @@ internal sealed class PostgresFencingTokenSource(
 
             // Gate the DDL behind a transaction-scoped advisory lock keyed on the sequence name so racing
             // replicas serialize on the create rather than both passing the IF NOT EXISTS check and one
-            // failing. The lock releases automatically on transaction end.
+            // failing. The lock releases automatically on transaction end. The key names this feature so it
+            // never shares an advisory lock with the Fencing feature's own storage initializer.
             await using var transaction = await connection
                 .BeginTransactionAsync(cancellationToken)
                 .ConfigureAwait(false);
@@ -130,7 +131,7 @@ internal sealed class PostgresFencingTokenSource(
                 {
                     lockCommand.Transaction = transaction;
                     lockCommand.CommandText =
-                        $"SELECT pg_advisory_xact_lock(hashtextextended('headless_fencing_init:{_qualifiedSequence}', 0))";
+                        $"SELECT pg_advisory_xact_lock(hashtextextended('headless_distributed_locks_init:{_qualifiedSequence}', 0))";
                     lockCommand.CommandTimeout = (int)_commandTimeout.TotalSeconds;
                     await lockCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
                 }
