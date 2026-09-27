@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics;
-using FirebaseAdmin.Messaging;
 using Headless.Checks;
 using Headless.PushNotifications.Firebase;
 using Headless.PushNotifications.Firebase.Internals;
@@ -10,9 +8,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Polly;
-using Polly.Registry;
-using Polly.Retry;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.PushNotifications;
@@ -99,7 +94,7 @@ public static class SetupFirebasePushNotifications
     /// Registers the Firebase push-notification service. <paramref name="name"/> <see langword="null"/>
     /// registers the default (unkeyed) service and an overridable <see cref="IFcmMessageSender"/>
     /// (<c>TryAddSingleton</c>, so a host-supplied sender wins); a non-null name registers a keyed service and
-    /// keyed sender built from that name's options and per-name retry pipeline. Every factory reads the options
+    /// keyed sender built from that name's options. Every factory reads the options
     /// snapshot for its own name (<c>IOptionsMonitor.Get(name)</c>) so keyed settings never bleed across
     /// instances — keyed DI does not cascade the key to ctor dependencies, and a keyed sender must not read
     /// <c>CurrentValue</c> (which binds the default).
@@ -112,13 +107,11 @@ public static class SetupFirebasePushNotifications
     {
         configureOptions(services, name);
         services.TryAddSingleton(TimeProvider.System);
-        _AddFirebaseRetryPipeline(services, name);
 
         if (name is null)
         {
             services.TryAddSingleton<IFcmMessageSender>(static sp => new FcmMessageSender(
                 sp.GetRequiredService<IOptionsMonitor<FirebaseOptions>>(),
-                sp.GetRequiredService<ResiliencePipelineProvider<string>>(),
                 optionsName: null,
                 sp.GetRequiredService<TimeProvider>(),
                 sp.GetRequiredService<ILogger<FcmMessageSender>>()
@@ -134,7 +127,6 @@ public static class SetupFirebasePushNotifications
             (sp, key) =>
                 new FcmMessageSender(
                     sp.GetRequiredService<IOptionsMonitor<FirebaseOptions>>(),
-                    sp.GetRequiredService<ResiliencePipelineProvider<string>>(),
                     optionsName: (string)key!,
                     sp.GetRequiredService<TimeProvider>(),
                     sp.GetRequiredService<ILogger<FcmMessageSender>>()
@@ -155,100 +147,18 @@ public static class SetupFirebasePushNotifications
                 {
                     target.Json = options.Json;
                     target.Retry = options.Retry;
+                    target.TreatSenderIdMismatchAsUnregistered = options.TreatSenderIdMismatchAsUnregistered;
                 },
                 name
             );
-    }
-
-    private static void _AddFirebaseRetryPipeline(IServiceCollection services, string? name)
-    {
-        services.AddResiliencePipeline(
-            FcmResilienceKeys.GetRetryPipelineKey(name),
-            (builder, context) =>
-            {
-                var serviceProvider = context.ServiceProvider;
-                var retry = serviceProvider.GetRequiredService<IOptionsMonitor<FirebaseOptions>>().Get(name).Retry;
-                var timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
-                var logger = serviceProvider.GetRequiredService<ILogger<FcmMessageSender>>();
-
-                // MaxAttempts == 0 disables retry: leave the pipeline empty (pass-through).
-                if (retry.MaxAttempts == 0)
-                {
-                    return;
-                }
-
-                builder.AddRetry(
-                    new RetryStrategyOptions
-                    {
-                        ShouldHandle = new PredicateBuilder()
-                            .Handle<FirebaseMessagingException>(RetryHelper.IsTransientError)
-                            .Handle<HttpRequestException>()
-                            // Only retry timeouts, not user-initiated cancellation.
-                            .Handle<TaskCanceledException>(static ex => !ex.CancellationToken.IsCancellationRequested),
-                        MaxRetryAttempts = retry.MaxAttempts,
-                        Delay = TimeSpan.FromSeconds(1), // Initial delay.
-                        BackoffType = DelayBackoffType.Exponential,
-                        UseJitter = retry.UseJitter,
-                        MaxDelay = retry.MaxDelay,
-                        DelayGenerator = args =>
-                        {
-                            // Honor (and cap) the Retry-After header for rate limits. Polly ignores MaxDelay for
-                            // DelayGenerator output, so GetRetryAfterDelay applies the cap itself.
-                            if (
-                                args.Outcome.Exception is FirebaseMessagingException
-                                {
-                                    MessagingErrorCode: MessagingErrorCode.QuotaExceeded,
-                                } ex
-                            )
-                            {
-                                var delay = RetryHelper.GetRetryAfterDelay(
-                                    ex,
-                                    retry.RateLimitDelay,
-                                    retry.MaxDelay,
-                                    timeProvider
-                                );
-
-                                return ValueTask.FromResult<TimeSpan?>(delay);
-                            }
-
-                            // Use default exponential backoff for other transient errors.
-                            return ValueTask.FromResult<TimeSpan?>(null);
-                        },
-                        OnRetry = args =>
-                        {
-                            logger.LogRetryAttempt(
-                                args.AttemptNumber,
-                                args.RetryDelay.TotalSeconds,
-                                args.Outcome.Exception?.Message ?? "Unknown error"
-                            );
-
-                            var activity = Activity.Current;
-                            activity?.AddEvent(
-                                new ActivityEvent(
-                                    "FCM Retry",
-                                    tags: new ActivityTagsCollection
-                                    {
-                                        ["retry.attempt"] = args.AttemptNumber,
-                                        ["retry.delay_seconds"] = args.RetryDelay.TotalSeconds,
-                                        ["error.type"] = args.Outcome.Exception?.GetType().Name,
-                                    }
-                                )
-                            );
-
-                            return default;
-                        },
-                    }
-                );
-            }
-        );
     }
 }
 
 /// <summary>
 /// Extension members for selecting Firebase Cloud Messaging for a named push-notification instance on
-/// <see cref="HeadlessPushNotificationsInstanceBuilder"/>. The instance owns its own named options and per-name
-/// retry pipeline, keyed <see cref="IFcmMessageSender"/>, and keyed service; it never shares them with the
-/// default service or other named instances.
+/// <see cref="HeadlessPushNotificationsInstanceBuilder"/>. The instance owns its own named options, keyed
+/// <see cref="IFcmMessageSender"/>, and keyed service; it never shares them with the default service or other
+/// named instances.
 /// </summary>
 [PublicAPI]
 public static class SetupFirebasePushNotificationsNamed

@@ -4,87 +4,83 @@ using FirebaseAdmin.Messaging;
 
 namespace Headless.PushNotifications.Firebase.Internals;
 
-/// <summary>
-/// Helper methods for FCM retry logic.
-/// </summary>
+/// <summary>Decides whether and how long to wait before resending an FCM message, following Google's guidance.</summary>
 internal static class RetryHelper
 {
-    /// <summary>
-    /// Determines if a FirebaseMessagingException represents a transient error that should be retried.
-    /// </summary>
-    /// <param name="exception">The exception to evaluate.</param>
-    /// <returns>
-    /// True if the error is transient (QuotaExceeded, Unavailable, Internal);
-    /// false for permanent errors (Unregistered, InvalidArgument, etc.).
-    /// </returns>
-    /// <remarks>
-    /// Error Classification Matrix:
-    /// - QuotaExceeded (429): Rate limit hit → Retry with RateLimitDelay
-    /// - Unavailable (503): Service temporarily down → Retry with exponential backoff
-    /// - Internal (500): Server error → Retry with exponential backoff
-    /// - Unregistered: Invalid FID → Don't retry (caller should remove the FID)
-    /// - InvalidArgument: Malformed request → Don't retry (code bug)
-    /// - SenderIdMismatch: Wrong credentials → Don't retry (config error)
-    /// - ThirdPartyAuthError: Bad APNs cert → Don't retry (config error)
-    /// </remarks>
-    public static bool IsTransientError(FirebaseMessagingException exception)
-    {
-        return exception.MessagingErrorCode
-            is MessagingErrorCode.QuotaExceeded
-                or MessagingErrorCode.Unavailable
-                or MessagingErrorCode.Internal;
-    }
+    /// <summary>Google: wait at least 10 seconds before retrying a failed request.</summary>
+    internal static readonly TimeSpan MinServerErrorDelay = TimeSpan.FromSeconds(10);
+
+    /// <summary>Google: without a Retry-After header, wait 60 seconds after <c>QUOTA_EXCEEDED</c>.</summary>
+    internal static readonly TimeSpan MinQuotaDelay = TimeSpan.FromSeconds(60);
 
     /// <summary>
-    /// Extracts the Retry-After delay from HTTP response headers (if present), clamped to <paramref name="maxDelay"/>.
+    /// Returns how long to wait before retry number <paramref name="retry"/> + 1, or <see langword="null"/> when the
+    /// failure must not be retried.
     /// </summary>
-    /// <param name="exception">The exception containing the HTTP response.</param>
-    /// <param name="defaultDelay">Default delay when no usable Retry-After header is present.</param>
-    /// <param name="maxDelay">Upper bound applied to the returned delay. Polly does not cap delays produced by a delay generator, so the cap is applied here.</param>
-    /// <param name="timeProvider">Clock used to compute the delay for HTTP-date Retry-After values.</param>
-    /// <returns>
-    /// The Retry-After delay, or <paramref name="defaultDelay"/> when not present or invalid, never exceeding
-    /// <paramref name="maxDelay"/>.
-    /// </returns>
     /// <remarks>
-    /// FCM returns a Retry-After header with HTTP 429 QuotaExceeded.
-    /// Header format: "Retry-After: 120" (seconds) or "Retry-After: Wed, 21 Oct 2015 07:28:00 GMT".
+    /// Only <c>INTERNAL</c> (500) and <c>QUOTA_EXCEEDED</c> (429) are retried here. The SDK already retries 503 and
+    /// transport exceptions itself, so retrying those again would multiply its attempts; every other code is
+    /// permanent. <c>INTERNAL</c> waits a jittered exponential backoff of 10s, 20s, 40s, and so on, each up to 50%
+    /// longer. <c>QUOTA_EXCEEDED</c> waits the longer of Retry-After and 60 seconds. Both honor a longer Retry-After
+    /// and are capped at <paramref name="maxDelay"/>; when Retry-After itself exceeds <paramref name="maxDelay"/>,
+    /// the failure is not retried, because retrying before the server allows only spends the quota again.
     /// </remarks>
-    public static TimeSpan GetRetryAfterDelay(
-        FirebaseMessagingException exception,
-        TimeSpan defaultDelay,
-        TimeSpan maxDelay,
-        TimeProvider timeProvider
-    )
+    public static TimeSpan? GetRetryDelay(Exception? failure, int retry, TimeSpan maxDelay, TimeProvider timeProvider)
     {
-        var delay = _ResolveRetryAfterDelay(exception, defaultDelay, timeProvider);
+        if (failure is not FirebaseMessagingException { MessagingErrorCode: { } code } exception)
+        {
+            return null;
+        }
+
+        TimeSpan floor;
+
+        switch (code)
+        {
+            case MessagingErrorCode.Internal:
+                var backoff = MinServerErrorDelay * Math.Pow(2, retry);
+#pragma warning disable CA5394 // False positive: non-security jitter for retry backoff; cryptographic RNG is unnecessary here.
+                floor = backoff + (backoff * (Random.Shared.NextDouble() / 2));
+#pragma warning restore CA5394
+                break;
+            case MessagingErrorCode.QuotaExceeded:
+                floor = MinQuotaDelay;
+                break;
+            default:
+                return null;
+        }
+
+        var retryAfter = GetRetryAfter(exception, timeProvider);
+
+        if (retryAfter > maxDelay)
+        {
+            return null;
+        }
+
+        var delay = retryAfter > floor ? retryAfter.Value : floor;
 
         return delay > maxDelay ? maxDelay : delay;
     }
 
-    private static TimeSpan _ResolveRetryAfterDelay(
-        FirebaseMessagingException exception,
-        TimeSpan defaultDelay,
-        TimeProvider timeProvider
-    )
+    /// <summary>
+    /// Reads the Retry-After header of the FCM response, as delta-seconds or an HTTP date, or returns
+    /// <see langword="null"/> when there is none or it has already passed.
+    /// </summary>
+    internal static TimeSpan? GetRetryAfter(FirebaseMessagingException exception, TimeProvider timeProvider)
     {
-        if (exception.HttpResponse?.Headers.RetryAfter is not { } retryAfter)
+        var retryAfter = exception.HttpResponse?.Headers.RetryAfter;
+
+        if (retryAfter?.Delta is { } delta)
         {
-            return defaultDelay;
+            return delta > TimeSpan.Zero ? delta : null;
         }
 
-        // Retry-After can be delta-seconds or HTTP-date.
-        if (retryAfter.Delta.HasValue)
+        if (retryAfter?.Date is { } date)
         {
-            return retryAfter.Delta.Value;
+            var delay = date - timeProvider.GetUtcNow();
+
+            return delay > TimeSpan.Zero ? delay : null;
         }
 
-        if (retryAfter.Date.HasValue)
-        {
-            var delay = retryAfter.Date.Value - timeProvider.GetUtcNow();
-            return delay > TimeSpan.Zero ? delay : defaultDelay;
-        }
-
-        return defaultDelay;
+        return null;
     }
 }

@@ -450,7 +450,9 @@ public sealed class FcmPushNotificationServiceTests : TestBase
     [InlineData("notification")]
     [InlineData("message_type")]
     [InlineData("google.x")]
+    [InlineData("google.c.a.e")]
     [InlineData("gcm.y")]
+    [InlineData("gcm.notification.title")]
     public async Task should_throw_when_data_contains_reserved_key(string reservedKey)
     {
         // given
@@ -462,14 +464,39 @@ public sealed class FcmPushNotificationServiceTests : TestBase
         await action.Should().ThrowAsync<ArgumentException>();
     }
 
-    [Fact]
-    public async Task should_throw_when_title_exceeds_max_length()
+    [Theory]
+    [InlineData("googleAnalyticsId")]
+    [InlineData("gcmSender")]
+    [InlineData("fromCity")]
+    public async Task should_accept_data_keys_that_only_resemble_reserved_keys(string key)
     {
+        // given
+        _sender
+            .SendAsync(Arg.Any<FcmMessageContent>(), "fid", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(PushNotificationResponse.Succeeded("fid", "msg-1")));
+        var data = new Dictionary<string, string>(StringComparer.Ordinal) { [key] = "value" };
+
         // when
-        var action = async () =>
-            await _CreateService().SendToDeviceAsync("fid", _Request(title: new string('a', 101)), AbortToken);
+        var result = await _CreateService().SendToDeviceAsync("fid", _Request(data: data), AbortToken);
+
         // then
-        await action.Should().ThrowAsync<ArgumentException>();
+        result.IsSucceeded().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_not_limit_title_or_body_length()
+    {
+        // given FCM limits only the whole payload, and reports an oversized one itself
+        _sender
+            .SendAsync(Arg.Any<FcmMessageContent>(), "fid", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(PushNotificationResponse.Succeeded("fid", "msg-1")));
+        var request = _Request(title: new string('a', 101), body: new string('b', 4001));
+
+        // when
+        var result = await _CreateService().SendToDeviceAsync("fid", request, AbortToken);
+
+        // then
+        result.IsSucceeded().Should().BeTrue();
     }
 
     [Fact]

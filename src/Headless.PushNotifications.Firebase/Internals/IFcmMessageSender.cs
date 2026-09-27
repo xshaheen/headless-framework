@@ -41,8 +41,11 @@ internal sealed record FcmMessageContent(
 /// </summary>
 internal interface IFcmMessageSender
 {
-    /// <summary>Sends one notification, retrying transient FCM failures, and returns the outcome.</summary>
-    /// <remarks>Propagates <see cref="OperationCanceledException"/> when <paramref name="cancellationToken"/> is cancelled.</remarks>
+    /// <summary>
+    /// Sends one notification, retrying transient FCM failures, and returns the outcome. Every failure, including
+    /// a timeout or a credential error, is returned as a failed outcome rather than thrown.
+    /// </summary>
+    /// <remarks>Throws <see cref="OperationCanceledException"/> only when <paramref name="cancellationToken"/> is cancelled.</remarks>
     Task<PushNotificationResponse> SendAsync(
         FcmMessageContent content,
         string fid,
@@ -50,11 +53,14 @@ internal interface IFcmMessageSender
     );
 
     /// <summary>
-    /// Sends one batch of at most 500 FIDs, retrying transient FCM failures, and returns one outcome per
-    /// FID in the same order as <paramref name="fids"/>. A whole-batch transport failure (after retries)
-    /// is reported as a failed outcome for every FID rather than thrown.
+    /// Sends one batch of at most 500 FIDs, resending only the FIDs that failed transiently, and returns one
+    /// outcome per FID in the same order as <paramref name="fids"/>. A whole-batch failure is reported as a
+    /// failed outcome for every FID rather than thrown.
     /// </summary>
-    /// <remarks>Propagates <see cref="OperationCanceledException"/> when <paramref name="cancellationToken"/> is cancelled.</remarks>
+    /// <remarks>
+    /// Throws <see cref="OperationCanceledException"/> when <paramref name="cancellationToken"/> is cancelled, even
+    /// though the SDK itself reports a cancelled multicast as per-message failures.
+    /// </remarks>
     Task<IReadOnlyList<PushNotificationResponse>> SendBatchAsync(
         FcmMessageContent content,
         IReadOnlyList<string> fids,

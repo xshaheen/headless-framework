@@ -13,8 +13,6 @@ namespace Headless.PushNotifications.Firebase;
 /// </summary>
 internal sealed class FcmPushNotificationService(IFcmMessageSender sender) : IPushNotificationService
 {
-    private const int _MaxTitleLength = 100;
-    private const int _MaxBodyLength = 4000;
     private const int _MaxFidsPerBatch = 500;
 
     // Forwarded to APNs as apns-collapse-id through the iOS bridge, and Apple caps that header at 64 UTF-8 bytes.
@@ -79,15 +77,9 @@ internal sealed class FcmPushNotificationService(IFcmMessageSender sender) : IPu
 
     private static void _ValidateContent(PushNotificationRequest request)
     {
+        // FCM limits only the whole payload (4096 bytes) and rejects an oversized one with INVALID_ARGUMENT, so
+        // title and body lengths are not checked here.
         PushNotificationRequestValidation.Validate(request);
-
-        // Both are set together or not at all once the shared rules pass.
-        if (request is { Title: { } title, Body: { } body })
-        {
-            Argument.IsLessThanOrEqualTo(title.Length, _MaxTitleLength);
-            Argument.IsLessThanOrEqualTo(body.Length, _MaxBodyLength);
-        }
-
         _EnsureDataAllowed(request.Data);
 
         if (request.CollapseKey is not null)
@@ -103,12 +95,14 @@ internal sealed class FcmPushNotificationService(IFcmMessageSender sender) : IPu
             return;
         }
 
+        // FCM reserves "from", "message_type", and the "google." and "gcm." namespaces for data keys; the legacy API
+        // also reserved "notification". A key that merely starts with "google" or "gcm" belongs to the app.
         foreach (var key in data.Keys)
         {
             if (
                 key is "from" or "notification" or "message_type"
-                || key.StartsWith("google", StringComparison.Ordinal)
-                || key.StartsWith("gcm", StringComparison.Ordinal)
+                || key.StartsWith("google.", StringComparison.Ordinal)
+                || key.StartsWith("gcm.", StringComparison.Ordinal)
             )
             {
                 throw new ArgumentException($"Notification data contains the reserved FCM key '{key}'.", nameof(data));

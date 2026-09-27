@@ -51,7 +51,7 @@ For pushes only APNs has — Live Activities, rich alert controls, background pu
 - Add **named** services in the same call: `setup.AddNamed("name", i => i.Use…())`. Names must be non-whitespace and ordinal-unique within the call, and each named instance must select exactly one provider — a duplicate name, whitespace name, or zero/multiple providers throws at registration time. The default is optional; a named-only host (no default) is supported — the unkeyed `IPushNotificationService` is simply not registered when no default is configured.
 - Resolve a named service with `IPushNotificationServiceProvider.GetService("name")` (throws `InvalidOperationException` naming `AddNamed` when unregistered) / `GetServiceOrNull("name")` (returns `null`), or raw keyed DI (`[FromKeyedServices("name")] IPushNotificationService`, `GetRequiredKeyedService<IPushNotificationService>(name)`). Both `GetService` and `GetServiceOrNull` throw `ArgumentException` on a null/whitespace name. The default (unkeyed) `IPushNotificationService` is **not** exposed through `IPushNotificationServiceProvider`. To validate an externally supplied name before resolving, check `IPushNotificationServiceProvider.RegisteredNames` (the registered named-instance names, an `IReadOnlySet<string>`; the default is excluded) instead of probing `GetServiceOrNull` and handling `null`.
 - Registration is deferred: provider contributions are queued and nothing touches the `IServiceCollection` until the gates pass, so a setup that throws leaves the collection unchanged. The same provider can back two different names with fully independent options.
-- Each named Firebase instance isolates its own options (validated per name via FluentValidation + `ValidateOnStart`), its own retry pipeline (keyed `Headless:FcmRetry:{name}`), and its own lazily-created `FirebaseApp`. Keyed DI does not cascade the key to constructor dependencies, so named services never read the default configuration (a keyed sender reads `IOptionsMonitor.Get(name)`, never `CurrentValue`).
+- Each named Firebase instance isolates its own options (validated per name via FluentValidation + `ValidateOnStart`), its own retry settings, and its own lazily-created `FirebaseApp`. Keyed DI does not cascade the key to constructor dependencies, so named services never read the default configuration (a keyed sender reads `IOptionsMonitor.Get(name)`, never `CurrentValue`).
 - Each named APNs instance likewise owns its options (validated per name at startup), its own HTTP client and resilience pipeline (named `Headless:Apns:{name}`), and its keyed service. It shares only the provider-token cache, which is keyed by team id and key id.
 - Always code against `IPushNotificationService` from `Headless.PushNotifications.Abstractions`. Never reference `FcmPushNotificationService` or other concrete types in application code. The one provider-specific interface is `IApnsPushNotificationService`: take it only for APNs-only push types or APNs response details, and keep plain alerts and data-only messages on `IPushNotificationService` so the provider stays swappable.
 - A `PushNotificationRequest` is a notification (non-blank `Title` and `Body`) or a data-only message (no `Title`, no `Body`, at least one `Data` entry, no `Badge`, no `Sound`). Every other combination, a negative `Badge` or `TimeToLive`, a `TimeToLive` over 28 days, a blank `Sound`, or an undefined `Priority` throws `ArgumentException` before any network call. `UseNoop()` does not validate.
@@ -61,12 +61,13 @@ For pushes only APNs has — Live Activities, rich alert controls, background pu
 - Use `Headless.PushNotifications.Dev` (`UseNoop()`) in development and testing environments to avoid sending real notifications. Switch on `builder.Environment.IsDevelopment()`.
 - Do NOT call the Firebase Admin SDK (`FirebaseAdmin`, `FirebaseMessaging`) directly. Route all sends through `IPushNotificationService`.
 - After every send, check `PushNotificationResponse.Status`. Three distinct states exist — `Success`, `Failure`, and `Unregistered` — and `IsSucceeded()` / `IsFailed()` both return `false` for an unregistered token. Use `IsUnregistered()` explicitly and remove that token from your store.
-- FCM enforces content limits: **title ≤ 100 characters**, **body ≤ 4 000 characters**. `FcmPushNotificationService` throws `ArgumentException` if either limit is exceeded.
-- FCM data payload keys `from`, `notification`, `message_type`, and any key starting with `google` or `gcm` are reserved. Passing a reserved key throws `ArgumentException` from `SendToDeviceAsync` / `SendMulticastAsync` before any network call.
+- FCM limits only the whole message payload (4 096 bytes), not the title or body. The provider does not check the size; FCM rejects an oversized message with `InvalidArgument`, which comes back as a `Failure`.
+- FCM data payload keys `from`, `notification`, `message_type`, and any key starting with `google.` or `gcm.` are reserved. A key that only starts with `google` or `gcm`, such as `googleId`, is allowed. Passing a reserved key throws `ArgumentException` from `SendToDeviceAsync` / `SendMulticastAsync` before any network call.
 - A single `SendMulticastAsync` call handles any number of tokens. Firebase chunks them into batches of at most 500 (the FCM hard limit); APNs has no batch endpoint, so it sends one request per token with at most `ApnsOptions.MaxConcurrency` in flight.
-- Firebase retries transient errors (HTTP 429 `QuotaExceeded`, 503 `Unavailable`, 500 `Internal`, network errors, non-user timeouts) automatically with exponential backoff. Do not wrap calls in your own retry for these errors.
-- Firebase does not retry permanent errors (`Unregistered`, `InvalidArgument`, `SenderIdMismatch`, `ThirdPartyAuthError`). `Unregistered` is returned as `PushNotificationResponseStatus.Unregistered`, not as a failure.
-- Do not disable Firebase retry in production (`MaxAttempts = 0`) unless you have your own resilience infrastructure. Default is 5 attempts with exponential backoff and jitter.
+- The FirebaseAdmin SDK retries HTTP 503 `Unavailable` and network errors itself, up to 4 times; that is not configurable. The provider adds retries only for HTTP 500 `Internal` and HTTP 429 `QuotaExceeded`, 2 by default, following Google's guidance: at least 10 seconds with jitter for `Internal`, and the longer of Retry-After and 60 seconds for `QuotaExceeded`. See [Retried errors](#retried-errors).
+- FCM has no idempotency key, so a retried message can arrive twice. Set `Retry.MaxAttempts = 0` when you retry from your own queue instead.
+- Firebase does not retry permanent errors (`Unregistered`, `InvalidArgument`, `SenderIdMismatch`, `ThirdPartyAuthError`). `Unregistered` is returned as `PushNotificationResponseStatus.Unregistered`, not as a failure. `SenderIdMismatch` is a `Failure` unless `FirebaseOptions.TreatSenderIdMismatchAsUnregistered` is `true`, because a host signed in to the wrong Firebase project gets it for every token.
+- A Firebase send never throws for one token's failure. A timeout, a credential error, or any other exception becomes a `Failure`; only the caller's own cancellation throws `OperationCanceledException`, from a single send and from a multicast alike.
 - `FirebaseOptions.Json` contains sensitive private-key material. Do not log it, serialize it, or store it in configuration as plain text in production. The `ToString()` override on `FirebaseOptions` redacts it.
 - `PushNotificationRequest.CollapseKey` is limited to 64 UTF-8 bytes by both production providers, because Apple caps the `apns-collapse-id` header at 64 bytes. A longer key throws `ArgumentException` before any network call.
 - APNs reports a token as `Unregistered` only on HTTP 410. `BadDeviceToken` (HTTP 400) is a `Failure` by default, because Apple returns it both for a malformed token and for a valid token sent to the wrong environment. A host pointed at the wrong `ApnsOptions.Environment` would discard every valid token it holds if that rejection meant unregistered. Set `TreatBadDeviceTokenAsUnregistered = true` only when the environment is known to be right.
@@ -100,7 +101,7 @@ builder.Services.AddHeadlessPushNotifications(setup =>
 - **Default is optional, named is additive.** The gate rejects more than one default provider but allows zero; named instances are unbounded and exempt from the default gate. The unkeyed `IPushNotificationService` resolves only when a default is configured — a named-only host is supported.
 - **Names are validated at registration time.** Each name must be non-whitespace and ordinal-unique within the call; each named instance must select exactly one provider. Violations throw `ArgumentException` / `InvalidOperationException`.
 - **Resolution.** Named services resolve two ways — as keyed services (`[FromKeyedServices("driver-app")] IPushNotificationService`) and through `IPushNotificationServiceProvider.GetService(name)` (throws when unregistered) / `GetServiceOrNull(name)` (returns `null`). `IPushNotificationServiceProvider.RegisteredNames` enumerates the registered named instances (default excluded) for validating a name before resolving. The default service resolves as the unkeyed `IPushNotificationService` and is **not** exposed through `IPushNotificationServiceProvider`.
-- **Isolation (Firebase).** Each named instance keys its options and backend under its name: per-name options (`IOptionsMonitor<FirebaseOptions>.Get(name)`, validated on start), a per-name retry pipeline keyed `Headless:FcmRetry:{name}`, and its own lazily-created `FirebaseApp` (so distinct service-account credentials never collide). .NET keyed registrations do not cascade the key to a type's constructor dependencies, so every keyed service/sender is an explicit factory — named push notifications never flow through the default configuration.
+- **Isolation (Firebase).** Each named instance keys its options and backend under its name: per-name options (`IOptionsMonitor<FirebaseOptions>.Get(name)`, validated on start), per-name retry settings, and its own lazily-created `FirebaseApp` (so distinct service-account credentials never collide). .NET keyed registrations do not cascade the key to a type's constructor dependencies, so every keyed service/sender is an explicit factory — named push notifications never flow through the default configuration.
 
 ### Notification and data-only requests
 
@@ -172,7 +173,7 @@ The `Unregistered` state is not a failure — it is a signal to clean up stale t
 | **Avoid when** | Local development (real credentials, real sends) | Android or Web clients; local development | Any production environment |
 | **Backend** | Firebase Cloud Messaging (FCM v1 API via `FirebaseAdmin`) | Apple Push Notification service over HTTP/2, called directly | In-process stub |
 | **Credentials** | Firebase service account JSON (`FirebaseOptions.Json`) | APNs `.p8` signing key plus key id and team id, or a `.p12` provider certificate; plus the bundle id | None |
-| **Retry** | Automatic exponential backoff for transient FCM errors | At most 2 short retries for pre-send connection failures; a 5xx is a `Failure`, and the caller retries it after about 15 minutes | N/A |
+| **Retry** | SDK retries 503 and network errors; the provider adds `Internal` and `QuotaExceeded` retries with Google's delays | At most 2 short retries for pre-send connection failures; a 5xx is a `Failure`, and the caller retries it after about 15 minutes | N/A |
 | **Trade-off** | Requires a Firebase project and service account | iOS only; one request per token (no batch endpoint); key rotation needs a restart | Zero external dependencies; always succeeds |
 
 ---
@@ -351,16 +352,17 @@ Firebase Cloud Messaging (FCM) implementation of `IPushNotificationService` for 
 ### API and behavior
 
 - FCM-backed `IPushNotificationService` implementation (`FcmPushNotificationService`)
-- Selectable as the default (`setup.UseFirebase(…)`) or as a named instance (`setup.AddNamed("name", i => i.UseFirebase(…))`), each isolating its own options, retry pipeline, and `FirebaseApp`
+- Selectable as the default (`setup.UseFirebase(…)`) or as a named instance (`setup.AddNamed("name", i => i.UseFirebase(…))`), each isolating its own options, retry settings, and `FirebaseApp`
 - Single-device (`SendToDeviceAsync`) and multicast (`SendMulticastAsync`) delivery
 - Automatic chunking of multicast sends into batches of ≤ 500 tokens (FCM hard limit)
 - Custom data payload support (with reserved-key enforcement)
-- Input validation: the notification or data-only rule, title ≤ 100 characters and body ≤ 4 000 characters on a notification, `CollapseKey` ≤ 64 UTF-8 bytes
+- Input validation: the notification or data-only rule, reserved data keys, `CollapseKey` ≤ 64 UTF-8 bytes. No title or body length limit
 - `CollapseKey` is sent as the Android collapse key and as the `apns-collapse-id` header of the APNs bridge
 - `Badge`, `Sound`, `Priority`, and `TimeToLive` map to both the Android config and the APNs bridge, as [Shared delivery fields](#shared-delivery-fields) shows. A data-only request sends no notification block and sets `content-available: 1` with `apns-priority: 5` on the APNs bridge
-- **Automatic retry** for transient failures: exponential backoff with jitter, Retry-After header support for rate limits
-- Configurable retry policy (`FirebaseRetryOptions`): `MaxAttempts` (0–10), `MaxDelay`, `RateLimitDelay`, `UseJitter`
-- Structured logging and OpenTelemetry Activity events on retry
+- **Retry** of `Internal` (500) and `QuotaExceeded` (429) on top of the SDK's own 503 and network retries; a multicast resends only the tokens that failed that way
+- Configurable retry policy (`FirebaseRetryOptions`): `MaxAttempts` (0–5), `MaxDelay` (1 minute to 1 hour)
+- `TreatSenderIdMismatchAsUnregistered` opt-in for reading `SenderIdMismatch` as a dead token
+- Structured logging on retry
 - Options validated at startup via FluentValidation
 
 ### Design constraints
@@ -368,9 +370,9 @@ Firebase Cloud Messaging (FCM) implementation of `IPushNotificationService` for 
 The Firebase Admin SDK `FirebaseApp` is created **lazily on the first send**, not at DI registration time. This means:
 - Registration has no observable side effects (no credentials are loaded, no HTTP calls are made).
 - Multiple hosts (default plus named instances) in the same process coexist with different credentials — each registration generates a uniquely-named `FirebaseApp`.
-- Configuration errors in `FirebaseOptions.Json` (malformed JSON, wrong credential type) surface as exceptions on the first call, not at startup. Supply the `IConfiguration` overload so the options validator catches missing `Json` at startup instead.
+- Configuration errors in `FirebaseOptions.Json` (malformed JSON, wrong credential type) surface as a `Failure` for every token on each send, not at startup. Supply the `IConfiguration` overload so the options validator catches missing `Json` at startup instead.
 
-Each named instance reads its own options snapshot (`IOptionsMonitor<FirebaseOptions>.Get(name)`) and its own retry pipeline (keyed `Headless:FcmRetry:{name}`); the default reads the unnamed options and the `Headless:FcmRetry` pipeline. Keyed DI does not cascade the key to constructor dependencies, so a keyed sender never reads `CurrentValue` (which binds the default) — the sender is registered through an explicit factory that passes its own name.
+Each named instance reads its own options snapshot (`IOptionsMonitor<FirebaseOptions>.Get(name)`), retry settings included; the default reads the unnamed options. Keyed DI does not cascade the key to constructor dependencies, so a keyed sender never reads `CurrentValue` (which binds the default) — the sender is registered through an explicit factory that passes its own name.
 
 When `Priority` is `null`, Android messages are sent at high priority and the APNs bridge sends no `apns-priority` header. When `Badge` is `null`, no badge is sent on either platform.
 
@@ -422,11 +424,10 @@ if (response.IsUnregistered())
 {
   "Firebase": {
     "Json": "{ ...service account JSON... }",
+    "TreatSenderIdMismatchAsUnregistered": false,
     "Retry": {
-      "MaxAttempts": 5,
-      "MaxDelay": "00:01:00",
-      "RateLimitDelay": "00:01:00",
-      "UseJitter": true
+      "MaxAttempts": 2,
+      "MaxDelay": "00:05:00"
     }
   }
 }
@@ -438,15 +439,14 @@ if (response.IsUnregistered())
 |---|---|---|---|
 | `Json` | `string` | _(required)_ | Firebase service account JSON string. Do not log — `ToString()` redacts it. |
 | `Retry` | `FirebaseRetryOptions` | see below | Retry policy. |
+| `TreatSenderIdMismatchAsUnregistered` | `bool` | `false` | Reports `SenderIdMismatch` as `Unregistered`, so the caller deletes the token. Enable only once the credentials are known to belong to the right Firebase project. |
 
 #### FirebaseRetryOptions
 
 | Property | Type | Default | Range | Description |
 |---|---|---|---|---|
-| `MaxAttempts` | `int` | `5` | 0–10 | Max retry attempts. `0` disables retry. |
-| `MaxDelay` | `TimeSpan` | `00:01:00` | 1s–5min | Cap on any single retry delay. |
-| `RateLimitDelay` | `TimeSpan` | `00:01:00` | 1s–5min | Delay for HTTP 429 when no Retry-After header is present. |
-| `UseJitter` | `bool` | `true` | — | Adds ±25% variance to prevent thundering herd. |
+| `MaxAttempts` | `int` | `2` | 0–5 | Retries after the first attempt. `0` disables the provider's retry; the SDK's own 503 and network retries still run. |
+| `MaxDelay` | `TimeSpan` | `00:05:00` | 1min–1h | Cap on any single retry delay. A failure whose Retry-After exceeds it is not retried. |
 
 ##### Retry overrides
 
@@ -473,37 +473,34 @@ builder.Services.AddHeadlessPushNotifications(setup =>
 );
 ```
 
-#### Transient Errors (Retried)
+#### Retried errors
 
-| Error | HTTP | Retry delay |
+| Error | HTTP | Retried by | Delay |
+|---|---|---|---|
+| `Unavailable` | 503 | FirebaseAdmin SDK, up to 4 times | Retry-After up to 30s, else 1s, 2s, 4s, 8s |
+| Network error (`HttpRequestException`) | — | FirebaseAdmin SDK, up to 4 times | 1s, 2s, 4s, 8s |
+| `Internal` | 500 | This provider, up to `MaxAttempts` times | 10s, 20s, 40s, …, each up to 50% longer; a longer Retry-After wins |
+| `QuotaExceeded` | 429 | This provider, up to `MaxAttempts` times | The longer of Retry-After and 60s |
+
+Every provider delay is capped at `MaxDelay`, and a Retry-After longer than `MaxDelay` ends the retries, because a retry before the server allows it only spends the quota again. The provider waits on the registered `TimeProvider`.
+
+A multicast never resends the whole batch. After each round it resends only the tokens that failed with `Internal` or `QuotaExceeded`, waits once for the longest delay among them, and merges the results back in input order.
+
+#### Errors that are not retried
+
+| Error | Meaning | Result |
 |---|---|---|
-| `QuotaExceeded` | 429 | Retry-After header, or `RateLimitDelay` (default 60s), capped at `MaxDelay` |
-| `Unavailable` | 503 | Exponential backoff |
-| `Internal` | 500 | Exponential backoff |
-| `HttpRequestException` | — | Exponential backoff |
-| `TaskCanceledException` (timeout only) | — | Exponential backoff |
-
-#### Permanent Errors (No Retry)
-
-| Error | Meaning | Caller action |
-|---|---|---|
-| `Unregistered` | Token invalid | Returns `PushNotificationResponseStatus.Unregistered`; remove token |
-| `InvalidArgument` | Malformed request | Code bug; fix the payload |
-| `SenderIdMismatch` | Wrong credentials | Configuration error |
-| `ThirdPartyAuthError` | Bad APNs certificate | Configuration error |
-| User `CancellationToken` | Caller cancelled | Do not retry |
-
-#### Backoff Strategy
-
-- Initial delay: 1s
-- Exponential sequence: 1s → 2s → 4s → 8s → 16s → 32s, capped at `MaxDelay` (default 60s)
-- Jitter: ±25% (when `UseJitter = true`)
-- Retry pipeline key: `"Headless:FcmRetry"` for the default, `"Headless:FcmRetry:{name}"` per named instance (registered via Polly's `AddResiliencePipeline`)
+| `Unregistered` | Token invalid | `Unregistered`; remove the token |
+| `SenderIdMismatch` | Token belongs to another Firebase project | `Failure`, or `Unregistered` when `TreatSenderIdMismatchAsUnregistered` is `true` |
+| `InvalidArgument` | Malformed request or payload over 4 096 bytes | `Failure`; fix the payload. Never read as a dead token |
+| `ThirdPartyAuthError` | Bad APNs certificate or key in the Firebase project | `Failure`; configuration error |
+| Timeout (`TaskCanceledException` not requested by the caller) | Request timed out | `Failure` |
+| Credential error | Service-account JSON could not be loaded or exchanged | `Failure` |
+| Caller `CancellationToken` | Caller cancelled | Throws `OperationCanceledException` |
 
 ### Runtime behavior
 
 - Registers `IPushNotificationService` as singleton (`FcmPushNotificationService`) for the default, or a keyed singleton under the instance name for a named instance
-- Registers a `ResiliencePipeline` named `"Headless:FcmRetry"` (default) or `"Headless:FcmRetry:{name}"` (per named instance) via Polly
 - Registers `TimeProvider.System` as singleton (if not already registered)
 - The Firebase Admin SDK `FirebaseApp` is created lazily on first send; registration has no network side effects
 ---
