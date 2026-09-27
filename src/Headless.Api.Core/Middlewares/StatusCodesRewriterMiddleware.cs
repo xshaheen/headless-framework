@@ -57,9 +57,6 @@ internal sealed class StatusCodesRewriterMiddleware(IProblemDetailsCreator probl
             return;
         }
 
-        // Every branch below writes through TenantCatalogRejectionWriter.WriteAsync, which assigns the
-        // status code it is handed before writing. The status is already the one being rewritten here, so
-        // passing context.Response.StatusCode re-asserts it rather than changing it.
         var problemDetails = context.Response.StatusCode switch
         {
             StatusCodes.Status401Unauthorized => problemDetailsCreator.Unauthorized(),
@@ -73,6 +70,8 @@ internal sealed class StatusCodesRewriterMiddleware(IProblemDetailsCreator probl
             return;
         }
 
+        // WriteAsync assigns the status code it is handed before writing; the status already matches the one
+        // being rewritten, so this re-asserts it rather than changing it.
         await TenantCatalogRejectionWriter
             .WriteAsync(context, context.Response.StatusCode, problemDetails)
             .ConfigureAwait(false);

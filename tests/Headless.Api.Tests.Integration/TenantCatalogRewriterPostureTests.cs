@@ -12,7 +12,6 @@ using Headless.Api.ServiceDefaults;
 using Headless.Caching;
 using Headless.Constants;
 using Headless.MultiTenancy;
-using Headless.MultiTenancy.Resources;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
