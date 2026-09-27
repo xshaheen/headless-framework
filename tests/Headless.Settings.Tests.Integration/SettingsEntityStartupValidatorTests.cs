@@ -1,0 +1,52 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Caching;
+using Headless.Security;
+using Headless.Settings;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Tests.TestSetup;
+
+namespace Tests;
+
+public sealed class SettingsEntityStartupValidatorTests(SettingsTestFixture fixture) : SettingsTestBase(fixture)
+{
+    [Fact]
+    public async Task should_fail_startup_when_shared_dbcontext_does_not_include_settings_entities()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+        // AddHeadlessSettings auto-registers the management core, which requires
+        // IStringEncryptionService (its _AddCore guard) and TimeProvider (its initialization hosted
+        // service) — register both so startup reaches the entity startup validator rather than throwing
+        // a missing-dependency error first.
+        builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddStringEncryptionService(options =>
+        {
+            options.DefaultPassPhrase = "TestPassPhrase123456";
+            options.DefaultSalt = [.. "TestSalt"u8];
+        });
+        builder.Services.AddDbContextFactory<MissingSettingsEntityDbContext>(options =>
+            options.UseNpgsql(Fixture.SqlConnectionString)
+        );
+        // The value store caches every read, and the host refuses to start without a registered cache.
+        builder.Services.AddHeadlessCaching(setup =>
+            setup.UseRedis(options => options.ConnectionMultiplexer = Fixture.Multiplexer)
+        );
+        builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<MissingSettingsEntityDbContext>());
+        using var host = builder.Build();
+
+        // when
+        var action = async () => await host.StartAsync(AbortToken);
+
+        // then
+        await action
+            .Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*SettingValueRecord*modelBuilder.AddHeadlessSettings*");
+    }
+
+    private sealed class MissingSettingsEntityDbContext(DbContextOptions<MissingSettingsEntityDbContext> options)
+        : DbContext(options);
+}

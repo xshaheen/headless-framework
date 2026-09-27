@@ -1,0 +1,20 @@
+<Project Sdk="Headless.NET.Sdk.Test">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Tests</RootNamespace>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.Api.DataProtection\Headless.Api.DataProtection.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Blobs.SignedUrlEndpoint\Headless.Blobs.SignedUrlEndpoint.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Blobs.FileSystem\Headless.Blobs.FileSystem.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+  </ItemGroup>
+</Project>

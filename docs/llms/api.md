@@ -48,7 +48,7 @@ Additional packages:
 - Use `PersistKeysToBlobStorage()` from `Headless.Api.DataProtection` to persist Data Protection keys in distributed/containerized environments.
 - For Serilog enrichment, call `AddSerilogEnrichers()` on services and `UseSerilogEnrichers()` on the app — place the middleware early in the pipeline.
 - Inject `IRequestContext` (from Abstractions) for request-scoped user, tenant, locale, timezone, and correlation ID — never access `HttpContext` directly in service code.
-- `AddHeadless()` auto-binds `Headless:StringEncryption` and `Headless:StringHash` through `Headless.Security`, and also exposes explicit overloads for configuration sections and option callbacks when the defaults are not suitable. When the hash callback is omitted, it still binds `Headless:StringHash` by default.
+- `AddHeadless()` auto-binds `Headless:StringEncryption` and `Headless:LookupHasher` through `Headless.Security`, and also exposes explicit overloads for configuration sections and option callbacks when the defaults are not suitable. When the hash callback is omitted, it still binds `Headless:LookupHasher` by default.
 - Place `UseResponseCompression()` **before** `UseIdempotency()` in the pipeline. Compression middleware registered inside idempotency records compressed bytes in the cache; replaying those bytes without re-encoding them produces garbled or double-encoded responses.
 - `HeaderName` per-endpoint overrides via `.WithIdempotency()` are silently ignored — the middleware reads the request header before resolving endpoint metadata. Change the header name globally via `AddIdempotency(o => o.HeaderName = ...)` only.
 - `TenantRequirement` must be in `DefaultPolicy` or `FallbackPolicy` for framework-level enforcement; placing it in a named policy is not detected by the startup validator.
@@ -127,15 +127,15 @@ dotnet add package Headless.Api.Abstractions
 Inject `IRequestContext` to access request-scoped information:
 
 ```csharp
-public sealed class OrderService(IRequestContext context)
+public sealed class OrderService(IRequestContext context, IOrderRepository repository)
 {
     public async Task<Order> CreateOrderAsync(CreateOrderRequest request, CancellationToken ct)
     {
-        var userId = context.User.Id;
+        var userId = context.User.UserId;
         var tenantId = context.Tenant.Id;
         var correlationId = context.CorrelationId;
 
-        return await _repository
+        return await repository
             .CreateAsync(
                 new Order
                 {
@@ -176,6 +176,7 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 - `AddHeadlessApiResponseCompression()` — Brotli + Gzip at `Fastest` level; extends MIME list with `application/problem+json`, `image/svg+xml`, `image/x-icon`
 - `AddHeadlessAntiforgery()` — antiforgery service registration
 - `AddStatusCodesRewriterMiddleware()` + `UseStatusCodesRewriter()` — rewrites bare 401, 403, 404 to structured `application/problem+json` via `IProblemDetailsCreator`
+- `IStatusCodeRejectionFeature` — a handler that fails a request (an authorization handler, a filter) can supply the response the rewriter writes instead of the bare-status rewrite. Set it with `httpContext.TrySetStatusCodeRejection(rejection)`, which stores it under the interface type only when no rejection is already set, so the first failure keeps ownership. `TryWriteResponseAsync` returns `false` to decline and fall back to the bare-status rewrite. The tenant identifier mismatch rejection is the one exception that always replaces an earlier rejection, because it must stay byte-identical to the unknown-tenant response
 - `ConfigureHeadlessDefaultApi()` — Kestrel limits (no `Server` header, 30 MB body, 40 headers), HSTS (365-day max-age, subdomain, preload), lowercase route URLs, form limits (4 MB value, 16 KB multipart headers, 30 MB multipart body), default `self` liveness health check
 - `AddHeadlessJsonService()` — `IJsonOptionsProvider`, `IJsonSerializer`, `ITextSerializer`, `ISerializer` (all `TryAddSingleton` — safe to override)
 - `AddHeadlessTimeService()` — `TimeProvider.System`, `ITimezoneProvider` (all `TryAddSingleton`)
@@ -186,6 +187,7 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 - HTTP tenant resolution: `ResolveFromClaims()`, `UseHeadlessTenancy()`, `[SkipTenantResolution]`, `.SkipTenantResolution()`
 - HTTP tenant catalog resolution (pre-authentication): `ResolveFromCatalog(...)`, `UseHeadlessTenantCatalogResolution()`, `ITenantIdentifierSource` returning `TenantIdentifierSourceResult` (`None` / `Found` / `Invalid`), and the `HeadlessTenantCatalogResolutionBuilder` members `AddHostSource(...)`, `AddRouteSource(...)`, `AddHeaderSource(...)`, `AddSource<T>()`, `AddSource(instance)`, `AddSource(Func<HttpContext, string?>)` with options `HostTenantIdentifierSourceOptions` (`Templates`), `RouteTenantIdentifierSourceOptions` (`RouteValueName`, `PromoteAmbientRouteValue`), and `HeaderTenantIdentifierSourceOptions` (`HeaderNames`, `DefaultHeaderName` = `X-Tenant`)
 - HTTP tenant authorization: `TenantRequirement`, `[AllowMissingTenant]`, `.AllowMissingTenant()`, `[RequireTenant]`, `.RequireTenant()`
+- `AddHeadlessAuthorizationDenialAudit<TContext>()` — opt-in; wraps `IAuthorizationMiddlewareResultHandler` and writes an `authorization.challenged` or `authorization.forbidden` audit entry (method, route template, policy names; never the body or path) through `IAuditLogWriter<TContext>`. Requires an audit log storage provider; see [Authorization denial entries](audit-log.md#authorization-denial-entries)
 - Diagnostic listeners: `AddHeadlessApiDiagnosticListeners()`, `BadRequestDiagnosticAdapter`, `MiddlewareAnalysisDiagnosticAdapter`
 
 ### Design constraints
@@ -213,6 +215,10 @@ Composing primitives without ServiceDefaults:
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+// Clock, build-information, and HTTP-context services the problem-details factory resolves; AddHeadless() registers them.
+builder.Services.AddHeadlessTimeService();
+builder.Services.AddHeadlessHostIdentity();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddHeadlessProblemDetails();
 builder.Services.AddHeadlessApiResponseCompression();
 builder.Services.ConfigureHeadlessDefaultApi(); // Kestrel limits + HSTS + health check + routing
@@ -373,6 +379,7 @@ Exception mapping from `AddHeadlessProblemDetails()`:
 | `MissingTenantContextException` | 403 with `error.code: g:tenant_required` |
 | `CrossTenantWriteException` | 409 with `error.code: g:cross_tenant_write` |
 | `ConflictException` | 409 with `errors` |
+| `TooManyRequestsException` | 429 with `Retry-After` header (whole seconds, rounded up, at least 1), `retryAfter`, and optional `error` |
 | `FluentValidation.ValidationException` | 422 with field errors |
 | `EntityNotFoundException` | 404 |
 | EF Core `DbUpdateConcurrencyException` (matched by type name) | 409 with concurrency-failure error |
@@ -488,7 +495,7 @@ builder.AddHeadless(configureServices: options =>
     options.Validation.ValidateServiceProviderOnStartup = true;
     options.Validation.RequireUseHeadless = true;
     options.Validation.RequireMapHeadlessEndpoints = true;
-    options.Validation.RequireStatusCodesRewriter = true; // validated on IStartupFilter path only
+    options.Validation.RequireStatusCodesRewriter = true;
     // Antiforgery defaults to false. Set to true for cookie-auth apps; bearer-token APIs leave it off.
     options.Antiforgery.Enabled = false;
 });
@@ -527,12 +534,12 @@ Surface filtering runs before schema generation and is independent of API Explor
 }
 ```
 
-#### String Hashing
+#### Lookup Hashing
 
 ```json
 {
     "Headless": {
-        "StringHash": {
+        "LookupHasher": {
             "Iterations": 600000,
             "Size": 128,
             "Algorithm": "SHA256",
@@ -553,7 +560,7 @@ Surface filtering runs before schema generation and is independent of API Explor
 - Registers OpenAPI services when `OpenApi.Enabled` is `true`.
 - Configures service discovery when `HttpClient.UseServiceDiscovery` is `true`.
 - Configures HttpClient defaults for standard resilience, service discovery, and application User-Agent.
-- Adds a startup filter that validates `UseHeadless()`, `UseStatusCodesRewriter()`, and `MapHeadlessEndpoints()` usage.
+- Adds a startup validator (`IHeadlessStartupValidator`) that fails host start, naming every missing call, when `UseHeadless()`, `UseStatusCodesRewriter()`, or `MapHeadlessEndpoints()` was not applied.
 
 ---
 
@@ -584,6 +591,7 @@ dotnet add package Headless.Api.DataProtection
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+// Resolves the registered IBlobStorage (and IBlobContainerManager, when present); register a blob provider first.
 builder.Services.AddDataProtection()
     .PersistKeysToBlobStorage()
     // Opt-in: probe the key ring at startup so a missing container / bad credentials fails the deploy,
@@ -738,6 +746,10 @@ dotnet add package Headless.Api.Idempotency
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+builder.AddHeadless(); // current user, problem details, and clock services the middleware resolves
+builder.AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims()));
+builder.Services.AddAuthentication(); // add your scheme, such as JWT bearer
+builder.Services.AddAuthorization();
 builder.Services.AddHeadlessCaching(setup => setup.UseInMemory()); // or setup.UseRedis(...)
 builder.Services.AddIdempotency(o =>
 {
@@ -747,12 +759,13 @@ builder.Services.AddIdempotency(o =>
 
 var app = builder.Build();
 
+app.UseHeadless(); // includes UseResponseCompression, which must stay OUTSIDE (before) UseIdempotency
 app.UseAuthentication();
 app.UseHeadlessTenancy(); // tenant must be resolved before idempotency
 app.UseAuthorization();
-app.UseResponseCompression(); // must be OUTSIDE (before) UseIdempotency
 app.UseIdempotency(); // installs response-capture stream; place AFTER auth and tenancy
 
+app.MapHeadlessEndpoints();
 app.MapPost("/disbursements", CreateDisbursement);
 app.Run();
 ```
@@ -822,14 +835,19 @@ dotnet add package Headless.Api.Logging.Serilog
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+builder.AddHeadless(); // registers IRequestContext, which the enrichers read
+
 // Register enrichers
 builder.Services.AddSerilogEnrichers();
 
 var app = builder.Build();
 
+app.UseHeadless();
+
 // Use enrichers middleware (place early in pipeline)
 app.UseSerilogEnrichers();
 
+app.MapHeadlessEndpoints();
 app.Run();
 ```
 
@@ -872,6 +890,9 @@ builder.AddHeadless().ConfigureMinimalApi();
 builder.Services.AddHeadlessMinimalApiEntityTagConcurrency();
 
 var app = builder.Build();
+
+app.UseHeadless();
+app.MapHeadlessEndpoints();
 
 app.MapGet(
     "/orders/{id:guid}",
@@ -952,6 +973,8 @@ builder.Services.AddHeadlessMvcEntityTagConcurrency();
 
 var app = builder.Build();
 
+app.UseHeadless();
+app.MapHeadlessEndpoints();
 app.MapControllers();
 app.Run();
 ```

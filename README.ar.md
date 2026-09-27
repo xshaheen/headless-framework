@@ -191,6 +191,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Push notifications | `AddHeadlessPushNotifications` | `UseFirebase`، `UseNoop` |
 | Distributed locks | `AddHeadlessDistributedLocks` | `UseInMemory`، `UseRedis`، `UsePostgreSql`، `UseSqlServer` |
 | Node membership | `AddHeadlessCoordination` | `UseRedis`، `UsePostgreSql`، `UseSqlServer` |
+| Sequences | `AddHeadlessSequences` | `UsePostgreSql`، `UseSqlServer` |
 | Feature flags | `AddHeadlessFeatures` | `UseEntityFramework<TContext>`، `UsePostgreSql`، `UseSqlServer` |
 | Dynamic settings | `AddHeadlessSettings` | `UseEntityFramework<TContext>`، `UsePostgreSql`، `UseSqlServer` |
 | Permissions | `AddHeadlessPermissions` | `UseEntityFramework<TContext>`، `UsePostgreSql`، `UseSqlServer` |
@@ -569,6 +570,17 @@ Cluster membership وliveness tracking: اعرف مين من الـ nodes شغّ
 | [Headless.Coordination.PostgreSql](src/Headless.Coordination.PostgreSql/README.md) | Membership في PostgreSQL بـ liveness من ساعة الـ server |
 | [Headless.Coordination.Redis](src/Headless.Coordination.Redis/README.md) | Membership على Redis عن طريق Lua وساعة Redis |
 | [Headless.Coordination.SqlServer](src/Headless.Coordination.SqlServer/README.md) | Membership في SQL Server بـ writes محروسة |
+
+### Sequences
+
+أرقام متتالية لكل tenant للإيصالات والفواتير وأرقام القضايا. الـ fast mode بياخد الرقم في transaction خاص بيه، والـ gap-free mode بياخده جوه الـ unit of work، فالـ rollback بيرجّع الرقم.
+
+| Package | الوصف |
+|---------|-------|
+| [Headless.Sequences.Abstractions](src/Headless.Sequences.Abstractions/README.md) | `ISequenceGenerator` و`SequenceRange` والـ accessor `unit.Sequences` |
+| [Headless.Sequences.Core](src/Headless.Sequences.Core/README.md) | الـ registration وسياسات الترقيم وتحديد مفتاح الـ tenant |
+| [Headless.Sequences.PostgreSql](src/Headless.Sequences.PostgreSql/README.md) | Counters في PostgreSQL بـ upsert-increment واحد |
+| [Headless.Sequences.SqlServer](src/Headless.Sequences.SqlServer/README.md) | Counters في SQL Server بـ upsert محمي بـ range lock |
 
 ### Unit of Work
 

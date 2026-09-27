@@ -63,12 +63,7 @@ public static class SetupTenantCatalogEntityFramework
             services.TryAddSingleton(storeType);
             services.TryAddSingleton(typeof(ITenantStore), sp => sp.GetRequiredService(storeType));
             services.TryAddSingleton(typeof(ITenantDirectory), sp => sp.GetRequiredService(storeType));
-            services.TryAddEnumerable(
-                ServiceDescriptor.Singleton(
-                    typeof(IHostedService),
-                    typeof(TenantCatalogEntityValidationStartupGate<>).MakeGenericType(dbContextType)
-                )
-            );
+            services.AddStartupValidator(typeof(TenantCatalogEntityStartupValidator<>).MakeGenericType(dbContextType));
         }
     }
 }

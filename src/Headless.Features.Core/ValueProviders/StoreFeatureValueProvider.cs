@@ -57,6 +57,29 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Writes straight to <see cref="IFeatureValueStore.SetAllAsync"/> without calling <see cref="SetAsync"/> or
+    /// <see cref="ClearAsync"/>, so a subclass that overrides either of those must override this member as well.
+    /// </remarks>
+    public virtual async Task SetAllAsync(
+        IReadOnlyList<KeyValuePair<FeatureDefinition, string?>> values,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var valuesByName = new Dictionary<string, string?>(values.Count, StringComparer.Ordinal);
+
+        foreach (var (feature, value) in values)
+        {
+            valuesByName[feature.Name] = value;
+        }
+
+        var pk = NormalizeProviderKey(providerKey);
+
+        await Store.SetAllAsync(valuesByName, Name, pk, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>
     public virtual Task<IAsyncDisposable> HandleContextAsync(
         string providerName,

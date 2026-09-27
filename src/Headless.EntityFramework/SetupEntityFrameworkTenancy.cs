@@ -50,6 +50,18 @@ public sealed class HeadlessEntityFrameworkTenancyBuilder
     public static IReadOnlyList<string> GuardTenantWritesCapabilities { get; } =
         Array.AsReadOnly(_GuardTenantWritesCapabilityLabels);
 
+    internal const string GuardTenantReadsLabel = "guard-tenant-reads";
+
+    private static readonly string[] _GuardTenantReadsCapabilityLabels = [GuardTenantReadsLabel];
+
+    /// <summary>
+    /// Capability labels reported by <see cref="GuardTenantReads"/>.
+    /// Downstream consumers can introspect the capability labels recorded by the EF seam for posture
+    /// assertions.
+    /// </summary>
+    public static IReadOnlyList<string> GuardTenantReadsCapabilities { get; } =
+        Array.AsReadOnly(_GuardTenantReadsCapabilityLabels);
+
     private readonly HeadlessTenancyBuilder _builder;
 
     internal HeadlessEntityFrameworkTenancyBuilder(HeadlessTenancyBuilder builder)
@@ -63,22 +75,40 @@ public sealed class HeadlessEntityFrameworkTenancyBuilder
     {
         _builder.Services.AddHeadlessTenantWriteGuard();
         _builder.Services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IHeadlessTenancyValidator, EntityFrameworkTenantWriteGuardStartupValidator>()
+            ServiceDescriptor.Singleton<IHeadlessTenancyValidator, EntityFrameworkTenantGuardStartupValidator>()
         );
         _builder.RecordSeam(Seam, TenantPostureStatus.Guarded, _GuardTenantWritesCapabilityLabels);
+
+        return this;
+    }
+
+    /// <summary>
+    /// Enables the EF tenant read guard: a query that applies the multi-tenancy filter to an entity whose
+    /// tenant column is required throws <see cref="MissingTenantContextException"/> when it executes without
+    /// an ambient tenant, instead of returning no rows. Entities with a nullable tenant column keep returning
+    /// host rows. <c>IgnoreMultiTenancyFilter()</c> lifts the guard for one query;
+    /// <see cref="ITenantWriteGuardBypass"/> does not.
+    /// </summary>
+    /// <returns>The same Entity Framework tenancy builder.</returns>
+    public HeadlessEntityFrameworkTenancyBuilder GuardTenantReads()
+    {
+        _builder.Services.AddHeadlessTenantReadGuard();
+        _builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IHeadlessTenancyValidator, EntityFrameworkTenantGuardStartupValidator>()
+        );
+        _builder.RecordSeam(Seam, TenantPostureStatus.Guarded, _GuardTenantReadsCapabilityLabels);
 
         return this;
     }
 }
 
 /// <summary>
-/// Emits a startup error when the EF seam recorded the <c>guard-tenant-writes</c> capability but
-/// <see cref="TenantWriteGuardOptions.IsEnabled"/> resolves to <see langword="false"/> (typically
-/// because a later <c>Configure&lt;TenantWriteGuardOptions&gt;</c> call clobbered the
-/// <c>PostConfigure</c> contribution). Surfaces the mismatch at startup so operators are not
-/// surprised by silent loss of the guard.
+/// Emits a startup error for each guard the EF seam recorded (<c>guard-tenant-writes</c>,
+/// <c>guard-tenant-reads</c>) whose <see cref="TenantGuardOptions"/> flag resolves to <see langword="false"/>,
+/// typically because a later options registration clobbered the <c>PostConfigure</c> contribution. Surfaces the
+/// mismatch at startup so operators are not surprised by silent loss of a guard.
 /// </summary>
-internal sealed class EntityFrameworkTenantWriteGuardStartupValidator(IOptions<TenantWriteGuardOptions> options)
+internal sealed class EntityFrameworkTenantGuardStartupValidator(IOptions<TenantGuardOptions> options)
     : IHeadlessTenancyValidator
 {
     private const string _Seam = HeadlessEntityFrameworkTenancyBuilder.Seam;
@@ -87,25 +117,36 @@ internal sealed class EntityFrameworkTenantWriteGuardStartupValidator(IOptions<T
     {
         Argument.IsNotNull(context);
 
-        var efSeam = context.Manifest.GetSeam(_Seam);
-        var recordedGuard =
-            efSeam?.Capabilities.Contains(
-                HeadlessEntityFrameworkTenancyBuilder.GuardTenantWritesLabel,
-                StringComparer.Ordinal
-            ) == true;
+        var capabilities = context.Manifest.GetSeam(_Seam)?.Capabilities ?? [];
 
-        if (!recordedGuard || options.Value.IsEnabled)
+        if (
+            capabilities.Contains(HeadlessEntityFrameworkTenancyBuilder.GuardTenantWritesLabel, StringComparer.Ordinal)
+            && !options.Value.GuardWrites
+        )
         {
-            yield break;
+            yield return HeadlessTenancyDiagnostic.Error(
+                _Seam,
+                "HEADLESS_TENANCY_EF_WRITE_GUARD_DISABLED",
+                "Headless EntityFramework seam recorded guard-tenant-writes but TenantGuardOptions.GuardWrites "
+                    + "resolved to false at startup. A later override of TenantGuardOptions clobbered the "
+                    + "PostConfigure contribution applied by GuardTenantWrites(). Move the override before "
+                    + "AddHeadlessTenancy(...) or remove it."
+            );
         }
 
-        yield return HeadlessTenancyDiagnostic.Error(
-            _Seam,
-            "HEADLESS_TENANCY_EF_WRITE_GUARD_DISABLED",
-            "Headless EntityFramework seam recorded guard-tenant-writes but TenantWriteGuardOptions.IsEnabled "
-                + "resolved to false at startup. A later Configure<TenantWriteGuardOptions>(...) call clobbered "
-                + "the PostConfigure contribution applied by GuardTenantWrites(). Move the override before "
-                + "AddHeadlessTenancy(...) or remove it."
-        );
+        if (
+            capabilities.Contains(HeadlessEntityFrameworkTenancyBuilder.GuardTenantReadsLabel, StringComparer.Ordinal)
+            && !options.Value.GuardReads
+        )
+        {
+            yield return HeadlessTenancyDiagnostic.Error(
+                _Seam,
+                "HEADLESS_TENANCY_EF_READ_GUARD_DISABLED",
+                "Headless EntityFramework seam recorded guard-tenant-reads but TenantGuardOptions.GuardReads "
+                    + "resolved to false at startup. A later override of TenantGuardOptions clobbered the "
+                    + "PostConfigure contribution applied by GuardTenantReads(). Move the override before "
+                    + "AddHeadlessTenancy(...) or remove it."
+            );
+        }
     }
 }

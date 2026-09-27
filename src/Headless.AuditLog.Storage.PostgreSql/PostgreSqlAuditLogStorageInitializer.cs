@@ -156,14 +156,17 @@ internal sealed partial class PostgreSqlAuditLogStorageInitializer(
         var lockResource = $"headless_audit_init:{options.Schema}.{options.TableName}";
         var acquireLock = $"SELECT pg_advisory_xact_lock(hashtextextended('{lockResource}', 0));";
 
+        // Each index ends in (CreatedAt, Id), the keyset order of read paging, so a filtered page seeks straight
+        // to its continuation position instead of scanning.
         return $"""
             {acquireLock}
 
-            CREATE INDEX IF NOT EXISTS "ix_audit_log_tenant_time" ON {table} ("TenantId", "CreatedAt");
-            CREATE INDEX IF NOT EXISTS "ix_audit_log_tenant_action_time" ON {table} ("TenantId", "Action", "CreatedAt");
-            CREATE INDEX IF NOT EXISTS "ix_audit_log_tenant_entity_time" ON {table} ("TenantId", "EntityType", "EntityId", "CreatedAt");
-            CREATE INDEX IF NOT EXISTS "ix_audit_log_tenant_actor_time" ON {table} ("TenantId", "UserId", "CreatedAt");
-            CREATE INDEX IF NOT EXISTS "ix_audit_log_correlation" ON {table} ("CorrelationId");
+            CREATE INDEX IF NOT EXISTS "ix_audit_log_tenant_time" ON {table} ("TenantId", "CreatedAt", "Id");
+            CREATE INDEX IF NOT EXISTS "ix_audit_log_tenant_action_time" ON {table} ("TenantId", "Action", "CreatedAt", "Id");
+            CREATE INDEX IF NOT EXISTS "ix_audit_log_tenant_entity_time" ON {table} ("TenantId", "EntityType", "EntityId", "CreatedAt", "Id");
+            CREATE INDEX IF NOT EXISTS "ix_audit_log_tenant_actor_time" ON {table} ("TenantId", "UserId", "CreatedAt", "Id");
+            CREATE INDEX IF NOT EXISTS "ix_audit_log_tenant_account_time" ON {table} ("TenantId", "AccountId", "CreatedAt", "Id");
+            CREATE INDEX IF NOT EXISTS "ix_audit_log_correlation" ON {table} ("CorrelationId", "CreatedAt", "Id");
             """;
     }
 

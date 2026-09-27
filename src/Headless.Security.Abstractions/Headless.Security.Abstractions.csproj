@@ -5,4 +5,7 @@
     <PackageTags>headless;security;dotnet</PackageTags>
     <RootNamespace>Headless.Security</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+  </ItemGroup>
 </Project>

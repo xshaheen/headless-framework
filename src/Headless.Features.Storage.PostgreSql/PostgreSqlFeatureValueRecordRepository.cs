@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless.Features.Entities;
 using Headless.Features.Repositories;
 using Microsoft.Extensions.Options;
@@ -83,6 +84,26 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
 
     /// <inheritdoc/>
     public Task<List<FeatureValueRecord>> GetListAsync(
+        HashSet<string> names,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var sql =
+            $"""SELECT {_ValueColumns} FROM {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE "Name" = ANY(@Names) AND "ProviderName"=@ProviderName AND "ProviderKey" IS NOT DISTINCT FROM @ProviderKey;""";
+
+        return _ReadValuesAsync(
+            sql,
+            cancellationToken,
+            _Param("Names", names.ToArray()),
+            _Param("ProviderName", providerName),
+            _Param("ProviderKey", providerKey)
+        );
+    }
+
+    /// <inheritdoc/>
+    public Task<List<FeatureValueRecord>> GetListAsync(
         string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
@@ -100,30 +121,112 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
     }
 
     /// <inheritdoc/>
-    public async Task InsertAsync(FeatureValueRecord feature, CancellationToken cancellationToken = default)
+    public Task InsertAsync(FeatureValueRecord feature, CancellationToken cancellationToken = default)
+    {
+        var (sql, parameters) = _InsertStatement(feature);
+
+        return _ExecuteAsync(sql, cancellationToken, parameters);
+    }
+
+    /// <inheritdoc/>
+    public Task UpdateAsync(FeatureValueRecord feature, CancellationToken cancellationToken = default)
+    {
+        var (sql, parameters) = _UpdateStatement(feature);
+
+        return _ExecuteAsync(sql, cancellationToken, parameters);
+    }
+
+    /// <inheritdoc/>
+    public Task DeleteAsync(
+        IReadOnlyCollection<FeatureValueRecord> features,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (features.Count == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        var (sql, parameters) = _DeleteStatement(features);
+
+        return _ExecuteAsync(sql, cancellationToken, parameters);
+    }
+
+    /// <inheritdoc/>
+    public async Task SaveAsync(
+        IReadOnlyCollection<FeatureValueRecord> inserted,
+        IReadOnlyCollection<FeatureValueRecord> updated,
+        IReadOnlyCollection<FeatureValueRecord> deleted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var statements = new List<(string Sql, NpgsqlParameter[] Parameters)>(inserted.Count + updated.Count + 1);
+        statements.AddRange(inserted.Select(_InsertStatement));
+        statements.AddRange(updated.Select(_UpdateStatement));
+
+        if (deleted.Count != 0)
+        {
+            statements.Add(_DeleteStatement(deleted));
+        }
+
+        if (statements.Count == 0)
+        {
+            return;
+        }
+
+        await using var connection = providerOptions.Value.CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        var firstUpdate = inserted.Count;
+        var afterLastUpdate = firstUpdate + updated.Count;
+
+        for (var i = 0; i < statements.Count; i++)
+        {
+            var (sql, parameters) = statements[i];
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            command.CommandTimeout = _CommandTimeout();
+            command.Parameters.AddRange(parameters);
+            var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+            // An update that matched no row means another writer deleted it after the caller read it. Failing rolls
+            // the batch back so the caller can re-read and retry, instead of silently dropping that value.
+            if (affected == 0 && i >= firstUpdate && i < afterLastUpdate)
+            {
+                throw new DBConcurrencyException("A value record in the batch was deleted by another writer.");
+            }
+        }
+
+        // Disposing an uncommitted transaction rolls it back, so a statement that throws above undoes every
+        // earlier one in the batch.
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private (string Sql, NpgsqlParameter[] Parameters) _InsertStatement(FeatureValueRecord feature)
     {
         var sql =
             $"""INSERT INTO {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} ("Id","Name","Value","ProviderName","ProviderKey","CreatedAt") VALUES (@Id,@Name,@Value,@ProviderName,@ProviderKey,@CreatedAt);""";
 
         // Preserve caller-supplied CreatedAt when present (mirrors the EF path); only stamp from
-        // the TimeProvider when the caller left it at default.
+        // the TimeProvider when the caller left it at default. Tests that pin CreatedAt for
+        // deterministic assertions and audit-driven scenarios that backfill historical timestamps
+        // both depend on this round-trip.
         var createdAt = feature.CreatedAt == default ? timeProvider.GetUtcNow() : feature.CreatedAt;
 
-        await _ExecuteAsync(
-                sql,
-                cancellationToken,
+        return (
+            sql,
+            [
                 _Param("Id", feature.Id),
                 _Param("Name", feature.Name),
                 _Param("Value", feature.Value),
                 _Param("ProviderName", feature.ProviderName),
                 _Param("ProviderKey", feature.ProviderKey),
-                _Param("CreatedAt", createdAt)
-            )
-            .ConfigureAwait(false);
+                _Param("CreatedAt", createdAt),
+            ]
+        );
     }
 
-    /// <inheritdoc/>
-    public async Task UpdateAsync(FeatureValueRecord feature, CancellationToken cancellationToken = default)
+    private (string Sql, NpgsqlParameter[] Parameters) _UpdateStatement(FeatureValueRecord feature)
     {
         var sql =
             $"""UPDATE {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} SET "Value"=@Value,"UpdatedAt"=@UpdatedAt WHERE "Id"=@Id;""";
@@ -135,32 +238,17 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
                 ? timeProvider.GetUtcNow()
                 : feature.UpdatedAt.Value;
 
-        await _ExecuteAsync(
-                sql,
-                cancellationToken,
-                _Param("Id", feature.Id),
-                _Param("Value", feature.Value),
-                _Param("UpdatedAt", updatedAt)
-            )
-            .ConfigureAwait(false);
+        return (sql, [_Param("Id", feature.Id), _Param("Value", feature.Value), _Param("UpdatedAt", updatedAt)]);
     }
 
-    /// <inheritdoc/>
-    public async Task DeleteAsync(
-        IReadOnlyCollection<FeatureValueRecord> features,
-        CancellationToken cancellationToken = default
+    private (string Sql, NpgsqlParameter[] Parameters) _DeleteStatement(
+        IReadOnlyCollection<FeatureValueRecord> features
     )
     {
-        if (features.Count == 0)
-        {
-            return;
-        }
-
         var sql =
             $"""DELETE FROM {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE "Id" = ANY(@Ids);""";
 
-        await _ExecuteAsync(sql, cancellationToken, _Param("Ids", features.Select(x => x.Id).ToArray()))
-            .ConfigureAwait(false);
+        return (sql, [_Param("Ids", features.Select(x => x.Id).ToArray())]);
     }
 
     private async Task<List<FeatureValueRecord>> _ReadValuesAsync(

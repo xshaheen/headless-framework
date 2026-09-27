@@ -148,5 +148,27 @@ public sealed class TenantFeatureValueProviderTests : TestBase
 
             return Task.CompletedTask;
         }
+
+        public Task SetAllAsync(
+            IReadOnlyDictionary<string, string?> values,
+            string providerName,
+            string? providerKey,
+            CancellationToken cancellationToken = default
+        )
+        {
+            foreach (var (name, value) in values)
+            {
+                if (value is null)
+                {
+                    _values.Remove((name, providerName, providerKey));
+                }
+                else
+                {
+                    _values[(name, providerName, providerKey)] = value;
+                }
+            }
+
+            return Task.CompletedTask;
+        }
     }
 }

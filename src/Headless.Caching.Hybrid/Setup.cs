@@ -132,8 +132,8 @@ public static class SetupHybridCache
 
         // Startup advisor for THIS named instance: it inspects the named options (the default-path advisor in
         // _AddCacheCore only ever sees the default options). AddSingleton (not TryAddEnumerable) so one advisor
-        // per named instance coexists with the default one instead of being deduped by implementation type.
-        services.AddSingleton<IHostedService>(provider => new HybridCacheBestPracticesAdvisor(
+        // per named instance coexists with the default one: the factory overload never dedupes.
+        services.AddStartupValidator(provider => new HybridCacheBestPracticesAdvisor(
             provider.GetRequiredService<IOptionsMonitor<HybridCacheOptions>>().Get(name),
             provider.GetRequiredService<ILogger<HybridCacheBestPracticesAdvisor>>(),
             instanceName: name
@@ -165,14 +165,7 @@ public static class SetupHybridCache
 
         // Startup advisor: logs warnings for questionable-but-valid configurations once at host
         // startup so operators notice misconfigurations before they see unexpected runtime behavior.
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IHostedService, HybridCacheBestPracticesAdvisor>(
-                provider => new HybridCacheBestPracticesAdvisor(
-                    provider.GetRequiredService<HybridCacheOptions>(),
-                    provider.GetRequiredService<ILogger<HybridCacheBestPracticesAdvisor>>()
-                )
-            )
-        );
+        services.AddStartupValidator<HybridCacheBestPracticesAdvisor>();
 
         return services;
     }

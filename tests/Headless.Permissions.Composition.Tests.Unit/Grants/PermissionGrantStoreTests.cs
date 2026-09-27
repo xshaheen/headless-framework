@@ -778,4 +778,79 @@ public sealed class PermissionGrantStoreTests : TestBase
     }
 
     #endregion
+
+    #region Surrounding white space
+
+    // SQL Server ignores trailing spaces when comparing keys and PostgreSQL does not, so a padded key part would
+    // address another key's row on one provider only; the store must refuse it before any storage call.
+    public static readonly TheoryData<string> PaddedKeyCalls =
+    [
+        "is-granted-name",
+        "is-granted-provider-name",
+        "is-granted-provider-key",
+        "is-granted-leading-provider-key",
+        "is-granted-many-names",
+        "is-granted-many-provider-key",
+        "get-all-grants",
+        "grant-provider-key",
+        "grant-tenant-id",
+        "grant-many-names",
+        "grant-many-tenant-id",
+        "revoke-provider-key",
+        "revoke-many-provider-key",
+        "refresh-provider-key",
+    ];
+
+    [Theory]
+    [MemberData(nameof(PaddedKeyCalls))]
+    public async Task should_refuse_key_with_surrounding_white_space_before_touching_storage(string call)
+    {
+        // when
+        Func<Task> action = call switch
+        {
+            "is-granted-name" => async () =>
+                await _sut.IsGrantedAsync("Users.Create ", _ProviderName, _ProviderKey, AbortToken),
+            "is-granted-provider-name" => async () =>
+                await _sut.IsGrantedAsync("Users.Create", "Role ", _ProviderKey, AbortToken),
+            "is-granted-provider-key" => async () =>
+                await _sut.IsGrantedAsync("Users.Create", _ProviderName, "admin ", AbortToken),
+            "is-granted-leading-provider-key" => async () =>
+                await _sut.IsGrantedAsync("Users.Create", _ProviderName, " admin", AbortToken),
+            "is-granted-many-names" => async () =>
+                await _sut.IsGrantedAsync(["Users.Create", "Users.Delete "], _ProviderName, _ProviderKey, AbortToken),
+            "is-granted-many-provider-key" => async () =>
+                await _sut.IsGrantedAsync(["Users.Create", "Users.Delete"], _ProviderName, "admin ", AbortToken),
+            "get-all-grants" => async () => await _sut.GetAllGrantsAsync(_ProviderName, "admin ", AbortToken),
+            "grant-provider-key" => async () =>
+                await _sut.GrantAsync("Users.Create", _ProviderName, "admin ", null, AbortToken),
+            "grant-tenant-id" => async () =>
+                await _sut.GrantAsync("Users.Create", _ProviderName, _ProviderKey, "acme ", AbortToken),
+            "grant-many-names" => async () =>
+                await _sut.GrantAsync(["Users.Create", " Users.Delete"], _ProviderName, _ProviderKey, null, AbortToken),
+            "grant-many-tenant-id" => async () =>
+                await _sut.GrantAsync(
+                    ["Users.Create", "Users.Delete"],
+                    _ProviderName,
+                    _ProviderKey,
+                    "acme ",
+                    AbortToken
+                ),
+            "revoke-provider-key" => async () =>
+                await _sut.RevokeAsync("Users.Create", _ProviderName, "admin ", AbortToken),
+            "revoke-many-provider-key" => async () =>
+                await _sut.RevokeAsync(["Users.Create", "Users.Delete"], _ProviderName, "admin ", AbortToken),
+            "refresh-provider-key" => async () => await _sut.RefreshAsync(_ProviderName, "admin ", AbortToken),
+            _ => throw new ArgumentOutOfRangeException(nameof(call), call, null),
+        };
+
+        // then
+        await action
+            .Should()
+            .ThrowExactlyAsync<ArgumentException>()
+            .WithMessage("*must not start or end with white space*");
+        _repository.ReceivedCalls().Should().BeEmpty();
+        _cache.ReceivedCalls().Should().BeEmpty();
+    }
+
+    #endregion
 }

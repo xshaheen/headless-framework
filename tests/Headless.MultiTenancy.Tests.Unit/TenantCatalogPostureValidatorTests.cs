@@ -153,6 +153,70 @@ public sealed class TenantCatalogPostureValidatorTests
     }
 
     [Fact]
+    public void should_report_error_when_the_status_codes_rewriter_was_added_after_authorization()
+    {
+        // given - the rewriter is present but downstream of UseAuthorization(), which short-circuits a
+        // failed evaluation before reaching it
+        var manifest = _CreateResolutionManifest();
+        manifest.MarkRuntimeApplied(
+            TenantCatalogPosture.Seam,
+            TenantCatalogPosture.StatusCodesRewriterAfterAuthorizationRuntimeMarker
+        );
+        var context = _CreateContext(manifest, withStatusCodesRewriter: false);
+
+        // when
+        var diagnostics = _sut.Validate(context).ToArray();
+
+        // then
+        var diagnostic = diagnostics.Should().ContainSingle().Subject;
+        diagnostic.Code.Should().Be("CATALOG_RESOLUTION_REWRITER_AFTER_AUTHORIZATION");
+        diagnostic.Severity.Should().Be(HeadlessTenancyDiagnosticSeverity.Error);
+        diagnostic.Message.Should().Contain("UseAuthorization()").And.Contain("enumerate tenants");
+    }
+
+    [Fact]
+    public void should_report_error_when_a_rewriter_after_authorization_accompanies_a_correctly_placed_one()
+    {
+        // given - the markers are host-wide, so a correctly placed rewriter cannot vouch for the branch the
+        // misplaced one serves
+        var manifest = _CreateResolutionManifest();
+        manifest.MarkRuntimeApplied(
+            TenantCatalogPosture.Seam,
+            TenantCatalogPosture.StatusCodesRewriterAfterAuthorizationRuntimeMarker
+        );
+        var context = _CreateContext(manifest);
+
+        // when
+        var diagnostics = _sut.Validate(context).ToArray();
+
+        // then
+        diagnostics.Should().ContainSingle().Which.Code.Should().Be("CATALOG_RESOLUTION_REWRITER_AFTER_AUTHORIZATION");
+    }
+
+    [Fact]
+    public void should_report_nothing_about_a_rewriter_after_authorization_for_an_accessor_only_host()
+    {
+        // given
+        var manifest = new TenantPostureManifest();
+        manifest.RecordSeam(
+            TenantCatalogPosture.Seam,
+            TenantPostureStatus.Configured,
+            TenantCatalogPosture.AccessorCapability
+        );
+        manifest.MarkRuntimeApplied(
+            TenantCatalogPosture.Seam,
+            TenantCatalogPosture.StatusCodesRewriterAfterAuthorizationRuntimeMarker
+        );
+        var context = _CreateContext(manifest, withStatusCodesRewriter: false);
+
+        // when
+        var diagnostics = _sut.Validate(context);
+
+        // then
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
     public void should_report_nothing_about_the_rewriter_for_an_accessor_only_host()
     {
         // given — deliberately a different gate from the caching rule: tier-2 only exists for
@@ -170,6 +234,21 @@ public sealed class TenantCatalogPostureValidatorTests
 
         // then
         diagnostics.Should().BeEmpty();
+    }
+
+    /// <summary>A fully wired resolution posture: store, resolution, and the pipeline marker.</summary>
+    private static TenantPostureManifest _CreateResolutionManifest()
+    {
+        var manifest = new TenantPostureManifest();
+        manifest.RecordSeam(
+            TenantCatalogPosture.Seam,
+            TenantPostureStatus.Enforcing,
+            TenantCatalogPosture.AccessorCapability,
+            TenantCatalogPosture.ResolutionCapability
+        );
+        manifest.MarkRuntimeApplied(TenantCatalogPosture.Seam, TenantCatalogPosture.ResolutionPipelineRuntimeMarker);
+
+        return manifest;
     }
 
     /// <summary>
