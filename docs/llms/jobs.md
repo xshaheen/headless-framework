@@ -104,14 +104,20 @@ The source generator (`Headless.Jobs.SourceGenerator`) scans for `JobFunctionAtt
 Attribute signatures (from `Headless.Jobs.Base.JobFunctionAttribute`):
 
 ```csharp
-// Cron job (cronExpression is optional — omit for time/programmatic jobs)
-[JobFunction("DailyReport", cronExpression: "0 0 * * *", taskPriority: JobPriority.High)]
-public static Task ExecuteAsync(IServiceProvider sp, CancellationToken ct) { ... }
+public sealed class OrderJobs(IReportService reports, IOrderService orders)
+{
+    // Cron job: six fields, seconds first. Omit cronExpression for time/programmatic jobs.
+    [JobFunction("DailyReport", cronExpression: "0 0 0 * * *", taskPriority: JobPriority.High)]
+    public Task DailyReportAsync(CancellationToken ct) => reports.BuildDailyAsync(ct);
 
-// Time job or named function for programmatic enqueue
-[JobFunction("ProcessOrder")]
-public async Task ExecuteAsync(JobFunctionContext<OrderRequest> context, CancellationToken ct) { ... }
+    // Time job or named function for programmatic enqueue
+    [JobFunction("ProcessOrder")]
+    public Task ProcessOrderAsync(JobFunctionContext<OrderRequest> context, CancellationToken ct) =>
+        orders.ProcessAsync(context.Request, ct);
+}
 ```
+
+A job method may take only `JobFunctionContext`, `JobFunctionContext<T>`, and `CancellationToken` (HF009). Services come from the declaring class's constructor.
 
 The first positional argument is the durable function identity. `IJobScheduler` obtains it from the generated descriptor, while low-level manager callers set the entity `Function` directly. Priority (`JobPriority.Normal` / `High` / `Low` / `LongRunning`) and max-concurrency are optional attribute parameters.
 
@@ -277,30 +283,31 @@ using Headless.Jobs.Models;
 // permission cache) observe the right tenant automatically.
 public sealed record TenantReportRequest(string ReportKind);
 
-[JobFunction("GenerateTenantReport")]
-public sealed class GenerateTenantReport(IReportService reports)
+public sealed class TenantReportJobs(
+    IReportService reports,
+    IJobScheduler scheduler,
+    IAppTenantDirectory tenants // application-owned enumeration
+)
 {
-    public Task ExecuteAsync(JobFunctionContext<TenantReportRequest> context, CancellationToken ct) =>
+    [JobFunction("GenerateTenantReport")]
+    public Task GenerateAsync(JobFunctionContext<TenantReportRequest> context, CancellationToken ct) =>
         reports.BuildAsync(context.Request.ReportKind, ct);
-}
 
-// A system-scope cron that fans out one tenant-scoped time job per tenant.
-[JobFunction("NightlyReportFanOut", cronExpression: "0 2 * * *")]
-public static async Task FanOutAsync(IServiceProvider sp, CancellationToken ct)
-{
-    var scheduler = sp.GetRequiredService<IJobScheduler>();
-    var tenants = sp.GetRequiredService<IAppTenantDirectory>(); // application-owned enumeration
-
-    foreach (var tenantId in await tenants.ListActiveTenantIdsAsync(ct))
+    // A system-scope cron that fans out one tenant-scoped time job per tenant.
+    [JobFunction("NightlyReportFanOut", cronExpression: "0 0 2 * * *")]
+    public async Task FanOutAsync(CancellationToken ct)
     {
-        // Explicit TenantId is REQUIRED: the cron handler runs system-scope, so there is no
-        // ambient tenant for PropagateTenant() to capture here. Relying on ambient capture
-        // inside a cron handler would silently persist tenantless jobs.
-        await scheduler.EnqueueAsync(
-            new TenantReportRequest("nightly"),
-            new JobOptions { TenantId = tenantId, Description = $"nightly-report-{tenantId}" },
-            ct
-        );
+        foreach (var tenantId in await tenants.ListActiveTenantIdsAsync(ct))
+        {
+            // Explicit TenantId is REQUIRED: the cron handler runs system-scope, so there is no
+            // ambient tenant for PropagateTenant() to capture here. Relying on ambient capture
+            // inside a cron handler would silently persist tenantless jobs.
+            await scheduler.EnqueueAsync(
+                new TenantReportRequest("nightly"),
+                new JobOptions { TenantId = tenantId, Description = $"nightly-report-{tenantId}" },
+                ct
+            );
+        }
     }
 }
 ```
@@ -657,13 +664,14 @@ public sealed class OrderService(IJobScheduler jobs)
 }
 
 // Mark a method for registration (requires Jobs.SourceGenerator)
-[JobFunction("SendOrderReminder")]
-public static Task ExecuteAsync(
-    JobFunctionContext<OrderReminderRequest> context,
-    CancellationToken ct)
+public static class OrderReminderJobs
 {
-    // context.Request.OrderId, context.RetryCount, and context.ScheduledFor are available.
-    return Task.CompletedTask;
+    [JobFunction("SendOrderReminder")]
+    public static Task ExecuteAsync(JobFunctionContext<OrderReminderRequest> context, CancellationToken ct)
+    {
+        // context.Request.OrderId, context.RetryCount, and context.ScheduledFor are available.
+        return Task.CompletedTask;
+    }
 }
 ```
 
@@ -839,9 +847,10 @@ using Headless.Jobs.Base;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
 
-// 1. Register Jobs
+// 1. Register Jobs, adding the generated module of every assembly that declares jobs
 builder.Services.AddHeadlessJobs(options =>
 {
+    options.AddModule<MyApp.JobsModule>();
     options.ConfigureScheduler(scheduler =>
     {
         scheduler.MaxConcurrency = 10;
@@ -861,21 +870,23 @@ builder.Services.AddHeadlessJobs(options =>
     });
 });
 
-// 2. Define a cron job (requires Jobs.SourceGenerator)
-[JobFunction("Cleanup", cronExpression: "*/5 * * * *")]
-public static async Task ExecuteAsync(IServiceProvider sp, CancellationToken ct)
+// 2. Define a cron job (requires Jobs.SourceGenerator); services come from the constructor
+public sealed class CleanupJobs(ILogger<CleanupJobs> logger)
 {
-    var logger = sp.GetRequiredService<ILogger<Program>>();
-    logger.LogInformation("Running cleanup");
-    await Task.CompletedTask;
+    [JobFunction("Cleanup", cronExpression: "0 */5 * * * *")]
+    public Task ExecuteAsync(CancellationToken ct)
+    {
+        logger.LogInformation("Running cleanup");
+        return Task.CompletedTask;
+    }
 }
 
 // 3. Define a time job with DI
-[JobFunction("ProcessOrder")]
 public sealed class OrderProcessor(IOrderService orders)
 {
-    public async Task ExecuteAsync(JobFunctionContext<OrderRequest> context, CancellationToken ct)
-        => await orders.ProcessAsync(context.Request, ct);
+    [JobFunction("ProcessOrder")]
+    public Task ExecuteAsync(JobFunctionContext<OrderRequest> context, CancellationToken ct) =>
+        orders.ProcessAsync(context.Request, ct);
 }
 
 // 4. Schedule through generated typed metadata.
@@ -1128,7 +1139,7 @@ Every rule is reported at compile time in category `Headless.Jobs.SourceGenerato
 | <a id="hf006"></a>HF006 | A job class declares more than one constructor and none is marked `[JobsConstructor]`. Warning. | Mark the constructor the factory must call with `[JobsConstructor]`. |
 | <a id="hf007"></a>HF007 | The class declaring a `[JobFunction]` is abstract. | Move the method to a concrete class. |
 | <a id="hf008"></a>HF008 | The class declaring a `[JobFunction]` is nested in another type. | Move the method to a top-level class. |
-| <a id="hf009"></a>HF009 | A parameter is not `JobFunctionContext`, `JobFunctionContext<T>`, or `CancellationToken`. | Remove the parameter; resolve services through the class constructor or `context.ServiceScope.ServiceProvider`. |
+| <a id="hf009"></a>HF009 | A parameter is not `JobFunctionContext`, `JobFunctionContext<T>`, or `CancellationToken`. | Remove the parameter and inject the service through the declaring class's constructor. |
 | <a id="hf010"></a>HF010 | More than one constructor is marked `[JobsConstructor]`. | Keep the attribute on one constructor. |
 | <a id="hf011"></a>HF011 | Two functions in one compilation take `JobFunctionContext<T>` with the same `T`. Nothing is generated. | Give each typed function its own request type. |
 | <a id="hf012"></a>HF012 | The priority argument is not a defined `JobPriority` value. | Pass a `JobPriority` member. |
@@ -1155,20 +1166,19 @@ dotnet add package Headless.Jobs.SourceGenerator
 using Headless.Jobs.Base;
 using Headless.Jobs.Enums;
 
-// Static cron job (no DI)
-[JobFunction("Cleanup", cronExpression: "*/5 * * * *")]
-public static async Task ExecuteAsync(IServiceProvider sp, CancellationToken ct)
+// Static cron job (no DI): a static method needs no instance, so no factory is generated
+public static class MaintenanceJobs
 {
-    sp.GetRequiredService<ILogger<Program>>().LogInformation("Cleaning up");
-    await Task.CompletedTask;
+    [JobFunction("Cleanup", cronExpression: "0 */5 * * * *")]
+    public static Task CleanupAsync(CancellationToken ct) => Task.CompletedTask;
 }
 
 // Instance job with primary constructor DI
-[JobFunction("ProcessOrder")]
 public sealed class OrderProcessor(IOrderService orders)
 {
-    public async Task ExecuteAsync(JobFunctionContext<OrderRequest> context, CancellationToken ct)
-        => await orders.ProcessAsync(context.Request, ct);
+    [JobFunction("ProcessOrder")]
+    public Task ExecuteAsync(JobFunctionContext<OrderRequest> context, CancellationToken ct) =>
+        orders.ProcessAsync(context.Request, ct);
 }
 
 // Multiple constructors — mark the target with [JobsConstructor]
@@ -1184,8 +1194,11 @@ public sealed class ComplexJob
 }
 
 // High-priority cron
-[JobFunction("DailyReport", cronExpression: "0 0 * * *", taskPriority: JobPriority.High)]
-public static Task ExecuteAsync(IServiceProvider sp, CancellationToken ct) => Task.CompletedTask;
+public static class ReportJobs
+{
+    [JobFunction("DailyReport", cronExpression: "0 0 0 * * *", taskPriority: JobPriority.High)]
+    public static Task DailyAsync(CancellationToken ct) => Task.CompletedTask;
+}
 ```
 
 ### Configuration
@@ -1479,9 +1492,9 @@ builder.Services.AddHeadlessJobs(options =>
 #### Job-Level Error Handling
 
 ```csharp
-[JobFunction("ProcessOrder")]
 public sealed class ProcessOrderJob(ILogger<ProcessOrderJob> logger)
 {
+    [JobFunction("ProcessOrder")]
     public async Task ExecuteAsync(JobFunctionContext<OrderRequest> context, CancellationToken ct)
     {
         try
