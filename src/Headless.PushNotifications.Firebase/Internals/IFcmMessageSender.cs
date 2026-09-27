@@ -2,13 +2,37 @@
 
 namespace Headless.PushNotifications.Firebase.Internals;
 
-/// <summary>The notification content sent to one or more Firebase Installation IDs (FIDs).</summary>
+/// <summary>
+/// The content sent to one or more Firebase Installation IDs (FIDs). A <see langword="null"/>
+/// <see cref="Title"/> and <see cref="Body"/> make it a data-only message.
+/// </summary>
 internal sealed record FcmMessageContent(
-    string Title,
-    string Body,
+    string? Title,
+    string? Body,
     IReadOnlyDictionary<string, string>? Data,
-    string? CollapseKey = null
-);
+    string? CollapseKey = null,
+    int? Badge = null,
+    string? Sound = null,
+    PushNotificationPriority? Priority = null,
+    TimeSpan? TimeToLive = null
+)
+{
+    public bool IsDataOnly => Title is null && Body is null;
+
+    public static FcmMessageContent From(PushNotificationRequest request)
+    {
+        return new FcmMessageContent(
+            request.Title,
+            request.Body,
+            request.Data,
+            request.CollapseKey,
+            request.Badge,
+            request.Sound,
+            request.Priority,
+            request.TimeToLive
+        );
+    }
+}
 
 /// <summary>
 /// Seam over Firebase Cloud Messaging. Owns all <c>FirebaseAdmin</c> interaction (app lifecycle, message

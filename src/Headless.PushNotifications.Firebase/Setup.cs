@@ -120,6 +120,7 @@ public static class SetupFirebasePushNotifications
                 sp.GetRequiredService<IOptionsMonitor<FirebaseOptions>>(),
                 sp.GetRequiredService<ResiliencePipelineProvider<string>>(),
                 optionsName: null,
+                sp.GetRequiredService<TimeProvider>(),
                 sp.GetRequiredService<ILogger<FcmMessageSender>>()
             ));
 
@@ -135,6 +136,7 @@ public static class SetupFirebasePushNotifications
                     sp.GetRequiredService<IOptionsMonitor<FirebaseOptions>>(),
                     sp.GetRequiredService<ResiliencePipelineProvider<string>>(),
                     optionsName: (string)key!,
+                    sp.GetRequiredService<TimeProvider>(),
                     sp.GetRequiredService<ILogger<FcmMessageSender>>()
                 )
         );

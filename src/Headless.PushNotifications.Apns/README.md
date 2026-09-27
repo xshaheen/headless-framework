@@ -4,7 +4,7 @@ Apple Push Notification service (APNs) implementation of `IPushNotificationServi
 
 ## Why use this package
 
-Delivers alert and VoIP notifications straight to APNs over HTTP/2 with token-based (`.p8` key) authentication. Reports device tokens Apple has retired as `Unregistered`, the same status the Firebase provider uses, so token cleanup code works with either provider. Use Firebase instead when one sender must also reach Android or Web clients.
+Delivers notifications straight to APNs over HTTP/2, authenticated with a `.p8` signing key or a `.p12` provider certificate. Beyond shared alerts, data-only messages, and VoIP pushes, `IApnsPushNotificationService` sends rich alerts, Live Activities, and the other APNs push types. Reports device tokens Apple has retired as `Unregistered`, the same status the Firebase provider uses, so token cleanup code works with either provider. Use Firebase instead when one sender must also reach Android or Web clients.
 
 ## Install
 
