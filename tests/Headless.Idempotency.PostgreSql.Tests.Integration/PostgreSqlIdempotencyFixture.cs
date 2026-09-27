@@ -23,7 +23,7 @@ public sealed class PostgreSqlIdempotencyFixture
         ICollectionFixture<PostgreSqlIdempotencyFixture>,
         IIdempotencyFixture
 {
-    private const string _Records = $"\"{HeadlessStorageDefaults.Schema}\".records";
+    private const string _Records = $"\"{HeadlessStorageDefaults.Schema}\".idempotency_records";
 
     public string ConnectionString => Container.GetConnectionString();
 

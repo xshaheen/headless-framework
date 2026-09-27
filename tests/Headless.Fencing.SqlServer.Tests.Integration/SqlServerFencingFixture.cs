@@ -155,7 +155,7 @@ public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IA
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(
             $"""
-            SELECT [generation], [state], [granted_at], [expires_at], [ended_at] FROM [{schema}].[leases]
+            SELECT [generation], [state], [granted_at], [expires_at], [ended_at] FROM [{schema}].[fencing_leases]
             WHERE [tenant_id] = @tenant AND [kind] = @kind AND [resource] = @resource
             """,
             connection
@@ -189,7 +189,7 @@ public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IA
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(
             $"""
-            UPDATE [{HeadlessStorageDefaults.Schema}].[leases]
+            UPDATE [{HeadlessStorageDefaults.Schema}].[fencing_leases]
             SET [granted_at] = {string.Format(CultureInfo.InvariantCulture, shift, "[granted_at]")},
                 [expires_at] = {string.Format(CultureInfo.InvariantCulture, shift, "[expires_at]")},
                 [ended_at] = {string.Format(CultureInfo.InvariantCulture, shift, "[ended_at]")}
@@ -277,8 +277,8 @@ public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IA
     public static string DropStorageSql(string schema)
     {
         return $"""
-            IF OBJECT_ID(N'{schema}.leases', N'U') IS NOT NULL DROP TABLE [{schema}].[leases];
-            IF OBJECT_ID(N'{schema}.lease_generations', N'SO') IS NOT NULL DROP SEQUENCE [{schema}].[lease_generations];
+            IF OBJECT_ID(N'{schema}.fencing_leases', N'U') IS NOT NULL DROP TABLE [{schema}].[fencing_leases];
+            IF OBJECT_ID(N'{schema}.fencing_lease_generations', N'SO') IS NOT NULL DROP SEQUENCE [{schema}].[fencing_lease_generations];
             IF SCHEMA_ID(N'{schema}') IS NOT NULL EXEC(N'DROP SCHEMA [{schema}]');
             """;
     }

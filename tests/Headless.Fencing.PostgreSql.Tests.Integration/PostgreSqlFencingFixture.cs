@@ -115,7 +115,7 @@ public sealed class PostgreSqlFencingFixture
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(
             $"""
-            SELECT generation, state, granted_at, expires_at, ended_at FROM "{schema}".leases
+            SELECT generation, state, granted_at, expires_at, ended_at FROM "{schema}".fencing_leases
             WHERE tenant_id = @tenant AND kind = @kind AND resource = @resource
             """,
             connection
@@ -146,7 +146,7 @@ public sealed class PostgreSqlFencingFixture
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(
             $"""
-            UPDATE "{HeadlessStorageDefaults.Schema}".leases
+            UPDATE "{HeadlessStorageDefaults.Schema}".fencing_leases
             SET granted_at = granted_at - @by, expires_at = expires_at - @by, ended_at = ended_at - @by
             WHERE tenant_id = @tenant AND kind = @kind AND resource = @resource
             """,

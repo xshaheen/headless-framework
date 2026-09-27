@@ -90,6 +90,6 @@ public sealed class PostgreSqlIdempotencyDeadlockRetryTests(PostgreSqlIdempotenc
 
     private PostgreSqlDeadlockInjector _Injector()
     {
-        return new PostgreSqlDeadlockInjector(fixture.ConnectionString, _Schema, "records");
+        return new PostgreSqlDeadlockInjector(fixture.ConnectionString, _Schema, "idempotency_records");
     }
 }

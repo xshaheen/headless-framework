@@ -5,8 +5,8 @@ namespace Headless.Idempotency.SqlServer;
 /// <summary>Object and column names of the record storage, shared by the initializer's DDL and the store's statements.</summary>
 internal static class SqlServerIdempotencySchema
 {
-    public const string TableName = "records";
-    public const string SequenceName = "record_generations";
+    public const string TableName = "idempotency_records";
+    public const string SequenceName = "idempotency_record_generations";
 
     public const string TenantId = "[tenant_id]";
     public const string Key = "[idempotency_key]";

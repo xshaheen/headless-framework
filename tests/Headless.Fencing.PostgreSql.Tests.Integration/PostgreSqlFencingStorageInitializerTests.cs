@@ -204,7 +204,7 @@ public sealed class PostgreSqlFencingStorageInitializerTests(PostgreSqlFencingFi
     private Task<int> _CountTablesAsync(string schema)
     {
         return fixture.ScalarAsync(
-            "SELECT count(*) FROM information_schema.tables WHERE table_schema = @schema AND table_name = 'leases'",
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = @schema AND table_name = 'fencing_leases'",
             AbortToken,
             ("schema", schema)
         );
@@ -213,7 +213,7 @@ public sealed class PostgreSqlFencingStorageInitializerTests(PostgreSqlFencingFi
     private Task<int> _CountIndexesAsync(string schema)
     {
         return fixture.ScalarAsync(
-            "SELECT count(*) FROM pg_indexes WHERE schemaname = @schema AND tablename = 'leases'",
+            "SELECT count(*) FROM pg_indexes WHERE schemaname = @schema AND tablename = 'fencing_leases'",
             AbortToken,
             ("schema", schema)
         );
@@ -222,7 +222,7 @@ public sealed class PostgreSqlFencingStorageInitializerTests(PostgreSqlFencingFi
     private Task<int> _CountSequencesAsync(string schema)
     {
         return fixture.ScalarAsync(
-            "SELECT count(*) FROM information_schema.sequences WHERE sequence_schema = @schema",
+            "SELECT count(*) FROM information_schema.sequences WHERE sequence_schema = @schema AND sequence_name = 'fencing_lease_generations'",
             AbortToken,
             ("schema", schema)
         );
