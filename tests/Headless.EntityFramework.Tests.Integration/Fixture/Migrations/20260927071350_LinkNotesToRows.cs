@@ -11,17 +11,17 @@ public partial class LinkNotesToRows : Migration
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)
     {
-        migrationBuilder.AddColumn<Guid>(name: "RowId", schema: "app", table: "Notes", type: "uuid", nullable: true);
+        migrationBuilder.AddColumn<Guid>(name: "RowId", table: "Notes", type: "uuid", schema: "app", nullable: true);
 
-        migrationBuilder.CreateIndex(name: "IX_Notes_RowId", schema: "app", table: "Notes", column: "RowId");
+        migrationBuilder.CreateIndex(name: "IX_Notes_RowId", table: "Notes", column: "RowId", schema: "app");
 
         migrationBuilder.AddForeignKey(
             name: "FK_Notes_Rows_RowId",
-            schema: "app",
             table: "Notes",
             column: "RowId",
-            principalSchema: "app",
             principalTable: "Rows",
+            schema: "app",
+            principalSchema: "app",
             principalColumn: "Id"
         );
     }
@@ -29,10 +29,10 @@ public partial class LinkNotesToRows : Migration
     /// <inheritdoc />
     protected override void Down(MigrationBuilder migrationBuilder)
     {
-        migrationBuilder.DropForeignKey(name: "FK_Notes_Rows_RowId", schema: "app", table: "Notes");
+        migrationBuilder.DropForeignKey(name: "FK_Notes_Rows_RowId", table: "Notes", schema: "app");
 
-        migrationBuilder.DropIndex(name: "IX_Notes_RowId", schema: "app", table: "Notes");
+        migrationBuilder.DropIndex(name: "IX_Notes_RowId", table: "Notes", schema: "app");
 
-        migrationBuilder.DropColumn(name: "RowId", schema: "app", table: "Notes");
+        migrationBuilder.DropColumn(name: "RowId", table: "Notes", schema: "app");
     }
 }
