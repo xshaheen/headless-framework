@@ -7,10 +7,6 @@ packages: Idempotency.Abstractions, Idempotency.Core, Idempotency.InMemory, Idem
 
 > Durable, tenant-scoped idempotent admission: admit a key once across processes, replay its stored result on retry, and refuse a stale attempt's completion. Each record row carries its own lease and generation.
 
-## How this differs from locks and fenced leases
-
-Idempotent admission answers "has this operation already happened, and what was its result?". It admits one attempt per tenant-scoped key and fingerprint and replays the stored result to every later retry. It does not serialize different keys over a shared resource: use a [distributed lock](distributed-locks.md) for "one process at a time", and a [fenced lease](fencing.md) for ownership of work with no result to replay, such as a resource handed to an external executor. Comparison of all four primitives: [Choosing a coordination primitive](index.md#choosing-a-coordination-primitive).
-
 ## Orientation
 
 Register one provider; nothing else is required:
@@ -62,6 +58,10 @@ switch (admission.Disposition)
 - `expectedContract` on `AdmitAsync` is a read guard, not a write guard: a completed record stored under a different contract tag comes back as `Conflict` (`StoredContract` set) rather than a mis-typed replay. Pass the same contract tag to `AdmitAsync` and `CompleteAsync`.
 - `RenewAsync` is one guarded single-row update the store commits on its own connection — call it from a heartbeat loop without an owned unit. It extends the lease only while the record is pending at the admission's generation with a live lease, and otherwise reports why (`IdempotentLeaseRenewal.Status`). It is the one autonomous-only member; there is no `unit.Idempotency.RenewAsync`.
 - The idempotency key, tenant id, and contract pass through `IdempotencyFieldLimits` (`TenantIdMaxLength` 128, `KeyMaxLength` 256, `ContractMaxLength` 256, `FingerprintAlgorithmMaxLength` 32, `FingerprintMaxLength` 64, `RecoveryPointMaxLength` 128, `RecoveryStateMaxLength` 64 KiB) before any SQL runs, and a lease duration must fall within `IdempotentOperationsOptions.MinimumLeaseDuration`/`MaximumLeaseDuration`.
+
+## How this differs from locks and fenced leases
+
+Idempotent admission answers "has this operation already happened, and what was its result?". It admits one attempt per tenant-scoped key and fingerprint and replays the stored result to every later retry. It does not serialize different keys over a shared resource: use a [distributed lock](distributed-locks.md) for "one process at a time", and a [fenced lease](fencing.md) for ownership of work with no result to replay, such as a resource handed to an external executor. Comparison of all four primitives: [Choosing a coordination primitive](fencing.md#choosing-a-coordination-primitive).
 
 ## Core Concepts
 

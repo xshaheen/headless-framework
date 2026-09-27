@@ -1,15 +1,24 @@
 # Authoring Consumer Documentation
 
-Headless has four documentation surfaces. Each has one job:
+Headless has five documentation surfaces. Each has one job:
 
 | Surface | Audience | Owns |
 | --- | --- | --- |
 | [`README.md`](../../README.md) | Evaluators and first-time users | Why Headless, first setup, package catalog |
+| [`README.ar.md`](../../README.ar.md) | Arabic-reading evaluators | The Arabic mirror of `README.md` |
 | [`docs/llms/index.md`](../llms/index.md) | Coding agents | Task routing and framework-wide invariants |
 | `docs/llms/<domain>.md` | Coding agents using one domain | Package choice, setup, behavior, constraints, operations |
 | `src/Headless.<Package>/README.md` | NuGet visitors | Why this package exists, installation, canonical links |
 
 Do not mirror reference content between surfaces. The domain guide is the canonical consumer contract. Package READMEs point to it; the index routes to it; the root README explains the framework and catalogs packages.
+
+`CONCEPTS.md` (contributor vocabulary) and `docs/solutions/` (past fixes and decisions) serve people working on this repository, not consumers, and are outside this contract.
+
+## Root READMEs
+
+`README.ar.md` is the one deliberate mirror. It carries every section of `README.md` in the same order: the introduction, the setup table, "What is in the box", and every package catalog section with the same packages, order, and links. Write its prose in Egyptian Arabic, keep technical terms and public names in English, and separate setup-table members with `،`. Code blocks, identifiers, links, and package names stay byte-identical to `README.md`.
+
+The catalog summary states the package count. Keep it equal to the catalog rows and to the IDs in [`eng/expected-packages.txt`](../../eng/expected-packages.txt).
 
 ## Domain guides
 
@@ -132,7 +141,7 @@ Put setup, options, API lists, runtime effects, and provider limits in the domai
 
 - Keep framework-wide invariants only.
 - Route by task or capability, not by repository layout.
-- Link every domain guide exactly once in the primary router.
+- Give every domain guide exactly one row of its own in the primary router. A row for a task that spans several domains may link guides that already have their own row.
 - Keep package enumeration in the root README and package ownership in domain frontmatter.
 - Put domain-specific rules in the domain guide, even if they are important.
 
@@ -142,7 +151,9 @@ Update documentation when a change affects public API, consumer-visible behavior
 
 | Change | Required documentation |
 | --- | --- |
-| Package purpose or name | Package README, owning domain guide, root catalog, index if routing changes |
+| Package added or removed | Package README, owning domain guide (frontmatter and `## Headless.*` section), catalog row and package count in `README.md` and `README.ar.md`, `eng/expected-packages.txt`, index if routing changes |
+| Package purpose or name | Package README, owning domain guide, catalog in `README.md` and `README.ar.md`, index if routing changes |
+| Setup entry point or provider member | Owning domain guide, setup table in `README.md` and `README.ar.md` when the family is listed there |
 | Registration, API, option, default, failure, ordering, or runtime effect | Owning domain guide |
 | Framework-wide invariant | Index and affected domain guides |
 | Internal refactor or tests only | None |
@@ -151,9 +162,10 @@ Before committing:
 
 1. Confirm every `src/Headless.*/README.md` maps to exactly one domain guide.
 2. Confirm each domain frontmatter package has one matching `## Headless.*` section.
-3. Check changed links and anchors.
-4. Compile or otherwise verify changed code samples against the current public API.
-5. Search removed or renamed public names across `docs/llms/`, package READMEs, and the root README.
+3. Confirm `README.md` and `README.ar.md` list the same setup rows, catalog sections, and package links in the same order.
+4. Check changed links and anchors.
+5. Compile or otherwise verify changed code samples against the current public API.
+6. Search removed or renamed public names across `docs/llms/`, package READMEs, and both root READMEs.
 
 ## Scoped safety rules
 
