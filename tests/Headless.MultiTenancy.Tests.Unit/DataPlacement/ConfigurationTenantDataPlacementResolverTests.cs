@@ -98,6 +98,22 @@ public sealed class ConfigurationTenantDataPlacementResolverTests : TestBase
         new ConfigurationTenantDataPlacementOptionsValidator().Validate(options).IsValid.Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void should_reject_a_non_positive_cache_expiration(int seconds)
+    {
+        var options = new TenantDataPlacementOptions { CacheExpiration = TimeSpan.FromSeconds(seconds) };
+
+        new TenantDataPlacementOptionsValidator().Validate(options).IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_accept_a_positive_cache_expiration()
+    {
+        new TenantDataPlacementOptionsValidator().Validate(new TenantDataPlacementOptions()).IsValid.Should().BeTrue();
+    }
+
     private static ConfigurationTenantDataPlacementResolver _Create(params ConfigurationTenantDataPlacement[] entries)
     {
         return new ConfigurationTenantDataPlacementResolver(
