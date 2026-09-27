@@ -99,9 +99,15 @@ options with the same default.
 ### Feature-prefixed object names
 
 Every table, sequence, index, and constraint the feature creates carries the feature in its name, because
-PostgreSQL index and constraint names are unique per schema, not per table. Use snake_case on PostgreSQL and
-PascalCase on SQL Server: `fencing_leases`, `idempotency_record_generations`, `messaging_published` /
-`MessagingPublished`.
+PostgreSQL index and constraint names are unique per schema, not per table.
+
+Casing is not uniform yet. Each existing feature keeps the table and column casing it already has on each
+provider: Messaging and Coordination switch from snake_case on PostgreSQL to PascalCase on SQL Server
+(`messaging_published` / `MessagingPublished`), Features, Permissions, and Settings use PascalCase on both
+(`FeatureValues`), and AuditLog, Fencing, Idempotency, and Sequences keep snake_case on both (`audit_log`,
+`fencing_leases`, `idempotency_record_generations`, `sequences`). A new feature follows the provider's majority
+style: snake_case on PostgreSQL, PascalCase on SQL Server. Unifying the casing of existing features is a planned
+follow-up; do not rename an existing feature's objects as a side effect of other work.
 
 - A noun unique to the feature's family already counts as the prefix: `CronJobs`, `FeatureValues`,
   `PermissionGrants`, and `headless_distributed_locks_fence` need no extra `jobs_` or `features_`.
@@ -114,13 +120,17 @@ PascalCase on SQL Server: `fencing_leases`, `idempotency_record_generations`, `m
 - Namespace the feature's init lock by feature and key it on the objects it owns:
   `headless_{feature}_init:{schema}` or `headless_{feature}_init:{schema}.{table}`. Two features in one schema must
   never share a lock resource by accident.
-- Every PostgreSQL initializer also takes `pg_advisory_xact_lock(hashtextextended('headless_schema_init:{schema}', 0))`
-  immediately before `CREATE SCHEMA IF NOT EXISTS`. Without it, two features creating the shared schema at the
-  same moment collide, and the loser's rollback silently discards its DDL.
+- Every PostgreSQL initializer also takes the schema-wide lock immediately before `CREATE SCHEMA IF NOT EXISTS`,
+  built only through `PostgreSqlSchemaInitLock.AcquireStatement(schema)` in `Headless.Sql.PostgreSql`, which owns
+  the lock key. Without it, two features creating the shared schema at the same moment collide, and the loser's
+  rollback silently discards its DDL.
+- A creator outside these locks (a consumer's EF migration) can still commit the schema first. An initializer
+  that absorbs `42P06 / 42P07 / 42710 / 23505` reruns its DDL once in a fresh transaction and lets a second
+  failure propagate; it never reports success after a rollback alone.
 - An initializer that runs `CREATE INDEX CONCURRENTLY` polls `pg_try_advisory_lock` for its session lock instead
   of blocking in `pg_advisory_lock`.
 
-[Storage initializer lifecycle](../best-practices/storage-initializer-lifecycle-correctness.md) explains both
+[Storage initializer lifecycle](../best-practices/storage-initializer-lifecycle-correctness.md) explains the
 PostgreSQL rules.
 
 ### Parameterless connection overload

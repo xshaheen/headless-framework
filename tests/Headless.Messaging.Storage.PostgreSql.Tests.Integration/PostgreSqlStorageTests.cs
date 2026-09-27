@@ -11,6 +11,7 @@ using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Storage.PostgreSql;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -2085,6 +2086,66 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         {
             await holder.ExecuteAsync("SELECT pg_advisory_unlock_all();");
             await holder.ExecuteAsync($"DROP SCHEMA IF EXISTS \"{schema}\" CASCADE;");
+        }
+    }
+
+    [Fact]
+    public async Task should_log_the_wait_when_another_session_holds_the_messaging_init_lock()
+    {
+        var schema = $"lock_wait_{Guid.NewGuid():N}";
+        var logger = new _EventRecordingLogger();
+        var initializer = new PostgreSqlStorageInitializer(
+            logger,
+            Options.Create(new PostgreSqlOptions { ConnectionString = fixture.ConnectionString }),
+            TestStorageOptions.For(schema),
+            Options.Create(new MessagingOptions())
+        );
+
+        await using var holder = new NpgsqlConnection(fixture.ConnectionString);
+        await holder.OpenAsync(AbortToken);
+        var lockParams = new { LockResource = $"headless_messaging_init:{schema}" };
+        await holder.ExecuteAsync("SELECT pg_advisory_lock(hashtextextended(@LockResource, 0));", lockParams);
+        try
+        {
+            var initialization = initializer.InitializeAsync(AbortToken);
+
+            // The first wait report is due after five seconds of waiting; hold the lock past it.
+            await Task.Delay(TimeSpan.FromSeconds(6), AbortToken);
+            initialization.IsCompleted.Should().BeFalse("the initializer must still be waiting on the lock");
+
+            await holder.ExecuteAsync("SELECT pg_advisory_unlock(hashtextextended(@LockResource, 0));", lockParams);
+            await initialization;
+
+            logger.EventNames.Should().ContainSingle(name => name == "WaitingForInitLock");
+        }
+        finally
+        {
+            await holder.ExecuteAsync("SELECT pg_advisory_unlock_all();");
+            await holder.ExecuteAsync($"DROP SCHEMA IF EXISTS \"{schema}\" CASCADE;");
+        }
+    }
+
+    // The initializer type is internal, so a proxy-based substitute cannot implement ILogger<T> for it.
+    private sealed class _EventRecordingLogger : ILogger<PostgreSqlStorageInitializer>
+    {
+        private readonly System.Collections.Concurrent.ConcurrentQueue<string?> _eventNames = new();
+
+        public IReadOnlyCollection<string?> EventNames => _eventNames;
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            _eventNames.Enqueue(eventId.Name);
         }
     }
 

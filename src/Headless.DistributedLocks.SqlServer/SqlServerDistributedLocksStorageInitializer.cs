@@ -96,11 +96,19 @@ internal sealed class SqlServerDistributedLocksStorageInitializer(
                 THROW 50000, N'Headless.DistributedLocks.SqlServer: failed to acquire fencing sequence initialization lock.', 1;
 
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = @schema)
-                BEGIN
-                    DECLARE @createSchema nvarchar(max) = N'CREATE SCHEMA {{SqlServerIdentifier.Quote(schema)}}';
-                    EXEC sys.sp_executesql @createSchema;
-                END;
+                -- The schema is shared with other features whose initializers hold their own locks, so one of them
+                -- can create it between this check and the CREATE; that duplicate (2714, reported as 2759 by
+                -- CREATE SCHEMA) means the schema exists, which is all this step needs.
+                BEGIN TRY
+                    IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = @schema)
+                    BEGIN
+                        DECLARE @createSchema nvarchar(max) = N'CREATE SCHEMA {{SqlServerIdentifier.Quote(schema)}}';
+                        EXEC sys.sp_executesql @createSchema;
+                    END;
+                END TRY
+                BEGIN CATCH
+                    IF ERROR_NUMBER() NOT IN (2714, 2759) THROW;
+                END CATCH;
 
                 IF NOT EXISTS (
                     SELECT 1

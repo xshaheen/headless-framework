@@ -27,73 +27,65 @@ internal sealed partial class PostgreSqlAuditLogStorageInitializer(
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        // Split table-creation DDL from index-creation DDL into separate transactions. If a racing
-        // initializer trips 42P07/42710 on the table side, the rollback that follows must not also
-        // wipe the index DDL — those indexes would be skipped on the IsInitialized=true path and the
-        // tables would live without their tenant-time covering indexes until a manual repair.
+        // Split table-creation DDL from index-creation DDL into separate transactions, so a race absorbed on
+        // one side rolls back and reruns only that side's batch.
         await _RunSchemaAndTableAsync(connection, options, cancellationToken).ConfigureAwait(false);
         await _RunIndexesAsync(connection, options, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task _RunSchemaAndTableAsync(
+    private Task _RunSchemaAndTableAsync(
         NpgsqlConnection connection,
         AuditLogStorageOptions options,
         CancellationToken cancellationToken
     )
     {
-        var sql = _CreateSchemaAndTableScript(options);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-
-        try
-        {
-            await using var command = new NpgsqlCommand(sql, connection, transaction);
-            command.CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds;
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        }
-        // 42P06: schema_already_exists, 42P07: relation_already_exists (table/index),
-        // 42710: duplicate_object, 23505: unique_violation on pg_namespace_nspname_index when
-        // two transactions race CREATE SCHEMA IF NOT EXISTS (the IF NOT EXISTS check is not
-        // transactional with the catalog insert). The pg_advisory_xact_lock serializes ours, but
-        // a foreign initializer running concurrent DDL can still trigger this path — absorb it
-        // and treat the schema as initialized. Index creation runs in a separate transaction
-        // below so it isn't wiped by this rollback.
-        catch (PostgresException ex)
-            when (ex.SqlState
-                    is SqlErrorCodes.PostgreSql.DuplicateSchema
-                        or SqlErrorCodes.PostgreSql.DuplicateTable
-                        or SqlErrorCodes.PostgreSql.DuplicateObject
-                        or SqlErrorCodes.PostgreSql.UniqueViolation
-            )
-        {
-            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            LogSchemaRaceObserved(_logger, ex.SqlState, ex.MessageText);
-        }
+        return _RunDdlAsync(connection, _CreateSchemaAndTableScript(options), cancellationToken);
     }
 
-    private async Task _RunIndexesAsync(
+    private Task _RunIndexesAsync(
         NpgsqlConnection connection,
         AuditLogStorageOptions options,
         CancellationToken cancellationToken
     )
     {
-        var sql = _CreateIndexesScript(options);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        return _RunDdlAsync(connection, _CreateIndexesScript(options), cancellationToken);
+    }
 
-        try
+    // The advisory locks serialize our initializers, but a schema or object creator outside them (a consumer's EF
+    // migration, other application code) can still commit the same CREATE first. That fails our transaction with
+    // 42P06/42P07/42710, or 23505 on the catalog unique index when the two inserts race, and the rollback takes every
+    // object of this batch with it. The conflicting creator has committed by the time we see the error, so one rerun
+    // in a fresh transaction passes its IF NOT EXISTS guards and creates what the rollback discarded. A second failure
+    // is not a race and propagates, so the initializer never reports success with its tables missing.
+    private async Task _RunDdlAsync(NpgsqlConnection connection, string sql, CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; ; attempt++)
         {
-            await using var command = new NpgsqlCommand(sql, connection, transaction);
-            command.CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds;
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        }
-        // Each CREATE INDEX uses IF NOT EXISTS so re-runs are idempotent; absorb any racing
-        // duplicate-object state codes from a foreign initializer running concurrent DDL.
-        catch (PostgresException ex)
-            when (ex.SqlState is SqlErrorCodes.PostgreSql.DuplicateTable or SqlErrorCodes.PostgreSql.DuplicateObject)
-        {
-            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            LogSchemaRaceObserved(_logger, ex.SqlState, ex.MessageText);
+            await using var transaction = await connection
+                .BeginTransactionAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            try
+            {
+                await using var command = new NpgsqlCommand(sql, connection, transaction);
+                command.CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds;
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+                return;
+            }
+            catch (PostgresException ex)
+                when (attempt == 1
+                    && ex.SqlState
+                        is SqlErrorCodes.PostgreSql.DuplicateSchema
+                            or SqlErrorCodes.PostgreSql.DuplicateTable
+                            or SqlErrorCodes.PostgreSql.DuplicateObject
+                            or SqlErrorCodes.PostgreSql.UniqueViolation
+                )
+            {
+                await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                LogSchemaRaceObserved(_logger, ex.SqlState, ex.MessageText);
+            }
         }
     }
 
@@ -185,7 +177,7 @@ internal sealed partial class PostgreSqlAuditLogStorageInitializer(
         EventId = 1,
         EventName = "PostgreSqlAuditLogSchemaRaceObserved",
         Level = LogLevel.Information,
-        Message = "PostgreSql audit-log initializer absorbed a concurrent-DDL race (SqlState={SqlState}): {Detail}. Treating schema as initialized."
+        Message = "PostgreSql audit-log initializer absorbed a concurrent-DDL race (SqlState={SqlState}): {Detail}. Retrying the DDL once in a fresh transaction."
     )]
     // ReSharper disable once InconsistentNaming
     private static partial void LogSchemaRaceObserved(ILogger logger, string sqlState, string detail);

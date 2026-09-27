@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Headless.Constants;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Headless.Sql.PostgreSql;
@@ -32,6 +33,12 @@ internal sealed class PostgreSqlStorageInitializer(
 
     private static readonly TimeSpan _InitLockPollInterval = TimeSpan.FromMilliseconds(100);
 
+    // A replica can hold the init lock across a multi-minute CONCURRENTLY build, and with the default unbounded DDL
+    // timeout a waiter would otherwise sit silent. Report the wait once it outlasts a normal boot, then periodically,
+    // so a stuck startup shows which lock it is waiting on instead of looking hung.
+    private static readonly TimeSpan _InitLockFirstWaitLog = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan _InitLockWaitLogInterval = TimeSpan.FromSeconds(30);
+
     // Polls pg_try_advisory_lock instead of blocking in pg_advisory_lock: a blocked statement keeps a
     // snapshot open, and the holder's CREATE INDEX CONCURRENTLY waits for that snapshot, so a blocking
     // wait deadlocks two replicas booting together on a fresh schema. Between attempts this session
@@ -46,6 +53,7 @@ internal sealed class PostgreSqlStorageInitializer(
     {
         var timeout = _GetDdlCommandTimeout();
         var startedAt = Stopwatch.GetTimestamp();
+        var nextWaitLog = _InitLockFirstWaitLog;
 
         while (true)
         {
@@ -63,11 +71,19 @@ internal sealed class PostgreSqlStorageInitializer(
                 return;
             }
 
-            if (timeout > TimeSpan.Zero && Stopwatch.GetElapsedTime(startedAt) >= timeout)
+            var elapsed = Stopwatch.GetElapsedTime(startedAt);
+
+            if (timeout > TimeSpan.Zero && elapsed >= timeout)
             {
                 throw new TimeoutException(
                     $"Timed out after {timeout} waiting for the Headless.Messaging initialization lock '{lockResource}'."
                 );
+            }
+
+            if (elapsed >= nextWaitLog)
+            {
+                logger.LogWaitingForInitLock(lockResource, elapsed);
+                nextWaitLog = elapsed + _InitLockWaitLogInterval;
             }
 
             await Task.Delay(_InitLockPollInterval, cancellationToken).ConfigureAwait(false);
@@ -136,23 +152,7 @@ internal sealed class PostgreSqlStorageInitializer(
 
         try
         {
-            // PostgreSQL supports transactional DDL — wrap the batch so a mid-script failure
-            // (network drop, broker-side abort) cannot leave the schema half-initialized.
-            await using (
-                var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
-            )
-            {
-                await connection
-                    .ExecuteNonQueryAsync(
-                        sql,
-                        transaction: transaction,
-                        commandTimeout: messagingOptions.Value.CommandTimeout,
-                        cancellationToken: cancellationToken
-                    )
-                    .ConfigureAwait(false);
-
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            }
+            await _RunTransactionalDdlAsync(connection, sql, cancellationToken).ConfigureAwait(false);
 
             // Retry-pickup partial indexes and trigram content indexes use CREATE INDEX CONCURRENTLY so
             // the AccessExclusiveLock is replaced with a ShareUpdateExclusiveLock — readers and writers
@@ -248,8 +248,70 @@ internal sealed class PostgreSqlStorageInitializer(
         }
         finally
         {
-            // Release the session advisory lock even if a CONCURRENTLY build was cancelled. Closing the
-            // connection would also release it, but unlock explicitly so a pooled connection comes back clean.
+            await _ReleaseInitLockAsync(connection, lockResource).ConfigureAwait(false);
+        }
+
+        logger.LogEnsuringTablesCreated();
+    }
+
+    // PostgreSQL supports transactional DDL, so the batch runs in one transaction and a mid-script failure (network
+    // drop, broker-side abort) cannot leave the schema half-initialized. The Messaging and schema-wide advisory locks
+    // serialize Headless initializers, but a schema or object creator outside them (a consumer's EF migration, other
+    // application code) can still commit the same CREATE first. That fails the batch with 42P06/42P07/42710, or 23505
+    // on the catalog unique index when the two inserts race, and the rollback discards the whole batch. The
+    // conflicting creator has committed by the time we see the error, so one rerun in a fresh transaction passes the
+    // IF NOT EXISTS guards; a second failure is not a race and propagates.
+    private async Task _RunTransactionalDdlAsync(
+        NpgsqlConnection connection,
+        string sql,
+        CancellationToken cancellationToken
+    )
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            await using var transaction = await connection
+                .BeginTransactionAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            try
+            {
+                await connection
+                    .ExecuteNonQueryAsync(
+                        sql,
+                        transaction: transaction,
+                        commandTimeout: messagingOptions.Value.CommandTimeout,
+                        cancellationToken: cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+                return;
+            }
+            catch (PostgresException ex)
+                when (attempt == 1
+                    && ex.SqlState
+                        is SqlErrorCodes.PostgreSql.DuplicateSchema
+                            or SqlErrorCodes.PostgreSql.DuplicateTable
+                            or SqlErrorCodes.PostgreSql.DuplicateObject
+                            or SqlErrorCodes.PostgreSql.UniqueViolation
+                )
+            {
+                await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                logger.LogSchemaRaceObserved(ex.SqlState, ex.MessageText);
+            }
+        }
+    }
+
+    // Release the session advisory lock even if a CONCURRENTLY build was cancelled. Closing the connection would also
+    // release it, but unlock explicitly so a pooled connection comes back clean. This runs from a finally block, so
+    // an unlock failure (typically the same broken connection that failed the DDL) is logged rather than thrown: a
+    // throw here would replace the exception that explains why initialization failed, and a dead session has already
+    // released its advisory locks.
+    private async Task _ReleaseInitLockAsync(NpgsqlConnection connection, string lockResource)
+    {
+        try
+        {
             await connection
                 .ExecuteNonQueryAsync(
                     "SELECT pg_advisory_unlock(hashtextextended(@LockResource, 0));",
@@ -259,8 +321,12 @@ internal sealed class PostgreSqlStorageInitializer(
                 )
                 .ConfigureAwait(false);
         }
-
-        logger.LogEnsuringTablesCreated();
+#pragma warning disable CA1031 // Best-effort cleanup from a finally block; rethrowing would mask the initialization failure, and the failure is logged.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            logger.LogInitLockReleaseFailed(lockResource, ex);
+        }
     }
 
     /// <summary>

@@ -242,6 +242,7 @@ internal sealed class SqlServerStorageInitializer(
         // duplicate-object/duplicate-key errors that fire only under a TOCTOU race between concurrent
         // initializers (e.g., simultaneous pod startup). Any other error is rethrown.
         //   2714 — "There is already an object named '...' in the database." (schema/table races)
+        //   2759 — "CREATE SCHEMA failed due to previous errors." (how CREATE SCHEMA reports the 2714)
         //   1913 — index already exists (index creation races)
         //   2627 — "Violation of PRIMARY KEY constraint." (lock-row INSERT races)
         // The caller holds the session init lock for this script, the history-index builds, and readiness.
@@ -255,7 +256,7 @@ internal sealed class SqlServerStorageInitializer(
                 END;
             END TRY
             BEGIN CATCH
-                IF ERROR_NUMBER() <> 2714 THROW;
+                IF ERROR_NUMBER() NOT IN (2714, 2759) THROW;
             END CATCH;
 
             IF OBJECT_ID(N'{schema}.MessagingSchemaState',N'U') IS NOT NULL

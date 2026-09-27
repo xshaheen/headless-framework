@@ -29,38 +29,51 @@ internal sealed partial class PostgreSqlMembershipStorageInitializer(
             // rather than as a raw NpgsqlException. The inner try absorbs the concurrent-DDL race; any other failure
             // bubbles out, disposing (and thus rolling back) the transaction on the way to the wrap.
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-            await using var transaction = await connection
-                .BeginTransactionAsync(cancellationToken)
-                .ConfigureAwait(false);
 
-            try
+            // The advisory locks serialize our initializers, but a schema or object creator outside them (a
+            // consumer's EF migration, other application code) can still commit the same CREATE first. That fails
+            // our transaction with 42P06/42P07/42710, or 23505 on the catalog unique index when the two inserts
+            // race, and the rollback takes every table of this batch with it. The conflicting creator has committed
+            // by the time we see the error, so one rerun in a fresh transaction passes its IF NOT EXISTS guards and
+            // creates what the rollback discarded. A second failure is not a race and propagates.
+            for (var attempt = 1; ; attempt++)
             {
-                await using var command = connection.CreateCommand();
-                command.Transaction = transaction;
-                command.CommandTimeout = DatabaseAdoHelpers.GetCommandTimeoutSeconds(
-                    providerOptions.Value.CommandTimeout
-                );
-                command.CommandText = _CreateSchemaScript(storageOptions.Value.Schema);
-                // Keyed on the schema, not the cluster: the DDL below creates schema-wide objects, so two
-                // clusters sharing one schema must serialize on the same advisory lock.
-                command.Parameters.AddWithValue(
-                    "LockResource",
-                    $"headless_coordination_init:{storageOptions.Value.Schema}"
-                );
+                await using var transaction = await connection
+                    .BeginTransactionAsync(cancellationToken)
+                    .ConfigureAwait(false);
 
-                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (PostgresException ex)
-                when (ex.SqlState
-                        is SqlErrorCodes.PostgreSql.DuplicateSchema
-                            or SqlErrorCodes.PostgreSql.DuplicateTable
-                            or SqlErrorCodes.PostgreSql.DuplicateObject
-                            or SqlErrorCodes.PostgreSql.UniqueViolation
-                )
-            {
-                await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-                LogSchemaRaceObserved(logger, ex.SqlState, ex.MessageText);
+                try
+                {
+                    await using var command = connection.CreateCommand();
+                    command.Transaction = transaction;
+                    command.CommandTimeout = DatabaseAdoHelpers.GetCommandTimeoutSeconds(
+                        providerOptions.Value.CommandTimeout
+                    );
+                    command.CommandText = _CreateSchemaScript(storageOptions.Value.Schema);
+                    // Keyed on the schema, not the cluster: the DDL below creates schema-wide objects, so two
+                    // clusters sharing one schema must serialize on the same advisory lock.
+                    command.Parameters.AddWithValue(
+                        "LockResource",
+                        $"headless_coordination_init:{storageOptions.Value.Schema}"
+                    );
+
+                    await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                    await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+                    return;
+                }
+                catch (PostgresException ex)
+                    when (attempt == 1
+                        && ex.SqlState
+                            is SqlErrorCodes.PostgreSql.DuplicateSchema
+                                or SqlErrorCodes.PostgreSql.DuplicateTable
+                                or SqlErrorCodes.PostgreSql.DuplicateObject
+                                or SqlErrorCodes.PostgreSql.UniqueViolation
+                    )
+                {
+                    await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                    LogSchemaRaceObserved(logger, ex.SqlState, ex.MessageText);
+                }
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -166,7 +179,7 @@ internal sealed partial class PostgreSqlMembershipStorageInitializer(
         EventId = 1,
         EventName = "PostgresCoordinationSchemaRaceObserved",
         Level = LogLevel.Information,
-        Message = "Postgres coordination initializer absorbed a concurrent-DDL race (SqlState={SqlState}): {Detail}. Treating schema as initialized."
+        Message = "Postgres coordination initializer absorbed a concurrent-DDL race (SqlState={SqlState}): {Detail}. Retrying the DDL once in a fresh transaction."
     )]
     // ReSharper disable once InconsistentNaming
     private static partial void LogSchemaRaceObserved(ILogger logger, string sqlState, string detail);
