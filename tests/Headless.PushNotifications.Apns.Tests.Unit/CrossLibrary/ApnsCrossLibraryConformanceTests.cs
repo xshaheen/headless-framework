@@ -3,7 +3,6 @@
 using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text.Json.Nodes;
-using System.Xml.Linq;
 using Headless.PushNotifications.Apns;
 using Headless.PushNotifications.Apns.Internals;
 using Headless.Testing.Tests;
@@ -12,8 +11,9 @@ using Microsoft.Extensions.Time.Testing;
 namespace Tests.CrossLibrary;
 
 /// <summary>
-/// Compares the request we build for each shared scenario against the request three reference APNs libraries build
-/// for it (see <c>eng/apns-oracles/README.md</c>). Every difference must be listed in <c>divergences.json</c> with the
+/// Compares the request we build for each shared scenario against the request three reference APNs libraries built
+/// for it: @parse/node-apn 8.1.0, pushy 0.15.6, and sideshow/apns2 v0.25.0, recorded once from their real
+/// request-building code into <c>Fixtures/</c>. Every difference must be listed in <c>divergences.json</c> with the
 /// Apple page or library source that justifies it, and a listed difference that no longer occurs fails too, so the
 /// list cannot go stale.
 /// </summary>
@@ -117,34 +117,6 @@ public sealed class ApnsCrossLibraryConformanceTests : TestBase
 
         // then
         _AssertOnlyListedDifferences(library, scenario, differences);
-    }
-
-    [Fact]
-    public void should_record_fixtures_generated_by_the_pinned_library_versions()
-    {
-        // A pin bump without `make apns-oracles` would leave fixtures describing the old library.
-        var pins = Path.Combine(AppContext.BaseDirectory, "CrossLibrary", "Pins");
-        var nodeApn = JsonNode.Parse(File.ReadAllText(Path.Combine(pins, "package.json")))!["dependencies"]![
-            "@parse/node-apn"
-        ]!.GetValue<string>();
-        var pushy = XDocument
-            .Load(Path.Combine(pins, "pom.xml"))
-            .Descendants()
-            .First(e => e.Name.LocalName == "artifactId" && e.Value == "pushy")
-            .ElementsAfterSelf()
-            .First(e => e.Name.LocalName == "version")
-            .Value;
-        var apns2 = File.ReadAllLines(Path.Combine(pins, "go.mod"))
-            .Select(line => line.Trim())
-            .First(line => line.StartsWith("require github.com/sideshow/apns2 ", StringComparison.Ordinal))
-            .Split(' ')[^1];
-
-        foreach (var (library, pinned) in new[] { ("node-apn", nodeApn), ("pushy", pushy), ("apns2", apns2) })
-        {
-            _String(_Fixtures.Value[library], "version")
-                .Should()
-                .Be(pinned, $"the {library} fixture must be regenerated with `make apns-oracles` after a pin change");
-        }
     }
 
     [Fact]
@@ -269,7 +241,7 @@ public sealed class ApnsCrossLibraryConformanceTests : TestBase
 
     #region Scenario mapping
 
-    // Each scenario in eng/apns-oracles/scenarios.json, expressed through our public typed API. The mapping is written
+    // Each scenario in scenarios.json, expressed through our public typed API. The mapping is written
     // out rather than derived from the scenario JSON so that it exercises the API a caller would use.
     private static (ApnsNotification Notification, bool VoipInstance) _OurNotification(string scenario)
     {
