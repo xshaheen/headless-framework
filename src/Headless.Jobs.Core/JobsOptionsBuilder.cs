@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
@@ -236,6 +237,9 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// serialization settings.
     /// </summary>
     internal Action<IServiceCollection, JobsRequestSerializationOptions>? DashboardServiceAction { get; set; }
+
+    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+    [field: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
     internal Type? JobExceptionHandlerType { get; private set; }
     internal JobsRetryOptions RetryOptions { get; } = new();
 
@@ -273,6 +277,11 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// Configures the <c>JsonSerializerOptions</c> used to serialize and deserialize job request
     /// payloads. When not called, the default <c>JsonSerializerOptions</c> are used.
     /// </summary>
+    /// <remarks>
+    /// Payload metadata comes from the options' <c>TypeInfoResolver</c>. If none is set, reflection-based metadata is
+    /// used when the app allows it. A trimmed or native AOT app must add a <c>JsonSerializerContext</c> covering every
+    /// request type, for example <c>json.TypeInfoResolverChain.Insert(0, AppJsonContext.Default)</c>.
+    /// </remarks>
     /// <param name="configure">Action that mutates the serializer options.</param>
     /// <returns>This builder for method chaining.</returns>
     public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureRequestJsonOptions(Action<JsonSerializerOptions>? configure)
@@ -398,7 +407,9 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// A type implementing <c>IJobExceptionHandler</c> that is registered in the DI container.
     /// </typeparam>
     /// <returns>This builder for method chaining.</returns>
-    public JobsOptionsBuilder<TTimeJob, TCronJob> SetExceptionHandler<THandler>()
+    public JobsOptionsBuilder<TTimeJob, TCronJob> SetExceptionHandler<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] THandler
+    >()
         where THandler : IJobExceptionHandler
     {
         JobExceptionHandlerType = typeof(THandler);

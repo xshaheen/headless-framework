@@ -990,6 +990,23 @@ builder.Services.AddHeadlessJobs(options =>
 - Registers a per-host `CronScheduleCache` (scheduler timezone) and the per-host `JobsRequestSerializationOptions` singleton (request JSON options, GZip, decompression cap) consumed by `JobsHelper` — no process-global serializer state.
 - Registers the Jobs tenancy primitives: `TenantPropagationScheduleMiddleware` / `TenantRestoreExecuteMiddleware` (`TryAddSingleton`), an `AsyncLocal`-backed `ICurrentTenantAccessor`, and the `ICurrentTenant` fallback (`NullCurrentTenant`, replaced by a real `CurrentTenant` once an HTTP / EF / consumer seam registers one). Inserts the schedule and execute tenancy middleware into the process-global registry once per process at `JobMiddlewarePriority.Tenancy`; both no-op until the tenancy seam enables `JobsTenancyOptions`.
 
+### Trimming and native AOT
+
+`Headless.Jobs.Abstractions` and `Headless.Jobs.Core` declare `IsAotCompatible` and build with the trim, AOT, and single-file analyzers enabled. Generated modules call job methods and middleware directly, without reflection. A trimmed or native AOT host must still do the following:
+
+- Supply JSON metadata for every typed request. Core reads payload metadata through the request options' `TypeInfoResolver`; when an app allows reflection-based serialization (the default outside trimmed and AOT publishing), a missing resolver falls back to reflection. Otherwise, register a `JsonSerializerContext`. Without one, the first enqueue or execution of a typed job throws `NotSupportedException` naming the type.
+
+  ```csharp
+  [JsonSerializable(typeof(CreateInvoice))]
+  internal sealed partial class AppJobsJsonContext : JsonSerializerContext;
+
+  options.ConfigureRequestJsonOptions(json => json.TypeInfoResolverChain.Insert(0, AppJobsJsonContext.Default));
+  ```
+
+- Use a store other than `Headless.Jobs.EntityFramework`. The EF package and its PostgreSQL and SQL Server providers do not declare `IsAotCompatible`: EF Core generates query code at runtime, and the generic time and cron entity types flow into EF model APIs that are not annotated for trimming.
+- Leave `Headless.Jobs.Dashboard` out. Its minimal-API endpoints, request-example generator, and JSON converters rely on reflection, so it does not declare `IsAotCompatible` either.
+- Expect the `enqueued_from` caller information to read `Unknown` when the app removes stack trace data (`<StackTraceSupport>false</StackTraceSupport>`).
+
 ---
 
 ## Headless.Jobs.Dashboard

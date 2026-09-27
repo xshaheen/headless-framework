@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using Headless.Checks;
 using Headless.Jobs.Entities;
@@ -85,6 +86,12 @@ public static class CronOccurrenceAccounting
     /// accounting flags are evaluated by the database and the raw status is never materialized.
     /// </summary>
     /// <typeparam name="TCronJob">The concrete cron definition type the occurrence belongs to.</typeparam>
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(CronOccurrenceInstantView))]
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026:Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code",
+        Justification = "The member bindings target CronOccurrenceInstantView's public properties, which the DynamicDependency above keeps, so the property metadata Expression.Bind resolves is never trimmed."
+    )]
     public static Expression<
         Func<CronJobOccurrenceEntity<TCronJob>, CronOccurrenceInstantView>
     > InstantViewSelector<TCronJob>()

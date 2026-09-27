@@ -1243,7 +1243,8 @@ internal sealed class JobsExecutionTaskHandler
             {
                 Message = ex.Message,
                 StackTrace = frame?.ToString() ?? rootException.StackTrace,
-            }
+            },
+            JobsExceptionJsonContext.Default.ExceptionDetailClassForSerialization
         );
     }
 

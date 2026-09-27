@@ -174,7 +174,7 @@ public static class SetupJobs
         // singleton so components resolve THIS host's settings — never process-global state shared across hosts.
         var requestSerializationOptions = new JobsRequestSerializationOptions
         {
-            SerializerOptions = optionInstance.RequestJsonSerializerOptions ?? JsonSerializerOptions.Default,
+            SerializerOptions = optionInstance.RequestJsonSerializerOptions ?? JobsRequestJson.DefaultOptions,
             UseGZipCompression = optionInstance.RequestGZipCompressionEnabled,
             MaxDecompressedRequestBytes = optionInstance.RequestGZipMaxDecompressedBytes,
         };
