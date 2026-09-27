@@ -2,6 +2,7 @@
 
 using FluentValidation;
 using Headless.Constants;
+using Headless.Hosting.Initialization;
 using Microsoft.Data.SqlClient;
 
 namespace Headless.Sequences.SqlServer;
@@ -10,9 +11,6 @@ namespace Headless.Sequences.SqlServer;
 [PublicAPI]
 public sealed class SqlServerSequencesOptions
 {
-    /// <summary>The schema used when <see cref="Schema" /> is not set.</summary>
-    public const string DefaultSchema = "sequences";
-
     /// <summary>The table used when <see cref="TableName" /> is not set.</summary>
     public const string DefaultTableName = "sequences";
 
@@ -26,8 +24,11 @@ public sealed class SqlServerSequencesOptions
     /// <summary>Gets or sets the timeout of every command this provider runs. Default: 30 seconds.</summary>
     public TimeSpan CommandTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
-    /// <summary>Gets or sets the schema that holds the counter table. Default: <c>sequences</c>.</summary>
-    public string Schema { get; set; } = DefaultSchema;
+    /// <summary>
+    /// Gets or sets the schema that holds the counter table. Default: <see cref="HeadlessStorageDefaults.Schema" />
+    /// (<c>headless</c>), the schema every Headless feature shares.
+    /// </summary>
+    public string Schema { get; set; } = HeadlessStorageDefaults.Schema;
 
     /// <summary>Gets or sets the name of the counter table. Default: <c>sequences</c>.</summary>
     public string TableName { get; set; } = DefaultTableName;

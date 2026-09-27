@@ -16,7 +16,8 @@ internal sealed class JobsModelCustomizer<TTimeJob, TCronJob>(ModelCustomizerDep
     {
         var contractCollation = JobsContractCollation.TryResolve(context.Database.ProviderName);
         // Read from the same option the dedicated JobsDbContext reads. This path previously took the mapping
-        // defaults, so a consumer-hosted context put every Jobs table in "jobs" whatever the override said.
+        // defaults, so a consumer-hosted context put every Jobs table in the default schema whatever the override
+        // said.
         var schema = context.GetService<JobsStorageOptions>().Schema;
 
         builder.ApplyConfiguration(new TimeJobConfigurations<TTimeJob>(schema, contractCollation));

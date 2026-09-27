@@ -5,6 +5,7 @@ using System.Data;
 using System.Data.Common;
 using Headless.Abstractions;
 using Headless.Coordination;
+using Headless.Hosting.Initialization;
 using Headless.Jobs;
 using Headless.Jobs.Base;
 using Headless.Jobs.DbContextFactory;
@@ -64,13 +65,13 @@ public interface IJobsCoordinationFixture
     /// <summary>Creates a new, unopened provider-specific connection (Npgsql / SqlClient).</summary>
     DbConnection CreateConnection();
 
-    /// <summary>Fully-qualified, provider-quoted TimeJobs table (Postgres: <c>jobs."TimeJobs"</c>; SqlServer: <c>[jobs].[TimeJobs]</c>).</summary>
+    /// <summary>Fully-qualified, provider-quoted TimeJobs table (Postgres: <c>headless."TimeJobs"</c>; SqlServer: <c>[headless].[TimeJobs]</c>).</summary>
     string QualifiedTimeJobsTable { get; }
 
-    /// <summary>Fully-qualified, provider-quoted CronJobs table (Postgres: <c>jobs."CronJobs"</c>; SqlServer: <c>[jobs].[CronJobs]</c>).</summary>
+    /// <summary>Fully-qualified, provider-quoted CronJobs table (Postgres: <c>headless."CronJobs"</c>; SqlServer: <c>[headless].[CronJobs]</c>).</summary>
     string QualifiedCronJobsTable { get; }
 
-    /// <summary>Fully-qualified, provider-quoted CronJobOccurrences table (Postgres: <c>jobs."CronJobOccurrences"</c>; SqlServer: <c>[jobs].[CronJobOccurrences]</c>).</summary>
+    /// <summary>Fully-qualified, provider-quoted CronJobOccurrences table (Postgres: <c>headless."CronJobOccurrences"</c>; SqlServer: <c>[headless].[CronJobOccurrences]</c>).</summary>
     string QualifiedCronJobOccurrencesTable { get; }
 
     /// <summary>
@@ -167,7 +168,7 @@ public static class JobsCoordinationFixtureExtensions
         return _BuildHost<JobsDbContext>(
             fixture,
             nodeId,
-            "jobs",
+            HeadlessStorageDefaults.Schema,
             lostBehavior,
             timeProvider,
             leaseDuration,
@@ -201,7 +202,7 @@ public static class JobsCoordinationFixtureExtensions
         return _BuildHost<JobsDbContext>(
             fixture,
             nodeId,
-            "jobs",
+            HeadlessStorageDefaults.Schema,
             MembershipLostBehavior.StopMembershipOnly,
             timeProvider: null,
             leaseDuration,
@@ -364,7 +365,7 @@ public static class JobsCoordinationFixtureExtensions
         bool enableTenantPropagation = false,
         TimeProvider? timeProvider = null,
         Action<IServiceCollection>? configureServices = null,
-        string schema = JobsStorageOptions.DefaultSchema
+        string schema = HeadlessStorageDefaults.Schema
     )
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {

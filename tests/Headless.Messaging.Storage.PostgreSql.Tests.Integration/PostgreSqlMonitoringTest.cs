@@ -35,8 +35,8 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         await connection.OpenAsync(AbortToken);
         await connection.ExecuteAsync(
             """
-            TRUNCATE TABLE messaging.published;
-            TRUNCATE TABLE messaging.received;
+            TRUNCATE TABLE headless.published;
+            TRUNCATE TABLE headless.received;
             """
         );
     }
@@ -399,7 +399,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         await using (var connection = new NpgsqlConnection(fixture.ConnectionString))
         {
             await connection.ExecuteAsync(
-                "UPDATE messaging.published SET \"Content\" = @Content WHERE \"Id\" = @Id",
+                "UPDATE headless.published SET \"Content\" = @Content WHERE \"Id\" = @Id",
                 new { Content = "not-a-message-envelope", Id = malformedPublished.StorageId }
             );
         }
@@ -454,7 +454,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         await connection.OpenAsync(AbortToken);
         await connection.ExecuteAsync(
             $"""
-            INSERT INTO messaging.{tableName}
+            INSERT INTO headless.{tableName}
                 ("Id", "Version", "Name", "Content", "IntentType", "Retries", "InlineAttempts", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId"{receivedColumns})
             SELECT id, 'v1', 'unknown-lane-diagnostic', 'not-a-message-envelope', 77, 0, 0,
                    @Added, NULL, @NextRetryAt, NULL, NULL, 'Failed', id::text{receivedValues}
@@ -468,7 +468,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
             }
         );
         var before = await connection.QuerySingleAsync<string>(
-            $"""SELECT to_jsonb(message)::text FROM messaging.{tableName} AS message WHERE "Id" = @Id""",
+            $"""SELECT to_jsonb(message)::text FROM headless.{tableName} AS message WHERE "Id" = @Id""",
             new { Id = ids[0] }
         );
 
@@ -503,7 +503,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
             .NotIntersectWith(secondPage.Items.Select(item => item.StorageId));
         (
             await connection.QuerySingleAsync<string>(
-                $"""SELECT to_jsonb(message)::text FROM messaging.{tableName} AS message WHERE "Id" = @Id""",
+                $"""SELECT to_jsonb(message)::text FROM headless.{tableName} AS message WHERE "Id" = @Id""",
                 new { Id = ids[0] }
             )
         )
@@ -528,7 +528,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         await connection.OpenAsync(AbortToken);
         await connection.ExecuteAsync(
             $"""
-            INSERT INTO messaging.{tableName}
+            INSERT INTO headless.{tableName}
                 ("Id", "Version", "Name", "Content", "IntentType", "Retries", "InlineAttempts", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId"{receivedColumns})
             VALUES (@Id, 'v1', 'unknown-lane-ordinary-read', 'not-a-message-envelope', 77, 0, 0, @Added, NULL, @Added, NULL, NULL, 'Failed', @MessageId{receivedValues});
             """,

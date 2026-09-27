@@ -26,7 +26,8 @@ public static class HeadlessJobsModelBuilderExtensions
 
         JobsKeyedModelConfiguration.Configure<TTimeJob>(builder, context);
         // The reservation table is not generic, so this is the one place a consumer-managed model maps it. It takes
-        // its schema from the same option as every other Jobs table so an override cannot strand it in "jobs".
+        // its schema from the same option as every other Jobs table so an override cannot strand it in the default
+        // schema.
         JobsIdempotencyModelConfiguration.Configure(
             builder,
             context.GetService<JobsStorageOptions>().Schema,

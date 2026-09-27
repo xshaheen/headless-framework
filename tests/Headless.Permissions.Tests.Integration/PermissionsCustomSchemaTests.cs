@@ -42,7 +42,7 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
         var grantsTableExists = await _TableExistsAsync(_Schema, _GrantsTableName);
         var definitionsTableExists = await _TableExistsAsync(_Schema, _DefinitionsTableName);
         var groupDefinitionsTableExists = await _TableExistsAsync(_Schema, _GroupDefinitionsTableName);
-        var defaultGrantsTableExists = await _TableExistsAsync("permissions", _GrantsTableName);
+        var defaultGrantsTableExists = await _TableExistsAsync("headless", _GrantsTableName);
 
         // then
         grantsTableExists.Should().BeTrue();
@@ -66,13 +66,13 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
 
         // then
         grantsEntity.Should().NotBeNull();
-        grantsEntity!.GetSchema().Should().Be("permissions");
+        grantsEntity!.GetSchema().Should().Be("headless");
         grantsEntity.GetTableName().Should().Be("PermissionGrants");
         definitionsEntity.Should().NotBeNull();
-        definitionsEntity!.GetSchema().Should().Be("permissions");
+        definitionsEntity!.GetSchema().Should().Be("headless");
         definitionsEntity.GetTableName().Should().Be("PermissionDefinitions");
         groupDefinitionsEntity.Should().NotBeNull();
-        groupDefinitionsEntity!.GetSchema().Should().Be("permissions");
+        groupDefinitionsEntity!.GetSchema().Should().Be("headless");
         groupDefinitionsEntity.GetTableName().Should().Be("PermissionGroupDefinitions");
     }
 
@@ -94,7 +94,7 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
         (await _TableHasRowsAsync(_Schema, _GrantsTableName))
             .Should()
             .BeTrue();
-        (await _TableHasRowsAsync("permissions", "PermissionGrants")).Should().BeFalse();
+        (await _TableHasRowsAsync("headless", "PermissionGrants")).Should().BeFalse();
     }
 
     [Fact]
@@ -189,7 +189,7 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
     private DefaultSchemaPermissionsContext _CreateDefaultSchemaContext()
     {
         // No ConfigureStorage call → PermissionsStorageOptions stays at its defaults
-        // (schema "permissions" + default table names).
+        // (schema "headless" + default table names).
         var options = new DbContextOptionsBuilder<DefaultSchemaPermissionsContext>()
             .UseNpgsql(Fixture.SqlConnectionString)
             .Options;

@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Data.Common;
+using Headless.Hosting.Initialization;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
@@ -923,7 +924,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        using var host = fixture.BuildMappedHost<FilteredJobsDbContext>("cas-filter-a", "jobs");
+        using var host = fixture.BuildMappedHost<FilteredJobsDbContext>("cas-filter-a", HeadlessStorageDefaults.Schema);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync<FilteredJobsDbContext>(host, ct);
         await host.StartAsync(ct);
 
@@ -960,7 +961,10 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        using var host = fixture.BuildMappedHost<FilteredJobsDbContext>("cas-bounded-a", "jobs");
+        using var host = fixture.BuildMappedHost<FilteredJobsDbContext>(
+            "cas-bounded-a",
+            HeadlessStorageDefaults.Schema
+        );
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync<FilteredJobsDbContext>(host, ct);
         await host.StartAsync(ct);
 

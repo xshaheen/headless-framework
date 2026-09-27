@@ -3,6 +3,7 @@
 using System.Data;
 using System.Data.Common;
 using Headless.Fencing;
+using Headless.Hosting.Initialization;
 using Headless.Testing.Testcontainers;
 using Headless.UnitOfWork;
 using Microsoft.Data.SqlClient;
@@ -86,7 +87,7 @@ public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IA
         // The container is reused across runs, so start from no lease storage and let the initializer create it.
         await ExecuteAsync(
             $"""
-            {DropStorageSql(FencingStorageOptions.DefaultSchema)}
+            {DropStorageSql(HeadlessStorageDefaults.Schema)}
             IF OBJECT_ID(N'{_HandoffTable}', N'U') IS NOT NULL DROP TABLE {_HandoffTable};
             CREATE TABLE {_HandoffTable} (
                 [id] bigint IDENTITY(1, 1) PRIMARY KEY,
@@ -145,7 +146,7 @@ public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IA
 
     public Task<StoredLease?> ReadLeaseAsync(LeaseKey key, CancellationToken cancellationToken)
     {
-        return ReadLeaseAsync(key, FencingStorageOptions.DefaultSchema, cancellationToken);
+        return ReadLeaseAsync(key, HeadlessStorageDefaults.Schema, cancellationToken);
     }
 
     public async Task<StoredLease?> ReadLeaseAsync(LeaseKey key, string schema, CancellationToken cancellationToken)
@@ -188,7 +189,7 @@ public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IA
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(
             $"""
-            UPDATE [{FencingStorageOptions.DefaultSchema}].[leases]
+            UPDATE [{HeadlessStorageDefaults.Schema}].[leases]
             SET [granted_at] = {string.Format(CultureInfo.InvariantCulture, shift, "[granted_at]")},
                 [expires_at] = {string.Format(CultureInfo.InvariantCulture, shift, "[expires_at]")},
                 [ended_at] = {string.Format(CultureInfo.InvariantCulture, shift, "[ended_at]")}

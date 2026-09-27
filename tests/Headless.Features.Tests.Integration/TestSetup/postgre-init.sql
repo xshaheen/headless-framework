@@ -9,8 +9,8 @@ START TRANSACTION;
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20250118001438_InitialMigration') THEN
-        IF NOT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = 'features') THEN
-CREATE SCHEMA features;
+        IF NOT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = 'headless') THEN
+CREATE SCHEMA headless;
 END IF;
 END IF;
 END $EF$;
@@ -18,7 +18,7 @@ END $EF$;
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20250118001438_InitialMigration') THEN
-CREATE TABLE features."FeatureDefinitions" (
+CREATE TABLE headless."FeatureDefinitions" (
                                                "Id" uuid NOT NULL,
                                                "GroupName" character varying(128) NOT NULL,
                                                "Name" character varying(128) NOT NULL,
@@ -38,7 +38,7 @@ END $EF$;
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20250118001438_InitialMigration') THEN
-CREATE TABLE features."FeatureGroupDefinitions" (
+CREATE TABLE headless."FeatureGroupDefinitions" (
                                                     "Id" uuid NOT NULL,
                                                     "Name" character varying(128) NOT NULL,
                                                     "DisplayName" character varying(256) NOT NULL,
@@ -51,7 +51,7 @@ END $EF$;
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20250118001438_InitialMigration') THEN
-CREATE TABLE features."FeatureValues" (
+CREATE TABLE headless."FeatureValues" (
                                           "Id" uuid NOT NULL,
                                           "Name" character varying(128) NOT NULL,
                                           "Value" character varying(128) NOT NULL,
@@ -67,29 +67,29 @@ END $EF$;
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20250118001438_InitialMigration') THEN
-CREATE INDEX "IX_FeatureDefinitions_GroupName" ON features."FeatureDefinitions" ("GroupName");
+CREATE INDEX "IX_FeatureDefinitions_GroupName" ON headless."FeatureDefinitions" ("GroupName");
 END IF;
 END $EF$;
 
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20250118001438_InitialMigration') THEN
-CREATE UNIQUE INDEX "IX_FeatureDefinitions_Name" ON features."FeatureDefinitions" ("Name");
+CREATE UNIQUE INDEX "IX_FeatureDefinitions_Name" ON headless."FeatureDefinitions" ("Name");
 END IF;
 END $EF$;
 
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20250118001438_InitialMigration') THEN
-CREATE UNIQUE INDEX "IX_FeatureGroupDefinitions_Name" ON features."FeatureGroupDefinitions" ("Name");
+CREATE UNIQUE INDEX "IX_FeatureGroupDefinitions_Name" ON headless."FeatureGroupDefinitions" ("Name");
 END IF;
 END $EF$;
 
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20250118001438_InitialMigration') THEN
-CREATE UNIQUE INDEX "IX_FeatureValues_Name_ProviderName_ProviderKey" ON features."FeatureValues" ("Name", "ProviderName", "ProviderKey") WHERE "ProviderKey" IS NOT NULL;
-CREATE UNIQUE INDEX "IX_FeatureValues_Name_ProviderName_NullProviderKey" ON features."FeatureValues" ("Name", "ProviderName") WHERE "ProviderKey" IS NULL;
+CREATE UNIQUE INDEX "IX_FeatureValues_Name_ProviderName_ProviderKey" ON headless."FeatureValues" ("Name", "ProviderName", "ProviderKey") WHERE "ProviderKey" IS NOT NULL;
+CREATE UNIQUE INDEX "IX_FeatureValues_Name_ProviderName_NullProviderKey" ON headless."FeatureValues" ("Name", "ProviderName") WHERE "ProviderKey" IS NULL;
 END IF;
 END $EF$;
 
@@ -107,9 +107,9 @@ START TRANSACTION;
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260708000000_AddFeatureValueAuditColumns') THEN
-        ALTER TABLE features."FeatureValues" ADD COLUMN IF NOT EXISTS "CreatedAt" timestamp with time zone NOT NULL DEFAULT TIMESTAMPTZ '2000-01-01 00:00:00+00';
-        ALTER TABLE features."FeatureValues" ALTER COLUMN "CreatedAt" DROP DEFAULT;
-        ALTER TABLE features."FeatureValues" ADD COLUMN IF NOT EXISTS "UpdatedAt" timestamp with time zone;
+        ALTER TABLE headless."FeatureValues" ADD COLUMN IF NOT EXISTS "CreatedAt" timestamp with time zone NOT NULL DEFAULT TIMESTAMPTZ '2000-01-01 00:00:00+00';
+        ALTER TABLE headless."FeatureValues" ALTER COLUMN "CreatedAt" DROP DEFAULT;
+        ALTER TABLE headless."FeatureValues" ADD COLUMN IF NOT EXISTS "UpdatedAt" timestamp with time zone;
 END IF;
 END $EF$;
 

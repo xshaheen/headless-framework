@@ -18,7 +18,7 @@ public sealed class HeadlessAuditLogModelBuilderExtensionsTests : TestBase
 
         // then
         var entity = _AuditLogEntity(db);
-        _AssertFullyConfigured(entity, "audit_log", "audit");
+        _AssertFullyConfigured(entity, "audit_log", "headless");
         _AssertAuditPolicy(entity, false);
     }
 
@@ -30,7 +30,7 @@ public sealed class HeadlessAuditLogModelBuilderExtensionsTests : TestBase
 
         // then
         var entity = _AuditLogEntity(db);
-        _AssertFullyConfigured(entity, "pre_registered_audit", "audit");
+        _AssertFullyConfigured(entity, "pre_registered_audit", "headless");
         _AssertAuditPolicy(entity, false);
     }
 
@@ -54,7 +54,7 @@ public sealed class HeadlessAuditLogModelBuilderExtensionsTests : TestBase
 
         // then
         var entity = _AuditLogEntity(db);
-        _AssertFullyConfigured(entity, "audit_log", "audit");
+        _AssertFullyConfigured(entity, "audit_log", "headless");
         _AssertAuditPolicy(entity, true);
     }
 

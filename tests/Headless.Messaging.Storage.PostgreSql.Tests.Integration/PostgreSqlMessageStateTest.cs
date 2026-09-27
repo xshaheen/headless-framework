@@ -58,7 +58,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         {
             await using var connection = new NpgsqlConnection(fixture.ConnectionString);
             await connection.OpenAsync();
-            await connection.ExecuteAsync("TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received;");
+            await connection.ExecuteAsync("TRUNCATE TABLE headless.published; TRUNCATE TABLE headless.received;");
         }
         catch (PostgresException)
         {
@@ -83,7 +83,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var status = await connection.QueryFirstAsync<string>(
-            "SELECT \"StatusName\" FROM messaging.published WHERE \"Id\"=@Id",
+            "SELECT \"StatusName\" FROM headless.published WHERE \"Id\"=@Id",
             new { Id = stored.StorageId }
         );
         status.Should().Be(nameof(StatusName.Scheduled));
@@ -105,7 +105,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var status = await connection.QueryFirstAsync<string>(
-            "SELECT \"StatusName\" FROM messaging.published WHERE \"Id\"=@Id",
+            "SELECT \"StatusName\" FROM headless.published WHERE \"Id\"=@Id",
             new { Id = stored.StorageId }
         );
         status.Should().Be(nameof(StatusName.Succeeded));
@@ -127,7 +127,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var status = await connection.QueryFirstAsync<string>(
-            "SELECT \"StatusName\" FROM messaging.published WHERE \"Id\"=@Id",
+            "SELECT \"StatusName\" FROM headless.published WHERE \"Id\"=@Id",
             new { Id = stored.StorageId }
         );
         status.Should().Be(nameof(StatusName.Failed));
@@ -152,7 +152,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var status = await connection.QueryFirstAsync<string>(
-            "SELECT \"StatusName\" FROM messaging.received WHERE \"Id\"=@Id",
+            "SELECT \"StatusName\" FROM headless.received WHERE \"Id\"=@Id",
             new { Id = stored.StorageId }
         );
         status.Should().Be(nameof(StatusName.Scheduled));
@@ -178,7 +178,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var status = await connection.QueryFirstAsync<string>(
-            "SELECT \"StatusName\" FROM messaging.received WHERE \"Id\"=@Id",
+            "SELECT \"StatusName\" FROM headless.received WHERE \"Id\"=@Id",
             new { Id = stored.StorageId }
         );
         status.Should().Be(nameof(StatusName.Succeeded));
@@ -204,7 +204,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var status = await connection.QueryFirstAsync<string>(
-            "SELECT \"StatusName\" FROM messaging.received WHERE \"Id\"=@Id",
+            "SELECT \"StatusName\" FROM headless.received WHERE \"Id\"=@Id",
             new { Id = stored.StorageId }
         );
         status.Should().Be(nameof(StatusName.Failed));
@@ -227,7 +227,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var retries = await connection.QueryFirstAsync<int>(
-            "SELECT \"Retries\" FROM messaging.published WHERE \"Id\"=@Id",
+            "SELECT \"Retries\" FROM headless.published WHERE \"Id\"=@Id",
             new { Id = stored.StorageId }
         );
         retries.Should().Be(3);
@@ -252,7 +252,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await connection.OpenAsync(AbortToken);
         // Npgsql maps timestamptz to a UTC DateTime by default, so read it as one and compare instants.
         var dbExpiresAt = await connection.QueryFirstAsync<DateTime?>(
-            "SELECT \"ExpiresAt\" FROM messaging.published WHERE \"Id\"=@Id",
+            "SELECT \"ExpiresAt\" FROM headless.published WHERE \"Id\"=@Id",
             new { Id = stored.StorageId }
         );
         dbExpiresAt.Should().NotBeNull();
@@ -281,7 +281,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var statuses = await connection.QueryAsync<string>(
-            "SELECT \"StatusName\" FROM messaging.published WHERE \"Id\" = ANY(@Ids)",
+            "SELECT \"StatusName\" FROM headless.published WHERE \"Id\" = ANY(@Ids)",
             new { Ids = ids.ToArray() }
         );
         statuses.Should().AllBe(nameof(StatusName.Delayed));

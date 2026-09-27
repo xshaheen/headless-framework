@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
 using Headless.Jobs;
 using Headless.Jobs.Base;
 using Headless.Jobs.Configurations;
@@ -57,7 +58,7 @@ public sealed class KeyedJobSchedulingTests : TestBase
     private sealed class ParentMappingContext(DbContextOptions<ParentMappingContext> options) : DbContext(options)
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder) =>
-            modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TimeJobEntity>(JobsStorageOptions.DefaultSchema));
+            modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TimeJobEntity>(HeadlessStorageDefaults.Schema));
     }
 
     [Theory]

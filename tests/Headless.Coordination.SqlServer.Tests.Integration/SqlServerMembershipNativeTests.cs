@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Coordination;
+using Headless.Hosting.Initialization;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,7 +11,7 @@ namespace Tests;
 [Collection<SqlServerMembershipFixture>]
 public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fixture) : TestBase
 {
-    private const string _Schema = CoordinationStorageOptions.DefaultSchema;
+    private const string _Schema = HeadlessStorageDefaults.Schema;
 
     [Fact]
     public async Task should_create_pascal_case_membership_schema_identifiers()

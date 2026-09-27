@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
 using Headless.Idempotency;
 using Headless.Testing.Testcontainers;
 using Microsoft.Data.SqlClient;
@@ -52,9 +53,9 @@ public sealed class ApiIdempotencySqlServerFixture
         await connection.OpenAsync(CancellationToken.None);
         await using var reset = new SqlCommand(
             $"""
-            IF OBJECT_ID(N'{IdempotencyStorageOptions.DefaultSchema}.records', N'U') IS NOT NULL DROP TABLE [{IdempotencyStorageOptions.DefaultSchema}].[records];
-            IF OBJECT_ID(N'{IdempotencyStorageOptions.DefaultSchema}.record_generations', N'SO') IS NOT NULL DROP SEQUENCE [{IdempotencyStorageOptions.DefaultSchema}].[record_generations];
-            IF SCHEMA_ID(N'{IdempotencyStorageOptions.DefaultSchema}') IS NOT NULL EXEC(N'DROP SCHEMA [{IdempotencyStorageOptions.DefaultSchema}]');
+            IF OBJECT_ID(N'{HeadlessStorageDefaults.Schema}.records', N'U') IS NOT NULL DROP TABLE [{HeadlessStorageDefaults.Schema}].[records];
+            IF OBJECT_ID(N'{HeadlessStorageDefaults.Schema}.record_generations', N'SO') IS NOT NULL DROP SEQUENCE [{HeadlessStorageDefaults.Schema}].[record_generations];
+            IF SCHEMA_ID(N'{HeadlessStorageDefaults.Schema}') IS NOT NULL EXEC(N'DROP SCHEMA [{HeadlessStorageDefaults.Schema}]');
             """,
             connection
         );

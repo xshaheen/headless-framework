@@ -28,7 +28,7 @@ public sealed class SqlServerDeadOwnerReclaimConformanceTests(SqlServerTestFixtu
         await connection.OpenAsync(AbortToken);
         await connection.ExecuteAsync(
             new CommandDefinition(
-                "TRUNCATE TABLE messaging.Published; TRUNCATE TABLE messaging.Received;",
+                "TRUNCATE TABLE headless.Published; TRUNCATE TABLE headless.Received;",
                 cancellationToken: AbortToken
             )
         );

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.DistributedLocks;
+using Headless.Hosting.Initialization;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -38,7 +39,7 @@ public sealed class SqlServerCustomSchemaTests(SqlServerDistributedLockFixture f
     }
 
     [Fact]
-    public async Task should_default_to_the_feature_schema_when_storage_is_not_configured()
+    public async Task should_default_to_the_shared_headless_schema_when_storage_is_not_configured()
     {
         await using var provider = _BuildProvider(schema: null);
         var locks = provider.GetRequiredService<IDistributedLock>();
@@ -52,7 +53,7 @@ public sealed class SqlServerCustomSchemaTests(SqlServerDistributedLockFixture f
         handle.FencingToken.Should().NotBeNull();
         await handle.ReleaseAsync();
 
-        var sequences = await _ListSequencesAsync(DistributedLocksStorageOptions.DefaultSchema);
+        var sequences = await _ListSequencesAsync(HeadlessStorageDefaults.Schema);
 
         sequences.Should().NotBeEmpty();
     }

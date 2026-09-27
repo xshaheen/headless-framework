@@ -57,7 +57,7 @@ public sealed class SqlServerStorageConnectionTest(SqlServerTestFixture fixture)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync();
-        await connection.ExecuteAsync("TRUNCATE TABLE messaging.Published; TRUNCATE TABLE messaging.Received;");
+        await connection.ExecuteAsync("TRUNCATE TABLE headless.Published; TRUNCATE TABLE headless.Received;");
         await base.DisposeAsyncCore();
     }
 

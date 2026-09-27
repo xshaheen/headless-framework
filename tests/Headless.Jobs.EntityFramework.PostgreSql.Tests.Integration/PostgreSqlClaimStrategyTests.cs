@@ -189,11 +189,11 @@ public sealed class PostgreSqlClaimStrategyTests(PostgreSqlJobsCoordinationFixtu
                 await connection.OpenAsync(ct);
                 await using var command = connection.CreateCommand();
                 command.CommandText =
-                    "CREATE OR REPLACE FUNCTION jobs.fail_descendant_claim() RETURNS trigger LANGUAGE plpgsql AS $$ "
+                    "CREATE OR REPLACE FUNCTION headless.fail_descendant_claim() RETURNS trigger LANGUAGE plpgsql AS $$ "
                     + "BEGIN IF NEW.\"Function\" = 'fail-child' AND NEW.\"OwnerId\" IS NOT NULL THEN "
                     + "RAISE EXCEPTION 'forced descendant failure'; END IF; RETURN NEW; END $$; "
                     + $"CREATE TRIGGER fail_descendant_claim BEFORE UPDATE ON {fixture.QualifiedTimeJobsTable} "
-                    + "FOR EACH ROW EXECUTE FUNCTION jobs.fail_descendant_claim();";
+                    + "FOR EACH ROW EXECUTE FUNCTION headless.fail_descendant_claim();";
                 await command.ExecuteNonQueryAsync(ct);
             }
 

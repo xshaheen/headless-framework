@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.Hosting.Initialization;
 using Headless.Idempotency;
 using Headless.Testing.Testcontainers;
 using Headless.UnitOfWork;
@@ -22,7 +23,7 @@ public sealed class PostgreSqlIdempotencyFixture
         ICollectionFixture<PostgreSqlIdempotencyFixture>,
         IIdempotencyFixture
 {
-    private const string _Records = $"\"{IdempotencyStorageOptions.DefaultSchema}\".records";
+    private const string _Records = $"\"{HeadlessStorageDefaults.Schema}\".records";
 
     public string ConnectionString => Container.GetConnectionString();
 
@@ -45,7 +46,7 @@ public sealed class PostgreSqlIdempotencyFixture
         // The container is reused across runs, so start from no storage and let the initializers create it.
         await using var reset = new NpgsqlCommand(
             $"""
-            DROP SCHEMA IF EXISTS "{IdempotencyStorageOptions.DefaultSchema}" CASCADE;
+            DROP SCHEMA IF EXISTS "{HeadlessStorageDefaults.Schema}" CASCADE;
             """,
             connection
         );

@@ -2,6 +2,7 @@
 
 using System.Data;
 using System.Data.Common;
+using Headless.Hosting.Initialization;
 using Headless.Idempotency;
 using Headless.Testing.Testcontainers;
 using Headless.UnitOfWork;
@@ -43,7 +44,7 @@ public sealed class SqlServerRcsiIdempotencyFixture
 
 public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture, IAsyncLifetime, IIdempotencyFixture
 {
-    private const string _Records = $"[{IdempotencyStorageOptions.DefaultSchema}].[records]";
+    private const string _Records = $"[{HeadlessStorageDefaults.Schema}].[records]";
 
     protected abstract string Database { get; }
 
@@ -83,9 +84,9 @@ public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture
         await connection.OpenAsync(CancellationToken.None);
         await using var reset = new SqlCommand(
             $"""
-            IF OBJECT_ID(N'{IdempotencyStorageOptions.DefaultSchema}.records', N'U') IS NOT NULL DROP TABLE {_Records};
-            IF OBJECT_ID(N'{IdempotencyStorageOptions.DefaultSchema}.record_generations', N'SO') IS NOT NULL DROP SEQUENCE [{IdempotencyStorageOptions.DefaultSchema}].[record_generations];
-            IF SCHEMA_ID(N'{IdempotencyStorageOptions.DefaultSchema}') IS NOT NULL EXEC(N'DROP SCHEMA [{IdempotencyStorageOptions.DefaultSchema}]');
+            IF OBJECT_ID(N'{HeadlessStorageDefaults.Schema}.records', N'U') IS NOT NULL DROP TABLE {_Records};
+            IF OBJECT_ID(N'{HeadlessStorageDefaults.Schema}.record_generations', N'SO') IS NOT NULL DROP SEQUENCE [{HeadlessStorageDefaults.Schema}].[record_generations];
+            IF SCHEMA_ID(N'{HeadlessStorageDefaults.Schema}') IS NOT NULL EXEC(N'DROP SCHEMA [{HeadlessStorageDefaults.Schema}]');
             SELECT CAST(is_read_committed_snapshot_on AS int) FROM sys.databases WHERE database_id = DB_ID();
             """,
             connection

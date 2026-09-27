@@ -93,7 +93,7 @@ public sealed class PermissionsStorageOptionsTests
 
         // then
         var resolved = act.Should().NotThrow().Subject;
-        resolved.Schema.Should().Be("permissions");
+        resolved.Schema.Should().Be("headless");
         resolved.PermissionGrantsTableName.Should().Be("PermissionGrants");
         resolved.PermissionDefinitionsTableName.Should().Be("PermissionDefinitions");
         resolved.PermissionGroupDefinitionsTableName.Should().Be("PermissionGroupDefinitions");

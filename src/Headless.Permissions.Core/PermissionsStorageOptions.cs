@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
+
 namespace Headless.Permissions;
 
 /// <summary>
@@ -9,8 +11,11 @@ namespace Headless.Permissions;
 [PublicAPI]
 public sealed class PermissionsStorageOptions
 {
-    /// <summary>Database schema that contains all permissions tables. Defaults to <c>"permissions"</c>.</summary>
-    public string Schema { get; set; } = "permissions";
+    /// <summary>
+    /// Database schema that contains all permissions tables. Defaults to
+    /// <see cref="HeadlessStorageDefaults.Schema"/> (<c>"headless"</c>), the schema every Headless feature shares.
+    /// </summary>
+    public string Schema { get; set; } = HeadlessStorageDefaults.Schema;
 
     /// <summary>Table name for permission grant records. Defaults to <c>"PermissionGrants"</c>.</summary>
     public string PermissionGrantsTableName { get; set; } = "PermissionGrants";

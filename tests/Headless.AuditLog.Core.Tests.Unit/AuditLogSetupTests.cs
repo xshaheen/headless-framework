@@ -111,6 +111,12 @@ public sealed class AuditLogSetupTests
         options.IsEnabled.Should().BeFalse();
     }
 
+    [Fact]
+    public void should_default_the_storage_schema_to_the_shared_headless_schema()
+    {
+        new AuditLogStorageOptions().Schema.Should().Be("headless");
+    }
+
     private sealed class NoopStorageExtension : IAuditLogStorageOptionsExtension
     {
         public void AddServices(IServiceCollection services) { }

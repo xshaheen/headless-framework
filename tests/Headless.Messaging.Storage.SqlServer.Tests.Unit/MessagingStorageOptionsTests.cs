@@ -18,7 +18,7 @@ public sealed class MessagingStorageOptionsTests : TestBase
     private const string _ConnectionString = "Server=localhost;Database=test;Integrated Security=true";
 
     [Fact]
-    public async Task should_default_the_schema_to_the_feature_name()
+    public async Task should_default_the_schema_to_the_shared_headless_schema()
     {
         // given
         var services = _BuildServices(setup => setup.UseSqlServer(_ConnectionString));
@@ -27,7 +27,7 @@ public sealed class MessagingStorageOptionsTests : TestBase
         await using var provider = services.BuildServiceProvider();
 
         // then
-        provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema.Should().Be("messaging");
+        provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema.Should().Be("headless");
     }
 
     [Fact]

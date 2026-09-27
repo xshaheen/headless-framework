@@ -54,7 +54,7 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
         var valuesTableExists = await _TableExistsAsync(_Schema, _ValuesTableName);
         var definitionsTableExists = await _TableExistsAsync(_Schema, _DefinitionsTableName);
         var groupDefinitionsTableExists = await _TableExistsAsync(_Schema, _GroupDefinitionsTableName);
-        var defaultValuesTableExists = await _TableExistsAsync("features", _ValuesTableName);
+        var defaultValuesTableExists = await _TableExistsAsync("headless", _ValuesTableName);
 
         // then
         valuesTableExists.Should().BeTrue();
@@ -78,13 +78,13 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
 
         // then
         valuesEntity.Should().NotBeNull();
-        valuesEntity!.GetSchema().Should().Be("features");
+        valuesEntity!.GetSchema().Should().Be("headless");
         valuesEntity.GetTableName().Should().Be("FeatureValues");
         definitionsEntity.Should().NotBeNull();
-        definitionsEntity!.GetSchema().Should().Be("features");
+        definitionsEntity!.GetSchema().Should().Be("headless");
         definitionsEntity.GetTableName().Should().Be("FeatureDefinitions");
         groupDefinitionsEntity.Should().NotBeNull();
-        groupDefinitionsEntity!.GetSchema().Should().Be("features");
+        groupDefinitionsEntity!.GetSchema().Should().Be("headless");
         groupDefinitionsEntity.GetTableName().Should().Be("FeatureGroupDefinitions");
     }
 
@@ -107,7 +107,7 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
         // then
         storedValue.Value.Should().Be(value);
         (await _TableHasRowsAsync(_Schema, _ValuesTableName)).Should().BeTrue();
-        (await _TableHasRowsAsync("features", "FeatureValues")).Should().BeFalse();
+        (await _TableHasRowsAsync("headless", "FeatureValues")).Should().BeFalse();
     }
 
     [Fact]
@@ -202,7 +202,7 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
     private DefaultSchemaFeaturesContext _CreateDefaultSchemaContext()
     {
         // No ConfigureStorage call → FeaturesStorageOptions stays at its defaults
-        // (schema "features" + default table names).
+        // (schema "headless" + default table names).
         var options = new DbContextOptionsBuilder<DefaultSchemaFeaturesContext>()
             .UseNpgsql(Fixture.SqlConnectionString)
             .Options;

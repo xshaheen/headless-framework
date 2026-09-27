@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
 using Headless.Jobs;
 using Headless.Jobs.Customizer;
 using Headless.Jobs.Entities;
@@ -47,14 +48,14 @@ public sealed class JobsModelCustomizerSchemaTests : TestBase
     [Fact]
     public void customizer_falls_back_to_the_default_schema_when_nothing_is_configured()
     {
-        using var context = _CreateCustomizedContext(JobsStorageOptions.DefaultSchema);
+        using var context = _CreateCustomizedContext(HeadlessStorageDefaults.Schema);
 
         context
             .Model.FindEntityType(typeof(JobIdempotencyReservationEntity))!
             .GetSchema()
             .Should()
-            .Be(JobsStorageOptions.DefaultSchema);
-        context.Model.FindEntityType(typeof(TimeJobEntity))!.GetSchema().Should().Be(JobsStorageOptions.DefaultSchema);
+            .Be(HeadlessStorageDefaults.Schema);
+        context.Model.FindEntityType(typeof(TimeJobEntity))!.GetSchema().Should().Be(HeadlessStorageDefaults.Schema);
     }
 
     /// <summary>

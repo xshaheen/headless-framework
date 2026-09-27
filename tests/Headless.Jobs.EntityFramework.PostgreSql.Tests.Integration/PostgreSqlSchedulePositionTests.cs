@@ -158,7 +158,7 @@ public sealed class PostgreSqlSchedulePositionTests(PostgreSqlJobsCoordinationFi
         await using var blockerTransaction = await blocker.BeginTransactionAsync(ct);
         await using (
             var command = new NpgsqlCommand(
-                "SELECT \"Id\" FROM jobs.\"CronJobs\" WHERE \"Id\" = @id FOR UPDATE;",
+                "SELECT \"Id\" FROM headless.\"CronJobs\" WHERE \"Id\" = @id FOR UPDATE;",
                 blocker,
                 blockerTransaction
             )

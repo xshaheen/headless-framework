@@ -9,8 +9,8 @@ START TRANSACTION;
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20241110150713_InitialMigration') THEN
-        IF NOT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = 'permissions') THEN
-CREATE SCHEMA permissions;
+        IF NOT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = 'headless') THEN
+CREATE SCHEMA headless;
 END IF;
 END IF;
 END $EF$;
@@ -18,7 +18,7 @@ END $EF$;
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20241110150713_InitialMigration') THEN
-CREATE TABLE permissions."PermissionDefinitions" (
+CREATE TABLE headless."PermissionDefinitions" (
                                                      "Id" uuid NOT NULL,
                                                      "GroupName" character varying(128) NOT NULL,
                                                      "Name" character varying(128) NOT NULL,
@@ -35,7 +35,7 @@ END $EF$;
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20241110150713_InitialMigration') THEN
-CREATE TABLE permissions."PermissionGrants" (
+CREATE TABLE headless."PermissionGrants" (
                                                 "Id" uuid NOT NULL,
                                                 "Name" character varying(128) NOT NULL,
                                                 "ProviderName" character varying(64) NOT NULL,
@@ -51,7 +51,7 @@ END $EF$;
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20241110150713_InitialMigration') THEN
-CREATE TABLE permissions."PermissionGroupDefinitions" (
+CREATE TABLE headless."PermissionGroupDefinitions" (
                                                           "Id" uuid NOT NULL,
                                                           "Name" character varying(128) NOT NULL,
                                                           "DisplayName" character varying(256) NOT NULL,
@@ -64,29 +64,29 @@ END $EF$;
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20241110150713_InitialMigration') THEN
-CREATE INDEX "IX_PermissionDefinitions_GroupName" ON permissions."PermissionDefinitions" ("GroupName");
+CREATE INDEX "IX_PermissionDefinitions_GroupName" ON headless."PermissionDefinitions" ("GroupName");
 END IF;
 END $EF$;
 
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20241110150713_InitialMigration') THEN
-CREATE UNIQUE INDEX "IX_PermissionDefinitions_Name" ON permissions."PermissionDefinitions" ("Name");
+CREATE UNIQUE INDEX "IX_PermissionDefinitions_Name" ON headless."PermissionDefinitions" ("Name");
 END IF;
 END $EF$;
 
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20241110150713_InitialMigration') THEN
-CREATE UNIQUE INDEX "IX_PermissionGrants_TenantId_Name_ProviderName_ProviderKey" ON permissions."PermissionGrants" ("TenantId", "Name", "ProviderName", "ProviderKey") WHERE "TenantId" IS NOT NULL;
-CREATE UNIQUE INDEX "IX_PermissionGrants_Name_ProviderName_ProviderKey_NullTenantId" ON permissions."PermissionGrants" ("Name", "ProviderName", "ProviderKey") WHERE "TenantId" IS NULL;
+CREATE UNIQUE INDEX "IX_PermissionGrants_TenantId_Name_ProviderName_ProviderKey" ON headless."PermissionGrants" ("TenantId", "Name", "ProviderName", "ProviderKey") WHERE "TenantId" IS NOT NULL;
+CREATE UNIQUE INDEX "IX_PermissionGrants_Name_ProviderName_ProviderKey_NullTenantId" ON headless."PermissionGrants" ("Name", "ProviderName", "ProviderKey") WHERE "TenantId" IS NULL;
 END IF;
 END $EF$;
 
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20241110150713_InitialMigration') THEN
-CREATE UNIQUE INDEX "IX_PermissionGroupDefinitions_Name" ON permissions."PermissionGroupDefinitions" ("Name");
+CREATE UNIQUE INDEX "IX_PermissionGroupDefinitions_Name" ON headless."PermissionGroupDefinitions" ("Name");
 END IF;
 END $EF$;
 
@@ -104,9 +104,9 @@ START TRANSACTION;
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260708000000_AddPermissionGrantAuditColumns') THEN
-        ALTER TABLE permissions."PermissionGrants" ADD COLUMN IF NOT EXISTS "CreatedAt" timestamp with time zone NOT NULL DEFAULT TIMESTAMPTZ '2000-01-01 00:00:00+00';
-        ALTER TABLE permissions."PermissionGrants" ALTER COLUMN "CreatedAt" DROP DEFAULT;
-        ALTER TABLE permissions."PermissionGrants" ADD COLUMN IF NOT EXISTS "UpdatedAt" timestamp with time zone;
+        ALTER TABLE headless."PermissionGrants" ADD COLUMN IF NOT EXISTS "CreatedAt" timestamp with time zone NOT NULL DEFAULT TIMESTAMPTZ '2000-01-01 00:00:00+00';
+        ALTER TABLE headless."PermissionGrants" ALTER COLUMN "CreatedAt" DROP DEFAULT;
+        ALTER TABLE headless."PermissionGrants" ADD COLUMN IF NOT EXISTS "UpdatedAt" timestamp with time zone;
 END IF;
 END $EF$;
 
@@ -124,7 +124,7 @@ START TRANSACTION;
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260115000000_AddIsGrantedColumn') THEN
-        ALTER TABLE permissions."PermissionGrants" ADD "IsGranted" boolean NOT NULL DEFAULT true;
+        ALTER TABLE headless."PermissionGrants" ADD "IsGranted" boolean NOT NULL DEFAULT true;
 END IF;
 END $EF$;
 

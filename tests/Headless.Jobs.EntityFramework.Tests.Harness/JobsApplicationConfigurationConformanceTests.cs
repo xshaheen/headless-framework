@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces;
@@ -114,7 +115,10 @@ public abstract class JobsApplicationConfigurationConformanceTests<TFixture>(TFi
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.Entity<ApplicationProbe>().ToTable("ApplicationProbe", "jobs").HasKey(x => x.Id);
+            modelBuilder
+                .Entity<ApplicationProbe>()
+                .ToTable("ApplicationProbe", HeadlessStorageDefaults.Schema)
+                .HasKey(x => x.Id);
         }
     }
 

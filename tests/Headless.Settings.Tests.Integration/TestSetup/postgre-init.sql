@@ -9,8 +9,8 @@ START TRANSACTION;
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20250118002326_InitialMigration') THEN
-        IF NOT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = 'settings') THEN
-CREATE SCHEMA settings;
+        IF NOT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = 'headless') THEN
+CREATE SCHEMA headless;
 END IF;
 END IF;
 END $EF$;
@@ -18,7 +18,7 @@ END $EF$;
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20250118002326_InitialMigration') THEN
-CREATE TABLE settings."SettingDefinitions" (
+CREATE TABLE headless."SettingDefinitions" (
                                                "Id" uuid NOT NULL,
                                                "Name" character varying(128) NOT NULL,
                                                "DisplayName" character varying(256) NOT NULL,
@@ -37,7 +37,7 @@ END $EF$;
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20250118002326_InitialMigration') THEN
-CREATE TABLE settings."SettingValues" (
+CREATE TABLE headless."SettingValues" (
                                           "Id" uuid NOT NULL,
                                           "Name" character varying(128) NOT NULL,
                                           "Value" character varying(2000) NOT NULL,
@@ -53,15 +53,15 @@ END $EF$;
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20250118002326_InitialMigration') THEN
-CREATE UNIQUE INDEX "IX_SettingDefinitions_Name" ON settings."SettingDefinitions" ("Name");
+CREATE UNIQUE INDEX "IX_SettingDefinitions_Name" ON headless."SettingDefinitions" ("Name");
 END IF;
 END $EF$;
 
 DO $EF$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20250118002326_InitialMigration') THEN
-CREATE UNIQUE INDEX "IX_SettingValues_Name_ProviderName_ProviderKey" ON settings."SettingValues" ("Name", "ProviderName", "ProviderKey") WHERE "ProviderKey" IS NOT NULL;
-CREATE UNIQUE INDEX "IX_SettingValues_Name_ProviderName_NullProviderKey" ON settings."SettingValues" ("Name", "ProviderName") WHERE "ProviderKey" IS NULL;
+CREATE UNIQUE INDEX "IX_SettingValues_Name_ProviderName_ProviderKey" ON headless."SettingValues" ("Name", "ProviderName", "ProviderKey") WHERE "ProviderKey" IS NOT NULL;
+CREATE UNIQUE INDEX "IX_SettingValues_Name_ProviderName_NullProviderKey" ON headless."SettingValues" ("Name", "ProviderName") WHERE "ProviderKey" IS NULL;
 END IF;
 END $EF$;
 

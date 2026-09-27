@@ -1,13 +1,18 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
+
 namespace Headless.Features;
 
 /// <summary>Storage-layer configuration shared across all feature-management database providers.</summary>
 [PublicAPI]
 public sealed class FeaturesStorageOptions
 {
-    /// <summary>Gets or sets the database schema that contains the features tables. Default: <c>"features"</c>.</summary>
-    public string Schema { get; set; } = "features";
+    /// <summary>
+    /// Gets or sets the database schema that contains the features tables. Default:
+    /// <see cref="HeadlessStorageDefaults.Schema"/> (<c>"headless"</c>), the schema every Headless feature shares.
+    /// </summary>
+    public string Schema { get; set; } = HeadlessStorageDefaults.Schema;
 
     /// <summary>Gets or sets the name of the table that stores per-provider feature values. Default: <c>"FeatureValues"</c>.</summary>
     public string FeatureValuesTableName { get; set; } = "FeatureValues";

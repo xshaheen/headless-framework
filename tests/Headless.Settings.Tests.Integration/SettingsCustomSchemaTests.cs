@@ -41,7 +41,7 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
         // when
         var valuesTableExists = await _TableExistsAsync(_Schema, _ValuesTableName);
         var definitionsTableExists = await _TableExistsAsync(_Schema, _DefinitionsTableName);
-        var defaultValuesTableExists = await _TableExistsAsync("settings", _ValuesTableName);
+        var defaultValuesTableExists = await _TableExistsAsync("headless", _ValuesTableName);
 
         // then
         valuesTableExists.Should().BeTrue();
@@ -63,10 +63,10 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
 
         // then
         valuesEntity.Should().NotBeNull();
-        valuesEntity!.GetSchema().Should().Be("settings");
+        valuesEntity!.GetSchema().Should().Be("headless");
         valuesEntity.GetTableName().Should().Be("SettingValues");
         definitionsEntity.Should().NotBeNull();
-        definitionsEntity!.GetSchema().Should().Be("settings");
+        definitionsEntity!.GetSchema().Should().Be("headless");
         definitionsEntity.GetTableName().Should().Be("SettingDefinitions");
     }
 
@@ -93,7 +93,7 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
         // then
         storedValue.Should().Be(value);
         (await _TableHasRowsAsync(_Schema, _ValuesTableName)).Should().BeTrue();
-        (await _TableHasRowsAsync("settings", "SettingValues")).Should().BeFalse();
+        (await _TableHasRowsAsync("headless", "SettingValues")).Should().BeFalse();
     }
 
     [Fact]
@@ -190,7 +190,7 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
     private DefaultSchemaSettingsContext _CreateDefaultSchemaContext()
     {
         // No ConfigureStorage call → SettingsStorageOptions stays at its defaults
-        // (schema "settings" + default table names).
+        // (schema "headless" + default table names).
         var options = new DbContextOptionsBuilder<DefaultSchemaSettingsContext>()
             .UseNpgsql(Fixture.SqlConnectionString)
             .Options;

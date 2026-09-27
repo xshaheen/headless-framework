@@ -93,7 +93,7 @@ public sealed class FeaturesStorageOptionsTests
 
         // then
         var resolved = act.Should().NotThrow().Subject;
-        resolved.Schema.Should().Be("features");
+        resolved.Schema.Should().Be("headless");
         resolved.FeatureValuesTableName.Should().Be("FeatureValues");
         resolved.FeatureDefinitionsTableName.Should().Be("FeatureDefinitions");
         resolved.FeatureGroupDefinitionsTableName.Should().Be("FeatureGroupDefinitions");

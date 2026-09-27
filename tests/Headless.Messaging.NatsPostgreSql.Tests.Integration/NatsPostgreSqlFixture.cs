@@ -170,8 +170,8 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
 
                 await using var command = connection.CreateCommand();
                 command.CommandText = """
-                    TRUNCATE TABLE messaging.published;
-                    TRUNCATE TABLE messaging.received;
+                    TRUNCATE TABLE headless.published;
+                    TRUNCATE TABLE headless.received;
                     """;
 
                 await command.ExecuteNonQueryAsync();

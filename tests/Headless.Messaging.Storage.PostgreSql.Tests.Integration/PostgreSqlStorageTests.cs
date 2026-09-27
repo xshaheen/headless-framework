@@ -43,7 +43,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                UPDATE messaging.received SET "Content"='not-json',"NextRetryAt"=statement_timestamp()-INTERVAL '1 minute',"LockedUntil"=statement_timestamp()-INTERVAL '1 minute' WHERE "Id"=@Id;
+                UPDATE headless.received SET "Content"='not-json',"NextRetryAt"=statement_timestamp()-INTERVAL '1 minute',"LockedUntil"=statement_timestamp()-INTERVAL '1 minute' WHERE "Id"=@Id;
                 """,
                 new { Id = storageId },
                 cancellationToken: cancellationToken
@@ -60,7 +60,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         return await connection.QuerySingleAsync<PersistedInboxPoisonState>(
             new CommandDefinition(
                 """
-                SELECT statement_timestamp() AS "DatabaseNow","StatusName","TerminalAt","EffectiveExpiresAt","AttemptId","NextRetryAt","LockedUntil","Owner","Content" FROM messaging.received WHERE "Id"=@Id;
+                SELECT statement_timestamp() AS "DatabaseNow","StatusName","TerminalAt","EffectiveExpiresAt","AttemptId","NextRetryAt","LockedUntil","Owner","Content" FROM headless.received WHERE "Id"=@Id;
                 """,
                 new { Id = storageId },
                 cancellationToken: cancellationToken
@@ -74,7 +74,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                UPDATE messaging.received SET "EffectiveExpiresAt"=statement_timestamp()-INTERVAL '1 minute' WHERE "Id"=@Id;
+                UPDATE headless.received SET "EffectiveExpiresAt"=statement_timestamp()-INTERVAL '1 minute' WHERE "Id"=@Id;
                 """,
                 new { Id = storageId },
                 cancellationToken: cancellationToken
@@ -153,7 +153,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await connection.OpenAsync(cancellationToken);
         var tableName = published ? "published" : "received";
         return await connection.QuerySingleAsync<PersistedLeaseIdentity>(
-            $"""SELECT "LockedUntil", "Owner" FROM messaging.{tableName} WHERE "Id"=@Id""",
+            $"""SELECT "LockedUntil", "Owner" FROM headless.{tableName} WHERE "Id"=@Id""",
             new { Id = storageId }
         );
     }
@@ -174,7 +174,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         var groupColumns = published ? string.Empty : ", \"Group\", \"ExceptionInfo\"";
         var groupValues = published ? string.Empty : ", 'unsupported-lane-group', NULL";
         var sql = $"""
-            INSERT INTO messaging.{tableName}
+            INSERT INTO headless.{tableName}
                 ("Id", "Version", "Name", "Content", "IntentType", "Retries", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId"{groupColumns})
             VALUES
                 (@Id, 'v1', 'unsupported-lane', @Content, @IntentType, 0, @Added, NULL, @NextRetryAt, @LockedUntil, 'stale-unsupported-lane-owner', 'Failed', @MessageId{groupValues});
@@ -215,7 +215,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         var sql = $"""
             SELECT "IntentType" AS "RawLane", "StatusName", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner",
                    {exceptionInfo} AS "ExceptionInfo"
-            FROM messaging.{tableName}
+            FROM headless.{tableName}
             WHERE "Id"=@Id;
             """;
 
@@ -273,9 +273,9 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await connection.OpenAsync(cancellationToken);
 
         const string sqlWithGroup =
-            "SELECT COUNT(*) FROM messaging.received WHERE \"MessageId\" = @MessageId AND \"Group\" = @Group";
+            "SELECT COUNT(*) FROM headless.received WHERE \"MessageId\" = @MessageId AND \"Group\" = @Group";
         const string sqlWithoutGroup =
-            "SELECT COUNT(*) FROM messaging.received WHERE \"MessageId\" = @MessageId AND \"Group\" IS NULL";
+            "SELECT COUNT(*) FROM headless.received WHERE \"MessageId\" = @MessageId AND \"Group\" IS NULL";
 
         var rowCount = group is null
             ? await connection.ExecuteScalarAsync<long>(sqlWithoutGroup, new { MessageId = messageId })
@@ -304,8 +304,8 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
             await connection.ExecuteAsync(
                 new CommandDefinition(
                     """
-                    TRUNCATE TABLE messaging.published;
-                    TRUNCATE TABLE messaging.received;
+                    TRUNCATE TABLE headless.published;
+                    TRUNCATE TABLE headless.received;
                     """,
                     cancellationToken: AbortToken
                 )
@@ -417,16 +417,16 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
             """
             SELECT state."SchemaVersion", (
                 SELECT COUNT(*) FROM pg_indexes
-                WHERE schemaname='messaging' AND indexname IN ('uq_received_inbox_root_key','uq_received_inbox_lifecycle_generation')
+                WHERE schemaname='headless' AND indexname IN ('uq_received_inbox_root_key','uq_received_inbox_lifecycle_generation')
             ) AS "IndexCount", (
                 SELECT COUNT(*) FROM pg_constraint WHERE conname IN ('ck_received_inbox_identity','ck_received_inbox_lifecycle')
-                  AND conrelid='messaging.received'::regclass
+                  AND conrelid='headless.received'::regclass
             ) AS "ConstraintCount", (
                 SELECT COUNT(*) FROM information_schema.columns
-                WHERE table_schema='messaging' AND table_name='inbox_operation_receipts'
+                WHERE table_schema='headless' AND table_name='inbox_operation_receipts'
                   AND column_name IN ('ExpectedStatus','Outcome','ChildIncarnationId','TargetKind','ExpectedDueAt','MessageName','MessageId','Lane')
             ) AS "ReceiptColumnCount"
-            FROM messaging.schema_state AS state
+            FROM headless.schema_state AS state
             WHERE state."Component"='inbox';
             """
         );
@@ -458,7 +458,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.ExecuteAsync(
             """
-            UPDATE messaging.received SET "StatusName"='Failed',"NextRetryAt"=NULL,"TerminalAt"=statement_timestamp()-INTERVAL '2 days',"EffectiveExpiresAt"=statement_timestamp()-INTERVAL '1 day'
+            UPDATE headless.received SET "StatusName"='Failed',"NextRetryAt"=NULL,"TerminalAt"=statement_timestamp()-INTERVAL '2 days',"EffectiveExpiresAt"=statement_timestamp()-INTERVAL '1 day'
             WHERE "Id"=@Id;
             """,
             new { Id = admitted.Message.StorageId }
@@ -476,9 +476,9 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         var persisted = await connection.QuerySingleAsync<(long Rows, long Receipts, long Audits)>(
             """
             SELECT
-              (SELECT COUNT(*) FROM messaging.received WHERE "Id"=@Id) AS "Rows",
-              (SELECT COUNT(*) FROM messaging.inbox_operation_receipts WHERE "StorageId"=@Id AND "OperationType"='Cleanup') AS "Receipts",
-              (SELECT COUNT(*) FROM messaging.inbox_audit a JOIN messaging.inbox_operation_receipts r ON r."OperationId"=a."OperationId" WHERE r."StorageId"=@Id AND a."OperationType"='Cleanup') AS "Audits";
+              (SELECT COUNT(*) FROM headless.received WHERE "Id"=@Id) AS "Rows",
+              (SELECT COUNT(*) FROM headless.inbox_operation_receipts WHERE "StorageId"=@Id AND "OperationType"='Cleanup') AS "Receipts",
+              (SELECT COUNT(*) FROM headless.inbox_audit a JOIN headless.inbox_operation_receipts r ON r."OperationId"=a."OperationId" WHERE r."StorageId"=@Id AND a."OperationType"='Cleanup') AS "Audits";
             """,
             new { Id = admitted.Message.StorageId }
         );
@@ -490,7 +490,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.ExecuteAsync(
-            "UPDATE messaging.schema_state SET \"SchemaVersion\"=2 WHERE \"Component\"='inbox';"
+            "UPDATE headless.schema_state SET \"SchemaVersion\"=2 WHERE \"Component\"='inbox';"
         );
 
         try
@@ -500,7 +500,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
             await act.Should().ThrowAsync<PostgresException>().WithMessage("*newer than supported version 1*");
             (
                 await connection.ExecuteScalarAsync<int>(
-                    "SELECT \"SchemaVersion\" FROM messaging.schema_state WHERE \"Component\"='inbox';"
+                    "SELECT \"SchemaVersion\" FROM headless.schema_state WHERE \"Component\"='inbox';"
                 )
             )
                 .Should()
@@ -509,7 +509,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         finally
         {
             await connection.ExecuteAsync(
-                "UPDATE messaging.schema_state SET \"SchemaVersion\"=1 WHERE \"Component\"='inbox';"
+                "UPDATE headless.schema_state SET \"SchemaVersion\"=1 WHERE \"Component\"='inbox';"
             );
         }
     }
@@ -718,7 +718,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await controlConnection.ExecuteAsync(
             new CommandDefinition(
                 """
-                CREATE OR REPLACE FUNCTION messaging.block_delayed_claim_commit()
+                CREATE OR REPLACE FUNCTION headless.block_delayed_claim_commit()
                 RETURNS trigger
                 LANGUAGE plpgsql
                 AS $function$
@@ -728,13 +728,13 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
                 END;
                 $function$;
 
-                DROP TRIGGER IF EXISTS block_delayed_claim_commit ON messaging.published;
+                DROP TRIGGER IF EXISTS block_delayed_claim_commit ON headless.published;
                 CREATE CONSTRAINT TRIGGER block_delayed_claim_commit
-                    AFTER UPDATE ON messaging.published
+                    AFTER UPDATE ON headless.published
                     DEFERRABLE INITIALLY DEFERRED
                     FOR EACH ROW
                     WHEN (OLD."StatusName" = 'Delayed' AND NEW."StatusName" = 'Queued')
-                    EXECUTE FUNCTION messaging.block_delayed_claim_commit();
+                    EXECUTE FUNCTION headless.block_delayed_claim_commit();
                 """,
                 cancellationToken: AbortToken
             )
@@ -776,7 +776,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
                 new CommandDefinition(
                     """
                     SELECT "StatusName", "LockedUntil", "Owner"
-                    FROM messaging.published
+                    FROM headless.published
                     WHERE "Id"=@Id;
                     """,
                     new { Id = stored.StorageId },
@@ -803,8 +803,8 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
             await controlConnection.ExecuteAsync(
                 new CommandDefinition(
                     """
-                    DROP TRIGGER IF EXISTS block_delayed_claim_commit ON messaging.published;
-                    DROP FUNCTION IF EXISTS messaging.block_delayed_claim_commit();
+                    DROP TRIGGER IF EXISTS block_delayed_claim_commit ON headless.published;
+                    DROP FUNCTION IF EXISTS headless.block_delayed_claim_commit();
                     """,
                     cancellationToken: AbortToken
                 )
@@ -1150,7 +1150,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         (await storage.LeasePublishAsync(message, leaseDuration, AbortToken)).Should().BeTrue();
 
         var persistedLease = await connection.QuerySingleAsync<PersistedLease>(
-            """SELECT statement_timestamp() AS "DatabaseTimeAfter", "LockedUntil", "Owner" FROM messaging.published WHERE "Id"=@Id""",
+            """SELECT statement_timestamp() AS "DatabaseTimeAfter", "LockedUntil", "Owner" FROM headless.published WHERE "Id"=@Id""",
             new { Id = message.StorageId }
         );
         persistedLease.LockedUntil.Should().BeOnOrAfter(databaseTimeBefore.Add(leaseDuration));
@@ -1181,7 +1181,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var before = await connection.QuerySingleAsync<PersistedLease>(
-            """SELECT statement_timestamp() AS "DatabaseTimeAfter", "LockedUntil", "Owner" FROM messaging.received WHERE "Id"=@Id""",
+            """SELECT statement_timestamp() AS "DatabaseTimeAfter", "LockedUntil", "Owner" FROM headless.received WHERE "Id"=@Id""",
             new { Id = stored.StorageId }
         );
 
@@ -1195,7 +1195,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
             AbortToken
         );
         var after = await connection.QuerySingleAsync<PersistedLease>(
-            """SELECT statement_timestamp() AS "DatabaseTimeAfter", "LockedUntil", "Owner" FROM messaging.received WHERE "Id"=@Id""",
+            """SELECT statement_timestamp() AS "DatabaseTimeAfter", "LockedUntil", "Owner" FROM headless.received WHERE "Id"=@Id""",
             new { Id = stored.StorageId }
         );
 
@@ -1213,9 +1213,9 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
 
         // then
         var result = await connection.QueryFirstOrDefaultAsync<string>(
-            "SELECT schema_name FROM information_schema.schemata WHERE schema_name = 'messaging'"
+            "SELECT schema_name FROM information_schema.schemata WHERE schema_name = 'headless'"
         );
-        result.Should().Be("messaging");
+        result.Should().Be("headless");
     }
 
     [Fact]
@@ -1260,7 +1260,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
             .BeTrue();
         var succeededInside = await connection.ExecuteScalarAsync<bool>(
             new CommandDefinition(
-                """SELECT "StatusName"='Succeeded' FROM messaging.received WHERE "Id"=@Id""",
+                """SELECT "StatusName"='Succeeded' FROM headless.received WHERE "Id"=@Id""",
                 new { Id = message.StorageId },
                 transaction,
                 cancellationToken: AbortToken
@@ -1272,7 +1272,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
 
         var succeededOutside = await connection.ExecuteScalarAsync<bool>(
             new CommandDefinition(
-                """SELECT "StatusName"='Succeeded' FROM messaging.received WHERE "Id"=@Id""",
+                """SELECT "StatusName"='Succeeded' FROM headless.received WHERE "Id"=@Id""",
                 new { Id = message.StorageId },
                 cancellationToken: AbortToken
             )
@@ -1281,8 +1281,8 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     }
 
     [Theory]
-    [InlineData("messaging.published")]
-    [InlineData("messaging.received")]
+    [InlineData("headless.published")]
+    [InlineData("headless.received")]
     public async Task should_create_tables(string tableName)
     {
         // given, when
@@ -1327,7 +1327,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await connection.OpenAsync(AbortToken);
 
         var indexDef = await connection.QueryFirstOrDefaultAsync<string>(
-            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'messaging' AND indexname = @IndexName",
+            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'headless' AND indexname = @IndexName",
             new { IndexName = $"idx_{table}_StatusName_Added" }
         );
 
@@ -1342,7 +1342,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await connection.OpenAsync(AbortToken);
 
         var indexDef = await connection.QueryFirstOrDefaultAsync<string>(
-            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'messaging' AND indexname = 'idx_published_Version_ExpiresAt_Queued'"
+            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'headless' AND indexname = 'idx_published_Version_ExpiresAt_Queued'"
         );
 
         indexDef.Should().NotBeNull();
@@ -1363,7 +1363,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await connection.OpenAsync(AbortToken);
 
         var indexDef = await connection.QueryFirstOrDefaultAsync<string>(
-            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'messaging' AND indexname = @IndexName",
+            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'headless' AND indexname = @IndexName",
             new { IndexName = $"idx_{table}_Content_trgm" }
         );
 
@@ -1387,19 +1387,19 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
                 await connection.OpenAsync(AbortToken);
                 var tables = await connection.ExecuteScalarAsync<int>(
                     new CommandDefinition(
-                        "SELECT COUNT(1) FROM information_schema.tables WHERE table_schema = 'messaging' AND table_name IN ('published', 'received')",
+                        "SELECT COUNT(1) FROM information_schema.tables WHERE table_schema = 'headless' AND table_name IN ('published', 'received')",
                         cancellationToken: AbortToken
                     )
                 );
                 var coreIndexes = await connection.ExecuteScalarAsync<int>(
                     new CommandDefinition(
-                        "SELECT COUNT(1) FROM pg_indexes WHERE schemaname = 'messaging' AND indexname IN ('idx_published_StatusName_Added', 'idx_received_StatusName_Added')",
+                        "SELECT COUNT(1) FROM pg_indexes WHERE schemaname = 'headless' AND indexname IN ('idx_published_StatusName_Added', 'idx_received_StatusName_Added')",
                         cancellationToken: AbortToken
                     )
                 );
                 var trgmIndexes = await connection.ExecuteScalarAsync<int>(
                     new CommandDefinition(
-                        "SELECT COUNT(1) FROM pg_indexes WHERE schemaname = 'messaging' AND indexname LIKE 'idx_%_Content_trgm'",
+                        "SELECT COUNT(1) FROM pg_indexes WHERE schemaname = 'headless' AND indexname LIKE 'idx_%_Content_trgm'",
                         cancellationToken: AbortToken
                     )
                 );
@@ -1428,7 +1428,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
                 await connection.OpenAsync(AbortToken);
                 var trgmIndexes = await connection.ExecuteScalarAsync<int>(
                     new CommandDefinition(
-                        "SELECT COUNT(1) FROM pg_indexes WHERE schemaname = 'messaging' AND indexname IN ('idx_published_Content_trgm', 'idx_received_Content_trgm')",
+                        "SELECT COUNT(1) FROM pg_indexes WHERE schemaname = 'headless' AND indexname IN ('idx_published_Content_trgm', 'idx_received_Content_trgm')",
                         cancellationToken: AbortToken
                     )
                 );
@@ -1467,19 +1467,19 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await assertConnection.OpenAsync(AbortToken);
 
         var statusName = await assertConnection.ExecuteScalarAsync<string>(
-            $"""SELECT "StatusName" FROM messaging.{tableName} WHERE "Id" = @Id""",
+            $"""SELECT "StatusName" FROM headless.{tableName} WHERE "Id" = @Id""",
             new { Id = id }
         );
         var nextRetryAt = await assertConnection.ExecuteScalarAsync<DateTimeOffset?>(
-            $"""SELECT "NextRetryAt" FROM messaging.{tableName} WHERE "Id" = @Id""",
+            $"""SELECT "NextRetryAt" FROM headless.{tableName} WHERE "Id" = @Id""",
             new { Id = id }
         );
         var lockedUntil = await assertConnection.ExecuteScalarAsync<DateTimeOffset?>(
-            $"""SELECT "LockedUntil" FROM messaging.{tableName} WHERE "Id" = @Id""",
+            $"""SELECT "LockedUntil" FROM headless.{tableName} WHERE "Id" = @Id""",
             new { Id = id }
         );
         var owner = await assertConnection.ExecuteScalarAsync<string?>(
-            $"""SELECT "Owner" FROM messaging.{tableName} WHERE "Id" = @Id""",
+            $"""SELECT "Owner" FROM headless.{tableName} WHERE "Id" = @Id""",
             new { Id = id }
         );
 
@@ -1491,7 +1491,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         if (string.Equals(tableName, "received", StringComparison.Ordinal))
         {
             var exceptionInfo = await assertConnection.ExecuteScalarAsync<string?>(
-                """SELECT "ExceptionInfo" FROM messaging.received WHERE "Id" = @Id""",
+                """SELECT "ExceptionInfo" FROM headless.received WHERE "Id" = @Id""",
                 new { Id = id }
             );
             exceptionInfo.Should().Contain("JsonException");
@@ -1531,7 +1531,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await using var assertConnection = new NpgsqlConnection(fixture.ConnectionString);
         await assertConnection.OpenAsync(AbortToken);
         var poisonNextRetryAt = await assertConnection.ExecuteScalarAsync<DateTimeOffset?>(
-            $"""SELECT "NextRetryAt" FROM messaging.{tableName} WHERE "Id" = @Id""",
+            $"""SELECT "NextRetryAt" FROM headless.{tableName} WHERE "Id" = @Id""",
             new { Id = poisonId }
         );
         poisonNextRetryAt.Should().BeNull();
@@ -1582,7 +1582,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         (await _ReadPersistedRowJsonAsync(connection, tableName, unknownBetweenId)).Should().Be(unknownBetweenBefore);
 
         await connection.ExecuteAsync(
-            $"""UPDATE messaging.{tableName} SET "IntentType" = 0 WHERE "Id" = @Id""",
+            $"""UPDATE headless.{tableName} SET "IntentType" = 0 WHERE "Id" = @Id""",
             new { Id = unknownAheadId }
         );
 
@@ -1616,7 +1616,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         );
         var before = await _ReadPersistedRowJsonAsync(connection, tableName, id);
 
-        (await storage.DeleteExpiresAsync($"messaging.{tableName}", now, cancellationToken: AbortToken)).Should().Be(0);
+        (await storage.DeleteExpiresAsync($"headless.{tableName}", now, cancellationToken: AbortToken)).Should().Be(0);
 
         (await _ReadPersistedRowJsonAsync(connection, tableName, id)).Should().Be(before);
     }
@@ -1636,7 +1636,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await connection.OpenAsync(AbortToken);
         await _InsertRetryRowAsync(connection, tableName, id, rawLane: 77, content, now.AddMinutes(-1));
         await connection.ExecuteAsync(
-            $"""UPDATE messaging.{tableName} SET "LockedUntil" = @LockedUntil, "Owner" = @Owner WHERE "Id" = @Id""",
+            $"""UPDATE headless.{tableName} SET "LockedUntil" = @LockedUntil, "Owner" = @Owner WHERE "Id" = @Id""",
             new
             {
                 Id = id,
@@ -1707,7 +1707,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         var dataType = await connection.QueryFirstOrDefaultAsync<string>(
             $"""
             SELECT data_type FROM information_schema.columns
-            WHERE table_schema = 'messaging' AND table_name = '{table}' AND column_name = '{column}'
+            WHERE table_schema = 'headless' AND table_name = '{table}' AND column_name = '{column}'
             """
         );
         dataType.Should().Be("timestamp with time zone");
@@ -1724,14 +1724,14 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         var dataType = await connection.QueryFirstOrDefaultAsync<string>(
             """
             SELECT data_type FROM information_schema.columns
-            WHERE table_schema = 'messaging' AND table_name = @Table AND column_name = 'Owner'
+            WHERE table_schema = 'headless' AND table_name = @Table AND column_name = 'Owner'
             """,
             new { Table = table }
         );
         var maxLength = await connection.QueryFirstOrDefaultAsync<int?>(
             """
             SELECT character_maximum_length FROM information_schema.columns
-            WHERE table_schema = 'messaging' AND table_name = @Table AND column_name = 'Owner'
+            WHERE table_schema = 'headless' AND table_name = @Table AND column_name = 'Owner'
             """,
             new { Table = table }
         );
@@ -1756,7 +1756,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
-        await connection.ExecuteAsync($"DROP INDEX IF EXISTS messaging.\"{indexName}\";");
+        await connection.ExecuteAsync($"DROP INDEX IF EXISTS headless.\"{indexName}\";");
         await _CreateInitializer(fixture.ConnectionString).InitializeAsync(AbortToken);
 
         var columns = (
@@ -1768,7 +1768,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
                 JOIN pg_namespace n ON n.oid = c.relnamespace
                 JOIN unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) ON true
                 JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
-                WHERE n.nspname = 'messaging'
+                WHERE n.nspname = 'headless'
                   AND c.relname = @IndexName
                   AND k.ord <= i.indnkeyatts
                 ORDER BY k.ord;
@@ -1787,7 +1787,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
             FROM pg_index i
             JOIN pg_class c ON c.oid = i.indexrelid
             JOIN pg_namespace n ON n.oid = c.relnamespace
-            WHERE n.nspname = 'messaging' AND c.relname = @IndexName;
+            WHERE n.nspname = 'headless' AND c.relname = @IndexName;
             """,
             new { IndexName = indexName }
         );
@@ -1802,10 +1802,10 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await connection.OpenAsync(AbortToken);
         await connection.ExecuteAsync(
             """
-            INSERT INTO messaging.received ("Id","Version","Name","IntentType","Retries","Added","StatusName","MessageId")
+            INSERT INTO headless.received ("Id","Version","Name","IntentType","Retries","Added","StatusName","MessageId")
             SELECT gen_random_uuid(), 'v1', 'retry-index-recovery', 0, 0, NOW(), 'Failed', gen_random_uuid()::text
             FROM generate_series(1, 2);
-            DROP INDEX IF EXISTS messaging."idx_received_Version_NextRetryAt";
+            DROP INDEX IF EXISTS headless."idx_received_Version_NextRetryAt";
             """
         );
 
@@ -1813,7 +1813,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         var createInvalidIndex = async () =>
             await connection.ExecuteAsync(
                 """
-                CREATE UNIQUE INDEX CONCURRENTLY "idx_received_Version_NextRetryAt" ON messaging.received ((true));
+                CREATE UNIQUE INDEX CONCURRENTLY "idx_received_Version_NextRetryAt" ON headless.received ((true));
                 """
             );
         (await createInvalidIndex.Should().ThrowAsync<PostgresException>())
@@ -1824,7 +1824,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
             FROM pg_index i
             JOIN pg_class c ON c.oid = i.indexrelid
             JOIN pg_namespace n ON n.oid = c.relnamespace
-            WHERE n.nspname = 'messaging' AND c.relname = @IndexName;
+            WHERE n.nspname = 'headless' AND c.relname = @IndexName;
             """;
         (await connection.QuerySingleAsync<bool>(validitySql, new { IndexName = indexName })).Should().BeFalse();
 
@@ -1833,7 +1833,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         (await connection.QuerySingleAsync<bool>(validitySql, new { IndexName = indexName })).Should().BeTrue();
         (
             await connection.QuerySingleAsync<int>(
-                "SELECT COUNT(*) FROM messaging.received WHERE \"Name\" = 'retry-index-recovery';"
+                "SELECT COUNT(*) FROM headless.received WHERE \"Name\" = 'retry-index-recovery';"
             )
         )
             .Should()
@@ -1857,7 +1857,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
                 JOIN pg_namespace n ON n.oid = c.relnamespace
                 JOIN unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) ON true
                 JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
-                WHERE n.nspname = 'messaging'
+                WHERE n.nspname = 'headless'
                   AND c.relname = @IndexName
                   AND k.ord <= i.indnkeyatts
                 ORDER BY k.ord;
@@ -1874,7 +1874,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
             FROM pg_index i
             JOIN pg_class c ON c.oid = i.indexrelid
             JOIN pg_namespace n ON n.oid = c.relnamespace
-            WHERE n.nspname = 'messaging' AND c.relname = @IndexName;
+            WHERE n.nspname = 'headless' AND c.relname = @IndexName;
             """,
             new { IndexName = indexName }
         );
@@ -1894,7 +1894,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
-        var qualifiedTable = $"messaging.\"{tableSuffix}\"";
+        var qualifiedTable = $"headless.\"{tableSuffix}\"";
         const int seedRows = 50;
         var seedSql = tableSuffix switch
         {
@@ -1996,7 +1996,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         }
     }
 
-    private PostgreSqlStorageInitializer _CreateInitializer(string connectionString, string schema = "messaging")
+    private PostgreSqlStorageInitializer _CreateInitializer(string connectionString, string schema = "headless")
     {
         return new PostgreSqlStorageInitializer(
             NullLogger<PostgreSqlStorageInitializer>.Instance,
@@ -2047,7 +2047,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         {
             await connection.ExecuteAsync(
                 """
-                INSERT INTO messaging.published
+                INSERT INTO headless.published
                     ("Id", "Version", "Name", "Content", "IntentType", "Retries", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId")
                 VALUES
                     (@Id, 'v1', 'poison-published', 'not-json', 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId);
@@ -2065,7 +2065,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
 
         await connection.ExecuteAsync(
             """
-            INSERT INTO messaging.received
+            INSERT INTO headless.received
                 ("Id", "Version", "Name", "Group", "Content", "IntentType", "Retries", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId", "ExceptionInfo")
             VALUES
                 (@Id, 'v1', 'poison-received', 'poison-group', 'not-json', 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL);
@@ -2092,7 +2092,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         {
             return connection.ExecuteAsync(
                 """
-                INSERT INTO messaging.published
+                INSERT INTO headless.published
                     ("Id", "Version", "Name", "Content", "IntentType", "Retries", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId")
                 VALUES
                     (@Id, 'v1', 'healthy-published', @Content, 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId);
@@ -2110,7 +2110,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
 
         return connection.ExecuteAsync(
             """
-            INSERT INTO messaging.received
+            INSERT INTO headless.received
                 ("Id", "Version", "Name", "Group", "Content", "IntentType", "Retries", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId", "ExceptionInfo")
             VALUES
                 (@Id, 'v1', 'healthy-received', 'healthy-group', @Content, 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL);
@@ -2141,7 +2141,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         {
             return connection.ExecuteAsync(
                 """
-                INSERT INTO messaging.published
+                INSERT INTO headless.published
                     ("Id", "Version", "Name", "Content", "IntentType", "Retries", "InlineAttempts", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId")
                 VALUES
                     (@Id, 'v1', 'lane-contract-published', @Content, @RawLane, 0, 0, @Added, @ExpiresAt, @NextRetryAt, NULL, NULL, @StatusName, @MessageId);
@@ -2162,7 +2162,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
 
         return connection.ExecuteAsync(
             """
-            INSERT INTO messaging.received
+            INSERT INTO headless.received
                 ("Id", "Version", "Name", "Group", "Content", "IntentType", "Retries", "InlineAttempts", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId", "ExceptionInfo")
             VALUES
                 (@Id, 'v1', 'lane-contract-received', 'lane-contract-group', @Content, @RawLane, 0, 0, @Added, @ExpiresAt, @NextRetryAt, NULL, NULL, @StatusName, @MessageId, NULL);
@@ -2184,7 +2184,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     private static Task<string> _ReadPersistedRowJsonAsync(NpgsqlConnection connection, string tableName, Guid id)
     {
         return connection.QuerySingleAsync<string>(
-            $"""SELECT to_jsonb(message)::text FROM messaging.{tableName} AS message WHERE "Id" = @Id""",
+            $"""SELECT to_jsonb(message)::text FROM headless.{tableName} AS message WHERE "Id" = @Id""",
             new { Id = id }
         );
     }

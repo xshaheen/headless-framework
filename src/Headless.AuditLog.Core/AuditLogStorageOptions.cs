@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
+
 namespace Headless.AuditLog;
 
 /// <summary>
@@ -16,9 +18,10 @@ namespace Headless.AuditLog;
 public sealed class AuditLogStorageOptions
 {
     /// <summary>
-    /// Database schema that contains the audit log table. Default: <c>"audit"</c>.
+    /// Database schema that contains the audit log table. Default: <see cref="HeadlessStorageDefaults.Schema"/>
+    /// (<c>"headless"</c>), the schema every Headless feature shares.
     /// </summary>
-    public string Schema { get; set; } = "audit";
+    public string Schema { get; set; } = HeadlessStorageDefaults.Schema;
 
     /// <summary>
     /// Name of the audit log table within <see cref="Schema"/>. Default: <c>"audit_log"</c>.

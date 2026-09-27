@@ -100,7 +100,7 @@ public sealed class SettingsStorageOptionsTests
 
         // then
         var resolved = act.Should().NotThrow().Subject;
-        resolved.Schema.Should().Be("settings");
+        resolved.Schema.Should().Be("headless");
         resolved.SettingValuesTableName.Should().Be("SettingValues");
         resolved.SettingDefinitionsTableName.Should().Be("SettingDefinitions");
     }
