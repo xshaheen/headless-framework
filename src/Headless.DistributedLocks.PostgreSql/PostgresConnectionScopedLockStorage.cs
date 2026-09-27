@@ -133,7 +133,7 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
             // Close. Drop it explicitly instead of registering it.
             Ensure.NotDisposed(_disposed, this);
 
-            var held = new HeldLock(resource, leaseId, engineHandle);
+            var held = new HeldLock(resource, leaseId, engineHandle, connectionLostToken);
             _heldByLockId[leaseId] = held;
             ownershipTransferred = true;
 
@@ -256,6 +256,27 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
 
     /// <inheritdoc/>
     /// <remarks>
+    /// Local-only: looks the lease up in the in-process registry and checks the engine handle's lost token. The
+    /// engine only observes connection death when the lock was acquired with monitoring, so an unmonitored lock whose
+    /// connection died silently still reads as held here until its next command fails.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is already cancelled on entry.
+    /// </exception>
+    public ValueTask<bool> IsHeldAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var isHeld =
+            _heldByLockId.TryGetValue(leaseId, out var held)
+            && string.Equals(held.Resource, resource, StringComparison.Ordinal)
+            && !held.IsLost;
+
+        return ValueTask.FromResult(isHeld);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
     /// Returns only the locks held by this process. Because long resource names are hashed into advisory
     /// integer keys, <c>pg_locks</c> cannot reverse-map them to the original resource name; a
     /// database-wide listing is therefore not possible and the result is limited to the local
@@ -364,13 +385,25 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     /// A single held lock: owns the engine handle (which owns the connection lifecycle, the advisory unlock, and the
     /// connection-monitoring registration). Disposal is idempotent and delegates entirely to the engine handle.
     /// </summary>
-    private sealed class HeldLock(string resource, string leaseId, IDistributedLease engineHandle) : IAsyncDisposable
+    /// <param name="connectionLostToken">
+    /// The loss token captured at acquire: the engine's token for a monitored lock, otherwise
+    /// <see cref="CancellationToken.None"/>. It is captured rather than read from the engine handle on demand because
+    /// that getter registers connection monitoring on first read and throws once the handle is disposed.
+    /// </param>
+    private sealed class HeldLock(
+        string resource,
+        string leaseId,
+        IDistributedLease engineHandle,
+        CancellationToken connectionLostToken
+    ) : IAsyncDisposable
     {
         private int _disposed;
 
         public string Resource { get; } = resource;
 
         public string LeaseId { get; } = leaseId;
+
+        public bool IsLost => connectionLostToken.IsCancellationRequested;
 
         public async ValueTask DisposeAsync()
         {
