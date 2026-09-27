@@ -8,8 +8,7 @@ namespace Headless.Jobs.SourceGenerator.Models;
 internal sealed record JobsRegistrationModel(
     string AssemblyName,
     EquatableArray<JobFunctionModel> Functions,
-    EquatableArray<MiddlewareRegistrationModel> Middleware,
-    EquatableArray<string> ConflictingTypeNames
+    EquatableArray<MiddlewareRegistrationModel> Middleware
 );
 
 /// <summary>

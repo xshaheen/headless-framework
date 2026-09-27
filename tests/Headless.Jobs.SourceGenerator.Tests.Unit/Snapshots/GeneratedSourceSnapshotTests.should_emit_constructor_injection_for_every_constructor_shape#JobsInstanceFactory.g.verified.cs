@@ -38,7 +38,7 @@ namespace Jobs.SourceGenerator.Tests
             }), MaxConcurrency = 0 });
             jobFunctionDelegateDict.Add("injection.static", new JobFunctionRegistration { CronExpression = "0 0 * * * *", Priority = (JobPriority)0, Delegate = new JobFunctionDelegate(async (serviceProvider, context, cancellationToken) =>
             {
-                await Demo.Injection.StaticJobs.RunAsync(cancellationToken);
+                await global::Demo.Injection.StaticJobs.RunAsync(cancellationToken);
             }), MaxConcurrency = 0 });
             JobFunctionProvider.RegisterFunctions(jobFunctionDelegateDict, 4);
             RegisterRequestTypes();
@@ -55,24 +55,24 @@ namespace Jobs.SourceGenerator.Tests
             JobFunctionProvider.RegisterDescriptors(descriptors, 4);
         }
 
-        private static Demo.Injection.RegularConstructorJobs CreateDemoInjectionRegularConstructorJobs(IServiceProvider serviceProvider)
+        private static global::Demo.Injection.RegularConstructorJobs CreateDemoInjectionRegularConstructorJobs(IServiceProvider serviceProvider)
         {
-            var clock = serviceProvider.GetService<Demo.Injection.IClock>();
-            var store = serviceProvider.GetKeyedService<Demo.Injection.IStore>("primary");
-            return new Demo.Injection.RegularConstructorJobs(clock, store, serviceProvider);
+            var clock = serviceProvider.GetService<global::Demo.Injection.IClock>();
+            var store = serviceProvider.GetKeyedService<global::Demo.Injection.IStore>("primary");
+            return new global::Demo.Injection.RegularConstructorJobs(clock, store, serviceProvider);
         }
 
-        private static Demo.Injection.PrimaryConstructorJobs CreateDemoInjectionPrimaryConstructorJobs(IServiceProvider serviceProvider)
+        private static global::Demo.Injection.PrimaryConstructorJobs CreateDemoInjectionPrimaryConstructorJobs(IServiceProvider serviceProvider)
         {
-            var clock = serviceProvider.GetService<Demo.Injection.IClock>();
-            var store = serviceProvider.GetKeyedService<Demo.Injection.IStore>(42);
-            return new Demo.Injection.PrimaryConstructorJobs(clock, store);
+            var clock = serviceProvider.GetService<global::Demo.Injection.IClock>();
+            var store = serviceProvider.GetKeyedService<global::Demo.Injection.IStore>(42);
+            return new global::Demo.Injection.PrimaryConstructorJobs(clock, store);
         }
 
-        private static Demo.Injection.MarkedConstructorJobs CreateDemoInjectionMarkedConstructorJobs(IServiceProvider serviceProvider)
+        private static global::Demo.Injection.MarkedConstructorJobs CreateDemoInjectionMarkedConstructorJobs(IServiceProvider serviceProvider)
         {
-            var clock = serviceProvider.GetService<Demo.Injection.IClock>();
-            return new Demo.Injection.MarkedConstructorJobs(clock);
+            var clock = serviceProvider.GetService<global::Demo.Injection.IClock>();
+            return new global::Demo.Injection.MarkedConstructorJobs(clock);
         }
 
         private static void RegisterRequestTypes()

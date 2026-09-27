@@ -5,13 +5,16 @@ using Headless.SourceGenerators;
 namespace Headless.Jobs.SourceGenerator.Models;
 
 /// <summary>Everything the emitter needs about one <c>[JobFunction]</c> method, captured as values.</summary>
+/// <param name="RequestTypeName">
+/// The fully qualified <c>T</c> of a <c>JobFunctionContext&lt;T&gt;</c> parameter, or <see langword="null"/> for a
+/// requestless function.
+/// </param>
 internal sealed record JobFunctionModel(
     JobClassModel Class,
     string MethodName,
     bool IsStaticMethod,
     bool IsAwaitable,
     EquatableArray<string> InvocationArguments,
-    string GenericTypeName,
     string? RequestTypeName,
     string? FunctionName,
     string? CronExpression,
@@ -23,21 +26,23 @@ internal sealed record JobFunctionModel(
     string ContractVersion
 )
 {
-    public bool UsesGenericContext => GenericTypeName.Length != 0;
+    public bool UsesGenericContext => RequestTypeName is not null;
 }
 
 /// <summary>The class that declares a job function, including how the generated factory constructs it.</summary>
+/// <param name="TypeName">
+/// The fully qualified (<c>global::</c>) name, so generated code cannot be captured by the namespace it is emitted into.
+/// </param>
 internal sealed record JobClassModel(
-    string FullName,
-    string Namespace,
-    string Name,
+    string TypeName,
+    string FactoryMethodName,
     bool IsStatic,
     EquatableArray<ConstructorParameterModel> ConstructorParameters
 );
 
 /// <summary>
-/// One constructor argument. <see cref="TypeName"/> is <see langword="null"/> when the argument is passed through
-/// without resolution (the <c>serviceProvider</c> parameter or an untyped parameter).
+/// One constructor argument. <see cref="TypeName"/> is <see langword="null"/> for the <c>serviceProvider</c>
+/// parameter, which is passed through without resolution.
 /// </summary>
 internal sealed record ConstructorParameterModel(string Name, string? TypeName, string? ServiceKey);
 

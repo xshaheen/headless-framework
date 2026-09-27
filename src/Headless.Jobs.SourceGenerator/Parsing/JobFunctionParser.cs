@@ -24,7 +24,7 @@ internal static class JobFunctionParser
     {
         if (
             context.TargetNode is not MethodDeclarationSyntax { Parent: ClassDeclarationSyntax classDeclaration } method
-            || context.TargetSymbol is not IMethodSymbol methodSymbol
+            || context.TargetSymbol is not IMethodSymbol { ContainingType: { } classSymbol } methodSymbol
             || context.Attributes.IsEmpty
         )
         {
@@ -32,18 +32,14 @@ internal static class JobFunctionParser
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        var semanticModel = context.SemanticModel;
         var attribute = context.Attributes[0];
         var diagnostics = new List<DiagnosticInfo>();
+        var classIdentifier = classDeclaration.Identifier;
+        var constructors = _SelectConstructors(classSymbol);
 
-        JobFunctionValidator.ValidateClassAndMethod(
-            classDeclaration,
-            method,
-            semanticModel.GetDeclaredSymbol(classDeclaration, cancellationToken),
-            diagnostics
-        );
-        ConstructorValidator.ValidateMultipleConstructors(classDeclaration, semanticModel, diagnostics);
-        JobFunctionValidator.ValidateNotNestedClass(classDeclaration, diagnostics);
+        JobFunctionValidator.ValidateClassAndMethod(classSymbol, classIdentifier, method, diagnostics);
+        ConstructorValidator.ValidateMultipleConstructors(constructors, classIdentifier, diagnostics);
+        JobFunctionValidator.ValidateNotNestedClass(classSymbol, classIdentifier, diagnostics);
 
         var values = attribute.GetJobFunctionAttributeValues();
         var attributeLocation = attribute.ApplicationSyntaxReference is { } syntaxReference
@@ -59,12 +55,11 @@ internal static class JobFunctionParser
         JobFunctionValidator.ValidateMethodParameters(method, methodSymbol, diagnostics);
 
         var function = new JobFunctionModel(
-            _ParseClass(classDeclaration, semanticModel, cancellationToken),
+            _ParseClass(classSymbol, constructors),
             method.Identifier.Text,
             method.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword)),
             SourceGeneratorUtilities.IsMethodAwaitable(method),
             _GetInvocationArguments(method),
-            _GetGenericTypeName(method, semanticModel, cancellationToken),
             GetRequestType(methodSymbol)?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
             values.functionName,
             values.cronExpression,
@@ -138,126 +133,100 @@ internal static class JobFunctionParser
         return arguments.ToEquatableArray();
     }
 
-    private static string _GetGenericTypeName(
-        MethodDeclarationSyntax method,
-        SemanticModel semanticModel,
-        CancellationToken cancellationToken
-    )
+    private static JobClassModel _ParseClass(INamedTypeSymbol classSymbol, ConstructorSelection constructors)
     {
-        var genericTypeName = string.Empty;
-        var genericPrefix = SourceGeneratorConstants.BaseGenericJobFunctionContextTypeName.Replace("`1", "<");
-        foreach (var parameter in method.ParameterList.Parameters)
-        {
-            if (parameter.Type == null)
-            {
-                continue;
-            }
+        var namespaceName = classSymbol.ContainingNamespace.IsGlobalNamespace
+            ? string.Empty
+            : classSymbol.ContainingNamespace.ToDisplayString();
 
-            var typeName =
-                semanticModel.GetSymbolInfo(parameter.Type, cancellationToken).Symbol?.ToDisplayString()
-                ?? parameter.Type.ToString();
-            if (!typeName.StartsWith(genericPrefix, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            var startIndex = typeName.IndexOf('<') + 1;
-            var endIndex = typeName.LastIndexOf('>');
-            if (startIndex > 0 && endIndex > startIndex)
-            {
-                genericTypeName = typeName.Substring(startIndex, endIndex - startIndex);
-            }
-        }
-
-        return genericTypeName;
-    }
-
-    private static JobClassModel _ParseClass(
-        ClassDeclarationSyntax classDeclaration,
-        SemanticModel semanticModel,
-        CancellationToken cancellationToken
-    )
-    {
-        var isStatic = classDeclaration.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword));
         return new(
-            SourceGeneratorUtilities.GetFullClassName(classDeclaration),
-            SourceGeneratorUtilities.GetNamespace(classDeclaration),
-            classDeclaration.Identifier.Text,
-            isStatic,
-            isStatic
+            classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+            $"Create{namespaceName.Replace(".", "")}{classSymbol.Name}",
+            classSymbol.IsStatic,
+            classSymbol.IsStatic
                 ? EquatableArray<ConstructorParameterModel>.Empty
-                : _ParseConstructor(classDeclaration, semanticModel, cancellationToken)
+                : _ParseConstructorParameters(constructors.Selected)
         );
     }
 
     /// <summary>
-    /// Picks the constructor the factory calls: the primary constructor, else the one marked
-    /// <c>[JobsConstructor]</c>, else the first public one, else the parameterless default.
+    /// Reads constructors from the type symbol, so every part of a partial class contributes. A constructor is the
+    /// primary constructor when it is declared by the type declaration itself rather than by a constructor declaration.
     /// </summary>
-    private static EquatableArray<ConstructorParameterModel> _ParseConstructor(
-        ClassDeclarationSyntax classDeclaration,
-        SemanticModel semanticModel,
-        CancellationToken cancellationToken
-    )
+    private static ConstructorSelection _SelectConstructors(INamedTypeSymbol classSymbol)
     {
-        var constructors = classDeclaration.Members.OfType<ConstructorDeclarationSyntax>().ToList();
-        var markedConstructor = constructors.Find(constructor =>
-            semanticModel.GetDeclaredSymbol(constructor, cancellationToken) is { } symbol
-            && symbol.GetAttributes().Any(SourceGeneratorUtilities.IsJobsConstructorAttribute)
-        );
-        var selectedConstructor =
-            markedConstructor
-            ?? constructors.Find(constructor =>
-                constructor.Modifiers.Any(modifier => modifier.IsKind(SyntaxKind.PublicKeyword))
-            );
+        var declarations = classSymbol.DeclaringSyntaxReferences;
+        IMethodSymbol? primary = null;
+        var explicitConstructors = new List<IMethodSymbol>();
+        foreach (var constructor in classSymbol.InstanceConstructors)
+        {
+            if (constructor.IsImplicitlyDeclared)
+            {
+                continue;
+            }
 
-        var isPrimaryConstructor = classDeclaration.ParameterList?.Parameters.Count > 0;
-        var parameters = isPrimaryConstructor
-            ? classDeclaration.ParameterList!.Parameters
-            : selectedConstructor?.ParameterList.Parameters ?? default;
+            var isPrimary = constructor.DeclaringSyntaxReferences.Any(reference =>
+                declarations.Any(declaration =>
+                    declaration.SyntaxTree == reference.SyntaxTree && declaration.Span == reference.Span
+                )
+            );
+            if (!isPrimary)
+            {
+                explicitConstructors.Add(constructor);
+            }
+            else if (constructor.Parameters.Length > 0)
+            {
+                primary = constructor;
+            }
+        }
+
+        var marked = explicitConstructors
+            .Where(constructor => constructor.GetAttributes().Any(SourceGeneratorUtilities.IsJobsConstructorAttribute))
+            .ToList();
+        var selected =
+            primary
+            ?? marked.FirstOrDefault()
+            ?? explicitConstructors.Find(constructor => constructor.DeclaredAccessibility == Accessibility.Public);
+
+        return new(selected, explicitConstructors.Count + (primary is null ? 0 : 1), marked.Count);
+    }
+
+    private static EquatableArray<ConstructorParameterModel> _ParseConstructorParameters(IMethodSymbol? constructor)
+    {
+        if (constructor is null)
+        {
+            return EquatableArray<ConstructorParameterModel>.Empty;
+        }
 
         var result = new List<ConstructorParameterModel>();
-        foreach (var parameter in parameters)
+        foreach (var parameter in constructor.Parameters)
         {
-            var parameterName = SourceGeneratorUtilities.FirstLetterToLower(parameter.Identifier.Text);
-            if (string.Equals(parameterName, "serviceProvider", StringComparison.Ordinal) || parameter.Type == null)
+            var parameterName = SourceGeneratorUtilities.FirstLetterToLower(parameter.Name);
+            if (string.Equals(parameterName, "serviceProvider", StringComparison.Ordinal))
             {
                 result.Add(new(parameterName, null, null));
                 continue;
             }
 
-            var parameterSymbol = isPrimaryConstructor
-                ? _GetPrimaryConstructorParameterSymbol(classDeclaration, parameter, semanticModel, cancellationToken)
-                : semanticModel.GetDeclaredSymbol(parameter, cancellationToken);
-            var typeName =
-                semanticModel.GetSymbolInfo(parameter.Type, cancellationToken).Symbol?.ToDisplayString()
-                ?? parameter.Type.ToString();
-            var keyedServiceAttribute = parameterSymbol
-                ?.GetAttributes()
+            var keyedServiceAttribute = parameter
+                .GetAttributes()
                 .FirstOrDefault(SourceGeneratorUtilities.IsFromKeyedServicesAttribute);
             var serviceKey = keyedServiceAttribute is null
                 ? null
                 : SourceGeneratorUtilities.GetServiceKey(keyedServiceAttribute);
 
-            result.Add(new(parameterName, typeName, serviceKey));
+            result.Add(
+                new(parameterName, parameter.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat), serviceKey)
+            );
         }
 
         return result.ToEquatableArray();
     }
-
-    private static IParameterSymbol? _GetPrimaryConstructorParameterSymbol(
-        ClassDeclarationSyntax classDeclaration,
-        ParameterSyntax parameter,
-        SemanticModel semanticModel,
-        CancellationToken cancellationToken
-    )
-    {
-        var primaryConstructor = semanticModel
-            .GetDeclaredSymbol(classDeclaration, cancellationToken)
-            ?.Constructors.FirstOrDefault(constructor => constructor.Parameters.Length > 0);
-
-        return primaryConstructor?.Parameters.FirstOrDefault(p =>
-            string.Equals(p.Name, parameter.Identifier.Text, StringComparison.Ordinal)
-        );
-    }
 }
+
+/// <summary>
+/// The constructor the generated factory calls, plus the counts the constructor diagnostics need. The factory uses the
+/// primary constructor, else the one marked <c>[JobsConstructor]</c>, else the first public one, else the implicit
+/// parameterless constructor.
+/// </summary>
+internal readonly record struct ConstructorSelection(IMethodSymbol? Selected, int DeclaredCount, int MarkedCount);

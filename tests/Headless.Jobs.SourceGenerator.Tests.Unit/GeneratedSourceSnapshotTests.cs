@@ -67,7 +67,7 @@ public sealed class GeneratedSourceSnapshotTests
     }
 
     [Fact]
-    public Task should_emit_simple_and_qualified_request_type_names()
+    public Task should_emit_fully_qualified_request_type_names()
     {
         return _VerifyGenerated(
             """

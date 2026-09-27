@@ -12,35 +12,6 @@ namespace Headless.Jobs.SourceGenerator.Utilities;
 internal static class SourceGeneratorUtilities
 {
     /// <summary>
-    /// Gets the full class name including namespace.
-    /// </summary>
-    public static string GetFullClassName(ClassDeclarationSyntax classDeclaration)
-    {
-        var namespaceName = GetNamespace(classDeclaration);
-        return string.IsNullOrEmpty(namespaceName)
-            ? classDeclaration.Identifier.Text
-            : $"{namespaceName}.{classDeclaration.Identifier.Text}";
-    }
-
-    /// <summary>
-    /// Gets the namespace of a class declaration.
-    /// </summary>
-    public static string GetNamespace(ClassDeclarationSyntax classDeclaration)
-    {
-        var namespaceDeclaration = classDeclaration.Ancestors().OfType<NamespaceDeclarationSyntax>().FirstOrDefault();
-        if (namespaceDeclaration != null)
-        {
-            return namespaceDeclaration.Name.ToString();
-        }
-
-        var fileScopedNamespace = classDeclaration
-            .Ancestors()
-            .OfType<FileScopedNamespaceDeclarationSyntax>()
-            .FirstOrDefault();
-        return fileScopedNamespace?.Name.ToString() ?? string.Empty;
-    }
-
-    /// <summary>
     /// Converts the first letter of a string to lowercase.
     /// </summary>
     public static string FirstLetterToLower(string input)

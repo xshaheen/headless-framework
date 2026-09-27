@@ -47,12 +47,7 @@ internal static class JobsRegistrationBuilder
             assemblyName,
             diagnostics
         );
-        var model = new JobsRegistrationModel(
-            assemblyName,
-            functionModels,
-            registrations,
-            _FindConflictingTypeNames(functionModels)
-        );
+        var model = new JobsRegistrationModel(assemblyName, functionModels, registrations);
 
         // One class can hold several functions, so class-level diagnostics arrive once per function.
         return new(model, diagnostics.Distinct().ToEquatableArray());
@@ -193,20 +188,4 @@ internal static class JobsRegistrationBuilder
 
         return registrations.ToEquatableArray();
     }
-
-    /// <summary>Simple request-type names shared by more than one typed function.</summary>
-    private static EquatableArray<string> _FindConflictingTypeNames(EquatableArray<JobFunctionModel> functions)
-    {
-        return functions
-            .Where(function => function.UsesGenericContext)
-            .GroupBy(function => SimpleName(function.GenericTypeName), StringComparer.Ordinal)
-            .Where(group => group.Skip(1).Any())
-            .Select(group => group.Key)
-            .OrderBy(name => name, StringComparer.Ordinal)
-            .ToEquatableArray();
-    }
-
-    /// <summary>The type name after its last namespace or containing-type separator.</summary>
-    public static string SimpleName(string fullTypeName) =>
-        fullTypeName.Contains('.') ? fullTypeName.Substring(fullTypeName.LastIndexOf('.') + 1) : fullTypeName;
 }

@@ -36,9 +36,9 @@ namespace Jobs.SourceGenerator.Tests
             JobFunctionProvider.RegisterDescriptors(descriptors, 1);
         }
 
-        private static GlobalJobs CreateGlobalJobs(IServiceProvider serviceProvider)
+        private static global::GlobalJobs CreateGlobalJobs(IServiceProvider serviceProvider)
         {
-            return new GlobalJobs();
+            return new global::GlobalJobs();
         }
 
         private static void RegisterRequestTypes()

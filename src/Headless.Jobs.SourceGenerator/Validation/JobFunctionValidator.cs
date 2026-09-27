@@ -16,20 +16,28 @@ internal static class JobFunctionValidator
     /// <summary>
     /// Validates class and method accessibility, and that the declaring class is not abstract.
     /// </summary>
+    /// <remarks>
+    /// Class accessibility is read from the symbol, not the modifiers of one declaration: a top-level class without a
+    /// modifier is internal, and a partial class may declare its accessibility on another part. A <c>file</c>-local
+    /// class is rejected because the generated file cannot see it.
+    /// </remarks>
     public static void ValidateClassAndMethod(
-        ClassDeclarationSyntax classDeclaration,
+        INamedTypeSymbol classSymbol,
+        SyntaxToken classIdentifier,
         MethodDeclarationSyntax methodDeclaration,
-        INamedTypeSymbol? classSymbol,
         ICollection<DiagnosticInfo> diagnostics
     )
     {
-        if (!_IsPublicOrInternal(classDeclaration.Modifiers))
+        if (
+            classSymbol.IsFileLocal
+            || classSymbol.DeclaredAccessibility is not (Accessibility.Public or Accessibility.Internal)
+        )
         {
             diagnostics.Add(
                 DiagnosticInfo.Create(
                     DiagnosticDescriptors.ClassAccessibility,
-                    classDeclaration.Identifier.GetLocation(),
-                    classDeclaration.Identifier.Text
+                    classIdentifier.GetLocation(),
+                    classIdentifier.Text
                 )
             );
         }
@@ -45,13 +53,13 @@ internal static class JobFunctionValidator
             );
         }
 
-        if (classSymbol?.IsAbstract == true)
+        if (classSymbol.IsAbstract)
         {
             diagnostics.Add(
                 DiagnosticInfo.Create(
                     DiagnosticDescriptors.AbstractClass,
-                    classDeclaration.Identifier.GetLocation(),
-                    classDeclaration.Identifier.Text
+                    classIdentifier.GetLocation(),
+                    classIdentifier.Text
                 )
             );
         }
@@ -86,20 +94,21 @@ internal static class JobFunctionValidator
     }
 
     /// <summary>
-    /// Validates that a class is not nested.
+    /// Validates that a class is not nested in any type.
     /// </summary>
     public static void ValidateNotNestedClass(
-        ClassDeclarationSyntax classDeclaration,
+        INamedTypeSymbol classSymbol,
+        SyntaxToken classIdentifier,
         ICollection<DiagnosticInfo> diagnostics
     )
     {
-        if (classDeclaration.Parent is ClassDeclarationSyntax)
+        if (classSymbol.ContainingType is not null)
         {
             diagnostics.Add(
                 DiagnosticInfo.Create(
                     DiagnosticDescriptors.NestedClass,
-                    classDeclaration.Identifier.GetLocation(),
-                    classDeclaration.Identifier.Text
+                    classIdentifier.GetLocation(),
+                    classIdentifier.Text
                 )
             );
         }

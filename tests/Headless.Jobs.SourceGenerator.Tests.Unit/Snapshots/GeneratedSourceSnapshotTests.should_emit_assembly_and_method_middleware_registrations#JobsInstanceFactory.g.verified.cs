@@ -41,9 +41,9 @@ namespace Jobs.SourceGenerator.Tests
             JobFunctionProvider.RegisterDescriptors(descriptors, 1);
         }
 
-        private static Demo.Middleware.MiddlewareJobs CreateDemoMiddlewareMiddlewareJobs(IServiceProvider serviceProvider)
+        private static global::Demo.Middleware.MiddlewareJobs CreateDemoMiddlewareMiddlewareJobs(IServiceProvider serviceProvider)
         {
-            return new Demo.Middleware.MiddlewareJobs();
+            return new global::Demo.Middleware.MiddlewareJobs();
         }
 
         private static void RegisterRequestTypes()

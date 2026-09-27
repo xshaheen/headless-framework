@@ -13,7 +13,6 @@ internal static class SourceGeneratorConstants
     public const string DescriptorMetadataAttributeName = "Headless.Jobs.JobFunctionDescriptorMetadataAttribute";
     public const string CancellationTokenTypeName = "System.Threading.CancellationToken";
     public const string BaseJobFunctionContextTypeName = "Headless.Jobs.Base.JobFunctionContext";
-    public const string BaseGenericJobFunctionContextTypeName = "Headless.Jobs.Base.JobFunctionContext`1";
     public const string FromKeyedServicesAttributeName = "FromKeyedServicesAttribute";
 
     /// <summary>

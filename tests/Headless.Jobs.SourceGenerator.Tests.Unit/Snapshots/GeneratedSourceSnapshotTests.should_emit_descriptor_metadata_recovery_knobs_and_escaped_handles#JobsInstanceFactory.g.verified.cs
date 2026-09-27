@@ -57,9 +57,9 @@ namespace Jobs.SourceGenerator.Tests
             JobFunctionProvider.RegisterDescriptors(descriptors, 4);
         }
 
-        private static Demo.Knobs.KnobJobs CreateDemoKnobsKnobJobs(IServiceProvider serviceProvider)
+        private static global::Demo.Knobs.KnobJobs CreateDemoKnobsKnobJobs(IServiceProvider serviceProvider)
         {
-            return new Demo.Knobs.KnobJobs();
+            return new global::Demo.Knobs.KnobJobs();
         }
 
         private static void RegisterRequestTypes()

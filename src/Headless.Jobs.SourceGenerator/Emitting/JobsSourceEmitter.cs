@@ -2,7 +2,6 @@
 
 using System.Globalization;
 using System.Text;
-using Headless.Jobs.SourceGenerator.Building;
 using Headless.Jobs.SourceGenerator.Models;
 using Headless.SourceGenerators;
 using Microsoft.CodeAnalysis.CSharp;
@@ -45,7 +44,7 @@ internal static class JobsSourceEmitter
         };
         foreach (var jobClass in _ConstructedClasses(functions))
         {
-            members.Add(w => _WriteFactoryMethod(w, jobClass, model.AssemblyName));
+            members.Add(w => _WriteFactoryMethod(w, jobClass));
         }
 
         if (hasTypedFunctions)
@@ -110,7 +109,7 @@ internal static class JobsSourceEmitter
             );
             foreach (var function in functions)
             {
-                _WriteFunctionRegistration(writer, function, model);
+                _WriteFunctionRegistration(writer, function);
             }
 
             writer.WriteLine($"JobFunctionProvider.RegisterFunctions(jobFunctionDelegateDict, {functions.Count});");
@@ -130,17 +129,13 @@ internal static class JobsSourceEmitter
         writer.CloseBlock();
     }
 
-    private static void _WriteFunctionRegistration(
-        SourceWriter writer,
-        JobFunctionModel function,
-        JobsRegistrationModel model
-    )
+    private static void _WriteFunctionRegistration(SourceWriter writer, JobFunctionModel function)
     {
         // Only async when the body awaits: the typed-context conversion or an awaitable method.
         var asyncFlag = function.UsesGenericContext || function.IsAwaitable ? "async " : "";
         var cronExpression = string.IsNullOrEmpty(function.CronExpression)
             ? "string.Empty"
-            : $"\"{function.CronExpression}\"";
+            : _Literal(function.CronExpression);
 
         // Bind to the named JobFunctionRegistration record rather than a positional tuple so new per-function knobs
         // stay additive for already-generated code.
@@ -152,15 +147,19 @@ internal static class JobsSourceEmitter
         if (function.UsesGenericContext)
         {
             writer.WriteLine(
-                $"var genericContext = await ToGenericContextWithRequest<{_RequestTypeName(function.GenericTypeName, model)}>(context, cancellationToken);"
+                $"var genericContext = await ToGenericContextWithRequest<{function.RequestTypeName}>(context, cancellationToken);"
             );
         }
 
-        var call =
-            $"{_Receiver(function, model.AssemblyName)}.{function.MethodName}({string.Join(", ", function.InvocationArguments)})";
+        var call = $"{_Receiver(function)}.{function.MethodName}({string.Join(", ", function.InvocationArguments)})";
         if (function.IsAwaitable)
         {
             writer.WriteLine($"await {call};");
+        }
+        else if (function.UsesGenericContext)
+        {
+            // The lambda is already async for the typed-context conversion, so it completes without returning a task.
+            writer.WriteLine($"{call};");
         }
         else
         {
@@ -198,22 +197,9 @@ internal static class JobsSourceEmitter
         return knobs.ToString();
     }
 
-    /// <summary>
-    /// The call receiver: the class for static methods, otherwise the generated factory. Classes in the assembly's root
-    /// namespace use their simple name because the header imports that namespace.
-    /// </summary>
-    private static string _Receiver(JobFunctionModel function, string assemblyName)
-    {
-        var jobClass = function.Class;
-        if (!function.IsStaticMethod)
-        {
-            return $"{_FactoryMethodName(jobClass)}(serviceProvider)";
-        }
-
-        return string.Equals(jobClass.Namespace, assemblyName, StringComparison.Ordinal)
-            ? jobClass.Name
-            : jobClass.FullName;
-    }
+    /// <summary>The call receiver: the class for static methods, otherwise the generated factory.</summary>
+    private static string _Receiver(JobFunctionModel function) =>
+        function.IsStaticMethod ? function.Class.TypeName : $"{function.Class.FactoryMethodName}(serviceProvider)";
 
     private static void _WriteDescriptorRegistration(SourceWriter writer, EquatableArray<JobFunctionModel> functions)
     {
@@ -238,14 +224,10 @@ internal static class JobsSourceEmitter
         writer.CloseBlock();
     }
 
-    private static void _WriteFactoryMethod(SourceWriter writer, JobClassModel jobClass, string assemblyName)
+    private static void _WriteFactoryMethod(SourceWriter writer, JobClassModel jobClass)
     {
-        var className = string.Equals(jobClass.Namespace, assemblyName, StringComparison.Ordinal)
-            ? jobClass.Name
-            : jobClass.FullName;
-
         writer.WriteLine(
-            $"private static {className} {_FactoryMethodName(jobClass)}(IServiceProvider serviceProvider)"
+            $"private static {jobClass.TypeName} {jobClass.FactoryMethodName}(IServiceProvider serviceProvider)"
         );
         writer.OpenBlock();
         foreach (var parameter in jobClass.ConstructorParameters)
@@ -263,7 +245,7 @@ internal static class JobsSourceEmitter
         }
 
         writer.WriteLine(
-            $"return new {className}({string.Join(", ", jobClass.ConstructorParameters.Select(x => x.Name))});"
+            $"return new {jobClass.TypeName}({string.Join(", ", jobClass.ConstructorParameters.Select(x => x.Name))});"
         );
         writer.CloseBlock();
     }
@@ -291,9 +273,9 @@ internal static class JobsSourceEmitter
             writer.WriteLine($"var requestTypes = new Dictionary<string, (string, Type)>({typedFunctions.Count});");
             foreach (var function in typedFunctions)
             {
-                var typeName = _RequestTypeName(function.GenericTypeName, model);
+                var typeName = function.RequestTypeName;
                 writer.WriteLine(
-                    $"requestTypes.Add(\"{function.FunctionName}\", (typeof({typeName}).FullName, typeof({typeName})));"
+                    $"requestTypes.Add({_Literal(function.FunctionName)}, (typeof({typeName}).FullName, typeof({typeName})));"
                 );
             }
 
@@ -334,35 +316,18 @@ internal static class JobsSourceEmitter
         writer.CloseBlock();
     }
 
-    /// <summary>
-    /// The request type as written in generated code: the simple name when some other request type shares a simple
-    /// name, the display name when no names conflict at all.
-    /// </summary>
-    private static string _RequestTypeName(string fullTypeName, JobsRegistrationModel model)
-    {
-        if (model.ConflictingTypeNames.Count == 0)
-        {
-            return fullTypeName;
-        }
-
-        var simpleName = JobsRegistrationBuilder.SimpleName(fullTypeName);
-        return model.ConflictingTypeNames.Contains(simpleName, StringComparer.Ordinal) ? fullTypeName : simpleName;
-    }
-
     /// <summary>Distinct constructed classes in first-use order; static classes need no factory.</summary>
     private static IEnumerable<JobClassModel> _ConstructedClasses(EquatableArray<JobFunctionModel> functions)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var function in functions)
         {
-            if (!function.Class.IsStatic && seen.Add(function.Class.FullName))
+            if (!function.Class.IsStatic && seen.Add(function.Class.TypeName))
             {
                 yield return function.Class;
             }
         }
     }
-
-    private static string _FactoryMethodName(JobClassModel jobClass) => $"Create{jobClass.FullName.Replace(".", "")}";
 
     private static IEnumerable<JobFunctionModel> _OrderedByName(EquatableArray<JobFunctionModel> functions) =>
         functions.OrderBy(function => function.FunctionName, StringComparer.Ordinal);

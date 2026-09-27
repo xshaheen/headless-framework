@@ -26,22 +26,22 @@ namespace Jobs.SourceGenerator.Tests
             var jobFunctionDelegateDict = new Dictionary<string, JobFunctionRegistration>(4);
             jobFunctionDelegateDict.Add("root.instance", new JobFunctionRegistration { CronExpression = string.Empty, Priority = (JobPriority)0, Delegate = new JobFunctionDelegate(async (serviceProvider, context, cancellationToken) =>
             {
-                var genericContext = await ToGenericContextWithRequest<Jobs.SourceGenerator.Tests.Payload>(context, cancellationToken);
+                var genericContext = await ToGenericContextWithRequest<global::Jobs.SourceGenerator.Tests.Payload>(context, cancellationToken);
                 await CreateJobsSourceGeneratorTestsRootJobs(serviceProvider).RunAsync(genericContext, cancellationToken);
             }), MaxConcurrency = 0 });
             jobFunctionDelegateDict.Add("root.order", new JobFunctionRegistration { CronExpression = string.Empty, Priority = (JobPriority)0, Delegate = new JobFunctionDelegate(async (serviceProvider, context, cancellationToken) =>
             {
-                var genericContext = await ToGenericContextWithRequest<Order>(context, cancellationToken);
+                var genericContext = await ToGenericContextWithRequest<global::Jobs.SourceGenerator.Tests.Order>(context, cancellationToken);
                 await CreateJobsSourceGeneratorTestsRootJobs(serviceProvider).OrderAsync(genericContext);
             }), MaxConcurrency = 0 });
             jobFunctionDelegateDict.Add("root.static", new JobFunctionRegistration { CronExpression = string.Empty, Priority = (JobPriority)0, Delegate = new JobFunctionDelegate((serviceProvider, context, cancellationToken) =>
             {
-                RootJobs.Run();
+                global::Jobs.SourceGenerator.Tests.RootJobs.Run();
                 return Task.CompletedTask;
             }), MaxConcurrency = 0 });
             jobFunctionDelegateDict.Add("billing.run", new JobFunctionRegistration { CronExpression = "%Jobs:Billing:Cron%", Priority = (JobPriority)0, Delegate = new JobFunctionDelegate(async (serviceProvider, context, cancellationToken) =>
             {
-                var genericContext = await ToGenericContextWithRequest<Billing.Payload>(context, cancellationToken);
+                var genericContext = await ToGenericContextWithRequest<global::Billing.Payload>(context, cancellationToken);
                 await CreateBillingBillingJobs(serviceProvider).RunAsync(genericContext);
             }), MaxConcurrency = 0 });
             JobFunctionProvider.RegisterFunctions(jobFunctionDelegateDict, 4);
@@ -59,14 +59,14 @@ namespace Jobs.SourceGenerator.Tests
             JobFunctionProvider.RegisterDescriptors(descriptors, 4);
         }
 
-        private static RootJobs CreateJobsSourceGeneratorTestsRootJobs(IServiceProvider serviceProvider)
+        private static global::Jobs.SourceGenerator.Tests.RootJobs CreateJobsSourceGeneratorTestsRootJobs(IServiceProvider serviceProvider)
         {
-            return new RootJobs();
+            return new global::Jobs.SourceGenerator.Tests.RootJobs();
         }
 
-        private static Billing.BillingJobs CreateBillingBillingJobs(IServiceProvider serviceProvider)
+        private static global::Billing.BillingJobs CreateBillingBillingJobs(IServiceProvider serviceProvider)
         {
-            return new Billing.BillingJobs();
+            return new global::Billing.BillingJobs();
         }
 
         private static async Task<JobFunctionContext<T>> ToGenericContextWithRequest<T>(JobFunctionContext context, CancellationToken cancellationToken)
@@ -78,9 +78,9 @@ namespace Jobs.SourceGenerator.Tests
         private static void RegisterRequestTypes()
         {
             var requestTypes = new Dictionary<string, (string, Type)>(3);
-            requestTypes.Add("root.instance", (typeof(Jobs.SourceGenerator.Tests.Payload).FullName, typeof(Jobs.SourceGenerator.Tests.Payload)));
-            requestTypes.Add("root.order", (typeof(Order).FullName, typeof(Order)));
-            requestTypes.Add("billing.run", (typeof(Billing.Payload).FullName, typeof(Billing.Payload)));
+            requestTypes.Add("root.instance", (typeof(global::Jobs.SourceGenerator.Tests.Payload).FullName, typeof(global::Jobs.SourceGenerator.Tests.Payload)));
+            requestTypes.Add("root.order", (typeof(global::Jobs.SourceGenerator.Tests.Order).FullName, typeof(global::Jobs.SourceGenerator.Tests.Order)));
+            requestTypes.Add("billing.run", (typeof(global::Billing.Payload).FullName, typeof(global::Billing.Payload)));
             JobFunctionProvider.RegisterRequestType(requestTypes, 3);
         }
     }
