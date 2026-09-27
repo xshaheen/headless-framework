@@ -63,7 +63,7 @@ internal sealed class JobsCoordinationStartupGate(
 internal static partial class JobsCoordinationStartupGateLog
 {
     [LoggerMessage(
-        EventId = 1,
+        EventId = 4,
         EventName = "NodeRegistered",
         Level = LogLevel.Information,
         Message = "Jobs node registered with coordination membership as {Identity}"
