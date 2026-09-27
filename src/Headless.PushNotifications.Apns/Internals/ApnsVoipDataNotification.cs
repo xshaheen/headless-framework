@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Json.Nodes;
+
 namespace Headless.PushNotifications.Apns.Internals;
 
 /// <summary>
@@ -13,7 +15,7 @@ namespace Headless.PushNotifications.Apns.Internals;
 internal sealed record ApnsVoipDataNotification : ApnsNotification
 {
     /// <summary>Custom keys written beside <c>aps</c> at the payload's top level. The key <c>aps</c> is reserved.</summary>
-    public IReadOnlyDictionary<string, string>? Data { get; init; }
+    public JsonObject? Data { get; init; }
 
     /// <summary>The delivery priority, or <see langword="null"/> to use <see cref="ApnsOptions.Priority"/>.</summary>
     public ApnsPriority? Priority { get; init; }

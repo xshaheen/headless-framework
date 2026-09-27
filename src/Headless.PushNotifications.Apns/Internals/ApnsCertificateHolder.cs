@@ -145,6 +145,7 @@ internal sealed class ApnsCertificateHolder : IDisposable
                     _instance,
                     "The options no longer configure a Certificate; switching to token mode needs a restart."
                 );
+                ApnsMetrics.RecordCertificateReload(accepted: false);
 
                 return;
             }
@@ -162,6 +163,7 @@ internal sealed class ApnsCertificateHolder : IDisposable
                 {
                     _logger.LogCertificateReloadFailed(_instance, string.Join(' ', errors));
                 }
+                ApnsMetrics.RecordCertificateReload(accepted: false);
 
                 return;
             }
@@ -169,6 +171,7 @@ internal sealed class ApnsCertificateHolder : IDisposable
             _previous?.Dispose();
             _previous = _current;
             _current = renewed;
+            ApnsMetrics.RecordCertificateReload(accepted: true);
 
             var expiresAt = ApnsCertificateLoader.GetExpiresAt(renewed);
             _logger.LogCertificateReloaded(_instance, expiresAt);

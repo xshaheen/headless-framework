@@ -26,79 +26,103 @@ internal sealed record ApnsRequestHeaders(
 
     /// <summary>Computes the headers for <paramref name="notification"/> sent through an instance with <paramref name="options"/>.</summary>
     /// <exception cref="ArgumentException">
-    /// The collapse id is blank or exceeds 64 UTF-8 bytes, the priority is not allowed for the push type, or the
-    /// instance is configured for VoIP and the push type is not an alert.
+    /// The collapse id is blank or exceeds 64 UTF-8 bytes, the priority is not allowed for the push type, the
+    /// instance is configured for VoIP and the push type is not an alert or VoIP push, or a VoIP push is sent through
+    /// an instance that is not configured for VoIP.
     /// </exception>
     public static ApnsRequestHeaders Create(ApnsNotification notification, ApnsOptions options)
     {
         Argument.IsNotNull(notification);
         Argument.IsNotNull(options);
 
-        var (pushType, topic, priority) = notification switch
+        // Each typed notification maps onto its push type, so a raw notification of the same type follows the same
+        // topic, priority, and VoIP rules without a second copy of them.
+        var (type, requestedPriority) = notification switch
         {
-            ApnsAlertNotification alert when options.PushType == ApnsPushType.Voip => (
-                ApnsPushTypes.Voip,
-                $"{options.BundleId}.voip",
-                alert.Priority ?? options.Priority
-            ),
-            ApnsAlertNotification alert => (ApnsPushTypes.Alert, options.BundleId, alert.Priority ?? options.Priority),
-            ApnsVoipDataNotification voipData when options.PushType == ApnsPushType.Voip => (
-                ApnsPushTypes.Voip,
-                $"{options.BundleId}.voip",
-                voipData.Priority ?? options.Priority
-            ),
-            ApnsBackgroundNotification => _NotVoip(
-                options,
-                ApnsPushTypes.Background,
-                options.BundleId,
-                ApnsPriority.PowerConsiderate
-            ),
-            ApnsLiveActivityNotification liveActivity => _NotVoip(
-                options,
-                ApnsPushTypes.LiveActivity,
-                $"{options.BundleId}.push-type.liveactivity",
-                _LiveActivityPriority(liveActivity.Priority)
-            ),
-            ApnsLocationNotification location => _NotVoip(
-                options,
-                ApnsPushTypes.Location,
-                $"{options.BundleId}.location-query",
-                _NichePriority(location.Priority)
-            ),
-            ApnsPushToTalkNotification => _NotVoip(
-                options,
-                ApnsPushTypes.PushToTalk,
-                $"{options.BundleId}.voip-ptt",
-                ApnsPriority.Immediate
-            ),
-            ApnsWidgetsNotification widgets => _NotVoip(
-                options,
-                ApnsPushTypes.Widgets,
-                $"{options.BundleId}.push-type.widgets",
-                _NichePriority(widgets.Priority)
-            ),
-            ApnsControlsNotification controls => _NotVoip(
-                options,
-                ApnsPushTypes.Controls,
-                $"{options.BundleId}.push-type.controls",
-                _NichePriority(controls.Priority)
-            ),
-            ApnsComplicationNotification complication => _NotVoip(
-                options,
-                ApnsPushTypes.Complication,
-                $"{options.BundleId}.complication",
-                _NichePriority(complication.Priority)
-            ),
-            ApnsFileProviderNotification fileProvider => _NotVoip(
-                options,
-                ApnsPushTypes.FileProvider,
-                $"{options.BundleId}.pushkit.fileprovider",
-                _NichePriority(fileProvider.Priority)
-            ),
+            ApnsAlertNotification alert => (ApnsNotificationType.Alert, alert.Priority),
+            ApnsVoipDataNotification voipData => (ApnsNotificationType.Voip, voipData.Priority),
+            ApnsBackgroundNotification => (ApnsNotificationType.Background, null),
+            ApnsLiveActivityNotification liveActivity => (ApnsNotificationType.LiveActivity, liveActivity.Priority),
+            ApnsLocationNotification location => (ApnsNotificationType.Location, location.Priority),
+            ApnsPushToTalkNotification => (ApnsNotificationType.PushToTalk, null),
+            ApnsWidgetsNotification widgets => (ApnsNotificationType.Widgets, widgets.Priority),
+            ApnsControlsNotification controls => (ApnsNotificationType.Controls, controls.Priority),
+            ApnsComplicationNotification complication => (ApnsNotificationType.Complication, complication.Priority),
+            ApnsFileProviderNotification fileProvider => (ApnsNotificationType.FileProvider, fileProvider.Priority),
+            ApnsRawNotification raw => (raw.Type, raw.Priority),
             _ => throw new ArgumentException(
                 $"Unsupported APNs notification type '{notification.GetType().Name}'.",
                 nameof(notification)
             ),
+        };
+
+        Argument.IsInEnum(type, paramName: nameof(notification));
+
+        var (pushType, topic, priority) = type switch
+        {
+            ApnsNotificationType.Alert or ApnsNotificationType.Voip when options.PushType == ApnsPushType.Voip => (
+                ApnsPushTypes.Voip,
+                $"{options.BundleId}.voip",
+                requestedPriority ?? options.Priority
+            ),
+            ApnsNotificationType.Alert => (
+                ApnsPushTypes.Alert,
+                options.BundleId,
+                requestedPriority ?? options.Priority
+            ),
+            ApnsNotificationType.Voip => throw new ArgumentException(
+                "A VoIP push needs an APNs instance configured for VoIP, whose PushKit tokens receive it.",
+                nameof(notification)
+            ),
+            ApnsNotificationType.Background => _NotVoip(
+                options,
+                ApnsPushTypes.Background,
+                options.BundleId,
+                _FixedPriority(requestedPriority, ApnsPriority.PowerConsiderate, ApnsPushTypes.Background)
+            ),
+            ApnsNotificationType.LiveActivity => _NotVoip(
+                options,
+                ApnsPushTypes.LiveActivity,
+                $"{options.BundleId}.push-type.liveactivity",
+                _LiveActivityPriority(requestedPriority)
+            ),
+            ApnsNotificationType.Location => _NotVoip(
+                options,
+                ApnsPushTypes.Location,
+                $"{options.BundleId}.location-query",
+                _NichePriority(requestedPriority)
+            ),
+            ApnsNotificationType.PushToTalk => _NotVoip(
+                options,
+                ApnsPushTypes.PushToTalk,
+                $"{options.BundleId}.voip-ptt",
+                _FixedPriority(requestedPriority, ApnsPriority.Immediate, ApnsPushTypes.PushToTalk)
+            ),
+            ApnsNotificationType.Widgets => _NotVoip(
+                options,
+                ApnsPushTypes.Widgets,
+                $"{options.BundleId}.push-type.widgets",
+                _NichePriority(requestedPriority)
+            ),
+            ApnsNotificationType.Controls => _NotVoip(
+                options,
+                ApnsPushTypes.Controls,
+                $"{options.BundleId}.push-type.controls",
+                _NichePriority(requestedPriority)
+            ),
+            ApnsNotificationType.Complication => _NotVoip(
+                options,
+                ApnsPushTypes.Complication,
+                $"{options.BundleId}.complication",
+                _NichePriority(requestedPriority)
+            ),
+            ApnsNotificationType.FileProvider => _NotVoip(
+                options,
+                ApnsPushTypes.FileProvider,
+                $"{options.BundleId}.pushkit.fileprovider",
+                _NichePriority(requestedPriority)
+            ),
+            _ => throw new ArgumentException($"Unsupported APNs notification type '{type}'.", nameof(notification)),
         };
 
         Argument.IsInEnum(priority, paramName: nameof(notification));
@@ -113,9 +137,12 @@ internal sealed record ApnsRequestHeaders(
             );
         }
 
-        // Apple advises against delivering a stale push-to-talk push, so it defaults to deliver-once.
+        // Apple tells senders to use expiration 0 for push-to-talk and VoIP pushes: a call or speaker update that
+        // APNs stores and delivers later is worse than none. Keyed on the push type, so an alert sent through a VoIP
+        // instance gets the default too.
         var requested =
-            notification.Expiration ?? (notification is ApnsPushToTalkNotification ? ApnsExpiration.DeliverOnce : null);
+            notification.Expiration
+            ?? (pushType is ApnsPushTypes.PushToTalk or ApnsPushTypes.Voip ? ApnsExpiration.DeliverOnce : null);
 
         var expiration = requested switch
         {
@@ -162,6 +189,21 @@ internal sealed record ApnsRequestHeaders(
         }
 
         return (pushType, topic, priority);
+    }
+
+    private static ApnsPriority _FixedPriority(ApnsPriority? requested, ApnsPriority required, string pushType)
+    {
+        // Apple fixes the priority of background (5) and push-to-talk (10) pushes; only a raw notification can ask
+        // for another, and it is refused rather than silently corrected.
+        if (requested is { } priority && priority != required)
+        {
+            throw new ArgumentException(
+                $"An APNs '{pushType}' push must use priority {((int)required).ToString(CultureInfo.InvariantCulture)}.",
+                nameof(requested)
+            );
+        }
+
+        return required;
     }
 
     private static ApnsPriority _NichePriority(ApnsPriority? priority)
