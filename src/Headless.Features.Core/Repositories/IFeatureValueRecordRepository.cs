@@ -38,6 +38,22 @@ public interface IFeatureValueRecordRepository
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Returns the feature value records for the specified set of feature <paramref name="names"/> scoped to a
+    /// provider and optional provider key.
+    /// </summary>
+    /// <param name="names">The feature names to retrieve.</param>
+    /// <param name="providerName">The value provider name to filter by.</param>
+    /// <param name="providerKey">The provider-specific scope key to filter by, or <see langword="null"/> for provider-global values.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>All matching <see cref="FeatureValueRecord"/> instances.</returns>
+    Task<List<FeatureValueRecord>> GetListAsync(
+        HashSet<string> names,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Returns all feature value records for the given <paramref name="providerName"/> and optional <paramref name="providerKey"/>.</summary>
     /// <param name="providerName">The value provider name to filter by.</param>
     /// <param name="providerKey">The provider-specific scope key to filter by, or <see langword="null"/> for provider-global values.</param>
@@ -64,6 +80,25 @@ public interface IFeatureValueRecordRepository
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     Task DeleteAsync(
         IReadOnlyCollection<FeatureValueRecord> featureValues,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Inserts, updates, and deletes the given records in one transaction: either every change persists or none does.
+    /// </summary>
+    /// <remarks>
+    /// An update that matches no stored row must fail the batch (for example with
+    /// <see cref="System.Data.DBConcurrencyException"/>) rather than succeed silently: the store treats that failure,
+    /// like a unique-key violation on insert, as a concurrent writer and plans the batch again.
+    /// </remarks>
+    /// <param name="inserted">The new records to insert.</param>
+    /// <param name="updated">The existing records whose values changed.</param>
+    /// <param name="deleted">The existing records to delete.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    Task SaveAsync(
+        IReadOnlyCollection<FeatureValueRecord> inserted,
+        IReadOnlyCollection<FeatureValueRecord> updated,
+        IReadOnlyCollection<FeatureValueRecord> deleted,
         CancellationToken cancellationToken = default
     );
 }

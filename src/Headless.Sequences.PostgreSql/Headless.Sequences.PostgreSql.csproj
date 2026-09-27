@@ -1,0 +1,18 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>PostgreSQL provider for Headless tenant-scoped sequences: atomic upsert-increment counters for fast and gap-free numbering.</Description>
+    <PackageTags>headless;sequences;numbering;postgresql;dotnet</PackageTags>
+    <RootNamespace>Headless.Sequences.PostgreSql</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.Sequences.Core\Headless.Sequences.Core.csproj" />
+    <ProjectReference Include="..\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />
+  </ItemGroup>
+</Project>

@@ -2,6 +2,7 @@
 
 using System.Security.Claims;
 using Headless.Abstractions;
+using Headless.MultiTenancy;
 using Headless.Permissions;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.Grants;
@@ -125,6 +126,22 @@ public sealed class PermissionPolicyRegistrationTests : TestBase
 
         // then
         provider.GetRequiredService<IAuthorizationPolicyProvider>().Should().BeOfType<PermissionPolicyProvider>();
+    }
+
+    [Fact]
+    public void should_resolve_client_config_services_without_authorization_registration()
+    {
+        // given — a worker-style host: no AddAuthorization, no ICurrentPrincipalAccessor, no ICurrentTenant.
+        // AddHeadlessPermissions supplies authorization and a tenant fallback; the principal accessor is optional.
+        var services = _CreateResolvableServices(Substitute.For<IPermissionManager>());
+
+        // when
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+
+        // then
+        provider.GetRequiredService<IGrantedPoliciesReader>().Should().NotBeNull();
+        provider.GetRequiredService<IAuthorizationPolicyCatalog>().Should().NotBeNull();
+        provider.GetRequiredService<ICurrentTenant>().Should().BeOfType<CurrentTenant>();
     }
 
     [Theory]

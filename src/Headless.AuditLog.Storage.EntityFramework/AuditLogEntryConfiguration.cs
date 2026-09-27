@@ -76,14 +76,23 @@ internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options)
             builder.Property(e => e.CreatedAt).HasColumnType(options.CreatedAtColumnType);
         }
 
-        // Indexes optimized for common query patterns
-        builder.HasIndex(e => new { e.TenantId, e.CreatedAt }).HasDatabaseName("ix_audit_log_tenant_time");
+        // Indexes for the common filters. Each ends in (CreatedAt, Id), the keyset order of IReadAuditLog paging,
+        // so a filtered page seeks straight to its continuation position instead of scanning.
+        builder
+            .HasIndex(e => new
+            {
+                e.TenantId,
+                e.CreatedAt,
+                e.Id,
+            })
+            .HasDatabaseName("ix_audit_log_tenant_time");
         builder
             .HasIndex(e => new
             {
                 e.TenantId,
                 e.Action,
                 e.CreatedAt,
+                e.Id,
             })
             .HasDatabaseName("ix_audit_log_tenant_action_time");
         builder
@@ -93,6 +102,7 @@ internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options)
                 e.EntityType,
                 e.EntityId,
                 e.CreatedAt,
+                e.Id,
             })
             .HasDatabaseName("ix_audit_log_tenant_entity_time");
         builder
@@ -101,8 +111,25 @@ internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options)
                 e.TenantId,
                 e.UserId,
                 e.CreatedAt,
+                e.Id,
             })
             .HasDatabaseName("ix_audit_log_tenant_actor_time");
-        builder.HasIndex(e => e.CorrelationId).HasDatabaseName("ix_audit_log_correlation");
+        builder
+            .HasIndex(e => new
+            {
+                e.TenantId,
+                e.AccountId,
+                e.CreatedAt,
+                e.Id,
+            })
+            .HasDatabaseName("ix_audit_log_tenant_account_time");
+        builder
+            .HasIndex(e => new
+            {
+                e.CorrelationId,
+                e.CreatedAt,
+                e.Id,
+            })
+            .HasDatabaseName("ix_audit_log_correlation");
     }
 }

@@ -115,9 +115,50 @@ public interface ISettingManager
     /// <param name="cancellationToken">The abort token.</param>
     /// <exception cref="ArgumentNullException"><paramref name="settingName"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="providerName"/> is <see langword="null"/>.</exception>
+    /// <exception cref="Headless.Exceptions.ConflictException">
+    /// The setting is not defined, the provider named <paramref name="providerName"/> is not registered, or that
+    /// provider is read-only.
+    /// </exception>
     Task SetAsync(
         string settingName,
         string? value,
+        string providerName,
+        string? providerKey,
+        bool forceToSet = false,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Persists several setting values through a specific provider and announces them in one
+    /// <see cref="SettingChangedMessage"/>.
+    /// </summary>
+    /// <param name="values">
+    /// The new values keyed by setting name. A <see langword="null"/> value clears that setting. An empty
+    /// dictionary writes nothing and announces nothing.
+    /// </param>
+    /// <param name="providerName">The name of the provider that will store the values.</param>
+    /// <param name="providerKey">
+    /// A provider-specific discriminator (e.g. a tenant ID or user ID).
+    /// Pass <see langword="null"/> to use the provider's default key.
+    /// </param>
+    /// <param name="forceToSet">
+    /// When <see langword="true"/>, stores each value even when it equals the value the next provider would
+    /// supply; otherwise such a value is cleared instead so the setting keeps inheriting it.
+    /// </param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <remarks>
+    /// Every name, the provider, and its writability are checked before anything is written, so a rejected batch
+    /// changes nothing. The built-in store providers then write the whole batch in one transaction: a failed write
+    /// leaves every value as it was, and no announcement goes out. A custom provider that does not override
+    /// <c>ISettingValueProvider.SetAllAsync</c> writes one value at a time and gives no such guarantee.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="values"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
+    /// <exception cref="Headless.Exceptions.ConflictException">
+    /// A setting in <paramref name="values"/> is not defined, the provider named <paramref name="providerName"/>
+    /// is not registered, or that provider is read-only.
+    /// </exception>
+    Task SetAsync(
+        IReadOnlyDictionary<string, string?> values,
         string providerName,
         string? providerKey,
         bool forceToSet = false,

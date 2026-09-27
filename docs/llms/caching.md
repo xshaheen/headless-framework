@@ -695,7 +695,14 @@ dotnet add package Headless.Caching.Hybrid
 var redis = ConnectionMultiplexer.Connect("localhost:6379");
 
 services.AddSingleton<IConnectionMultiplexer>(redis);
-services.AddHeadlessMessaging(builder => builder.UseRedis("localhost:6379"));
+services.AddHeadlessMessaging(messaging =>
+{
+    messaging.UseRedis("localhost:6379");
+    // Messaging needs one storage, and the hybrid's invalidation consumer is a durable consumer: raw
+    // PostgreSQL storage declares only the DurableDedupeOnly inbox tier, so opt down to it explicitly.
+    messaging.UsePostgreSql(configuration.GetConnectionString("Messaging")!);
+    messaging.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+});
 services.AddHeadlessCaching(setup =>
 {
     setup.AddMemoryTier();
@@ -824,10 +831,12 @@ dotnet add package Headless.Caching.InMemory
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Pick one shape — AddHeadlessCaching may be called only once per service collection.
-
 builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+```
 
+Pick one shape — `AddHeadlessCaching` may be called only once per service collection. With options:
+
+```csharp
 builder.Services.AddHeadlessCaching(setup =>
     setup.UseInMemory(options =>
     {
@@ -836,8 +845,11 @@ builder.Services.AddHeadlessCaching(setup =>
         options.DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) };
     })
 );
+```
 
-// As the memory tier of a default hybrid instead of the default ICache (see Headless.Caching.Hybrid):
+As the memory tier of a default hybrid instead of the default `ICache` (see Headless.Caching.Hybrid):
+
+```csharp
 builder.Services.AddHeadlessCaching(setup =>
 {
     setup.AddMemoryTier();

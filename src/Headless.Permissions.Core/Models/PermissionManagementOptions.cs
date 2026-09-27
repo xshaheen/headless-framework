@@ -45,7 +45,7 @@ public sealed class PermissionManagementOptions
     public TimeSpan ApplicationSaveLockAcquireTimeout { get; set; } = 5.Minutes();
 
     /// <summary>
-    /// How long the MD5 hash of the last successfully saved permission set is cached in the distributed cache.
+    /// How long the SHA-256 hash of the last successfully saved permission set is cached in the distributed cache.
     /// The hash is used to skip no-op saves. Default: 30 days.
     /// </summary>
     public TimeSpan PermissionsHashCacheExpiration { get; set; } = 30.Days();

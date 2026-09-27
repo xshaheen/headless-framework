@@ -93,17 +93,51 @@ public sealed class EfAuditLogTests : TestBase
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    public async Task should_reject_non_positive_read_query_limit(int limit)
+    [InlineData(int.MaxValue)]
+    public async Task should_reject_out_of_range_read_query_size(int size)
     {
         // given
         var dbFactory = Substitute.For<IDbContextFactory<AuditStoreDbContext>>();
         var sut = new EfReadAuditLog<AuditStoreDbContext>(dbFactory);
 
         // when
-        var act = () => sut.QueryAsync(new() { Limit = limit }, cancellationToken: AbortToken);
+        var act = () => sut.QueryAsync(new() { Size = size }, cancellationToken: AbortToken);
 
         // then
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not-a-token")]
+    [InlineData("AgAAAAAAAAAAAAAAAAAAAAA")] // unknown version byte
+    [InlineData("AQAAAAAAAAAAAAAAAAAAAAAAAA")] // one byte too long
+    public async Task should_reject_malformed_continuation_token(string token)
+    {
+        // given
+        var dbFactory = Substitute.For<IDbContextFactory<AuditStoreDbContext>>();
+        var sut = new EfReadAuditLog<AuditStoreDbContext>(dbFactory);
+
+        // when
+        var act = () => sut.QueryAsync(new() { ContinuationToken = token }, cancellationToken: AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("query");
+        await dbFactory.DidNotReceive().CreateDbContextAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_reject_undefined_read_query_direction()
+    {
+        // given
+        var dbFactory = Substitute.For<IDbContextFactory<AuditStoreDbContext>>();
+        var sut = new EfReadAuditLog<AuditStoreDbContext>(dbFactory);
+
+        // when
+        var act = () => sut.QueryAsync(new() { Direction = (AuditLogSortDirection)7 }, cancellationToken: AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>();
     }
 
     [Fact]

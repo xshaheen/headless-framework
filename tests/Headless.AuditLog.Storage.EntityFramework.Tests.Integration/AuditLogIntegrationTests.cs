@@ -245,15 +245,16 @@ public sealed class AuditLogIntegrationTests : TestBase
         await db.SaveChangesAsync(AbortToken);
 
         // when
-        var entries = await readAuditLog.QueryAsync(
+        var page = await readAuditLog.QueryAsync(
             new()
             {
                 Action = AuditActionNames.Created,
                 EntityType = typeof(Order).FullName,
-                Limit = 10,
+                Size = 10,
             },
             cancellationToken: AbortToken
         );
+        var entries = page.Items;
 
         // then
         entries.Should().ContainSingle();
@@ -299,15 +300,16 @@ public sealed class AuditLogIntegrationTests : TestBase
         await db.SaveChangesAsync(AbortToken);
 
         // when
-        var entries = await readAuditLog.QueryAsync(
+        var page = await readAuditLog.QueryAsync(
             new()
             {
                 Action = AuditActionNames.Created,
                 EntityType = typeof(Order).FullName,
-                Limit = 2,
+                Size = 2,
             },
             cancellationToken: AbortToken
         );
+        var entries = page.Items;
 
         // then
         entries.Should().HaveCount(2);

@@ -237,7 +237,7 @@ internal sealed class HeadlessTenantModelConvention(DbContext db) : IModelFinali
     private void _ConfigureFilter(IMutableEntityType entity, IMutableProperty property)
     {
         var parameter = Expression.Parameter(entity.ClrType, "entity");
-        var tenant = Expression.Property(Expression.Constant(db), nameof(IHeadlessDbContext.TenantId));
+        var tenant = HeadlessTenantQueryFilter.CreateTenantAccess(db, required: !property.IsNullable);
         var value = Expression.Call(
             typeof(EF),
             nameof(EF.Property),

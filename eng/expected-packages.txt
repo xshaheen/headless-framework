@@ -127,9 +127,15 @@ Headless.PushNotifications.Abstractions
 Headless.PushNotifications.Core
 Headless.PushNotifications.Dev
 Headless.PushNotifications.Firebase
+Headless.RateLimiting
 Headless.Redis
 Headless.Security
 Headless.Security.Abstractions
+Headless.Security.Argon2
+Headless.Sequences.Abstractions
+Headless.Sequences.Core
+Headless.Sequences.PostgreSql
+Headless.Sequences.SqlServer
 Headless.Serializer.Abstractions
 Headless.Serializer.Json
 Headless.Serializer.MessagePack

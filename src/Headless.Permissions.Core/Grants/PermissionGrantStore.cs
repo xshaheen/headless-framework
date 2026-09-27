@@ -23,6 +23,12 @@ namespace Headless.Permissions.Grants;
 /// An explicit <c>Revoke</c> writes a denial record (<c>IsGranted = false</c>) — it does NOT delete
 /// the row — so the cache can distinguish <c>Prohibited</c> from <c>Undefined</c>.
 /// </para>
+/// <para>
+/// Every member throws <see cref="ArgumentException"/> before touching storage when a permission name, provider name,
+/// provider key, or tenant id starts or ends with white space. SQL Server ignores trailing spaces when it compares keys
+/// while PostgreSQL keeps them, so <c>"acme"</c> and <c>"acme "</c> would address one row on one provider and two on
+/// the other.
+/// </para>
 /// </summary>
 public interface IPermissionGrantStore
 {
@@ -123,6 +129,21 @@ public sealed class PermissionGrantStore(
 {
     private readonly TimeSpan _cacheExpiration = managementOptions.Value.GrantCacheExpiration;
 
+    private static void _EnsureKey(string? providerName, string? providerKey, string? name = null)
+    {
+        Argument.HasNoSurroundingWhiteSpace(providerName);
+        Argument.HasNoSurroundingWhiteSpace(providerKey);
+        Argument.HasNoSurroundingWhiteSpace(name);
+    }
+
+    private static void _EnsureNames(IEnumerable<string> names)
+    {
+        foreach (var name in names)
+        {
+            Argument.HasNoSurroundingWhiteSpace(name);
+        }
+    }
+
     public async Task<PermissionGrantStatus> IsGrantedAsync(
         string name,
         string providerName,
@@ -130,6 +151,8 @@ public sealed class PermissionGrantStore(
         CancellationToken cancellationToken = default
     )
     {
+        _EnsureKey(providerName, providerKey, name);
+
         var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey);
 
         logger.LogGetCacheItem(cacheKey);
@@ -159,6 +182,8 @@ public sealed class PermissionGrantStore(
     )
     {
         Argument.IsNotNullOrEmpty(names);
+        _EnsureKey(providerName, providerKey);
+        _EnsureNames(names);
 
         if (names.Count == 1)
         {
@@ -179,6 +204,8 @@ public sealed class PermissionGrantStore(
         CancellationToken cancellationToken = default
     )
     {
+        _EnsureKey(providerName, providerKey);
+
         var result = await repository.GetListAsync(providerName, providerKey, cancellationToken).ConfigureAwait(false);
 
         return result.ConvertAll(x => new PermissionGrant(x.Name, x.IsGranted));
@@ -192,6 +219,9 @@ public sealed class PermissionGrantStore(
         CancellationToken cancellationToken = default
     )
     {
+        _EnsureKey(providerName, providerKey, name);
+        Argument.HasNoSurroundingWhiteSpace(tenantId);
+
         var permissionGrant = await repository
             .FindAsync(name, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
@@ -259,6 +289,9 @@ public sealed class PermissionGrantStore(
         Argument.IsNotNullOrEmpty(names);
         Argument.IsNotNullOrEmpty(providerName);
         Argument.IsNotNullOrEmpty(providerKey);
+        _EnsureKey(providerName, providerKey);
+        _EnsureNames(names);
+        Argument.HasNoSurroundingWhiteSpace(tenantId);
 
         var distinctNames = names.ToHashSet(StringComparer.Ordinal);
 
@@ -320,6 +353,8 @@ public sealed class PermissionGrantStore(
         CancellationToken cancellationToken = default
     )
     {
+        _EnsureKey(providerName, providerKey, name);
+
         var permissionGrant = await repository
             .FindAsync(name, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
@@ -388,6 +423,8 @@ public sealed class PermissionGrantStore(
         Argument.IsNotNullOrEmpty(names);
         Argument.IsNotNullOrEmpty(providerName);
         Argument.IsNotNullOrEmpty(providerKey);
+        _EnsureKey(providerName, providerKey);
+        _EnsureNames(names);
 
         var distinctNames = names.ToHashSet(StringComparer.Ordinal);
 
@@ -555,6 +592,7 @@ public sealed class PermissionGrantStore(
     {
         Argument.IsNotNullOrWhiteSpace(providerName);
         Argument.IsNotNullOrWhiteSpace(providerKey);
+        _EnsureKey(providerName, providerKey);
 
         await _CacheAllAsync(providerName, providerKey, cancellationToken).ConfigureAwait(false);
     }
