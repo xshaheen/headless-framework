@@ -190,14 +190,15 @@ dotnet add package Headless.Permissions.Abstractions
 ```csharp
 public sealed class OrderService(IPermissionManager permissions, ICurrentUser currentUser)
 {
-    public async Task DeleteOrderAsync(Guid orderId, CancellationToken ct)
+    public async Task<ApiResult> DeleteOrderAsync(Guid orderId, CancellationToken ct)
     {
         var result = await permissions.GetAsync("Orders.Delete", currentUser, cancellationToken: ct);
 
         if (!result.IsGranted)
-            throw new ForbiddenException();
+            return ApiResult.Forbidden("Orders.Delete is not granted."); // maps to 403
 
         // Delete order...
+        return ApiResult.Ok();
     }
 }
 

@@ -19,7 +19,7 @@ packages: Core, Checks, Domain, Domain.LocalEventBus
 ## Agent Rules
 
 - Use `Headless.Checks` (`Argument.IsNotNull`, `Argument.IsNotNullOrEmpty`, `Argument.IsPositive`, etc.) for argument validation instead of raw `ArgumentNullException` or `ArgumentOutOfRangeException`. Use `Ensure` for internal state assertions.
-- Use `Headless.Domain` base classes for DDD: inherit `Entity<T>` for entities, `AggregateRoot<T>` for aggregate roots, `ValueObject` for value objects. Emit in-process events via `AddDomainEvent()` and distributed events via `AddIntegrationEvent()` on aggregate roots.
+- Use `Headless.Domain` base classes for DDD: inherit `Entity<T>` for entities, `AggregateRoot<T>` for aggregate roots, `ValueObject<TSelf>` for value objects. Emit in-process events via `AddDomainEvent()` and distributed events via `AddIntegrationEvent()` on aggregate roots.
 - Use `Headless.Core` for `ICurrentUser` and `ICurrentTenant`. For time, use the BCL `TimeProvider` — the framework has no clock abstraction of its own. `DateTime.Now` / `DateTime.UtcNow` / `DateTimeOffset.Now` / `DateTimeOffset.UtcNow` are banned at compile time by the Headless SDK (`RS0030`).
 - Name framework-owned event timestamps with an `At` suffix (`CreatedAt`, `UpdatedAt`, `DeletedAt`, `PublishedAt`) and use an `On` suffix only for `DateOnly` values (`EffectiveOn`). Avoid `DateCreated`-style prefixes; persisted instants and public timestamp contracts use `DateTimeOffset`. Preserve provider-owned CLR members, JSON fields, and protocol keys exactly as defined by the third party; the framework convention does not rename contracts it does not own.
 - Time semantics belong to whichever authority owns the decision, not to the ambient environment of the running process. Pick by the question the timestamp answers: **"who owns this, and until when?"** (leases, locks, liveness, visibility) → the **store's** clock, inlined into the atomic statement; **"how long has this taken?"** (timeouts, backoff, deadlines) → a **monotonic** clock, `TimeProvider.GetTimestamp()` / `GetElapsedTime()`; **"when should this fire in human terms?"** (cron, calendars) → the **tz database** via an explicit `TimeZoneInfo` (never `TimeZoneInfo.Local`); **"when did this happen?"** (audit, `CreatedAt`, logs) → the injected **`TimeProvider`** (`timeProvider.GetUtcNow()`). Full rationale: [temporal-authority-standard](../solutions/design-patterns/temporal-authority-standard.md).
@@ -80,7 +80,7 @@ public sealed class OrderService(TimeProvider timeProvider, ICurrentUser user, I
         return new Order
         {
             Id = Guid.NewGuid(),
-            UserId = user.UserId!.Value,
+            UserId = user.UserId!,
             TenantId = tenant.Id,
             // "When did this happen?" — an audit timestamp, so the injected app clock owns it.
             CreatedAt = timeProvider.GetUtcNow(),
@@ -103,6 +103,9 @@ logger.LogInformation(s => s.Tag("orders").Property("orderId", orderId), "Order 
 For retries and delayed execution, use `Polly.Core` directly — it ships zero transitive dependencies on `net10.0`:
 
 ```csharp
+using Polly;
+using Polly.Retry;
+
 private static readonly ResiliencePipeline _RetryPipeline = new ResiliencePipelineBuilder()
     .AddRetry(
         new RetryStrategyOptions
@@ -219,7 +222,8 @@ Core domain-driven design abstractions including entities, aggregate roots, valu
 
 - **Entity Abstractions**: `IEntity`, `IEntity<T>`, base `Entity` class
 - **Aggregate Roots**: `IAggregateRoot`, `AggregateRoot` with built-in message emission
-- **Value Objects**: `ValueObject` base class with equality
+- **Value Objects**: `ValueObject<TSelf>` base class with equality over the components it compares and hashes
+
 - **Auditing**: `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`
 - **Concurrency**: `IHasConcurrencyStamp`
 - **Multi-tenancy**: `IMultiTenant`
@@ -300,15 +304,19 @@ public sealed class Product : Entity<int>, ICreateAudit, IUpdateAudit
 #### Value Objects
 
 ```csharp
-public sealed class Address : ValueObject
+public sealed class Address : ValueObject<Address>
 {
     public required string Street { get; init; }
     public required string City { get; init; }
 
-    protected override IEnumerable<object?> EqualityComponents()
+    protected override bool EqualityComponentsEqual(Address other) =>
+        string.Equals(Street, other.Street, StringComparison.Ordinal)
+        && string.Equals(City, other.City, StringComparison.Ordinal);
+
+    protected override void BuildHashCode(ref HashCode hash)
     {
-        yield return Street;
-        yield return City;
+        hash.Add(Street, StringComparer.Ordinal);
+        hash.Add(City, StringComparer.Ordinal);
     }
 }
 ```

@@ -445,6 +445,8 @@ These read `Schema` and `*TableName` from validated `*StorageOptions` and apply 
 #### Custom Save Processors
 
 ```csharp
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+
 public sealed class AppSaveEntryProcessor : IHeadlessSaveEntryProcessor
 {
     public void Process(EntityEntry entry, HeadlessSaveEntryContext context)
@@ -579,21 +581,26 @@ dotnet add package Headless.Couchbase
 ### Setup and use
 
 ```csharp
-// Define a typed bucket context
+using Couchbase;
+using Couchbase.Linq;
+using Couchbase.Transactions;
+
+// Define a typed bucket context; the provider wires each attributed IDocumentSet<T> property to its collection
 public sealed class AppBucketContext(
     IBucket bucket,
     Transactions transactions,
     ILogger<CouchbaseBucketContext> logger
 ) : CouchbaseBucketContext(bucket, transactions, logger)
 {
-    public DocumentSet<Product> Products => GetDocumentSet<Product>("products");
+    [CouchbaseCollection("_default", "products")]
+    public IDocumentSet<Product> Products { get; set; } = null!;
 }
 
 // Resolve context via the provider (typically injected via ICouchbaseClustersProvider + IBucketContextProvider)
 var context = await bucketContextProvider.GetAsync<AppBucketContext>(
     clusterKey: "default",
     bucketName: "app",
-    defaultScopeName: "_default"
+    defaultScopeName: null // use each document set's declared scope
 );
 
 // KV operations via DocumentSetExtensions

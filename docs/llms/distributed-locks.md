@@ -431,6 +431,8 @@ dotnet add package Headless.DistributedLocks.Core
 ### Setup and use
 
 ```csharp
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
+
 builder.Services.AddHeadlessDistributedLocks(setup =>
 {
     setup.ConfigureOptions(options =>
