@@ -102,6 +102,7 @@ The four concerns commonly proposed as pipeline behaviors that this framework re
 
 ```bash
 dotnet add package Headless.Mediator
+dotnet add package Mediator.SourceGenerator # generates AddMediator into your project
 ```
 
 ### Setup and use
@@ -179,7 +180,7 @@ builder.Services.AddMediatorSlowRequestsLoggingBehaviors();
 For worker/console hosts where no real user exists, register `NullCurrentUser` before the logging behaviors:
 
 ```csharp
-using Headless.Core;
+using Headless.Abstractions;
 
 builder.Services.AddSingleton<ICurrentUser, NullCurrentUser>();
 builder.Services.AddMediatorLoggingBehaviors();

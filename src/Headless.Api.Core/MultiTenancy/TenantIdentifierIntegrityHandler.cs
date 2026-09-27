@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Checks;
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authorization;
@@ -53,6 +54,7 @@ namespace Headless.Api.MultiTenancy;
 /// </remarks>
 internal sealed class TenantIdentifierIntegrityHandler(
     IOptions<MultiTenancyOptions> options,
+    IOptions<TenantCatalogOptions> catalogOptions,
     IHttpContextAccessor httpContextAccessor
 ) : IAuthorizationHandler
 {
@@ -101,7 +103,11 @@ internal sealed class TenantIdentifierIntegrityHandler(
         // it excludes and why that exclusion is intended.
         if (ReferenceEquals(context.User, httpContext.User))
         {
-            httpContext.Features.Set(TenantIdentifierMismatchFeature.Instance);
+            // Set, not TrySetStatusCodeRejection: the mismatch rejection must win over any rejection an
+            // earlier handler chose, or the response could differ from the unknown-tenant rejection.
+            httpContext.Features.Set<IStatusCodeRejectionFeature>(
+                TenantIdentifierMismatchFeature.For(catalogOptions.Value.DetailedResolutionErrors)
+            );
         }
 
         context.Fail(new AuthorizationFailureReason(this, _MismatchFailureReason));

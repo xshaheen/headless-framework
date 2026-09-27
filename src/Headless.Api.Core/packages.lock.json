@@ -333,6 +333,12 @@
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )"
         }
       },
+      "headless.auditlog.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Extensions": "[1.0.0, )"
+        }
+      },
       "headless.caching.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -422,7 +428,10 @@
         }
       },
       "headless.security.abstractions": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
       },
       "headless.serializer.abstractions": {
         "type": "Project"

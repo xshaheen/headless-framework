@@ -1,0 +1,13 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Distributed attempt limiting for Headless: fixed-window quotas over ICache with pseudonymised subject keys.</Description>
+    <PackageTags>headless;rate-limiting;attempts;otp;dotnet</PackageTags>
+    <RootNamespace>Headless.RateLimiting</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+  </ItemGroup>
+</Project>

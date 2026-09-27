@@ -70,6 +70,25 @@ public abstract class StoreSettingValueProvider(ISettingValueStore store) : ISet
             .ConfigureAwait(false);
     }
 
+    /// <inheritdoc/>
+    public async Task SetAllAsync(
+        IReadOnlyList<KeyValuePair<SettingDefinition, string?>> values,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var valuesByName = new Dictionary<string, string?>(values.Count, StringComparer.Ordinal);
+
+        foreach (var (setting, value) in values)
+        {
+            valuesByName[setting.Name] = value;
+        }
+
+        await Store
+            .SetAllAsync(valuesByName, Name, NormalizeProviderKey(providerKey), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     /// <summary>Normalizes the provider key before it is forwarded to the store. Override to apply provider-specific scoping logic.</summary>
     /// <param name="providerKey">The raw provider key supplied by the caller.</param>
     /// <returns>The normalized key to use when accessing the store, or <see langword="null"/> if not scoped.</returns>

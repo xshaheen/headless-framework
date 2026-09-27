@@ -125,7 +125,7 @@ dotnet add package Headless.Emails.Abstractions
 ### Setup and use
 
 ```csharp
-public sealed class NotificationService(IEmailSender emailSender)
+public sealed class NotificationService(IEmailSender emailSender, ILogger<NotificationService> logger)
 {
     public async Task SendWelcomeEmailAsync(string to, string name, CancellationToken ct)
     {
@@ -236,6 +236,10 @@ dotnet add package Headless.Emails.Aws
 ### Setup and use
 
 ```csharp
+using Amazon;
+using Amazon.Extensions.NETCore.Setup;
+using Amazon.Runtime;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Option 1: from configuration (reads AWS:Region, credentials from environment/profile)
@@ -355,6 +359,8 @@ dotnet add package Headless.Emails.Azure
 ### Setup and use
 
 ```csharp
+using Azure.Identity;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Option 1: connection string or endpoint + access key, bound from configuration
@@ -441,13 +447,15 @@ if (builder.Environment.IsDevelopment())
     // Or discard silently (useful in automated tests)
     // builder.Services.AddHeadlessEmails(setup => setup.UseNoop());
 }
-
-// As a named instance alongside a real default sender (keyed IEmailSender "audit"):
-builder.Services.AddHeadlessEmails(setup =>
+else
 {
-    setup.UseAwsSes(awsOptions); // default (optional)
-    setup.AddNamed("audit", i => i.UseDevelopment("audit-emails.txt"));
-});
+    // As a named instance alongside a real default sender (keyed IEmailSender "audit"):
+    builder.Services.AddHeadlessEmails(setup =>
+    {
+        setup.UseAwsSes(awsOptions); // default (optional)
+        setup.AddNamed("audit", i => i.UseDevelopment("audit-emails.txt"));
+    });
+}
 ```
 
 Example output written to the file:
@@ -502,6 +510,8 @@ dotnet add package Headless.Emails.Mailkit
 ### Setup and use
 
 ```csharp
+using MailKit.Security;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Option 1: from configuration section

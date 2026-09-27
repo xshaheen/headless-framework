@@ -15,6 +15,11 @@ namespace Headless.Settings.Values;
 /// Persistence and caching layer for raw setting values. Abstracts repository access and manages
 /// the <see cref="SettingValueCacheItem"/> cache so callers never interact with the store directly.
 /// </summary>
+/// <remarks>
+/// Every member throws <see cref="ArgumentException"/> before touching storage when a setting name, provider name, or
+/// provider key starts or ends with white space. SQL Server ignores trailing spaces when it compares keys while
+/// PostgreSQL keeps them, so <c>"acme"</c> and <c>"acme "</c> would address one row on one provider and two on the other.
+/// </remarks>
 public interface ISettingValueStore
 {
     /// <summary>Returns the stored value for the given setting, provider, and key, or <see langword="null"/> if not set.</summary>
@@ -70,6 +75,29 @@ public interface ISettingValueStore
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Stores or clears several setting values under one provider scope in a single repository transaction:
+    /// either every value changes or none does.
+    /// </summary>
+    /// <remarks>
+    /// When another writer inserts or deletes one of these rows between the read and the save, the save fails as a
+    /// whole; the store then reads the rows again, plans the batch against them, and retries, up to three attempts.
+    /// The last writer's value wins. Any other failure is rethrown unchanged.
+    /// </remarks>
+    /// <param name="values">
+    /// The values keyed by setting name. A <see langword="null"/> value removes the stored entry for that setting.
+    /// </param>
+    /// <param name="providerName">The provider name.</param>
+    /// <param name="providerKey">The provider-scoped key, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="values"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
+    Task SetAllAsync(
+        IReadOnlyDictionary<string, string?> values,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Removes the stored value for a setting and invalidates its cache entry.</summary>
     /// <param name="name">The setting name.</param>
     /// <param name="providerName">The provider name.</param>
@@ -94,6 +122,24 @@ public sealed class SettingValueStore(
 {
     private readonly TimeSpan _cacheExpiration = options.Value.ValueCacheExpiration;
 
+    /// <summary>How many times a batch is planned and saved before a concurrent-writer collision is surfaced.</summary>
+    private const int _MaxSaveAttempts = 3;
+
+    private static void _EnsureKey(string? providerName, string? providerKey, string? name = null)
+    {
+        Argument.HasNoSurroundingWhiteSpace(providerName);
+        Argument.HasNoSurroundingWhiteSpace(providerKey);
+        Argument.HasNoSurroundingWhiteSpace(name);
+    }
+
+    private static void _EnsureNames(IEnumerable<string> names)
+    {
+        foreach (var name in names)
+        {
+            Argument.HasNoSurroundingWhiteSpace(name);
+        }
+    }
+
     /// <inheritdoc/>
     public async Task<string?> GetOrDefaultAsync(
         string name,
@@ -102,6 +148,8 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken = default
     )
     {
+        _EnsureKey(providerName, providerKey, name);
+
         var cacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
         var existValueCacheItem = await cache.GetAsync(cacheKey, cancellationToken).ConfigureAwait(false);
 
@@ -128,6 +176,8 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken = default
     )
     {
+        _EnsureKey(providerName, providerKey);
+
         var settings = await valueRepository
             .GetListAsync(providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
@@ -144,6 +194,8 @@ public sealed class SettingValueStore(
     )
     {
         Argument.IsNotNullOrEmpty(names);
+        _EnsureKey(providerName, providerKey);
+        _EnsureNames(names);
 
         if (names.Count == 1)
         {
@@ -169,6 +221,8 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken = default
     )
     {
+        _EnsureKey(providerName, providerKey, name);
+
         var settingValue = await valueRepository
             .FindAsync(name, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
@@ -197,6 +251,133 @@ public sealed class SettingValueStore(
     }
 
     /// <inheritdoc/>
+    public async Task SetAllAsync(
+        IReadOnlyDictionary<string, string?> values,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(values);
+        Argument.IsNotNull(providerName);
+        _EnsureKey(providerName, providerKey);
+        _EnsureNames(values.Keys);
+
+        if (values.Count == 0)
+        {
+            return;
+        }
+
+        var names = values.Keys.ToHashSet(StringComparer.Ordinal);
+
+        for (var attempt = 1; ; attempt++)
+        {
+            var existingRecords = await valueRepository
+                .GetListAsync(names, providerName, providerKey, cancellationToken)
+                .ConfigureAwait(false);
+
+            var readIds = existingRecords.Select(x => x.Id).ToHashSet();
+            var changes = _PlanChanges(values, existingRecords, providerName, providerKey);
+
+            try
+            {
+                await valueRepository
+                    .SaveAsync(changes.Inserted, changes.Updated, changes.Deleted, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception) when (attempt < _MaxSaveAttempts && !cancellationToken.IsCancellationRequested)
+            {
+                // A concurrent writer that inserted or deleted one of these rows between the read and the save fails
+                // the whole batch (a unique-key violation, or an update that found no row). Only that collision is
+                // worth planning again; a failure against an unchanged scope is the caller's to see.
+                var currentRecords = await valueRepository
+                    .GetListAsync(names, providerName, providerKey, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (currentRecords.Select(x => x.Id).ToHashSet().SetEquals(readIds))
+                {
+                    throw;
+                }
+
+                continue;
+            }
+
+            if (changes.CacheItems.Count != 0)
+            {
+                await cache
+                    .UpsertAllAsync(changes.CacheItems, _cacheExpiration, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (changes.RemovedCacheKeys.Count != 0)
+            {
+                await cache.RemoveAllAsync(changes.RemovedCacheKeys, cancellationToken).ConfigureAwait(false);
+            }
+
+            return;
+        }
+    }
+
+    /// <summary>Splits the requested values into the inserts, updates, and deletes that bring the stored rows to them.</summary>
+    private BatchChanges _PlanChanges(
+        IReadOnlyDictionary<string, string?> values,
+        List<SettingValueRecord> existingRecords,
+        string providerName,
+        string? providerKey
+    )
+    {
+        var existingByName = existingRecords.ToDictionary(x => x.Name, StringComparer.Ordinal);
+        var changes = new BatchChanges();
+
+        foreach (var (name, value) in values)
+        {
+            var cacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
+            existingByName.TryGetValue(name, out var existing);
+
+            if (value is null)
+            {
+                if (existing is not null)
+                {
+                    changes.Deleted.Add(existing);
+                }
+
+                changes.RemovedCacheKeys.Add(cacheKey);
+
+                continue;
+            }
+
+            if (existing is null)
+            {
+                changes.Inserted.Add(
+                    new SettingValueRecord(guidGenerator.Create(), name, value, providerName, providerKey)
+                );
+            }
+            else
+            {
+                existing.Value = value;
+                changes.Updated.Add(existing);
+            }
+
+            changes.CacheItems[cacheKey] = new SettingValueCacheItem(value);
+        }
+
+        return changes;
+    }
+
+    private sealed class BatchChanges
+    {
+        public List<SettingValueRecord> Inserted { get; } = [];
+
+        public List<SettingValueRecord> Updated { get; } = [];
+
+        public List<SettingValueRecord> Deleted { get; } = [];
+
+        public Dictionary<string, SettingValueCacheItem> CacheItems { get; } = new(StringComparer.Ordinal);
+
+        public List<string> RemovedCacheKeys { get; } = [];
+    }
+
+    /// <inheritdoc/>
     public async Task DeleteAsync(
         string name,
         string providerName,
@@ -204,6 +385,8 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken = default
     )
     {
+        _EnsureKey(providerName, providerKey, name);
+
         var settings = await valueRepository
             .FindAllAsync(name, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);

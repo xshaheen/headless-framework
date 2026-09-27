@@ -64,4 +64,31 @@ public sealed class StringContentTests
         endsAction.Should().ThrowExactly<ArgumentNullException>();
         containsAction.Should().ThrowExactly<ArgumentNullException>();
     }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("acme")]
+    [InlineData("ac me")]
+    public void should_return_value_when_has_no_surrounding_white_space(string? value)
+    {
+        Argument.HasNoSurroundingWhiteSpace(value).Should().Be(value);
+    }
+
+    [Theory]
+    [InlineData("acme ")]
+    [InlineData(" acme")]
+    [InlineData("acme\t")]
+    [InlineData("\nacme")]
+    [InlineData("acme\u00A0")]
+    [InlineData(" ")]
+    public void should_throw_when_value_starts_or_ends_with_white_space(string value)
+    {
+        var action = () => Argument.HasNoSurroundingWhiteSpace(value);
+
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage("The argument \"value\" must not start or end with white space. (Parameter 'value')");
+    }
 }

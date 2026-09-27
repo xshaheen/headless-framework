@@ -25,7 +25,7 @@ namespace Headless.EntityFramework.Contexts.Processors;
 /// </remarks>
 [PublicAPI]
 public sealed class HeadlessEntitySaveEntryProcessor(
-    IOptions<TenantWriteGuardOptions> tenantWriteGuardOptions,
+    IOptions<TenantGuardOptions> tenantGuardOptions,
     ITenantWriteGuardBypass tenantWriteGuardBypass
 ) : IHeadlessSaveEntryProcessor
 {
@@ -44,7 +44,7 @@ public sealed class HeadlessEntitySaveEntryProcessor(
             case EntityState.Added:
                 // Guid keys are produced by the EF Core value generator (ConfigureHeadlessValueGenerated) when the
                 // entity transitions to Added, so by the time it reaches the save pipeline the id is already set.
-                if (!tenantWriteGuardOptions.Value.IsEnabled || tenantWriteGuardBypass.IsActive)
+                if (!tenantGuardOptions.Value.GuardWrites || tenantWriteGuardBypass.IsActive)
                 {
                     _TrySetMultiTenantId(entry, context.TenantId);
                 }
@@ -66,7 +66,7 @@ public sealed class HeadlessEntitySaveEntryProcessor(
             return;
         }
 
-        var guarded = tenantWriteGuardOptions.Value.IsEnabled && !tenantWriteGuardBypass.IsActive;
+        var guarded = tenantGuardOptions.Value.GuardWrites && !tenantWriteGuardBypass.IsActive;
         var currentTenantId = _ReadTenantId(context.TenantId);
         if (!guarded && entry.Metadata.IsOwned())
         {

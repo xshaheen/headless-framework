@@ -12,11 +12,10 @@ public interface IFeatureErrorsDescriptor
     /// <returns>An <see cref="ErrorDescriptor"/> describing the error.</returns>
     ErrorDescriptor FeatureIsNotDefined(string featureName);
 
-    /// <summary>Returns an error descriptor indicating that the provider <paramref name="providerName"/> is not defined for feature <paramref name="featureName"/>.</summary>
-    /// <param name="featureName">The name of the feature.</param>
+    /// <summary>Returns an error descriptor indicating that no value provider named <paramref name="providerName"/> is registered.</summary>
     /// <param name="providerName">The name of the missing provider.</param>
     /// <returns>An <see cref="ErrorDescriptor"/> describing the error.</returns>
-    ErrorDescriptor FeatureProviderNotDefined(string featureName, string providerName);
+    ErrorDescriptor ProviderNotFound(string providerName);
 
     /// <summary>Returns an error descriptor indicating that the provider identified by <paramref name="providerKey"/> is read-only and cannot be modified.</summary>
     /// <param name="providerKey">The key identifying the read-only provider.</param>
@@ -38,18 +37,18 @@ public sealed class DefaultFeatureErrorsDescriptor : IFeatureErrorsDescriptor
     }
 
     /// <inheritdoc/>
-    public ErrorDescriptor FeatureProviderNotDefined(string featureName, string providerName)
+    public ErrorDescriptor ProviderNotFound(string providerName)
     {
         var description = string.Format(
             CultureInfo.InvariantCulture,
-            FeatureMessages.features_provider_not_defined,
-            featureName,
+            FeatureMessages.features_provider_not_found,
             providerName
         );
 
-        var error = new ErrorDescriptor("features:provider-not-defined", description)
-            .WithParam("featureName", featureName)
-            .WithParam("providerName", providerName);
+        var error = new ErrorDescriptor("features:provider-not-found", description).WithParam(
+            "providerName",
+            providerName
+        );
 
         return error;
     }

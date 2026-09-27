@@ -251,6 +251,23 @@ Registrations answer for the handle: `OnCompleted`, `OnFailed`, and `GetOrAdd` o
 reached a terminal state throw, which is how an enlisted publish refuses a dead handle before any
 row is stored.
 
+## Sequences
+
+### Sequence counter
+
+A named, tenant-scoped monotonic counter, identified by the current tenant, a name, and an optional
+partition. A new partition (for example the year) is a new counter, so a period never needs a reset.
+Formatting the number (prefix, padding, year text) is the application's concern, not the counter's.
+
+### Gap-free sequence
+
+A sequence counter whose name is registered with `SequenceMode.GapFree` and taken only through
+`unit.Sequences`. The increment runs in the unit's transaction and holds the counter's row lock until
+the unit ends, so a rolled-back unit's number is re-issued to the next caller and a committed number
+is never skipped. The cost is that every writer of that counter waits for the previous writer's unit.
+Its counterpart, the fast mode through the injected `ISequenceGenerator`, commits the number in its
+own transaction and may leave a gap when the caller rolls back. A name has exactly one mode.
+
 ## Startup validation
 
 ### Startup validation gate
@@ -326,6 +343,13 @@ instant it stands in for. A coalesced run represents the whole missed window, no
 An opaque hash of the rules a projection was derived under — cron-library semantics and the
 effective timezone's DST rules. Only equality is meaningful: a mismatch means an identical
 expression and timezone would now resolve to a different instant.
+
+### Unfinished occurrence
+
+An occurrence of a cron definition that is `Idle`, `Queued`, or `InProgress`, whatever its lease
+state. The overlap policy decides whether a newly due occurrence of the same definition may run while
+one exists. An idle retry after a node death and an in-progress row with a lapsed lease both count,
+because either can run again.
 
 ## Jobs (chains)
 

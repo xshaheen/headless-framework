@@ -15,7 +15,7 @@ namespace Headless.DistributedLocks.SqlServer;
 internal sealed class SqlServerUnitOfWorkTransactionLocks(IOptions<SqlServerDistributedLockOptions> options)
     : IUnitOfWorkTransactionLocks
 {
-    private const string _ProviderName = "SQL Server";
+    private const string _Operation = "transaction-scoped SQL Server lock";
 
     // Matches the static helpers' default so a caller moving between the two surfaces keeps one wait budget.
     private static readonly TimeSpan _DefaultAcquireTimeout = TimeSpan.FromSeconds(30);
@@ -29,7 +29,7 @@ internal sealed class SqlServerUnitOfWorkTransactionLocks(IOptions<SqlServerDist
     {
         Argument.IsNotNullOrWhiteSpace(resource);
 
-        var transaction = UnitOfWorkTransactions.RequireTransaction<SqlTransaction>(unitOfWork, _ProviderName);
+        var transaction = UnitOfWorkTransactions.RequireTransaction<SqlTransaction>(unitOfWork, _Operation);
         var value = options.Value;
 
         await SqlServerDistributedLock
@@ -55,7 +55,7 @@ internal sealed class SqlServerUnitOfWorkTransactionLocks(IOptions<SqlServerDist
     {
         Argument.IsNotNullOrWhiteSpace(resource);
 
-        var transaction = UnitOfWorkTransactions.RequireTransaction<SqlTransaction>(unitOfWork, _ProviderName);
+        var transaction = UnitOfWorkTransactions.RequireTransaction<SqlTransaction>(unitOfWork, _Operation);
         var value = options.Value;
 
         // TimeSpan.Zero is sp_getapplock's single non-blocking attempt, the try-acquire default on every provider.
