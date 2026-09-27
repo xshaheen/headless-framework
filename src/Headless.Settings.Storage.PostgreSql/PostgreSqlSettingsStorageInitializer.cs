@@ -3,6 +3,7 @@
 using Headless.Constants;
 using Headless.Hosting.Initialization;
 using Headless.Settings.Entities;
+using Headless.Sql.PostgreSql;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -122,9 +123,7 @@ internal sealed partial class PostgreSqlSettingsStorageInitializer(
         return $"""
             {acquireLock}
 
-            -- Features share one schema but lock only their own objects, so every feature also takes this
-            -- schema-wide lock: otherwise a foreign feature's concurrent CREATE SCHEMA fails this whole transaction.
-            SELECT pg_advisory_xact_lock(hashtextextended('headless_schema_init:{options.Schema}', 0));
+            {PostgreSqlSchemaInitLock.AcquireStatement(options.Schema)}
             CREATE SCHEMA IF NOT EXISTS "{options.Schema}";
 
             CREATE TABLE IF NOT EXISTS {definitionsTable} (

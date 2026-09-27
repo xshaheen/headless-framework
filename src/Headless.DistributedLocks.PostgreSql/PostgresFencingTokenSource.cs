@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using Headless.Constants;
+using Headless.Sql.PostgreSql;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -140,9 +141,7 @@ internal sealed class PostgresFencingTokenSource(
                 {
                     command.Transaction = transaction;
                     command.CommandText = $"""
-                        -- Features share one schema but lock only their own objects, so every feature also takes this
-                        -- schema-wide lock: otherwise a foreign feature's concurrent CREATE SCHEMA fails this whole transaction.
-                        SELECT pg_advisory_xact_lock(hashtextextended('headless_schema_init:{_schema}', 0));
+                        {PostgreSqlSchemaInitLock.AcquireStatement(_schema)}
                         CREATE SCHEMA IF NOT EXISTS "{_schema}";
                         CREATE SEQUENCE IF NOT EXISTS {_qualifiedSequence};
                         """;

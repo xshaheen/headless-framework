@@ -2,6 +2,7 @@
 
 using Headless.Constants;
 using Headless.Hosting.Initialization;
+using Headless.Sql.PostgreSql;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -107,10 +108,8 @@ internal sealed partial class PostgreSqlAuditLogStorageInitializer(
     {
         var table = Qualified(options);
         var primaryKey = AuditLogStorageNames.PrimaryKey(options.TableName);
-        // Features share one schema but lock only their own objects, so every feature also takes this schema-wide
-        // lock: otherwise a foreign feature's concurrent CREATE SCHEMA fails this whole transaction.
         var createSchema = $"""
-            SELECT pg_advisory_xact_lock(hashtextextended('headless_schema_init:{options.Schema}', 0));
+            {PostgreSqlSchemaInitLock.AcquireStatement(options.Schema)}
             CREATE SCHEMA IF NOT EXISTS "{options.Schema}";
             """;
         var jsonColumnType = (options.JsonColumnType ?? AuditLogJsonColumnType.Jsonb).ToSqlFragment();

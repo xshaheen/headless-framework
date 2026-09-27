@@ -3,6 +3,7 @@
 using System.Diagnostics;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
+using Headless.Sql.PostgreSql;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -513,9 +514,7 @@ internal sealed class PostgreSqlStorageInitializer(
             -- inside this transaction would roll back the whole schema batch. It is instead ensured
             -- best-effort BEFORE this transaction in _TryEnsureTrgmExtensionAsync; the trigram indexes are
             -- skipped when it is absent.
-            -- Features share one schema but lock only their own objects, so every feature also takes this
-            -- schema-wide lock: otherwise a foreign feature's concurrent CREATE SCHEMA fails this whole transaction.
-            SELECT pg_advisory_xact_lock(hashtextextended('headless_schema_init:{schema}', 0));
+            {PostgreSqlSchemaInitLock.AcquireStatement(schema)}
             CREATE SCHEMA IF NOT EXISTS "{schema}";
 
             DO $inbox_schema_guard$

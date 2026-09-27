@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Headless.Constants;
 
 namespace Headless.AuditLog;
 
@@ -17,7 +18,7 @@ internal static class AuditLogStorageNames
     // PostgreSQL silently truncates longer identifiers, which would make two derived names collide. It is the
     // strictest supported provider, so every provider applies this bound and a table name valid on one stays
     // valid on the others.
-    private const int _MaxIdentifierBytes = 63;
+    private const int _MaxIdentifierBytes = StorageIdentifier.PostgreSql.IdentifierMaxLength;
 
     /// <summary>The longest <see cref="AuditLogStorageOptions.TableName"/> whose derived names all fit 63 bytes.</summary>
     public static readonly int MaxTableNameLength = _MaxIdentifierBytes - _LongestDerivedNameOverhead();
