@@ -91,6 +91,224 @@ internal sealed class ApnsPushNotificationService(
         };
     }
 
+    public async ValueTask<ApnsBroadcastResult> SendBroadcastAsync(
+        string channelId,
+        ApnsLiveActivityNotification notification,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrWhiteSpace(channelId);
+        Argument.IsNotNull(notification);
+
+        var options = optionsMonitor.Get(optionsName);
+        var payload = ApnsPayloadWriter.PrepareBroadcast(notification, timeProvider);
+        var priority = notification.Priority ?? ApnsPriority.PowerConsiderate;
+        Argument.IsInEnum(priority, paramName: nameof(notification));
+
+        // Apple marks apns-expiration required on a broadcast; 0 means deliver once and never store, which every
+        // storage policy accepts, while a nonzero value is rejected on a no-storage channel.
+        var expiration = notification.Expiration?.ExpiresAt?.ToUnixTimeSeconds() ?? 0L;
+        var requestId = (notification.ApnsId ?? Guid.NewGuid()).ToString("D");
+        var client = httpClientFactory.CreateClient(httpClientName);
+
+        using var activity = ApnsDiagnostics.Start("apns.broadcast");
+        activity?.SetTag(ApnsTags.PushType, ApnsPushTypes.LiveActivity);
+        activity?.SetTag(
+            ApnsTags.Environment,
+            options.Environment == ApnsEnvironment.Sandbox ? "sandbox" : "production"
+        );
+
+        ApnsBroadcastResult result;
+
+        try
+        {
+            EnsureSecureEndpoint(client.BaseAddress);
+
+            var credential = await authenticator.GetCredentialAsync(options, cancellationToken).ConfigureAwait(false);
+            var answer = await _PostBroadcastAsync(
+                    client,
+                    options.BundleId,
+                    channelId,
+                    payload,
+                    priority,
+                    expiration,
+                    requestId,
+                    credential,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            if (
+                answer.Status == HttpStatusCode.Forbidden
+                && string.Equals(
+                    answer.Error.Reason,
+                    ApnsResponseMapper.ExpiredProviderTokenReason,
+                    StringComparison.Ordinal
+                )
+                && await authenticator.RenewExpiredAsync(options, credential, cancellationToken).ConfigureAwait(false)
+                    is { } retryCredential
+            )
+            {
+                logger.LogProviderTokenExpired(credential.Generation, retryCredential.Generation);
+
+                answer = await _PostBroadcastAsync(
+                        client,
+                        options.BundleId,
+                        channelId,
+                        payload,
+                        priority,
+                        expiration,
+                        requestId,
+                        retryCredential,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
+            result = _BroadcastResult(answer, requestId);
+
+            if (!result.IsSucceeded && logger.IsEnabled(LogLevel.Warning))
+            {
+                logger.LogBroadcastRejected((int)answer.Status, answer.Error.Reason ?? "no reason", requestId);
+            }
+
+            if (ApnsFailureClassifier.IsTokenConfigurationProblem(answer.Error.Reason))
+            {
+                logger.LogTokenConfigurationError(answer.Error.Reason!, "broadcast");
+            }
+            else if (string.Equals(answer.Error.Reason, "TooManyProviderTokenUpdates", StringComparison.Ordinal))
+            {
+                logger.LogProviderTokenUpdatedTooOften();
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception e)
+        {
+            // A broadcast is one request, so a transport fault is its whole outcome; returning it keeps the contract
+            // of the device sends, where only invalid input and caller cancellation throw.
+            if (logger.IsEnabled(LogLevel.Error))
+            {
+                logger.LogBroadcastFailed(e, requestId);
+            }
+
+            result = new ApnsBroadcastResult
+            {
+                IsSucceeded = false,
+                FailureError = ApnsResponseMapper.DescribeException(e),
+                RequestId = requestId,
+                FailureKind = ApnsFailureKind.Transport,
+            };
+        }
+
+        activity?.SetTag(ApnsTags.Outcome, result.IsSucceeded ? "succeeded" : "failed");
+        activity?.SetTag(ApnsTags.FailureKind, result.FailureKind is { } kind ? ApnsMetrics.ToTagValue(kind) : null);
+        activity?.SetTag(ApnsTags.Reason, result.Reason);
+        activity?.SetStatus(
+            result.IsSucceeded ? ActivityStatusCode.Ok : ActivityStatusCode.Error,
+            result.IsSucceeded ? null : result.FailureError
+        );
+
+        ApnsMetrics.RecordBroadcast(result, options.Environment);
+
+        return result;
+    }
+
+    private static ApnsBroadcastResult _BroadcastResult(ApnsAnswer answer, string requestId)
+    {
+        if (answer.Status == HttpStatusCode.OK)
+        {
+            return new ApnsBroadcastResult
+            {
+                IsSucceeded = true,
+                StatusCode = HttpStatusCode.OK,
+                RequestId = requestId,
+                UniqueId = answer.UniqueId,
+            };
+        }
+
+        var kind = ApnsFailureClassifier.Classify(answer.Status, answer.Error.Reason);
+
+        return new ApnsBroadcastResult
+        {
+            IsSucceeded = false,
+            StatusCode = answer.Status,
+            Reason = answer.Error.Reason,
+            FailureError = answer.Error.Reason is { } reason
+                ? string.Create(CultureInfo.InvariantCulture, $"{reason} (HTTP {(int)answer.Status})")
+                : string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"APNs rejected the broadcast (HTTP {(int)answer.Status})"
+                ),
+            RequestId = requestId,
+            UniqueId = answer.UniqueId,
+            FailureKind = kind,
+            RetryAfter = kind switch
+            {
+                ApnsFailureKind.ServerError => TimeSpan.FromMinutes(15),
+                ApnsFailureKind.Throttled => answer.Error.RetryAfter,
+                _ => null,
+            },
+        };
+    }
+
+    private static async ValueTask<ApnsAnswer> _PostBroadcastAsync(
+        HttpClient client,
+        string bundleId,
+        string channelId,
+        byte[] payload,
+        ApnsPriority priority,
+        long expiration,
+        string requestId,
+        ApnsCredential credential,
+        CancellationToken cancellationToken
+    )
+    {
+        using var message = new HttpRequestMessage(
+            HttpMethod.Post,
+            new Uri($"/4/broadcasts/apps/{Uri.EscapeDataString(bundleId)}", UriKind.Relative)
+        );
+
+        message.Version = HttpVersion.Version20;
+        message.VersionPolicy = HttpVersionPolicy.RequestVersionExact;
+
+        credential.Apply(message);
+
+        // Apple's broadcast header table lists these as required. Its table spells the push type "Liveactivity",
+        // but its own sample requests send "liveactivity", the value every other APNs push type uses.
+        message.Headers.TryAddWithoutValidation("apns-channel-id", channelId);
+        message.Headers.TryAddWithoutValidation("apns-push-type", ApnsPushTypes.LiveActivity);
+        message.Headers.TryAddWithoutValidation(
+            "apns-priority",
+            ((int)priority).ToString(CultureInfo.InvariantCulture)
+        );
+        message.Headers.TryAddWithoutValidation("apns-expiration", expiration.ToString(CultureInfo.InvariantCulture));
+        message.Headers.TryAddWithoutValidation("apns-request-id", requestId);
+        message.Content = new ByteArrayContent(payload) { Headers = { ContentType = _JsonContentType } };
+
+        using var response = await client.SendAsync(message, cancellationToken).ConfigureAwait(false);
+
+        var uniqueId = response.Headers.TryGetValues(_UniqueIdHeader, out var values) ? values.FirstOrDefault() : null;
+
+        if (response.StatusCode == HttpStatusCode.OK)
+        {
+            return new ApnsAnswer(HttpStatusCode.OK, ApnsResponseMapper.ReadError([]), uniqueId);
+        }
+
+        var body = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+
+        return new ApnsAnswer(
+            response.StatusCode,
+            ApnsResponseMapper.ReadError(body) with
+            {
+                RetryAfter = _ReadRetryAfter(response.Headers),
+            },
+            uniqueId
+        );
+    }
+
     #endregion
 
     #region Shared
@@ -297,7 +515,7 @@ internal sealed class ApnsPushNotificationService(
 
         try
         {
-            _EnsureSecureEndpoint(client.BaseAddress);
+            EnsureSecureEndpoint(client.BaseAddress);
 
             var credential = await authenticator.GetCredentialAsync(options, cancellationToken).ConfigureAwait(false);
             var answer = await _PostAsync(client, deviceToken, prepared, apnsId, credential, cancellationToken)
@@ -514,7 +732,7 @@ internal sealed class ApnsPushNotificationService(
         }
     }
 
-    private static void _EnsureSecureEndpoint(Uri? baseAddress)
+    internal static void EnsureSecureEndpoint(Uri? baseAddress)
     {
         if (baseAddress is null)
         {

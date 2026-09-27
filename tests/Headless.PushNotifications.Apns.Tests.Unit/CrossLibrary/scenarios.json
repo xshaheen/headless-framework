@@ -13,7 +13,12 @@
       "id": "alert-basic",
       "pushType": "alert",
       "topic": "com.example.app",
-      "aps": { "alert": { "title": "Hello", "body": "World" } }
+      "aps": {
+        "alert": {
+          "title": "Hello",
+          "body": "World"
+        }
+      }
     },
     {
       "id": "alert-full",
@@ -25,9 +30,14 @@
           "subtitle": "Arrives tomorrow",
           "body": "Your order #42 is on its way",
           "title-loc-key": "ORDER_TITLE",
-          "title-loc-args": ["42"],
+          "title-loc-args": [
+            "42"
+          ],
           "loc-key": "ORDER_BODY",
-          "loc-args": ["42", "tomorrow"],
+          "loc-args": [
+            "42",
+            "tomorrow"
+          ],
           "launch-image": "launch.png"
         },
         "thread-id": "orders",
@@ -50,9 +60,14 @@
           "subtitle": "Arrives tomorrow",
           "body": "Your order #42 is on its way",
           "title-loc-key": "ORDER_TITLE",
-          "title-loc-args": ["42"],
+          "title-loc-args": [
+            "42"
+          ],
           "loc-key": "ORDER_BODY",
-          "loc-args": ["42", "tomorrow"],
+          "loc-args": [
+            "42",
+            "tomorrow"
+          ],
           "launch-image": "launch.png"
         },
         "thread-id": "orders",
@@ -69,9 +84,16 @@
       "pushType": "alert",
       "topic": "com.example.app",
       "aps": {
-        "alert": { "title": "Critical", "body": "Check the sensor" },
+        "alert": {
+          "title": "Critical",
+          "body": "Check the sensor"
+        },
         "interruption-level": "critical",
-        "sound": { "critical": 1, "name": "chime.caf", "volume": 0.8 }
+        "sound": {
+          "critical": 1,
+          "name": "chime.caf",
+          "volume": 0.8
+        }
       }
     },
     {
@@ -79,15 +101,22 @@
       "pushType": "background",
       "topic": "com.example.app",
       "priority": 5,
-      "aps": { "content-available": 1 },
-      "custom": { "sync": "inbox" }
+      "aps": {
+        "content-available": 1
+      },
+      "custom": {
+        "sync": "inbox"
+      }
     },
     {
       "id": "voip",
       "pushType": "voip",
       "topic": "com.example.app.voip",
       "aps": {},
-      "custom": { "caller": "Alice", "callId": "call-7" }
+      "custom": {
+        "caller": "Alice",
+        "callId": "call-7"
+      }
     },
     {
       "id": "liveactivity-start",
@@ -97,9 +126,18 @@
         "event": "start",
         "timestamp": 1767225600,
         "attributes-type": "DeliveryAttributes",
-        "attributes": { "orderId": "42", "restaurant": "Pizza Place" },
-        "content-state": { "status": "preparing", "etaMinutes": 25 },
-        "alert": { "title": "Order started", "body": "We are preparing your order" },
+        "attributes": {
+          "orderId": "42",
+          "restaurant": "Pizza Place"
+        },
+        "content-state": {
+          "status": "preparing",
+          "etaMinutes": 25
+        },
+        "alert": {
+          "title": "Order started",
+          "body": "We are preparing your order"
+        },
         "sound": "chime.caf"
       }
     },
@@ -110,7 +148,10 @@
       "aps": {
         "event": "update",
         "timestamp": 1767225600,
-        "content-state": { "status": "on-the-way", "etaMinutes": 10 },
+        "content-state": {
+          "status": "on-the-way",
+          "etaMinutes": 10
+        },
         "stale-date": 1767229200,
         "relevance-score": 0.5
       }
@@ -122,7 +163,10 @@
       "aps": {
         "event": "end",
         "timestamp": 1767225600,
-        "content-state": { "status": "delivered", "etaMinutes": 0 },
+        "content-state": {
+          "status": "delivered",
+          "etaMinutes": 0
+        },
         "dismissal-date": 1767232800
       }
     },
@@ -137,26 +181,34 @@
       "pushType": "pushtotalk",
       "topic": "com.example.app.voip-ptt",
       "aps": {},
-      "custom": { "activeSpeaker": "Alice" }
+      "custom": {
+        "activeSpeaker": "Alice"
+      }
     },
     {
       "id": "widgets",
       "pushType": "widgets",
       "topic": "com.example.app.push-type.widgets",
-      "aps": { "content-changed": true }
+      "aps": {
+        "content-changed": true
+      }
     },
     {
       "id": "controls",
       "pushType": "controls",
       "topic": "com.example.app.push-type.controls",
-      "aps": { "content-changed": true }
+      "aps": {
+        "content-changed": true
+      }
     },
     {
       "id": "complication",
       "pushType": "complication",
       "topic": "com.example.app.complication",
       "aps": {},
-      "custom": { "temperature": 21 }
+      "custom": {
+        "temperature": 21
+      }
     },
     {
       "id": "fileprovider",
@@ -172,10 +224,27 @@
       "id": "custom-data-nested",
       "pushType": "alert",
       "topic": "com.example.app",
-      "aps": { "alert": { "body": "You have a new order" } },
+      "aps": {
+        "alert": {
+          "body": "You have a new order"
+        }
+      },
       "custom": {
-        "order": { "id": "A-1", "lines": [{ "sku": "X1", "qty": 2 }], "total": 12.5, "paid": true },
-        "tags": ["new", "priority"],
+        "order": {
+          "id": "A-1",
+          "lines": [
+            {
+              "sku": "X1",
+              "qty": 2
+            }
+          ],
+          "total": 12.5,
+          "paid": true
+        },
+        "tags": [
+          "new",
+          "priority"
+        ],
         "count": 3,
         "flag": false
       }
@@ -185,42 +254,72 @@
       "pushType": "alert",
       "topic": "com.example.app",
       "expiration": 0,
-      "aps": { "alert": { "title": "Now", "body": "Deliver now or never" } }
+      "aps": {
+        "alert": {
+          "title": "Now",
+          "body": "Deliver now or never"
+        }
+      }
     },
     {
       "id": "expiration-absolute",
       "pushType": "alert",
       "topic": "com.example.app",
       "expiration": 1767312000,
-      "aps": { "alert": { "title": "Later", "body": "Keep for a day" } }
+      "aps": {
+        "alert": {
+          "title": "Later",
+          "body": "Keep for a day"
+        }
+      }
     },
     {
       "id": "collapse-id",
       "pushType": "alert",
       "topic": "com.example.app",
       "collapseId": "order-42",
-      "aps": { "alert": { "title": "Order 42", "body": "Latest status" } }
+      "aps": {
+        "alert": {
+          "title": "Order 42",
+          "body": "Latest status"
+        }
+      }
     },
     {
       "id": "priority-5",
       "pushType": "alert",
       "topic": "com.example.app",
       "priority": 5,
-      "aps": { "alert": { "title": "Low", "body": "Power-considerate delivery" } }
+      "aps": {
+        "alert": {
+          "title": "Low",
+          "body": "Power-considerate delivery"
+        }
+      }
     },
     {
       "id": "priority-10",
       "pushType": "alert",
       "topic": "com.example.app",
       "priority": 10,
-      "aps": { "alert": { "title": "High", "body": "Immediate delivery" } }
+      "aps": {
+        "alert": {
+          "title": "High",
+          "body": "Immediate delivery"
+        }
+      }
     },
     {
       "id": "apns-id",
       "pushType": "alert",
       "topic": "com.example.app",
       "apnsId": "123e4567-e89b-12d3-a456-426614174000",
-      "aps": { "alert": { "title": "Tracked", "body": "Caller-chosen id" } }
+      "aps": {
+        "alert": {
+          "title": "Tracked",
+          "body": "Caller-chosen id"
+        }
+      }
     },
     {
       "id": "raw-payload",
@@ -228,12 +327,37 @@
       "topic": "com.example.app",
       "raw": {
         "aps": {
-          "alert": { "title": "Raw", "body": "Unmodelled keys pass through" },
+          "alert": {
+            "title": "Raw",
+            "body": "Unmodelled keys pass through"
+          },
           "sound": "default",
-          "future-apple-key": { "enabled": true }
+          "future-apple-key": {
+            "enabled": true
+          }
         },
-        "customRoot": [1, "two", { "three": 3 }]
+        "customRoot": [
+          1,
+          "two",
+          {
+            "three": 3
+          }
+        ]
       }
     }
-  ]
+  ],
+  "broadcast": {
+    "bundleId": "com.example.app",
+    "channelId": "dHN0LXNyY2gtY2hubA==",
+    "requestId": "2288cf3f-70d8-46a6-97d7-dd5d00867127",
+    "update": {
+      "aps": {
+        "timestamp": 1790330400,
+        "event": "update",
+        "content-state": {
+          "score": 2
+        }
+      }
+    }
+  }
 }

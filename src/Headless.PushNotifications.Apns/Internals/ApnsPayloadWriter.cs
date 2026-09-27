@@ -17,6 +17,7 @@ internal static class ApnsPayloadWriter
     // Apple's documented payload limits: 4 KB for regular notifications and 5 KB for VoIP.
     private const int _MaxAlertPayloadBytes = 4096;
     private const int _MaxVoipPayloadBytes = 5120;
+    private const int _MaxBroadcastPayloadBytes = 5120;
 
     // The payload's own dictionary, where Apple reads alert, badge, and sound; a custom key with this name would
     // overwrite it.
@@ -98,6 +99,60 @@ internal static class ApnsPayloadWriter
 
         return new ApnsPreparedNotification(buffer.WrittenSpan.ToArray(), headers);
     }
+
+    #region Broadcast
+
+    /// <summary>
+    /// Validates a Live Activity update or end for a broadcast channel and returns its UTF-8 JSON payload.
+    /// </summary>
+    /// <exception cref="ArgumentException">
+    /// The notification starts an activity, carries start-only fields or a collapse id, breaks a Live Activity rule,
+    /// or its payload is over the 5120-byte broadcast limit.
+    /// </exception>
+    public static byte[] PrepareBroadcast(ApnsLiveActivityNotification notification, TimeProvider timeProvider)
+    {
+        Argument.IsNotNull(notification);
+        Argument.IsNotNull(timeProvider);
+
+        // Apple: "You can't use broadcast push notifications to start a Live Activity." A channel carries updates to
+        // activities that already subscribed to it.
+        if (notification.Event == ApnsLiveActivityEvent.Start)
+        {
+            throw new ArgumentException(
+                "A broadcast cannot start a Live Activity; send a 'start' to each device and subscribe it with InputPushChannel.",
+                nameof(notification)
+            );
+        }
+
+        // The broadcast request has no apns-collapse-id header in Apple's contract, so a collapse id would silently
+        // not apply.
+        if (notification.CollapseId is not null)
+        {
+            throw new ArgumentException("A broadcast does not support a collapse id.", nameof(notification));
+        }
+
+        var buffer = new ArrayBufferWriter<byte>(512);
+
+#pragma warning disable MA0045 // False positive: a synchronous in-memory JSON writer in a synchronous method; await using would add nothing.
+        using (var writer = new Utf8JsonWriter(buffer))
+#pragma warning restore MA0045
+        {
+            _WriteLiveActivityNotification(writer, notification, timeProvider);
+        }
+
+        // Apple: "the payload is limited to a maximum size of 5 KB (5,120 bytes)" for a broadcast.
+        if (buffer.WrittenCount > _MaxBroadcastPayloadBytes)
+        {
+            throw new ArgumentException(
+                $"The APNs broadcast payload is {buffer.WrittenCount.ToString(CultureInfo.InvariantCulture)} bytes, over the {_MaxBroadcastPayloadBytes.ToString(CultureInfo.InvariantCulture)}-byte limit.",
+                nameof(notification)
+            );
+        }
+
+        return buffer.WrittenSpan.ToArray();
+    }
+
+    #endregion
 
     #region Raw
 
@@ -366,6 +421,8 @@ internal static class ApnsPayloadWriter
             writer.WriteNumber("input-push-token", 1);
         }
 
+        _WriteOptionalString(writer, "input-push-channel", notification.InputPushChannel);
+
         _WriteOptionalString(writer, "attributes-type", notification.AttributesType);
 
         if (notification.Attributes is { } attributes)
@@ -427,6 +484,22 @@ internal static class ApnsPayloadWriter
             // An update or end goes to the activity's own push token, so there is no new token to request.
             throw new ArgumentException(
                 "Only a Live Activity 'start' push can request a push token.",
+                nameof(notification)
+            );
+        }
+        else if (notification.InputPushChannel is not null)
+        {
+            // A running activity is already subscribed or not; only the start can name the channel to listen on.
+            throw new ArgumentException(
+                "Only a Live Activity 'start' push can subscribe the activity to a broadcast channel.",
+                nameof(notification)
+            );
+        }
+
+        if (notification.InputPushChannel is { } channel && string.IsNullOrWhiteSpace(channel))
+        {
+            throw new ArgumentException(
+                "A Live Activity input push channel must be a channel id, not blank.",
                 nameof(notification)
             );
         }

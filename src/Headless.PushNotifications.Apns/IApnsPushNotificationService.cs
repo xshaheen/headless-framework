@@ -58,4 +58,37 @@ public interface IApnsPushNotificationService
         ApnsNotification notification,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    /// Broadcasts a Live Activity update or end to every device subscribed to <paramref name="channelId"/>, with one
+    /// request (iOS 18 and iPadOS 18 or later).
+    /// </summary>
+    /// <param name="channelId">The channel id from <see cref="IApnsBroadcastChannelService.CreateAsync"/>.</param>
+    /// <param name="notification">
+    /// A Live Activity <see cref="ApnsLiveActivityEvent.Update"/> or <see cref="ApnsLiveActivityEvent.End"/>. Apple does
+    /// not let a broadcast start an activity; start it on each device with
+    /// <see cref="ApnsLiveActivityNotification.InputPushChannel"/> set instead.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the broadcast.</param>
+    /// <returns>
+    /// APNs' answer for the broadcast as a whole. A rejection or transport fault is a failed result, not an
+    /// exception.
+    /// </returns>
+    /// <remarks>
+    /// The request always carries <c>apns-expiration</c>, which Apple requires on a broadcast: a
+    /// <see langword="null"/> <see cref="ApnsNotification.Expiration"/> sends <c>0</c> (deliver once, never store).
+    /// A nonzero expiration on a channel created with <see cref="ApnsChannelStoragePolicy.NoMessageStored"/> is
+    /// rejected by APNs. The payload limit is 5120 bytes.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="channelId"/> is blank, or <paramref name="notification"/> starts an activity, sets start-only
+    /// fields or a collapse id, breaks a Live Activity rule, or is over the payload limit.
+    /// </exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
+    ValueTask<ApnsBroadcastResult> SendBroadcastAsync(
+        string channelId,
+        ApnsLiveActivityNotification notification,
+        CancellationToken cancellationToken = default
+    );
 }

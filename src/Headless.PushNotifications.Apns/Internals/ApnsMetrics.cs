@@ -23,6 +23,7 @@ internal static class ApnsMetrics
     internal const string SendDurationName = "headless.apns.send.duration";
     internal const string ProviderTokensMintedName = "headless.apns.provider_tokens.minted";
     internal const string CertificateReloadsName = "headless.apns.certificates.reloaded";
+    internal const string BroadcastsName = "headless.apns.broadcasts";
 
     private static readonly Counter<long> _Sends = ApnsDiagnostics.Meter.CreateCounter<long>(
         SendsName,
@@ -47,6 +48,35 @@ internal static class ApnsMetrics
         unit: "{reload}",
         description: "APNs provider certificate reloads, by outcome."
     );
+
+    private static readonly Counter<long> _Broadcasts = ApnsDiagnostics.Meter.CreateCounter<long>(
+        BroadcastsName,
+        unit: "{broadcast}",
+        description: "APNs channel broadcasts, by outcome, failure kind, reason, and environment."
+    );
+
+    /// <summary>Counts one finished broadcast with its outcome tags.</summary>
+    internal static void RecordBroadcast(ApnsBroadcastResult result, ApnsEnvironment environment)
+    {
+        if (!_Broadcasts.Enabled)
+        {
+            return;
+        }
+
+        var tags = new TagList
+        {
+            { ApnsTags.Outcome, result.IsSucceeded ? "succeeded" : "failed" },
+            { ApnsTags.Environment, environment == ApnsEnvironment.Sandbox ? "sandbox" : "production" },
+        };
+
+        if (!result.IsSucceeded)
+        {
+            tags.Add(ApnsTags.FailureKind, result.FailureKind is { } kind ? ToTagValue(kind) : null);
+            tags.Add(ApnsTags.Reason, result.Reason ?? "none");
+        }
+
+        _Broadcasts.Add(1, tags);
+    }
 
     /// <summary>Whether any APNs instrument currently has a subscribed listener.</summary>
     internal static bool AnyEnabled =>
