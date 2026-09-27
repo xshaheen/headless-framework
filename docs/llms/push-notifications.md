@@ -166,7 +166,7 @@ The `Unregistered` state is not a failure — it is a signal to clean up stale t
 
 `SendMulticastAsync` sends the same notification to many device tokens and aggregates the results into a single `BatchPushNotificationResponse`. The `Responses` list has exactly one entry per input token, preserving input order. Providers surface transport failures that remain after retries as `Failure` outcomes rather than throwing, so results already collected are never discarded; only invalid input and caller cancellation throw.
 
-- **Firebase** chunks token lists into batches of ≤ 500 (the FCM limit). A whole-batch transport failure after all retries becomes a `Failure` for every token in that batch.
+- **Firebase** chunks token lists into batches of ≤ 500 (the FCM limit). A whole-batch transport failure after all retries becomes a `Failure` for every token in that batch. The SDK sends a batch's messages all at once, so one multicast can hold up to 500 requests in flight; batches run one after another. A host that must bound outbound concurrency more tightly splits the token list itself.
 - **APNs** has no batch endpoint. It sends one HTTP/2 request per token, with at most `ApnsOptions.MaxConcurrency` (default 100) in flight, and validates every token before the first send, so one blank token cannot cause a partial delivery. A transport failure affects only the token it hit.
 
 ## Choosing a Provider

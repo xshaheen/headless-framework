@@ -431,6 +431,100 @@ public sealed class FcmMessageSenderTests : TestBase
         await action.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    [Fact]
+    public async Task should_resend_a_multicast_over_several_rounds_and_settle_each_token_in_its_own_round()
+    {
+        // given one token that needs two retries and one that turns permanent in the second round
+        _http.Responder = static (request, _) =>
+            Task.FromResult(
+                (request.Target, request.Attempt) switch
+                {
+                    ("fid-twice", < 3) => FakeFcmHttpHandler.Error("INTERNAL"),
+                    ("fid-gone", 1) => FakeFcmHttpHandler.Error("INTERNAL"),
+                    ("fid-gone", _) => FakeFcmHttpHandler.Error("UNREGISTERED"),
+                    _ => FakeFcmHttpHandler.Success(request.Target),
+                }
+            );
+        var sender = _CreateSender();
+        string[] fids = ["fid-twice", "fid-ok", "fid-gone"];
+
+        // when
+        var send = _SendBatchAsync(sender, fids, AbortToken);
+        var first = await _time.WaitForTimerAsync(1, AbortToken);
+        _time.Advance(first);
+        var second = await _time.WaitForTimerAsync(2, AbortToken);
+        _time.Advance(second);
+        var results = await send.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+
+        // then the backoff doubles per round and results stay in input order
+        first.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(10)).And.BeLessThan(TimeSpan.FromSeconds(15));
+        second.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(20)).And.BeLessThan(TimeSpan.FromSeconds(30));
+        results.Select(r => r.ClientIdentifier).Should().Equal(fids);
+        results
+            .Select(r => r.Status)
+            .Should()
+            .Equal(
+                PushNotificationResponseStatus.Success,
+                PushNotificationResponseStatus.Success,
+                PushNotificationResponseStatus.Unregistered
+            );
+        _http.RequestsFor("fid-twice").Should().HaveCount(3);
+        _http.RequestsFor("fid-ok").Should().ContainSingle();
+        _http.RequestsFor("fid-gone").Should().HaveCount(2);
+        _time.Timers.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task should_wait_until_a_retry_after_date_when_fcm_reports_quota_exceeded()
+    {
+        // given a Retry-After sent as an HTTP date rather than a number of seconds
+        var retryAt = _time.GetUtcNow().AddSeconds(120);
+        _http.Responder = (request, _) =>
+        {
+            if (request.Attempt > 1)
+            {
+                return Task.FromResult(FakeFcmHttpHandler.Success(request.Target));
+            }
+
+            var response = FakeFcmHttpHandler.Error("QUOTA_EXCEEDED");
+            response.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(retryAt);
+
+            return Task.FromResult(response);
+        };
+        var sender = _CreateSender();
+
+        // when
+        var send = _SendAsync(sender, "fid-1", AbortToken);
+        var delay = await _time.WaitForTimerAsync(1, AbortToken);
+        _time.Advance(delay);
+        var result = await send.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+
+        // then the header's one-second resolution may shave the fraction off the wait, never more
+        delay.Should().BeGreaterThan(TimeSpan.FromSeconds(119)).And.BeLessThanOrEqualTo(TimeSpan.FromSeconds(120));
+        result.IsSucceeded().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_throw_when_the_caller_cancels_while_a_single_send_fails()
+    {
+        // given the caller cancels while FCM's answer is an error, so the SDK throws that error and not a cancellation
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        _http.Responder = async (_, _) =>
+        {
+            await cts.CancelAsync();
+
+            return FakeFcmHttpHandler.Error("INVALID_ARGUMENT");
+        };
+        var sender = _CreateSender();
+
+        // when
+        var send = sender.SendAsync(_Message, FcmTarget.Token("fid-1"), cts.Token);
+        var action = async () => await send.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+
+        // then
+        await action.Should().ThrowAsync<OperationCanceledException>();
+    }
+
     private FcmMessageSender _CreateSender(Action<FirebaseOptions>? configure = null)
     {
         return _rig.CreateSender(configure);

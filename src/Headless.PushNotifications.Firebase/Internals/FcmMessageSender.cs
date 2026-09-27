@@ -150,6 +150,14 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
                 failure = e;
             }
 
+            // The SDK can report a send the caller cancelled as FCM's error or a network failure rather than a
+            // cancellation, so the caller's cancellation is checked here as well.
+            if (cancellationToken.IsCancellationRequested)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "cancelled");
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             FcmMetrics.RecordDuration(_instance, _timeProvider.GetElapsedTime(started), target.Kind, multicast: false);
             result = FcmFailureClassifier.Classify(
                 target.Value,
@@ -298,9 +306,13 @@ internal sealed class FcmMessageSender : IFcmMessageSender, IDisposable
 
         if (batch is not null && batch.Responses.Count != pending.Count)
         {
-            throw new InvalidOperationException(
+            // Responses cannot be matched to tokens by position, so none is trusted; every token of the round is
+            // reported as failed rather than the whole call throwing and losing earlier rounds' results.
+            batchFailure = new InvalidOperationException(
                 $"Firebase response count ({batch.Responses.Count}) does not match FID count ({pending.Count})."
             );
+            batch = null;
+            _logger.FailedToSendPushNotification(batchFailure, $"multicast:{pending.Count}");
         }
 
         for (var i = 0; i < pending.Count; i++)

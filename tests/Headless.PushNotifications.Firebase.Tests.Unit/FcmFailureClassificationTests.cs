@@ -309,4 +309,35 @@ public sealed class FcmFailureClassificationTests : TestBase
         result.IsRetryable.Should().BeFalse();
         _rig.Http.Requests.Should().BeEmpty("no FCM request is sent without an access token");
     }
+
+    [Fact]
+    public async Task should_classify_a_rejected_token_exchange_as_authentication_for_every_multicast_target()
+    {
+        // given the multicast path, where the SDK wraps each send's exception instead of letting it escape
+        _rig.Http.TokenResponder = static () =>
+            new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    """{"error":"invalid_grant","error_description":"Invalid JWT Signature."}""",
+                    Encoding.UTF8,
+                    "application/json"
+                ),
+            };
+        var sender = _rig.CreateSender();
+
+        // when
+        var results = await sender.SendBatchAsync(_Message, ["fid-1", "fid-2"], AbortToken);
+
+        // then a revoked key is not reported as a retryable network failure
+        results.Should().HaveCount(2);
+        results
+            .Should()
+            .AllSatisfy(r =>
+            {
+                r.Response.IsFailed().Should().BeTrue();
+                r.FailureKind.Should().Be(FcmFailureKind.Authentication);
+                r.IsRetryable.Should().BeFalse();
+            });
+        _rig.Http.Requests.Should().BeEmpty("no FCM request is sent without an access token");
+    }
 }

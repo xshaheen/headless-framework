@@ -81,6 +81,15 @@ internal static class FcmFailureClassifier
                 ),
                 _ => (_PlatformKind(messaging), _PlatformCode(messaging), false),
             },
+            // A multicast send wraps any exception it catches in an Unknown error whose message is the original
+            // exception's ToString(), so a rejected token exchange there is recognisable only by its type name.
+            // Read as a network failure, it would tell the caller to retry a revoked key forever.
+            FirebaseMessagingException { MessagingErrorCode: null, HttpResponse: null } wrapped
+                when wrapped.Message.StartsWith(typeof(TokenResponseException).FullName!, StringComparison.Ordinal) => (
+                FcmFailureKind.Authentication,
+                null,
+                false
+            ),
             FirebaseException { HttpResponse: null } => (FcmFailureKind.Transport, null, false),
             FirebaseException firebase => (_PlatformKind(firebase), _PlatformCode(firebase), false),
             FcmCredentialException or TokenResponseException => (FcmFailureKind.Authentication, null, false),
