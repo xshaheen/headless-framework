@@ -555,7 +555,7 @@ public sealed class DynamicFeatureDefinitionStore(
         stringBuilder.Append("DeletedFeature:");
         stringBuilder.Append(deletedFeatures.JoinAsString(","));
 
-        return stringBuilder.ToString().ToMd5();
+        return stringBuilder.ToString().ToSha256();
     }
 
     private static readonly JsonSerializerOptions _JsonSerializerOptions = _CreateHashJsonSerializerOptions();

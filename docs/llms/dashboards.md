@@ -47,6 +47,7 @@ builder.Services.AddAuthorizationBuilder().AddPolicy(
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
+    // plus exactly one transport and one storage provider; see messaging.md
     setup.UseDashboard(dashboard =>
     {
         dashboard.WithHostAuthentication("DashboardPolicy");

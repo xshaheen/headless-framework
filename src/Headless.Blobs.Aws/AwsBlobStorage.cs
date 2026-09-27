@@ -851,6 +851,10 @@ internal sealed class AwsBlobStorage(
     #region Presigned Urls
 
     /// <inheritdoc />
+    /// <remarks>S3 signs the content type into the URL, but a presigned PUT cannot bound the upload's size.</remarks>
+    public PresignedUploadConstraintKinds SupportedUploadConstraints => PresignedUploadConstraintKinds.ContentType;
+
+    /// <inheritdoc />
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="expiry"/> is not positive.</exception>
     public ValueTask<Uri> GetPresignedDownloadUrlAsync(
         BlobLocation location,
@@ -858,24 +862,31 @@ internal sealed class AwsBlobStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return _GetPresignedUrlAsync(location, expiry, HttpVerb.GET, cancellationToken);
+        return _GetPresignedUrlAsync(location, expiry, HttpVerb.GET, contentType: null, cancellationToken);
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// A <see cref="PresignedUploadConstraints.ContentType"/> is signed into the URL, so the upload must send that exact
+    /// <c>Content-Type</c> header or S3 rejects the signature. S3 cannot bound the size of a presigned PUT, so a
+    /// <see cref="PresignedUploadConstraints.MaxLength"/> is ignored.
+    /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="expiry"/> is not positive.</exception>
     public ValueTask<Uri> GetPresignedUploadUrlAsync(
         BlobLocation location,
         TimeSpan expiry,
+        PresignedUploadConstraints? constraints = null,
         CancellationToken cancellationToken = default
     )
     {
-        return _GetPresignedUrlAsync(location, expiry, HttpVerb.PUT, cancellationToken);
+        return _GetPresignedUrlAsync(location, expiry, HttpVerb.PUT, constraints?.ContentType, cancellationToken);
     }
 
     private async ValueTask<Uri> _GetPresignedUrlAsync(
         BlobLocation location,
         TimeSpan expiry,
         HttpVerb verb,
+        string? contentType,
         CancellationToken cancellationToken
     )
     {
@@ -894,6 +905,11 @@ internal sealed class AwsBlobStorage(
             // SigV4 presigning is performed locally; Expires is the absolute deadline.
             Expires = timeProvider.GetUtcNow().Add(expiry).UtcDateTime,
         };
+
+        if (contentType is not null)
+        {
+            request.ContentType = contentType;
+        }
 
         // Honor the configured endpoint scheme. When the client targets a plaintext http:// endpoint (an
         // S3-compatible emulator such as LocalStack/MinIO), the SDK would otherwise rewrite the signed URL

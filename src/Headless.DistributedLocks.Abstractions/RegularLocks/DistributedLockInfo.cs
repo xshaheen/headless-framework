@@ -17,8 +17,9 @@ public sealed record DistributedLockInfo
     public required string? LeaseId { get; init; }
 
     /// <summary>
-    /// A per-resource monotonic grant counter used by protected resources to reject stale writes,
-    /// or null when the backend or inspection path cannot report a fencing token.
+    /// The fencing token of the current grant, or null when the backend or inspection path cannot report one.
+    /// Tokens increase per resource but may skip values; see <see cref="IDistributedLease.FencingToken"/> for how a
+    /// protected resource must compare them.
     /// </summary>
     /// <remarks>
     /// The inspection path (<c>GetLockInfoAsync</c> / <c>ListActiveLocksAsync</c>) reports null for

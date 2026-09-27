@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Features;
 using Headless.Hosting.Initialization;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
@@ -19,7 +18,7 @@ public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture 
         // Password is a placeholder; we never reach the auth handshake because the TCP connect fails first.
         const string unreachable =
             "Server=127.0.0.1,1;Database=missing;User Id=sa;Password=placeholder-never-used;Connect Timeout=2;TrustServerCertificate=true";
-        using var host = _CreateHost(unreachable);
+        using var host = fixture.CreateHost("features_sql_failure", unreachable);
 
         // when & then — wrapped in HostFailedToStartException by the host pipeline; inner is SqlException
         await FluentActions
@@ -44,12 +43,9 @@ public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture 
     {
         // given — 5 hosts racing to create the same schema/tables; the initializer is
         // designed to be idempotent via OBJECT_ID checks + duplicate-error suppression.
-        await _DropSchemaAsync("features_sql_concurrent");
+        await fixture.DropSchemaAsync("features_sql_concurrent", AbortToken);
         const int hostCount = 5;
-        var hosts = Enumerable
-            .Range(0, hostCount)
-            .Select(_ => _CreateHost(fixture.ConnectionString, "features_sql_concurrent"))
-            .ToArray();
+        var hosts = Enumerable.Range(0, hostCount).Select(_ => fixture.CreateHost("features_sql_concurrent")).ToArray();
 
         try
         {
@@ -80,37 +76,6 @@ public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture 
                 host.Dispose();
             }
         }
-    }
-
-    private static IHost _CreateHost(string connectionString, string schema = "features_sql_failure")
-    {
-        var builder = Host.CreateApplicationBuilder();
-        // unify: management-core deps
-        builder.Services.AddSingleton(TimeProvider.System);
-        builder.Services.AddHeadlessFeatures(setup =>
-        {
-            setup.ConfigureStorage(options => options.Schema = schema);
-            setup.UseSqlServer(connectionString);
-        });
-
-        return builder.Build();
-    }
-
-    private async Task _DropSchemaAsync(string schema)
-    {
-        await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        await using var command = new SqlCommand(
-            $"""
-            IF OBJECT_ID(N'{schema}.FeatureValues', N'U') IS NOT NULL DROP TABLE [{schema}].[FeatureValues];
-            IF OBJECT_ID(N'{schema}.FeatureDefinitions', N'U') IS NOT NULL DROP TABLE [{schema}].[FeatureDefinitions];
-            IF OBJECT_ID(N'{schema}.FeatureGroupDefinitions', N'U') IS NOT NULL DROP TABLE [{schema}].[FeatureGroupDefinitions];
-            IF TYPE_ID(N'{schema}.HeadlessFeaturesIdList') IS NOT NULL DROP TYPE [{schema}].[HeadlessFeaturesIdList];
-            IF EXISTS (SELECT * FROM sys.schemas WHERE name = N'{schema}') EXEC(N'DROP SCHEMA [{schema}]');
-            """,
-            connection
-        );
-        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private async Task<int> _CountTablesAsync(string schema, string table)

@@ -176,7 +176,8 @@ public sealed class CronControlProviderTests : TestBase
                     "seeded",
                     "0 */5 * * * *",
                     MissedRunPolicy.Coalesce,
-                    JobsRecoveryDefaults.MissedRunGraceSeconds
+                    JobsRecoveryDefaults.MissedRunGraceSeconds,
+                    CronOverlapPolicy.Allow
                 ),
             ],
             AbortToken
@@ -203,7 +204,8 @@ public sealed class CronControlProviderTests : TestBase
                     "seeded",
                     "0 */5 * * * *",
                     MissedRunPolicy.Coalesce,
-                    JobsRecoveryDefaults.MissedRunGraceSeconds
+                    JobsRecoveryDefaults.MissedRunGraceSeconds,
+                    CronOverlapPolicy.Allow
                 ),
             ],
             AbortToken
@@ -218,7 +220,8 @@ public sealed class CronControlProviderTests : TestBase
                     "seeded",
                     "0 */10 * * * *",
                     MissedRunPolicy.Coalesce,
-                    JobsRecoveryDefaults.MissedRunGraceSeconds
+                    JobsRecoveryDefaults.MissedRunGraceSeconds,
+                    CronOverlapPolicy.Allow
                 ),
             ],
             AbortToken

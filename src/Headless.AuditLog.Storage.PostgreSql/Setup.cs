@@ -150,6 +150,7 @@ public static class SetupAuditLogPostgreSql
             services.TryAddSingleton<PostgreSqlAuditLogWriter>();
             services.TryAddScoped<IAuditLogStore, PostgreSqlAuditLogStore>();
             services.TryAddSingleton(typeof(IAuditLog<>), typeof(PostgreSqlAuditLog<>));
+            services.TryAddSingleton(typeof(IAuditLogWriter<>), typeof(PostgreSqlAuditLog<>));
             services.TryAddSingleton(typeof(IReadAuditLog<>), typeof(PostgreSqlReadAuditLog<>));
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<ICurrentTenant, NullCurrentTenant>();

@@ -647,6 +647,10 @@ internal sealed class AzureBlobStorage(
     #region Presigned Urls
 
     /// <inheritdoc />
+    /// <remarks>A SAS grants write permission but cannot constrain the request's content type or size.</remarks>
+    public PresignedUploadConstraintKinds SupportedUploadConstraints => PresignedUploadConstraintKinds.None;
+
+    /// <inheritdoc />
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="expiry"/> is not positive.</exception>
     /// <exception cref="InvalidOperationException">Thrown when the <see cref="BlobServiceClient"/> cannot generate a SAS URI (no account key or user-delegation credentials).</exception>
     public ValueTask<Uri> GetPresignedDownloadUrlAsync(
@@ -659,11 +663,16 @@ internal sealed class AzureBlobStorage(
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// A SAS grants write permission but cannot constrain the request's content type or size, so
+    /// <paramref name="constraints"/> is ignored.
+    /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="expiry"/> is not positive.</exception>
     /// <exception cref="InvalidOperationException">Thrown when the <see cref="BlobServiceClient"/> cannot generate a SAS URI (no account key or user-delegation credentials).</exception>
     public ValueTask<Uri> GetPresignedUploadUrlAsync(
         BlobLocation location,
         TimeSpan expiry,
+        PresignedUploadConstraints? constraints = null,
         CancellationToken cancellationToken = default
     )
     {

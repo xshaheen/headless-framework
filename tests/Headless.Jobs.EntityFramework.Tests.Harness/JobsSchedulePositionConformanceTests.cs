@@ -760,7 +760,8 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
                     "migrate-reset",
                     "0 */5 * * * *",
                     MissedRunPolicy.Coalesce,
-                    JobsRecoveryDefaults.MissedRunGraceSeconds
+                    JobsRecoveryDefaults.MissedRunGraceSeconds,
+                    CronOverlapPolicy.Allow
                 ),
             ],
             ct

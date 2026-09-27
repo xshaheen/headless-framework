@@ -195,6 +195,41 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture) : FeaturesT
     }
 
     [Fact]
+    public async Task should_store_and_clear_a_batch_of_edition_values_in_one_call()
+    {
+        // given
+        await Fixture.ResetAsync();
+        using var host = CreateHost(b => b.Services.AddFeatureDefinitionProvider<TwoFeaturesDefinitionProvider>());
+        await using var scope = host.Services.CreateAsyncScope();
+        var featureManager = scope.ServiceProvider.GetRequiredService<IFeatureManager>();
+        var valueRepository = scope.ServiceProvider.GetRequiredService<IFeatureValueRecordRepository>();
+        const string editionId = "AnyEditionId";
+        await featureManager.GrantToEditionAsync("Feature2", editionId);
+
+        // when
+        await featureManager.SetAsync(
+            new Dictionary<string, string?>(StringComparer.Ordinal) { ["Feature1"] = "true", ["Feature2"] = null },
+            FeatureValueProviderNames.Edition,
+            editionId,
+            cancellationToken: AbortToken
+        );
+
+        // then
+        (await featureManager.GetForEditionAsync("Feature1", editionId))
+            .Value.Should()
+            .Be("true");
+        var feature2 = await featureManager.GetForEditionAsync("Feature2", editionId);
+        feature2.Value.Should().Be("false");
+        feature2.Provider!.Name.Should().Be(DefaultValueFeatureValueProvider.ProviderName);
+        var stored = await valueRepository.GetListAsync(
+            EditionFeatureValueProvider.ProviderName,
+            editionId,
+            AbortToken
+        );
+        stored.Should().ContainSingle().Which.Name.Should().Be("Feature1");
+    }
+
+    [Fact]
     public async Task should_invalidate_cached_feature_end_to_end_when_repository_updates_record()
     {
         // given
@@ -368,6 +403,17 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture) : FeaturesT
         public void Define(IFeatureDefinitionContext context)
         {
             context.AddGroup("Group1").AddChild(new() { Name = "Feature1", DefaultValue = "false" });
+        }
+    }
+
+    [UsedImplicitly]
+    private sealed class TwoFeaturesDefinitionProvider : IFeatureDefinitionProvider
+    {
+        public void Define(IFeatureDefinitionContext context)
+        {
+            var group = context.AddGroup("Group1");
+            group.AddChild(new() { Name = "Feature1", DefaultValue = "false" });
+            group.AddChild(new() { Name = "Feature2", DefaultValue = "false" });
         }
     }
 

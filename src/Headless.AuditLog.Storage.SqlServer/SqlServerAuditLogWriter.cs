@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Data;
 using Headless.Serializer;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
@@ -184,8 +185,13 @@ internal sealed class SqlServerAuditLogWriter(
         for (var i = 0; i < rowCount; i++)
         {
             var entry = entries[offset + i];
+            // Typed explicitly: an untyped DateTime binds as legacy datetime and rounds the stored value to ~3 ms,
+            // collapsing distinct timestamps in a datetime2 column that read paging orders by.
             parameters.Add(
-                _Param(string.Create(CultureInfo.InvariantCulture, $"CreatedAt_{i}"), entry.CreatedAt.UtcDateTime)
+                new SqlParameter(string.Create(CultureInfo.InvariantCulture, $"@CreatedAt_{i}"), SqlDbType.DateTime2)
+                {
+                    Value = entry.CreatedAt.UtcDateTime,
+                }
             );
             parameters.Add(
                 _Param(

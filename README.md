@@ -162,6 +162,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Push notifications | `AddHeadlessPushNotifications` | `UseFirebase`, `UseApns`, `UseNoop` |
 | Distributed locks | `AddHeadlessDistributedLocks` | `UseInMemory`, `UseRedis`, `UsePostgreSql`, `UseSqlServer` |
 | Node membership | `AddHeadlessCoordination` | `UseRedis`, `UsePostgreSql`, `UseSqlServer` |
+| Sequences | `AddHeadlessSequences` | `UsePostgreSql`, `UseSqlServer` |
 | Feature flags | `AddHeadlessFeatures` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
 | Dynamic settings | `AddHeadlessSettings` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
 | Permissions | `AddHeadlessPermissions` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
@@ -182,7 +183,7 @@ Two rules follow from that shape:
 | **API host** | `AddHeadless()` one-line bootstrap: problem details, OpenTelemetry, OpenAPI, health checks, compression, forwarded headers, HSTS, startup validation. Minimal API and MVC integrations, FluentValidation filters, Stripe-style HTTP idempotency. |
 | **Data** | EF Core conventions, global filters, soft deletes, DDD base types, seed data. Raw connection factories for PostgreSQL, SQL Server, and SQLite. Couchbase. Geospatial support through NetTopologySuite. |
 | **State and storage** | Caching (memory, Redis, hybrid L1/L2, tagging, stampede protection). Blob storage across six backends. Dynamic settings, feature flags, permissions, and audit logs, each with three storage providers. |
-| **Distributed runtime** | Messaging with a transactional outbox, retries, and delayed delivery over eight transports. Background jobs with cron, retries, and source-generated registration. Distributed locks. Node membership and liveness. A scoped unit of work that drains outbox and job work atomically on commit. |
+| **Distributed runtime** | Messaging with a transactional outbox, retries, and delayed delivery over eight transports. Background jobs with cron, retries, and source-generated registration. Distributed locks. Attempt limiting for OTP, password-reset, and PIN flows. Node membership and liveness. A scoped unit of work that drains outbox and job work atomically on commit. |
 | **Integrations** | Email, SMS, push notifications, CAPTCHA, image processing, media text extraction, Paymob payments, TUS resumable uploads, sitemaps, slugs, URL building. |
 | **Multi-tenancy** | Tenant context that flows through HTTP resolution, EF Core query filters, permission caching, and messaging headers, plus an optional tenant catalog. |
 | **Testing** | xUnit v3 base classes, Bogus builders, `WebApplicationFactory` fixtures with database reset, Testcontainers fixtures, and a messaging test harness that asserts on published, consumed, and faulted messages. |
@@ -276,7 +277,8 @@ Foundational building blocks shared across the framework — domain primitives, 
 | [Headless.Extensions](src/Headless.Extensions/README.md) | Core primitives and utilities |
 | [Headless.Core](src/Headless.Core/README.md) | Domain-Driven Design building blocks |
 | [Headless.Security.Abstractions](src/Headless.Security.Abstractions/README.md) | Security contracts and options |
-| [Headless.Security](src/Headless.Security/README.md) | String encryption and hashing services |
+| [Headless.Security](src/Headless.Security/README.md) | String encryption, lookup hashing, and secret hashing (PBKDF2) services |
+| [Headless.Security.Argon2](src/Headless.Security.Argon2/README.md) | Argon2id secret hashing, the default `ISecretHasher` algorithm |
 | [Headless.Checks](src/Headless.Checks/README.md) | Guard clauses and argument validation |
 | [Headless.Domain](src/Headless.Domain/README.md) | Domain entities and events |
 | [Headless.Domain.LocalEventBus](src/Headless.Domain.LocalEventBus/README.md) | DI-based `ILocalEventBus` for in-process domain event publishing |
@@ -310,6 +312,7 @@ One blob storage interface with providers for every major cloud and protocol.
 | [Headless.Blobs.CloudflareR2](src/Headless.Blobs.CloudflareR2/README.md) | Cloudflare R2 (S3-compatible) blob storage |
 | [Headless.Blobs.FileSystem](src/Headless.Blobs.FileSystem/README.md) | Local filesystem storage |
 | [Headless.Blobs.Redis](src/Headless.Blobs.Redis/README.md) | Redis blob storage |
+| [Headless.Blobs.SignedUrlEndpoint](src/Headless.Blobs.SignedUrlEndpoint/README.md) | Signed download and upload URLs for blob stores without native presign |
 | [Headless.Blobs.SshNet](src/Headless.Blobs.SshNet/README.md) | SFTP blob storage |
 
 ### Caching
@@ -519,6 +522,14 @@ Coordinate access to shared resources across distributed services.
 | [Headless.DistributedLocks.Redis](src/Headless.DistributedLocks.Redis/README.md) | Redis-based locking |
 | [Headless.DistributedLocks.SqlServer](src/Headless.DistributedLocks.SqlServer/README.md) | SQL Server application-lock locking |
 
+### Rate Limiting
+
+Exact attempt quotas per phone number, email address, IP address, or card, shared by every replica.
+
+| Package | Description |
+|---------|-------------|
+| [Headless.RateLimiting](src/Headless.RateLimiting/README.md) | Fixed-window attempt limiter over `ICache` with pseudonymised subject keys |
+
 ### Coordination
 
 Cluster membership and liveness tracking. Know which nodes are alive across a distributed deployment.
@@ -531,6 +542,17 @@ Cluster membership and liveness tracking. Know which nodes are alive across a di
 | [Headless.Coordination.PostgreSql](src/Headless.Coordination.PostgreSql/README.md) | PostgreSQL membership with server-clock liveness |
 | [Headless.Coordination.Redis](src/Headless.Coordination.Redis/README.md) | Redis membership via Lua scripts and server time |
 | [Headless.Coordination.SqlServer](src/Headless.Coordination.SqlServer/README.md) | SQL Server membership with guarded writes |
+
+### Sequences
+
+Per-tenant consecutive numbers for receipts, invoices, and case numbers. The fast mode takes a number in its own transaction; the gap-free mode takes it inside the unit of work, so a rollback returns it.
+
+| Package | Description |
+|---------|-------------|
+| [Headless.Sequences.Abstractions](src/Headless.Sequences.Abstractions/README.md) | `ISequenceGenerator`, `SequenceRange`, and the `unit.Sequences` accessor |
+| [Headless.Sequences.Core](src/Headless.Sequences.Core/README.md) | Registration, numbering policies, and tenant key resolution |
+| [Headless.Sequences.PostgreSql](src/Headless.Sequences.PostgreSql/README.md) | PostgreSQL counters with a single upsert-increment |
+| [Headless.Sequences.SqlServer](src/Headless.Sequences.SqlServer/README.md) | SQL Server counters with a range-locked upsert |
 
 ### Unit of Work
 

@@ -79,14 +79,14 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
             await Task.WhenAll(startTasks);
 
             // then — all initializers report ready, exactly one audit_log table exists, and the
-            // full 5-index complement is present (regression guard: a swallowed CREATE INDEX
+            // full 6-index complement is present (regression guard: a swallowed CREATE INDEX
             // failure would otherwise pass the table-count assertion silently).
             hosts
                 .Select(h => h.Services.GetRequiredService<IEnumerable<IInitializer>>().Single().IsInitialized)
                 .Should()
                 .AllSatisfy(initialized => initialized.Should().BeTrue());
             (await _CountTablesAsync("audit_log_pg_concurrent", "audit_log")).Should().Be(1);
-            (await _CountIndexesAsync("audit_log_pg_concurrent", "audit_log")).Should().Be(5);
+            (await _CountIndexesAsync("audit_log_pg_concurrent", "audit_log")).Should().Be(6);
         }
         finally
         {
@@ -139,7 +139,7 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
-        // Matches the 5 `CREATE INDEX IF NOT EXISTS ix_audit_log_*` statements in the PG
+        // Matches the 6 `CREATE INDEX IF NOT EXISTS ix_audit_log_*` statements in the PG
         // initializer; the LIKE filter excludes the PK index (named `PK_<table>`).
         await using var command = new NpgsqlCommand(
             """

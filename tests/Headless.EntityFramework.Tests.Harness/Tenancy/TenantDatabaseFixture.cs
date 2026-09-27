@@ -111,12 +111,14 @@ public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider) : I
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<ICurrentUser>(new TestCurrentUser());
         services.AddSingleton<IGuidGenerator>(new SequentialGuidGenerator(SequentialGuidType.Version7));
-        builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
+        builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ConfigureTenancy));
         services.AddSingleton<ICurrentTenant>(CurrentTenant);
         services.AddRecordingHeadlessDispatcher();
         configure(services);
         return services.BuildServiceProvider();
     }
+
+    protected virtual void ConfigureTenancy(HeadlessEntityFrameworkTenancyBuilder ef) => ef.GuardTenantWrites();
 
     protected abstract void ConfigureServices(IServiceCollection services);
     protected abstract DbContext GetContext(IServiceProvider services);

@@ -915,6 +915,148 @@ public sealed class SettingManagerTests : TestBase
         await action.Should().ThrowExactlyAsync<ConflictException>();
     }
 
+    [Fact]
+    public async Task should_write_a_batch_in_one_provider_call_and_announce_every_name_once()
+    {
+        // given
+        var setting1 = new SettingDefinition("Setting1");
+        var setting2 = new SettingDefinition("Setting2");
+        var provider = Substitute.For<ISettingValueProvider>();
+        provider.Name.Returns("Provider1");
+        _definitionManager.FindAsync("Setting1", AbortToken).Returns(setting1);
+        _definitionManager.FindAsync("Setting2", AbortToken).Returns(setting2);
+        _valueProviderManager.Providers.Returns([provider]);
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["Setting1"] = "a",
+            ["Setting2"] = null,
+        };
+
+        // when
+        await _sut.SetAsync(values, "Provider1", "key1", cancellationToken: AbortToken);
+
+        // then
+        await provider
+            .Received(1)
+            .SetAllAsync(
+                Arg.Is<IReadOnlyList<KeyValuePair<SettingDefinition, string?>>>(writes =>
+                    writes.Count == 2
+                    && writes[0].Key == setting1
+                    && writes[0].Value == "a"
+                    && writes[1].Key == setting2
+                    && writes[1].Value == null
+                ),
+                "key1",
+                AbortToken
+            );
+        await _bus.Received(1)
+            .PublishAsync(
+                Arg.Is<SettingChangedMessage>(m =>
+                    m.SettingNames.Count == 2
+                    && m.SettingNames.Contains("Setting1")
+                    && m.SettingNames.Contains("Setting2")
+                    && m.ProviderName == "Provider1"
+                    && m.ProviderKey == "key1"
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_store_and_clear_every_value_in_a_batch()
+    {
+        // given
+        var setting1 = new SettingDefinition("Setting1");
+        var setting2 = new SettingDefinition("Setting2");
+        var provider = new FakeSettingValueProvider { Name = "Provider1" };
+        provider.SetValue("Setting2", "old");
+        _definitionManager.FindAsync("Setting1", AbortToken).Returns(setting1);
+        _definitionManager.FindAsync("Setting2", AbortToken).Returns(setting2);
+        _valueProviderManager.Providers.Returns([provider]);
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["Setting1"] = "a",
+            ["Setting2"] = null,
+        };
+
+        // when
+        await _sut.SetAsync(values, "Provider1", null, cancellationToken: AbortToken);
+
+        // then
+        (await provider.GetOrDefaultAsync(setting1, cancellationToken: AbortToken))
+            .Should()
+            .Be("a");
+        (await provider.GetOrDefaultAsync(setting2, cancellationToken: AbortToken)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_write_nothing_when_a_name_in_the_batch_is_not_defined()
+    {
+        // given
+        var setting1 = new SettingDefinition("Setting1");
+        var provider = new FakeSettingValueProvider { Name = "Provider1" };
+        _definitionManager.FindAsync("Setting1", AbortToken).Returns(setting1);
+        _definitionManager.FindAsync("Missing", AbortToken).Returns((SettingDefinition?)null);
+        _valueProviderManager.Providers.Returns([provider]);
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal) { ["Setting1"] = "a", ["Missing"] = "b" };
+
+        // when
+        var action = async () => await _sut.SetAsync(values, "Provider1", null, cancellationToken: AbortToken);
+
+        // then
+        await action.Should().ThrowExactlyAsync<ConflictException>();
+        (await provider.GetOrDefaultAsync(setting1, cancellationToken: AbortToken)).Should().BeNull();
+        await _bus.DidNotReceive().PublishAsync(Arg.Any<SettingChangedMessage>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_write_nothing_when_a_same_named_provider_is_read_only()
+    {
+        // given the first "Provider1" is writable and a second one registered under the same name is not
+        var setting1 = new SettingDefinition("Setting1");
+        var writable = new FakeSettingValueProvider { Name = "Provider1" };
+        var readOnly = Substitute.For<ISettingValueReadProvider>();
+        readOnly.Name.Returns("Provider1");
+        _definitionManager.FindAsync("Setting1", AbortToken).Returns(setting1);
+        _valueProviderManager.Providers.Returns([writable, readOnly]);
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal) { ["Setting1"] = "a" };
+
+        // when
+        var action = async () => await _sut.SetAsync(values, "Provider1", null, cancellationToken: AbortToken);
+
+        // then
+        await action.Should().ThrowExactlyAsync<ConflictException>();
+        (await writable.GetOrDefaultAsync(setting1, cancellationToken: AbortToken)).Should().BeNull();
+        await _bus.DidNotReceive().PublishAsync(Arg.Any<SettingChangedMessage>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_write_and_announce_nothing_for_an_empty_batch()
+    {
+        // given
+        var provider = Substitute.For<ISettingValueProvider>();
+        provider.Name.Returns("Provider1");
+        _valueProviderManager.Providers.Returns([provider]);
+
+        // when
+        await _sut.SetAsync(
+            new Dictionary<string, string?>(StringComparer.Ordinal),
+            "Provider1",
+            null,
+            cancellationToken: AbortToken
+        );
+
+        // then
+        await provider
+            .DidNotReceive()
+            .SetAllAsync(
+                Arg.Any<IReadOnlyList<KeyValuePair<SettingDefinition, string?>>>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>()
+            );
+        await _bus.DidNotReceive().PublishAsync(Arg.Any<SettingChangedMessage>(), Arg.Any<CancellationToken>());
+    }
+
     #endregion
 
     #region DeleteAsync

@@ -211,7 +211,7 @@ public enum TenantPostureStatus
     /// <summary>The seam propagates tenant context.</summary>
     Propagating = 1,
 
-    /// <summary>The seam guards tenant-owned writes.</summary>
+    /// <summary>The seam guards tenant-owned reads or writes; its capability labels name which.</summary>
     Guarded = 2,
 
     /// <summary>The seam enforces tenant context.</summary>
