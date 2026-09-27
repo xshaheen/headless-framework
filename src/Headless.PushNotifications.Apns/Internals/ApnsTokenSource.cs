@@ -170,6 +170,7 @@ internal sealed class ApnsTokenSource(TimeProvider timeProvider) : IDisposable
 
             var minted = _Mint(entry, (current?.Generation ?? 0) + 1);
             entry.Current = minted;
+            ApnsMetrics.RecordProviderTokenMinted();
 
             return minted;
         }

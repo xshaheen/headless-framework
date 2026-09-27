@@ -598,7 +598,9 @@ public sealed class ApnsPushNotificationServiceTests : TestBase
         var bearers = _server.DistinctBearers();
         bearers.Should().HaveCount(2);
         bearers.Should().Contain(rejected);
-        _server.Requests.Where(r => r.Attempt == 1).Should().AllSatisfy(r => r.Bearer.Should().Be(rejected));
+        // A send that starts after another send's rejection already carries the new token on its first attempt,
+        // so only the resends are pinned: none may repeat the rejected token.
+        _server.Requests.Where(r => r.Attempt > 1).Should().AllSatisfy(r => r.Bearer.Should().NotBe(rejected));
     }
 
     [Fact]

@@ -94,4 +94,22 @@ internal static partial class ApnsLoggerExtensions
         Message = "APNs: The periodic expiry check of the '{Instance}' instance's certificate failed."
     )]
     public static partial void LogCertificateCheckFailed(this ILogger logger, Exception exception, string instance);
+
+    // A rejection whose reason names the instance's key or token configuration: no send succeeds until the operator
+    // fixes it, so it is an error, not a per-token warning.
+    [LoggerMessage(
+        EventId = 10,
+        EventName = "ApnsTokenConfigurationError",
+        Level = LogLevel.Error,
+        Message = "APNs: {Reason} rejected the provider token. The KeyId, TeamId, or PrivateKey configuration of this instance is wrong; every send fails until it is fixed. Token prefix: {DeviceTokenPrefix}"
+    )]
+    public static partial void LogTokenConfigurationError(this ILogger logger, string reason, string deviceTokenPrefix);
+
+    [LoggerMessage(
+        EventId = 11,
+        EventName = "ApnsProviderTokenUpdatedTooOften",
+        Level = LogLevel.Error,
+        Message = "APNs: TooManyProviderTokenUpdates: the provider token is being updated too often. Apple rejects a key whose token changes more than once every 20 minutes, so share one token per key across every process that signs with it and wait out the window before re-minting."
+    )]
+    public static partial void LogProviderTokenUpdatedTooOften(this ILogger logger);
 }
