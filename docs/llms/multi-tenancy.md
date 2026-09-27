@@ -577,7 +577,7 @@ builder.Services.AddHeadlessDbContext<AppDbContext>(options => options.UseNpgsql
 builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
 ```
 
-`GuardTenantWrites()` is the only registration API. `TenantWriteGuardOptions.IsEnabled` reports the configured state and has no public setter.
+`GuardTenantWrites()` is the only registration API. `TenantGuardOptions.GuardWrites` reports the configured state and has no public setter.
 
 When enabled, the guard reads finalized ownership metadata and rejects in-memory mismatches before local handler dispatch and persistence:
 
@@ -627,7 +627,7 @@ Without the guard, a query over a tenant-owned entity with a required tenant col
 - **Not covered:** raw SQL (`FromSql`, `ExecuteSql`) and identity-map hits such as `FindAsync` on an already tracked entity. Neither runs the filter.
 - **Lookups before tenant resolution:** tenant resolution runs after `UseAuthentication()`. With tenant-owned Identity, a user lookup inside authentication, such as a cookie security-stamp validator calling `FindByIdAsync`, now throws instead of returning no user. Resolve the tenant before such a lookup runs, or perform it through your own query that calls `IgnoreMultiTenancyFilter()` on purpose.
 
-`GuardTenantReads()` is the only registration API. `TenantReadGuardOptions.IsEnabled` reports the configured state and has no public setter. When the seam records `guard-tenant-reads` but the options resolve to disabled, for example because a later registration replaced `IOptions<TenantReadGuardOptions>`, host startup fails with `HEADLESS_TENANCY_EF_READ_GUARD_DISABLED`.
+`GuardTenantReads()` is the only registration API. `TenantGuardOptions.GuardReads` reports the configured state and has no public setter. When the seam records `guard-tenant-reads` but `GuardReads` resolves to false, for example because a later registration replaced `IOptions<TenantGuardOptions>`, host startup fails with `HEADLESS_TENANCY_EF_READ_GUARD_DISABLED`; the write guard reports `HEADLESS_TENANCY_EF_WRITE_GUARD_DISABLED` the same way.
 
 ## Messaging Exhausted Callbacks
 

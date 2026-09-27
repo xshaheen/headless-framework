@@ -37,7 +37,7 @@ internal static class HeadlessTenantQueryFilter
         if (
             required
             && string.IsNullOrWhiteSpace(tenantId)
-            && context.ServiceProvider.GetRequiredService<IOptions<TenantReadGuardOptions>>().Value.IsEnabled
+            && context.ServiceProvider.GetRequiredService<IOptions<TenantGuardOptions>>().Value.GuardReads
         )
         {
             throw new MissingTenantContextException(

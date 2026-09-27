@@ -340,7 +340,7 @@ The raw PostgreSQL and SQL Server audit packages are storage providers. They can
 
 #### Tenant Write Guard
 
-Disabled by default. `TenantWriteGuardOptions.IsEnabled` is read-only to consumers. Enable validation and tenant stamping through the tenancy builder:
+Disabled by default. `TenantGuardOptions.GuardWrites` is read-only to consumers. Enable validation and tenant stamping through the tenancy builder:
 
 ```csharp
 builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
@@ -373,7 +373,7 @@ Bulk `ExecuteUpdate` and `ExecuteDelete` use query filters but skip the save gua
 
 #### Tenant Read Guard
 
-Disabled by default and independent of the write guard. `TenantReadGuardOptions.IsEnabled` is read-only to consumers:
+Disabled by default and independent of the write guard. `TenantGuardOptions.GuardReads` is read-only to consumers:
 
 ```csharp
 builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantReads()));
@@ -486,7 +486,7 @@ configurationBuilder.Properties<MoneyAmount>().HaveConversion<MoneyAmountValueCo
 - Registers `IDbContextOptionsConfiguration<TDbContext>` that auto-attaches DI-registered `IInterceptor` instances to EF's option pipeline (covers both `AddHeadlessDbContext` and consumer's own `AddDbContext`)
 - Registers the singleton `IUnitOfWorkFactory` (idempotent `AddUnitOfWork()`, via `Headless.UnitOfWork.EntityFramework`)
 - `.AddDomainEvents()` registers `IDomainEventDispatcher` (via `services.AddHeadlessDomainEventDispatcher()`); `.AddIntegrationEventOutbox()` (from `Headless.EntityFramework.Messaging`) registers `IHeadlessOutboxDispatcher`; neither is registered by default
-- Registers `TenantWriteGuardOptions` and `ITenantWriteGuardBypass` (always; guard is disabled by default)
+- Registers `TenantGuardOptions` and `ITenantWriteGuardBypass` (always; both guards are disabled by default)
 - Registers via `TryAddSingleton`: `TimeProvider.System`, keyed `IGuidGenerator` strategies (`Version7` and `SqlServer`) plus an unkeyed `Version7` default, `ICurrentTenantAccessor`, `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider`
 - Registers `ICurrentTenant` (`CurrentTenant`), replacing only the framework-fallback `NullCurrentTenant` while preserving consumer-provided tenant implementations
 - Replaces `ICompiledQueryCacheKeyGenerator` so tenant-scoped queries share compiled plans correctly

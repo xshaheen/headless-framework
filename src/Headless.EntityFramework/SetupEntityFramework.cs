@@ -202,8 +202,7 @@ public static class SetupEntityFramework
             configureOptions?.Invoke(options);
             options.RegisterServices(services);
 
-            services.AddOptions<TenantWriteGuardOptions>();
-            services.AddOptions<TenantReadGuardOptions>();
+            services.AddOptions<TenantGuardOptions>();
             services.TryAddScoped<HeadlessDbContextServices>();
             services.TryAddScoped<IHeadlessSaveChangesPipeline, HeadlessSaveChangesPipeline>();
             // The save pipeline enlists its transaction in the scoped unit of work and resolves the unit bound
@@ -246,10 +245,10 @@ public static class SetupEntityFramework
 
             services.AddSingleton<HeadlessTenantWriteGuardSentinel>();
 
-            // PostConfigure (not Configure): the seam's IsEnabled = true must run AFTER any consumer
-            // Configure<TenantWriteGuardOptions>(...) the host wires up so a later host-side
+            // PostConfigure (not Configure): the seam's GuardWrites = true must run AFTER any consumer
+            // Configure<TenantGuardOptions>(...) the host wires up so a later host-side
             // Configure that disables the guard does not override the seam's explicit opt-in.
-            services.PostConfigure<TenantWriteGuardOptions>(options => options.IsEnabled = true);
+            services.PostConfigure<TenantGuardOptions>(options => options.GuardWrites = true);
 
             return services;
         }
@@ -273,8 +272,8 @@ public static class SetupEntityFramework
             services.AddSingleton<HeadlessTenantReadGuardSentinel>();
 
             // PostConfigure for the same reason as the write guard: the seam's opt-in must win over any
-            // host-side Configure<TenantReadGuardOptions>(...).
-            services.PostConfigure<TenantReadGuardOptions>(options => options.IsEnabled = true);
+            // host-side Configure<TenantGuardOptions>(...).
+            services.PostConfigure<TenantGuardOptions>(options => options.GuardReads = true);
 
             return services;
         }

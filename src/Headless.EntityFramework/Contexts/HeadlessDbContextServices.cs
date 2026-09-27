@@ -22,14 +22,14 @@ public sealed class HeadlessDbContextServices(
     IServiceProvider serviceProvider,
     ICurrentTenant currentTenant,
     IHeadlessSaveChangesPipeline saveChangesPipeline,
-    IOptions<TenantWriteGuardOptions> tenantWriteGuardOptions
+    IOptions<TenantGuardOptions> tenantGuardOptions
 )
 {
     internal string? TenantId => currentTenant.Id;
 
     internal IHeadlessSaveChangesPipeline SaveChangesPipeline { get; } = saveChangesPipeline;
 
-    internal bool IsTenantWriteGuardEnabled => tenantWriteGuardOptions.Value.IsEnabled;
+    internal bool IsTenantWriteGuardEnabled => tenantGuardOptions.Value.GuardWrites;
 
     // The scoped (request) service provider that resolved this bag — the SAME scope the save pipeline captures.
     // Held so the runtime (ITenantWriteGuardBypass on every Added transition) and anything reaching the context
