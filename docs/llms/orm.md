@@ -37,6 +37,7 @@ Use these packages for ORM-level persistence primitives. For raw SQL connection 
 - **Never pool `HeadlessDbContext`.** Do not register subclasses with `AddDbContextPool` or `AddPooledDbContextFactory`. The context holds a private `HeadlessDbContextRuntime` that captures the request-scoped outbox dispatcher and audit persistence. Pooling reuses a prior request's unit of work — a captive-dependency bug, not a perf trade-off.
 - Declare third-party roots with `IsTenantOwned()` after `base.OnModelCreating(modelBuilder)`. Finalized metadata drives tenant filters, the optional write guard, and SQL concurrency predicates. `IMultiTenant` remains the default ownership signal; `IsNotTenantOwned()` explicitly excludes a root.
 - Enable tenant validation and Added-transition stamping with `builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()))`. SQL tenant concurrency predicates remain active without the guard.
+- Enable `GuardTenantReads()` on the same builder so queries over entities with a required tenant column throw `MissingTenantContextException` instead of returning no rows when no tenant is set. Nullable tenant columns keep returning host rows. `IgnoreMultiTenancyFilter()` lifts it; `ITenantWriteGuardBypass` does not.
 - Create a fresh `DbContext` for each tenant scope. `TenantId` reads the active ambient tenant dynamically, but query filters cannot sanitize entities already tracked by `FindAsync`.
 - **`IgnoreMultiTenancyFilter()` is read-side only.** It does not relax write protection under `GuardTenantWrites()`. When the same code path writes, also wrap the save in `ITenantWriteGuardBypass.BeginBypass()` — the two bypasses are independent.
 - Use `IUnitOfWorkFactory.RunAsync(db, (unit, ct) => …)` for multi-step EF operations that must be atomic under retry execution strategies (e.g. SQL Server `EnableRetryOnFailure`). It begins a unit of work on the context inside the execution strategy, hands it to the operation, and completes it after commit, so `unit.Outbox` publishes and `unit.Jobs` writes made inside enlist and drain atomically. The factory is the only receiver that opens a transaction — a context carries no transaction helper of its own, and there is no "plain, no unit-of-work" overload. Inject `IUnitOfWorkFactory` (singleton) at the call site; it works the same for a `HeadlessDbContext`, a `HeadlessIdentityDbContext`, and a plain `DbContext`, and `RunAsync(connection, …)` covers `SqlConnection` / `NpgsqlConnection` (see [Unit of Work](unit-of-work.md)). `RunAsync(db, …)` on a context that already carries a live unit joins it, so a service can self-wrap and still compose under a caller's transaction; code handed only the context reads the unit with `db.UnitOfWork()`, and a raw-ADO helper handed `db.Database.GetDbConnection()` joins the same unit through `RunAsync(connection, …)`.
@@ -339,7 +340,7 @@ The raw PostgreSQL and SQL Server audit packages are storage providers. They can
 
 #### Tenant Write Guard
 
-Disabled by default. `TenantWriteGuardOptions.IsEnabled` is read-only to consumers. Enable validation and tenant stamping through the tenancy builder:
+Disabled by default. `TenantGuardOptions.GuardWrites` is read-only to consumers. Enable validation and tenant stamping through the tenancy builder:
 
 ```csharp
 builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
@@ -369,6 +370,18 @@ Every tenant-owned root uses its tenant property as a concurrency token alongsid
 Early guard errors occur before local handler dispatch. SQL concurrency failures can occur after local handlers run because business persistence follows local dispatch. A failed database save prevents durable outbox persistence, but does not undo local or external handler effects.
 
 Bulk `ExecuteUpdate` and `ExecuteDelete` use query filters but skip the save guard and its generated concurrency predicates. Raw SQL commands and stored procedures bypass both filters and the guard. Supply explicit tenant predicates and authorization; wrapping raw SQL in `BeginBypass()` adds no protection.
+
+#### Tenant Read Guard
+
+Disabled by default and independent of the write guard. `TenantGuardOptions.GuardReads` is read-only to consumers:
+
+```csharp
+builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantReads()));
+```
+
+When enabled, the multi-tenancy filter on an entity with a required tenant column throws `MissingTenantContextException` at query execution when `ICurrentTenant.Id` is null or white space. This covers materializing queries, `ExecuteUpdate`, `ExecuteDelete`, `Include`, and navigation loads, and the exception reaches the caller unwrapped. Entities with a nullable tenant column are not guarded and keep returning host rows. Among framework entities only tenant-owned Identity is affected.
+
+`IgnoreMultiTenancyFilter()` removes the guard for that query. `ITenantWriteGuardBypass.BeginBypass()` does not. Raw SQL and `FindAsync` hits on tracked entities run no filter, so the guard does not apply to them. A later registration that resolves the options to disabled fails host startup with `HEADLESS_TENANCY_EF_READ_GUARD_DISABLED`. See [EF Tenant Read Guard](multi-tenancy.md#ef-tenant-read-guard).
 
 #### Tenant ownership
 
@@ -473,7 +486,7 @@ configurationBuilder.Properties<MoneyAmount>().HaveConversion<MoneyAmountValueCo
 - Registers `IDbContextOptionsConfiguration<TDbContext>` that auto-attaches DI-registered `IInterceptor` instances to EF's option pipeline (covers both `AddHeadlessDbContext` and consumer's own `AddDbContext`)
 - Registers the singleton `IUnitOfWorkFactory` (idempotent `AddUnitOfWork()`, via `Headless.UnitOfWork.EntityFramework`)
 - `.AddDomainEvents()` registers `IDomainEventDispatcher` (via `services.AddHeadlessDomainEventDispatcher()`); `.AddIntegrationEventOutbox()` (from `Headless.EntityFramework.Messaging`) registers `IHeadlessOutboxDispatcher`; neither is registered by default
-- Registers `TenantWriteGuardOptions` and `ITenantWriteGuardBypass` (always; guard is disabled by default)
+- Registers `TenantGuardOptions` and `ITenantWriteGuardBypass` (always; both guards are disabled by default)
 - Registers via `TryAddSingleton`: `TimeProvider.System`, keyed `IGuidGenerator` strategies (`Version7` and `SqlServer`) plus an unkeyed `Version7` default, `ICurrentTenantAccessor`, `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider`
 - Registers `ICurrentTenant` (`CurrentTenant`), replacing only the framework-fallback `NullCurrentTenant` while preserving consumer-provided tenant implementations
 - Replaces `ICompiledQueryCacheKeyGenerator` so tenant-scoped queries share compiled plans correctly
