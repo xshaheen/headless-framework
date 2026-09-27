@@ -30,24 +30,20 @@ public sealed class FcmConformanceTests : PushNotificationServiceConformanceTest
         // The service forwards the token without inspecting it, so the double stands in for the Firebase client and
         // cancels the way that client would.
         sender
-            .SendAsync(Arg.Any<FcmMessageContent>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .SendAsync(Arg.Any<FcmMessage>(), Arg.Any<FcmTarget>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 ci.ArgAt<CancellationToken>(2).ThrowIfCancellationRequested();
 
-                return Task.FromResult(_Outcome(ci.ArgAt<string>(1), unregisteredFid));
+                return Task.FromResult(_Outcome(ci.ArgAt<FcmTarget>(1).Value, unregisteredFid));
             });
 
         sender
-            .SendBatchAsync(
-                Arg.Any<FcmMessageContent>(),
-                Arg.Any<IReadOnlyList<string>>(),
-                Arg.Any<CancellationToken>()
-            )
+            .SendBatchAsync(Arg.Any<FcmMessage>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 ci.ArgAt<CancellationToken>(2).ThrowIfCancellationRequested();
-                IReadOnlyList<PushNotificationResponse> outcomes =
+                IReadOnlyList<FcmSendResult> outcomes =
                 [
                     .. ci.ArgAt<IReadOnlyList<string>>(1).Select(fid => _Outcome(fid, unregisteredFid)),
                 ];
@@ -55,14 +51,17 @@ public sealed class FcmConformanceTests : PushNotificationServiceConformanceTest
                 return Task.FromResult(outcomes);
             });
 
-        return new FcmPushNotificationService(sender);
+        return new FcmPushNotificationService(sender, TimeProvider.System);
     }
 
-    private static PushNotificationResponse _Outcome(string fid, string? unregisteredFid)
+    private static FcmSendResult _Outcome(string fid, string? unregisteredFid)
     {
-        return string.Equals(fid, unregisteredFid, StringComparison.Ordinal)
-            ? PushNotificationResponse.Unregistered(fid)
-            : PushNotificationResponse.Succeeded(fid, $"projects/test/messages/{fid}");
+        return new FcmSendResult
+        {
+            Response = string.Equals(fid, unregisteredFid, StringComparison.Ordinal)
+                ? PushNotificationResponse.Unregistered(fid)
+                : PushNotificationResponse.Succeeded(fid, $"projects/test/messages/{fid}"),
+        };
     }
 
     [Fact]
