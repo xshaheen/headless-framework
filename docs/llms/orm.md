@@ -235,7 +235,6 @@ dotnet add package Headless.EntityFramework
 
 ### Setup and use
 
-<!-- example: boot -->
 ```csharp
 public sealed class AppDbContext(
     HeadlessDbContextServices services,
@@ -342,7 +341,6 @@ The raw PostgreSQL and SQL Server audit packages are storage providers. They can
 
 Disabled by default. `TenantWriteGuardOptions.IsEnabled` is read-only to consumers. Enable validation and tenant stamping through the tenancy builder:
 
-<!-- example: boot -->
 ```csharp
 builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
 ```
@@ -375,8 +373,6 @@ Bulk `ExecuteUpdate` and `ExecuteDelete` use query filters but skip the save gua
 #### Tenant ownership
 
 Configure ownership after the base model call. These declarations take effect at model finalization, after application mappings:
-
-<!-- example: fragment -->
 
 ```csharp
 protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -420,8 +416,6 @@ Existing `IMultiTenant` columns gain tenant concurrency-token metadata without f
 
 Each feature-storage EF package exposes a `ModelBuilder` extension. Call them inside `OnModelCreating` after `base.OnModelCreating(modelBuilder)`:
 
-<!-- example: fragment -->
-
 ```csharp
 protected override void OnModelCreating(ModelBuilder modelBuilder)
 {
@@ -437,7 +431,6 @@ These read `Schema` and `*TableName` from validated `*StorageOptions` and apply 
 
 #### Custom Save Processors
 
-<!-- example: boot -->
 ```csharp
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 
@@ -622,7 +615,6 @@ await context.ExecuteTransactionAsync(async attempt =>
 - Resolve `IBucketContextProvider` from DI to get typed bucket contexts.
 - Use `ICouchbaseManager` during application startup or `IInitializer` to bootstrap scopes, collections, and indexes idempotently.
 
-<!-- example: boot -->
 ```csharp
 // Supply the two application-specific providers (or register the shipped defaults):
 services.AddSingleton<ICouchbaseClusterOptionsProvider, MyClusterOptionsProvider>();

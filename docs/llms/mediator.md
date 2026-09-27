@@ -107,8 +107,6 @@ dotnet add package Mediator.SourceGenerator # generates AddMediator into your pr
 
 ### Setup and use
 
-<!-- example: fragment -->
-
 ```csharp
 using Headless.Mediator;
 

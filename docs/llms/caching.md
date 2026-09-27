@@ -836,7 +836,6 @@ builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
 
 Pick one shape — `AddHeadlessCaching` may be called only once per service collection. With options:
 
-<!-- example: boot -->
 ```csharp
 builder.Services.AddHeadlessCaching(setup =>
     setup.UseInMemory(options =>
@@ -861,7 +860,6 @@ builder.Services.AddHeadlessCaching(setup =>
 
 Named instances (independent options, resolved by name; the setup still needs exactly one default `Use*`):
 
-<!-- example: boot -->
 ```csharp
 builder.Services.AddHeadlessCaching(setup =>
 {

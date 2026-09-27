@@ -345,7 +345,6 @@ Ignored identifiers (for example `www`) stay on `TenantCatalogOptions.IgnoredIde
 
 An API surface is a named set of endpoints sharing routing, authorization and tenancy defaults, plus an OpenAPI document. `AddHeadlessApiSurface(name, configure)` runs its optional callback immediately, validates the definition, and registers an immutable descriptor plus a singleton `ApiSurfaceRegistry`. MVC, Minimal API, telemetry, and OpenAPI share these definitions. Configure definitions during registration; the builders do not use the deferred .NET options pipeline. Changes to a retained builder after registration have no effect.
 
-<!-- example: boot -->
 ```csharp
 using Headless.Api;
 using Headless.Api.Surfaces;
@@ -926,7 +925,6 @@ Endpoint tenancy choices override surface defaults. Native authorization policie
 
 Representation validation is optional. The default accepts any strong entity tag. Configure the shared MVC and Minimal API validator when every conditional write uses a specific representation format:
 
-<!-- example: boot -->
 ```csharp
 builder.Services.AddHeadlessMinimalApiEntityTagConcurrency(options =>
     options.IfMatchValidator = static tag => tag.TryGetUInt32(out _)

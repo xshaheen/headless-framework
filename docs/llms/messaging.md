@@ -527,7 +527,6 @@ dotnet add package Headless.Messaging.Storage.InMemory
 
 ### Setup and use
 
-<!-- example: boot -->
 ```csharp
 services.AddHeadlessMessaging(setup =>
 {

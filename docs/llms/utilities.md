@@ -79,8 +79,6 @@ public sealed class UserValidator : AbstractValidator<User>
 
 #### Phone Number Validation
 
-<!-- example: fragment -->
-
 ```csharp
 RuleFor(x => x.Phone).BasicPhoneNumber(); // DataAnnotations check
 RuleFor(x => x.Phone).PhoneNumber(u => u.CountryCode); // Country-specific
@@ -88,8 +86,6 @@ RuleFor(x => x.Phone).InternationalPhoneNumber(); // International format
 ```
 
 #### Error Descriptor Integration
-
-<!-- example: fragment -->
 
 ```csharp
 RuleFor(x => x.Total)
@@ -199,8 +195,6 @@ var json = JsonSerializer.Serialize(email); // JSON: "user@example.com"
 ```
 
 #### Entity Framework Integration
-
-<!-- example: fragment -->
 
 ```csharp
 // Auto-generated value converter is registered via:

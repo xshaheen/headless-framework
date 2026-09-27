@@ -82,8 +82,6 @@ For multi-recipient sends, `SendBulkSmsRequest` carries a `Destinations` list (p
 
 `SendSingleSmsResponse` is returned by every provider. It is a closed type constructed only via factory methods:
 
-<!-- example: fragment -->
-
 ```csharp
 SendSingleSmsResponse.Succeeded()                                 // Success = true, FailureKind = None
 SendSingleSmsResponse.Succeeded("provider-message-id")            // carries the backend's message id

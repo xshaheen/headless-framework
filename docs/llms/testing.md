@@ -249,8 +249,6 @@ Most projects benefit from a thin app-specific wrapper that adds project-shaped 
 
 `AddTestTimeProvider()` (called internally during host setup) replaces the `TimeProvider` registration with a `FakeTimeProvider`. It registers against the abstract service type only:
 
-<!-- example: fragment -->
-
 ```csharp
 // Correct
 var fake = (FakeTimeProvider)serviceProvider.GetRequiredService<TimeProvider>();

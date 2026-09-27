@@ -255,8 +255,6 @@ Razor tag helpers (the widget/script for the default provider):
 
 ### Configuration
 
-<!-- example: fragment -->
-
 ```csharp
 options.VerifyBaseUrl = "https://www.google.com/"; // base URL of the reCAPTCHA API (default)
 options.SiteKey = "your-site-key"; // required — rendered into the client widget/script
@@ -352,8 +350,6 @@ Razor tag helpers (the default provider's widget/script):
 ```
 
 ### Configuration
-
-<!-- example: fragment -->
 
 ```csharp
 options.VerifyBaseUrl = "https://challenges.cloudflare.com/"; // base URL for siteverify and the client script (default)

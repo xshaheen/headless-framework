@@ -102,8 +102,6 @@ logger.LogInformation(s => s.Tag("orders").Property("orderId", orderId), "Order 
 
 For retries and delayed execution, use `Polly.Core` directly — it ships zero transitive dependencies on `net10.0`:
 
-<!-- example: fragment -->
-
 ```csharp
 using Polly;
 using Polly.Retry;
@@ -195,8 +193,6 @@ public void CreateUser(string name, int age, List<string> roles)
 - `Argument.IsTrue(condition, message, nameof(arg))` / `IsFalse(condition, …)` — custom argument precondition that must hold / must not hold; throws `ArgumentException`
 
 #### Runtime Assertions
-
-<!-- example: fragment -->
 
 ```csharp
 using Headless.Checks;

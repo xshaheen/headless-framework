@@ -55,8 +55,6 @@ $pbkdf2-sha256$i=600000,l=32$<salt>$<hash>
 
 ### Verification and rotation
 
-<!-- example: fragment -->
-
 ```csharp
 // sign-up or reset
 account.PinHash = hasher.Hash(pin);
@@ -283,7 +281,6 @@ dotnet add package Headless.Security.Argon2
 
 ### Setup and use
 
-<!-- example: boot -->
 ```csharp
 builder.Services.AddHeadlessSecretHasher(setup => setup.UseArgon2id(o => o.MemorySize = 47_104));
 ```

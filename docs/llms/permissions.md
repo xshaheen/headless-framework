@@ -315,8 +315,6 @@ builder.Services.AddHeadlessPermissions(setup => setup.UseEntityFramework<AppDbC
 
 Use a defined permission name directly as the policy name. `AddHeadlessPermissions` registers `PermissionPolicyProvider`, so no `AddPolicy` call is needed:
 
-<!-- example: fragment -->
-
 ```csharp
 // Controllers
 [Authorize("Orders.Edit")]

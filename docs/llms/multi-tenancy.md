@@ -585,7 +585,6 @@ Use fresh contexts and fresh Identity store/manager DI scopes across tenant chan
 
 The EF write guard is opt-in and disabled by default for compatibility. Enable it from the root tenancy surface:
 
-<!-- example: boot -->
 ```csharp
 builder.Services.AddHeadlessDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
 
@@ -647,8 +646,6 @@ Raw SQL requires explicit tenant predicates sourced from trusted context and aut
 ## Permissions and Caching
 
 `Headless.Permissions.Core` already scopes permission grant cache entries by tenant:
-
-<!-- example: fragment -->
 
 ```csharp
 () => $"t:{sp.GetRequiredService<ICurrentTenant>().Id}"

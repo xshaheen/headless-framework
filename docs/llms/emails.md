@@ -358,8 +358,6 @@ dotnet add package Headless.Emails.Azure
 
 ### Setup and use
 
-<!-- example: fragment -->
-
 ```csharp
 using Azure.Identity;
 

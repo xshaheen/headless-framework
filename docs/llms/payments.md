@@ -161,8 +161,6 @@ public sealed class PaymentService(IPaymobCashInBroker broker)
 
 Validate an incoming callback:
 
-<!-- example: fragment -->
-
 ```csharp
 [HttpPost("paymob/callback")]
 public IActionResult HandleCallback([FromBody] CashInCallbackTransaction transaction, [FromQuery] string hmac)
