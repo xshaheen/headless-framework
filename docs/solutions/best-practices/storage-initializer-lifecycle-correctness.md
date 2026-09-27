@@ -1,7 +1,7 @@
 ---
 title: Storage Initializer Lifecycle & Concurrent-Startup Safety
 date: 2026-05-25
-last_updated: 2026-06-07
+last_updated: 2026-09-27
 category: best-practices
 module: headless-storage
 problem_type: best_practice
@@ -20,10 +20,15 @@ tags:
   - postgres
   - sqlserver
   - log-dedup
+  - shared-schema
+  - advisory-lock
+  - create-index-concurrently
 applies_when:
   - Writing a new I{Feature}StorageInitializer for Postgres or SqlServer
   - Reviewing concurrent-startup behavior of multiple replicas against one DB
   - Diagnosing startup hangs or duplicate-DDL errors at host boot
+  - Adding a feature whose tables live in the shared headless schema
+  - Running CREATE INDEX CONCURRENTLY from an initializer that other replicas wait on
   - Handling DB-unreachable or auth-failure during the initializer phase
   - Auditing dispose ordering between bootstrapper and repo-held resources
 ---
@@ -79,17 +84,36 @@ The `IsCompleted`-guarded `Interlocked.Exchange` is load-bearing. The earlier (`
 
 ### 2. Concurrent-startup race — provider-specific locks + idempotent DDL
 
-**PostgreSQL** (`PostgreSqlAuditLogStorageInitializer._CreateScript`): each statement is `CREATE … IF NOT EXISTS` and the whole script is preceded by a transaction-scoped advisory lock keyed on `(schema, table)`. The lock serializes racing `CREATE SCHEMA IF NOT EXISTS` calls because PG's `IF NOT EXISTS` check is not transactional with the catalog insert — two concurrent transactions can both pass the check and one fails with `23505`. The initializer also catches `42P06 / 42P07 / 42710 / 23505` to absorb residual races driven by foreign initializers running concurrent DDL.
+**PostgreSQL** (`PostgreSqlAuditLogStorageInitializer._CreateScript`): each statement is `CREATE … IF NOT EXISTS`, and the script takes two transaction-scoped advisory locks before it runs:
+
+1. **The schema-wide lock**, `headless_schema_init:{schema}`, immediately before `CREATE SCHEMA IF NOT EXISTS`. Every PostgreSQL initializer takes it, whatever its feature.
+2. **The feature lock**, namespaced by feature and keyed on the objects it owns, for example `headless_audit_init:{schema}.{table}` or `headless_fencing_init:{schema}.fencing_leases`.
 
 ```csharp
+var createSchema = $"""
+    SELECT pg_advisory_xact_lock(hashtextextended('headless_schema_init:{options.Schema}', 0));
+    CREATE SCHEMA IF NOT EXISTS "{options.Schema}";
+    """;
 var lockResource = $"headless_audit_init:{options.Schema}.{options.TableName}";
 var acquireLock = $"""SELECT pg_advisory_xact_lock(hashtextextended('{lockResource}', 0));""";
-// ...
+```
+
+PostgreSQL's `IF NOT EXISTS` check is not transactional with the catalog insert. Two concurrent transactions can both pass the check, and the loser fails with `42P06` or `23505`. A per-feature lock serializes replicas of one feature only. Every relational feature now defaults to the one `headless` schema, so Messaging, Fencing, and AuditLog replicas all run `CREATE SCHEMA "headless"` at the same moment, each under a different feature lock.
+
+A failed statement aborts the whole PostgreSQL transaction (`25P02`). Catching `42P06` and rolling back therefore does not absorb the race: it discards every table, index, and sequence the losing feature created in that transaction, the initializer reports success, and the first query fails with `42P01`. The schema-wide lock prevents the collision instead of absorbing it. It is transaction-scoped, so it serializes the features' schema-creating transactions only at boot and releases when each commits or rolls back.
+
+The initializer still catches `42P06 / 42P07 / 42710 / 23505` and rolls back, as a guard for DDL that runs outside these locks, such as a DBA script or an older build. Do not rely on that catch for correctness.
+
+```csharp
 catch (PostgresException ex) when (ex.SqlState is "42P06" or "42P07" or "42710" or "23505")
 {
     await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
 }
 ```
+
+SQL Server initializers do not need the schema-wide lock. They create the schema in its own guarded block that swallows `2714`, and that error does not doom the rest of the batch.
+
+**PostgreSQL with `CREATE INDEX CONCURRENTLY`** (`PostgreSqlStorageInitializer` in Messaging): `CONCURRENTLY` cannot run inside a transaction, so the feature lock must be a session lock held across the transactional DDL and the index builds. Acquire it by polling `pg_try_advisory_lock` with a short delay. Do not block in `pg_advisory_lock`. A blocked statement holds a snapshot open for as long as it waits, and `CREATE INDEX CONCURRENTLY` waits for every snapshot older than the build to finish. The lock holder's build then waits on the waiter, and the waiter waits on the lock holder, so two replicas that boot together deadlock until the DDL timeout. Between polls the waiting connection runs no statement and holds no snapshot. Bound the polling by the DDL timeout, not the OLTP command timeout, because the holder can keep the lock across a multi-minute build. Release the session lock explicitly in a `finally`, even when a build was cancelled, so a pooled connection returns without it.
 
 **SQL Server** (`SqlServerAuditLogStorageInitializer._CreateScript`): `sp_getapplock` (Session scope) guards the script and `sp_releaseapplock` runs on every path. The release in the success path lives at the end of the inner `TRY`; the outer `CATCH` checks `APPLOCK_MODE` and re-releases before re-throwing. Index creation is split into per-index `IF NOT EXISTS` guards so a partial-failure run that committed the table but missed an index self-heals on next start. Each guarded block also catches `2714, 1913, 2759` (object already exists).
 
@@ -255,6 +279,8 @@ internal static class AuditLogFieldLimits
 ## Why This Matters
 
 - **Rolling deploys are the default.** Multi-replica services boot in parallel; without per-provider advisory locks plus idempotent DDL, the first deploy after a schema reset is non-deterministic. PG `23505` and SqlServer `1205` deadlocks are the real-world failure modes.
+- **Features share one schema.** Per-feature locks do not serialize two features creating the same schema, and on PostgreSQL the loser's rollback silently discards its DDL. The schema-wide `headless_schema_init:{schema}` lock is mandatory for every PostgreSQL initializer.
+- **Blocking lock waits and `CONCURRENTLY` do not mix.** A waiter blocked in `pg_advisory_lock` holds the snapshot that the holder's `CREATE INDEX CONCURRENTLY` waits for. Poll `pg_try_advisory_lock` instead.
 - **Schema leftover from a crashed init must self-heal.** Per-statement `IF NOT EXISTS` guards mean a host that committed the table but crashed before the indexes gets the indexes on next start without operator intervention.
 - **Lock release on the failure path is mandatory for SqlServer.** Session-scoped applocks survive past the throw and starve the next replica until the connection is physically reset by the pool. The outer `TRY/CATCH` with `APPLOCK_MODE` guard is non-negotiable.
 - **TCS replacement under restart is subtle.** Naive cancel-then-reassign breaks pre-host waiters on first start; naive "just reassign" leaks waiters on restart. The `IsCompleted`-gated `Interlocked.Exchange` is the correct shape.
@@ -276,6 +302,8 @@ The same TCS/race/dedup discipline transfers to other startup-time initializers 
 | Concern | Source file (branch `xshaheen/refactor-storage-initialization-unification`) |
 | --- | --- |
 | PG initializer + race lock | `src/Headless.AuditLog.Storage.PostgreSql/PostgreSqlAuditLogStorageInitializer.cs` |
+| PG polled session lock around `CREATE INDEX CONCURRENTLY` | `src/Headless.Messaging.Storage.PostgreSql/PostgreSqlStorageInitializer.cs` |
+| Every feature initializing one schema concurrently | `tests/Headless.Storage.SharedSchema.Tests.Integration/` |
 | SqlServer initializer + applock | `src/Headless.AuditLog.Storage.SqlServer/SqlServerAuditLogStorageInitializer.cs` |
 | Settings raw PG initializer | `src/Headless.Settings.Storage.PostgreSql/PostgreSqlSettingsStorageInitializer.cs` |
 | Features raw PG initializer | `src/Headless.Features.Storage.PostgreSql/PostgreSqlFeaturesStorageInitializer.cs` |

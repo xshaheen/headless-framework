@@ -470,7 +470,7 @@ builder.Services.AddHeadlessPermissions(setup =>
 {
     setup.ConfigureStorage(o =>
     {
-        o.Schema = "permissions"; // default
+        o.Schema = "headless"; // default, shared by every Headless feature
         o.PermissionGrantsTableName = "PermissionGrants"; // default
         o.PermissionDefinitionsTableName = "PermissionDefinitions"; // default
         o.PermissionGroupDefinitionsTableName = "PermissionGroupDefinitions"; // default
@@ -554,7 +554,7 @@ builder.Services.AddHeadlessPermissions(setup =>
 
 `PermissionsStorageOptions` defaults:
 
-- `Schema = "permissions"`
+- `Schema = "headless"`, the schema every Headless feature shares (see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features))
 - `PermissionGrantsTableName = "PermissionGrants"`
 - `PermissionDefinitionsTableName = "PermissionDefinitions"`
 - `PermissionGroupDefinitionsTableName = "PermissionGroupDefinitions"`
@@ -583,6 +583,7 @@ PostgreSQL raw-DDL storage for permission management.
 - `setup.UsePostgreSql(IConfiguration configuration)` — binds `PostgreSqlPermissionsOptions` from a configuration section
 - `setup.UsePostgreSql(Action<PostgreSqlPermissionsOptions> configure)` — full option control
 - `setup.UsePostgreSql(Action<PostgreSqlPermissionsOptions, IServiceProvider> configure)` — with resolved services
+- `setup.UsePostgreSql()` — reads the connection registered by `AddPostgreSqlSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
 - Idempotent schema, table, and index creation at host startup via `PostgreSqlPermissionsStorageInitializer`
 - `PostgreSqlPermissionsOptions` — `ConnectionString` and `CommandTimeout` (default 30 seconds)
 - Shares `PermissionsStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
@@ -599,9 +600,13 @@ dotnet add package Headless.Permissions.Storage.PostgreSql
 Register required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and `IGuidGenerator`. `AddHeadlessPermissions` registers the management core automatically.
 
 ```csharp
+builder.Services.AddPostgreSqlSql(connectionString);
+builder.Services.AddHeadlessPermissions(setup => setup.UsePostgreSql());
+
+// Or give this feature its own connection and schema:
 builder.Services.AddHeadlessPermissions(setup =>
 {
-    setup.ConfigureStorage(storage => storage.Schema = "permissions");
+    setup.ConfigureStorage(storage => storage.Schema = "app_permissions");
     setup.UsePostgreSql(connectionString);
 });
 
@@ -647,6 +652,7 @@ SQL Server raw-DDL storage for permission management.
 - `setup.UseSqlServer(IConfiguration configuration)` — binds `SqlServerPermissionsOptions` from a configuration section
 - `setup.UseSqlServer(Action<SqlServerPermissionsOptions> configure)` — full option control
 - `setup.UseSqlServer(Action<SqlServerPermissionsOptions, IServiceProvider> configure)` — with resolved services
+- `setup.UseSqlServer()` — reads the connection registered by `AddSqlServerSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
 - Idempotent schema, table, and index creation at host startup via `SqlServerPermissionsStorageInitializer`
 - `SqlServerPermissionsOptions` — `ConnectionString` and `CommandTimeout` (default 30 seconds)
 - Shares `PermissionsStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
@@ -663,9 +669,13 @@ dotnet add package Headless.Permissions.Storage.SqlServer
 Register required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and `IGuidGenerator`. `AddHeadlessPermissions` registers the management core automatically.
 
 ```csharp
+builder.Services.AddSqlServerSql(connectionString);
+builder.Services.AddHeadlessPermissions(setup => setup.UseSqlServer());
+
+// Or give this feature its own connection and schema:
 builder.Services.AddHeadlessPermissions(setup =>
 {
-    setup.ConfigureStorage(storage => storage.Schema = "permissions");
+    setup.ConfigureStorage(storage => storage.Schema = "app_permissions");
     setup.UseSqlServer(connectionString);
 });
 

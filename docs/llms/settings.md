@@ -377,7 +377,7 @@ services.AddHeadlessSettings(setup =>
 {
     setup.ConfigureStorage(o =>
     {
-        o.Schema = "settings"; // default
+        o.Schema = "headless"; // default, shared by every Headless feature
         o.SettingValuesTableName = "SettingValues"; // default
         o.SettingDefinitionsTableName = "SettingDefinitions"; // default
         o.InitializeOnStartup = true; // default; set false when schema is provisioned out-of-band
@@ -460,7 +460,7 @@ builder.Services.AddHeadlessSettings(setup =>
 
 `SettingsStorageOptions` defaults:
 
-- `Schema = "settings"`
+- `Schema = "headless"`, the schema every Headless feature shares (see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features))
 - `SettingValuesTableName = "SettingValues"`
 - `SettingDefinitionsTableName = "SettingDefinitions"`
 - `InitializeOnStartup = true`
@@ -486,6 +486,7 @@ PostgreSQL raw-DDL storage for settings management.
 - `setup.UsePostgreSql(IConfiguration configuration)` — overload that binds `PostgreSqlSettingsOptions` from a configuration section
 - `setup.UsePostgreSql(Action<PostgreSqlSettingsOptions> configure)` — overload for full option control
 - `setup.UsePostgreSql(Action<PostgreSqlSettingsOptions, IServiceProvider> configure)` — overload for late-bound configuration
+- `setup.UsePostgreSql()` — reads the connection registered by `AddPostgreSqlSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
 - Idempotent schema, table, and index creation at host startup via `PostgreSqlSettingsStorageInitializer`
 - Raw ADO.NET repositories for setting values and definitions
 - `PostgreSqlSettingsOptions` — connection string and command timeout
@@ -506,9 +507,13 @@ builder.Services.AddCaching();
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
+builder.Services.AddPostgreSqlSql(connectionString);
+builder.Services.AddHeadlessSettings(setup => setup.UsePostgreSql());
+
+// Or give this feature its own connection and schema:
 builder.Services.AddHeadlessSettings(setup =>
 {
-    setup.ConfigureStorage(storage => storage.Schema = "settings");
+    setup.ConfigureStorage(storage => storage.Schema = "app_settings");
     setup.UsePostgreSql(connectionString);
 });
 
@@ -554,6 +559,7 @@ SQL Server raw-DDL storage for settings management.
 - `setup.UseSqlServer(IConfiguration configuration)` — overload that binds `SqlServerSettingsOptions` from a configuration section
 - `setup.UseSqlServer(Action<SqlServerSettingsOptions> configure)` — overload for full option control
 - `setup.UseSqlServer(Action<SqlServerSettingsOptions, IServiceProvider> configure)` — overload for late-bound configuration
+- `setup.UseSqlServer()` — reads the connection registered by `AddSqlServerSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
 - Idempotent schema, table, and index creation at host startup via `SqlServerSettingsStorageInitializer`
 - Raw ADO.NET repositories for setting values and definitions
 - `SqlServerSettingsOptions` — connection string and command timeout
@@ -574,9 +580,13 @@ builder.Services.AddCaching();
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
+builder.Services.AddSqlServerSql(connectionString);
+builder.Services.AddHeadlessSettings(setup => setup.UseSqlServer());
+
+// Or give this feature its own connection and schema:
 builder.Services.AddHeadlessSettings(setup =>
 {
-    setup.ConfigureStorage(storage => storage.Schema = "settings");
+    setup.ConfigureStorage(storage => storage.Schema = "app_settings");
     setup.UseSqlServer(connectionString);
 });
 

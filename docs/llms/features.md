@@ -309,7 +309,7 @@ services.AddHeadlessFeatures(setup =>
 {
     setup.ConfigureStorage(o =>
     {
-        o.Schema = "features"; // default
+        o.Schema = "headless"; // default, shared by every Headless feature
         o.FeatureValuesTableName = "FeatureValues"; // default
         o.FeatureDefinitionsTableName = "FeatureDefinitions"; // default
         o.FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions"; // default
@@ -380,7 +380,7 @@ builder.Services.AddHeadlessFeatures(setup =>
 
 `FeaturesStorageOptions` defaults:
 
-- `Schema = "features"`
+- `Schema = "headless"`, the schema every Headless feature shares (see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features))
 - `FeatureValuesTableName = "FeatureValues"`
 - `FeatureDefinitionsTableName = "FeatureDefinitions"`
 - `FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions"`
@@ -409,6 +409,7 @@ PostgreSQL raw-DDL storage for feature management.
 - `setup.UsePostgreSql(IConfiguration configuration)` — binds `PostgreSqlFeaturesOptions` from a configuration section
 - `setup.UsePostgreSql(Action<PostgreSqlFeaturesOptions> configure)` — overload for full option control
 - `setup.UsePostgreSql(Action<PostgreSqlFeaturesOptions, IServiceProvider> configure)` — overload with service-provider access for late-bound configuration
+- `setup.UsePostgreSql()` — reads the connection registered by `AddPostgreSqlSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
 - Idempotent schema, table, and index creation at host startup via `PostgreSqlFeaturesStorageInitializer`
 - Raw ADO.NET repositories for feature values, feature definitions, and feature group definitions
 - `PostgreSqlFeaturesOptions` — connection string and command timeout (`CommandTimeout`, default 30 seconds)
@@ -425,9 +426,13 @@ dotnet add package Headless.Features.Storage.PostgreSql
 Register the required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and `IGuidGenerator`. `AddHeadlessFeatures` registers the management core automatically.
 
 ```csharp
+builder.Services.AddPostgreSqlSql(connectionString);
+builder.Services.AddHeadlessFeatures(setup => setup.UsePostgreSql());
+
+// Or give this feature its own connection and schema:
 builder.Services.AddHeadlessFeatures(setup =>
 {
-    setup.ConfigureStorage(storage => storage.Schema = "features");
+    setup.ConfigureStorage(storage => storage.Schema = "app_features");
     setup.UsePostgreSql(connectionString);
 });
 
@@ -473,6 +478,7 @@ SQL Server raw-DDL storage for feature management.
 - `setup.UseSqlServer(IConfiguration configuration)` — binds `SqlServerFeaturesOptions` from a configuration section
 - `setup.UseSqlServer(Action<SqlServerFeaturesOptions> configure)` — overload for full option control
 - `setup.UseSqlServer(Action<SqlServerFeaturesOptions, IServiceProvider> configure)` — overload with service-provider access for late-bound configuration
+- `setup.UseSqlServer()` — reads the connection registered by `AddSqlServerSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
 - Idempotent schema, table, and index creation at host startup via `SqlServerFeaturesStorageInitializer`
 - Raw ADO.NET repositories for feature values, feature definitions, and feature group definitions
 - `SqlServerFeaturesOptions` — connection string and command timeout (`CommandTimeout`, default 30 seconds)
@@ -489,9 +495,13 @@ dotnet add package Headless.Features.Storage.SqlServer
 Register the required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and `IGuidGenerator`. `AddHeadlessFeatures` registers the management core automatically.
 
 ```csharp
+builder.Services.AddSqlServerSql(connectionString);
+builder.Services.AddHeadlessFeatures(setup => setup.UseSqlServer());
+
+// Or give this feature its own connection and schema:
 builder.Services.AddHeadlessFeatures(setup =>
 {
-    setup.ConfigureStorage(storage => storage.Schema = "features");
+    setup.ConfigureStorage(storage => storage.Schema = "app_features");
     setup.UseSqlServer(connectionString);
 });
 

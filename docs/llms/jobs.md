@@ -712,7 +712,7 @@ Core implementation of the Jobs scheduler: in-memory persistence provider, execu
 - **Storage-agnostic recovery planner**: `CronRecoveryPlanner` resolves the whole coalesce decision as a pure value (`CronRecoveryPlan`, `CronRecoveryWindow`, `CronRecoveryRunStep`, `CronRecoveryRunStepKind`, `CronRecoveryResolution`) that every provider — relational, in-memory, or third-party — applies with its own fenced writes. See [Applying a recovery pass](#applying-a-recovery-pass).
 - **`DisableBackgroundServices()`**: suppresses background execution; only the managers are registered (useful for worker-side-only nodes and test projects).
 - **Seeder API**: `UseJobsSeeder(Func<ITimeJobManager<TTimeJob>, Task>)` and `UseJobsSeeder(Func<ICronJobManager<TCronJob>, Task>)` for startup data seeding; `IgnoreSeedDefinedCronJobs()` to skip auto-seeding of attribute-defined cron jobs.
-- **Feature-owned storage naming**: `ConfigureStorage(storage => storage.Schema = "…")` on `JobsOptionsBuilder` sets the database schema holding every Jobs table (default `"jobs"`). The setting lives here rather than on a store provider's builder, so one value covers every table a provider maps — including non-generic ones like the idempotency reservation table — and cannot be honored by one registration path while another silently keeps the default. A second overload binds a configuration section directly: `ConfigureStorage(configuration.GetSection("Headless:Jobs:Storage"))`. Pass that section itself, so its keys are the option's property names. Using both is allowed — they compose as last call wins, the same rule the other features follow.
+- **Feature-owned storage naming**: `ConfigureStorage(storage => storage.Schema = "…")` on `JobsOptionsBuilder` sets the database schema holding every Jobs table (default `"headless"`, the schema every Headless feature shares; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)). The setting lives here rather than on a store provider's builder, so one value covers every table a provider maps — including non-generic ones like the idempotency reservation table — and cannot be honored by one registration path while another silently keeps the default. A second overload binds a configuration section directly: `ConfigureStorage(configuration.GetSection("Headless:Jobs:Storage"))`. Pass that section itself, so its keys are the option's property names. Using both is allowed — they compose as last call wins, the same rule the other features follow.
 - **GZip request payloads**: `UseGZipCompression()` on `JobsOptionsBuilder` compresses serialized request bytes. Decompression is capped at 64 MiB by default; use `UseGZipCompression(maxDecompressedBytes)` only when the application deliberately supports a different bounded payload size.
 - **Exception handler**: `SetExceptionHandler<THandler>()` registers an `IJobExceptionHandler` singleton.
 - **Node-death policy enforcement**: claim predicate gates the lease-expiry re-claim arm on `OnNodeDeath == Retry`; clock skew cannot speculatively re-run `Skip` or `MarkFailed` jobs.
@@ -893,7 +893,7 @@ builder.Services.AddHeadlessJobs(options =>
     });
 
     // Database schema for every Jobs table. Feature-owned, so it applies to whichever store is installed.
-    options.ConfigureStorage(storage => storage.Schema = "jobs"); // default: "jobs"
+    options.ConfigureStorage(storage => storage.Schema = "background"); // default: "headless"
     // Or bind the section itself instead of authoring the value in code:
     // options.ConfigureStorage(builder.Configuration.GetSection("Headless:Jobs:Storage"));
 
@@ -1161,7 +1161,7 @@ Entity Framework Core persistence provider for `Headless.Jobs` — durable, dist
 
 - **Durable contract tuples**: time jobs and cron definitions map required bounded `Function`/`ContractVersion` columns; occurrences additionally persist their own function, version, request bytes, correlation, causation, and nullable tenant. Newly materialized occurrences copy the current definition tuple while holding its write lock; retries and restart reads use the occurrence row. Runtime write converters reject invalid identities.
 - **Application-owned schema**: initialize the Jobs database from the current EF model before starting workers or definition writers. Required bounded contract columns, occurrence-owned tuples, constraints, and indexes are part of that initial schema. Library mappings never mutate the schema automatically.
-- **Durable storage**: persists `TimeJobEntity`, `CronJobEntity`, and `CronJobOccurrenceEntity` in EF Core-mapped tables (default schema: `jobs`).
+- **Durable storage**: persists `TimeJobEntity`, `CronJobEntity`, and `CronJobOccurrenceEntity` in EF Core-mapped tables (default schema: `headless`).
 - **`UseEntityFramework(ef => …)`**: the EF registration extension on `JobsOptionsBuilder`.
 - **`UseJobsDbContext<TDbContext>(dbOptions)`**: registers a dedicated `JobsDbContext`. The schema comes from the feature-owned `ConfigureStorage` option, not from this call.
 - **`UseApplicationDbContext<TDbContext>(ConfigurationType)`**: shares an existing application `DbContext` instead of a dedicated one.
@@ -1179,7 +1179,7 @@ Entity Framework Core persistence provider for `Headless.Jobs` — durable, dist
 - **Fail-fast coordination check**: startup throws `InvalidOperationException` when no coordination provider is registered.
 - **Cron-expression caching**: reuses the host's `ICache` (optional). No `ICache` → reads from DB, cache invalidation is skipped. Cache failures are fail-open.
 - **DbContext pool**: configurable via `SetDbContextPoolSize(n)` (default 1024).
-- **Custom schema**: `ConfigureStorage(storage => storage.Schema = "custom_schema")` on the Jobs options builder (default `"jobs"`). The schema is owned by the feature, not by this provider, so one setting moves every Jobs table — the idempotency reservation table included — on the dedicated-context, application-context, and consumer-managed model paths alike. The value is validated at startup against cross-provider identifier rules.
+- **Custom schema**: `ConfigureStorage(storage => storage.Schema = "custom_schema")` on the Jobs options builder (default `"headless"`). The schema is owned by the feature, not by this provider, so one setting moves every Jobs table — the idempotency reservation table included — on the dedicated-context, application-context, and consumer-managed model paths alike. The value is validated at startup against cross-provider identifier rules.
 
 ### Design constraints
 
@@ -1253,7 +1253,7 @@ builder
             scheduler.DeadNodeReconcileInterval = TimeSpan.FromMinutes(1); // default: 1 min
         });
         // Schema naming is feature-owned: this moves every Jobs table, whichever store is installed.
-        options.ConfigureStorage(storage => storage.Schema = "background"); // default: "jobs"
+        options.ConfigureStorage(storage => storage.Schema = "background"); // default: "headless"
     })
     .UseEntityFramework(ef =>
     {
@@ -1541,7 +1541,7 @@ builder.Services.AddHeadlessJobs(jobs =>
 
 ### Configuration
 
-Register `AppDbContext` first, with a public constructor accepting only `DbContextOptions<AppDbContext>`. The convenience method derives the connection string in a temporary DI scope and rejects an EF context configured for another backend. It adds Jobs mappings in the `jobs` schema while retaining application `OnModelCreating` configuration. It does not create application/Jobs tables: create the fresh application schema from that combined model before starting workers.
+Register `AppDbContext` first, with a public constructor accepting only `DbContextOptions<AppDbContext>`. The convenience method derives the connection string in a temporary DI scope and rejects an EF context configured for another backend. It adds Jobs mappings in the configured Jobs schema (default `headless`) while retaining application `OnModelCreating` configuration. It does not create application/Jobs tables: create the fresh application schema from that combined model before starting workers.
 
 This convenience API targets the standard `TimeJobEntity` / `CronJobEntity` store and one fixed application database. Per-request or per-tenant database selection is not supported: singleton cluster membership captures the configured connection once. Provider authentication callbacks and data-source customizations are not copied from EF options.
 
@@ -1605,7 +1605,7 @@ builder.Services.AddHeadlessJobs(jobs =>
 
 ### Configuration
 
-Register `AppDbContext` first, with a public constructor accepting only `DbContextOptions<AppDbContext>`. The convenience method derives the connection string in a temporary DI scope and rejects an EF context configured for another backend. It adds Jobs mappings in the `jobs` schema while retaining application `OnModelCreating` configuration. It does not create application/Jobs tables: create the fresh application schema from that combined model before starting workers.
+Register `AppDbContext` first, with a public constructor accepting only `DbContextOptions<AppDbContext>`. The convenience method derives the connection string in a temporary DI scope and rejects an EF context configured for another backend. It adds Jobs mappings in the configured Jobs schema (default `headless`) while retaining application `OnModelCreating` configuration. It does not create application/Jobs tables: create the fresh application schema from that combined model before starting workers.
 
 This convenience API targets the standard `TimeJobEntity` / `CronJobEntity` store and one fixed application database. Per-request or per-tenant database selection is not supported: singleton cluster membership captures the configured connection once. Provider authentication callbacks and data-source customizations are not copied from EF options.
 

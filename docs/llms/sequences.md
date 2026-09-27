@@ -152,9 +152,12 @@ dotnet add package Headless.Sequences.PostgreSql
 
 ```csharp
 builder.Services.AddHeadlessSequences(setup => setup.UsePostgreSql(connectionString));
+// or reuse the connection from services.AddPostgreSqlSql(connectionString): setup.UsePostgreSql();
 // or bind options: setup.UsePostgreSql(builder.Configuration.GetSection("Sequences"));
 // or: setup.UsePostgreSql(options => { options.ConnectionString = cs; options.Schema = "numbering"; });
 ```
+
+The parameterless overloads and the shared `headless` schema are described in [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features).
 
 Gap-free units begin over a PostgreSQL connection or an EF `DbContext` (`AddPostgreSqlUnitOfWork()` or the EF unit-of-work package).
 
@@ -164,7 +167,7 @@ Gap-free units begin over a PostgreSQL connection or an EF `DbContext` (`AddPost
 | --- | --- | --- |
 | `ConnectionString` | required | The database that holds the counters and that gap-free units must run on |
 | `CommandTimeout` | 30 seconds | Also bounds how long a gap-free call waits for another unit's row lock |
-| `Schema` / `TableName` | `sequences` / `sequences` | Validated as PostgreSQL identifiers |
+| `Schema` / `TableName` | `headless` / `sequences` | Validated as PostgreSQL identifiers. Sequences has no `ConfigureStorage`; the schema is a provider option. `headless` is the schema every Headless feature shares |
 | `InitializeOnStartup` | `true` | When `false`, the application creates the table |
 
 ### Design and runtime behavior
@@ -188,7 +191,10 @@ dotnet add package Headless.Sequences.SqlServer
 
 ```csharp
 builder.Services.AddHeadlessSequences(setup => setup.UseSqlServer(connectionString));
+// or reuse the connection from services.AddSqlServerSql(connectionString): setup.UseSqlServer();
 ```
+
+The parameterless overloads and the shared `headless` schema are described in [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features).
 
 Gap-free units begin over a SQL Server connection or an EF `DbContext` (`AddSqlServerUnitOfWork()` or the EF unit-of-work package).
 
@@ -198,7 +204,7 @@ Gap-free units begin over a SQL Server connection or an EF `DbContext` (`AddSqlS
 | --- | --- | --- |
 | `ConnectionString` | required | The database that holds the counters and that gap-free units must run on |
 | `CommandTimeout` | 30 seconds | Also bounds how long a gap-free call waits for another unit's locks |
-| `Schema` / `TableName` | `sequences` / `sequences` | Validated as SQL Server identifiers |
+| `Schema` / `TableName` | `headless` / `sequences` | Validated as SQL Server identifiers. Sequences has no `ConfigureStorage`; the schema is a provider option. `headless` is the schema every Headless feature shares |
 | `InitializeOnStartup` | `true` | When `false`, the application creates the table |
 
 ### Design and runtime behavior

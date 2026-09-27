@@ -28,7 +28,7 @@ Code against `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAudit
 - Apply property policy in this order: framework default exclusions, explicit `ExcludeFromAudit()`, and `PropertyFilter` veto before sensitive handling. A strategy passed to `IsAuditSensitive(...)` overrides the global `AuditLogOptions.SensitiveDataStrategy`.
 - Register the audit log with exactly one `services.AddHeadlessAuditLog(setup => setup.Use...)` call. Put global audit options in `setup.ConfigureOptions(...)` and storage-table options in `setup.ConfigureStorage(...)`.
 - For EF storage, call `setup.UseEntityFramework<TContext>()`, register the same context with EF Core, register `IDbContextFactory<TContext>` for read-back, and call `modelBuilder.AddHeadlessAuditLog(auditLogStorageOptions)` inside `OnModelCreating`. A startup gate validates this at boot and throws if it is missing.
-- For raw storage, call `setup.UsePostgreSql(connectionString)` or `setup.UseSqlServer(connectionString)`; the provider creates the audit table at host startup and writes over its own connection.
+- For raw storage, call `setup.UsePostgreSql(connectionString)` or `setup.UseSqlServer(connectionString)`, or the parameterless `UsePostgreSql()` / `UseSqlServer()` to reuse the connection registered by `AddPostgreSqlSql` / `AddSqlServerSql`; the provider creates the audit table at host startup and writes over its own connection.
 - Raw PostgreSQL and SQL Server packages provide storage only. Automatic change capture and the fluent metadata policy are EF-specific; there is no parallel provider-neutral policy registry.
 - Use `IAuditLog<TContext>` for explicit events (reads, reveals, failures) — do not insert `AuditLogEntry` rows directly. Multi-context applications resolve a distinct logger per owning context via the `TContext` type parameter.
 - Use `IReadAuditLog<TContext>` to query audit history. Do not couple callers to `AuditLogEntry` or EF types directly.
@@ -269,7 +269,7 @@ services.AddHeadlessAuditLog(setup =>
 
     setup.ConfigureStorage(options =>
     {
-        options.Schema = "audit";
+        options.Schema = "compliance"; // default: "headless"
         options.TableName = "audit_log";
     });
 
@@ -285,8 +285,8 @@ Storage options (`AuditLogStorageOptions`):
 
 | Option | Default | Description |
 |---|---|---|
-| `Schema` | `"audit"` | Database schema name. |
-| `TableName` | `"audit_log"` | Table name. |
+| `Schema` | `"headless"` | Database schema name, shared with every Headless feature. See [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features). |
+| `TableName` | `"audit_log"` | Table name, at most 40 characters. The primary key and index names derive from it (`PK_{TableName}`, `ix_{TableName}_tenant_account_time`, and siblings), so two audit tables can share one schema, and the longest derived name must fit PostgreSQL's 63-byte identifier limit. Startup validation rejects a longer name. |
 | `JsonColumnType` | `null` (provider default) | Override JSON column type: `Jsonb`, `Json`, or `NvarcharMax`. |
 | `CreatedAtColumnType` | `null` (provider default) | Override the timestamp column DDL type string. |
 | `InitializeOnStartup` | `true` | Set `false` to skip DDL at startup (raw providers only). |
@@ -343,7 +343,6 @@ services.AddHeadlessAuditLog(setup =>
     });
     setup.ConfigureStorage(options =>
     {
-        options.Schema = "audit";
         options.JsonColumnType = AuditLogJsonColumnType.Jsonb; // for PostgreSQL
     });
     setup.UseEntityFramework<AppDbContext>();
@@ -408,8 +407,8 @@ var page = await readAuditLog.QueryAsync(
 ```csharp
 setup.ConfigureStorage(options =>
 {
-    options.TableName = "audit_entries";
-    options.Schema = "audit";
+    options.TableName = "audit_entries"; // at most 40 characters
+    options.Schema = "compliance"; // default: "headless"
     options.JsonColumnType = AuditLogJsonColumnType.Jsonb; // optional
     options.CreatedAtColumnType = "timestamp with time zone"; // optional explicit override
 });
@@ -458,7 +457,7 @@ Raw PostgreSQL storage provider for audit rows. No Entity Framework dependency �
 - Batched INSERT: up to 500 rows per command (cached per row count to avoid repeated string building).
 - `jsonb` by default for `OldValues`, `NewValues`, and `ChangedFields`; override via `AuditLogStorageOptions.JsonColumnType` (`Jsonb` or `Json` accepted; `NvarcharMax` rejected at options validation time).
 - `PostgreSqlAuditLogOptions` — `ConnectionString` (required) and `CommandTimeout` (default 30 s).
-- `UsePostgreSql` ships the full provider overload trio: `(string connectionString)`, `(IConfiguration configuration)`, `(Action<PostgreSqlAuditLogOptions>)`, and `(Action<PostgreSqlAuditLogOptions, IServiceProvider>)`.
+- `UsePostgreSql` ships the full provider overload trio: `(string connectionString)`, `(IConfiguration configuration)`, `(Action<PostgreSqlAuditLogOptions>)`, and `(Action<PostgreSqlAuditLogOptions, IServiceProvider>)`, plus a parameterless `UsePostgreSql()` that reads the connection registered by `AddPostgreSqlSql`.
 - Same index set as the EF provider: tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, tenant+account+time, correlation ID, each ending in `(CreatedAt, Id)`.
 
 ### Design constraints
@@ -476,16 +475,19 @@ dotnet add package Headless.AuditLog.Storage.PostgreSql
 ### Setup and use
 
 ```csharp
+// Reuse the connection every Headless feature shares:
+services.AddPostgreSqlSql(builder.Configuration.GetConnectionString("Default")!);
+services.AddHeadlessAuditLog(setup => setup.UsePostgreSql());
+
+// Or give the audit log its own database and schema:
 services.AddHeadlessAuditLog(setup =>
 {
-    setup.ConfigureStorage(options =>
-    {
-        options.Schema = "audit";
-        options.TableName = "audit_log";
-    });
+    setup.ConfigureStorage(options => options.Schema = "compliance");
     setup.UsePostgreSql(builder.Configuration.GetConnectionString("AuditLog")!);
 });
 ```
+
+The parameterless overloads and the shared `headless` schema are described in [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features).
 
 Skip startup DDL when schema is provisioned out-of-band:
 
@@ -551,7 +553,7 @@ Raw SQL Server storage provider for audit rows. No Entity Framework dependency �
 - Batched INSERT: up to 100 rows per command (SQL Server parameter limit is lower than PostgreSQL's).
 - `nvarchar(max)` by default for JSON columns; `NvarcharMax` is the only accepted `AuditLogJsonColumnType` (PostgreSQL-specific types are rejected at options validation time).
 - `SqlServerAuditLogOptions` — `ConnectionString` (required) and `CommandTimeout` (default 30 s).
-- `UseSqlServer` ships the full provider overload trio: `(string connectionString)`, `(IConfiguration configuration)`, `(Action<SqlServerAuditLogOptions>)`, and `(Action<SqlServerAuditLogOptions, IServiceProvider>)`.
+- `UseSqlServer` ships the full provider overload trio: `(string connectionString)`, `(IConfiguration configuration)`, `(Action<SqlServerAuditLogOptions>)`, and `(Action<SqlServerAuditLogOptions, IServiceProvider>)`, plus a parameterless `UseSqlServer()` that reads the connection registered by `AddSqlServerSql`.
 - Same index set as the EF provider: tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, tenant+account+time, correlation ID, each ending in `(CreatedAt, Id)`.
 
 ### Design constraints
@@ -571,16 +573,19 @@ dotnet add package Headless.AuditLog.Storage.SqlServer
 ### Setup and use
 
 ```csharp
+// Reuse the connection every Headless feature shares:
+services.AddSqlServerSql(builder.Configuration.GetConnectionString("Default")!);
+services.AddHeadlessAuditLog(setup => setup.UseSqlServer());
+
+// Or give the audit log its own database and schema:
 services.AddHeadlessAuditLog(setup =>
 {
-    setup.ConfigureStorage(options =>
-    {
-        options.Schema = "audit";
-        options.TableName = "audit_log";
-    });
+    setup.ConfigureStorage(options => options.Schema = "compliance");
     setup.UseSqlServer(builder.Configuration.GetConnectionString("AuditLog")!);
 });
 ```
+
+The parameterless overloads and the shared `headless` schema are described in [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features).
 
 Skip startup DDL when schema is provisioned out-of-band:
 

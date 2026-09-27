@@ -260,7 +260,7 @@ How to read each column:
 - **Outbox + persisted retry storage** — the framework's combined storage contract. There is no separate `IRetryStorage` or `ISubscriptionStorage` abstraction; outbox writes and persisted-retry pickups go through the same `IDataStorage` implementation. The brainstorm proposed a "Subscriptions" column; the live code does not expose a subscription-tracking storage seam, so the column was dropped during planning rather than padded with "n/a" values.
 - **Schema initializer** — `IStorageInitializer` is the seam each storage uses to create or migrate its tables (PostgreSql/SqlServer) or initialize in-process state (InMemoryStorage). All three storages implement it.
 - **Storage row IDs** — `MediumMessage.StorageId`, monitoring APIs, dashboard routes, and bulk storage actions use `Guid`. Storage providers generate row IDs through provider-keyed `IGuidGenerator` strategies, not database defaults. PostgreSQL creates `UUID` `Id` columns and resolves the `Version7` strategy; SQL Server creates `uniqueidentifier` `Id` columns, resolves the `SqlServer` comb strategy, and creates a `uniqueidentifier` table-valued ID-list type.
-- **Retry row owners** — persisted `published` and `received` rows include nullable `Owner` (`node@incarnation`). It is stamped only when a Coordination membership identity is active and is cleared when `LockedUntil` is cleared.
+- **Retry row owners** — persisted published and received rows include nullable `Owner` (`node@incarnation`). It is stamped only when a Coordination membership identity is active and is cleared when `LockedUntil` is cleared.
 
 Internal-wiring asymmetries (for example, `Headless.Messaging.Storage.SqlServer` additionally registers `DiagnosticProcessorObserver` and a `DiagnosticRegister` background server for SQL Server-specific telemetry that PostgreSql does not need) are deliberately not surfaced as matrix columns — they are implementation details, not chooser-relevant capabilities.
 
@@ -273,10 +273,12 @@ provider. Configure it on `MessagingStorageOptions` through the setup builder; `
 ```csharp
 services.AddHeadlessMessaging(setup =>
 {
-    setup.ConfigureStorage(storage => storage.Schema = "messaging"); // default: "messaging"
+    setup.ConfigureStorage(storage => storage.Schema = "outbox"); // default: "headless"
     setup.UsePostgreSql(builder.Configuration.GetConnectionString("Messaging")!);
 });
 ```
+
+The default schema is `headless`, which every Headless feature shares; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features).
 
 - **One setting, per-provider validation.** Whichever storage provider is registered validates the value
   once at startup against its own dialect's identifier rules — PostgreSQL's unquoted-identifier rules
@@ -288,9 +290,17 @@ services.AddHeadlessMessaging(setup =>
   `Use…(IConfiguration)` overloads bind only their own options and never the schema. Both `ConfigureStorage`
   overloads register in call order, so the last one applied wins.
 - **EF-context storage paths** read the same setting: `setup.UseEntityFramework<TContext>()` takes no
-  schema of its own, so pair it with `ConfigureStorage` when the tables do not live in `messaging`.
+  schema of its own, so pair it with `ConfigureStorage` when the tables do not live in `headless`.
 
-Table names are not configurable; each provider creates its own fixed set inside the configured schema.
+Table names are not configurable; each provider creates its own fixed set inside the configured schema, prefixed with the feature so they coexist with other features in one schema:
+
+| PostgreSQL | SQL Server | Holds |
+| --- | --- | --- |
+| `messaging_published` | `MessagingPublished` | Outbox rows |
+| `messaging_received` | `MessagingReceived` | Inbox rows |
+| `messaging_inbox_operation_receipts` | `MessagingInboxOperationReceipts` | Operator and cleanup receipts |
+| `messaging_inbox_audit` | `MessagingInboxAudit` | Operator and cleanup audit |
+| `messaging_schema_state` | `MessagingSchemaState` | Schema readiness versions |
 
 ## Headless.Messaging.Abstractions
 
@@ -1651,7 +1661,7 @@ Registers Redis transports, consumers, and Redis connection services.
 ### API and behavior
 
 - `IMessageRevocationStorage` atomically deletes a scheduled row before reservation, fenced by storage version, terminal status, and retry state. Claimed but unreserved rows remain revocable; deleted rows cannot be restored by reservation or shutdown flush.
-- `setup.UsePostgreSql(...)` — connection string, `IConfiguration` binding, `Action<PostgreSqlOptions>`, or `Action<PostgreSqlOptions, IServiceProvider>`.
+- `setup.UsePostgreSql(...)` — connection string, `IConfiguration` binding, `Action<PostgreSqlOptions>`, or `Action<PostgreSqlOptions, IServiceProvider>`. The parameterless `setup.UsePostgreSql()` reads the connection registered by `AddPostgreSqlSql`.
 - Validates the feature-owned `MessagingStorageOptions.Schema` against PostgreSQL identifier rules at startup.
 - Raw ADO.NET integration and startup initialization.
 - Declares `MessagingInboxCapabilityTier.DurableDedupeOnly`; durable consumers can require `DurableDedupeOnly` or `ProcessLocal`. The default `Transactional` requirement is rejected unless the configured provider declares that stronger guarantee.
@@ -1669,7 +1679,11 @@ dotnet add package Headless.Messaging.Storage.PostgreSql
 
 ```csharp
 setup.UsePostgreSql(builder.Configuration.GetConnectionString("Messaging")!);
+// or reuse the connection from services.AddPostgreSqlSql(connectionString):
+setup.UsePostgreSql();
 ```
+
+The parameterless overload and the shared `headless` schema are described in [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features).
 
 ### Configuration
 
@@ -1680,6 +1694,7 @@ Known orphans use a separate bounded probe batch and recover only when the exact
 History retention uses the shared `MessagingOptions` defaults: cleanup receipts/audits 7 days each, operator receipts 30 days, and operator audits 90 days. All four are positive configurable minimum residence durations. Audit references can extend receipt lifetime; deleting history does not release holds. PostgreSQL database time controls history age. Initialization adds the history-selection and audit-reference indexes idempotently. This history also covers scheduled-delivery operator actions (revoke, dispatch-now) under the shared `TargetKind` ledger; the schema is created fresh with the generalized ledger columns (greenfield — no prior schema versions exist), and the `inbox` schema-state version pins the readiness contract. See [Core configuration](#configuration-3) for probe settings, replay limits, rollout effects, and collector pacing.
 
 - **`DdlCommandTimeout`** (`TimeSpan?`, default `null`): timeout budget for schema-init DDL — the `CREATE INDEX CONCURRENTLY` / `DROP INDEX CONCURRENTLY` builds, the `CREATE EXTENSION` probe, and the advisory-lock waits that gate them. Decoupled from the OLTP `MessagingOptions.CommandTimeout` (~30s) because these can run for minutes-to-hours on a large table; a premature kill leaves a `CONCURRENTLY` index `INVALID` for the next boot to repair. Default `null` (and `TimeSpan.Zero`) mean **no timeout** (wait indefinitely). A negative value is rejected at validation time.
+- **Initializer lock**: concurrent replicas serialize on the session advisory lock `headless_messaging_init:{schema}`. The initializer polls `pg_try_advisory_lock` instead of blocking in `pg_advisory_lock`, because a blocked statement holds a snapshot that the lock holder's `CREATE INDEX CONCURRENTLY` waits on, which deadlocks two booting replicas. The schema transaction also takes `headless_schema_init:{schema}` before `CREATE SCHEMA`, so another feature creating the same schema cannot roll back the messaging DDL.
 - **`pg_trgm` on managed PostgreSQL**: dashboard content (ILIKE) search uses GIN trigram indexes that need the `pg_trgm` extension. The initializer runs `CREATE EXTENSION IF NOT EXISTS pg_trgm` best-effort **outside** the schema transaction. On managed PostgreSQL (AWS RDS, Azure, Neon, Supabase) the app role usually lacks `CREATE EXTENSION`; it logs a warning, **skips the trigram content indexes**, and continues — write/retry paths are unaffected, only dashboard content search is disabled until a DBA pre-installs `pg_trgm`. (Previously `CREATE EXTENSION` ran as the first statement of the schema transaction, so a permission error rolled back the entire schema batch and left messaging dead at startup.)
 - **Bootstrap indexes**: fresh schemas directly create `("StatusName","Added")` indexes for dashboard timelines/statistics and a partial `("Version","ExpiresAt") WHERE "StatusName" = 'Queued'` index for delayed-message scheduling. The initializer is schema bootstrap, not a migration runner, so it does not alter legacy columns or drop superseded indexes.
 
@@ -1700,7 +1715,7 @@ EF execution-strategy retries are allowed only before handler entry. After entry
 ### API and behavior
 
 - `IMessageRevocationStorage` atomically deletes a scheduled row before reservation, fenced by storage version, terminal status, and retry state. Claimed but unreserved rows remain revocable; deleted rows cannot be restored by reservation or shutdown flush.
-- `setup.UseSqlServer(...)` — connection string, `IConfiguration` binding, `Action<SqlServerOptions>`, or `Action<SqlServerOptions, IServiceProvider>`.
+- `setup.UseSqlServer(...)` — connection string, `IConfiguration` binding, `Action<SqlServerOptions>`, or `Action<SqlServerOptions, IServiceProvider>`. The parameterless `setup.UseSqlServer()` reads the connection registered by `AddSqlServerSql`.
 - Validates the feature-owned `MessagingStorageOptions.Schema` against SQL Server identifier rules at startup.
 - Raw ADO.NET integration and startup initialization.
 - Declares `MessagingInboxCapabilityTier.DurableDedupeOnly`; durable consumers can require `DurableDedupeOnly` or `ProcessLocal`. The default `Transactional` requirement is rejected unless the configured provider declares that stronger guarantee.
@@ -1718,7 +1733,11 @@ dotnet add package Headless.Messaging.Storage.SqlServer
 
 ```csharp
 setup.UseSqlServer(builder.Configuration.GetConnectionString("Messaging")!);
+// or reuse the connection from services.AddSqlServerSql(connectionString):
+setup.UseSqlServer();
 ```
+
+The parameterless overload and the shared `headless` schema are described in [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features).
 
 ### Configuration
 
@@ -1730,7 +1749,7 @@ History retention uses the shared `MessagingOptions` defaults: cleanup receipts/
 
 Fresh schemas directly create `([StatusName],[Added])` indexes for dashboard timelines/statistics. The initializer creates the final schema shape and does not carry legacy migration DDL.
 
-- **`DdlCommandTimeout`** (`TimeSpan?`, default `null`): timeout for schema-init DDL that grows with table size. That covers the history-table index builds on `InboxOperationReceipts` and `InboxAudit`, plus the `sp_getapplock` wait that serializes initializers. It is separate from the OLTP `MessagingOptions.CommandTimeout` (~30s) because upgraded schemas already hold an unbounded history backlog. The builds run offline, since `ONLINE = ON` depends on the edition, and block writes to that history table until they finish. Each index is its own command, run while the initializer lock is held. Inbox readiness is published only after the builds finish, so peer replicas wait instead of failing. `null` and `TimeSpan.Zero` mean **no timeout**. A negative value is rejected at validation time.
+- **`DdlCommandTimeout`** (`TimeSpan?`, default `null`): timeout for schema-init DDL that grows with table size. That covers the history-table index builds on `MessagingInboxOperationReceipts` and `MessagingInboxAudit`, plus the `sp_getapplock` wait that serializes initializers. It is separate from the OLTP `MessagingOptions.CommandTimeout` (~30s) because upgraded schemas already hold an unbounded history backlog. The builds run offline, since `ONLINE = ON` depends on the edition, and block writes to that history table until they finish. Each index is its own command, run while the initializer lock is held. Inbox readiness is published only after the builds finish, so peer replicas wait instead of failing. `null` and `TimeSpan.Zero` mean **no timeout**. A negative value is rejected at validation time.
 
 ### Runtime behavior
 

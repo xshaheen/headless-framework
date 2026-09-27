@@ -76,7 +76,7 @@ Idempotent admission answers "has this operation already happened, and what was 
 | `Replay` | The operation already completed within retention. | `Result` (`IdempotentResult`: `Payload`, `Contract`) |
 | `Conflict` | The key is stored with a different fingerprint, or a completed result carries a contract the caller did not expect. | `StoredFingerprint`, and `StoredContract` for a contract mismatch |
 
-Under the hood, admission locks or inserts the key's record row (one row, one lock), reads the database clock after the lock is held, then decides in order: fingerprint mismatch → `Conflict`; `Completed` within retention → `Replay` (or contract `Conflict` if `expectedContract` does not match); `Pending` with a generation whose lease is still live → `InFlight`; otherwise it grants: draws the next generation from the store-wide `record_generations` sequence, sets `lease_expires_at` to the database clock plus the lease duration, and returns `Admitted`. A record past its retention is reset in place and granted, unless a live attempt still holds it (its lease was renewed past the retention). `IsTakeover` is set when the record was `Pending` with a generation before this call, meaning an attempt ended without completing or releasing.
+Under the hood, admission locks or inserts the key's record row (one row, one lock), reads the database clock after the lock is held, then decides in order: fingerprint mismatch → `Conflict`; `Completed` within retention → `Replay` (or contract `Conflict` if `expectedContract` does not match); `Pending` with a generation whose lease is still live → `InFlight`; otherwise it grants: draws the next generation from the store-wide `idempotency_record_generations` sequence, sets `lease_expires_at` to the database clock plus the lease duration, and returns `Admitted`. A record past its retention is reset in place and granted, unless a live attempt still holds it (its lease was renewed past the retention). `IsTakeover` is set when the record was `Pending` with a generation before this call, meaning an attempt ended without completing or releasing.
 
 Generations only grow per key, even after the record is purged and the key admitted again, because they come from one sequence, drawn only after the row lock is held. A zombie attempt of a purged record can never match a new one.
 
@@ -181,7 +181,7 @@ Applications reach it through a provider package, as shown in [Orientation](#ori
 | Builder member | Effect |
 | --- | --- |
 | `ConfigureOptions(Action<IdempotentOperationsOptions>)` | Sets `DefaultRetention` (24 hours), `DefaultLeaseDuration` (2 minutes), `MinimumLeaseDuration` (1 second), `MaximumLeaseDuration` (1 day), `PurgeInterval` (1 hour; `null` disables the purge), `PurgeBatchSize` (1000) |
-| `ConfigureStorage(Action<IdempotencyStorageOptions>)` / `ConfigureStorage(IConfiguration)` | Sets `Schema` (default `"idempotency"`), the schema the record table lives in |
+| `ConfigureStorage(Action<IdempotencyStorageOptions>)` / `ConfigureStorage(IConfiguration)` | Sets `Schema` (default `"headless"`, the schema every Headless feature shares), the schema the `idempotency_records` table and its `idempotency_record_generations` sequence live in |
 
 ### Design and runtime behavior
 
@@ -272,7 +272,10 @@ dotnet add package Headless.Idempotency.PostgreSql
 
 ```csharp
 builder.Services.AddHeadlessIdempotency(setup => setup.UsePostgreSql(connectionString));
+// or reuse the connection from services.AddPostgreSqlSql(connectionString): setup.UsePostgreSql();
 ```
+
+The parameterless overloads and the shared `headless` schema are described in [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features).
 
 ### Configuration
 
@@ -280,7 +283,7 @@ builder.Services.AddHeadlessIdempotency(setup => setup.UsePostgreSql(connectionS
 | --- | --- | --- |
 | `ConnectionString` | required | The database that holds the records; an enlisted call is accepted only on a unit whose connection reaches it |
 | `CommandTimeout` | 30 seconds | Also bounds how long a concurrent admission of the same key waits behind an open enlisted admission, fence, or completion |
-| `InitializeOnStartup` | `true` | When `false`, the application creates the schema, generation sequence, record table, and index |
+| `InitializeOnStartup` | `true` | When `false`, the application creates the schema, the `idempotency_record_generations` sequence, the `idempotency_records` table, and its index |
 
 ### Design and runtime behavior
 
@@ -304,7 +307,10 @@ dotnet add package Headless.Idempotency.SqlServer
 
 ```csharp
 builder.Services.AddHeadlessIdempotency(setup => setup.UseSqlServer(connectionString));
+// or reuse the connection from services.AddSqlServerSql(connectionString): setup.UseSqlServer();
 ```
+
+The parameterless overloads and the shared `headless` schema are described in [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features).
 
 ### Configuration
 
@@ -312,7 +318,7 @@ builder.Services.AddHeadlessIdempotency(setup => setup.UseSqlServer(connectionSt
 | --- | --- | --- |
 | `ConnectionString` | required | The database that holds the records; an enlisted call is accepted only on a unit whose connection reaches it. Name the database explicitly (`Initial Catalog`) |
 | `CommandTimeout` | 30 seconds | Also bounds how long a concurrent admission of the same key waits behind an open enlisted admission, fence, or completion |
-| `InitializeOnStartup` | `true` | When `false`, the application creates the schema, generation sequence, record table, and index |
+| `InitializeOnStartup` | `true` | When `false`, the application creates the schema, the `idempotency_record_generations` sequence, the `idempotency_records` table, and its index |
 
 ### Design and runtime behavior
 

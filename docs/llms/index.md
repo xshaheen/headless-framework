@@ -18,6 +18,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 - Keep provider types at the composition root. Application and domain code depend on framework abstractions such as `ICache`, `IBlobStorage`, `IBus`, or `IEmailSender`.
 - Install only the packages the host uses: normally an abstractions package, the domain runtime/core package, and one provider. Some domains have a different shape; the domain guide owns that exception.
 - Register each feature through its `AddHeadless*` setup builder and select providers there. Do not create a second registration path around the framework.
+- Relational storage features share one connection and one schema by default: register the database once with `AddPostgreSqlSql` or `AddSqlServerSql`, call each feature's parameterless `UsePostgreSql()` or `UseSqlServer()`, and every feature creates its tables in the `headless` schema. [SQL](sql.md#shared-connection-and-schema-for-storage-features) owns the override rules.
 - Preserve explicit durability boundaries. In-memory and `*.Dev` providers are for tests, development, or intentionally ephemeral workloads; they are not production substitutes for durable providers.
 - Keep cancellation tokens end-to-end and use the injected `TimeProvider` for application time. Store-backed leases, locks, and coordination use the store's clock where their guide says so.
 - Treat tenancy, authorization, transactions, retries, ordering, and external side effects as domain contracts. Read every affected guide when a change crosses those boundaries.
@@ -43,7 +44,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | --- | --- |
 | Use EF Core conventions, save pipelines, Couchbase, or the messaging outbox bridge | [ORM](orm.md) |
 | Open and enlist an explicit transaction across EF, messaging, or jobs | [Unit of Work](unit-of-work.md) |
-| Use provider-neutral SQL connections | [SQL](sql.md) |
+| Use provider-neutral SQL connections, or share one connection and schema across storage features | [SQL](sql.md) |
 | Cache data in memory, Redis, or hybrid L1/L2; use output cache or factory locks | [Caching](caching.md) |
 | Store blobs in S3, MinIO or another S3-compatible server, Azure, R2, filesystem, Redis, or SFTP | [Blob Storage](blobs.md) |
 | Persist dynamic settings | [Settings](settings.md) |
