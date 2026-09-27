@@ -5,6 +5,7 @@ using Headless.Jobs;
 using Headless.Jobs.Customizer;
 using Headless.Jobs.Entities;
 using Headless.MultiTenancy;
+using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -15,7 +16,7 @@ namespace Tests.Transactions;
 /// routed context is already refused by the options-constructor requirement (it has no single-options constructor);
 /// this pins the explicit tenancy guard that also covers any other routed context type.
 /// </summary>
-public sealed class TenantRoutedContextGuardTests
+public sealed class TenantRoutedContextGuardTests : TestBase
 {
     [Theory]
     [InlineData(true)]

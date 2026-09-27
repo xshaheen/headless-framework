@@ -80,6 +80,8 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
 
     public ValueTask DisposeAsync()
     {
+        RoutedPlacement?.Dispose();
+
         if (!_initialized)
         {
             return ValueTask.CompletedTask;

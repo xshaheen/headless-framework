@@ -18,10 +18,11 @@ namespace Headless.EntityFramework.Contexts.Runtime;
 /// is constructed, because EF builds the model then and the model carries the schema: a pin taken later (for
 /// example at first connection open) could pair one tenant's model with another tenant's database.
 /// </summary>
-internal sealed class HeadlessRoutedPlacement
+internal sealed class HeadlessRoutedPlacement : IDisposable
 {
     private readonly Type _contextType;
     private readonly IMemoryCache _modelCache;
+    private DbConnection? _expectedConnection;
 
     private HeadlessRoutedPlacement(
         Type contextType,
@@ -44,6 +45,9 @@ internal sealed class HeadlessRoutedPlacement
 
     /// <summary>The pinned tenant placement, or <see langword="null"/> for the host placement.</summary>
     public TenantDataPlacement? Placement { get; }
+
+    /// <summary>Whether <see cref="Configure"/> ran for this context, which a derived <c>OnConfiguring</c> can skip.</summary>
+    public bool IsConfigured { get; private set; }
 
     /// <summary>The context's own default schema: the schema its migrations are authored against.</summary>
     public string? HostSchema { get; }
@@ -135,8 +139,10 @@ internal sealed class HeadlessRoutedPlacement
     /// </summary>
     public void Configure(DbContextOptionsBuilder optionsBuilder)
     {
-        // Replaced services and interceptor instances are identical for every routed instance, so every tenant
-        // shares one EF internal service provider; only the warning configuration below adds a second one.
+        IsConfigured = true;
+
+        // Replaced services, the model cache, and the interceptor instance are identical for every routed instance
+        // of a context type, so its tenants share one EF internal service provider.
         optionsBuilder.ReplaceService<IModelCacheKeyFactory, HeadlessTenantModelCacheKeyFactory>();
         optionsBuilder.ReplaceService<IMigrationsAssembly, HeadlessTenantMigrationsAssembly>();
         optionsBuilder.UseMemoryCache(_modelCache);
@@ -181,6 +187,16 @@ internal sealed class HeadlessRoutedPlacement
     /// </summary>
     public void VerifyModel(IModel model)
     {
+        // Without Configure there is no tenant connection string and no enforcement interceptor, so a database
+        // placement would silently use the registration database even though the schema check below passes.
+        if (!IsConfigured)
+        {
+            throw new InvalidOperationException(
+                $"The tenant-routed context '{_contextType.Name}' did not apply its tenant data placement. Call "
+                    + "base.OnConfiguring(...) from the context's OnConfiguring override."
+            );
+        }
+
         var modelSchema = model.FindAnnotation(HeadlessModelAnnotations.Tenancy.PlacementSchema)?.Value as string;
 
         if (!string.Equals(modelSchema, EffectiveSchema, StringComparison.Ordinal))
@@ -207,12 +223,10 @@ internal sealed class HeadlessRoutedPlacement
             return;
         }
 
-        // An unopened connection only parses its connection string, so building one per open is cheap.
-#pragma warning disable MA0045 // EF's synchronous ConnectionOpening hook calls this too; disposing an unopened connection does no I/O.
-        using var expected = _CreateExpectedConnection(connection);
-#pragma warning restore MA0045
+        // Built once per context: the pinned placement never changes, and EF opens the connection once per query.
+        _expectedConnection ??= _CreateExpectedConnection(connection);
 
-        if (!RelationalDatabaseIdentity.IsSameDatabase(expected, connection))
+        if (!RelationalDatabaseIdentity.IsSameDatabase(_expectedConnection, connection))
         {
             throw new InvalidOperationException(
                 $"The tenant-routed context '{_contextType.Name}' is opening a connection that does not reach the "
@@ -232,6 +246,13 @@ internal sealed class HeadlessRoutedPlacement
         expected.ConnectionString = Placement!.ConnectionString;
 
         return expected;
+    }
+
+    /// <summary>Releases the never-opened connection kept for the database comparison.</summary>
+    public void Dispose()
+    {
+        _expectedConnection?.Dispose();
+        _expectedConnection = null;
     }
 
     private static string? _Normalize(string? tenantId) => string.IsNullOrWhiteSpace(tenantId) ? null : tenantId;

@@ -22,12 +22,9 @@ internal sealed class HeadlessTenantPlacementModelConvention(string schema) : IM
     {
         foreach (var entity in modelBuilder.Metadata.GetEntityTypes())
         {
-            if (
-                entity.BaseType is not null
-                || entity.IsOwned()
-                || entity.GetTableName() is null
-                || string.Equals(entity.GetSchema(), schema, StringComparison.Ordinal)
-            )
+            // Every entity type with a table is checked, derived and owned ones included: a TPT/TPC derived type or an
+            // owned collection can map to a table of its own in another schema.
+            if (entity.GetTableName() is null || string.Equals(entity.GetSchema(), schema, StringComparison.Ordinal))
             {
                 continue;
             }

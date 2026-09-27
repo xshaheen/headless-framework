@@ -80,7 +80,7 @@ public sealed class TenantDataPlacementMigrationTests(TenantMigrationFixture fix
                 )
             )
                 .Should()
-                .Be(2);
+                .Be(3);
             (await _ScalarAsync<string>(connectionString, $"""SELECT "Name" FROM "{schema}"."Rows" """))
                 .Should()
                 .Be("seeded");
@@ -93,6 +93,17 @@ public sealed class TenantDataPlacementMigrationTests(TenantMigrationFixture fix
                     """
                 )
             ).Should().Be(200);
+            (
+                await _ScalarAsync<string>(
+                    connectionString,
+                    $"""
+                    SELECT ccu.table_schema FROM information_schema.table_constraints tc
+                    JOIN information_schema.constraint_column_usage ccu
+                        ON ccu.constraint_schema = tc.constraint_schema AND ccu.constraint_name = tc.constraint_name
+                    WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = '{schema}' AND tc.table_name = 'Notes'
+                    """
+                )
+            ).Should().Be(schema, "the foreign key must reference the tenant's own Rows table");
         }
 
         (await _TablesAsync(fixture.SharedConnectionString, "app")).Should().BeEmpty();
@@ -119,7 +130,7 @@ public sealed class TenantDataPlacementMigrationTests(TenantMigrationFixture fix
             )
         )
             .Should()
-            .Be(2);
+            .Be(3);
     }
 
     [Fact]

@@ -178,7 +178,7 @@ internal sealed class TenantCatalogService(
         catch (Exception fault) when (fault is not OperationCanceledException && storeAnswered)
 #pragma warning restore CA1031
         {
-            logger.LogTenantCatalogCacheWriteFaulted(fault, nameof(TenantIdentifierCacheItem));
+            logger.LogTenancyCacheWriteFaulted(fault, nameof(TenantIdentifierCacheItem));
 
             return freshFromStore;
         }
@@ -186,7 +186,7 @@ internal sealed class TenantCatalogService(
         catch (Exception fault) when (fault is not OperationCanceledException && !factoryStarted)
 #pragma warning restore CA1031
         {
-            logger.LogTenantCatalogCacheReadFaultedDegradingToMiss(fault, nameof(TenantIdentifierCacheItem));
+            logger.LogTenancyCacheReadFaultedDegradingToMiss(fault, nameof(TenantIdentifierCacheItem));
 
             return await _LoadByIdentifierFromStoreAsync(normalizedIdentifier, identifierCacheKey, cancellationToken)
                 .ConfigureAwait(false);

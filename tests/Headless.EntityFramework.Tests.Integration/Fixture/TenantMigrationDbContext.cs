@@ -8,7 +8,7 @@ namespace Tests.Fixture;
 /// <summary>
 /// The context the tenant-migration tests migrate. Its migrations under <c>Fixture/Migrations</c> were scaffolded
 /// with <c>dotnet ef migrations add</c> against its own default schema <c>app</c>, with seed data and a later
-/// alteration of an indexed column, so the per-tenant schema rewrite is exercised on real scaffold output.
+/// alteration of an indexed column and a later foreign key, so the per-tenant schema rewrite is exercised on real scaffold output.
 /// </summary>
 public sealed class TenantMigrationDbContext(
     HeadlessDbContextServices services,
@@ -41,7 +41,9 @@ public sealed class TenantMigrationDbContext(
                 TenantId = "seed",
             }
         );
-        modelBuilder.Entity<MigratedNote>().ToTable("Notes");
+        var note = modelBuilder.Entity<MigratedNote>();
+        note.ToTable("Notes");
+        note.HasOne<MigratedRow>().WithMany().HasForeignKey(x => x.RowId);
     }
 }
 
@@ -60,4 +62,6 @@ public sealed class MigratedNote
     public Guid Id { get; set; } = Guid.NewGuid();
 
     public required string Text { get; set; }
+
+    public Guid? RowId { get; set; }
 }

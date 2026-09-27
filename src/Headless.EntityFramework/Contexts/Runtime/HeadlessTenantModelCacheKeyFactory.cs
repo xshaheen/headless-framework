@@ -19,8 +19,17 @@ internal sealed class HeadlessTenantModelCacheKeyFactory : IModelCacheKeyFactory
     {
         var schema = context is HeadlessDbContext { RoutedPlacement: { } placement } ? placement.EffectiveSchema : null;
 
-        return new TenantModelCacheKey(context.GetType(), schema, designTime);
+        // The model cache is shared process-wide, so the key also carries a singleton of the context's EF internal
+        // service provider: two hosts that route one context type through different providers or model-affecting
+        // options have different internal providers and must never share a model, as EF's own per-provider cache
+        // guarantees.
+        return new TenantModelCacheKey(context.GetType(), schema, designTime, context.GetService<IModelSource>());
     }
 
-    private readonly record struct TenantModelCacheKey(Type ContextType, string? Schema, bool DesignTime);
+    private readonly record struct TenantModelCacheKey(
+        Type ContextType,
+        string? Schema,
+        bool DesignTime,
+        IModelSource ServiceProviderIdentity
+    );
 }

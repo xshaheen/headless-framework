@@ -32,7 +32,7 @@ internal static class TenantCacheOperations
         catch (Exception fault) when (fault is not OperationCanceledException)
 #pragma warning restore CA1031
         {
-            logger.LogTenantCatalogCacheReadFaultedDegradingToMiss(fault, typeof(T).Name);
+            logger.LogTenancyCacheReadFaultedDegradingToMiss(fault, typeof(T).Name);
 
             return CacheValue<T>.NoValue;
         }
@@ -59,7 +59,7 @@ internal static class TenantCacheOperations
         catch (Exception fault) when (fault is not OperationCanceledException)
 #pragma warning restore CA1031
         {
-            logger.LogTenantCatalogCacheWriteFaulted(fault, typeof(T).Name);
+            logger.LogTenancyCacheWriteFaulted(fault, typeof(T).Name);
         }
     }
 }
@@ -68,11 +68,11 @@ internal static partial class TenantCacheLog
 {
     [LoggerMessage(
         EventId = 10,
-        EventName = "TenantCatalogCacheReadFaultedDegradingToMiss",
+        EventName = "TenancyCacheReadFaultedDegradingToMiss",
         Level = LogLevel.Warning,
         Message = "Tenancy cache read of {CacheItemType} faulted; degrading to a cache miss and falling through to the store."
     )]
-    public static partial void LogTenantCatalogCacheReadFaultedDegradingToMiss(
+    public static partial void LogTenancyCacheReadFaultedDegradingToMiss(
         this ILogger logger,
         Exception exception,
         string cacheItemType
@@ -80,11 +80,11 @@ internal static partial class TenantCacheLog
 
     [LoggerMessage(
         EventId = 11,
-        EventName = "TenantCatalogCacheWriteFaulted",
+        EventName = "TenancyCacheWriteFaulted",
         Level = LogLevel.Warning,
         Message = "Tenancy cache write of {CacheItemType} faulted; the resolved outcome is unaffected."
     )]
-    public static partial void LogTenantCatalogCacheWriteFaulted(
+    public static partial void LogTenancyCacheWriteFaulted(
         this ILogger logger,
         Exception exception,
         string cacheItemType

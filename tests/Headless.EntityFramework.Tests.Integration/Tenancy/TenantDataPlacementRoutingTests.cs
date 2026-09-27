@@ -260,16 +260,14 @@ public sealed class TenantDataPlacementRoutingTests(TenantPlacementDbContextTest
         await act.Should().ThrowAsync<MissingTenantContextException>();
     }
 
-    [Fact]
-    public async Task should_refuse_a_model_shared_across_schemas_when_base_configuration_is_skipped()
+    [Theory]
+    [InlineData(_A)]
+    [InlineData(_DatabaseA)]
+    public async Task should_refuse_a_routed_context_that_skips_base_configuration(string tenantId)
     {
-        // given
-        using (fixture.CurrentTenant.Change(_A))
-        {
-            await using var first = await fixture.CreateAsync<SkippingBaseConfigurationDbContext>(AbortToken);
-        }
-
-        using var tenant = fixture.CurrentTenant.Change(_B);
+        // given: without base.OnConfiguring a schema placement would share one model across schemas and a
+        // database placement would silently stay on the registration database
+        using var tenant = fixture.CurrentTenant.Change(tenantId);
 
         // when
         var act = () => fixture.CreateAsync<SkippingBaseConfigurationDbContext>(AbortToken);
