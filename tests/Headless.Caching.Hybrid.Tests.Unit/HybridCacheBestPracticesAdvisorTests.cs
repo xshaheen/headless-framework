@@ -29,7 +29,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         var logger = new CapturingLogger();
         var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
-        await advisor.StartingAsync(AbortToken);
+        await advisor.ValidateAsync(AbortToken);
 
         logger.HasWarning("AutoRecoveryDelayTooLarge").Should().BeTrue();
     }
@@ -46,7 +46,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         var logger = new CapturingLogger();
         var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
-        await advisor.StartingAsync(AbortToken);
+        await advisor.ValidateAsync(AbortToken);
 
         logger.HasWarning("AutoRecoveryDelayTooLarge").Should().BeFalse();
     }
@@ -63,7 +63,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         var logger = new CapturingLogger();
         var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
-        await advisor.StartingAsync(AbortToken);
+        await advisor.ValidateAsync(AbortToken);
 
         logger.HasWarning("AutoRecoveryDelayTooLarge").Should().BeFalse();
     }
@@ -84,7 +84,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         var logger = new CapturingLogger();
         var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
-        await advisor.StartingAsync(AbortToken);
+        await advisor.ValidateAsync(AbortToken);
 
         logger.HasWarning("AutoRecoveryWithoutCircuitBreaker").Should().BeTrue();
     }
@@ -101,7 +101,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         var logger = new CapturingLogger();
         var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
-        await advisor.StartingAsync(AbortToken);
+        await advisor.ValidateAsync(AbortToken);
 
         logger.HasWarning("AutoRecoveryWithoutCircuitBreaker").Should().BeFalse();
     }
@@ -118,7 +118,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         var logger = new CapturingLogger();
         var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
-        await advisor.StartingAsync(AbortToken);
+        await advisor.ValidateAsync(AbortToken);
 
         logger.HasWarning("AutoRecoveryWithoutCircuitBreaker").Should().BeFalse();
     }
@@ -143,7 +143,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         var logger = new CapturingLogger();
         var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
-        await advisor.StartingAsync(AbortToken);
+        await advisor.ValidateAsync(AbortToken);
 
         logger.HasWarning("FailSafeMaxDurationNotBeyondDuration").Should().BeTrue();
     }
@@ -164,7 +164,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         var logger = new CapturingLogger();
         var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
-        await advisor.StartingAsync(AbortToken);
+        await advisor.ValidateAsync(AbortToken);
 
         logger.HasWarning("FailSafeMaxDurationNotBeyondDuration").Should().BeTrue();
     }
@@ -185,7 +185,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         var logger = new CapturingLogger();
         var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
-        await advisor.StartingAsync(AbortToken);
+        await advisor.ValidateAsync(AbortToken);
 
         logger.HasWarning("FailSafeMaxDurationNotBeyondDuration").Should().BeFalse();
     }
@@ -206,7 +206,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         var logger = new CapturingLogger();
         var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
-        await advisor.StartingAsync(AbortToken);
+        await advisor.ValidateAsync(AbortToken);
 
         logger.HasWarning("FailSafeMaxDurationNotBeyondDuration").Should().BeFalse();
     }
@@ -231,7 +231,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         var logger = new CapturingLogger();
         var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
-        await advisor.StartingAsync(AbortToken);
+        await advisor.ValidateAsync(AbortToken);
 
         logger.HasWarning("FactorySoftTimeoutInertWithoutFailSafe").Should().BeTrue();
     }
@@ -254,7 +254,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         var logger = new CapturingLogger();
         var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
-        await advisor.StartingAsync(AbortToken);
+        await advisor.ValidateAsync(AbortToken);
 
         logger.HasWarning("FactorySoftTimeoutInertWithoutFailSafe").Should().BeFalse();
     }
@@ -275,7 +275,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         var logger = new CapturingLogger();
         var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
-        await advisor.StartingAsync(AbortToken);
+        await advisor.ValidateAsync(AbortToken);
 
         logger.HasWarning("FactorySoftTimeoutInertWithoutFailSafe").Should().BeFalse();
     }
@@ -299,7 +299,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         var logger = new CapturingLogger();
         var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
-        await advisor.StartingAsync(AbortToken);
+        await advisor.ValidateAsync(AbortToken);
 
         logger.HasWarning("EagerRefreshThresholdTooHigh").Should().BeTrue();
     }
@@ -319,7 +319,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         var logger = new CapturingLogger();
         var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
-        await advisor.StartingAsync(AbortToken);
+        await advisor.ValidateAsync(AbortToken);
 
         logger.HasWarning("EagerRefreshThresholdTooHigh").Should().BeTrue();
     }
@@ -339,7 +339,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         var logger = new CapturingLogger();
         var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
-        await advisor.StartingAsync(AbortToken);
+        await advisor.ValidateAsync(AbortToken);
 
         logger.HasWarning("EagerRefreshThresholdTooHigh").Should().BeFalse();
     }
@@ -355,7 +355,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         var logger = new CapturingLogger();
         var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
-        await advisor.StartingAsync(AbortToken);
+        await advisor.ValidateAsync(AbortToken);
 
         logger.HasWarning("EagerRefreshThresholdTooHigh").Should().BeFalse();
     }
@@ -372,7 +372,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         var logger = new CapturingLogger();
         var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
-        await advisor.StartingAsync(AbortToken);
+        await advisor.ValidateAsync(AbortToken);
 
         logger
             .Warnings()
@@ -408,7 +408,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         var logger = new CapturingLogger();
         var advisor = new HybridCacheBestPracticesAdvisor(options, logger);
 
-        await advisor.StartingAsync(AbortToken);
+        await advisor.ValidateAsync(AbortToken);
 
         logger.HasWarning("AutoRecoveryDelayTooLarge").Should().BeTrue();
         logger.HasWarning("FailSafeMaxDurationNotBeyondDuration").Should().BeTrue();
@@ -435,7 +435,7 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
         var logger = new CapturingLogger();
         var advisor = new HybridCacheBestPracticesAdvisor(options, logger, instanceName: "products");
 
-        await advisor.StartingAsync(AbortToken);
+        await advisor.ValidateAsync(AbortToken);
 
         logger.HasWarning("AutoRecoveryDelayTooLarge").Should().BeTrue();
     }

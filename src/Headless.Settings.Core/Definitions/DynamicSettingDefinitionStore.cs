@@ -344,7 +344,7 @@ public sealed class DynamicSettingDefinitionStore(
         stringBuilder.Append("DeletedSetting:");
         stringBuilder.Append(deletedSettings.JoinAsString(","));
 
-        return stringBuilder.ToString().ToMd5();
+        return stringBuilder.ToString().ToSha256();
     }
 
     #endregion

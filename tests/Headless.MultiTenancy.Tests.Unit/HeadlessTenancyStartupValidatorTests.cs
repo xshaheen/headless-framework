@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Validation;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,7 +24,7 @@ public sealed class HeadlessTenancyStartupValidatorTests : TestBase
             logger
         );
 
-        var act = () => validator.StartingAsync(AbortToken);
+        var act = () => validator.ValidateAsync(AbortToken);
 
         await act.Should().NotThrowAsync();
         logger.Entries.Should().ContainSingle(entry => entry.Level == LogLevel.Warning);
@@ -47,7 +48,7 @@ public sealed class HeadlessTenancyStartupValidatorTests : TestBase
             logger
         );
 
-        var act = () => validator.StartingAsync(cts.Token);
+        var act = () => validator.ValidateAsync(cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         second.Calls.Should().Be(0);
@@ -68,14 +69,14 @@ public sealed class HeadlessTenancyStartupValidatorTests : TestBase
         );
 
         await using var provider = builder.Services.BuildServiceProvider();
-        var hostedService = (IHostedLifecycleService)
+        var hostedService = (IHeadlessStartupValidator)
             provider
-                .GetServices<IHostedService>()
+                .GetServices<IHeadlessStartupValidator>()
                 .Single(service =>
                     string.Equals(service.GetType().Name, "HeadlessTenancyStartupValidator", StringComparison.Ordinal)
                 );
 
-        await hostedService.StartingAsync(AbortToken);
+        await hostedService.ValidateAsync(AbortToken);
 
         capturing.SeenManifest.Should().BeSameAs(provider.GetRequiredService<TenantPostureManifest>());
         var seam = capturing.SeenManifest!.GetSeam("Http");

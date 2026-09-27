@@ -50,6 +50,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | Evaluate feature flags | [Features](features.md) |
 | React when a setting, feature, or permission grant changes instead of polling | [Settings](settings.md), [Features](features.md), [Permissions](permissions.md) — each has a "Reacting to a change" section |
 | Record entity changes or explicit audit events | [Audit Log](audit-log.md) |
+| Issue per-tenant consecutive numbers (receipts, invoices, case numbers), gap-free when audited | [Sequences](sequences.md) |
 
 ### Distributed runtime
 
@@ -57,7 +58,8 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | --- | --- |
 | Publish or consume messages; configure transports, outbox/inbox, retries, or ordering | [Messaging](messaging.md) |
 | Schedule or execute background jobs and recurring work | [Jobs](jobs.md) |
-| Acquire distributed locks, reader/writer locks, or semaphores | [Distributed Locks](distributed-locks.md) |
+| Acquire distributed locks, reader/writer locks, or semaphores, or fence stale writes with fencing tokens | [Distributed Locks](distributed-locks.md) |
+| Cap attempts per phone, email, IP, or card across replicas (OTP delivery, password reset, PIN verification) | [Rate Limiting](rate-limiting.md) |
 | Track node identity, liveness, and membership | [Coordination](coordination.md) |
 | Dispatch in-process requests and notifications | [Mediator](mediator.md) |
 
@@ -77,7 +79,8 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 
 | Task | Read |
 | --- | --- |
-| Use current-user/locale/time-zone services, guards, DDD entities, local domain events, or string security | [Core](core.md) |
+| Use current-user/locale/time-zone services, guards, DDD entities, or local domain events | [Core](core.md) |
+| Encrypt strings, build a blind index, or hash and verify secrets (PINs, API-key secrets, recovery codes, passwords outside Identity) | [Security](security.md) |
 | Find a primitive, result type, collection helper, concurrency helper, IO helper, or URL builder | [Extensions and Primitives](extensions.md) |
 | Serialize JSON or MessagePack behind `ISerializer` | [Serialization](serialization.md) |
 | Configure Serilog defaults | [Logging](logging.md) |

@@ -42,6 +42,8 @@ Neither provider registers itself into DI automatically — you must call `servi
 `ISerializer` is the root interface; all serialization flows through it:
 
 ```csharp
+using System.Buffers;
+
 public interface ISerializer
 {
     void Serialize<T>(T value, IBufferWriter<byte> output);
@@ -249,6 +251,8 @@ public sealed class ApiClient(IJsonSerializer serializer)
 Implement `IJsonOptionsProvider` to override the default options:
 
 ```csharp
+using System.Text.Json;
+
 public sealed class MyJsonOptionsProvider : IJsonOptionsProvider
 {
     // Starts from DefaultWebJsonOptions, then adds a custom converter:
@@ -266,6 +270,8 @@ public sealed class MyJsonOptionsProvider : IJsonOptionsProvider
 A snake_case contract shared with a non-.NET producer, optionally backed by a source-generated context:
 
 ```csharp
+using System.Text.Json;
+
 public static class OrderWireJson
 {
     public static JsonSerializerOptions Options { get; } = _Create();
@@ -329,6 +335,9 @@ dotnet add package Headless.Serializer.MessagePack
 ### Setup and use
 
 ```csharp
+using MessagePack;
+using MessagePack.Resolvers;
+
 // Default: contractless, no compression, MessagePackSecurity.UntrustedData:
 builder.Services.AddSingleton<IBinarySerializer, MessagePackBinarySerializer>();
 
@@ -356,11 +365,15 @@ public sealed class CacheWriter(IBinarySerializer serializer)
 All configuration is passed via `MessagePackSerializerOptions` at construction time:
 
 ```csharp
+using MessagePack;
+using MessagePack.Resolvers;
+
 // Switch to attribute-based (non-contractless) mode:
-var options = MessagePackSerializerOptions.Standard; // requires [MessagePackObject]/[Key] attributes
+var attributeOptions = MessagePackSerializerOptions.Standard; // requires [MessagePackObject]/[Key] attributes
 
 // The parameterless constructor already applies this security level:
-var options = MessagePackSerializerOptions
+var untrustedOptions = MessagePackSerializerOptions
+
     .Standard.WithResolver(ContractlessStandardResolver.Instance)
     .WithSecurity(MessagePackSecurity.UntrustedData);
 

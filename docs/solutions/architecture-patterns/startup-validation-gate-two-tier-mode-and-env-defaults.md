@@ -33,14 +33,23 @@ tags:
 > the former `CommitProbeMode` (commit-coordination abstractions, since removed) and its only consumer is the EF
 > `CommitInterceptorStartupGate<TContext>` (Tier-2 exception at the end of this document).
 
+> **Update (2026-09-25).** Tier-1 gates now share one mechanism: implement `IHeadlessStartupValidator`
+> (`Headless.Hosting.Validation`) and register it with `AddStartupValidator`. One runner executes every validator in
+> `StartingAsync`, runs all of them even after a failure, rethrows a single failure unwrapped, and wraps two or more in
+> a `StartupValidationException`. The EF entity validators, `RequiredServiceStartupValidator`,
+> `HeadlessTenancyStartupValidator`, `HeadlessServiceDefaultsStartupValidator`, and `HybridCacheBestPracticesAdvisor`
+> all run through it; the per-gate `IHostedLifecycleService` shapes described in the Context table below no longer
+> exist. Tier-2 diagnostics (the secret-hasher cost check, the data-protection key-ring probe) stay bespoke hosted
+> services because each needs its own mode and timing. See "Tier-1 gates are `IHeadlessStartupValidator`s" under Guidance.
+
 ## Context
 
 The framework already validates a lot at host startup, but each package invented its own gate shape. Today there are **four incompatible shapes** and **no environment-awareness anywhere** (`grep IsDevelopment src/` returns hits, none of them a startup gate):
 
 | Shape | Real example | Behavior |
 | --- | --- | --- |
-| Always-throw, no knob | `FeaturesEntityValidationStartupGate<TContext>` (`Headless.Features.Storage.EntityFramework/Internal/`) | Throws `InvalidOperationException` if a required EF entity type is absent from the model. No opt-out. |
-| Per-gate `bool`, throw-when-on | `HeadlessServiceDefaultsValidationStartupFilter` (`Headless.Api.ServiceDefaults/`) | Reads `RequireUseHeadless` / `RequireMapHeadlessEndpoints` / `RequireStatusCodesRewriter` (all default `true`); throws if wiring was skipped. Two-state per gate. |
+| Always-throw, no knob | `FeaturesEntityStartupValidator<TContext>` (`Headless.Features.Storage.EntityFramework/Internal/`) | Throws `InvalidOperationException` if a required EF entity type is absent from the model. No opt-out. |
+| Per-gate `bool`, throw-when-on | `HeadlessServiceDefaultsStartupValidator` (`Headless.Api.ServiceDefaults/`) | Reads `RequireUseHeadless` / `RequireMapHeadlessEndpoints` / `RequireStatusCodesRewriter` (all default `true`); throws if wiring was skipped. Two-state per gate. |
 | Collect-then-throw + warn-log | `HeadlessTenancyStartupValidator` (`Headless.MultiTenancy/`) | Aggregates `IHeadlessTenancyValidator` diagnostics, throws if any `Error`, logs `Warning`/`Information`. Warn-vs-strict is baked into each diagnostic's severity, not operator-configurable. |
 | **Real 3-state mode — but only one package has it** | The former SQL Server commit diagnostic hosted service (the former SQL Server commit-coordination package, since removed) | Its probe mode was `Disabled \| Warn \| Strict`. The only gate with an explicit graduated knob at the time; that knob later became `CommitProbeMode` on the EF interceptor gate; both were removed with the scoped unit of work (2026-09-17). |
 
@@ -60,10 +69,23 @@ This doc names the latent pattern across those instances and proposes the one mi
 
 | Tier | Definition | Default policy | Real gates |
 | --- | --- | --- | --- |
-| **Tier-1 — Correctness** | cheap, **no network I/O**: in-memory checks of options, EF model metadata, DI wiring flags, tenant posture | `Strict` in **all** environments | `FeaturesEntityValidationStartupGate<TContext>` (EF model-metadata only); `HeadlessServiceDefaultsValidationStartupFilter` (flag checks); `HeadlessTenancyStartupValidator` (Tier-1 *by convention* — see edge case); options `ValidateOnStart()` chains; `UseDefaultServiceProvider(ValidateOnBuild/ValidateScopes)` |
+| **Tier-1 — Correctness** | cheap, **no network I/O**: in-memory checks of options, EF model metadata, DI wiring flags, tenant posture | `Strict` in **all** environments | `FeaturesEntityStartupValidator<TContext>` (EF model-metadata only); `HeadlessServiceDefaultsStartupValidator` (flag checks); `HeadlessTenancyStartupValidator` (Tier-1 *by convention* — see edge case); options `ValidateOnStart()` chains; `UseDefaultServiceProvider(ValidateOnBuild/ValidateScopes)` |
 | **Tier-2 — Diagnostic** | network I/O, adds startup latency, can fail on transient blips | `Strict`/`Warn` in Dev, **`Off` in Prod** | The former SQL Server commit diagnostic hosted service (opened a live `SqlConnection`, ran a real txn under a probe timeout; removed). Today the only Tier-2 gate is `CommitInterceptorStartupGate<TContext>`, covered as the exception below |
 
-The test for tier is **I/O at runtime, not object allocation.** `FeaturesEntityValidationStartupGate` opens a `DbContext` via `IDbContextFactory` but only reads `context.Model.FindEntityType(...)` — in-memory model metadata, no DB round-trip — so it is correctly Tier-1 despite "creating" a context.
+The test for tier is **I/O at runtime, not object allocation.** `FeaturesEntityStartupValidator` opens a `DbContext` via `IDbContextFactory` but only reads `context.Model.FindEntityType(...)` — in-memory model metadata, no DB round-trip — so it is correctly Tier-1 despite "creating" a context.
+
+### Tier-1 gates are `IHeadlessStartupValidator`s
+
+A new Tier-1 gate implements `IHeadlessStartupValidator` and calls `services.AddStartupValidator<T>()` (or the `Type` overload
+for a closed generic, or the factory overload for one validator per named instance). It does not implement
+`IHostedLifecycleService`, add a run-once guard, or write the five empty lifecycle members. The shared runner gives
+every Tier-1 gate the same ordering (before any `StartAsync`) and reports every failing gate in one start instead of
+one per restart. It has no mode: throwing is the only way to fail, and an advisory gate logs and returns.
+
+Registration order still matters in one way: the runner occupies the lifecycle position of the first
+`AddStartupValidator` call, and lifecycle services run `StartingAsync` in registration order. Every validator therefore
+runs no later than it did as its own hosted service, but a `HostedInitializer` registered before the first validator
+still runs its `StartingAsync` first. Validators must not depend on an initializer's side effects.
 
 ### Shared 3-state mode enum
 
@@ -148,7 +170,7 @@ A prior review (session history) flagged the former SQL Server commit coordinati
 
 ## Why This Matters
 
-- **Disabling Tier-1 in prod = bad config serves live traffic.** Skip `FeaturesEntityValidationStartupGate` and a DbContext missing `FeatureValueRecord` boots fine, then faults at the first feature read — a runtime failure under load instead of a startup failure. `RequireUseHeadless = false` lets an app start without the Headless middleware pipeline. These are deterministic, cheap-to-detect misconfigurations with no upside to deferring → Tier-1 stays `Strict` even in prod.
+- **Disabling Tier-1 in prod = bad config serves live traffic.** Skip `FeaturesEntityStartupValidator` and a DbContext missing `FeatureValueRecord` boots fine, then faults at the first feature read — a runtime failure under load instead of a startup failure. `RequireUseHeadless = false` lets an app start without the Headless middleware pipeline. These are deterministic, cheap-to-detect misconfigurations with no upside to deferring → Tier-1 stays `Strict` even in prod.
 - **Disabling Tier-2 in prod avoids two distinct prod hazards:** (1) **startup latency** — the SqlServer probe opens a connection and runs a transaction (bounded by a default 5 s timeout) on every boot; (2) **transient-blip startup failures** — a momentary DB hiccup during a rolling deploy would, under `Strict`, abort the new instance's startup and stall the rollout. The probe verifies a *library-compatibility regression* (SqlClient still emitting the diagnostic payloads out-of-band commit detection relies on) — a dev/CI concern, not a per-boot prod concern. Hence `Off` in prod.
 - **The existing SqlServer 3-mode gate proves the shape works.** The `Off`-short-circuit / `Warn`-log / `Strict`-throw branch already ships and is tested. The generalization is "lift this one good shape into a shared vocabulary and add the env-default it's missing" — not invent a mechanism. The choice of a 3-state enum over a `bool` was deliberate (session history): `Warn` is the safe default because the SqlServer provider is an *acceleration* path and a missed signal degrades to polling rather than violating correctness.
 
@@ -165,7 +187,7 @@ When a package adds **any** host-startup gate, run this decision procedure:
 
 ## Examples
 
-### Tier-1 stays always-throw — don't add an `Off` switch (real, `FeaturesEntityValidationStartupGate.cs`)
+### Tier-1 stays always-throw — don't add an `Off` switch (real, `FeaturesEntityStartupValidator.cs`)
 
 ```csharp
 private static void _EnsureEntity(DbContext context, Type entityType, string entityName)
@@ -177,7 +199,7 @@ private static void _EnsureEntity(DbContext context, Type entityType, string ent
 
 Correct as-is: skipping a correctness check is never the right answer, so the generalization for Tier-1 is mostly *not* exposing an `Off` switch.
 
-### Tier-1 stays binary — the `bool` opt-out is the right shape (real, `HeadlessServiceDefaultsValidationStartupFilter.cs`)
+### Tier-1 stays binary — the `bool` opt-out is the right shape (real, `HeadlessServiceDefaultsStartupValidator.cs`)
 
 ```csharp
 if (options.Validation.RequireUseHeadless && !options.UseHeadlessCalled)
@@ -253,9 +275,23 @@ The only deltas from shipping code: `DiagnosticProbeMode` becomes `HeadlessValid
 
 So the tier taxonomy classifies by *cost/IO*, but the env-default is ultimately a function of **whether the check is correctness-adjacent**. Tier-2 gates whose signal has prod value (outbox atomicity here) may legitimately run `Warn`-everywhere; reserve `Off`-in-prod for purely dev/CI diagnostics. Do not "correct" this gate to `Off`-in-prod to match the generic Tier-2 rule.
 
+### Split a gate by tier, and run a Tier-2 `Warn` after startup (real, `SecretHasherRegistrationValidator.cs` and `SecretHasherCostCheckService.cs`)
+
+The secret hasher needs one check of each tier, so it ships two types that each follow their tier's rule:
+
+- **Registration (Tier-1), `SecretHasherRegistrationValidator`.** The selected algorithm id must have a registered `ISecretHashAlgorithm`. It is an in-memory lookup and an `IHeadlessStartupValidator`, so it always throws and has no switch; `CostCheck.Mode` does not govern it. The cost check skips a missing algorithm instead of reporting it twice.
+- **Cost benchmark (Tier-2 by latency, not I/O), `SecretHasherCostCheckService`.** Its own hosted service, because it has a mode and timing a validator cannot express. One warm-up plus three timed hashes: CPU-bound, but up to four times the configured hash cost on the startup path. The mode is `SecretHasherCostCheckMode { Off, Warn, Strict }`.
+
+Two choices differ from the generic Tier-2 rule:
+
+- **`Warn` in every environment, no environment default.** Test-grade cost parameters reaching production are exactly what the benchmark catches, so its signal is production-relevant, which is the same argument as the `CommitInterceptorStartupGate` exception above. Consumers switch it off per environment through configuration (`Headless:SecretHasher:CostCheck:Mode`).
+- **`Warn` runs in the background from `StartedAsync`.** A warning cannot justify making every instance wait, so only `Strict`, which asks for a gate, measures in `StartingAsync`. The background task captures a `CancellationTokenSource` that `StoppingAsync` cancels and then awaits, it checks cancellation between samples, and it logs its own failures instead of faulting, because nothing else observes it. This removes both Tier-2 production hazards for the default mode: no startup latency, and no transient-slowness start failure.
+
+Use this shape for any diagnostic whose check needs no ordering guarantee: `Strict` blocks in `StartingAsync`, `Warn` measures after startup.
+
 ## Related
 
-- [`best-practices/storage-initializer-lifecycle-correctness.md`](../best-practices/storage-initializer-lifecycle-correctness.md) — concrete Tier-1 correctness-gate instances (the EF `*ValidationStartupGate` files) and the fail-closed-on-misconfig rationale. **Primary sibling.**
+- [`best-practices/storage-initializer-lifecycle-correctness.md`](../best-practices/storage-initializer-lifecycle-correctness.md) — concrete Tier-1 correctness-gate instances (the EF `*EntityStartupValidator` files) and the fail-closed-on-misconfig rationale. **Primary sibling.**
 - [`concurrency/startup-pause-gating-and-half-open-recovery.md`](../concurrency/startup-pause-gating-and-half-open-recovery.md) — "validate cross-option invariants in the FluentValidation validator; don't silently redefine invalid config as primary behavior" — the Tier-1 source-of-truth rule.
 - [`architecture-patterns/unified-provider-setup-builder-pattern.md`](unified-provider-setup-builder-pattern.md) — where gates attach to the host (`Setup{Feature}` registration + `IHostedLifecycleService.StartingAsync`).
 - [`architecture-patterns/coordination-register-establishes-durable-liveness.md`](coordination-register-establishes-durable-liveness.md) — `JobsCoordinationStartupGate` is another real correctness-gate example.

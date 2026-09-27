@@ -1,7 +1,7 @@
 ---
 title: "When to extract a Headless.<Feature>.Tests.Harness package"
 date: 2026-09-18
-last_updated: 2026-09-18
+last_updated: 2026-09-25
 category: best-practices
 module: headless-framework
 problem_type: test_structure
@@ -61,10 +61,12 @@ projects.
 - [Headless.EntityFramework.Tests.Harness](../../../tests/Headless.EntityFramework.Tests.Harness) — `HeadlessDbContext` runtime and EF Core base behavior
 - [Headless.Messaging.Core.Tests.Harness](../../../tests/Headless.Messaging.Core.Tests.Harness) — messaging dispatch and outbox
 - [Headless.Jobs.EntityFramework.Tests.Harness](../../../tests/Headless.Jobs.EntityFramework.Tests.Harness) — Jobs and Coordination conformance across the EF database providers (PostgreSQL, SqlServer). This one uses an interface plus extensions (`IJobsCoordinationFixture`) instead of an abstract fixture base.
+- [Headless.Settings.Tests.Harness](../../../tests/Headless.Settings.Tests.Harness) and [Headless.Features.Tests.Harness](../../../tests/Headless.Features.Tests.Harness) — raw-ADO storage conformance (PostgreSQL, SqlServer). Also interface plus extensions (`ISettingsStorageFixture`, `IFeaturesStorageFixture`), because each leaf fixture already derives from its provider's Testcontainers fixture.
 
 ## The shape this rule prevents
 
-The storage-domain integration tests
-(`Headless.{AuditLog,Features,Permissions,Settings}.Storage.{EntityFramework,PostgreSql,SqlServer}.Tests.Integration`)
-each own a private `<Provider><Feature>Fixture.cs` with substantial overlap. When you add a new domain or
-provider there, extract first.
+The remaining storage-domain integration tests
+(`Headless.AuditLog.Storage.{EntityFramework,PostgreSql,SqlServer}.Tests.Integration` and
+`Headless.Permissions.Storage.{PostgreSql,SqlServer}.Tests.Integration`)
+each own a private `<Provider><Feature>Fixture.cs` and host bootstrap with substantial overlap. When you add a
+new domain or provider there, extract first, following the Settings and Features harnesses.

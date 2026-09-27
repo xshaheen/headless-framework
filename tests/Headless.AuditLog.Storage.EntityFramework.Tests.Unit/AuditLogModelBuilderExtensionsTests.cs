@@ -80,7 +80,7 @@ public sealed class HeadlessAuditLogModelBuilderExtensionsTests : TestBase
             .Properties.Select(property => property.Name)
             .Should()
             .Equal(nameof(AuditLogEntry.CreatedAt), nameof(AuditLogEntry.Id));
-        entity.GetIndexes().Should().HaveCount(5);
+        entity.GetIndexes().Should().HaveCount(6);
     }
 
     private static void _AssertAuditPolicy(IEntityType entity, bool expected)

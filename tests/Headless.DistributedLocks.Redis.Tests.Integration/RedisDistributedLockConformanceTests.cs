@@ -29,6 +29,24 @@ public sealed class RedisDistributedLockConformanceTests(RedisTestFixture fixtur
     }
 
     [Fact]
+    public override Task should_renew_held_lease()
+    {
+        return base.should_renew_held_lease();
+    }
+
+    [Fact]
+    public override Task should_not_renew_released_lease()
+    {
+        return base.should_not_renew_released_lease();
+    }
+
+    [Fact]
+    public override Task should_not_renew_unknown_lease_id()
+    {
+        return base.should_not_renew_unknown_lease_id();
+    }
+
+    [Fact]
     public override Task should_acquire_composite_in_canonical_order_and_deduplicate()
     {
         return base.should_acquire_composite_in_canonical_order_and_deduplicate();

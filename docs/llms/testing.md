@@ -50,6 +50,7 @@ Core testing utilities and base classes for xUnit tests.
 - `TestCurrentUser` / `TestCurrentTenant` - Fake context implementations
 - `AddTestTimeProvider()` - Replaces the container's `TimeProvider` with a `FakeTimeProvider` and returns it
 - Assertion extensions for async operations
+- `AllBeSecretHashes(algorithmId)` - Asserts a string collection (for example a queried hash column) holds only PHC-encoded secret hashes of one algorithm; failures name the offending index and reason, never the value (see [security.md](security.md))
 
 ### Install
 
@@ -191,10 +192,10 @@ public sealed class TestFixture : IAsyncLifetime
         App.WaitForReadiness(async sp =>
         {
             var bootstrapper = sp.GetRequiredService<IBootstrapper>();
-            await bootstrapper.WaitUntilStartedAsync();
+            await bootstrapper.BootstrapAsync(); // joins the in-flight startup; returns once it completes
         });
 
-        App.ConfigureDatabaseReset(options => options.ConnectionString = "...");
+        App.ConfigureDatabaseReset(options => options.ConnectionProvider = _ => new NpgsqlConnection("..."));
 
         await App.InitializeAsync();
     }

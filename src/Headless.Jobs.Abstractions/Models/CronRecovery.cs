@@ -89,6 +89,14 @@ public sealed record CronRecoveryResult<TCronJob>
     /// <summary>Not-yet-executing occurrences in the missed window transitioned to skipped.</summary>
     public required int SkippedOccurrenceCount { get; init; }
 
+    /// <summary>
+    /// The run recovery established and then recorded as <see cref="JobStatus.Skipped"/> because the definition's
+    /// <see cref="CronJobEntity.OnOverlap"/> is <see cref="CronOverlapPolicy.Skip"/> and an earlier occurrence was
+    /// still unfinished, or <see langword="null"/> when no run was skipped for overlap. <see cref="CoalescedRun"/> is
+    /// <see langword="null"/> whenever this is set.
+    /// </summary>
+    public CronJobOccurrenceEntity<TCronJob>? OverlapSkippedRun { get; init; }
+
     /// <summary>The persisted watermark after recovery.</summary>
     public required DateTime ReconciledThroughUtc { get; init; }
 

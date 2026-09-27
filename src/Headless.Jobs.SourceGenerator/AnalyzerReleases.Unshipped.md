@@ -23,6 +23,7 @@ HF018   | Headless.Jobs.SourceGenerator | Error | Assembly-level Function target
 HF019   | Headless.Jobs.SourceGenerator | Error | Middleware type is inaccessible to generated registration code
 HF020   | Headless.Jobs.SourceGenerator | Error | Undefined missed-run policy on [JobFunction]
 HF021   | Headless.Jobs.SourceGenerator | Error | Non-positive missed-run grace on [JobFunction]
+HF022   | Headless.Jobs.SourceGenerator | Error | Undefined overlap policy on [JobFunction]
 
 ### Removed Rules
 

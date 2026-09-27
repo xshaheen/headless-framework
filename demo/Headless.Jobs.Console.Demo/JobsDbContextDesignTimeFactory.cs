@@ -20,6 +20,7 @@ internal sealed class JobsDbContextDesignTimeFactory : IDesignTimeDbContextFacto
     {
         var services = new ServiceCollection();
         services.AddSingleton(new JobsEfCoreOptionBuilder<TimeJobEntity, CronJobEntity>());
+        services.AddSingleton(new JobsStorageOptions());
         var serviceProvider = services.BuildServiceProvider();
 
         var options = new DbContextOptionsBuilder<JobsDbContext>()
