@@ -25,4 +25,15 @@ public sealed record PushNotificationRequest
     /// underlying provider may be rejected by the implementation. Defaults to <see langword="null"/>.
     /// </summary>
     public IReadOnlyDictionary<string, string>? Data { get; init; }
+
+    /// <summary>
+    /// Optional key that groups notifications so a newer one replaces an older undelivered one with the same key
+    /// on the device. Defaults to <see langword="null"/> (no collapsing).
+    /// </summary>
+    /// <remarks>
+    /// Each provider maps and limits the key: APNs sends it as the <c>apns-collapse-id</c> header, which Apple
+    /// caps at 64 UTF-8 bytes, and Firebase sends it as the Android collapse key and as the same APNs header
+    /// through its iOS bridge. Providers reject a key over their limit with <see cref="ArgumentException"/>.
+    /// </remarks>
+    public string? CollapseKey { get; init; }
 }
