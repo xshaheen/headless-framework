@@ -60,11 +60,11 @@ public sealed class SqlServerJobsCoordinationFixture
         // a schema that still owns objects, so the tables go first, children before parents, exactly as above.
         + _CustomSchemaResetSql
         + _MappedSchemaResetSql
-        + "DROP TABLE IF EXISTS [headless].[InboxAudit];"
-        + "DROP TABLE IF EXISTS [headless].[InboxOperationReceipts];"
-        + "DROP TABLE IF EXISTS [headless].[SchemaState];"
-        + "DROP TABLE IF EXISTS [headless].[Published];"
-        + "DROP TABLE IF EXISTS [headless].[Received];"
+        + "DROP TABLE IF EXISTS [headless].[MessagingInboxAudit];"
+        + "DROP TABLE IF EXISTS [headless].[MessagingInboxOperationReceipts];"
+        + "DROP TABLE IF EXISTS [headless].[MessagingSchemaState];"
+        + "DROP TABLE IF EXISTS [headless].[MessagingPublished];"
+        + "DROP TABLE IF EXISTS [headless].[MessagingReceived];"
         + "IF TYPE_ID(N'headless.HeadlessMessagingIdList') IS NOT NULL DROP TYPE [headless].[HeadlessMessagingIdList];"
         + "IF TYPE_ID(N'headless.HeadlessMessagingOwnerList') IS NOT NULL DROP TYPE [headless].[HeadlessMessagingOwnerList];"
         + "IF TYPE_ID(N'headless.HeadlessMessagingPoisonMessageList') IS NOT NULL DROP TYPE [headless].[HeadlessMessagingPoisonMessageList];"

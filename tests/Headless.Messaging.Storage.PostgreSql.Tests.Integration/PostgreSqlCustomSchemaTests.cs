@@ -57,10 +57,10 @@ public sealed class PostgreSqlCustomSchemaTests(PostgreSqlTestFixture fixture) :
                 "SELECT table_name FROM information_schema.tables WHERE table_schema=@Schema ORDER BY table_name;",
                 new { Schema = _Schema }
             );
-            tables.Should().Contain(["published", "received"]);
+            tables.Should().Contain(["messaging_published", "messaging_received"]);
 
             var rows = await connection.QueryFirstAsync<int>(
-                $"""SELECT COUNT(*) FROM "{_Schema}"."published" WHERE "Id"=@Id;""",
+                $"""SELECT COUNT(*) FROM "{_Schema}"."messaging_published" WHERE "Id"=@Id;""",
                 new { Id = stored.StorageId }
             );
             rows.Should().Be(1, "the write must land in the configured schema, not the default one");

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Microsoft.Extensions.Logging;
@@ -10,7 +11,7 @@ namespace Headless.Messaging.Storage.PostgreSql;
 
 /// <summary>
 /// PostgreSQL implementation of <see cref="IStorageInitializer"/> for database schema setup.
-/// Creates required tables (published, received) and indexes on first run.
+/// Creates required tables (messaging_published, messaging_received) and indexes on first run.
 /// </summary>
 internal sealed class PostgreSqlStorageInitializer(
     ILogger<PostgreSqlStorageInitializer> logger,
@@ -28,22 +29,66 @@ internal sealed class PostgreSqlStorageInitializer(
         return postgreSqlOptions.Value.DdlCommandTimeout ?? TimeSpan.Zero;
     }
 
+    private static readonly TimeSpan _InitLockPollInterval = TimeSpan.FromMilliseconds(100);
+
+    // Polls pg_try_advisory_lock instead of blocking in pg_advisory_lock: a blocked statement keeps a
+    // snapshot open, and the holder's CREATE INDEX CONCURRENTLY waits for that snapshot, so a blocking
+    // wait deadlocks two replicas booting together on a fresh schema. Between attempts this session
+    // holds no snapshot, which lets the holder's index builds finish.
+    // #510 — the wait is bounded by the DDL timeout, not the OLTP one, because the holder can keep the
+    // lock across a multi-minute CONCURRENTLY build.
+    private async Task _AcquireInitLockAsync(
+        NpgsqlConnection connection,
+        string lockResource,
+        CancellationToken cancellationToken
+    )
+    {
+        var timeout = _GetDdlCommandTimeout();
+        var startedAt = Stopwatch.GetTimestamp();
+
+        while (true)
+        {
+            var acquired = await connection
+                .ExecuteScalarAsync(
+                    "SELECT pg_try_advisory_lock(hashtextextended(@LockResource, 0))::int;",
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: [new NpgsqlParameter("@LockResource", lockResource)],
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            if (acquired == 1)
+            {
+                return;
+            }
+
+            if (timeout > TimeSpan.Zero && Stopwatch.GetElapsedTime(startedAt) >= timeout)
+            {
+                throw new TimeoutException(
+                    $"Timed out after {timeout} waiting for the Headless.Messaging initialization lock '{lockResource}'."
+                );
+            }
+
+            await Task.Delay(_InitLockPollInterval, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     /// <summary>
     /// Returns the fully-qualified PostgreSQL table name for published outbox messages,
-    /// in the form <c>"schema"."published"</c>.
+    /// in the form <c>"schema"."messaging_published"</c>.
     /// </summary>
     public string GetPublishedTableName()
     {
-        return $"\"{storageOptions.Value.Schema}\".\"published\"";
+        return $"\"{storageOptions.Value.Schema}\".\"messaging_published\"";
     }
 
     /// <summary>
     /// Returns the fully-qualified PostgreSQL table name for received outbox messages,
-    /// in the form <c>"schema"."received"</c>.
+    /// in the form <c>"schema"."messaging_received"</c>.
     /// </summary>
     public string GetReceivedTableName()
     {
-        return $"\"{storageOptions.Value.Schema}\".\"received\"";
+        return $"\"{storageOptions.Value.Schema}\".\"messaging_received\"";
     }
 
     /// <summary>
@@ -79,66 +124,43 @@ internal sealed class PostgreSqlStorageInitializer(
         // search — never a write or retry-pickup path — so degrade gracefully when it is unavailable.
         var trgmAvailable = await _TryEnsureTrgmExtensionAsync(connection, cancellationToken).ConfigureAwait(false);
 
-        // #6 — serialize concurrent-replica boots on a stable advisory-lock key derived from the schema
-        // name (hashtextextended is deterministic across sessions and needs no superuser, unlike
-        // CREATE EXTENSION). Without it two replicas booting together can race the CONCURRENTLY builds /
-        // probe-then-DROP below and one replica's startup fails (InitializeAsync has no retry).
+        // #6 — serialize concurrent-replica boots on one session-level advisory lock held across the
+        // transactional DDL and the CONCURRENTLY phase. Without it two replicas booting together can race
+        // the CONCURRENTLY builds / probe-then-DROP below and one replica's startup fails (InitializeAsync
+        // has no retry). The key is Messaging-namespaced so another feature sharing the schema never
+        // contends on it; hashtextextended is deterministic across sessions and needs no superuser.
         var schema = storageOptions.Value.Schema;
-        object[] lockParams = [new NpgsqlParameter("@Schema", schema)];
-
-        // PostgreSQL supports transactional DDL — wrap the batch so a mid-script failure
-        // (network drop, broker-side abort) cannot leave the schema half-initialized. The
-        // transaction-scoped advisory lock is released automatically on COMMIT/ROLLBACK.
-        await using (var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false))
-        {
-            // #510 — the lock WAIT uses the DDL timeout, not the OLTP one: a peer replica can hold this
-            // same key (session-level) across a multi-minute CONCURRENTLY build below, so a 30s wait here
-            // would fail this replica's startup while the peer legitimately builds.
-            await connection
-                .ExecuteNonQueryAsync(
-                    "SELECT pg_advisory_xact_lock(hashtextextended(@Schema, 0));",
-                    transaction: transaction,
-                    commandTimeout: _GetDdlCommandTimeout(),
-                    sqlParams: lockParams,
-                    cancellationToken: cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            await connection
-                .ExecuteNonQueryAsync(
-                    sql,
-                    transaction: transaction,
-                    commandTimeout: messagingOptions.Value.CommandTimeout,
-                    cancellationToken: cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        // Retry-pickup partial indexes and trigram content indexes use CREATE INDEX CONCURRENTLY so
-        // the AccessExclusiveLock is replaced with a ShareUpdateExclusiveLock — readers and writers
-        // stay live during the create. CONCURRENTLY cannot run inside a transaction (PG raises 25001),
-        // so these run on an autocommit connection AFTER the schema/table DDL has committed above.
-        // A session-level advisory lock (same key) serializes this phase across replicas so two booters
-        // don't race the same CONCURRENTLY build / probe-then-DROP.
-        // #510 — DDL timeout for the same reason as the xact lock above: this session-level lock is held
-        // for the full duration of the CONCURRENTLY phase, so a peer's wait must not expire at the OLTP budget.
-        await connection
-            .ExecuteNonQueryAsync(
-                "SELECT pg_advisory_lock(hashtextextended(@Schema, 0));",
-                commandTimeout: _GetDdlCommandTimeout(),
-                sqlParams: lockParams,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
+        var lockResource = $"headless_messaging_init:{schema}";
+        await _AcquireInitLockAsync(connection, lockResource, cancellationToken).ConfigureAwait(false);
 
         try
         {
+            // PostgreSQL supports transactional DDL — wrap the batch so a mid-script failure
+            // (network drop, broker-side abort) cannot leave the schema half-initialized.
+            await using (
+                var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+            )
+            {
+                await connection
+                    .ExecuteNonQueryAsync(
+                        sql,
+                        transaction: transaction,
+                        commandTimeout: messagingOptions.Value.CommandTimeout,
+                        cancellationToken: cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            // Retry-pickup partial indexes and trigram content indexes use CREATE INDEX CONCURRENTLY so
+            // the AccessExclusiveLock is replaced with a ShareUpdateExclusiveLock — readers and writers
+            // stay live during the create. CONCURRENTLY cannot run inside a transaction (PG raises 25001),
+            // so these run on an autocommit connection AFTER the schema/table DDL has committed above.
             await _EnsureRetryPickupIndexConcurrentlyAsync(
                     connection,
                     GetReceivedTableName(),
-                    indexName: "idx_received_Version_NextRetryAt",
+                    indexName: "idx_messaging_received_Version_NextRetryAt",
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -146,7 +168,7 @@ internal sealed class PostgreSqlStorageInitializer(
             await _EnsureRetryPickupIndexConcurrentlyAsync(
                     connection,
                     GetPublishedTableName(),
-                    indexName: "idx_published_Version_NextRetryAt",
+                    indexName: "idx_messaging_published_Version_NextRetryAt",
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -159,7 +181,7 @@ internal sealed class PostgreSqlStorageInitializer(
                 await _EnsureContentTrgmIndexConcurrentlyAsync(
                         connection,
                         GetReceivedTableName(),
-                        indexName: "idx_received_Content_trgm",
+                        indexName: "idx_messaging_received_Content_trgm",
                         cancellationToken
                     )
                     .ConfigureAwait(false);
@@ -167,7 +189,7 @@ internal sealed class PostgreSqlStorageInitializer(
                 await _EnsureContentTrgmIndexConcurrentlyAsync(
                         connection,
                         GetPublishedTableName(),
-                        indexName: "idx_published_Content_trgm",
+                        indexName: "idx_messaging_published_Content_trgm",
                         cancellationToken
                     )
                     .ConfigureAwait(false);
@@ -180,7 +202,7 @@ internal sealed class PostgreSqlStorageInitializer(
             await _EnsureOwnerIndexConcurrentlyAsync(
                     connection,
                     GetReceivedTableName(),
-                    indexName: "idx_received_Owner_not_null",
+                    indexName: "idx_messaging_received_Owner_not_null",
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -188,7 +210,7 @@ internal sealed class PostgreSqlStorageInitializer(
             await _EnsureOwnerIndexConcurrentlyAsync(
                     connection,
                     GetPublishedTableName(),
-                    indexName: "idx_published_Owner_not_null",
+                    indexName: "idx_messaging_published_Owner_not_null",
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -197,9 +219,17 @@ internal sealed class PostgreSqlStorageInitializer(
             foreach (
                 var (indexName, table, columns) in new[]
                 {
-                    ("idx_inbox_receipts_type_created", "inbox_operation_receipts", "\"OperationType\",\"CreatedAt\""),
-                    ("idx_inbox_audit_type_created", "inbox_audit", "\"OperationType\",\"CreatedAt\""),
-                    ("idx_inbox_audit_operation", "inbox_audit", "\"OperationId\""),
+                    (
+                        "idx_messaging_inbox_receipts_type_created",
+                        "messaging_inbox_operation_receipts",
+                        "\"OperationType\",\"CreatedAt\""
+                    ),
+                    (
+                        "idx_messaging_inbox_audit_type_created",
+                        "messaging_inbox_audit",
+                        "\"OperationType\",\"CreatedAt\""
+                    ),
+                    ("idx_messaging_inbox_audit_operation", "messaging_inbox_audit", "\"OperationId\""),
                 }
             )
             {
@@ -221,9 +251,9 @@ internal sealed class PostgreSqlStorageInitializer(
             // connection would also release it, but unlock explicitly so a pooled connection comes back clean.
             await connection
                 .ExecuteNonQueryAsync(
-                    "SELECT pg_advisory_unlock(hashtextextended(@Schema, 0));",
+                    "SELECT pg_advisory_unlock(hashtextextended(@LockResource, 0));",
                     commandTimeout: messagingOptions.Value.CommandTimeout,
-                    sqlParams: [new NpgsqlParameter("@Schema", schema)],
+                    sqlParams: [new NpgsqlParameter("@LockResource", lockResource)],
                     cancellationToken: CancellationToken.None
                 )
                 .ConfigureAwait(false);
@@ -402,7 +432,7 @@ internal sealed class PostgreSqlStorageInitializer(
     {
         var finalIndexCount = await connection
             .ExecuteScalarAsync(
-                "SELECT COUNT(1) FROM pg_indexes WHERE schemaname=@Schema AND indexname IN ('uq_received_inbox_root_key','uq_received_inbox_lifecycle_generation');",
+                "SELECT COUNT(1) FROM pg_indexes WHERE schemaname=@Schema AND indexname IN ('uq_messaging_received_inbox_root_key','uq_messaging_received_inbox_lifecycle_generation');",
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: [new NpgsqlParameter("@Schema", storageOptions.Value.Schema)],
                 cancellationToken: cancellationToken
@@ -421,32 +451,32 @@ internal sealed class PostgreSqlStorageInitializer(
                 SELECT (
                     EXISTS (
                         SELECT 1 FROM pg_constraint
-                        WHERE conname='ck_received_inbox_identity'
-                          AND conrelid=format('%I.received', @Schema)::regclass
+                        WHERE conname='ck_messaging_received_inbox_identity'
+                          AND conrelid=format('%I.messaging_received', @Schema)::regclass
                     )
-                    AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname='ck_received_inbox_lifecycle'
-                        AND conrelid = format('%I.received', @Schema)::regclass)
+                    AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname='ck_messaging_received_inbox_lifecycle'
+                        AND conrelid = format('%I.messaging_received', @Schema)::regclass)
                     AND EXISTS (SELECT 1 FROM information_schema.columns
-                        WHERE table_schema=@Schema AND table_name='received' AND column_name='LifecycleId')
+                        WHERE table_schema=@Schema AND table_name='messaging_received' AND column_name='LifecycleId')
                     AND EXISTS (
                         SELECT 1 FROM information_schema.columns
-                        WHERE table_schema=@Schema AND table_name='inbox_operation_receipts' AND column_name='ExpectedStatus'
+                        WHERE table_schema=@Schema AND table_name='messaging_inbox_operation_receipts' AND column_name='ExpectedStatus'
                     )
                     AND EXISTS (
                         SELECT 1 FROM information_schema.columns
-                        WHERE table_schema=@Schema AND table_name='inbox_operation_receipts' AND column_name='Outcome'
+                        WHERE table_schema=@Schema AND table_name='messaging_inbox_operation_receipts' AND column_name='Outcome'
                     )
                     AND EXISTS (
                         SELECT 1 FROM information_schema.columns
-                        WHERE table_schema=@Schema AND table_name='inbox_operation_receipts' AND column_name='TargetKind'
+                        WHERE table_schema=@Schema AND table_name='messaging_inbox_operation_receipts' AND column_name='TargetKind'
                     )
                     AND EXISTS (
                         SELECT 1 FROM information_schema.columns
-                        WHERE table_schema=@Schema AND table_name='inbox_operation_receipts' AND column_name='ExpectedDueAt'
+                        WHERE table_schema=@Schema AND table_name='messaging_inbox_operation_receipts' AND column_name='ExpectedDueAt'
                     )
                     AND EXISTS (
                         SELECT 1 FROM information_schema.columns
-                        WHERE table_schema=@Schema AND table_name='inbox_audit' AND column_name='TargetKind'
+                        WHERE table_schema=@Schema AND table_name='messaging_inbox_audit' AND column_name='TargetKind'
                     )
                 )::int;
                 """,
@@ -463,7 +493,7 @@ internal sealed class PostgreSqlStorageInitializer(
         }
 
         var sql = $"""
-            INSERT INTO "{storageOptions.Value.Schema}"."schema_state" ("Component","SchemaVersion","ReadyAt")
+            INSERT INTO "{storageOptions.Value.Schema}"."messaging_schema_state" ("Component","SchemaVersion","ReadyAt")
             VALUES ('inbox', 1, statement_timestamp())
             ON CONFLICT ("Component") DO UPDATE
             SET "SchemaVersion"=EXCLUDED."SchemaVersion", "ReadyAt"=EXCLUDED."ReadyAt";
@@ -488,9 +518,9 @@ internal sealed class PostgreSqlStorageInitializer(
             DO $inbox_schema_guard$
             DECLARE current_schema_version integer;
             BEGIN
-                IF to_regclass('"{schema}"."schema_state"') IS NOT NULL THEN
+                IF to_regclass('"{schema}"."messaging_schema_state"') IS NOT NULL THEN
                     SELECT "SchemaVersion" INTO current_schema_version
-                    FROM "{schema}"."schema_state"
+                    FROM "{schema}"."messaging_schema_state"
                     WHERE "Component"='inbox';
 
                     IF current_schema_version > 1 THEN
@@ -544,10 +574,10 @@ internal sealed class PostgreSqlStorageInitializer(
             DO $headless$
             BEGIN
                 IF NOT EXISTS (
-                    SELECT 1 FROM pg_constraint WHERE conname = 'ck_received_inbox_identity'
+                    SELECT 1 FROM pg_constraint WHERE conname = 'ck_messaging_received_inbox_identity'
                     AND conrelid = '{GetReceivedTableName()}'::regclass
                 ) THEN
-                    ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT "ck_received_inbox_identity" CHECK (
+                    ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT "ck_messaging_received_inbox_identity" CHECK (
                         NOT "IsInboxRecord" OR (
                             "Generation" >= 0
                             AND "InboxRetentionSeconds" BETWEEN 1 AND 2147483647
@@ -565,9 +595,9 @@ internal sealed class PostgreSqlStorageInitializer(
 
             DO $headless$
             BEGIN
-                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_received_inbox_lifecycle'
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_messaging_received_inbox_lifecycle'
                     AND conrelid = '{GetReceivedTableName()}'::regclass) THEN
-                    ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT "ck_received_inbox_lifecycle" CHECK (
+                    ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT "ck_messaging_received_inbox_lifecycle" CHECK (
                         NOT "IsInboxRecord" OR ("LifecycleId" IS NOT NULL
                             AND ("ReplayParentIncarnationId" IS NOT NULL OR "LifecycleId" = "GenerationIncarnationId"))
                     );
@@ -575,32 +605,32 @@ internal sealed class PostgreSqlStorageInitializer(
             END
             $headless$;
 
-            CREATE UNIQUE INDEX IF NOT EXISTS "uq_received_inbox_root_key" ON {GetReceivedTableName()}
+            CREATE UNIQUE INDEX IF NOT EXISTS "uq_messaging_received_inbox_root_key" ON {GetReceivedTableName()}
                 ("TenantPresent","TenantId","MessageId","IntentType","ContractIdentity","ContractVersion","ConsumerIdentity","Generation")
                 WHERE "IsInboxRecord" AND "ReplayParentIncarnationId" IS NULL;
-            CREATE UNIQUE INDEX IF NOT EXISTS "uq_received_inbox_lifecycle_generation" ON {GetReceivedTableName()}
+            CREATE UNIQUE INDEX IF NOT EXISTS "uq_messaging_received_inbox_lifecycle_generation" ON {GetReceivedTableName()}
                 ("LifecycleId","Generation") WHERE "IsInboxRecord";
-            CREATE UNIQUE INDEX IF NOT EXISTS "uq_received_generation_incarnation" ON {GetReceivedTableName()} ("GenerationIncarnationId")
+            CREATE UNIQUE INDEX IF NOT EXISTS "uq_messaging_received_generation_incarnation" ON {GetReceivedTableName()} ("GenerationIncarnationId")
                 WHERE "GenerationIncarnationId" IS NOT NULL;
-            CREATE UNIQUE INDEX IF NOT EXISTS "uq_received_non_inbox_transport_identity" ON {GetReceivedTableName()}
+            CREATE UNIQUE INDEX IF NOT EXISTS "uq_messaging_received_non_inbox_transport_identity" ON {GetReceivedTableName()}
                 ("Version","MessageId",(COALESCE("Group",'')),"IntentType") WHERE NOT "IsInboxRecord";
-            CREATE INDEX IF NOT EXISTS "idx_received_inbox_retention" ON {GetReceivedTableName()} ("EffectiveExpiresAt","Id")
+            CREATE INDEX IF NOT EXISTS "idx_messaging_received_inbox_retention" ON {GetReceivedTableName()} ("EffectiveExpiresAt","Id")
                 INCLUDE ("StatusName","NextRetryAt","IntentType") WHERE "IsInboxRecord" AND NOT "IsHeld";
-            CREATE INDEX IF NOT EXISTS "idx_received_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("ExpiresAt","StatusName");
-            CREATE INDEX IF NOT EXISTS "idx_received_Version_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("Version","ExpiresAt","StatusName");
-            -- #8 — The partial retry-pickup index (idx_received_Version_NextRetryAt) is created
+            CREATE INDEX IF NOT EXISTS "idx_messaging_received_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("ExpiresAt","StatusName");
+            CREATE INDEX IF NOT EXISTS "idx_messaging_received_Version_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("Version","ExpiresAt","StatusName");
+            -- #8 — The partial retry-pickup index (idx_messaging_received_Version_NextRetryAt) is created
             -- post-transaction with CREATE INDEX CONCURRENTLY in _EnsureRetryPickupIndexConcurrentlyAsync.
             -- CREATE INDEX CONCURRENTLY cannot run inside a transaction; doing the create here would
             -- take an AccessExclusiveLock and block all writers to the hot retry-pickup path during
             -- every replica boot.
-            CREATE INDEX IF NOT EXISTS "idx_received_delayed" ON {GetReceivedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
+            CREATE INDEX IF NOT EXISTS "idx_messaging_received_delayed" ON {GetReceivedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
             -- #508 — ("StatusName","Added") serves BOTH the dashboard hourly-timeline query
             -- (WHERE "StatusName"=$1 AND "Added" BETWEEN … — a StatusName seek + Added range scan) and the
             -- per-status COUNTs in GetStatisticsAsync via its "StatusName" prefix. The initializer creates
             -- the final schema directly; it does not carry migration DDL for superseded index shapes.
-            CREATE INDEX IF NOT EXISTS "idx_received_StatusName_Added" ON {GetReceivedTableName()} ("StatusName","Added");
+            CREATE INDEX IF NOT EXISTS "idx_messaging_received_StatusName_Added" ON {GetReceivedTableName()} ("StatusName","Added");
 
-            CREATE TABLE IF NOT EXISTS "{schema}"."inbox_operation_receipts"(
+            CREATE TABLE IF NOT EXISTS "{schema}"."messaging_inbox_operation_receipts"(
                 "OperationId" UUID PRIMARY KEY NOT NULL,
                 "TargetKind" VARCHAR(50) COLLATE "C" NOT NULL DEFAULT 'Inbox',
                 "GenerationIncarnationId" UUID NULL,
@@ -620,7 +650,7 @@ internal sealed class PostgreSqlStorageInitializer(
                 "CreatedAt" TIMESTAMPTZ NOT NULL
             );
 
-            CREATE TABLE IF NOT EXISTS "{schema}"."inbox_audit"(
+            CREATE TABLE IF NOT EXISTS "{schema}"."messaging_inbox_audit"(
                 "AuditId" UUID PRIMARY KEY NOT NULL,
                 "OperationId" UUID NOT NULL,
                 "TargetKind" VARCHAR(50) COLLATE "C" NOT NULL DEFAULT 'Inbox',
@@ -630,17 +660,17 @@ internal sealed class PostgreSqlStorageInitializer(
                 "Reason" VARCHAR(1000) NOT NULL,
                 "Outcome" VARCHAR(50) COLLATE "C" NOT NULL,
                 "CreatedAt" TIMESTAMPTZ NOT NULL,
-                CONSTRAINT "fk_inbox_audit_operation" FOREIGN KEY ("OperationId")
-                    REFERENCES "{schema}"."inbox_operation_receipts"("OperationId") ON DELETE RESTRICT
+                CONSTRAINT "fk_messaging_inbox_audit_operation" FOREIGN KEY ("OperationId")
+                    REFERENCES "{schema}"."messaging_inbox_operation_receipts"("OperationId") ON DELETE RESTRICT
             );
-            CREATE INDEX IF NOT EXISTS "idx_inbox_audit_incarnation_created" ON "{schema}"."inbox_audit" ("GenerationIncarnationId","CreatedAt");
+            CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_audit_incarnation_created" ON "{schema}"."messaging_inbox_audit" ("GenerationIncarnationId","CreatedAt");
 
-            CREATE TABLE IF NOT EXISTS "{schema}"."schema_state"(
+            CREATE TABLE IF NOT EXISTS "{schema}"."messaging_schema_state"(
                 "Component" VARCHAR(50) COLLATE "C" PRIMARY KEY NOT NULL,
                 "SchemaVersion" INT NOT NULL,
                 "ReadyAt" TIMESTAMPTZ NOT NULL
             );
-            DELETE FROM "{schema}"."schema_state" WHERE "Component"='inbox';
+            DELETE FROM "{schema}"."messaging_schema_state" WHERE "Component"='inbox';
 
             CREATE TABLE IF NOT EXISTS {GetPublishedTableName()}(
                 "Id" UUID PRIMARY KEY NOT NULL,
@@ -659,20 +689,20 @@ internal sealed class PostgreSqlStorageInitializer(
                 "MessageId" VARCHAR(200) NOT NULL
             );
 
-            CREATE INDEX IF NOT EXISTS "idx_published_ExpiresAt_StatusName" ON {GetPublishedTableName()}("ExpiresAt","StatusName");
-            CREATE INDEX IF NOT EXISTS "idx_published_Version_ExpiresAt_StatusName" ON {GetPublishedTableName()} ("Version","ExpiresAt","StatusName");
+            CREATE INDEX IF NOT EXISTS "idx_messaging_published_ExpiresAt_StatusName" ON {GetPublishedTableName()}("ExpiresAt","StatusName");
+            CREATE INDEX IF NOT EXISTS "idx_messaging_published_Version_ExpiresAt_StatusName" ON {GetPublishedTableName()} ("Version","ExpiresAt","StatusName");
             -- #8 — see the matching comment on the received-table block above; the partial
             -- retry-pickup index for published is also created post-transaction via
             -- _EnsureRetryPickupIndexConcurrentlyAsync.
-            CREATE INDEX IF NOT EXISTS "idx_published_delayed" ON {GetPublishedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
+            CREATE INDEX IF NOT EXISTS "idx_messaging_published_delayed" ON {GetPublishedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
             -- #509 — partial index for the Queued branch of ScheduleMessagesOfDelayedAsync's OR predicate
             -- (WHERE "Version"=$1 AND ("ExpiresAt"<$2 AND "StatusName"='Queued')). Leading with
             -- ("Version","ExpiresAt") gives a version seek + ExpiresAt range scan, which the planner can
             -- bitmap-OR with the Delayed partial index above instead of sequentially scanning a large
             -- Queued backlog (e.g. accumulated during broker downtime).
-            CREATE INDEX IF NOT EXISTS "idx_published_Version_ExpiresAt_Queued" ON {GetPublishedTableName()} ("Version","ExpiresAt") WHERE "StatusName" = 'Queued';
+            CREATE INDEX IF NOT EXISTS "idx_messaging_published_Version_ExpiresAt_Queued" ON {GetPublishedTableName()} ("Version","ExpiresAt") WHERE "StatusName" = 'Queued';
             -- #508 — see the received-table note above; create the final dashboard timeline/statistics index.
-            CREATE INDEX IF NOT EXISTS "idx_published_StatusName_Added" ON {GetPublishedTableName()} ("StatusName","Added");
+            CREATE INDEX IF NOT EXISTS "idx_messaging_published_StatusName_Added" ON {GetPublishedTableName()} ("StatusName","Added");
 
             """
         );

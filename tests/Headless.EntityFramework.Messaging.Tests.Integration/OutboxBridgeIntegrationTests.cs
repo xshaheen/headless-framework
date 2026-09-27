@@ -40,8 +40,8 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
 
             await using var command = connection.CreateCommand();
             command.CommandText = """
-                TRUNCATE TABLE messaging."published" CASCADE;
-                TRUNCATE TABLE messaging."received" CASCADE;
+                TRUNCATE TABLE headless."messaging_published" CASCADE;
+                TRUNCATE TABLE headless."messaging_received" CASCADE;
                 TRUNCATE TABLE "Orders" CASCADE;
                 TRUNCATE TABLE "DeadlineReceipts" CASCADE;
                 """;
@@ -575,8 +575,8 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
             """
             DROP TABLE IF EXISTS "DeadlineReceipts";
             DROP TABLE IF EXISTS "Orders";
-            TRUNCATE TABLE messaging."published" CASCADE;
-            TRUNCATE TABLE messaging."received" CASCADE;
+            TRUNCATE TABLE headless."messaging_published" CASCADE;
+            TRUNCATE TABLE headless."messaging_received" CASCADE;
             """,
             AbortToken
         );
@@ -591,7 +591,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         await connection.OpenAsync(AbortToken);
 
         await using var command = connection.CreateCommand();
-        command.CommandText = """SELECT COUNT(*) FROM messaging."published" WHERE "Content" LIKE @marker""";
+        command.CommandText = """SELECT COUNT(*) FROM headless."messaging_published" WHERE "Content" LIKE @marker""";
         var parameter = command.CreateParameter();
         parameter.ParameterName = "marker";
         parameter.Value = $"%{marker}%";
@@ -607,7 +607,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         await connection.OpenAsync(AbortToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
-            """SELECT "MessageId", "Content" FROM messaging."published" WHERE "Content" LIKE @marker""";
+            """SELECT "MessageId", "Content" FROM headless."messaging_published" WHERE "Content" LIKE @marker""";
         command.Parameters.AddWithValue(nameof(marker), $"%{marker}%");
         await using var reader = await command.ExecuteReaderAsync(AbortToken);
         var serializer = provider.GetRequiredService<ISerializer>();

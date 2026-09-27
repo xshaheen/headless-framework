@@ -63,7 +63,9 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync();
-        await connection.ExecuteAsync("TRUNCATE TABLE headless.published; TRUNCATE TABLE headless.received;");
+        await connection.ExecuteAsync(
+            "TRUNCATE TABLE headless.MessagingPublished; TRUNCATE TABLE headless.MessagingReceived;"
+        );
         await base.DisposeAsyncCore();
     }
 
@@ -320,7 +322,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
 
         // when
         var deleted = await _storage.DeleteExpiresAsync(
-            "headless.published",
+            "headless.MessagingPublished",
             _timeProvider.GetUtcNow(),
             1000,
             AbortToken

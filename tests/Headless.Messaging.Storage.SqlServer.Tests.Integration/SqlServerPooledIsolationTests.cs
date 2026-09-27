@@ -125,7 +125,7 @@ public sealed class SqlServerPooledIsolationTests(SqlServerTestFixture fixture) 
                 );
                 await locker.ExecuteAsync(
                     new CommandDefinition(
-                        "UPDATE headless.Published WITH (ROWLOCK) SET Content=Content WHERE Id=@Id;",
+                        "UPDATE headless.MessagingPublished WITH (ROWLOCK) SET Content=Content WHERE Id=@Id;",
                         new { Id = lockedId },
                         transaction: lockedTransaction,
                         cancellationToken: AbortToken
@@ -154,7 +154,7 @@ public sealed class SqlServerPooledIsolationTests(SqlServerTestFixture fixture) 
             {
                 await connection.ExecuteAsync(
                     new CommandDefinition(
-                        "UPDATE headless.Received SET StatusName=N'Succeeded',NextRetryAt=NULL,EffectiveExpiresAt=DATEADD(minute,-1,SYSUTCDATETIME()) WHERE Id=@Id;",
+                        "UPDATE headless.MessagingReceived SET StatusName=N'Succeeded',NextRetryAt=NULL,EffectiveExpiresAt=DATEADD(minute,-1,SYSUTCDATETIME()) WHERE Id=@Id;",
                         new { Id = received.Message.StorageId },
                         cancellationToken: AbortToken
                     )
@@ -240,7 +240,7 @@ public sealed class SqlServerPooledIsolationTests(SqlServerTestFixture fixture) 
         connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                INSERT INTO headless.Published
+                INSERT INTO headless.MessagingPublished
                     (Id,Version,Name,Content,IntentType,Retries,Added,ExpiresAt,NextRetryAt,LockedUntil,Owner,StatusName,MessageId)
                 VALUES (@Id,'v1','isolation.message',@Content,0,0,SYSUTCDATETIME(),@ExpiresAt,NULL,NULL,NULL,@StatusName,@MessageId);
                 """,

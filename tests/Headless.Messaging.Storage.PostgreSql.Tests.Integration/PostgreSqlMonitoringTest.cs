@@ -35,8 +35,8 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         await connection.OpenAsync(AbortToken);
         await connection.ExecuteAsync(
             """
-            TRUNCATE TABLE headless.published;
-            TRUNCATE TABLE headless.received;
+            TRUNCATE TABLE headless.messaging_published;
+            TRUNCATE TABLE headless.messaging_received;
             """
         );
     }
@@ -399,7 +399,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         await using (var connection = new NpgsqlConnection(fixture.ConnectionString))
         {
             await connection.ExecuteAsync(
-                "UPDATE headless.published SET \"Content\" = @Content WHERE \"Id\" = @Id",
+                "UPDATE headless.messaging_published SET \"Content\" = @Content WHERE \"Id\" = @Id",
                 new { Content = "not-a-message-envelope", Id = malformedPublished.StorageId }
             );
         }
@@ -438,8 +438,8 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
     }
 
     [Theory]
-    [InlineData(MessageType.Publish, "published")]
-    [InlineData(MessageType.Subscribe, "received")]
+    [InlineData(MessageType.Publish, "messaging_published")]
+    [InlineData(MessageType.Subscribe, "messaging_received")]
     public async Task should_return_bounded_unknown_lane_diagnostics_without_reading_content(
         MessageType messageType,
         string tableName
@@ -512,8 +512,8 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
     }
 
     [Theory]
-    [InlineData(MessageType.Publish, "published")]
-    [InlineData(MessageType.Subscribe, "received")]
+    [InlineData(MessageType.Publish, "messaging_published")]
+    [InlineData(MessageType.Subscribe, "messaging_received")]
     public async Task should_hide_malformed_unknown_lane_from_ordinary_monitoring_reads(
         MessageType messageType,
         string tableName

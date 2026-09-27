@@ -55,7 +55,9 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         await using (var resetConnection = new SqlConnection(fixture.ConnectionString))
         {
             await resetConnection.OpenAsync();
-            await resetConnection.ExecuteAsync("TRUNCATE TABLE headless.published; TRUNCATE TABLE headless.received;");
+            await resetConnection.ExecuteAsync(
+                "TRUNCATE TABLE headless.MessagingPublished; TRUNCATE TABLE headless.MessagingReceived;"
+            );
         }
 
         _storage = new SqlServerDataStorage(
@@ -78,7 +80,9 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync();
-        await connection.ExecuteAsync("TRUNCATE TABLE headless.published; TRUNCATE TABLE headless.received;");
+        await connection.ExecuteAsync(
+            "TRUNCATE TABLE headless.MessagingPublished; TRUNCATE TABLE headless.MessagingReceived;"
+        );
         await base.DisposeAsyncCore();
     }
 
@@ -459,7 +463,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         await using (var connection = new SqlConnection(fixture.ConnectionString))
         {
             await connection.ExecuteAsync(
-                "UPDATE headless.published SET Content = @Content WHERE Id = @Id",
+                "UPDATE headless.MessagingPublished SET Content = @Content WHERE Id = @Id",
                 new { Content = "not-a-message-envelope", Id = malformedPublished.StorageId }
             );
         }
@@ -497,8 +501,8 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
     }
 
     [Theory]
-    [InlineData(MessageType.Publish, "Published")]
-    [InlineData(MessageType.Subscribe, "Received")]
+    [InlineData(MessageType.Publish, "MessagingPublished")]
+    [InlineData(MessageType.Subscribe, "MessagingReceived")]
     public async Task should_return_bounded_deterministic_unknown_lane_diagnostics_without_mutation(
         MessageType messageType,
         string tableName
@@ -567,8 +571,8 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
     }
 
     [Theory]
-    [InlineData(MessageType.Publish, "Published")]
-    [InlineData(MessageType.Subscribe, "Received")]
+    [InlineData(MessageType.Publish, "MessagingPublished")]
+    [InlineData(MessageType.Subscribe, "MessagingReceived")]
     public async Task should_hide_malformed_unknown_lane_from_ordinary_monitoring_reads(
         MessageType messageType,
         string tableName
@@ -703,10 +707,10 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         DateTimeOffset added
     )
     {
-        var receivedColumns = string.Equals(tableName, "Received", StringComparison.Ordinal)
+        var receivedColumns = string.Equals(tableName, "MessagingReceived", StringComparison.Ordinal)
             ? ", [Group], ExceptionInfo"
             : string.Empty;
-        var receivedValues = string.Equals(tableName, "Received", StringComparison.Ordinal)
+        var receivedValues = string.Equals(tableName, "MessagingReceived", StringComparison.Ordinal)
             ? ", 'diagnostic-group', NULL"
             : string.Empty;
         return connection.ExecuteAsync(

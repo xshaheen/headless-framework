@@ -43,7 +43,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         await connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                UPDATE headless.Received SET Content=N'not-json',NextRetryAt=DATEADD(minute,-1,SYSUTCDATETIME()),LockedUntil=DATEADD(minute,-1,SYSUTCDATETIME()) WHERE Id=@Id;
+                UPDATE headless.MessagingReceived SET Content=N'not-json',NextRetryAt=DATEADD(minute,-1,SYSUTCDATETIME()),LockedUntil=DATEADD(minute,-1,SYSUTCDATETIME()) WHERE Id=@Id;
                 """,
                 new { Id = storageId },
                 cancellationToken: cancellationToken
@@ -60,7 +60,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         return await connection.QuerySingleAsync<PersistedInboxPoisonState>(
             new CommandDefinition(
                 """
-                SELECT CONVERT(datetimeoffset(7),SYSUTCDATETIME()) AS DatabaseNow,StatusName,TerminalAt,EffectiveExpiresAt,AttemptId,NextRetryAt,LockedUntil,Owner,Content FROM headless.Received WHERE Id=@Id;
+                SELECT CONVERT(datetimeoffset(7),SYSUTCDATETIME()) AS DatabaseNow,StatusName,TerminalAt,EffectiveExpiresAt,AttemptId,NextRetryAt,LockedUntil,Owner,Content FROM headless.MessagingReceived WHERE Id=@Id;
                 """,
                 new { Id = storageId },
                 cancellationToken: cancellationToken
@@ -74,7 +74,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         await connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                UPDATE headless.Received SET EffectiveExpiresAt=DATEADD(minute,-1,SYSUTCDATETIME()) WHERE Id=@Id;
+                UPDATE headless.MessagingReceived SET EffectiveExpiresAt=DATEADD(minute,-1,SYSUTCDATETIME()) WHERE Id=@Id;
                 """,
                 new { Id = storageId },
                 cancellationToken: cancellationToken
@@ -151,7 +151,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(cancellationToken);
-        var tableName = published ? "Published" : "Received";
+        var tableName = published ? "MessagingPublished" : "MessagingReceived";
         return await connection.QuerySingleAsync<PersistedLeaseIdentity>(
             $"SELECT LockedUntil, Owner FROM headless.{tableName} WHERE Id = @Id",
             new { Id = storageId }
@@ -170,7 +170,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         _EnsureInitialized();
         var id = Guid.NewGuid();
         var content = _serializer!.Serialize(CreateMessage($"unsupported-lane-{id:N}"));
-        var tableName = published ? "Published" : "Received";
+        var tableName = published ? "MessagingPublished" : "MessagingReceived";
         var groupColumns = published ? string.Empty : ", [Group], ExceptionInfo";
         var groupValues = published ? string.Empty : ", 'unsupported-lane-group', NULL";
         var sql = $"""
@@ -210,7 +210,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         CancellationToken cancellationToken
     )
     {
-        var tableName = published ? "Published" : "Received";
+        var tableName = published ? "MessagingPublished" : "MessagingReceived";
         var exceptionInfo = published ? "CAST(NULL AS nvarchar(max))" : "ExceptionInfo";
         var sql = $"""
             SELECT IntentType AS RawLane, StatusName, ExpiresAt, NextRetryAt, LockedUntil, Owner,
@@ -258,9 +258,9 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         await connection.OpenAsync(cancellationToken);
 
         const string sqlWithGroup =
-            "SELECT COUNT(*) FROM headless.Received WHERE [MessageId] = @MessageId AND [Group] = @Group";
+            "SELECT COUNT(*) FROM headless.MessagingReceived WHERE [MessageId] = @MessageId AND [Group] = @Group";
         const string sqlWithoutGroup =
-            "SELECT COUNT(*) FROM headless.Received WHERE [MessageId] = @MessageId AND [Group] IS NULL";
+            "SELECT COUNT(*) FROM headless.MessagingReceived WHERE [MessageId] = @MessageId AND [Group] IS NULL";
 
         return group is null
             ? await connection.ExecuteScalarAsync<int>(sqlWithoutGroup, new { MessageId = messageId })
@@ -282,7 +282,9 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         // Clean up tables after tests
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync();
-        await connection.ExecuteAsync("TRUNCATE TABLE headless.Published; TRUNCATE TABLE headless.Received;");
+        await connection.ExecuteAsync(
+            "TRUNCATE TABLE headless.MessagingPublished; TRUNCATE TABLE headless.MessagingReceived;"
+        );
 
         await base.DisposeAsyncCore();
     }
@@ -388,16 +390,16 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
             """
             SELECT state.SchemaVersion, (
                 SELECT COUNT_BIG(*) FROM sys.indexes
-                WHERE object_id=OBJECT_ID(N'headless.Received') AND name IN (N'UX_headless_Received_InboxRootKey',N'UX_headless_Received_InboxLifecycleGeneration')
+                WHERE object_id=OBJECT_ID(N'headless.MessagingReceived') AND name IN (N'UX_MessagingReceived_InboxRootKey',N'UX_MessagingReceived_InboxLifecycleGeneration')
             ) AS IndexCount, (
-                SELECT COUNT_BIG(*) FROM sys.check_constraints WHERE name IN (N'CK_headless_Received_InboxIdentity',N'CK_headless_Received_InboxLifecycle')
-                  AND parent_object_id=OBJECT_ID(N'headless.Received')
+                SELECT COUNT_BIG(*) FROM sys.check_constraints WHERE name IN (N'CK_MessagingReceived_InboxIdentity',N'CK_MessagingReceived_InboxLifecycle')
+                  AND parent_object_id=OBJECT_ID(N'headless.MessagingReceived')
             ) AS ConstraintCount, (
                 SELECT COUNT_BIG(*) FROM sys.columns
-                WHERE object_id=OBJECT_ID(N'headless.InboxOperationReceipts')
+                WHERE object_id=OBJECT_ID(N'headless.MessagingInboxOperationReceipts')
                   AND name IN(N'ExpectedStatus',N'Outcome',N'ChildIncarnationId',N'TargetKind',N'ExpectedDueAt',N'MessageName',N'MessageId',N'Lane')
             ) AS ReceiptColumnCount
-            FROM headless.SchemaState AS state
+            FROM headless.MessagingSchemaState AS state
             WHERE state.Component=N'inbox';
             """
         );
@@ -429,7 +431,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.ExecuteAsync(
             """
-            UPDATE headless.Received SET StatusName=N'Failed',NextRetryAt=NULL,TerminalAt=DATEADD(day,-2,SYSDATETIMEOFFSET()),EffectiveExpiresAt=DATEADD(day,-1,SYSDATETIMEOFFSET())
+            UPDATE headless.MessagingReceived SET StatusName=N'Failed',NextRetryAt=NULL,TerminalAt=DATEADD(day,-2,SYSDATETIMEOFFSET()),EffectiveExpiresAt=DATEADD(day,-1,SYSDATETIMEOFFSET())
             WHERE Id=@Id;
             """,
             new { Id = admitted.Message.StorageId }
@@ -447,9 +449,9 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         var persisted = await connection.QuerySingleAsync<(long Rows, long Receipts, long Audits)>(
             """
             SELECT
-              (SELECT COUNT_BIG(*) FROM headless.Received WHERE Id=@Id) AS Rows,
-              (SELECT COUNT_BIG(*) FROM headless.InboxOperationReceipts WHERE StorageId=@Id AND OperationType=N'Cleanup') AS Receipts,
-              (SELECT COUNT_BIG(*) FROM headless.InboxAudit a JOIN headless.InboxOperationReceipts r ON r.OperationId=a.OperationId WHERE r.StorageId=@Id AND a.OperationType=N'Cleanup') AS Audits;
+              (SELECT COUNT_BIG(*) FROM headless.MessagingReceived WHERE Id=@Id) AS Rows,
+              (SELECT COUNT_BIG(*) FROM headless.MessagingInboxOperationReceipts WHERE StorageId=@Id AND OperationType=N'Cleanup') AS Receipts,
+              (SELECT COUNT_BIG(*) FROM headless.MessagingInboxAudit a JOIN headless.MessagingInboxOperationReceipts r ON r.OperationId=a.OperationId WHERE r.StorageId=@Id AND a.OperationType=N'Cleanup') AS Audits;
             """,
             new { Id = admitted.Message.StorageId }
         );
@@ -460,7 +462,9 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     public async Task should_fail_closed_when_inbox_schema_is_newer_than_supported()
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.ExecuteAsync("UPDATE headless.SchemaState SET SchemaVersion=2 WHERE Component=N'inbox';");
+        await connection.ExecuteAsync(
+            "UPDATE headless.MessagingSchemaState SET SchemaVersion=2 WHERE Component=N'inbox';"
+        );
 
         try
         {
@@ -469,7 +473,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
             await act.Should().ThrowAsync<SqlException>().WithMessage("*newer than supported version 1*");
             (
                 await connection.ExecuteScalarAsync<int>(
-                    "SELECT SchemaVersion FROM headless.SchemaState WHERE Component=N'inbox';"
+                    "SELECT SchemaVersion FROM headless.MessagingSchemaState WHERE Component=N'inbox';"
                 )
             )
                 .Should()
@@ -477,7 +481,9 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         }
         finally
         {
-            await connection.ExecuteAsync("UPDATE headless.SchemaState SET SchemaVersion=1 WHERE Component=N'inbox';");
+            await connection.ExecuteAsync(
+                "UPDATE headless.MessagingSchemaState SET SchemaVersion=1 WHERE Component=N'inbox';"
+            );
         }
     }
 
@@ -1115,7 +1121,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
             .BeTrue();
         var succeededInside = await connection.ExecuteScalarAsync<bool>(
             new CommandDefinition(
-                "SELECT CAST(CASE WHEN StatusName='Succeeded' THEN 1 ELSE 0 END AS bit) FROM headless.Received WHERE Id=@Id",
+                "SELECT CAST(CASE WHEN StatusName='Succeeded' THEN 1 ELSE 0 END AS bit) FROM headless.MessagingReceived WHERE Id=@Id",
                 new { Id = message.StorageId },
                 transaction,
                 cancellationToken: AbortToken
@@ -1127,7 +1133,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
 
         var succeededOutside = await connection.ExecuteScalarAsync<bool>(
             new CommandDefinition(
-                "SELECT CAST(CASE WHEN StatusName='Succeeded' THEN 1 ELSE 0 END AS bit) FROM headless.Received WHERE Id=@Id",
+                "SELECT CAST(CASE WHEN StatusName='Succeeded' THEN 1 ELSE 0 END AS bit) FROM headless.MessagingReceived WHERE Id=@Id",
                 new { Id = message.StorageId },
                 cancellationToken: AbortToken
             )
@@ -1136,8 +1142,8 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     }
 
     [Theory]
-    [InlineData("Published")]
-    [InlineData("Received")]
+    [InlineData("MessagingPublished")]
+    [InlineData("MessagingReceived")]
     public async Task should_create_tables(string tableName)
     {
         // given, when
@@ -1155,8 +1161,8 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     }
 
     [Theory]
-    [InlineData("Published")]
-    [InlineData("Received")]
+    [InlineData("MessagingPublished")]
+    [InlineData("MessagingReceived")]
     public async Task should_create_owner_column_with_shared_width(string tableName)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
@@ -1196,15 +1202,15 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     }
 
     [Theory]
-    [InlineData("Published")]
-    [InlineData("Received")]
+    [InlineData("MessagingPublished")]
+    [InlineData("MessagingReceived")]
     public async Task should_skip_unknown_lane_without_starving_concurrent_lane_claims(string tableName)
     {
         var busStorage = _CreateStorage(new MessagingOptions { Version = "v1", RetryBatchSize = 1 });
         var queueStorage = _CreateStorage(new MessagingOptions { Version = "v1", RetryBatchSize = 1 });
         var serializer = GetSerializer();
         var now = TimeProvider.GetUtcNow();
-        var published = string.Equals(tableName, "Published", StringComparison.Ordinal);
+        var published = string.Equals(tableName, "MessagingPublished", StringComparison.Ordinal);
         var unknownId = (
             await SeedUnsupportedLaneRetryRowAsync(
                 busStorage,
@@ -1388,7 +1394,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         );
         var claimed = await storage.ClaimDelayedMessagesAsync(AbortToken);
         var deleted = await storage.DeleteExpiresAsync(
-            "headless.Published",
+            "headless.MessagingPublished",
             now.AddHours(-1),
             batchCount: 10,
             AbortToken
@@ -1408,7 +1414,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
             )>(
                 """
                 SELECT Id, IntentType, StatusName, LockedUntil
-                FROM headless.Published
+                FROM headless.MessagingPublished
                 WHERE Id IN @Ids
                 ORDER BY Id;
                 """,
@@ -1423,8 +1429,8 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     }
 
     [Theory]
-    [InlineData("Published")]
-    [InlineData("Received")]
+    [InlineData("MessagingPublished")]
+    [InlineData("MessagingReceived")]
     public async Task should_terminalize_poison_retry_row_when_content_cannot_deserialize(string tableName)
     {
         // given
@@ -1439,7 +1445,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         }
 
         // when
-        var picked = string.Equals(tableName, "Published", StringComparison.Ordinal)
+        var picked = string.Equals(tableName, "MessagingPublished", StringComparison.Ordinal)
             ? await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)
             : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
 
@@ -1471,10 +1477,10 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         lockedUntil.Should().BeNull();
         owner.Should().BeNull();
 
-        if (string.Equals(tableName, "Received", StringComparison.Ordinal))
+        if (string.Equals(tableName, "MessagingReceived", StringComparison.Ordinal))
         {
             var exceptionInfo = await assertConnection.ExecuteScalarAsync<string?>(
-                "SELECT ExceptionInfo FROM headless.Received WHERE Id = @Id",
+                "SELECT ExceptionInfo FROM headless.MessagingReceived WHERE Id = @Id",
                 new { Id = id }
             );
             exceptionInfo.Should().Contain("JsonException");
@@ -1482,8 +1488,8 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     }
 
     [Theory]
-    [InlineData("Published")]
-    [InlineData("Received")]
+    [InlineData("MessagingPublished")]
+    [InlineData("MessagingReceived")]
     public async Task should_return_healthy_retry_row_when_same_claim_batch_contains_poison(string tableName)
     {
         var storage = GetStorage();
@@ -1505,7 +1511,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
             );
         }
 
-        var picked = string.Equals(tableName, "Published", StringComparison.Ordinal)
+        var picked = string.Equals(tableName, "MessagingPublished", StringComparison.Ordinal)
             ? await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)
             : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
 
@@ -1691,10 +1697,10 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     }
 
     [Theory]
-    [InlineData(false, "Received")]
-    [InlineData(false, "Published")]
-    [InlineData(true, "Received")]
-    [InlineData(true, "Published")]
+    [InlineData(false, "MessagingReceived")]
+    [InlineData(false, "MessagingPublished")]
+    [InlineData(true, "MessagingReceived")]
+    [InlineData(true, "MessagingPublished")]
     public async Task should_claim_recovery_with_read_committed_snapshot_enabled_or_disabled(
         bool readCommittedSnapshotEnabled,
         string tableName
@@ -1756,7 +1762,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
 
             var claimed = await _ClaimRetryAsync(
                 storage,
-                string.Equals(tableName, "Published", StringComparison.Ordinal),
+                string.Equals(tableName, "MessagingPublished", StringComparison.Ordinal),
                 MessageLane.Bus
             );
 
@@ -1780,8 +1786,8 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     // -------------------------------------------------------------------------
 
     [Theory]
-    [InlineData("Received", "IX_headless_Received_Version_NextRetryAt")]
-    [InlineData("Published", "IX_headless_Published_Version_NextRetryAt")]
+    [InlineData("MessagingReceived", "IX_MessagingReceived_Version_NextRetryAt")]
+    [InlineData("MessagingPublished", "IX_MessagingPublished_Version_NextRetryAt")]
     public async Task should_key_retry_pickup_filtered_index_on_version_lane_then_next_retry_at(
         string tableName,
         string indexName
@@ -1841,8 +1847,8 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     }
 
     [Theory]
-    [InlineData("Received", "IX_headless_Received_Owner_NotNull")]
-    [InlineData("Published", "IX_headless_Published_Owner_NotNull")]
+    [InlineData("MessagingReceived", "IX_MessagingReceived_Owner_NotNull")]
+    [InlineData("MessagingPublished", "IX_MessagingPublished_Owner_NotNull")]
     public async Task should_key_owner_filtered_index_on_owner_with_not_null_filter(string tableName, string indexName)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
@@ -1927,11 +1933,11 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         DateTimeOffset now
     )
     {
-        if (string.Equals(tableName, "Published", StringComparison.Ordinal))
+        if (string.Equals(tableName, "MessagingPublished", StringComparison.Ordinal))
         {
             await connection.ExecuteAsync(
                 """
-                INSERT INTO headless.Published
+                INSERT INTO headless.MessagingPublished
                     (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId)
                 VALUES
                     (@Id, 'v1', 'poison-published', 'not-json', 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId);
@@ -1949,7 +1955,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
 
         await connection.ExecuteAsync(
             """
-            INSERT INTO headless.Received
+            INSERT INTO headless.MessagingReceived
                 (Id, Version, Name, [Group], Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId, ExceptionInfo)
             VALUES
                 (@Id, 'v1', 'poison-received', 'poison-group', 'not-json', 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL);
@@ -1976,7 +1982,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     {
         return connection.ExecuteAsync(
             """
-            INSERT INTO headless.Published
+            INSERT INTO headless.MessagingPublished
                 (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId)
             VALUES
                 (@Id, 'v1', 'sql-provider-test', @Content, @IntentType, 0, @Now, @ExpiresAt, @NextRetryAt, NULL, NULL, @StatusName, @MessageId);
@@ -2004,11 +2010,11 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         short rawLane = 0
     )
     {
-        if (string.Equals(tableName, "Published", StringComparison.Ordinal))
+        if (string.Equals(tableName, "MessagingPublished", StringComparison.Ordinal))
         {
             return connection.ExecuteAsync(
                 """
-                INSERT INTO headless.Published
+                INSERT INTO headless.MessagingPublished
                     (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId)
                 VALUES
                     (@Id, 'v1', 'healthy-published', @Content, @IntentType, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId);
@@ -2027,7 +2033,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
 
         return connection.ExecuteAsync(
             """
-            INSERT INTO headless.Received
+            INSERT INTO headless.MessagingReceived
                 (Id, Version, Name, [Group], Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId, ExceptionInfo)
             VALUES
                 (@Id, 'v1', 'healthy-received', 'healthy-group', @Content, @IntentType, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL);

@@ -29,8 +29,8 @@ public sealed class PostgreSqlDeadOwnerReclaimConformanceTests(PostgreSqlTestFix
         await connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                TRUNCATE TABLE headless.published;
-                TRUNCATE TABLE headless.received;
+                TRUNCATE TABLE headless.messaging_published;
+                TRUNCATE TABLE headless.messaging_received;
                 """,
                 cancellationToken: AbortToken
             )
