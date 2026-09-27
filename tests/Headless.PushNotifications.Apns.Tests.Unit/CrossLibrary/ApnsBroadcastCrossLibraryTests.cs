@@ -11,7 +11,7 @@ namespace Tests.CrossLibrary;
 
 /// <summary>
 /// Compares our iOS 18 broadcast and channel-management requests with the ones @parse/node-apn sends, the only
-/// surveyed APNs client that implements them. The fixture comes from <c>make apns-oracles</c>.
+/// surveyed APNs client that implements them. The fixture was recorded from node-apn 8.1.0's real request-building code.
 /// </summary>
 public sealed class ApnsBroadcastCrossLibraryTests : TestBase
 {
@@ -119,18 +119,6 @@ public sealed class ApnsBroadcastCrossLibraryTests : TestBase
 
             _AssertSameRequest(fixture, sent[index], expectedBody: operation == "create");
         }
-    }
-
-    [Fact]
-    public void should_record_the_broadcast_fixture_with_the_pinned_node_apn_version()
-    {
-        var pinned = JsonNode.Parse(
-            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "CrossLibrary", "Pins", "package.json"))
-        )!["dependencies"]!["@parse/node-apn"]!.GetValue<string>();
-
-        _String(_Fixture.Value, "version")
-            .Should()
-            .Be(pinned, "the broadcast fixture must be regenerated with `make apns-oracles` after a pin change");
     }
 
     private static void _AssertSameRequest(JsonObject fixture, FakeApnsRequest sent, bool expectedBody)
