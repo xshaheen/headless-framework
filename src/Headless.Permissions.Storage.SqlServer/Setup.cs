@@ -6,6 +6,7 @@ using Headless.Constants;
 using Headless.Permissions.Repositories;
 using Headless.Permissions.SqlServer;
 using Headless.Serializer;
+using Headless.Sql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -21,6 +22,22 @@ public static class SetupPermissionsSqlServer
 {
     extension(HeadlessPermissionsSetupBuilder setup)
     {
+        /// <summary>
+        /// Configures SQL Server storage with the connection registered by <c>AddSqlServerSql</c>, so one
+        /// connection string serves every feature that shares the database.
+        /// </summary>
+        /// <returns>The setup builder for chaining.</returns>
+        /// <remarks>
+        /// Options resolution throws <see cref="InvalidOperationException"/> when <c>AddSqlServerSql</c> was not
+        /// called or registered another provider's connection.
+        /// </remarks>
+        public HeadlessPermissionsSetupBuilder UseSqlServer()
+        {
+            return setup.UseSqlServer(
+                (options, services) => options.ConnectionString = services.GetSqlServerConnectionString()
+            );
+        }
+
         /// <summary>
         /// Configures the permissions system to use SQL Server for raw-DDL storage, setting the connection
         /// string directly.

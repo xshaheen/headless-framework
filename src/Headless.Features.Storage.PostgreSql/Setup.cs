@@ -6,6 +6,7 @@ using Headless.Constants;
 using Headless.Features.PostgreSql;
 using Headless.Features.Repositories;
 using Headless.Serializer;
+using Headless.Sql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -19,6 +20,22 @@ public static class SetupFeaturesPostgreSql
 {
     extension(HeadlessFeaturesSetupBuilder setup)
     {
+        /// <summary>
+        /// Configures PostgreSQL storage with the connection registered by <c>AddPostgreSqlSql</c>, so one
+        /// connection string serves every feature that shares the database.
+        /// </summary>
+        /// <returns>The setup builder for chaining.</returns>
+        /// <remarks>
+        /// Options resolution throws <see cref="InvalidOperationException"/> when <c>AddPostgreSqlSql</c> was not
+        /// called or registered another provider's connection.
+        /// </remarks>
+        public HeadlessFeaturesSetupBuilder UsePostgreSql()
+        {
+            return setup.UsePostgreSql(
+                (options, services) => options.ConnectionString = services.GetPostgreSqlConnectionString()
+            );
+        }
+
         /// <summary>Registers the PostgreSQL features storage provider using <paramref name="connectionString"/>.</summary>
         /// <param name="connectionString">PostgreSQL connection string.</param>
         /// <returns>The same <see cref="HeadlessFeaturesSetupBuilder"/> instance to allow chaining.</returns>

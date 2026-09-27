@@ -6,6 +6,7 @@ using Headless.Constants;
 using Headless.Permissions.PostgreSql;
 using Headless.Permissions.Repositories;
 using Headless.Serializer;
+using Headless.Sql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -21,6 +22,22 @@ public static class SetupPermissionsPostgreSql
 {
     extension(HeadlessPermissionsSetupBuilder setup)
     {
+        /// <summary>
+        /// Configures PostgreSQL storage with the connection registered by <c>AddPostgreSqlSql</c>, so one
+        /// connection string serves every feature that shares the database.
+        /// </summary>
+        /// <returns>The setup builder for chaining.</returns>
+        /// <remarks>
+        /// Options resolution throws <see cref="InvalidOperationException"/> when <c>AddPostgreSqlSql</c> was not
+        /// called or registered another provider's connection.
+        /// </remarks>
+        public HeadlessPermissionsSetupBuilder UsePostgreSql()
+        {
+            return setup.UsePostgreSql(
+                (options, services) => options.ConnectionString = services.GetPostgreSqlConnectionString()
+            );
+        }
+
         /// <summary>
         /// Configures the permissions system to use PostgreSQL for raw-DDL storage, setting the connection
         /// string directly.

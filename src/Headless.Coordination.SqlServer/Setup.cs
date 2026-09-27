@@ -4,6 +4,7 @@ using FluentValidation;
 using Headless.Checks;
 using Headless.Constants;
 using Headless.Coordination.SqlServer;
+using Headless.Sql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -20,6 +21,22 @@ public static class SetupSqlServerCoordination
 {
     extension(HeadlessCoordinationSetupBuilder setup)
     {
+        /// <summary>
+        /// Configures SQL Server storage with the connection registered by <c>AddSqlServerSql</c>, so one
+        /// connection string serves every feature that shares the database.
+        /// </summary>
+        /// <returns>The setup builder for chaining.</returns>
+        /// <remarks>
+        /// Options resolution throws <see cref="InvalidOperationException"/> when <c>AddSqlServerSql</c> was not
+        /// called or registered another provider's connection.
+        /// </remarks>
+        public HeadlessCoordinationSetupBuilder UseSqlServer()
+        {
+            return setup.UseSqlServer(
+                (options, services) => options.ConnectionString = services.GetSqlServerConnectionString()
+            );
+        }
+
         /// <summary>
         /// Selects SQL Server as the coordination backing store using the supplied connection string.
         /// </summary>
