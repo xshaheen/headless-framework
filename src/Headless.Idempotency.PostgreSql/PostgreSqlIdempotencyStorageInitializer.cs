@@ -79,6 +79,9 @@ internal sealed partial class PostgreSqlIdempotencyStorageInitializer(
         return $"""
             SELECT pg_advisory_xact_lock(hashtextextended(@LockResource, 0));
 
+            -- Features share one schema but lock only their own objects, so every feature also takes this
+            -- schema-wide lock: otherwise a foreign feature's concurrent CREATE SCHEMA fails this whole transaction.
+            SELECT pg_advisory_xact_lock(hashtextextended('headless_schema_init:{schema}', 0));
             CREATE SCHEMA IF NOT EXISTS "{schema}";
 
             CREATE SEQUENCE IF NOT EXISTS {sequence} AS bigint START WITH 1 INCREMENT BY 1 NO CYCLE;

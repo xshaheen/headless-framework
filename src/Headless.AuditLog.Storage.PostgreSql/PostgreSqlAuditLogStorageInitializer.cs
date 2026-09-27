@@ -107,7 +107,12 @@ internal sealed partial class PostgreSqlAuditLogStorageInitializer(
     {
         var table = Qualified(options);
         var primaryKey = AuditLogStorageNames.PrimaryKey(options.TableName);
-        var createSchema = $"""CREATE SCHEMA IF NOT EXISTS "{options.Schema}";""";
+        // Features share one schema but lock only their own objects, so every feature also takes this schema-wide
+        // lock: otherwise a foreign feature's concurrent CREATE SCHEMA fails this whole transaction.
+        var createSchema = $"""
+            SELECT pg_advisory_xact_lock(hashtextextended('headless_schema_init:{options.Schema}', 0));
+            CREATE SCHEMA IF NOT EXISTS "{options.Schema}";
+            """;
         var jsonColumnType = (options.JsonColumnType ?? AuditLogJsonColumnType.Jsonb).ToSqlFragment();
         var createdAtColumnType = string.IsNullOrWhiteSpace(options.CreatedAtColumnType)
             ? "timestamp with time zone"
