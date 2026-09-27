@@ -260,6 +260,148 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_renew_held_lease_by_resource_and_lease_id()
+    {
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(12);
+
+        await using var handle = await provider.AcquireAsync(resource, cancellationToken: AbortToken);
+
+        (await provider.RenewAsync(resource, handle.LeaseId, cancellationToken: AbortToken)).Should().BeTrue();
+        (await handle.RenewAsync(cancellationToken: AbortToken)).Should().BeTrue();
+        handle.RenewalCount.Should().Be(0, "a connection-scoped renewal confirms ownership and extends nothing");
+    }
+
+    [Fact]
+    public async Task should_not_renew_released_lease()
+    {
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(12);
+
+        await using var handle = await provider.AcquireAsync(resource, cancellationToken: AbortToken);
+        await handle.ReleaseAsync();
+
+        (await provider.RenewAsync(resource, handle.LeaseId, cancellationToken: AbortToken)).Should().BeFalse();
+        (await handle.RenewAsync(cancellationToken: AbortToken)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_not_renew_unknown_lease_id()
+    {
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(12);
+
+        await using var handle = await provider.AcquireAsync(resource, cancellationToken: AbortToken);
+
+        var renewed = await provider.RenewAsync(resource, Faker.Random.AlphaNumeric(32), cancellationToken: AbortToken);
+
+        renewed.Should().BeFalse();
+        (await provider.RenewAsync(resource, handle.LeaseId, cancellationToken: AbortToken)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_not_renew_lease_id_under_a_different_resource()
+    {
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(12);
+
+        await using var handle = await provider.AcquireAsync(resource, cancellationToken: AbortToken);
+
+        var renewed = await provider.RenewAsync(resource + "-other", handle.LeaseId, cancellationToken: AbortToken);
+
+        renewed.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_not_renew_handle_after_out_of_band_release()
+    {
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(12);
+
+        await using var handle = await provider.AcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { ReleaseOnDispose = false },
+            AbortToken
+        );
+        await provider.ReleaseAsync(resource, handle.LeaseId, AbortToken);
+
+        (await handle.RenewAsync(cancellationToken: AbortToken)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_not_renew_after_connection_is_lost()
+    {
+        using var connectionLostCts = new CancellationTokenSource();
+        _storage.ConnectionLostToken = connectionLostCts.Token;
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(12);
+
+        await using var handle = await provider.AcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { Monitoring = LockMonitoringMode.Monitor, ReleaseOnDispose = false },
+            AbortToken
+        );
+        await connectionLostCts.CancelAsync();
+
+        (await handle.RenewAsync(cancellationToken: AbortToken)).Should().BeFalse();
+        (await provider.RenewAsync(resource, handle.LeaseId, cancellationToken: AbortToken)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_not_renew_read_write_handles_after_release()
+    {
+        var rwProvider = new ConnectionScopedReadWriteLock(_CreateProvider());
+        var readResource = Faker.Random.AlphaNumeric(12);
+        var writeResource = Faker.Random.AlphaNumeric(12);
+
+        await using var reader = await rwProvider.AcquireReadLockAsync(readResource, cancellationToken: AbortToken);
+        await using var writer = await rwProvider.AcquireWriteLockAsync(writeResource, cancellationToken: AbortToken);
+
+        (await reader.RenewAsync(cancellationToken: AbortToken)).Should().BeTrue();
+        (await writer.RenewAsync(cancellationToken: AbortToken)).Should().BeTrue();
+
+        await reader.ReleaseAsync();
+        await writer.ReleaseAsync();
+
+        (await reader.RenewAsync(cancellationToken: AbortToken)).Should().BeFalse();
+        (await writer.RenewAsync(cancellationToken: AbortToken)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_fence_write_handles_but_not_read_handles()
+    {
+        var rwProvider = new ConnectionScopedReadWriteLock(
+            _CreateProvider(fencingTokenSource: new SequenceFencingTokenSource())
+        );
+
+        await using var reader = await rwProvider.AcquireReadLockAsync(
+            Faker.Random.AlphaNumeric(12),
+            cancellationToken: AbortToken
+        );
+        await using var writer = await rwProvider.AcquireWriteLockAsync(
+            Faker.Random.AlphaNumeric(12),
+            cancellationToken: AbortToken
+        );
+
+        reader.FencingToken.Should().BeNull();
+        writer.FencingToken.Should().NotBeNull();
+    }
+
+    [Theory]
+    [InlineData(null, "lease")]
+    [InlineData("resource", null)]
+    [InlineData(" ", "lease")]
+    [InlineData("resource", " ")]
+    public async Task should_reject_invalid_renew_arguments(string? resource, string? leaseId)
+    {
+        var provider = _CreateProvider();
+
+        var act = async () => await provider.RenewAsync(resource!, leaseId!, cancellationToken: AbortToken);
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
     public async Task should_throw_when_max_waiters_per_resource_is_exceeded()
     {
         // One waiter slot per resource: the second concurrent acquirer on the same resource must be rejected.
@@ -509,6 +651,22 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
             return ValueTask.FromResult(LocalLeaseIds.TryGetValue(resource, out var leaseId) ? leaseId : null);
         }
 
+        public ValueTask<bool> IsHeldAsync(
+            string resource,
+            string leaseId,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var isHeld =
+                LocalLeaseIds.TryGetValue(resource, out var heldLeaseId)
+                && string.Equals(heldLeaseId, leaseId, StringComparison.Ordinal)
+                && !ConnectionLostToken.IsCancellationRequested;
+
+            return ValueTask.FromResult(isHeld);
+        }
+
         public ValueTask<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(
             CancellationToken cancellationToken = default
         )
@@ -585,6 +743,18 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
             );
         }
 
+        public ValueTask<bool> IsHeldAsync(
+            string resource,
+            string leaseId,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return ValueTask.FromResult(
+                string.Equals(resource, lockedResource, StringComparison.Ordinal)
+                    && string.Equals(leaseId, localLeaseId, StringComparison.Ordinal)
+            );
+        }
+
         public ValueTask<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(
             CancellationToken cancellationToken = default
         )
@@ -636,6 +806,22 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
             cancellationToken.ThrowIfCancellationRequested();
 
             throw new InvalidOperationException("fencing failed");
+        }
+    }
+
+    private sealed class SequenceFencingTokenSource : IFencingTokenSource
+    {
+        private long _next;
+
+        public ValueTask<long?> NextAsync(
+            string resource,
+            System.Data.Common.DbConnection? connection = null,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return ValueTask.FromResult<long?>(Interlocked.Increment(ref _next));
         }
     }
 
@@ -701,6 +887,15 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
         public ValueTask<string?> GetLocalLeaseIdAsync(string resource, CancellationToken cancellationToken = default)
         {
             return ValueTask.FromResult<string?>(null);
+        }
+
+        public ValueTask<bool> IsHeldAsync(
+            string resource,
+            string leaseId,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return ValueTask.FromResult(false);
         }
 
         public ValueTask<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(

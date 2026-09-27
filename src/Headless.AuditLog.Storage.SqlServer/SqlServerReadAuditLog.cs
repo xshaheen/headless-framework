@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Checks;
+using System.Data;
+using Headless.Primitives;
 using Headless.Serializer;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
@@ -13,39 +14,57 @@ internal sealed class SqlServerReadAuditLog<TContext>(
     IJsonSerializer serializer
 ) : IReadAuditLog<TContext>
 {
-    public async Task<IReadOnlyList<AuditLogEntryData>> QueryAsync(
+    public async Task<ContinuationPage<AuditLogEntryData>> QueryAsync(
         AuditLogQuery query,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(query);
-        Argument.IsPositive(query.Limit, "The query limit must be positive.", nameof(query));
+        var position = AuditLogPaging.Validate(query);
         var filters = new List<string>();
-        var parameters = new List<SqlParameter> { _Param("Limit", query.Limit) };
+        // One extra row tells whether another page exists without a second count query.
+        var parameters = new List<SqlParameter> { _Param("Limit", query.Size + 1) };
 
         _AddFilter(filters, parameters, "[Action]=@Action", "Action", query.Action);
         _AddFilter(filters, parameters, "[EntityType]=@EntityType", "EntityType", query.EntityType);
         _AddFilter(filters, parameters, "[EntityId]=@EntityId", "EntityId", query.EntityId);
         _AddFilter(filters, parameters, "[UserId]=@UserId", "UserId", query.UserId);
+        _AddFilter(filters, parameters, "[AccountId]=@AccountId", "AccountId", query.AccountId);
         _AddFilter(filters, parameters, "[TenantId]=@TenantId", "TenantId", query.TenantId);
+        _AddFilter(filters, parameters, "[CorrelationId]=@CorrelationId", "CorrelationId", query.CorrelationId);
 
         if (query.From is not null)
         {
             filters.Add("[CreatedAt]>=@From");
-            parameters.Add(_Param("From", query.From.Value.UtcDateTime));
+            parameters.Add(_DateTimeParam("From", query.From.Value.UtcDateTime));
         }
 
         if (query.To is not null)
         {
             filters.Add("[CreatedAt]<@To");
-            parameters.Add(_Param("To", query.To.Value.UtcDateTime));
+            parameters.Add(_DateTimeParam("To", query.To.Value.UtcDateTime));
         }
 
+        var newestFirst = query.Direction == AuditLogSortDirection.NewestFirst;
+
+        if (position is { } after)
+        {
+            // SQL Server has no row-value comparison; this expanded form is the equivalent keyset predicate.
+            filters.Add(
+                newestFirst
+                    ? "([CreatedAt]<@AfterCreatedAt OR ([CreatedAt]=@AfterCreatedAt AND [Id]<@AfterId))"
+                    : "([CreatedAt]>@AfterCreatedAt OR ([CreatedAt]=@AfterCreatedAt AND [Id]>@AfterId))"
+            );
+            parameters.Add(_DateTimeParam("AfterCreatedAt", after.CreatedAtUtc));
+            parameters.Add(_Param("AfterId", after.Id));
+        }
+
+        var order = newestFirst ? "[CreatedAt] DESC, [Id] DESC" : "[CreatedAt] ASC, [Id] ASC";
         var where = filters.Count == 0 ? string.Empty : $" WHERE {string.Join(" AND ", filters)}";
         var sql =
-            $"SELECT TOP(@Limit) [UserId],[AccountId],[TenantId],[IpAddress],[UserAgent],[CorrelationId],[Action],[ChangeType],[EntityType],[EntityId],[OldValues],[NewValues],[ChangedFields],[Success],[ErrorCode],[CreatedAt] FROM {SqlServerAuditLogStorageInitializer.Qualified(storageOptions.Value)}{where} ORDER BY [CreatedAt] DESC, [Id] DESC;";
+            $"SELECT TOP(@Limit) [Id],[UserId],[AccountId],[TenantId],[IpAddress],[UserAgent],[CorrelationId],[Action],[ChangeType],[EntityType],[EntityId],[OldValues],[NewValues],[ChangedFields],[Success],[ErrorCode],[CreatedAt] FROM {SqlServerAuditLogStorageInitializer.Qualified(storageOptions.Value)}{where} ORDER BY {order};";
 
         var result = new List<AuditLogEntryData>();
+        (DateTime CreatedAtUtc, long Id) last = default;
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new SqlCommand(sql, connection);
@@ -54,35 +73,47 @@ internal sealed class SqlServerReadAuditLog<TContext>(
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
+            if (result.Count == query.Size)
+            {
+                // The extra row only signals that another page exists; the token points at the last row kept.
+                return new ContinuationPage<AuditLogEntryData>(
+                    result,
+                    query.Size,
+                    AuditLogPaging.Encode(last.CreatedAtUtc, last.Id)
+                );
+            }
+
+            var createdAt = DateTime.SpecifyKind(reader.GetDateTime(16), DateTimeKind.Utc);
+            last = (createdAt, reader.GetInt64(0));
             result.Add(
                 new AuditLogEntryData
                 {
-                    UserId = await _GetStringAsync(reader, 0, cancellationToken).ConfigureAwait(false),
-                    AccountId = await _GetStringAsync(reader, 1, cancellationToken).ConfigureAwait(false),
-                    TenantId = await _GetStringAsync(reader, 2, cancellationToken).ConfigureAwait(false),
-                    IpAddress = await _GetStringAsync(reader, 3, cancellationToken).ConfigureAwait(false),
-                    UserAgent = await _GetStringAsync(reader, 4, cancellationToken).ConfigureAwait(false),
-                    CorrelationId = await _GetStringAsync(reader, 5, cancellationToken).ConfigureAwait(false),
-                    Action = reader.GetString(6),
-                    ChangeType = await reader.IsDBNullAsync(7, cancellationToken).ConfigureAwait(false)
+                    UserId = await _GetStringAsync(reader, 1, cancellationToken).ConfigureAwait(false),
+                    AccountId = await _GetStringAsync(reader, 2, cancellationToken).ConfigureAwait(false),
+                    TenantId = await _GetStringAsync(reader, 3, cancellationToken).ConfigureAwait(false),
+                    IpAddress = await _GetStringAsync(reader, 4, cancellationToken).ConfigureAwait(false),
+                    UserAgent = await _GetStringAsync(reader, 5, cancellationToken).ConfigureAwait(false),
+                    CorrelationId = await _GetStringAsync(reader, 6, cancellationToken).ConfigureAwait(false),
+                    Action = reader.GetString(7),
+                    ChangeType = await reader.IsDBNullAsync(8, cancellationToken).ConfigureAwait(false)
                         ? null
-                        : (AuditChangeType)reader.GetInt32(7),
-                    EntityType = await _GetStringAsync(reader, 8, cancellationToken).ConfigureAwait(false),
-                    EntityId = await _GetStringAsync(reader, 9, cancellationToken).ConfigureAwait(false),
-                    OldValues = await _DeserializeAsync<Dictionary<string, object?>>(reader, 10, cancellationToken)
+                        : (AuditChangeType)reader.GetInt32(8),
+                    EntityType = await _GetStringAsync(reader, 9, cancellationToken).ConfigureAwait(false),
+                    EntityId = await _GetStringAsync(reader, 10, cancellationToken).ConfigureAwait(false),
+                    OldValues = await _DeserializeAsync<Dictionary<string, object?>>(reader, 11, cancellationToken)
                         .ConfigureAwait(false),
-                    NewValues = await _DeserializeAsync<Dictionary<string, object?>>(reader, 11, cancellationToken)
+                    NewValues = await _DeserializeAsync<Dictionary<string, object?>>(reader, 12, cancellationToken)
                         .ConfigureAwait(false),
-                    ChangedFields = await _DeserializeAsync<List<string>>(reader, 12, cancellationToken)
+                    ChangedFields = await _DeserializeAsync<List<string>>(reader, 13, cancellationToken)
                         .ConfigureAwait(false),
-                    Success = reader.GetBoolean(13),
-                    ErrorCode = await _GetStringAsync(reader, 14, cancellationToken).ConfigureAwait(false),
-                    CreatedAt = new DateTimeOffset(DateTime.SpecifyKind(reader.GetDateTime(15), DateTimeKind.Utc)),
+                    Success = reader.GetBoolean(14),
+                    ErrorCode = await _GetStringAsync(reader, 15, cancellationToken).ConfigureAwait(false),
+                    CreatedAt = new DateTimeOffset(createdAt),
                 }
             );
         }
 
-        return result;
+        return new ContinuationPage<AuditLogEntryData>(result, query.Size, continuationToken: null);
     }
 
     private static void _AddFilter(
@@ -126,5 +157,12 @@ internal sealed class SqlServerReadAuditLog<TContext>(
     private static SqlParameter _Param(string name, object? value)
     {
         return new($"@{name}", value ?? DBNull.Value);
+    }
+
+    // An untyped DateTime parameter binds as legacy datetime, which rounds to ~3 ms; against a datetime2 column
+    // that would shift range bounds and make the keyset predicate skip or repeat rows at a page boundary.
+    private static SqlParameter _DateTimeParam(string name, DateTime value)
+    {
+        return new($"@{name}", SqlDbType.DateTime2) { Value = value };
     }
 }

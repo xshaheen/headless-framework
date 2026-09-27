@@ -102,6 +102,8 @@ dotnet add package Headless.Sql.Abstractions
 ### Setup and use
 
 ```csharp
+using Dapper;
+
 // Register a concrete factory (provider package required):
 builder.Services.AddSingleton<ISqlConnectionFactory>(new NpgsqlConnectionFactory(connectionString));
 
@@ -200,6 +202,8 @@ builder.Services.AddPostgreSqlSql(connectionString);
 Use in a repository (always inject `ISqlConnectionFactory`, not the concrete type):
 
 ```csharp
+using Dapper;
+
 public sealed class ReportRepository(ISqlConnectionFactory connectionFactory)
 {
     public async Task<IEnumerable<Report>> GetRecentAsync(CancellationToken ct)
@@ -261,6 +265,8 @@ builder.Services.AddSqlServerSql(connectionString);
 Use in a repository:
 
 ```csharp
+using Dapper;
+
 public sealed class ReportRepository(ISqlConnectionFactory connectionFactory)
 {
     public async Task<IEnumerable<Report>> GetRecentAsync(CancellationToken ct)
@@ -327,6 +333,8 @@ services.AddSqliteSql("Data Source=app.db");
 Use in a repository:
 
 ```csharp
+using Dapper;
+
 public sealed class CacheRepository(ISqlConnectionFactory connectionFactory)
 {
     public async Task<string?> GetAsync(string key, CancellationToken ct)

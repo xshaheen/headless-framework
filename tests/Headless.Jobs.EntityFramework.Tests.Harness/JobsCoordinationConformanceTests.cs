@@ -1895,7 +1895,8 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                         "seeded",
                         "0 */5 * * * *",
                         MissedRunPolicy.Coalesce,
-                        JobsRecoveryDefaults.MissedRunGraceSeconds
+                        JobsRecoveryDefaults.MissedRunGraceSeconds,
+                        CronOverlapPolicy.Allow
                     ),
                 ],
                 ct
@@ -1910,7 +1911,8 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                         "seeded",
                         "0 */10 * * * *",
                         MissedRunPolicy.Coalesce,
-                        JobsRecoveryDefaults.MissedRunGraceSeconds
+                        JobsRecoveryDefaults.MissedRunGraceSeconds,
+                        CronOverlapPolicy.Allow
                     ),
                 ],
                 ct
@@ -1960,7 +1962,8 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                 "concurrent-seed",
                 "0 */5 * * * *",
                 MissedRunPolicy.Coalesce,
-                JobsRecoveryDefaults.MissedRunGraceSeconds
+                JobsRecoveryDefaults.MissedRunGraceSeconds,
+                CronOverlapPolicy.Allow
             ),
         ];
 
@@ -1998,7 +2001,8 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                         "intended-seed",
                         "0 */5 * * * *",
                         MissedRunPolicy.Coalesce,
-                        JobsRecoveryDefaults.MissedRunGraceSeconds
+                        JobsRecoveryDefaults.MissedRunGraceSeconds,
+                        CronOverlapPolicy.Allow
                     ),
                 ],
                 ct

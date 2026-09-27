@@ -71,6 +71,7 @@ internal static class DelegateGenerator
         string cronExpression,
         int? onMissedRun = null,
         int? missedRunGraceSeconds = null,
+        int? onOverlap = null,
         string? assemblyName = null,
         HashSet<string>? typeNameConflicts = null
     )
@@ -114,6 +115,11 @@ internal static class DelegateGenerator
         if (missedRunGraceSeconds.HasValue)
         {
             recoveryKnobs += $", MissedRunGraceSeconds = {missedRunGraceSeconds.Value}";
+        }
+
+        if (onOverlap.HasValue)
+        {
+            recoveryKnobs += $", OnOverlap = (CronOverlapPolicy){onOverlap.Value}";
         }
 
         sb.AppendLine($"            }}), MaxConcurrency = {maxConcurrency}{recoveryKnobs} }});");

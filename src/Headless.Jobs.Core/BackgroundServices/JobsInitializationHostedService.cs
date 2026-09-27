@@ -228,23 +228,22 @@ internal sealed class JobsInitializationHostedService(
         var scopedProvider = scope.ServiceProvider;
         var internalJobsManager = scopedProvider.GetRequiredService<IInternalJobManager>();
 
-        // Resolve the recovery knobs HERE rather than in the provider: attribute value, else the scheduler-wide
-        // setting, else the framework default. The threshold has to be identical on every node — if each provider
-        // resolved it from local configuration, two nodes could disagree about whether the same instant misfired.
+        // Resolve the per-definition knobs HERE rather than in the provider, so every node seeds the same values: if
+        // each provider resolved them from local configuration, two nodes could disagree about whether the same
+        // instant misfired.
         var functionsToSeed = functionRegistry
             .Functions.Where(x => !string.IsNullOrEmpty(x.Value.CronExpression))
-            .Select(x => new CronSeedDefinition(
-                x.Key,
-                x.Value.CronExpression,
-                _ResolveMissedRunPolicy(x.Key, x.Value.OnMissedRun, schedulerOptions.DefaultMissedRunPolicy),
-                _ResolveGraceSeconds(
+            .Select(x =>
+                _ToSeed(
                     x.Key,
-                    x.Value.MissedRunGraceSeconds,
-                    schedulerOptions.DefaultMissedRunGraceSeconds
-                ),
-                scopedProvider.GetRequiredService<CronScheduleCache>().ComputeEvaluationFingerprint(timeZoneId: null),
-                functionRegistry.Descriptors[x.Key].ContractVersion
-            ))
+                    x.Value,
+                    schedulerOptions,
+                    scopedProvider
+                        .GetRequiredService<CronScheduleCache>()
+                        .ComputeEvaluationFingerprint(timeZoneId: null),
+                    functionRegistry.Descriptors[x.Key].ContractVersion
+                )
+            )
             .ToArray();
 
         // No lock configured (default): run the seed directly. Seeded rows carry a DETERMINISTIC primary key derived
@@ -296,39 +295,61 @@ internal sealed class JobsInitializationHostedService(
         }
     }
 
-    private static MissedRunPolicy _ResolveMissedRunPolicy(
+    /// <summary>
+    /// Resolves one declared function's knobs — attribute value, else the scheduler-wide default — and rejects any
+    /// that a hand-written registration could still carry out of range; the source generator already rejects them for
+    /// attributes.
+    /// </summary>
+    private static CronSeedDefinition _ToSeed(
         string function,
-        MissedRunPolicy? fromAttribute,
-        MissedRunPolicy schedulerWide
+        JobFunctionRegistration registration,
+        SchedulerOptionsBuilder schedulerOptions,
+        string evaluationFingerprint,
+        string contractVersion
     )
     {
-        var resolved = fromAttribute ?? schedulerWide;
-        if (resolved is MissedRunPolicy.Coalesce or MissedRunPolicy.Skip)
+        var onMissedRun = registration.OnMissedRun ?? schedulerOptions.DefaultMissedRunPolicy;
+        var graceSeconds = registration.MissedRunGraceSeconds ?? schedulerOptions.DefaultMissedRunGraceSeconds;
+        var onOverlap = registration.OnOverlap ?? schedulerOptions.DefaultOverlapPolicy;
+
+        if (!Enum.IsDefined(onMissedRun))
         {
-            return resolved;
+            throw new JobValidatorException(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Missed-run policy value '{(int)onMissedRun}' is not defined for function '{function}'."
+                )
+            );
         }
 
-        throw new JobValidatorException(
-            string.Create(
-                CultureInfo.InvariantCulture,
-                $"Missed-run policy value '{(int)resolved}' is not defined for function '{function}'."
-            )
-        );
-    }
-
-    private static int _ResolveGraceSeconds(string function, int? fromAttribute, int schedulerWide)
-    {
-        var resolved = fromAttribute ?? schedulerWide;
-        if (resolved > 0)
+        if (graceSeconds <= 0)
         {
-            return resolved;
+            throw new JobValidatorException(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Missed-run grace must be greater than zero seconds for function '{function}' but was {graceSeconds}."
+                )
+            );
         }
 
-        throw new JobValidatorException(
-            string.Create(
-                CultureInfo.InvariantCulture,
-                $"Missed-run grace must be greater than zero seconds for function '{function}' but was {resolved}."
-            )
+        if (!Enum.IsDefined(onOverlap))
+        {
+            throw new JobValidatorException(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Overlap policy value '{(int)onOverlap}' is not defined for function '{function}'."
+                )
+            );
+        }
+
+        return new CronSeedDefinition(
+            function,
+            registration.CronExpression,
+            onMissedRun,
+            graceSeconds,
+            onOverlap,
+            evaluationFingerprint,
+            contractVersion
         );
     }
 }

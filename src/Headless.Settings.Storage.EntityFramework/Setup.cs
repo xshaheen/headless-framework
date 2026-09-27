@@ -56,12 +56,7 @@ public static class SetupSettingsEntityFramework
                 typeof(ISettingDefinitionRecordRepository),
                 typeof(EfSettingDefinitionRecordRepository<>).MakeGenericType(dbContextType)
             );
-            services.TryAddEnumerable(
-                ServiceDescriptor.Singleton(
-                    typeof(IHostedService),
-                    typeof(SettingsEntityValidationStartupGate<>).MakeGenericType(dbContextType)
-                )
-            );
+            services.AddStartupValidator(typeof(SettingsEntityStartupValidator<>).MakeGenericType(dbContextType));
         }
     }
 

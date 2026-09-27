@@ -330,6 +330,7 @@
           "DeviceDetector.NET": "[6.5.2, )",
           "FluentValidation.DependencyInjectionExtensions": "[12.1.1, )",
           "Headless.Api.Abstractions": "[1.0.0, )",
+          "Headless.AuditLog.Abstractions": "[1.0.0, )",
           "Headless.Core": "[1.0.0, )",
           "Headless.FluentValidation": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
@@ -536,7 +537,10 @@
         }
       },
       "headless.security.abstractions": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
       },
       "headless.serializer.abstractions": {
         "type": "Project"
@@ -556,7 +560,10 @@
         }
       },
       "headless.unitofwork.abstractions": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
       },
       "headless.unitofwork.entityframework": {
         "type": "Project",

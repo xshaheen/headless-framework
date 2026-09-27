@@ -213,7 +213,6 @@ public sealed class CronRecoveryContextPropagationTests : TestBase
         new()
         {
             FunctionName = "ctx",
-            CronOccurrenceOperations = new CronOccurrenceOperations(() => { }),
             ScheduledFor = _EarliestMissed,
             RecoveredFromUtc = recoveredFrom,
         };

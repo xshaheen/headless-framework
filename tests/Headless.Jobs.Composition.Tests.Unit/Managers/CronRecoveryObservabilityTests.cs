@@ -153,6 +153,14 @@ public sealed class CronRecoveryObservabilityTests : TestBase
             DateTime rebasedNextDueUtc
         ) => rebases.Add(cronJobId);
 
+        public void LogCronOccurrenceSkippedForOverlap(
+            Guid cronJobId,
+            string functionName,
+            Guid occurrenceId,
+            DateTime executionTimeUtc,
+            bool isRecoveryRun
+        ) { }
+
         public Activity? StartJobActivity(string name, JobExecutionState state) => null;
 
         public void LogJobEnqueued(string jobType, string functionName, Guid jobId, string? enqueuedFrom = null) { }

@@ -1,0 +1,12 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Contracts for Headless tenant-scoped sequences: the fast generator, the reserved range, and the gap-free unit-of-work accessor.</Description>
+    <PackageTags>headless;sequences;numbering;unit-of-work;dotnet</PackageTags>
+    <RootNamespace>Headless.Sequences</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.UnitOfWork.Abstractions\Headless.UnitOfWork.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

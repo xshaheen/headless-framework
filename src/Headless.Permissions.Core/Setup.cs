@@ -188,6 +188,18 @@ public static class SetupPermissions
         services.AddSingleton<IAuthorizationHandler, PermissionRequirementHandler>();
         services.AddSingleton<IAuthorizationHandler, PermissionsRequirementHandler>();
 
+        // The requirement handlers and the client-config builder evaluate through IAuthorizationService, which a
+        // worker host would otherwise lack. AddAuthorizationCore is TryAdd-only, so a host's own registrations win.
+        services.AddAuthorizationCore();
+
+        // The grant cache and the client-config builder read ICurrentTenant. Same fallback as Messaging and Jobs: an
+        // AsyncLocal-backed tenant, whose Change the builder relies on, replaced by any real tenancy registration.
+        services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
+        services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
+
+        services.TryAddTransient<IAuthorizationPolicyCatalog, AuthorizationPolicyCatalog>();
+        services.TryAddTransient<IGrantedPoliciesReader, GrantedPoliciesReader>();
+
         if (setup.RegisterPermissionNamePolicies)
         {
             // Swap only ASP.NET Core's own default provider, in either registration order: AddAuthorization

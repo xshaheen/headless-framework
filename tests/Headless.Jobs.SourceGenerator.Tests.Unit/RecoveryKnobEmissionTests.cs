@@ -44,6 +44,7 @@ public sealed class RecoveryKnobEmissionTests
                     + "pin every definition to the framework default and make that setting unreachable"
             );
         generated.Should().NotContain("MissedRunGraceSeconds");
+        generated.Should().NotContain("OnOverlap");
     }
 
     [Fact]
@@ -117,6 +118,40 @@ public sealed class RecoveryKnobEmissionTests
         var diagnostics = driver.GetRunResult().Diagnostics;
         diagnostics.Should().Contain(x => x.Id == "HF020" && x.Severity == DiagnosticSeverity.Error);
         diagnostics.Should().Contain(x => x.Id == "HF021" && x.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void should_emit_the_overlap_policy_when_the_attribute_sets_it()
+    {
+        var generated = _Generate(
+            $$"""
+            {{_Prelude}}
+                [JobFunction("overlap", "0 * * * * *", OnOverlap = CronOverlapPolicy.Skip)]
+                public Task RunAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+            }
+            """
+        );
+
+        generated.Should().Contain("OnOverlap = (CronOverlapPolicy)1");
+        generated.Should().NotContain("OnMissedRun", "only the knob that was written is emitted");
+    }
+
+    [Fact]
+    public void should_report_an_undefined_overlap_policy_before_emission()
+    {
+        var driver = GeneratorTestHelper.Run(
+            $$"""
+            {{_Prelude}}
+                [JobFunction("invalid", "0 * * * * *", OnOverlap = (CronOverlapPolicy)999)]
+                public Task RunAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+            }
+            """
+        );
+
+        driver
+            .GetRunResult()
+            .Diagnostics.Should()
+            .Contain(x => x.Id == "HF022" && x.Severity == DiagnosticSeverity.Error);
     }
 
 #pragma warning disable MA0045 // The trees are already in memory; going async would spread to every void test.

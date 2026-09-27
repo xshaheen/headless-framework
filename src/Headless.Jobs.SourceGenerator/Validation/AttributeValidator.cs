@@ -20,7 +20,8 @@ internal static class AttributeValidator
             int taskPriority,
             int maxConcurrency,
             int? onMissedRun,
-            int? missedRunGraceSeconds
+            int? missedRunGraceSeconds,
+            int? onOverlap
         ) attributeValues,
         MethodDeclarationSyntax methodDeclaration,
         string className,
@@ -88,6 +89,17 @@ internal static class AttributeValidator
                     DiagnosticDescriptors.InvalidMissedRunGrace,
                     attributeLocation,
                     attributeValues.missedRunGraceSeconds
+                )
+            );
+        }
+
+        if (attributeValues.onOverlap is not null and not 0 and not 1)
+        {
+            context.ReportDiagnostic(
+                Diagnostic.Create(
+                    DiagnosticDescriptors.InvalidOverlapPolicy,
+                    attributeLocation,
+                    attributeValues.onOverlap
                 )
             );
         }

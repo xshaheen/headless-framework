@@ -741,6 +741,29 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 recovery.SkippedOccurrenceCount
             );
 
+        JobsMetrics.CronOccurrencesSkipped(
+            JobsMetrics.SkipReasonMissedRun,
+            candidate.FunctionName,
+            recovery.SkippedOccurrenceCount
+        );
+
+        if (recovery.OverlapSkippedRun is { } overlapSkippedRun)
+        {
+            // The coalesced run was established and then recorded as skipped: an earlier occurrence is still
+            // unfinished and the definition forbids overlap. Nothing is left to claim.
+            JobsMetrics.CronOccurrencesSkipped(JobsMetrics.SkipReasonOverlap, candidate.FunctionName, 1);
+            _ResolveInstrumentation()
+                ?.LogCronOccurrenceSkippedForOverlap(
+                    candidate.CronJobId,
+                    candidate.FunctionName,
+                    overlapSkippedRun.Id,
+                    overlapSkippedRun.ExecutionTime,
+                    isRecoveryRun: true
+                );
+
+            return null;
+        }
+
         if (recovery.CoalescedRun is null)
         {
             // Skip materialized nothing, or coalesce found every missed instant already accounted for by executing or
@@ -846,6 +869,27 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        if (materialized.Outcome is CronScheduleMaterializationOutcome.OccurrenceSkippedForOverlap)
+        {
+            // The skipped row already accounts for the instant and the position moved past it; the claim path must
+            // never see it.
+            JobsMetrics.CronOccurrencesSkipped(JobsMetrics.SkipReasonOverlap, candidate.FunctionName, 1);
+
+            if (materialized.OccurrenceId is { } skippedId)
+            {
+                _ResolveInstrumentation()
+                    ?.LogCronOccurrenceSkippedForOverlap(
+                        candidate.CronJobId,
+                        candidate.FunctionName,
+                        skippedId,
+                        candidate.NextDueUtc,
+                        isRecoveryRun: false
+                    );
+            }
+
+            return null;
+        }
 
         if (
             materialized.Outcome

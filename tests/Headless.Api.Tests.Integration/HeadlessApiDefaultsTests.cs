@@ -325,7 +325,7 @@ public sealed class HeadlessApiDefaultsTests : TestBase
             new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultPassPhrase", "TestPassPhrase123456"),
             new KeyValuePair<string, string?>("Headless:StringEncryption:InitVectorBytes", "VGVzdElWMDEyMzQ1Njc4OQ=="),
             new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultSalt", "VGVzdFNhbHQ="),
-            new KeyValuePair<string, string?>("Headless:StringHash:DefaultSalt", "TestSalt"),
+            new KeyValuePair<string, string?>("Headless:LookupHasher:DefaultSalt", "TestSalt"),
         ]);
     }
 }

@@ -8,7 +8,8 @@ namespace Headless.MultiTenancy;
 /// <c>Headless.Api.Core</c>'s pre-auth resolution middleware is the intended caller that records
 /// <see cref="ResolutionCapability"/> and marks <see cref="ResolutionPipelineRuntimeMarker"/> once an
 /// identifier source is registered, and its <c>UseStatusCodesRewriter()</c> marks
-/// <see cref="StatusCodesRewriterRuntimeMarker"/> — <see cref="TenantCatalogPostureValidator"/>
+/// <see cref="StatusCodesRewriterRuntimeMarker"/> ahead of authorization or
+/// <see cref="StatusCodesRewriterAfterAuthorizationRuntimeMarker"/> after it — <see cref="TenantCatalogPostureValidator"/>
 /// cross-checks both packages' contributions against these shared string constants so a typo in either
 /// package fails loudly instead of silently producing an unchecked posture.
 /// </summary>
@@ -40,18 +41,28 @@ public static class TenantCatalogPosture
 
     /// <summary>
     /// Runtime marker recorded when the HTTP seam's status-codes rewriter middleware is added to the
-    /// pipeline. The mapping-integrity check's authorization tier only fails the evaluation and
+    /// pipeline ahead of authorization. The mapping-integrity check's authorization tier only fails the evaluation and
     /// marks the request; the generic tenant rejection that keeps a mismatch indistinguishable from an
     /// unknown identifier is written by that middleware. Its absence alongside
     /// <see cref="ResolutionCapability"/> therefore leaves a tenant-enumeration oracle open.
     /// </summary>
     public const string StatusCodesRewriterRuntimeMarker = "StatusCodesRewriterActive";
+
+    /// <summary>
+    /// Runtime marker recorded when the status-codes rewriter is added to the pipeline after authorization.
+    /// A failed authorization evaluation short-circuits before reaching it, so the mismatch rejection is
+    /// never written; its presence alongside <see cref="ResolutionCapability"/> fails startup even when a
+    /// correctly placed rewriter was also recorded, because the misplaced one may serve a branch the
+    /// correctly placed one does not wrap.
+    /// </summary>
+    public const string StatusCodesRewriterAfterAuthorizationRuntimeMarker = "StatusCodesRewriterAfterAuthorization";
 }
 
 /// <summary>
 /// Validates that the <see cref="TenantCatalogPosture.Seam"/> posture is internally consistent:
 /// resolution-capable without a configured store, without a registered pipeline, or without the
-/// status-codes rewriter that writes the mapping-integrity rejection are all startup-blocking. Accessor-only posture
+/// status-codes rewriter that writes the mapping-integrity rejection — or with that rewriter placed after
+/// authorization — are all startup-blocking. Accessor-only posture
 /// (store configured, no resolution) is otherwise valid and never flagged — this validator's explicit
 /// accessor-only carve-out.
 /// <para>
@@ -112,6 +123,24 @@ internal sealed class TenantCatalogPostureValidator : IHeadlessTenancyValidator
         // identifier-resolved requests, since the mapping-integrity check's authorization tier exists only for them. An
         // accessor-only host has no mismatch path and needs nothing here.
         if (
+            seam.RuntimeMarkers.Contains(
+                TenantCatalogPosture.StatusCodesRewriterAfterAuthorizationRuntimeMarker,
+                StringComparer.Ordinal
+            )
+        )
+        {
+            yield return HeadlessTenancyDiagnostic.Error(
+                TenantCatalogPosture.Seam,
+                "CATALOG_RESOLUTION_REWRITER_AFTER_AUTHORIZATION",
+                "Tenant catalog identifier resolution is enabled but UseStatusCodesRewriter() was called after "
+                    + "UseAuthorization(). A failed authorization evaluation short-circuits before reaching the "
+                    + "rewriter, so the mapping-integrity mismatch surfaces as a bare authorization failure while "
+                    + "an unknown identifier surfaces as the 404 rejection, and a caller can enumerate tenants by "
+                    + "status code alone. Move UseStatusCodesRewriter() (or UseHeadless() from "
+                    + "Headless.Api.ServiceDefaults) before UseAuthorization() and remove every call placed after it."
+            );
+        }
+        else if (
             !seam.RuntimeMarkers.Contains(TenantCatalogPosture.StatusCodesRewriterRuntimeMarker, StringComparer.Ordinal)
         )
         {

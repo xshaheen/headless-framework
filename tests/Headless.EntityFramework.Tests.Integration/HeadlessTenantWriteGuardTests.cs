@@ -66,8 +66,8 @@ public sealed class HeadlessTenantWriteGuardTests(
         using var provider = services.BuildServiceProvider();
 
         // then
-        var options = provider.GetRequiredService<IOptions<TenantWriteGuardOptions>>().Value;
-        options.IsEnabled.Should().BeFalse();
+        var options = provider.GetRequiredService<IOptions<TenantGuardOptions>>().Value;
+        options.GuardWrites.Should().BeFalse();
         provider.GetRequiredService<ITenantWriteGuardBypass>().IsActive.Should().BeFalse();
     }
 
@@ -84,8 +84,8 @@ public sealed class HeadlessTenantWriteGuardTests(
         using var provider = services.BuildServiceProvider();
 
         // then
-        var options = provider.GetRequiredService<IOptions<TenantWriteGuardOptions>>().Value;
-        options.IsEnabled.Should().BeTrue();
+        var options = provider.GetRequiredService<IOptions<TenantGuardOptions>>().Value;
+        options.GuardWrites.Should().BeTrue();
         provider.GetRequiredService<ITenantWriteGuardBypass>().IsActive.Should().BeFalse();
     }
 
@@ -96,14 +96,10 @@ public sealed class HeadlessTenantWriteGuardTests(
             .GetMethods()
             .Should()
             .NotContain(method => method.Name == "AddHeadlessTenantWriteGuard");
-        typeof(TenantWriteGuardOptions)
-            .GetProperty(
-                nameof(TenantWriteGuardOptions.IsEnabled),
-                BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
-            )!
-            .GetSetMethod()
+        typeof(TenantGuardOptions)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Should()
-            .BeNull();
+            .OnlyContain(property => property.GetSetMethod() == null);
         typeof(HeadlessEntityFrameworkTenancyBuilder)
             .GetMethods()
             .Where(method =>
@@ -132,8 +128,8 @@ public sealed class HeadlessTenantWriteGuardTests(
         using var provider = builder.Services.BuildServiceProvider();
 
         // then
-        var options = provider.GetRequiredService<IOptions<TenantWriteGuardOptions>>().Value;
-        options.IsEnabled.Should().BeTrue();
+        var options = provider.GetRequiredService<IOptions<TenantGuardOptions>>().Value;
+        options.GuardWrites.Should().BeTrue();
         provider.GetRequiredService<ITenantWriteGuardBypass>().IsActive.Should().BeFalse();
 
         var manifest = builder.Services.GetOrAddTenantPostureManifest();
@@ -156,15 +152,15 @@ public sealed class HeadlessTenantWriteGuardTests(
         using var provider = builder.Services.BuildServiceProvider();
 
         // then
-        var options = provider.GetRequiredService<IOptions<TenantWriteGuardOptions>>().Value;
-        options.IsEnabled.Should().BeTrue();
+        var options = provider.GetRequiredService<IOptions<TenantGuardOptions>>().Value;
+        options.GuardWrites.Should().BeTrue();
         provider.GetRequiredService<ITenantWriteGuardBypass>().IsActive.Should().BeFalse();
         provider
             .GetServices<IHeadlessTenancyValidator>()
-            .OfType<EntityFrameworkTenantWriteGuardStartupValidator>()
+            .OfType<EntityFrameworkTenantGuardStartupValidator>()
             .Should()
             .ContainSingle();
-        provider.GetServices<IPostConfigureOptions<TenantWriteGuardOptions>>().Should().ContainSingle();
+        provider.GetServices<IPostConfigureOptions<TenantGuardOptions>>().Should().ContainSingle();
     }
 
     [Fact]

@@ -65,4 +65,11 @@ public readonly record struct JobFunctionRegistration
     /// </summary>
     /// <remarks>Same optionality and creation-only seeding rule as <see cref="OnMissedRun"/>.</remarks>
     public int? MissedRunGraceSeconds { get; init; }
+
+    /// <summary>
+    /// Overlap policy to seed onto this function's cron definition when it is first created, or
+    /// <see langword="null"/> to take the scheduler-wide default. Ignored for time jobs.
+    /// </summary>
+    /// <remarks>Same optionality and creation-only seeding rule as <see cref="OnMissedRun"/>.</remarks>
+    public CronOverlapPolicy? OnOverlap { get; init; }
 }
