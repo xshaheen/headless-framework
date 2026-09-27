@@ -28,7 +28,8 @@ public sealed record ApnsSendResult
 
     /// <summary>
     /// The <c>apns-id</c> the request carried, which APNs echoes and which identifies the notification in Apple's
-    /// logs; <see langword="null"/> when no answer arrived.
+    /// logs. When no answer arrived it is the caller's <see cref="ApnsNotification.ApnsId"/> if one was set, and
+    /// <see langword="null"/> otherwise.
     /// </summary>
     public string? ApnsId { get; init; }
 

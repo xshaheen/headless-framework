@@ -2,6 +2,7 @@
 
 using System.Net;
 using System.Net.Sockets;
+using System.Text.Json.Nodes;
 using Headless.PushNotifications.Apns;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -81,6 +82,8 @@ public sealed class ApnsTypedServiceTests : TestBase
 
         // then
         var sentApnsId = _server.Requests.Should().ContainSingle().Subject.Headers["apns-id"];
+        // Apple's apns-id is the canonical 8-4-4-4-12 hyphenated UUID form.
+        sentApnsId.Should().MatchRegex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
         result.Response.IsSucceeded().Should().BeTrue();
         result.Response.MessageId.Should().Be(sentApnsId);
         result.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -124,6 +127,26 @@ public sealed class ApnsTypedServiceTests : TestBase
         result.StatusCode.Should().BeNull();
         result.Reason.Should().BeNull();
         result.ApnsId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_keep_the_caller_apns_id_when_the_endpoint_is_unreachable()
+    {
+        // given
+        var closedPort = _GetClosedLoopbackPort();
+        await using var provider = _server.CreateProvider(configureClient: c =>
+            c.BaseAddress = new Uri($"http://127.0.0.1:{closedPort}")
+        );
+        var service = provider.GetRequiredService<IApnsPushNotificationService>();
+        var apnsId = Guid.Parse("4d3c2b1a-0f9e-4d8c-b7a6-5f4e3d2c1b0a");
+
+        // when
+        var result = await service.SendAsync(_DeviceToken, _Alert() with { ApnsId = apnsId }, AbortToken);
+
+        // then
+        result.Response.IsFailed().Should().BeTrue();
+        result.StatusCode.Should().BeNull();
+        result.ApnsId.Should().Be("4d3c2b1a-0f9e-4d8c-b7a6-5f4e3d2c1b0a");
     }
 
     [Fact]
@@ -201,10 +224,7 @@ public sealed class ApnsTypedServiceTests : TestBase
         // given
         await using var provider = _server.CreateProvider(o => o.Priority = ApnsPriority.Immediate);
         var service = provider.GetRequiredService<IApnsPushNotificationService>();
-        var notification = new ApnsBackgroundNotification
-        {
-            Data = new Dictionary<string, string>(StringComparer.Ordinal) { ["sync"] = "1" },
-        };
+        var notification = new ApnsBackgroundNotification { Data = new JsonObject { ["sync"] = "1" } };
 
         // when
         var result = await service.SendAsync(_DeviceToken, notification, AbortToken);
@@ -240,10 +260,7 @@ public sealed class ApnsTypedServiceTests : TestBase
         {
             {
                 "background",
-                new ApnsBackgroundNotification
-                {
-                    Data = new Dictionary<string, string>(StringComparer.Ordinal) { ["sync"] = "1" },
-                }
+                new ApnsBackgroundNotification { Data = new JsonObject { ["sync"] = "1" } }
             },
             {
                 "live activity",
@@ -337,6 +354,110 @@ public sealed class ApnsTypedServiceTests : TestBase
         // then
         await act.Should().ThrowAsync<ArgumentException>();
         _server.Requests.Should().BeEmpty();
+    }
+
+    #endregion
+
+    #region Custom data, raw payloads, and apns-id
+
+    [Fact]
+    public async Task should_send_one_payload_to_every_token_and_leave_the_caller_data_untouched_when_multicasting_json_data()
+    {
+        // given
+        await using var provider = _server.CreateProvider(o => o.MaxConcurrency = 8);
+        var service = provider.GetRequiredService<IApnsPushNotificationService>();
+        var nested = new JsonObject { ["id"] = 42, ["tags"] = new JsonArray("a", "b") };
+        var data = new JsonObject { ["order"] = nested, ["urgent"] = true };
+        var before = data.ToJsonString();
+        var notification = new ApnsAlertNotification
+        {
+            Alert = new ApnsAlert { Body = "Hi" },
+            Data = data,
+        };
+        var tokens = Enumerable.Range(0, 32).Select(i => $"token-{i}").ToList();
+
+        // when
+        var result = await service.SendMulticastAsync(tokens, notification, AbortToken);
+
+        // then
+        result.SuccessCount.Should().Be(tokens.Count);
+        _server
+            .Requests.Select(r => r.Body)
+            .Distinct(StringComparer.Ordinal)
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be("""{"aps":{"alert":{"body":"Hi"}},"order":{"id":42,"tags":["a","b"]},"urgent":true}""");
+        _server.Requests.Select(r => r.Headers["apns-id"]).Should().OnlyHaveUniqueItems();
+        data.ToJsonString().Should().Be(before);
+        data.Parent.Should().BeNull();
+        nested.Parent.Should().BeSameAs(data);
+    }
+
+    [Fact]
+    public async Task should_send_and_return_the_caller_apns_id_when_the_notification_sets_one()
+    {
+        // given
+        var apnsId = Guid.Parse("4d3c2b1a-0f9e-4d8c-b7a6-5f4e3d2c1b0a");
+        await using var provider = _server.CreateProvider();
+        var service = provider.GetRequiredService<IApnsPushNotificationService>();
+        var notification = _Alert() with { ApnsId = apnsId };
+
+        // when
+        var result = await service.SendAsync(_DeviceToken, notification, AbortToken);
+
+        // then
+        _server
+            .Requests.Should()
+            .ContainSingle()
+            .Subject.Headers["apns-id"]
+            .Should()
+            .Be("4d3c2b1a-0f9e-4d8c-b7a6-5f4e3d2c1b0a");
+        result.ApnsId.Should().Be("4d3c2b1a-0f9e-4d8c-b7a6-5f4e3d2c1b0a");
+        result.Response.MessageId.Should().Be("4d3c2b1a-0f9e-4d8c-b7a6-5f4e3d2c1b0a");
+    }
+
+    [Fact]
+    public async Task should_throw_before_sending_when_a_multicast_notification_sets_an_apns_id()
+    {
+        // given
+        await using var provider = _server.CreateProvider();
+        var service = provider.GetRequiredService<IApnsPushNotificationService>();
+        var notification = _Alert() with { ApnsId = Guid.NewGuid() };
+
+        // when
+        var act = async () => await service.SendMulticastAsync(["t1", "t2"], notification, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>();
+        _server.Requests.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_send_a_raw_notification_verbatim_with_the_headers_of_its_type()
+    {
+        // given
+        await using var provider = _server.CreateProvider();
+        var service = provider.GetRequiredService<IApnsPushNotificationService>();
+        const string payload = """{"aps":{"content-available":1,"future-key":true},"sync":{"since":17}}""";
+        var notification = new ApnsRawNotification
+        {
+            Type = ApnsNotificationType.Background,
+            Payload = _Element(payload),
+            CollapseId = "sync",
+        };
+
+        // when
+        var result = await service.SendAsync(_DeviceToken, notification, AbortToken);
+
+        // then
+        result.Response.IsSucceeded().Should().BeTrue();
+        var sent = _server.Requests.Should().ContainSingle().Subject;
+        sent.Headers["apns-push-type"].Should().Be("background");
+        sent.Headers["apns-topic"].Should().Be(FakeApnsServer.BundleId);
+        sent.Headers["apns-priority"].Should().Be("5");
+        sent.Headers["apns-collapse-id"].Should().Be("sync");
+        sent.Body.Should().Be(payload);
     }
 
     #endregion
