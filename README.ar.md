@@ -202,18 +202,6 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Messaging | `AddHeadlessMessaging` | Transport: `UseRabbitMq`، `UseKafka`، `UseAws`، `UseAzureServiceBus`، `UseNats`، `UsePulsar`، `UseRedis`، `UseInMemory`. Storage: `UsePostgreSql`، `UseSqlServer`، `UseInMemoryStorage` |
 | Background jobs | `AddHeadlessJobs` | Storage على EF Core مع atomic claims في PostgreSQL أو SQL Server |
 
-**Connection واحدة و schema واحدة.** سجّل الـ database مرة واحدة بـ `AddPostgreSqlSql` أو `AddSqlServerSql`. بعدها أي relational provider خام بيستخدم نفس الـ connection لما تنادي `UsePostgreSql()` أو `UseSqlServer()` من غير parameters، وكل feature بتعمل الـ tables بتاعتها في الـ schema المشتركة `headless`. لو عايز تنقل feature واحدة، اديها connection string خاص بيها أو نادي `ConfigureStorage(storage => storage.Schema = "...")`. القواعد كاملة في [الـ SQL guide](docs/llms/sql.md#shared-connection-and-schema-for-storage-features).
-
-</div>
-
-```csharp
-services.AddPostgreSqlSql(connectionString);
-services.AddHeadlessFencing(setup => setup.UsePostgreSql());
-services.AddHeadlessIdempotency(setup => setup.UsePostgreSql());
-```
-
-<div dir="rtl" align="right">
-
 وقاعدتين بتيجوا مع الشكل دا:
 
 - **الـ setup صريح.** الخدمة بتسجّل الـ features والـ providers اللي بتستخدمها بس. مفيش package بتسجّل نفسها، ومفيش واحدة بتعمل scan للـ assemblies بتاعتك من ورا ظهرك.

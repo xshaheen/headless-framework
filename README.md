@@ -173,14 +173,6 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Messaging | `AddHeadlessMessaging` | Transport: `UseRabbitMq`, `UseKafka`, `UseAws`, `UseAzureServiceBus`, `UseNats`, `UsePulsar`, `UseRedis`, `UseInMemory`. Storage: `UsePostgreSql`, `UseSqlServer`, `UseInMemoryStorage` |
 | Background jobs | `AddHeadlessJobs` | EF Core persistence with PostgreSQL or SQL Server atomic claims |
 
-**One connection, one schema.** Register the database once with `AddPostgreSqlSql` or `AddSqlServerSql`. Every raw relational provider's parameterless `UsePostgreSql()` or `UseSqlServer()` then reuses that connection, and every feature creates its tables in the shared `headless` schema. To move one feature, pass it its own connection string or call `ConfigureStorage(storage => storage.Schema = "...")`. The [SQL guide](docs/llms/sql.md#shared-connection-and-schema-for-storage-features) has the full rules.
-
-```csharp
-services.AddPostgreSqlSql(connectionString);
-services.AddHeadlessFencing(setup => setup.UsePostgreSql());
-services.AddHeadlessIdempotency(setup => setup.UsePostgreSql());
-```
-
 Two rules follow from that shape:
 
 - **Setup is explicit.** A service registers only the domains and providers it uses. No package registers itself, and none scans your assemblies uninvited.
