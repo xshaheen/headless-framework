@@ -1225,6 +1225,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     x.Expression,
                     x.OnMissedRun,
                     x.MissedRunGraceSeconds,
+                    x.OnOverlap,
                     x.EvaluationFingerprint,
                     x.ContractVersion,
                     Id: existingByFunction.TryGetValue(x.Function, out var existingDefinition)
@@ -1244,6 +1245,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 expression,
                 onMissedRun,
                 missedRunGraceSeconds,
+                onOverlap,
                 evaluationFingerprint,
                 contractVersion,
                 _
@@ -1307,6 +1309,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     // override by construction — which is why no provenance marker is persisted.
                     OnMissedRun = onMissedRun,
                     MissedRunGraceSeconds = missedRunGraceSeconds,
+                    OnOverlap = onOverlap,
                     EvaluationFingerprint = evaluationFingerprint,
                 };
                 await cronSet.AddAsync(entity, cancellationToken).ConfigureAwait(false);
@@ -1871,6 +1874,53 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 .ConfigureAwait(false);
         }
 
+        CronJobOccurrenceEntity<TCronJob>? overlapSkippedRun = null;
+
+        if (coalescedRun is not null)
+        {
+            // Overlap is judged only after the backlog is resolved, so rows this recovery just retired no longer count
+            // as unfinished; whatever still does — an execution already running, or a retry waiting to re-run — was
+            // started before this recovery and would overlap the coalesced run.
+            var runId = coalescedRun.Id;
+            var onOverlap = await definitions
+                .AsNoTracking()
+                .Where(x => x.Id == cronJobId)
+                .Select(x => x.OnOverlap)
+                .SingleAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            if (
+                CronOverlapRule.ForbidsOverlap(onOverlap)
+                && await occurrences
+                    .Where(CronOverlapRule.UnfinishedOccurrenceOf<TCronJob>(cronJobId))
+                    .AnyAsync(x => x.Id != runId, cancellationToken)
+                    .ConfigureAwait(false)
+            )
+            {
+                var skippedRun = await occurrences
+                    .Where(x => x.Id == runId && x.Status == JobStatus.Idle)
+                    .ExecuteUpdateAsync(
+                        setter =>
+                            setter
+                                .SetProperty(x => x.Status, JobStatus.Skipped)
+                                .SetProperty(x => x.ExecutedAt, request.OperationTimeUtc)
+                                .SetProperty(x => x.UpdatedAt, request.OperationTimeUtc)
+                                .SetProperty(x => x.SkippedReason, CronOverlapRule.SkippedReason)
+                                // The run stood in for the backlog, so skipping it still accounts for its instant:
+                                // a later recovery must not replay what this one resolved.
+                                .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                if (skippedRun > 0)
+                {
+                    overlapSkippedRun = coalescedRun;
+                    coalescedRun = null;
+                }
+            }
+        }
+
         var finalRecoveredThroughUtc = resolution.ReconciledThroughUtc;
         var finalNextDueUtc = resolution.NextDueUtc;
 
@@ -1896,6 +1946,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         {
             CoalescedRun = coalescedRun,
             SkippedOccurrenceCount = skippedCount,
+            OverlapSkippedRun = overlapSkippedRun,
             ReconciledThroughUtc = finalRecoveredThroughUtc,
             NextDueUtc = finalNextDueUtc,
         };
@@ -2205,14 +2256,22 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         if (!CronOccurrenceAccounting.IsInstantAccountedFor(rowsAtInstant))
         {
             // Nothing here accounts for the instant — either no row at all, or only rows a seeding migration retired
-            // without a replacement. Both owe the fire, so both materialize.
+            // without a replacement. Both owe the fire, so both materialize. The definition row lock taken by the
+            // fenced update above is also what makes the overlap check sound: no other scheduled occurrence of this
+            // definition can be created until this transaction ends.
+            var skipForOverlap =
+                CronOverlapRule.ForbidsOverlap(committedDefinition.OnOverlap)
+                && await occurrences
+                    .AnyAsync(CronOverlapRule.UnfinishedOccurrenceOf<TCronJob>(advance.CronJobId), cancellationToken)
+                    .ConfigureAwait(false);
+
             var now = TimeProvider.GetUtcNow();
             var created = new CronJobOccurrenceEntity<TCronJob>
             {
                 Id = GuidGenerator.Create(),
                 CronJobId = advance.CronJobId,
                 ExecutionTime = materialization.ExecutionTimeUtc,
-                Status = JobStatus.Idle,
+                Status = skipForOverlap ? JobStatus.Skipped : JobStatus.Idle,
                 OwnerId = null,
                 LockedUntil = null,
                 OnNodeDeath = committedDefinition.OnNodeDeath,
@@ -2220,12 +2279,23 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 UpdatedAt = now,
             };
 
+            if (skipForOverlap)
+            {
+                // A durable skipped row, not just a moved watermark: the instant is visibly accounted for, so neither
+                // recovery nor a claim-time insert fires it later, and the dashboard shows why it did not run.
+                created.ExecutedAt = now;
+                created.SkippedReason = CronOverlapRule.SkippedReason;
+                created.Disposition = CronOccurrenceDisposition.Accounted;
+            }
+
             created.SnapshotContract(committedDefinition);
             await occurrences.AddAsync(created, cancellationToken).ConfigureAwait(false);
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             occurrenceId = created.Id;
             occurrenceCreatedAt = created.CreatedAt;
-            outcome = CronScheduleMaterializationOutcome.OccurrenceCreated;
+            outcome = skipForOverlap
+                ? CronScheduleMaterializationOutcome.OccurrenceSkippedForOverlap
+                : CronScheduleMaterializationOutcome.OccurrenceCreated;
         }
         else
         {
@@ -2234,6 +2304,41 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             outcome = existing.IsLive
                 ? CronScheduleMaterializationOutcome.OccurrenceExists
                 : CronScheduleMaterializationOutcome.OccurrenceAlreadyTerminal;
+
+            // A live row created ahead of its instant has not been judged for overlap yet; judge it now, when due.
+            // Only a still-idle row is retired: one already claimed or running has started and is left alone.
+            var existingId = existing.Id;
+            if (
+                existing.IsLive
+                && CronOverlapRule.ForbidsOverlap(committedDefinition.OnOverlap)
+                && await occurrences
+                    .Where(CronOverlapRule.UnfinishedOccurrenceOf<TCronJob>(advance.CronJobId))
+                    .AnyAsync(x => x.Id != existingId, cancellationToken)
+                    .ConfigureAwait(false)
+            )
+            {
+                var skippedAt = TimeProvider.GetUtcNow();
+                var retired = await occurrences
+                    .Where(x => x.Id == existingId && x.Status == JobStatus.Idle)
+                    .ExecuteUpdateAsync(
+                        setter =>
+                            setter
+                                .SetProperty(x => x.Status, JobStatus.Skipped)
+                                .SetProperty(x => x.OwnerId, _ => null)
+                                .SetProperty(x => x.LockedUntil, _ => null)
+                                .SetProperty(x => x.ExecutedAt, skippedAt)
+                                .SetProperty(x => x.UpdatedAt, skippedAt)
+                                .SetProperty(x => x.SkippedReason, CronOverlapRule.SkippedReason)
+                                .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                if (retired > 0)
+                {
+                    outcome = CronScheduleMaterializationOutcome.OccurrenceSkippedForOverlap;
+                }
+            }
         }
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);

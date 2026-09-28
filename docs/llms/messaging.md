@@ -14,21 +14,37 @@ Use `Headless.Messaging.Core` as the composition package, then add exactly one t
 The current registration surface is message-first:
 
 ```csharp
-services.AddHeadlessMessaging(setup =>
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("App"))
+);
+
+builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.UseRabbitMq(options => options.HostName = "localhost");
-    setup.UsePostgreSql(builder.Configuration.GetConnectionString("Messaging")!);
+    setup.UseRabbitMq(options =>
+    {
+        options.HostName = "localhost";
+        options.UserName = builder.Configuration["RabbitMq:UserName"]!;
+        options.Password = builder.Configuration["RabbitMq:Password"]!;
+    });
+    // EF-backed storage declares the Transactional inbox tier that durable consumers require by default.
+    setup.UseEntityFramework<AppDbContext>();
 
     setup.Bus.ForMessage<OrderPlaced>(message =>
         message
             .Contract("orders.placed")
             .CorrelationFrom(order => order.OrderId.ToString())
             .Consumer<OrderProjection>(consumer =>
-                consumer.Group("orders-projection").Concurrency(4).UseRabbitMq(rabbit => rabbit.PrefetchCount(20))
+                consumer
+                    .ConsumerIdentity("orders.projection")
+                    .Group("orders-projection")
+                    .Concurrency(4)
+                    .UseRabbitMq(rabbit => rabbit.PrefetchCount(20))
             )
     );
 });
 ```
+
+This is the production default: `Headless.Messaging.RabbitMq` for transport and `Headless.Messaging.Storage.PostgreSql.EntityFramework` for storage over the application's `DbContext`. Every consumer needs a stable `ConsumerIdentity(...)`. The raw `UsePostgreSql(...)` and `UseSqlServer(...)` storages declare only the `DurableDedupeOnly` inbox tier, so a host with durable consumers on them must opt down through `setup.Options.RequiredInboxCapability`.
 
 ## Agent Rules
 
@@ -150,7 +166,7 @@ Two unit-of-work behaviors are documented, not defects. `IUnitOfWork.OnCompleted
 | AWS | SNS topic to one SQS queue per subscriber group | Direct SQS destination | Yes | `MessageGroupId(...)` | None |
 | Azure Service Bus | Topic/subscription | Queue | Yes | `PartitionKey(...)` | None |
 | InMemory | One copy per group | One owned copy | Yes | None | None |
-| Kafka | No | Consumer group | Not applicable; Queue-only | `PartitionBy(...)` | `IsolationLevel(...)` |
+| Kafka | No | Consumer group | Not applicable; Queue-only | `PartitionBy(...)` | `WithIsolationLevel(...)` |
 | NATS | Interest-retained lane stream | Work-queue-retained lane stream | Yes | `SubjectShard(...)` | `Sharded()` |
 | Pulsar | Lane topic + group subscription | Lane topic + owned subscription | Yes | None | None |
 | RabbitMQ | Lane topic exchange | Lane direct exchange | Yes | None | `PrefetchCount(...)` |
@@ -273,6 +289,7 @@ provider. Configure it on `MessagingStorageOptions` through the setup builder; `
 ```csharp
 services.AddHeadlessMessaging(setup =>
 {
+    // ... transport registration ...
     setup.ConfigureStorage(storage => storage.Schema = "outbox"); // default: "headless"
     setup.UsePostgreSql(builder.Configuration.GetConnectionString("Messaging")!);
 });
@@ -651,7 +668,7 @@ pickup 3 (persisted retry #2):
 
 ### FailedInfo construction (for tests / fakes)
 
-`FailedInfo` has six required-init properties — `Exception`, `StorageId`, and `RetryCount` are now part of the contract:
+`FailedInfo` has seven required-init properties — `Lane`, `Exception`, `StorageId`, and `RetryCount` are part of the contract:
 
 ```csharp
 var info = new FailedInfo
@@ -659,6 +676,7 @@ var info = new FailedInfo
     ServiceProvider = scope.ServiceProvider, // live dispatch scope, NOT the root provider
     MessageType = MessageType.Subscribe, // or MessageType.Publish
     Message = message,
+    Lane = MessageLane.Bus, // or MessageLane.Queue
     Exception = ex, // the exhausting exception
     StorageId = mediumMessage.StorageId, // storage row identifier for DLQ correlation
     RetryCount = mediumMessage.Retries, // final persisted-retry count
@@ -696,12 +714,12 @@ Use `MessagingBuilder.UseDistributedLock(...)` to wire the provider. Calling thi
 
 ```csharp
 // Instance overload — when you already have an IDistributedLock
-var lockProvider = new MyDistributedLock(...);
-builder.Services.AddHeadlessMessaging(setup => { ... })
+var lockProvider = new MyDistributedLock(/* ... */);
+builder.Services.AddHeadlessMessaging(setup => { /* ... */ })
     .UseDistributedLock(lockProvider);
 
 // Factory overload — when the provider depends on other DI services
-builder.Services.AddHeadlessMessaging(setup => { ... })
+builder.Services.AddHeadlessMessaging(setup => { /* ... */ })
     .UseDistributedLock(sp => sp.GetRequiredService<IDistributedLock>());
 ```
 
@@ -814,7 +832,9 @@ Root tenancy setup:
 
 ```csharp
 builder.AddHeadlessTenancy(tenancy =>
-    tenancy.Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
+    tenancy
+        .Http(http => http.ResolveFromClaims()) // the ambient tenant that propagation captures
+        .Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
 );
 ```
 
@@ -884,10 +904,10 @@ public sealed class CorrelationPublishMiddleware
     }
 }
 
-builder.Services.AddHeadlessMessaging(options => { /* ... */ })
-    .AddReceiveMiddleware<SignatureVerificationReceiveMiddleware>()
-    .AddBusConsumeMiddleware<AuditConsumeMiddleware>()
-    .AddPublishMiddlewareFor<CorrelationPublishMiddleware, OrderPlaced>();
+var messaging = builder.Services.AddHeadlessMessaging(setup => { /* ... */ });
+messaging.AddReceiveMiddleware<SignatureVerificationReceiveMiddleware>();
+messaging.AddBusConsumeMiddleware<AuditConsumeMiddleware>();
+messaging.AddPublishMiddlewareFor<CorrelationPublishMiddleware, OrderPlaced>(MessageLane.Bus);
 ```
 
 ### Receive Middleware
@@ -909,7 +929,7 @@ Receive middleware intercepts the raw transport envelope (`ReceiveContext.Header
 
 - `AddBusPublishMiddleware<T>()` / `AddBusConsumeMiddleware<T>()`: object-typed middleware for every publish or consume.
 - `AddReceiveMiddleware<T>()`: global receive middleware running on both lanes for every resolved consumer.
-- `AddPublishMiddlewareFor<TMiddleware, TMessage>()`: typed publish middleware for one message type.
+- `AddPublishMiddlewareFor<TMiddleware, TMessage>(lane)`: typed publish middleware for one message type and lane.
 - `AddReceiveMiddlewareFor<TMiddleware, TMessage>(group, lane)`: typed receive middleware for one message type, consumer group, and lane.
 - `AddConsumeMiddlewareFor<TMiddleware, TMessage>(group, lane)`: typed consume middleware for one message type and consumer group.
 - Each call returns a registration handle with `.WithPriority(int)`. Lower priority runs first and wraps later middleware. Ties use registration order. Default priority is `0`; first-party tenant propagation uses `-1000`.
@@ -933,7 +953,11 @@ Absolute schedules retain the requested instant in UTC as `ScheduledAt`; `Publis
 The framework ships built-in middleware that propagates the originating tenant on the wire:
 
 ```csharp
-builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant()));
+builder.AddHeadlessTenancy(tenancy =>
+    tenancy
+        .Http(http => http.ResolveFromClaims()) // the ambient tenant that propagation captures
+        .Messaging(messaging => messaging.PropagateTenant())
+);
 ```
 
 The root tenancy seam registers `TenantPropagationPublishMiddleware` (stamps `PublishOptions.TenantId` from ambient `ICurrentTenant.Id`) and `TenantPropagationConsumeMiddleware` (calls `ICurrentTenant.Change(...)` for the lifetime of the consume). Caller-set values on `PublishOptions.TenantId` are preserved verbatim — set it explicitly to override the ambient tenant. See the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section for the trust boundary and the strict-tenancy guard.
@@ -1002,21 +1026,26 @@ builder.Services.AddHeadlessMessaging(setup =>
 ```csharp
 builder.Services.AddHeadlessMessaging(setup =>
 {
+    // ... transport + storage registration ...
     setup.Bus.ForMessage<PaymentProcessed>(message =>
         message
             .Contract("payments.process")
             .Consumer<PaymentHandler>(consumer =>
-                consumer.WithCircuitBreaker(cb =>
-                {
-                    cb.FailureThreshold = 3; // more sensitive
-                    cb.OpenDuration = TimeSpan.FromSeconds(60); // longer cooldown
-                })
+                consumer
+                    .ConsumerIdentity("payments.handler")
+                    .WithCircuitBreaker(cb =>
+                    {
+                        cb.FailureThreshold = 3; // more sensitive
+                        cb.OpenDuration = TimeSpan.FromSeconds(60); // longer cooldown
+                    })
             )
     );
 
     // Disable circuit breaker for a best-effort consumer
     setup.Bus.ForMessage<MetricsUpdated>(message =>
-        message.Consumer<MetricsHandler>(consumer => consumer.WithCircuitBreaker(cb => cb.Enabled = false))
+        message.Consumer<MetricsHandler>(consumer =>
+            consumer.ConsumerIdentity("metrics.handler").WithCircuitBreaker(cb => cb.Enabled = false)
+        )
     );
 });
 ```
@@ -1171,7 +1200,11 @@ dotnet add package Headless.Messaging.Dashboard.K8s
 ### Setup and use
 
 ```csharp
-services.AddHeadlessMessaging(setup => setup.UseK8sDiscovery());
+services.AddHeadlessMessaging(setup =>
+{
+    // ... transport + storage registration ...
+    setup.UseK8sDiscovery();
+});
 ```
 
 ### Configuration
@@ -1226,7 +1259,7 @@ Spans and metrics for messaging publish, persist, consume, and subscriber-invoke
 // 1. Register enrichers / suppression on the messaging setup builder (optional).
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.UseRabbitMq(/* ... */);
+    // ... transport + storage registration ...
     setup.Instrumentation.SuppressTenantIdTag = true;      // opt out of tenant-id tagging
     setup.Instrumentation.AddEnricher(new MyTagEnricher()); // custom tags
 });
@@ -1438,7 +1471,7 @@ Registers in-memory storage and monitoring services. State is lost when the proc
 - `setup.UseKafka(...)`.
 - Kafka topic auto-creation support.
 - Producer hatch: `UseKafka(kafka => kafka.PartitionBy(message => ...))`.
-- Consumer hatch: `consumer.UseKafka(kafka => kafka.IsolationLevel(IsolationLevel.ReadCommitted))`.
+- Consumer hatch: `consumer.UseKafka(kafka => kafka.WithIsolationLevel(IsolationLevel.ReadCommitted))`.
 - Consumer startup honors host cancellation while creating topics and subscriptions.
 
 ### Design constraints
@@ -1461,7 +1494,9 @@ setup.Queue.ForMessage<OrderPlaced>(message =>
         .Contract("orders.placed")
         .UseKafka(kafka => kafka.PartitionBy(order => order.CustomerId.ToString()))
         .Consumer<OrderWorker>(consumer =>
-            consumer.UseKafka(kafka => kafka.IsolationLevel(IsolationLevel.ReadCommitted))
+            consumer
+                .ConsumerIdentity("orders.worker")
+                .UseKafka(kafka => kafka.WithIsolationLevel(IsolationLevel.ReadCommitted))
         )
 );
 ```
@@ -1515,7 +1550,9 @@ setup.UseNats(options => options.Servers = "nats://localhost:4222");
 setup.Bus.ForMessage<OrderPlaced>(message =>
     message
         .UseNats(nats => nats.SubjectShard(order => order.CustomerId.ToString()))
-        .Consumer<OrderProjection>(consumer => consumer.UseNats(nats => nats.Sharded()))
+        .Consumer<OrderProjection>(consumer =>
+            consumer.ConsumerIdentity("orders.projection").UseNats(nats => nats.Sharded())
+        )
 );
 ```
 
@@ -1606,7 +1643,9 @@ setup.UseRabbitMq(options =>
 });
 
 setup.Bus.ForMessage<OrderPlaced>(message =>
-    message.Consumer<OrderProjection>(consumer => consumer.UseRabbitMq(rabbit => rabbit.PrefetchCount(20)))
+    message.Consumer<OrderProjection>(consumer =>
+        consumer.ConsumerIdentity("orders.projection").UseRabbitMq(rabbit => rabbit.PrefetchCount(20))
+    )
 );
 ```
 
@@ -1641,7 +1680,7 @@ dotnet add package Headless.Messaging.Redis
 ### Setup and use
 
 ```csharp
-setup.UseRedis(options => options.Configuration = "localhost:6379");
+setup.UseRedis(options => options.Configuration = ConfigurationOptions.Parse("localhost:6379"));
 ```
 
 Redis physical keys are `headless:messaging:bus:{logical-name}` and `headless:messaging:queue:{logical-name}`. Both lanes use retained Streams with explicit consumer-group ownership.

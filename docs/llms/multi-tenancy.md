@@ -36,6 +36,15 @@ builder.AddHeadlessTenancy(tenancy =>
         .EntityFramework(ef => ef.GuardTenantWrites())
 );
 
+// RequireTenant() fails startup unless DefaultPolicy or FallbackPolicy carries TenantRequirement.
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .AddRequirements(new TenantRequirement())
+        .Build();
+});
+
 var app = builder.Build();
 
 app.UseHeadless();
@@ -63,6 +72,7 @@ app.UseAuthorization();
 - Raw SQL requires explicit tenant predicates and authorization. `BeginBypass()` has no effect on raw SQL and never removes SQL predicates or database constraints from tracked writes.
 - When using `IgnoreMultiTenancyFilter()`, add an inline `// MULTI-TENANCY-BYPASS: <reason>` comment naming the approved scenario (cross-tenant snapshot, admin lookup, system maintenance, etc.) so reviewers and post-incident readers can distinguish legitimate bypasses from drift.
 - Enable strict EF tenant writes with `.EntityFramework(ef => ef.GuardTenantWrites())` when tenant-owned saves must fail without a matching tenant context.
+- Enable strict EF tenant reads with `.EntityFramework(ef => ef.GuardTenantReads())` when a query over required-tenant rows must fail instead of returning nothing without a tenant. See [EF Tenant Read Guard](#ef-tenant-read-guard).
 - Use `ITenantWriteGuardBypass.BeginBypass()` only around intentional admin or host-level writes. `IgnoreMultiTenancyFilter()` affects reads only; it does not bypass guarded writes.
 - Permission cache scoping depends on `ICurrentTenant.Id`. Host-level operations with no tenant use the shared `t:` scope by design.
 - For background jobs, adopt the Jobs tenancy seam (`.Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue())`) so time jobs capture the ambient tenant at schedule time and restore it around every execution attempt. Cron is always system-scope: fan out one explicit-tenant time job per tenant from application code — see [Background Jobs](#background-jobs).
@@ -73,7 +83,7 @@ app.UseAuthorization();
 - Do not treat `ICurrentTenantInfo` reads as an authorization check. Reads never reject — a disabled tenant's metadata still returns with `IsEnabled = false`. Rejection on disablement happens only at identifier-resolution time (`TenantCatalogResolutionMiddleware` / `ITenantCatalogService.ResolveAsync`), never on an accessor read.
 - Never treat `TenantResolutionKind.None` as a resolution result. It is the enum's reserved zero value — the state of an uninitialized `default(TenantResolutionOutcome)`, an auto-valued test double, or a misbehaving custom `ITenantCatalogService` — not a sixth outcome. The catalog itself never produces it; a store or catalog-service override that returns it has a bug, not a legitimate "unresolved" case. Use `Unknown` for that.
 - Register `UseHeadlessTenantCatalogResolution()` after `UseRouting()` and before `UseAuthentication()` — a different slot from `UseHeadlessTenancy()` (after `UseAuthentication()`, before `UseAuthorization()`). The two middlewares serve different resolution paths (identifier vs. claim) and both can be active in the same pipeline.
-- Register `UseStatusCodesRewriter()` so it wraps `UseAuthorization()` on any catalog-resolution host. It writes the mismatch rejection the authorization tier only marks; omitting it fails startup (`CATALOG_RESOLUTION_WITHOUT_REWRITER`), and placing it after `UseAuthorization()` passes startup but still leaks the mismatch as a distinguishable bare 403.
+- Register `UseStatusCodesRewriter()` so it wraps `UseAuthorization()` on any catalog-resolution host. It writes the mismatch rejection the authorization tier only marks; omitting it fails startup (`CATALOG_RESOLUTION_WITHOUT_REWRITER`), and so does any call placed after `UseAuthorization()` (`CATALOG_RESOLUTION_REWRITER_AFTER_AUTHORIZATION`), since that rewriter never sees the failed evaluation and the mismatch would leak as a distinguishable bare 403.
 - Do not add per-tenant application configuration to `TenantInfo.ExtraProperties` or a queryable column just because it is convenient. If a value needs to be queried or indexed, it belongs in Settings/Features/Permissions keyed by the canonical tenant id, or in a typed column of your own `ITenantStore` implementation — never in the catalog's read-along bag.
 - Register a caching provider in any host that configures `.Catalog(...)`. `Headless.MultiTenancy` references only `Headless.Caching.Abstractions`, and the open-generic `ICache<>` implementation ships with a provider package, so `AddHeadlessCaching(caching => caching.UseInMemory())` (or `UseRedis` / `UseHybrid`) is a hard prerequisite rather than an optimization. The requirement is declared with `RequireRegisteredService` and fails host startup when unmet, in every environment. It applies to accessor-only hosts too, because `ICurrentTenantInfo` reads go through the same caches as identifier resolution.
 - Rate-limit the pre-authentication identifier path in the application or at the edge. Every unauthenticated request can reach `ITenantCatalogService.ResolveAsync`, and negative caching only blunts repeated probes of the *same* unknown identifier: rotating through distinct identifiers costs one store read each. The framework enforces no bound on that traffic class by design. See [DoS and rate limiting](#dos-and-rate-limiting).
@@ -180,7 +190,7 @@ publicGroup.MapGet("/status", () => Results.Ok());
 // MVC — controller (applies to all actions)
 [SkipTenantResolution]
 [Route("admin")]
-public sealed class AdminController : ControllerBase { ... }
+public sealed class AdminController : ControllerBase;
 
 // MVC — individual action
 [Route("users")]
@@ -361,13 +371,17 @@ No HTTP pipeline change is required for this — `TenantResolutionMiddleware` (t
 using Headless.MultiTenancy; // TenantInfo, Catalog(...)
 using Headless.Api;          // ResolveFromCatalog(...), AddHostSource(...), UseHeadlessTenantCatalogResolution()
 
+builder.Services.AddHeadlessCaching(caching => caching.UseInMemory()); // the catalog's hard prerequisite
+
 builder.AddHeadlessTenancy(tenancy =>
 {
     tenancy
         .Catalog(catalog =>
             catalog
                 .Configure(options => options.IgnoredIdentifiers.Add("www")) // www.example.com -> host context
-                .UseInMemory(options => options.Tenants.Add(/* ... */))
+                .UseInMemory(options =>
+                    options.Tenants.Add(new TenantInfo(id: "ten_123", identifier: "acme", name: "Acme Inc", isEnabled: true))
+                )
         )
         .Http(http =>
             http.ResolveFromCatalog(sources =>
@@ -379,6 +393,8 @@ builder.AddHeadlessTenancy(tenancy =>
             )
         );
 });
+
+builder.Services.AddAuthorization(); // UseAuthorization() below requires it
 
 var app = builder.Build();
 
@@ -499,7 +515,7 @@ The claim middleware also carries a fast-path check comparing against the preser
 
 A mismatch that is visible only to a non-default scheme is rejected by the authorization tier, whose forbid result is collapsed to the generic 404 by `StatusCodesRewriterMiddleware`. That tier writes no response of its own — it only fails the evaluation and marks the request — so the rewriter is load-bearing, not cosmetic, and its absence leaves a distinguishable 403 next to the unknown identifier's 404: a tenant-enumeration oracle. Startup therefore fails with `CATALOG_RESOLUTION_WITHOUT_REWRITER` when `catalog-resolution` is configured and `UseStatusCodesRewriter()` was never called.
 
-The residual the diagnostic cannot cover is **placement**: the posture manifest records that the rewriter was registered, not where. `UseStatusCodesRewriter()` must be added to the pipeline before `UseAuthorization()` so that it wraps it — a rewriter placed after authorization is never reached, because a failed evaluation short-circuits, and the mismatch stays a bare 403 on a host that passes startup validation.
+Placement is checked too. `UseStatusCodesRewriter()` must be added to the pipeline before `UseAuthorization()` so that it wraps it — a rewriter placed after authorization is never reached, because a failed evaluation short-circuits, and the mismatch stays a bare 403. The rewriter records whether `UseAuthorization()` had already been called on the same builder, and startup fails with `CATALOG_RESOLUTION_REWRITER_AFTER_AUTHORIZATION` for any call placed after it, even when another call is correctly placed. Two placements stay invisible to that check: authorization that `WebApplication` adds implicitly because the host never called `UseAuthorization()`, which runs ahead of all user middleware, and authorization added inside a rejoining `UseWhen` branch. Call `UseAuthentication()` and `UseAuthorization()` explicitly on the main pipeline.
 
 ### Failure mapping
 
@@ -576,7 +592,7 @@ builder.Services.AddHeadlessDbContext<AppDbContext>(options => options.UseNpgsql
 builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
 ```
 
-`GuardTenantWrites()` is the only registration API. `TenantWriteGuardOptions.IsEnabled` reports the configured state and has no public setter.
+`GuardTenantWrites()` is the only registration API. `TenantGuardOptions.GuardWrites` reports the configured state and has no public setter.
 
 When enabled, the guard reads finalized ownership metadata and rejects in-memory mismatches before local handler dispatch and persistence:
 
@@ -609,6 +625,24 @@ using (bypass.BeginBypass())
 `IgnoreMultiTenancyFilter()` is only a read-side query-filter bypass. Loading a row through `IgnoreMultiTenancyFilter()` does not permit cross-tenant updates or deletes when the write guard is enabled; wrap only the intended write in `ITenantWriteGuardBypass.BeginBypass()`.
 
 Write-guard bypass does not remove SQL tenant predicates, required columns, or database constraints, and does not supply a valid original tenant. It has no effect on raw SQL.
+
+### EF Tenant Read Guard
+
+The EF read guard is opt-in and separate from the write guard. Enable it from the root tenancy surface:
+
+```csharp
+builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites().GuardTenantReads()));
+```
+
+Without the guard, a query over a tenant-owned entity with a required tenant column returns no rows when no tenant is resolved. A background job or handler that forgot to set the tenant then looks healthy while reading and bulk-deleting nothing. With `GuardTenantReads()`, the multi-tenancy filter throws `Headless.MultiTenancy.MissingTenantContextException` when such a query executes while `ICurrentTenant.Id` is null or white space. The exception is not wrapped, so it maps to the same normalized HTTP 403 as the write guard.
+
+- **Covered:** every query that applies `HeadlessQueryFilters.MultiTenancyFilter` to an entity whose tenant column is required: materializing queries, `ExecuteUpdate`/`ExecuteDelete`, `Include`, and explicit navigation loads. The check runs each time the query executes, so a query EF already compiled under a tenant still checks the current one.
+- **Required columns only.** Roots declared with `IsTenantOwned()` get a required tenant column; `IMultiTenant` roots keep their own nullability. An entity with a nullable tenant column keeps host-row semantics under the guard: with no tenant it returns rows whose tenant is null. Among the framework's own entities, only tenant-owned Identity (`ConfigureTenantOwnedIdentity`) is affected; permission grants, settings, and features keep nullable tenant columns and keep reading host rows.
+- **Bypass:** `IgnoreMultiTenancyFilter()` removes the filter, and therefore the guard, for one query. Mark it with a `// MULTI-TENANCY-BYPASS: <reason>` comment. `ITenantWriteGuardBypass.BeginBypass()` does not relax reads.
+- **Not covered:** raw SQL (`FromSql`, `ExecuteSql`) and identity-map hits such as `FindAsync` on an already tracked entity. Neither runs the filter.
+- **Lookups before tenant resolution:** tenant resolution runs after `UseAuthentication()`. With tenant-owned Identity, a user lookup inside authentication, such as a cookie security-stamp validator calling `FindByIdAsync`, now throws instead of returning no user. Resolve the tenant before such a lookup runs, or perform it through your own query that calls `IgnoreMultiTenancyFilter()` on purpose.
+
+`GuardTenantReads()` is the only registration API. `TenantGuardOptions.GuardReads` reports the configured state and has no public setter. When the seam records `guard-tenant-reads` but `GuardReads` resolves to false, for example because a later registration replaced `IOptions<TenantGuardOptions>`, host startup fails with `HEADLESS_TENANCY_EF_READ_GUARD_DISABLED`; the write guard reports `HEADLESS_TENANCY_EF_WRITE_GUARD_DISABLED` the same way.
 
 ## Messaging Exhausted Callbacks
 
@@ -648,7 +682,9 @@ When no tenant is active, the cache scope is `t:`. This is expected host-level b
 using Headless.Jobs;
 
 builder.AddHeadlessTenancy(tenancy =>
-    tenancy.Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue())
+    tenancy
+        .Http(http => http.ResolveFromClaims()) // the ambient tenant that propagation captures
+        .Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue())
 );
 
 builder.Services.AddHeadlessJobs(options =>
@@ -656,7 +692,7 @@ builder.Services.AddHeadlessJobs(options =>
 });
 ```
 
-Register a real `ICurrentTenant` source (HTTP claim resolution, `AddHeadlessDbContextServices()`, or a custom implementation) before `AddHeadlessJobs` so propagation resolves a live tenant rather than the framework's `NullCurrentTenant` fallback. See [docs/llms/jobs.md](jobs.md#tenant-propagation) for the full resolution and chain-propagation semantics.
+Register a real `ICurrentTenant` source (HTTP claim resolution or a custom implementation) before `AddHeadlessJobs` so propagation resolves a live tenant rather than the framework's `NullCurrentTenant` fallback. See [docs/llms/jobs.md](jobs.md#tenant-propagation) for the full resolution and chain-propagation semantics.
 
 #### Automatic Propagation (`PropagateTenant`)
 
@@ -706,41 +742,40 @@ using Headless.MultiTenancy; // ITenantDirectory — only when a tenant catalog 
 // permission cache) observe the right tenant automatically.
 public sealed record TenantReportRequest(string ReportKind);
 
-[JobFunction("GenerateTenantReport")]
 public sealed class GenerateTenantReport(IReportService reports)
 {
+    [JobFunction("GenerateTenantReport")]
     public Task ExecuteAsync(JobFunctionContext<TenantReportRequest> context, CancellationToken ct) =>
         reports.BuildAsync(context.Request.ReportKind, ct);
 }
 
 // A system-scope cron that fans out one tenant-scoped time job per tenant.
-[JobFunction("NightlyReportFanOut", cronExpression: "0 2 * * *")]
-public static async Task FanOutAsync(IServiceProvider sp, CancellationToken ct)
+// ITenantDirectory is the framework's optional catalog enumeration capability (see
+// [Tenant Catalog](#tenant-catalog)) — available only when a tenant catalog store is
+// configured via `.Catalog(...)`. An app that has not configured a catalog enumerates
+// tenants through its own means instead (a direct query against its own tenant table, an
+// app-owned directory service, etc.) — the loop below is identical either way.
+public sealed class NightlyReportFanOut(IJobScheduler scheduler, ITenantDirectory tenants)
 {
-    var scheduler = sp.GetRequiredService<IJobScheduler>();
-
-    // ITenantDirectory is the framework's optional catalog enumeration capability (see
-    // [Tenant Catalog](#tenant-catalog)) — available only when a tenant catalog store is
-    // configured via `.Catalog(...)`. An app that has not configured a catalog enumerates
-    // tenants through its own means instead (a direct query against its own tenant table, an
-    // app-owned directory service, etc.) — the loop below is identical either way.
-    var tenants = sp.GetRequiredService<ITenantDirectory>();
-
-    foreach (var tenant in await tenants.GetAllAsync(ct))
+    [JobFunction("NightlyReportFanOut", cronExpression: "0 0 2 * * *")]
+    public async Task ExecuteAsync(CancellationToken ct)
     {
-        if (!tenant.IsEnabled)
+        foreach (var tenant in await tenants.GetAllAsync(ct))
         {
-            continue;
-        }
+            if (!tenant.IsEnabled)
+            {
+                continue;
+            }
 
-        // Explicit TenantId is REQUIRED: the cron handler runs system-scope, so there is no
-        // ambient tenant for PropagateTenant() to capture here. Relying on ambient capture
-        // inside a cron handler would silently persist tenantless jobs.
-        await scheduler.EnqueueAsync(
-            new TenantReportRequest("nightly"),
-            new JobOptions { TenantId = tenant.Id, Description = $"nightly-report-{tenant.Id}" },
-            ct
-        );
+            // Explicit TenantId is REQUIRED: the cron handler runs system-scope, so there is no
+            // ambient tenant for PropagateTenant() to capture here. Relying on ambient capture
+            // inside a cron handler would silently persist tenantless jobs.
+            await scheduler.EnqueueAsync(
+                new TenantReportRequest("nightly"),
+                new JobOptions { TenantId = tenant.Id, Description = $"nightly-report-{tenant.Id}" },
+                ct
+            );
+        }
     }
 }
 ```
@@ -770,7 +805,9 @@ For end-to-end propagation, opt in to the built-in middleware pair:
 using Headless.Messaging.MultiTenancy;
 
 builder.AddHeadlessTenancy(tenancy =>
-    tenancy.Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
+    tenancy
+        .Http(http => http.ResolveFromClaims()) // the ambient tenant that propagation captures
+        .Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
 );
 
 builder.Services.AddHeadlessMessaging(options =>
@@ -871,7 +908,7 @@ public sealed class OrderService(ICurrentTenant currentTenant)
 {
     public Order CreateOrder(CreateOrderRequest request)
     {
-        return new Order { Id = Guid.NewGuid(), TenantId = currentTenant.Id, ... };
+        return new Order { Id = Guid.NewGuid(), TenantId = currentTenant.Id };
     }
 
     // Scope a temporary tenant override — for example inside a background job or an admin tool.
@@ -926,7 +963,7 @@ None.
 - **Identifier resolution reads through `GetOrAddAsync`; two paths deliberately do not.** The identifier namespace uses the cache's factory-backed read, so an expiry rollover under concurrent load for one identifier costs a single store read rather than one per caller (in-process single-flight; cross-node deduplication would additionally require an `ICacheFactoryLockProvider`). The factory writes the id namespace as a side effect of the same store hit, so one store read still populates both. A factory-backed read always persists whatever the factory returns, which two paths cannot accept: the id namespace must never cache an id that has no catalog row (`FindByIdAsync` would then keep answering `null` for a tenant that has since appeared), and a host that sets `UnknownIdentifierCacheExpiration = TimeSpan.Zero` must not write unknown identifiers at all — a zero duration is a write followed by an immediate eviction, not a skipped write. Both keep the plain read-then-conditional-write shape and trade single-flight away for their write rule.
 - **Accessor-only is a first-class, non-failing posture.** A host can call `Catalog(catalog => catalog.UseInMemory(...))` without ever calling `Headless.Api.Core`'s `.Http(http => http.ResolveFromCatalog(...))`. That combination records only the `catalog-accessor` capability — `ICurrentTenantInfo` metadata reads work, but no HTTP identifier resolution runs. `TenantCatalogPostureValidator` treats this as valid and never fails startup for it; it only fails when `catalog-resolution` is recorded without a configured store, without an actually-wired resolution pipeline, or without the status-codes rewriter that writes the mismatch rejection.
 - **A caching provider is a hard prerequisite of `Catalog(...)`.** This package references `Headless.Caching.Abstractions` only; the open-generic `ICache<>` implementation ships with a caching *provider* (`Headless.Caching.InMemory`, `.Redis`, `.Hybrid`). Since `TenantCatalogService` takes both cache item types as constructor dependencies, a host that configures a store but never calls `AddHeadlessCaching(...)` would start clean and then fail every tenant lookup — including plain `ICurrentTenantInfo` reads on accessor-only hosts. `Catalog(...)` therefore declares both closed `ICache<T>` types through `Headless.Hosting`'s shared `IServiceCollection.RequireRegisteredService<T>(requiredBy, remedy)`, which fails the host in `StartingAsync` with a `MissingRequiredServiceException` naming the remedy. The requirement is attached wherever a store is configured — the `catalog-accessor` capability — so accessor-only hosts are covered too. The check probes the registration (`IServiceProviderIsService`) rather than resolving the cache, so startup never builds the backing cache singleton early. Every other cache-consuming Headless feature (`Settings`, `Permissions`, `Features`, `Api.Idempotency`) declares the same way, so a host that installed no provider at all gets one exception listing every affected feature instead of one failure per restart.
-- **`UseStatusCodesRewriter()` is a hard prerequisite of catalog *resolution*.** Mismatch enforcement's second tier (`TenantIdentifierIntegrityHandler`) only fails the authorization evaluation and marks the request; the generic tenant rejection that keeps a mismatch byte-identical to an unknown identifier is written afterwards by `StatusCodesRewriterMiddleware`. A resolution host that never registers it answers a mismatch with a bare authorization failure while an unknown identifier still gets the 404 rejection — a tenant-enumeration oracle — so `TenantCatalogPostureValidator` fails startup with `CATALOG_RESOLUTION_WITHOUT_REWRITER` whenever `catalog-resolution` is recorded without the rewriter's runtime marker. This gate is resolution-scoped, not accessor-scoped like the caching one: an accessor-only host has no tier-2 path to collapse. The marker records presence, not position — the rewriter must also be added to the pipeline *before* `UseAuthorization()` so it wraps it, since a rewriter placed downstream never observes an evaluation that short-circuits.
+- **`UseStatusCodesRewriter()` is a hard prerequisite of catalog *resolution*.** Mismatch enforcement's second tier (`TenantIdentifierIntegrityHandler`) only fails the authorization evaluation and marks the request; the generic tenant rejection that keeps a mismatch byte-identical to an unknown identifier is written afterwards by `StatusCodesRewriterMiddleware`. A resolution host that never registers it answers a mismatch with a bare authorization failure while an unknown identifier still gets the 404 rejection — a tenant-enumeration oracle — so `TenantCatalogPostureValidator` fails startup with `CATALOG_RESOLUTION_WITHOUT_REWRITER` whenever `catalog-resolution` is recorded without the rewriter's runtime marker. This gate is resolution-scoped, not accessor-scoped like the caching one: an accessor-only host has no tier-2 path to collapse. The rewriter must also be added to the pipeline *before* `UseAuthorization()` so it wraps it, since a rewriter placed downstream never observes an evaluation that short-circuits; a call after `UseAuthorization()` fails startup with `CATALOG_RESOLUTION_REWRITER_AFTER_AUTHORIZATION`, except for authorization `WebApplication` adds implicitly or that runs inside a `UseWhen` branch, which the check cannot see.
 - **Exactly-one-storage-provider guard.** `Catalog(...)` reuses the same `GuardSingleStorageProvider` mechanism as `Headless.Settings.Core` — registering zero or more than one of `UseInMemory`/`UseConfiguration`/`UseEntityFramework` in the same `Catalog(...)` callback fails startup immediately rather than silently picking one.
 
 ### Install
@@ -952,6 +989,15 @@ builder.AddHeadlessTenancy(tenancy =>
         .Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue())
         .EntityFramework(ef => ef.GuardTenantWrites())
 );
+
+// RequireTenant() fails startup unless DefaultPolicy or FallbackPolicy carries TenantRequirement.
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .AddRequirements(new TenantRequirement())
+        .Build();
+});
 
 var app = builder.Build();
 
@@ -1021,6 +1067,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 builder.Services.AddDbContextFactory<AppDbContext>(options =>
     options.UseNpgsql(connectionString)
 );
+
+builder.Services.AddHeadlessCaching(caching => caching.UseInMemory()); // the catalog's hard prerequisite
 
 builder.AddHeadlessTenancy(tenancy =>
 {

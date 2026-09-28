@@ -67,6 +67,7 @@
         <Project Path="src\Headless.Blobs.Core\Headless.Blobs.Core.csproj" />
         <Project Path="src\Headless.Blobs.FileSystem\Headless.Blobs.FileSystem.csproj" />
         <Project Path="src\Headless.Blobs.Redis\Headless.Blobs.Redis.csproj" />
+        <Project Path="src\Headless.Blobs.SignedUrlEndpoint\Headless.Blobs.SignedUrlEndpoint.csproj" />
         <Project Path="src\Headless.Blobs.SshNet\Headless.Blobs.SshNet.csproj" />
     </Folder>
     <Folder Name="/Blobs/Tests/">
@@ -84,6 +85,7 @@
         <Project Path="tests\Headless.Blobs.FileSystem.Tests.Unit\Headless.Blobs.FileSystem.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Blobs.Redis.Tests.Integration\Headless.Blobs.Redis.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Blobs.Redis.Tests.Unit\Headless.Blobs.Redis.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Blobs.SignedUrlEndpoint.Tests.Unit\Headless.Blobs.SignedUrlEndpoint.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Blobs.SshNet.Tests.Integration\Headless.Blobs.SshNet.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Blobs.SshNet.Tests.Unit\Headless.Blobs.SshNet.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Blobs.Tests.Harness\Headless.Blobs.Tests.Harness.csproj" />
@@ -469,15 +471,18 @@
     </Folder>
     <Folder Name="/PushNotifications/">
         <Project Path="src\Headless.PushNotifications.Abstractions\Headless.PushNotifications.Abstractions.csproj" />
+        <Project Path="src\Headless.PushNotifications.Apns\Headless.PushNotifications.Apns.csproj" />
         <Project Path="src\Headless.PushNotifications.Core\Headless.PushNotifications.Core.csproj" />
         <Project Path="src\Headless.PushNotifications.Dev\Headless.PushNotifications.Dev.csproj" />
         <Project Path="src\Headless.PushNotifications.Firebase\Headless.PushNotifications.Firebase.csproj" />
     </Folder>
     <Folder Name="/PushNotifications/Tests/">
         <Project Path="tests\Headless.PushNotifications.Abstractions.Tests.Unit\Headless.PushNotifications.Abstractions.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.PushNotifications.Apns.Tests.Unit\Headless.PushNotifications.Apns.Tests.Unit.csproj" />
         <Project Path="tests\Headless.PushNotifications.Composition.Tests.Unit\Headless.PushNotifications.Composition.Tests.Unit.csproj" />
         <Project Path="tests\Headless.PushNotifications.Dev.Tests.Unit\Headless.PushNotifications.Dev.Tests.Unit.csproj" />
         <Project Path="tests\Headless.PushNotifications.Firebase.Tests.Unit\Headless.PushNotifications.Firebase.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.PushNotifications.Tests.Harness\Headless.PushNotifications.Tests.Harness.csproj" />
     </Folder>
     <Folder Name="/RateLimiting/">
         <Project Path="src\Headless.RateLimiting\Headless.RateLimiting.csproj" />

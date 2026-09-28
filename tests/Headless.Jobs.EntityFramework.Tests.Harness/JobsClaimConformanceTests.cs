@@ -33,6 +33,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             "* * * * *",
             MissedRunPolicy.Skip,
             60,
+            CronOverlapPolicy.Allow,
             ContractVersion: "1"
         );
         Guid definitionId;

@@ -211,8 +211,8 @@ builder.Services.AddHeadlessSecretHasher(setup =>
     setup.UseArgon2id(builder.Configuration.GetSection("Headless:SecretHasher:Argon2id"));
 });
 
-// Or PBKDF2, with no native dependency.
-builder.Services.AddHeadlessSecretHasher(setup => setup.UsePbkdf2Sha256());
+// Or PBKDF2, with no native dependency, in place of the call above; a second call throws.
+// builder.Services.AddHeadlessSecretHasher(setup => setup.UsePbkdf2Sha256());
 ```
 
 ### Configuration

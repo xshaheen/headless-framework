@@ -126,10 +126,25 @@ public sealed class JobFunctionAttribute : Attribute
         set => _missedRunGraceSeconds = value;
     }
 
+    /// <summary>
+    /// Policy applied when an occurrence becomes due while an earlier occurrence of this cron definition is still
+    /// unfinished. Ignored for time jobs.
+    /// </summary>
+    /// <remarks>
+    /// Same seeding rule as <see cref="OnMissedRun"/>: creation only, never reapplied, so a value later set through
+    /// <c>ICronJobManager</c> stays in force. Leave unset to take the scheduler-wide default.
+    /// </remarks>
+    public CronOverlapPolicy OnOverlap
+    {
+        get => _onOverlap ?? CronOverlapPolicy.Allow;
+        set => _onOverlap = value;
+    }
+
     // Attribute arguments cannot be nullable value types, so "unset" is tracked separately from the public
     // non-nullable surface. The source generator reads these through the attribute's named arguments and emits only
     // the ones actually written, which is what lets an unset knob fall through to the scheduler-wide default rather
     // than silently pinning every definition to the framework default at creation.
     private MissedRunPolicy? _onMissedRun;
     private int? _missedRunGraceSeconds;
+    private CronOverlapPolicy? _onOverlap;
 }

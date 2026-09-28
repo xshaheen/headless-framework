@@ -47,6 +47,18 @@ public abstract class MetadataTenantConformanceTests<TFixture>(TFixture fixture)
     }
 
     [Fact]
+    public async Task should_return_no_required_tenant_rows_without_tenant_when_read_guard_is_off()
+    {
+        await _SeedAsync("tenant-a");
+        fixture.CurrentTenant.Id = null;
+        await using var scope = fixture.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<MetadataTenantContext>();
+
+        (await db.Set<TenantRow>().ToListAsync(AbortToken)).Should().BeEmpty();
+        (await db.Set<ShadowTenantRow>().ToListAsync(AbortToken)).Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task should_disable_only_tenant_filter_and_keep_sibling_filter_and_guard()
     {
         await _SeedAsync("tenant-a");
