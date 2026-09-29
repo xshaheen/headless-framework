@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
@@ -16,20 +17,27 @@ namespace Headless.Jobs.Configurations;
 // expired rows; correctness never depends on sweeping.
 internal static class JobsIdempotencyModelConfiguration
 {
-    internal const string TableName = "TimeJobIdempotencyReservations";
-
-    internal static void Configure(ModelBuilder builder, string schema, string? contractCollation)
+    internal static void Configure(
+        ModelBuilder builder,
+        string schema,
+        StorageNamingStyle style,
+        string? contractCollation
+    )
     {
+        var table = JobsStorageNaming.Table(style, JobsStorageNaming.TimeJobIdempotencyReservations);
+
         builder.Entity<JobIdempotencyReservationEntity>(entity =>
         {
-            entity.ToTable(TableName, schema);
-            entity.HasKey(row => new
-            {
-                row.ScopeKey,
-                row.Function,
-                row.ContractVersion,
-                row.IdempotencyKey,
-            });
+            entity.ToTable(table, schema);
+            entity
+                .HasKey(row => new
+                {
+                    row.ScopeKey,
+                    row.Function,
+                    row.ContractVersion,
+                    row.IdempotencyKey,
+                })
+                .HasName(HeadlessStorageNaming.PrimaryKeyName(style, table));
             entity.Property(row => row.ScopeKey).IsRequired().HasMaxLength(2 + JobsTenancyOptions.TenantIdMaxLength);
             entity
                 .Property(row => row.Function)
@@ -43,7 +51,10 @@ internal static class JobsIdempotencyModelConfiguration
                 .HasConversion(value => JobContract.ValidateVersion(value), value => value);
             entity.Property(row => row.IdempotencyKey).IsRequired().HasMaxLength(JobContract.NameMaxLength);
             entity.Property(row => row.TenantId).IsRequired(false).HasMaxLength(JobsTenancyOptions.TenantIdMaxLength);
-            entity.HasIndex(row => row.ExpiresAt).HasDatabaseName("IX_TimeJobIdempotencyReservations_ExpiresAt");
+            entity
+                .HasIndex(row => row.ExpiresAt)
+                .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "ExpiresAt"));
+            entity.ApplyJobsColumnNaming(style);
         });
 
         if (contractCollation is not null)

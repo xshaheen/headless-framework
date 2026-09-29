@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Reflection;
 using Headless.Abstractions;
 using Headless.Coordination;
+using Headless.Hosting.Initialization;
 using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
@@ -823,6 +824,8 @@ internal sealed class CapturingLoggerProvider : ILoggerProvider
 internal sealed class SqlServerNativeClaimsFixture(string connectionString) : IJobsCoordinationFixture
 {
     public string ConnectionString { get; } = connectionString;
+
+    public StorageNamingStyle NamingStyle => StorageNamingStyle.PascalCase;
 
     public string QualifiedTimeJobsTable => "[headless].[TimeJobs]";
 

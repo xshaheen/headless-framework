@@ -3,6 +3,7 @@
 using System.Data.Common;
 using System.Globalization;
 using Headless.Coordination;
+using Headless.Hosting.Initialization;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Messaging;
@@ -27,6 +28,8 @@ public sealed class SqlServerJobsCoordinationFixture
         ICollectionFixture<SqlServerJobsCoordinationFixture>,
         IJobsApplicationConfigurationFixture
 {
+    public StorageNamingStyle NamingStyle => StorageNamingStyle.PascalCase;
+
     public string QualifiedTimeJobsTable => "[headless].[TimeJobs]";
 
     public string QualifiedCronJobsTable => "[headless].[CronJobs]";

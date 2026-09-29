@@ -74,6 +74,9 @@ public sealed class PostgreSqlSharedSchemaTests(PostgreSqlSharedSchemaFixture fi
             ["Settings"] = ["setting_definitions", "setting_values"],
         };
 
+    protected override string[] ExpectedJobsTables { get; } =
+    ["cron_job_occurrences", "cron_jobs", "time_job_idempotency_reservations", "time_jobs"];
+
     // The audit log's identity column owns an implicit sequence named after the table and column.
     protected override IReadOnlyDictionary<string, string[]> ExpectedRawSequences { get; } =
         new Dictionary<string, string[]>(StringComparer.Ordinal)

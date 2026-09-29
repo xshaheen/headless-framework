@@ -51,8 +51,7 @@ public sealed class PostgreSqlClaimStrategyTests(PostgreSqlJobsCoordinationFixtu
             await using (var command = connection.CreateCommand())
             {
                 command.Transaction = transaction;
-                command.CommandText =
-                    $"SELECT \"Id\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id FOR UPDATE;";
+                command.CommandText = $"SELECT id FROM {fixture.QualifiedTimeJobsTable} WHERE id = @id FOR UPDATE;";
                 var parameter = command.CreateParameter();
                 parameter.ParameterName = "@id";
                 parameter.Value = locked.Id;
@@ -190,7 +189,7 @@ public sealed class PostgreSqlClaimStrategyTests(PostgreSqlJobsCoordinationFixtu
                 await using var command = connection.CreateCommand();
                 command.CommandText =
                     "CREATE OR REPLACE FUNCTION headless.fail_descendant_claim() RETURNS trigger LANGUAGE plpgsql AS $$ "
-                    + "BEGIN IF NEW.\"Function\" = 'fail-child' AND NEW.\"OwnerId\" IS NOT NULL THEN "
+                    + "BEGIN IF NEW.function = 'fail-child' AND NEW.owner_id IS NOT NULL THEN "
                     + "RAISE EXCEPTION 'forced descendant failure'; END IF; RETURN NEW; END $$; "
                     + $"CREATE TRIGGER fail_descendant_claim BEFORE UPDATE ON {fixture.QualifiedTimeJobsTable} "
                     + "FOR EACH ROW EXECUTE FUNCTION headless.fail_descendant_claim();";
@@ -236,7 +235,7 @@ public sealed class PostgreSqlClaimStrategyTests(PostgreSqlJobsCoordinationFixtu
                 await using var command = claimTransaction.DbContext.Database.GetDbConnection().CreateCommand();
                 command.Transaction = claimTransaction.Transaction.GetDbTransaction();
                 command.CommandText =
-                    $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"OwnerId\" = 'partial' WHERE \"Id\" = @id;";
+                    $"UPDATE {fixture.QualifiedTimeJobsTable} SET owner_id = 'partial' WHERE id = @id;";
                 var parameter = command.CreateParameter();
                 parameter.ParameterName = "@id";
                 parameter.Value = job.Id;

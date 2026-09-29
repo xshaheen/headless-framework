@@ -12,7 +12,11 @@ namespace Microsoft.EntityFrameworkCore;
 /// <summary>Finalizes Jobs constraints for consumer-managed relational models.</summary>
 public static class HeadlessJobsModelBuilderExtensions
 {
-    /// <summary>Builds keyed Jobs indexes and check constraints from the final table and column mappings.</summary>
+    /// <summary>
+    /// Builds keyed Jobs indexes and check constraints from the final table and column mappings, and maps the
+    /// idempotency reservation table. Names follow the <paramref name="context"/>'s database provider: snake_case on
+    /// PostgreSQL, PascalCase elsewhere, matching the style passed to the Jobs entity configurations.
+    /// </summary>
     /// <remarks>
     /// Call at the end of OnModelCreating after applying Jobs configurations and all consumer mappings when
     /// using ConfigurationType.IgnoreModelCustomizer. The built-in Jobs model customizer performs this step automatically.
@@ -31,6 +35,7 @@ public static class HeadlessJobsModelBuilderExtensions
         JobsIdempotencyModelConfiguration.Configure(
             builder,
             context.GetService<JobsStorageOptions>().Schema,
+            JobsStorageNaming.StyleOf(context),
             JobsContractCollation.TryResolve(context.Database.ProviderName)
         );
         return builder;

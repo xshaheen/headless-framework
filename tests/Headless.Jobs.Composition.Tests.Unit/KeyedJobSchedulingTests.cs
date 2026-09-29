@@ -58,7 +58,12 @@ public sealed class KeyedJobSchedulingTests : TestBase
     private sealed class ParentMappingContext(DbContextOptions<ParentMappingContext> options) : DbContext(options)
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder) =>
-            modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TimeJobEntity>(HeadlessStorageDefaults.Schema));
+            modelBuilder.ApplyConfiguration(
+                new TimeJobConfigurations<TimeJobEntity>(
+                    HeadlessStorageDefaults.Schema,
+                    HeadlessStorageNaming.ForProvider(Database.ProviderName)
+                )
+            );
     }
 
     [Theory]

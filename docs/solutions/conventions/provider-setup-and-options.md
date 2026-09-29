@@ -106,13 +106,13 @@ constraint and index names derived from them (`PK_FencingLeases`, `IX_FencingLea
 `CK_IdempotencyRecords_Status`, `DF_FencingLeases_TakeoverCount`), and unquoted snake_case on PostgreSQL
 (`fencing_leases`, `ix_fencing_leases_active_expiry`). A new feature follows it on both providers.
 
-Messaging, Coordination, Fencing, Idempotency, Sequences, Features, Permissions, Settings, and AuditLog follow the
-rule on both providers (`messaging_published` / `MessagingPublished`, `fencing_leases` / `FencingLeases`,
+Messaging, Coordination, Fencing, Idempotency, Sequences, Features, Permissions, Settings, AuditLog, and Jobs follow
+the rule on both providers (`messaging_published` / `MessagingPublished`, `fencing_leases` / `FencingLeases`,
 `idempotency_record_generations` / `IdempotencyRecordGenerations`, `sequences` / `Sequences`,
 `feature_values` / `FeatureValues`, `permission_grants` / `PermissionGrants`, `setting_values` / `SettingValues`,
-`audit_log_entries` / `AuditLogEntries`). Not every family does yet: the EF-mapped Jobs tables use PascalCase on
-PostgreSQL as well (`CronJobs`). Converting those is separate work; do not rename a family's objects as a side effect
-of other changes.
+`audit_log_entries` / `AuditLogEntries`, `cron_jobs` / `CronJobs`). The DistributedLocks SQL Server fence sequence is
+`DistributedLocksFence_{KeyPrefix}`, the prefix kept verbatim after normalization so distinct prefixes never share a
+sequence; its PostgreSQL counterpart stays `headless_distributed_locks_fence`, one sequence for every prefix.
 
 #### One naming source for raw SQL and EF Core
 
@@ -144,7 +144,7 @@ database provisioned by one reads correctly through the other. `Headless.Hosting
   harness; Permissions and AuditLog have one in each provider's integration project.
 
 - A noun unique to the feature's family already counts as the prefix: `CronJobs`, `FeatureValues`,
-  `PermissionGrants`, and `headless_distributed_locks_fence` need no extra `jobs_` or `features_`.
+  `PermissionGrants`, and `DistributedLocksFence_*` need no extra `jobs_` or `features_`.
 - Derive index and constraint names from the table name, not the schema: `IX_CronJobs_Function_Expression`,
   `ix_{TableName}_tenant_time`. When the table name is configurable, validate its length so the longest derived
   name fits PostgreSQL's 63-byte identifier limit; AuditLog's longest, `ix_{TableName}_tenant_account_time`, caps

@@ -33,14 +33,8 @@ namespace Tests;
 /// </remarks>
 public abstract class SharedSchemaTestsBase : TestBase
 {
-    // The Jobs EF Core model names its tables the same way on every provider.
-    private static readonly string[] _ExpectedJobsTables =
-    [
-        "CronJobOccurrences",
-        "CronJobs",
-        "TimeJobIdempotencyReservations",
-        "TimeJobs",
-    ];
+    /// <summary>The tables the Jobs EF Core model creates, in this provider's naming convention.</summary>
+    protected abstract string[] ExpectedJobsTables { get; }
 
     /// <summary>An object the catalog reports, with its schema and the provider's type code for it.</summary>
     protected sealed record CatalogObject(string Schema, string Name, string Type);
@@ -144,7 +138,7 @@ public abstract class SharedSchemaTestsBase : TestBase
             .Where(o => o.Type == TableType)
             .Select(o => o.Name)
             .Should()
-            .BeEquivalentTo(_ExpectedJobsTables, "the consumer's create script adds only the Jobs model");
+            .BeEquivalentTo(ExpectedJobsTables, "the consumer's create script adds only the Jobs model");
 
         await using var messagingC = _BuildMessaging(connectionString);
         await hostC.StartAsync(AbortToken);
@@ -176,7 +170,7 @@ public abstract class SharedSchemaTestsBase : TestBase
 
         if (includeJobs)
         {
-            expectedTables.AddRange(_ExpectedJobsTables);
+            expectedTables.AddRange(ExpectedJobsTables);
         }
 
         var expectedSequences = ExpectedRawSequences.SelectMany(f => f.Value).ToList();

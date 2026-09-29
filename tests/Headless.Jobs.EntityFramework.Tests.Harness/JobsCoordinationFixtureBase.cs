@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
+using System.Text.RegularExpressions;
 using Headless.Abstractions;
 using Headless.Coordination;
 using Headless.Hosting.Initialization;
@@ -65,13 +66,19 @@ public interface IJobsCoordinationFixture
     /// <summary>Creates a new, unopened provider-specific connection (Npgsql / SqlClient).</summary>
     DbConnection CreateConnection();
 
-    /// <summary>Fully-qualified, provider-quoted TimeJobs table (Postgres: <c>headless."TimeJobs"</c>; SqlServer: <c>[headless].[TimeJobs]</c>).</summary>
+    /// <summary>
+    /// The casing the Jobs model uses on this backend: <see cref="StorageNamingStyle.SnakeCase" /> on PostgreSQL,
+    /// <see cref="StorageNamingStyle.PascalCase" /> on SQL Server.
+    /// </summary>
+    StorageNamingStyle NamingStyle { get; }
+
+    /// <summary>Fully-qualified, provider-quoted time-job table (Postgres: <c>headless.time_jobs</c>; SqlServer: <c>[headless].[TimeJobs]</c>).</summary>
     string QualifiedTimeJobsTable { get; }
 
-    /// <summary>Fully-qualified, provider-quoted CronJobs table (Postgres: <c>headless."CronJobs"</c>; SqlServer: <c>[headless].[CronJobs]</c>).</summary>
+    /// <summary>Fully-qualified, provider-quoted cron-job table (Postgres: <c>headless.cron_jobs</c>; SqlServer: <c>[headless].[CronJobs]</c>).</summary>
     string QualifiedCronJobsTable { get; }
 
-    /// <summary>Fully-qualified, provider-quoted CronJobOccurrences table (Postgres: <c>headless."CronJobOccurrences"</c>; SqlServer: <c>[headless].[CronJobOccurrences]</c>).</summary>
+    /// <summary>Fully-qualified, provider-quoted cron-occurrence table (Postgres: <c>headless.cron_job_occurrences</c>; SqlServer: <c>[headless].[CronJobOccurrences]</c>).</summary>
     string QualifiedCronJobOccurrencesTable { get; }
 
     /// <summary>
@@ -135,8 +142,36 @@ public interface IJobsCoordinationFixture
 /// <c>TimeJobEntity.Status/OwnerId</c> have internal setters). Mirrors the Coordination harness's
 /// <c>CoordinationFixtureExtensions</c> shape.
 /// </summary>
-public static class JobsCoordinationFixtureExtensions
+public static partial class JobsCoordinationFixtureExtensions
 {
+    /// <summary>
+    /// Adapts harness SQL to this backend's naming: every double-quoted PascalCase identifier (<c>"LockedUntil"</c>)
+    /// becomes <c>"locked_until"</c> on a snake_case backend and stays as written otherwise. Shared scenarios write
+    /// their seed and probe SQL once, in the PascalCase the property names use, and run it on both backends.
+    /// </summary>
+    public static string Sql(this IJobsCoordinationFixture fixture, string sql)
+    {
+        return fixture.NamingStyle is StorageNamingStyle.PascalCase
+            ? sql
+            : _QuotedPascalIdentifier.Replace(
+                sql,
+                match => "\"" + HeadlessStorageNaming.Apply(fixture.NamingStyle, match.Groups["name"].Value) + "\""
+            );
+    }
+
+    /// <summary>The name of a Jobs table on this backend, from its PascalCase default (<c>TimeJobs</c>).</summary>
+    public static string JobsTable(this IJobsCoordinationFixture fixture, string pascalTable)
+    {
+        return HeadlessStorageNaming.Apply(fixture.NamingStyle, pascalTable);
+    }
+
+    [GeneratedRegex(
+        "\"(?<name>[A-Z][A-Za-z0-9]*)\"",
+        RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture,
+        matchTimeoutMilliseconds: 1000
+    )]
+    private static partial Regex _QuotedPascalIdentifier { get; }
+
     public const string ClusterName = "jobs-it";
 
     // Membership thresholds tuned low so a stopped host's liveness expires within seconds (real dead-node
@@ -519,7 +554,8 @@ public static class JobsCoordinationFixtureExtensions
     public const string CustomSchemaName = "jobs_custom";
 
     /// <summary>
-    /// Whether <paramref name="table" /> exists in <paramref name="schema" />. Asks <c>information_schema</c>, which
+    /// Whether the Jobs table <paramref name="table" /> (its PascalCase default name, converted to this backend's
+    /// naming) exists in <paramref name="schema" />. Asks <c>information_schema</c>, which
     /// both backends implement, so the scenario can assert where a table landed without provider-specific catalog SQL.
     /// </summary>
     public static async Task<bool> TableExistsAsync(
@@ -535,13 +571,16 @@ public static class JobsCoordinationFixtureExtensions
         command.CommandText =
             "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = @schema AND table_name = @table;";
         AddParameter(command, "@schema", schema);
-        AddParameter(command, "@table", table);
+        AddParameter(command, "@table", fixture.JobsTable(table));
         var scalar = await command.ExecuteScalarAsync(cancellationToken);
 
         return Convert.ToInt32(scalar, CultureInfo.InvariantCulture) > 0;
     }
 
-    /// <summary>Counts rows in an arbitrary schema-qualified table on an independent connection.</summary>
+    /// <summary>
+    /// Counts rows in a Jobs table, named by its PascalCase default, in <paramref name="schema" /> on an independent
+    /// connection.
+    /// </summary>
     public static Task<int> CountRowsAsync(
         this IJobsCoordinationFixture fixture,
         string schema,
@@ -549,7 +588,11 @@ public static class JobsCoordinationFixtureExtensions
         CancellationToken cancellationToken
     )
     {
-        return _CountAsync(fixture, $"SELECT COUNT(*) FROM {fixture.QualifyTable(schema, table)};", cancellationToken);
+        return _CountAsync(
+            fixture,
+            $"SELECT COUNT(*) FROM {fixture.QualifyTable(schema, fixture.JobsTable(table))};",
+            cancellationToken
+        );
     }
 
     private static async Task<int> _CountAsync(
@@ -614,10 +657,11 @@ public static class JobsCoordinationFixtureExtensions
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText =
+        command.CommandText = fixture.Sql(
             $"INSERT INTO {fixture.QualifiedTimeJobsTable} ({_InsertColumns}, \"ContractVersion\") "
-            + "VALUES (@id, @function, @function, @status, @ownerId, "
-            + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, 0, @onNodeDeath, @lockedUntil, '1');";
+                + "VALUES (@id, @function, @function, @status, @ownerId, "
+                + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, 0, @onNodeDeath, @lockedUntil, '1');"
+        );
 
         // Status and OnNodeDeath persist as enum names (HasConversion<string>), so seed the names, not ordinals.
         AddParameter(command, "@id", id);
@@ -670,13 +714,14 @@ public static class JobsCoordinationFixtureExtensions
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
 
-        command.CommandText =
+        command.CommandText = fixture.Sql(
             $"INSERT INTO {fixture.QualifiedCronJobsTable} ({_CronInsertColumns}, \"ContractVersion\", \"OnOverlap\") "
-            + "VALUES (@id, @function, @function, @expression, @timeZoneId, @isPaused, @scheduleRevision, 0, "
-            + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, @onNodeDeath, "
-            + $"{fixture.UtcNowOffsetSqlExpression(reconciledThroughOffsetSeconds)}, "
-            + $"{fixture.UtcNowOffsetSqlExpression(nextDueOffsetSeconds)}, "
-            + "@missedRunGraceSeconds, @onMissedRun, '1', @onOverlap);";
+                + "VALUES (@id, @function, @function, @expression, @timeZoneId, @isPaused, @scheduleRevision, 0, "
+                + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, @onNodeDeath, "
+                + $"{fixture.UtcNowOffsetSqlExpression(reconciledThroughOffsetSeconds)}, "
+                + $"{fixture.UtcNowOffsetSqlExpression(nextDueOffsetSeconds)}, "
+                + "@missedRunGraceSeconds, @onMissedRun, '1', @onOverlap);"
+        );
 
         AddParameter(command, "@id", id);
         AddParameter(command, "@function", function);
@@ -702,8 +747,9 @@ public static class JobsCoordinationFixtureExtensions
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText =
-            $"SELECT \"ReconciledThroughUtc\", \"NextDueUtc\" FROM {fixture.QualifiedCronJobsTable} WHERE \"Id\" = @id;";
+        command.CommandText = fixture.Sql(
+            $"SELECT \"ReconciledThroughUtc\", \"NextDueUtc\" FROM {fixture.QualifiedCronJobsTable} WHERE \"Id\" = @id;"
+        );
         AddParameter(command, "@id", cronJobId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -763,12 +809,13 @@ public static class JobsCoordinationFixtureExtensions
             : fixture.UtcNowSqlExpression;
         // ExecutionTime is an explicit parameter, not now(): the (CronJobId, ExecutionTime) unique index requires
         // distinct execution times when several occurrences of the same cron are seeded together.
-        command.CommandText =
+        command.CommandText = fixture.Sql(
             $"INSERT INTO {fixture.QualifiedCronJobOccurrencesTable} ({_CronOccurrenceInsertColumns}, "
-            + "\"SkippedReason\", \"Disposition\", \"Function\", \"ContractVersion\", \"Request\") "
-            + "SELECT @id, @cronJobId, @status, @ownerId, @executionTime, "
-            + $"{createdAtSql}, {createdAtSql}, 0, 0, @onNodeDeath, @lockedUntil, "
-            + $"@skippedReason, @disposition, \"Function\", \"ContractVersion\", \"Request\" FROM {fixture.QualifiedCronJobsTable} WHERE \"Id\" = @cronJobId;";
+                + "\"SkippedReason\", \"Disposition\", \"Function\", \"ContractVersion\", \"Request\") "
+                + "SELECT @id, @cronJobId, @status, @ownerId, @executionTime, "
+                + $"{createdAtSql}, {createdAtSql}, 0, 0, @onNodeDeath, @lockedUntil, "
+                + $"@skippedReason, @disposition, \"Function\", \"ContractVersion\", \"Request\" FROM {fixture.QualifiedCronJobsTable} WHERE \"Id\" = @cronJobId;"
+        );
 
         AddParameter(command, "@id", id);
         AddParameter(command, "@cronJobId", cronJobId);
@@ -793,8 +840,9 @@ public static class JobsCoordinationFixtureExtensions
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText =
-            $"SELECT \"Status\", \"Disposition\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;";
+        command.CommandText = fixture.Sql(
+            $"SELECT \"Status\", \"Disposition\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;"
+        );
         AddParameter(command, "@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -813,8 +861,9 @@ public static class JobsCoordinationFixtureExtensions
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText =
-            $"SELECT \"Status\", \"OwnerId\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;";
+        command.CommandText = fixture.Sql(
+            $"SELECT \"Status\", \"OwnerId\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;"
+        );
         AddParameter(command, "@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -840,8 +889,9 @@ public static class JobsCoordinationFixtureExtensions
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText =
-            $"SELECT \"OwnerId\", \"LockedUntil\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;";
+        command.CommandText = fixture.Sql(
+            $"SELECT \"OwnerId\", \"LockedUntil\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;"
+        );
         AddParameter(command, "@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -865,8 +915,9 @@ public static class JobsCoordinationFixtureExtensions
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText =
-            $"SELECT \"LockedUntil\", \"UpdatedAt\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;";
+        command.CommandText = fixture.Sql(
+            $"SELECT \"LockedUntil\", \"UpdatedAt\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;"
+        );
         AddParameter(command, "@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -907,9 +958,10 @@ public static class JobsCoordinationFixtureExtensions
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText =
+        command.CommandText = fixture.Sql(
             "SELECT \"Status\", \"OwnerId\", \"LockedUntil\", \"ExceptionMessage\", \"SkippedReason\" "
-            + $"FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;";
+                + $"FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;"
+        );
         AddParameter(command, "@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -939,7 +991,9 @@ public static class JobsCoordinationFixtureExtensions
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = $"SELECT \"RetryCount\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;";
+        command.CommandText = fixture.Sql(
+            $"SELECT \"RetryCount\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;"
+        );
         AddParameter(command, "@id", id);
         var result =
             await command.ExecuteScalarAsync(cancellationToken)
@@ -957,8 +1011,9 @@ public static class JobsCoordinationFixtureExtensions
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText =
-            $"SELECT \"LockedUntil\", \"UpdatedAt\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;";
+        command.CommandText = fixture.Sql(
+            $"SELECT \"LockedUntil\", \"UpdatedAt\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;"
+        );
         AddParameter(command, "@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -982,7 +1037,9 @@ public static class JobsCoordinationFixtureExtensions
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = $"SELECT \"TenantId\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;";
+        command.CommandText = fixture.Sql(
+            $"SELECT \"TenantId\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;"
+        );
         AddParameter(command, "@id", id);
 
         var scalar = await command.ExecuteScalarAsync(cancellationToken);
@@ -991,7 +1048,8 @@ public static class JobsCoordinationFixtureExtensions
     }
 
     // Column identifiers are double-quoted: SQL Server accepts ANSI double quotes for delimited identifiers
-    // (QUOTED_IDENTIFIER is ON by default for SqlClient), and Postgres requires them for the PascalCase columns.
+    // (QUOTED_IDENTIFIER is ON by default for SqlClient). Statements pass through Sql(), which converts them to the
+    // snake_case columns on Postgres.
     private const string _InsertColumns =
         "\"Id\", \"Function\", \"Description\", \"Status\", \"OwnerId\", "
         + "\"CreatedAt\", \"UpdatedAt\", \"ElapsedTime\", \"Retries\", \"RetryCount\", \"OnNodeDeath\", \"LockedUntil\"";

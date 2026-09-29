@@ -422,13 +422,25 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
                 ? "Latin1_General_100_BIN2"
                 : "C";
             modelBuilder.ApplyConfiguration(
-                new TimeJobConfigurations<TimeJobEntity>(HeadlessStorageDefaults.Schema, collation)
+                new TimeJobConfigurations<TimeJobEntity>(
+                    HeadlessStorageDefaults.Schema,
+                    HeadlessStorageNaming.ForProvider(Database.ProviderName),
+                    collation
+                )
             );
             modelBuilder.ApplyConfiguration(
-                new CronJobConfigurations<CronJobEntity>(HeadlessStorageDefaults.Schema, collation)
+                new CronJobConfigurations<CronJobEntity>(
+                    HeadlessStorageDefaults.Schema,
+                    HeadlessStorageNaming.ForProvider(Database.ProviderName),
+                    collation
+                )
             );
             modelBuilder.ApplyConfiguration(
-                new CronJobOccurrenceConfigurations<CronJobEntity>(HeadlessStorageDefaults.Schema, collation)
+                new CronJobOccurrenceConfigurations<CronJobEntity>(
+                    HeadlessStorageDefaults.Schema,
+                    HeadlessStorageNaming.ForProvider(Database.ProviderName),
+                    collation
+                )
             );
             var row = modelBuilder.Entity<TimeJobEntity>();
             row.ToTable("consumer_time_jobs", "consumer_jobs");
@@ -459,10 +471,23 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
                     ? "Latin1_General_100_BIN2"
                     : "C"
             );
-            modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TimeJobEntity>(HeadlessStorageDefaults.Schema));
-            modelBuilder.ApplyConfiguration(new CronJobConfigurations<CronJobEntity>(HeadlessStorageDefaults.Schema));
             modelBuilder.ApplyConfiguration(
-                new CronJobOccurrenceConfigurations<CronJobEntity>(HeadlessStorageDefaults.Schema)
+                new TimeJobConfigurations<TimeJobEntity>(
+                    HeadlessStorageDefaults.Schema,
+                    HeadlessStorageNaming.ForProvider(Database.ProviderName)
+                )
+            );
+            modelBuilder.ApplyConfiguration(
+                new CronJobConfigurations<CronJobEntity>(
+                    HeadlessStorageDefaults.Schema,
+                    HeadlessStorageNaming.ForProvider(Database.ProviderName)
+                )
+            );
+            modelBuilder.ApplyConfiguration(
+                new CronJobOccurrenceConfigurations<CronJobEntity>(
+                    HeadlessStorageDefaults.Schema,
+                    HeadlessStorageNaming.ForProvider(Database.ProviderName)
+                )
             );
         }
     }
@@ -471,10 +496,23 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TimeJobEntity>(HeadlessStorageDefaults.Schema));
-            modelBuilder.ApplyConfiguration(new CronJobConfigurations<CronJobEntity>(HeadlessStorageDefaults.Schema));
             modelBuilder.ApplyConfiguration(
-                new CronJobOccurrenceConfigurations<CronJobEntity>(HeadlessStorageDefaults.Schema)
+                new TimeJobConfigurations<TimeJobEntity>(
+                    HeadlessStorageDefaults.Schema,
+                    HeadlessStorageNaming.ForProvider(Database.ProviderName)
+                )
+            );
+            modelBuilder.ApplyConfiguration(
+                new CronJobConfigurations<CronJobEntity>(
+                    HeadlessStorageDefaults.Schema,
+                    HeadlessStorageNaming.ForProvider(Database.ProviderName)
+                )
+            );
+            modelBuilder.ApplyConfiguration(
+                new CronJobOccurrenceConfigurations<CronJobEntity>(
+                    HeadlessStorageDefaults.Schema,
+                    HeadlessStorageNaming.ForProvider(Database.ProviderName)
+                )
             );
             modelBuilder.FinalizeJobsModel<TimeJobEntity>(this);
         }

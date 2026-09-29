@@ -56,11 +56,14 @@ public sealed class SqlServerSharedSchemaTests(SqlServerSharedSchemaFixture fixt
             ["Settings"] = ["SettingDefinitions", "SettingValues"],
         };
 
+    protected override string[] ExpectedJobsTables { get; } =
+    ["CronJobOccurrences", "CronJobs", "TimeJobIdempotencyReservations", "TimeJobs"];
+
     // The lock fence sequence carries the default key prefix, so locks with different prefixes stay independent.
     protected override IReadOnlyDictionary<string, string[]> ExpectedRawSequences { get; } =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
-            ["DistributedLocks"] = ["headless_distlocks_fence_distributed_lock"],
+            ["DistributedLocks"] = ["DistributedLocksFence_distributed_lock"],
             ["Fencing"] = ["FencingLeaseGenerations"],
             ["Idempotency"] = ["IdempotencyRecordGenerations"],
         };

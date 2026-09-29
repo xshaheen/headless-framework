@@ -943,7 +943,7 @@ services.AddHeadlessDistributedLocks(setup =>
 });
 ```
 
-The default is `"headless"`, not `dbo`; the initializer creates the schema when absent. The provider validates it against SQL Server's regular-identifier rules at startup.
+The default is `"headless"`, not `dbo`; the initializer creates the schema when absent. The provider validates it against SQL Server's regular-identifier rules at startup. The sequence inside it is named `DistributedLocksFence_{KeyPrefix}`, with every run of characters outside `A-Za-z0-9_` in the prefix collapsed to `_` and the name truncated to 128 characters, so the default prefix `distributed-lock:` gives `DistributedLocksFence_distributed_lock`. Each key prefix gets its own sequence, so replicas that share a prefix share a fence.
 
 ### Runtime behavior
 

@@ -3,6 +3,7 @@
 using System.Data.Common;
 using System.Globalization;
 using Headless.Coordination;
+using Headless.Hosting.Initialization;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Messaging;
@@ -30,11 +31,13 @@ public sealed class PostgreSqlJobsCoordinationFixture
 {
     public string ConnectionString => Container.GetConnectionString();
 
-    public string QualifiedTimeJobsTable => "headless.\"TimeJobs\"";
+    public StorageNamingStyle NamingStyle => StorageNamingStyle.SnakeCase;
 
-    public string QualifiedCronJobsTable => "headless.\"CronJobs\"";
+    public string QualifiedTimeJobsTable => "headless.time_jobs";
 
-    public string QualifiedCronJobOccurrencesTable => "headless.\"CronJobOccurrences\"";
+    public string QualifiedCronJobsTable => "headless.cron_jobs";
+
+    public string QualifiedCronJobOccurrencesTable => "headless.cron_job_occurrences";
 
     public string QualifyTable(string schema, string table) => $"{schema}.\"{table}\"";
 

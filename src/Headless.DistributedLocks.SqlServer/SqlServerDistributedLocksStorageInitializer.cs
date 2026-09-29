@@ -16,7 +16,7 @@ namespace Headless.DistributedLocks.SqlServer;
 /// Runs only when <see cref="SqlServerDistributedLockOptions.EnableFencing"/> is
 /// <see langword="true"/>. Creates (if absent) the feature-owned
 /// <see cref="DistributedLocksStorageOptions.Schema"/> and a <c>bigint</c> sequence named
-/// <c>{KeyPrefix}_headless_distlocks_fence</c> (truncated to 128 characters if necessary) inside that
+/// <c>DistributedLocksFence_{KeyPrefix}</c> (truncated to 128 characters if necessary) inside that
 /// schema. Schema and sequence creation are guarded by a session-scoped <c>sp_getapplock</c> so
 /// concurrent initializers on multiple nodes do not race on DDL.
 /// </para>

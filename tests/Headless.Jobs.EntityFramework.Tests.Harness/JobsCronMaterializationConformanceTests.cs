@@ -3,6 +3,7 @@
 using System.Data.Common;
 using System.Globalization;
 using Headless.Abstractions;
+using Headless.Hosting.Initialization;
 using Headless.Jobs;
 using Headless.Jobs.Configurations;
 using Headless.Jobs.Entities;
@@ -183,13 +184,15 @@ public abstract class JobsCronMaterializationConformanceTests(Action<DbContextOp
         }
         var factory = new MaterializationFactory(options.Options);
         await using var context = factory.CreateDbContext();
-        await context.Database.ExecuteSqlRawAsync(
-            """
-            DROP TABLE IF EXISTS "jobs_bulk_materialization"."CronJobOccurrences";
-            DROP TABLE IF EXISTS "jobs_bulk_materialization"."CronJobs";
-            """,
-            AbortToken
-        );
+        var style = HeadlessStorageNaming.ForProvider(context.Database.ProviderName);
+        var dropTables = $"""
+            DROP TABLE IF EXISTS "jobs_bulk_materialization"."{HeadlessStorageNaming.Apply(
+                style,
+                "CronJobOccurrences"
+            )}";
+            DROP TABLE IF EXISTS "jobs_bulk_materialization"."{HeadlessStorageNaming.Apply(style, "CronJobs")}";
+            """;
+        await context.Database.ExecuteSqlRawAsync(dropTables, AbortToken);
         await context.GetService<IRelationalDatabaseCreator>().CreateTablesAsync(AbortToken);
         return factory;
     }
@@ -234,9 +237,17 @@ public abstract class JobsCronMaterializationConformanceTests(Action<DbContextOp
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.ApplyConfiguration(new CronJobConfigurations<CronJobEntity>("jobs_bulk_materialization"));
             modelBuilder.ApplyConfiguration(
-                new CronJobOccurrenceConfigurations<CronJobEntity>("jobs_bulk_materialization")
+                new CronJobConfigurations<CronJobEntity>(
+                    "jobs_bulk_materialization",
+                    HeadlessStorageNaming.ForProvider(Database.ProviderName)
+                )
+            );
+            modelBuilder.ApplyConfiguration(
+                new CronJobOccurrenceConfigurations<CronJobEntity>(
+                    "jobs_bulk_materialization",
+                    HeadlessStorageNaming.ForProvider(Database.ProviderName)
+                )
             );
         }
     }
@@ -306,7 +317,10 @@ public abstract class JobsCronMaterializationConformanceTests(Action<DbContextOp
             if (
                 Armed
                 && command.CommandText.StartsWith("UPDATE", StringComparison.Ordinal)
-                && command.CommandText.Contains("ScheduleRevision", StringComparison.Ordinal)
+                && (
+                    command.CommandText.Contains("ScheduleRevision", StringComparison.Ordinal)
+                    || command.CommandText.Contains("schedule_revision", StringComparison.Ordinal)
+                )
             )
             {
                 LockIds.Add(command.Parameters.Cast<DbParameter>().Select(x => x.Value).OfType<Guid>().Single());
@@ -325,7 +339,10 @@ public abstract class JobsCronMaterializationConformanceTests(Action<DbContextOp
             if (
                 Armed
                 && command.CommandText.StartsWith("SELECT", StringComparison.Ordinal)
-                && command.CommandText.Contains("CronJobs", StringComparison.Ordinal)
+                && (
+                    command.CommandText.Contains("CronJobs", StringComparison.Ordinal)
+                    || command.CommandText.Contains("cron_jobs", StringComparison.Ordinal)
+                )
             )
             {
                 Reads++;
