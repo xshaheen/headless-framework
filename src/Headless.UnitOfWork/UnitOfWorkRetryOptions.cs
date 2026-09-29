@@ -35,8 +35,10 @@ public sealed class UnitOfWorkRetryOptions
     /// <summary>
     /// Gets the default replay classification: replay a relational failure the driver or the database reports as
     /// transient — a dropped connection, a serialization failure (SQLSTATE <c>40001</c>, SQL Server <c>3960</c>),
-    /// or a deadlock (<c>40P01</c>, SQL Server <c>1205</c>) — and never a cancellation. Reuse (or compose) this
-    /// predicate when supplying a <see cref="RetryStrategy" /> so a custom strategy keeps the framework's
+    /// a deadlock (<c>40P01</c>, SQL Server <c>1205</c>), and on SQL Server the same error-number set EF Core
+    /// replays under <c>EnableRetryOnFailure</c>, read across every error the exception carries — and never a
+    /// cancellation or a client-side command timeout, which may have completed on the server. Reuse (or compose)
+    /// this predicate when supplying a <see cref="RetryStrategy" /> so a custom strategy keeps the framework's
     /// classification; Polly's own default replays every exception that is not a cancellation.
     /// </summary>
     public static Func<RetryPredicateArguments<object>, ValueTask<bool>> DefaultShouldHandle { get; } =

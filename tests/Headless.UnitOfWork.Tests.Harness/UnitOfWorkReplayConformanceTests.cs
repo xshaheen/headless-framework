@@ -23,6 +23,7 @@ public abstract class UnitOfWorkReplayConformanceTests(IUnitOfWorkReplayFixture 
         var attempts = new List<IUnitOfWork>();
         var drains = 0;
         UnitOfWorkFailure? firstAttemptFailure = null;
+        var attemptsWhenFirstFailed = 0;
 
         var act = () =>
             fixture.RunAsync(
@@ -42,6 +43,7 @@ public abstract class UnitOfWorkReplayConformanceTests(IUnitOfWorkReplayFixture 
                         context.UnitOfWork.OnFailed(failure =>
                         {
                             firstAttemptFailure = failure;
+                            attemptsWhenFirstFailed = attempts.Count;
 
                             return ValueTask.CompletedTask;
                         });
@@ -68,7 +70,11 @@ public abstract class UnitOfWorkReplayConformanceTests(IUnitOfWorkReplayFixture 
             drains.Should().Be(0);
         }
 
-        firstAttemptFailure.Should().NotBeNull("the faulted attempt's unit is unwound before anything else runs");
+        firstAttemptFailure.Should().NotBeNull("the faulted attempt's unit is rolled back");
+        firstAttemptFailure!
+            .Reason.Should()
+            .Be(UnitOfWorkFailureReason.RolledBack, "every spelling rolls a faulted attempt back explicitly");
+        attemptsWhenFirstFailed.Should().Be(1, "the rollback finishes before a replay begins");
         (await fixture.CountProbeRowsAsync(AbortToken))
             .Should()
             .Be(attempts.Count - 1, "the faulted attempt's row rolls back and only a replay's row commits");

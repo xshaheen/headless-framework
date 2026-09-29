@@ -20,20 +20,26 @@ namespace Headless.UnitOfWork.Internal;
 /// the unit, and a joined block that ends the unit itself is refused once it returns.
 /// </para>
 /// <para>
-/// An owned attempt that faults before its commit starts is unwound first, so a replay never meets a still-open
-/// transaction, and the ORIGINAL fault reaches the strategy, which may replay the whole block with a fresh unit.
-/// A fault that must not replay never reaches the strategy: once the commit has started (the transaction may
-/// already be durable) or after <see cref="IUnitOfWork.PreventRetry" />, the fault is captured and rethrown after
-/// the strategy returns. A drain fault after a durable commit — <see cref="IUnitOfWork.CompleteAsync" /> throwing
-/// while the unit is already <see cref="UnitOfWorkState.Completed" /> — is logged and the block's result is
-/// returned: surfacing it would invite a retry that double-applies a committed transaction, and the enlisted
-/// durable rows are relay-recoverable. An unwind fault is logged and never replaces the attempt's own fault.
+/// An owned attempt that faults before its commit starts is rolled back first, so a replay never meets a
+/// still-open transaction, and the ORIGINAL fault reaches the strategy, which may replay the whole block with a
+/// fresh unit. The rollback is explicit on every provider, so <c>OnFailed</c> receives
+/// <see cref="UnitOfWorkFailureReason.RolledBack" /> whatever spelling ran the block. A fault that must not
+/// replay never reaches the strategy: once the commit has started (the transaction may already be durable),
+/// after <see cref="IUnitOfWork.PreventRetry" />, or after the block ended the unit by its own hand (its
+/// committed work must not be applied twice), the fault is captured and rethrown after the strategy returns. A
+/// drain fault after a durable commit — <see cref="IUnitOfWork.CompleteAsync" /> throwing while the unit is
+/// already <see cref="UnitOfWorkState.Completed" /> — is logged and the block's result is returned: surfacing it
+/// would invite a retry that double-applies a committed transaction, and the enlisted durable rows are
+/// relay-recoverable. A rollback fault is logged and never replaces the attempt's own fault.
 /// </para>
 /// </remarks>
 internal static partial class UnitOfWorkRunner
 {
     public const string JoinedBlockEndedUnitMessage =
         "A block that joined a unit of work through RunAsync completed, rolled back, or disposed it. The owner of the unit decides its outcome: return normally to keep it open, or throw to fault it. If the joined code must decide the outcome itself, hand it the unit's owner instead of the unit.";
+
+    public const string OwnedBlockEndedUnitMessage =
+        "A block that owns its unit of work through RunAsync rolled it back or disposed it and then returned a result. RunAsync completes the unit when the block returns and rolls it back when the block throws; throw to fail the block instead of ending the unit yourself.";
 
     /// <summary>
     /// The factory's logger keeps runner faults in the unit-of-work category; a foreign factory implementation
@@ -66,33 +72,36 @@ internal static partial class UnitOfWorkRunner
     }
 
     /// <summary>
-    /// Joins <paramref name="joined" /> when it is not <see langword="null" />; otherwise runs the owned block
+    /// Joins the unit <paramref name="findJoined" /> returns when it returns one; otherwise runs the owned block
     /// inside <paramref name="strategy" /> under the replay and refusal policy described on the type.
     /// </summary>
-    /// <param name="joined">The live unit already bound to the resource, or <see langword="null" /> to begin one.</param>
+    /// <param name="findJoined">
+    /// The provider's binding lookup: the live unit already bound to the resource, or <see langword="null" /> to
+    /// begin one. Awaited before anything else so a stale unit the lookup abandons has released its transaction and
+    /// connection before the begin runs; a provider that must refuse a begin on this resource throws from here, so
+    /// the refusal surfaces before the strategy and never replays.
+    /// </param>
     /// <param name="begin">Begins a fresh owned unit for one attempt and binds it to the resource.</param>
     /// <param name="operation">The caller's block.</param>
     /// <param name="strategy">The provider's replay loop; <see cref="NoReplayUnitOfWorkExecutionStrategy" /> runs once.</param>
-    /// <param name="unwind">How an attempt that faulted before its commit is unwound.</param>
-    /// <param name="logger">Receives unwind and post-commit drain faults.</param>
+    /// <param name="logger">Receives rollback and post-commit drain faults.</param>
     /// <param name="cancellationToken">Forwarded to the strategy, which hands it to each attempt.</param>
     public static async Task<TResult> RunAsync<TResult>(
-        IUnitOfWork? joined,
+        Func<ValueTask<IUnitOfWork?>> findJoined,
         Func<CancellationToken, ValueTask<IUnitOfWork>> begin,
         Func<IUnitOfWork, CancellationToken, Task<TResult>> operation,
         IUnitOfWorkExecutionStrategy strategy,
-        UnitOfWorkAttemptUnwind unwind,
         ILogger logger,
         CancellationToken cancellationToken
     )
     {
-        if (joined is not null)
+        if (await findJoined().ConfigureAwait(false) is { } joined)
         {
             return await RunJoinedAsync(joined, operation, cancellationToken).ConfigureAwait(false);
         }
 
         var outcome = await strategy
-            .ExecuteAsync(ct => _RunAttemptAsync(begin, operation, unwind, logger, ct), cancellationToken)
+            .ExecuteAsync(ct => _RunAttemptAsync(begin, operation, logger, ct), cancellationToken)
             .ConfigureAwait(false);
 
         outcome.Error?.Throw();
@@ -134,13 +143,12 @@ internal static partial class UnitOfWorkRunner
                 {
                     var connection = await openConnection(ct).ConfigureAwait(false);
 
-                    // Disposed only after the attempt returns, which is after its unit was unwound or completed.
+                    // Disposed only after the attempt returns, which is after its unit was rolled back or completed.
                     await using (connection.ConfigureAwait(false))
                     {
                         return await _RunAttemptAsync(
                                 attemptCt => begin(connection, attemptCt),
                                 (unitOfWork, attemptCt) => operation(unitOfWork, connection, attemptCt),
-                                UnitOfWorkAttemptUnwind.RollBack,
                                 logger,
                                 ct
                             )
@@ -159,7 +167,6 @@ internal static partial class UnitOfWorkRunner
     private static async Task<AttemptOutcome<TResult>> _RunAttemptAsync<TResult>(
         Func<CancellationToken, ValueTask<IUnitOfWork>> begin,
         Func<IUnitOfWork, CancellationToken, Task<TResult>> operation,
-        UnitOfWorkAttemptUnwind unwind,
         ILogger logger,
         CancellationToken cancellationToken
     )
@@ -172,6 +179,12 @@ internal static partial class UnitOfWorkRunner
             unitOfWork = await begin(cancellationToken).ConfigureAwait(false);
 
             var result = await operation(unitOfWork, cancellationToken).ConfigureAwait(false);
+
+            if (unitOfWork.State != UnitOfWorkState.Active)
+            {
+                return _EndedByBlock(unitOfWork, result, logger);
+            }
+
             commitStarted = true;
 
             try
@@ -189,18 +202,22 @@ internal static partial class UnitOfWorkRunner
         }
         catch (Exception ex)
         {
+            // Read before the rollback below makes the unit terminal: a block that ended its own unit and then
+            // threw may have committed, and a replay would apply that work twice.
+            var endedByBlock = !commitStarted && unitOfWork is { State: not UnitOfWorkState.Active };
+
             if (unitOfWork is not null)
             {
-                // A commit fault leaves the unit terminal, so this is a no-op there. Before the commit, the unwind
-                // must finish before the strategy replays, or the replay's begin meets a still-open transaction on
-                // the same resource.
-                await _UnwindQuietlyAsync(unitOfWork, unwind, logger).ConfigureAwait(false);
+                // A no-op on a terminal unit (a commit fault, or a unit the block ended). Before the commit, the
+                // rollback must finish before the strategy replays, or the replay's begin meets a still-open
+                // transaction on the same resource.
+                await _RollBackQuietlyAsync(unitOfWork, logger).ConfigureAwait(false);
             }
 
-            // Once the commit has started (it may have committed before the fault) or the block marked itself
-            // non-replayable, the fault must NOT reach the strategy's replay loop: capture it and rethrow it after
-            // the strategy returns.
-            if (commitStarted || unitOfWork?.IsRetryPrevented == true)
+            // Once the commit has started (it may have committed before the fault), the block ended the unit, or
+            // the block marked itself non-replayable, the fault must NOT reach the strategy's replay loop: capture
+            // it and rethrow it after the strategy returns.
+            if (commitStarted || endedByBlock || unitOfWork?.IsRetryPrevented == true)
             {
                 return new AttemptOutcome<TResult>(default!, ExceptionDispatchInfo.Capture(ex));
             }
@@ -209,35 +226,42 @@ internal static partial class UnitOfWorkRunner
         }
     }
 
-    private static async ValueTask _UnwindQuietlyAsync(
+    /// <summary>
+    /// The block returned normally after ending its own unit. A unit it completed holds durable work, so the
+    /// result is returned and the misuse is logged rather than thrown: an exception here would invite a retry of
+    /// committed work. A unit it rolled back or disposed has no result to stand behind, so that is refused, and
+    /// never replayed, because the block's own verb decided the outcome.
+    /// </summary>
+    private static AttemptOutcome<TResult> _EndedByBlock<TResult>(
         IUnitOfWork unitOfWork,
-        UnitOfWorkAttemptUnwind unwind,
+        TResult result,
         ILogger logger
     )
     {
-        // The attempt's own fault is the caller's outcome; an unwind fault must not mask it, but it is still a
-        // real secondary failure, so it is logged rather than dropped.
-        if (unwind == UnitOfWorkAttemptUnwind.RollBack)
+        if (unitOfWork.State == UnitOfWorkState.Completed)
         {
-            try
-            {
-                await unitOfWork.RollbackAsync().ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                LogRollbackFaulted(logger, ex);
-            }
+            LogBlockCompletedOwnUnit(logger);
 
-            return;
+            return new AttemptOutcome<TResult>(result, Error: null);
         }
 
+        return new AttemptOutcome<TResult>(
+            default!,
+            ExceptionDispatchInfo.Capture(new InvalidOperationException(OwnedBlockEndedUnitMessage))
+        );
+    }
+
+    private static async ValueTask _RollBackQuietlyAsync(IUnitOfWork unitOfWork, ILogger logger)
+    {
+        // The attempt's own fault is the caller's outcome; a rollback fault must not mask it, but it is still a
+        // real secondary failure, so it is logged rather than dropped.
         try
         {
-            await unitOfWork.DisposeAsync().ConfigureAwait(false);
+            await unitOfWork.RollbackAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            LogAttemptDisposeFaulted(logger, ex);
+            LogRollbackFaulted(logger, ex);
         }
     }
 
@@ -261,25 +285,9 @@ internal static partial class UnitOfWorkRunner
 
     [LoggerMessage(
         EventId = 12,
-        Level = LogLevel.Error,
-        Message = "Disposing the unit of work of a faulted RunAsync attempt faulted as well; the attempt's own exception is what surfaces."
+        Level = LogLevel.Warning,
+        Message = "A RunAsync block completed its own unit of work before returning; RunAsync completes the unit when the block returns, so the block's own CompleteAsync is redundant and its result is returned as committed."
     )]
     // ReSharper disable once InconsistentNaming
-    private static partial void LogAttemptDisposeFaulted(ILogger logger, Exception exception);
-}
-
-/// <summary>How <see cref="UnitOfWorkRunner" /> unwinds an attempt whose block faulted before the commit started.</summary>
-/// <remarks>
-/// Both roll the transaction back; they differ in the <see cref="UnitOfWorkFailureReason" /> the unit's
-/// <c>OnFailed</c> callbacks receive. The raw-ADO helpers have always reported <see cref="UnitOfWorkFailureReason.RolledBack" />
-/// and EF <see cref="UnitOfWorkFailureReason.Abandoned" />; each provider keeps its reported reason until the two are
-/// deliberately aligned, because an <c>OnFailed</c> handler may branch on it.
-/// </remarks>
-internal enum UnitOfWorkAttemptUnwind
-{
-    /// <summary><see cref="IUnitOfWork.RollbackAsync" />: <c>OnFailed</c> receives <see cref="UnitOfWorkFailureReason.RolledBack" />.</summary>
-    RollBack = 0,
-
-    /// <summary><see cref="IAsyncDisposable.DisposeAsync" />: <c>OnFailed</c> receives <see cref="UnitOfWorkFailureReason.Abandoned" />.</summary>
-    Dispose = 1,
+    private static partial void LogBlockCompletedOwnUnit(ILogger logger);
 }

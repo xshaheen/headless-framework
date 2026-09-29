@@ -54,10 +54,20 @@ internal static class JobsTreeDeleteConflicts
 
         if (string.Equals(providerName, "Microsoft.EntityFrameworkCore.SqlServer", StringComparison.Ordinal))
         {
-            var number = RelationalTransientFaults.GetErrorNumber(databaseException);
+            // Every error in the batch counts: SqlClient reports several per exception, and the deadlock or the
+            // foreign-key conflict is not always the first.
+            foreach (var number in RelationalTransientFaults.GetErrorNumbers(databaseException))
+            {
+                if (
+                    RelationalTransientFaults.IsTransientSqlServerNumber(number)
+                    || number is SqlErrorCodes.SqlServer.ConstraintViolation
+                )
+                {
+                    return true;
+                }
+            }
 
-            return RelationalTransientFaults.IsTransientSqlServerNumber(number)
-                || number is SqlErrorCodes.SqlServer.ConstraintViolation;
+            return false;
         }
 
         return false;
