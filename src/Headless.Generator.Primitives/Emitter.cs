@@ -2,6 +2,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using Headless.Generator.Primitives.Diagnostics;
 using Headless.Generator.Primitives.Helpers;
 using Headless.Generator.Primitives.Models;
 using Headless.Generator.Primitives.Shared;
@@ -109,7 +110,9 @@ internal static class Emitter
         }
         catch (Exception ex)
         {
-            context.ReportDiagnostic(DiagnosticHelper.GeneralError(Location.None, ex));
+            context.ReportDiagnostic(
+                Diagnostic.Create(DiagnosticDescriptors.GeneratorFailure, Location.None, ex.ToString())
+            );
         }
     }
 
@@ -194,15 +197,11 @@ internal static class Emitter
             builder.AppendNullableDisable();
         }
 
-        builder.AppendLine("#pragma warning disable HF1003 // Should not have non obsolete empty constructors.");
-
         builder
             .AppendLine("[Obsolete(\"Primitive cannot be created using empty Constructor\", true)]")
             .Append("public ")
             .Append(data.ClassName)
             .AppendLine("() { }");
-
-        builder.AppendLine("#pragma warning restore HF1003");
 
         if (!primitiveTypeIsValueType)
         {

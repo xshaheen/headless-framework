@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Immutable;
+using Headless.Generator.Primitives.Diagnostics;
 using Headless.Generator.Primitives.Extensions;
-using Headless.Generator.Primitives.Helpers;
 using Headless.Generator.Primitives.Models;
 using Headless.Generator.Primitives.Shared;
 using Headless.SourceGenerators;
@@ -72,30 +72,39 @@ internal static class Parser
             return null;
         }
 
-        // Extract all data needed for emission
-        var info = _ExtractPrimitiveTypeInfo(symbol, primitiveInterface, ct);
+        var location = typeSyntax.Identifier.GetLocation();
+        var diagnostics = new List<DiagnosticInfo>(2);
 
-        if (info is null)
+        // Extract all data needed for emission
+        var info = _ExtractPrimitiveTypeInfo(symbol, primitiveInterface, location, diagnostics, ct);
+
+        if (info is not null)
+        {
+            _AddDeclarationDiagnostics(info.Value, location, diagnostics);
+        }
+        else if (diagnostics.Count == 0)
         {
             return null;
         }
 
-        return new PrimitiveParseResult(info.Value, _GetDiagnostics(info.Value, typeSyntax.Identifier.GetLocation()));
+        return new PrimitiveParseResult(info, diagnostics.ToEquatableArray());
     }
 
     /// <summary>
     /// Finds the declaration problems the generator reports, anchored at the type's identifier so they point at the
     /// offending declaration and honor <c>#pragma</c> suppression.
     /// </summary>
-    private static EquatableArray<DiagnosticInfo> _GetDiagnostics(PrimitiveTypeInfo info, Location location)
+    private static void _AddDeclarationDiagnostics(
+        PrimitiveTypeInfo info,
+        Location location,
+        List<DiagnosticInfo> diagnostics
+    )
     {
-        var diagnostics = new List<DiagnosticInfo>(2);
-
         if (info is { UnderlyingTypeIsValueType: true, IsValueType: false })
         {
             diagnostics.Add(
                 DiagnosticInfo.Create(
-                    DiagnosticHelper.TypeShouldBeValueTypeRule,
+                    DiagnosticDescriptors.TypeShouldBeValueType,
                     location,
                     info.ClassName,
                     info.UnderlyingTypeFriendlyName
@@ -106,7 +115,7 @@ internal static class Parser
         {
             diagnostics.Add(
                 DiagnosticInfo.Create(
-                    DiagnosticHelper.TypeShouldBeReferenceTypeRule,
+                    DiagnosticDescriptors.TypeShouldBeReferenceType,
                     location,
                     info.ClassName,
                     info.UnderlyingTypeFriendlyName
@@ -116,23 +125,28 @@ internal static class Parser
 
         if (!info.Modifiers.Contains("partial"))
         {
-            diagnostics.Add(DiagnosticInfo.Create(DiagnosticHelper.ClassMustBePartialRule, location));
+            diagnostics.Add(
+                DiagnosticInfo.Create(DiagnosticDescriptors.PrimitiveMustBePartial, location, info.ClassName)
+            );
         }
-
-        return diagnostics.ToEquatableArray();
     }
 
     /// <summary>Extracts all data from the symbol into an equatable PrimitiveTypeInfo struct.</summary>
     private static PrimitiveTypeInfo? _ExtractPrimitiveTypeInfo(
         INamedTypeSymbol typeSymbol,
         INamedTypeSymbol primitiveInterface,
+        Location location,
+        List<DiagnosticInfo> diagnostics,
         CancellationToken ct
     )
     {
         ct.ThrowIfCancellationRequested();
 
-        if (primitiveInterface.TypeArguments[0] is not INamedTypeSymbol primitiveType)
+        var wrappedType = primitiveInterface.TypeArguments[0];
+
+        if (wrappedType is not INamedTypeSymbol primitiveType)
         {
+            diagnostics.Add(_UnsupportedUnderlyingType(typeSymbol, wrappedType, location));
             return null;
         }
 
@@ -141,6 +155,7 @@ internal static class Parser
 
         if (underlyingType == PrimitiveUnderlyingType.Other)
         {
+            diagnostics.Add(_UnsupportedUnderlyingType(typeSymbol, underlyingTypeSymbol, location));
             return null;
         }
 
@@ -203,11 +218,36 @@ internal static class Parser
         {
             supportedOps = _GetCombinedSupportedOperations(typeSymbol, underlyingType, parentSymbols, supportedOpsAttr);
         }
+        else if (supportedOpsAttr is not null)
+        {
+            // Operators are generated only for numeric primitives, so the attribute would otherwise be ignored.
+            diagnostics.Add(
+                DiagnosticInfo.Create(
+                    DiagnosticDescriptors.SupportedOperationsRequiresNumeric,
+                    _AttributeLocation(supportedOpsAttr, location),
+                    typeSymbol.Name,
+                    underlyingTypeSymbol.GetFriendlyName()
+                )
+            );
+        }
 
         // SerializationFormatAttribute
         string? serializationFormat = null;
 
-        if (serializationAttr is not null && serializationAttr.ConstructorArguments.Length != 0)
+        if (serializationAttr is not null && !underlyingType.IsDateOrTime())
+        {
+            // The format is emitted into ParseExact/TryParseExact calls, which only the date and time types provide,
+            // so it is dropped here rather than generating code that does not compile.
+            diagnostics.Add(
+                DiagnosticInfo.Create(
+                    DiagnosticDescriptors.SerializationFormatRequiresDateOrTime,
+                    _AttributeLocation(serializationAttr, location),
+                    typeSymbol.Name,
+                    underlyingTypeSymbol.GetFriendlyName()
+                )
+            );
+        }
+        else if (serializationAttr is not null && serializationAttr.ConstructorArguments.Length != 0)
         {
             serializationFormat = serializationAttr.ConstructorArguments[0].Value?.ToString();
         }
@@ -284,6 +324,24 @@ internal static class Parser
             UnderlyingImplementsIUtf8SpanFormattable: underlyingImplementsIUtf8SpanFormattable,
             XmlDocumentation: xmlDocumentation
         );
+    }
+
+    private static DiagnosticInfo _UnsupportedUnderlyingType(
+        INamedTypeSymbol typeSymbol,
+        ITypeSymbol wrappedType,
+        Location location
+    ) =>
+        DiagnosticInfo.Create(
+            DiagnosticDescriptors.UnsupportedUnderlyingType,
+            location,
+            typeSymbol.Name,
+            wrappedType.ToDisplayString()
+        );
+
+    private static Location _AttributeLocation(AttributeData attribute, Location fallback)
+    {
+        var syntaxReference = attribute.ApplicationSyntaxReference;
+        return syntaxReference?.SyntaxTree.GetLocation(syntaxReference.Span) ?? fallback;
     }
 
     /// <summary>
