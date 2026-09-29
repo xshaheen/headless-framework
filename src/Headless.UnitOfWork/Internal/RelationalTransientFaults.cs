@@ -54,6 +54,10 @@ internal static class RelationalTransientFaults
     /// command timeout (-2) can fire after the statement completed on the server, and 203 is transient only when
     /// a <c>Win32Exception</c> sits beneath it, which a driver-free read cannot see.
     /// </summary>
+    // The numbers are copied from EF Core's SqlServerTransientExceptionDetector, (c) .NET Foundation and
+    // Contributors, MIT license:
+    // https://github.com/dotnet/efcore/blob/release/10.0/src/EFCore.SqlServer/Storage/Internal/SqlServerTransientExceptionDetector.cs
+    // That file also documents what each number means. Re-diff against it when the pinned EF Core major changes.
     private static readonly FrozenSet<int> _SqlServerTransientNumbers = FrozenSet.ToFrozenSet([
         20,
         64,
