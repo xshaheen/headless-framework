@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Immutable;
 using Headless.Generator.Primitives.Extensions;
+using Headless.SourceGenerators;
 
 namespace Headless.Generator.Primitives.Models;
 
@@ -27,7 +27,7 @@ internal sealed class GeneratorData
     public required string PrimitiveTypeNamespace { get; init; }
 
     /// <summary>Parent primitive info for nested primitives.</summary>
-    public required ImmutableArray<ParentPrimitiveInfo> ParentPrimitives { get; init; }
+    public required EquatableArray<ParentPrimitiveInfo> ParentPrimitives { get; init; }
 
     /// <summary>The namespace containing the type.</summary>
     public required string Namespace { get; init; }
@@ -89,12 +89,6 @@ internal sealed class GeneratorData
     /// <summary>XML documentation comment for Swagger.</summary>
     public required string? XmlDocumentation { get; init; }
 
-    /// <summary>Location file path for diagnostics.</summary>
-    public required string LocationFilePath { get; init; }
-
-    /// <summary>Location line start for diagnostics.</summary>
-    public required int LocationLineStart { get; init; }
-
     public bool HasMathOperators()
     {
         return GenerateAdditionOperators
@@ -106,17 +100,17 @@ internal sealed class GeneratorData
 
     public bool IsPrimitiveUnderlyingTypString()
     {
-        return ParentPrimitives.Length == 0 && UnderlyingType is PrimitiveUnderlyingType.String;
+        return ParentPrimitives.Count == 0 && UnderlyingType is PrimitiveUnderlyingType.String;
     }
 
     public bool IsPrimitiveUnderlyingTypeChar()
     {
-        return ParentPrimitives.Length == 0 && UnderlyingType is PrimitiveUnderlyingType.Char;
+        return ParentPrimitives.Count == 0 && UnderlyingType is PrimitiveUnderlyingType.Char;
     }
 
     public bool IsPrimitiveUnderlyingTypeBool()
     {
-        return ParentPrimitives.Length == 0 && UnderlyingType is PrimitiveUnderlyingType.Boolean;
+        return ParentPrimitives.Count == 0 && UnderlyingType is PrimitiveUnderlyingType.Boolean;
     }
 
     /// <summary>Creates GeneratorData from PrimitiveTypeInfo and global options.</summary>
@@ -195,8 +189,6 @@ internal sealed class GeneratorData
             HasExplicitToStringMethod = info.HasExplicitToStringMethod,
             StringLengthAttributeValidation = stringLengthValidation,
             XmlDocumentation = info.XmlDocumentation,
-            LocationFilePath = info.LocationFilePath,
-            LocationLineStart = info.LocationLineStart,
         };
     }
 }

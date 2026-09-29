@@ -254,7 +254,7 @@ public sealed class GeneratedSourceCompilationTests
         CSharpGeneratorDriver
             .Create(
                 [new JobsIncrementalSourceGenerator().AsSourceGenerator()],
-                parseOptions: GeneratorTestHelper.ParseOptions
+                parseOptions: GeneratorCompilation.ParseOptions
             )
             .RunGeneratorsAndUpdateCompilation(compilation, out var output, out var generatorDiagnostics);
 

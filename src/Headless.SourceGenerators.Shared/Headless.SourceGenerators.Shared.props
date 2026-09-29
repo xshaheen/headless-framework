@@ -1,15 +1,42 @@
 <Project>
   <!--
-    Shared incremental-generator infrastructure, compiled into each Headless source generator as internal source.
+    Imported by every Headless source generator project. It supplies the settings a Roslyn component package needs and
+    compiles the shared incremental-generator infrastructure in this folder into the generator as internal source.
+
     Source inclusion rather than a project reference: an analyzer's own dependencies are not loaded from NuGet by the
     compiler, so a separate assembly would have to be packed into every generator package and could version-conflict
     between two generators loaded side by side.
   -->
+  <PropertyGroup>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <!-- The generator ships under analyzers/, not lib/, so projects that reference the package do not compile against it. -->
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <!-- Required when IncludeBuildOutput is false; symbols are embedded in the assembly instead. -->
+    <IncludeSymbols>false</IncludeSymbols>
+    <!-- A development dependency does not flow transitively to projects that consume the referencing package. -->
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <!-- Rejects APIs a generator must not use, such as file and environment access. -->
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
+  </ItemGroup>
   <ItemGroup>
     <Compile
       Include="$(MSBuildThisFileDirectory)**\*.cs"
       Exclude="$(MSBuildThisFileDirectory)bin\**;$(MSBuildThisFileDirectory)obj\**"
       Link="Shared\%(RecursiveDir)%(Filename)%(Extension)"
+    />
+  </ItemGroup>
+  <ItemGroup Label="Packs the generator as an analyzer">
+    <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    <!-- Marks the package as supporting netstandard2.0 without adding a compile-time reference. -->
+    <None
+      Include="$(MSBuildThisFileDirectory)lib\netstandard2.0\_._"
+      Pack="true"
+      PackagePath="lib\netstandard2.0\"
+      Visible="false"
     />
   </ItemGroup>
 </Project>

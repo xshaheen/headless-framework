@@ -11,22 +11,12 @@ namespace Tests;
 
 internal static class GeneratorTestHelper
 {
-    public static CSharpParseOptions ParseOptions { get; } =
-        CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.CSharp14);
-
     private static readonly Lazy<ImmutableArray<MetadataReference>> _References = new(() =>
-        [
-            .. AppDomain
-                .CurrentDomain.GetAssemblies()
-                .Where(assembly => !assembly.IsDynamic && !string.IsNullOrWhiteSpace(assembly.Location))
-                .Select(assembly => (MetadataReference)MetadataReference.CreateFromFile(assembly.Location))
-                .Concat([
-                    MetadataReference.CreateFromFile(typeof(JobFunctionAttribute).Assembly.Location),
-                    MetadataReference.CreateFromFile(typeof(JobFunctionProvider).Assembly.Location),
-                    MetadataReference.CreateFromFile(typeof(IServiceCollection).Assembly.Location),
-                ])
-                .DistinctBy(reference => reference.Display, StringComparer.Ordinal),
-        ]
+        GeneratorCompilation.LoadedAssemblyReferences(
+            typeof(JobFunctionAttribute).Assembly,
+            typeof(JobFunctionProvider).Assembly,
+            typeof(IServiceCollection).Assembly
+        )
     );
 
     public static GeneratorDriver Run(string source)
@@ -75,17 +65,10 @@ internal static class GeneratorTestHelper
         return MetadataReference.CreateFromImage(stream.ToArray());
     }
 
+    /// <summary>A library compilation that references the Jobs runtime plus <paramref name="additionalReferences"/>.</summary>
     public static CSharpCompilation CreateCompilation(
         string assemblyName,
         IReadOnlyCollection<(string Path, string Source)> sources,
         IReadOnlyCollection<MetadataReference> additionalReferences
-    )
-    {
-        return CSharpCompilation.Create(
-            assemblyName,
-            sources.Select(source => CSharpSyntaxTree.ParseText(source.Source, ParseOptions, source.Path)),
-            [.. _References.Value, .. additionalReferences],
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
-        );
-    }
+    ) => GeneratorCompilation.Create(assemblyName, sources, [.. _References.Value, .. additionalReferences]);
 }

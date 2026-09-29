@@ -17,6 +17,7 @@
     <ProjectReference Include="..\..\src\Headless.Jobs.Core\Headless.Jobs.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.SourceGenerator\Headless.Jobs.SourceGenerator.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <ProjectReference Include="..\Headless.SourceGenerators.Tests.Harness\Headless.SourceGenerators.Tests.Harness.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Compile Remove="Snapshots\**" />

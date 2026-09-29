@@ -2,10 +2,18 @@
 
 using System.Globalization;
 using System.Text;
+using Microsoft.CodeAnalysis.Text;
 
-namespace Headless.Generator.Primitives.Shared;
+namespace Headless.SourceGenerators;
 
-/// <summary>A utility class for building source code with proper indentation.</summary>
+/// <summary>
+/// Builds generated C# with automatic indentation: a line starting with <c>{</c> indents what follows, and one
+/// starting with <c>}</c> outdents itself.
+/// </summary>
+/// <remarks>
+/// Lines always end in <see cref="PlainNewLine"/> rather than <see cref="Environment.NewLine"/>, so the same input
+/// generates the same bytes on every build machine.
+/// </remarks>
 internal sealed class SourceCodeBuilder
 {
     private const string _SourceHeader1 = """
@@ -49,11 +57,13 @@ internal sealed class SourceCodeBuilder
         }
     }
 
-    /// <summary>Represents a new line character sequence.</summary>
-    public static readonly string PlainNewLine = new StringBuilder(2).AppendLine().ToString();
+    /// <summary>The line terminator of every generated line.</summary>
+    public const string PlainNewLine = "\n";
 
     /// <summary>Represents the length of a new line character sequence.</summary>
-    public static readonly int NewLineLength = PlainNewLine.Length;
+    public const int NewLineLength = 1;
+
+    private const char _NewLineChar = '\n';
 
     /// <summary>Returns a string that represents the specified number of indentation chars.</summary>
     /// <param name="count">The number of indentation strings to generate. Default is 1.</param>
@@ -315,35 +325,6 @@ internal sealed class SourceCodeBuilder
         return AppendLine("{ }");
     }
 
-    public SourceCodeBuilder AppendDebuggerBrowsableNeverAttribute()
-    {
-        return AppendLine(
-            "[global::System.Diagnostics.DebuggerBrowsable(global::System.Diagnostics.DebuggerBrowsableState.Never)]"
-        );
-    }
-
-    public SourceCodeBuilder AppendMethodAggressiveInliningAttribute()
-    {
-        return AppendLine(
-            "[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]"
-        );
-    }
-
-    public SourceCodeBuilder AppendJsonConverterAttribute(string typeName)
-    {
-        return AppendLine($"[global::System.Text.Json.Serialization.JsonConverter(typeof({typeName}))]");
-    }
-
-    public SourceCodeBuilder AppendTypeConverterAttribute(string typeName)
-    {
-        return AppendLine($"[global::System.ComponentModel.TypeConverter(typeof({typeName}))]");
-    }
-
-    public SourceCodeBuilder AppendDebuggerDisplay(string value)
-    {
-        return AppendLine($"[global::System.Diagnostics.DebuggerDisplay(\"{value}\")]");
-    }
-
     /// <summary>Appends a line of text to the source code without adding a newline character if the input line is not null.</summary>
     /// <param name="line">The line of text to be appended.</param>
     public SourceCodeBuilder Continue(string? line)
@@ -413,16 +394,16 @@ internal sealed class SourceCodeBuilder
         {
             if (line.Length == 0)
             {
-                _sb.AppendLine();
+                _sb.Append(_NewLineChar);
             }
             else if (line[0] == '#')
             {
-                _sb.AppendLine(line);
+                _sb.Append(line).Append(_NewLineChar);
             }
             else
             {
                 _sb.Append(_indentations);
-                _sb.AppendLine(line);
+                _sb.Append(line).Append(_NewLineChar);
             }
         }
 
@@ -501,6 +482,9 @@ internal sealed class SourceCodeBuilder
         return this;
     }
 
+    /// <summary>Returns the built source as UTF-8 text for <c>AddSource</c>.</summary>
+    public SourceText ToSourceText() => SourceText.From(ToString(), Encoding.UTF8);
+
     /// <summary>
     /// Gets the string representation of the source code builder.
     /// </summary>
@@ -530,13 +514,13 @@ internal sealed class SourceCodeBuilder
 
         if (lineType is not LineType.Default && !_previousWasNewLine)
         {
-            _sb.AppendLine();
+            _sb.Append(_NewLineChar);
             _sb.Append(_indentations);
         }
 
         if (appendNewLine)
         {
-            _sb.AppendLine(line);
+            _sb.Append(line).Append(_NewLineChar);
             _previousWasNewLine = true;
         }
         else

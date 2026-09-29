@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections;
-using System.Reflection;
 using Headless.Jobs.SourceGenerator;
 using Headless.Testing.Tests;
 using Microsoft.CodeAnalysis;
@@ -86,8 +84,8 @@ public sealed class IncrementalCachingTests : TestBase
         var edited = _ReplaceText(compilation, _UnrelatedPath, "public sealed class Unrelated { public int Value; }");
         var result = _Run(driver, edited);
 
-        _AssertAllStepsReused(result);
-        _AssertNoSymbolsOrSyntax(result);
+        IncrementalGeneratorAssertions.AssertStepsReused(result, _TrackedSteps);
+        IncrementalGeneratorAssertions.AssertNoSymbolsOrSyntax(result, _TrackedSteps);
     }
 
     [Fact]
@@ -98,14 +96,14 @@ public sealed class IncrementalCachingTests : TestBase
         var edited = compilation.AddSyntaxTrees(
             CSharpSyntaxTree.ParseText(
                 "public sealed class Added { }",
-                GeneratorTestHelper.ParseOptions,
+                GeneratorCompilation.ParseOptions,
                 "added.cs",
                 cancellationToken: AbortToken
             )
         );
         var result = _Run(driver, edited);
 
-        _AssertAllStepsReused(result);
+        IncrementalGeneratorAssertions.AssertStepsReused(result, _TrackedSteps);
     }
 
     [Fact]
@@ -117,12 +115,13 @@ public sealed class IncrementalCachingTests : TestBase
         var result = _Run(driver, edited);
 
         // Locations live beside the emission model, so moving code refreshes diagnostics but not generated source.
-        _Reasons(result, "RegistrationModel")
+        IncrementalGeneratorAssertions
+            .StepReasons(result, "RegistrationModel")
             .Should()
             .OnlyContain(reason =>
                 reason == IncrementalStepRunReason.Cached || reason == IncrementalStepRunReason.Unchanged
             );
-        _AssertNoSymbolsOrSyntax(result);
+        IncrementalGeneratorAssertions.AssertNoSymbolsOrSyntax(result, _TrackedSteps);
     }
 
     [Fact]
@@ -137,8 +136,14 @@ public sealed class IncrementalCachingTests : TestBase
         );
         var result = _Run(driver, edited);
 
-        _Reasons(result, "JobFunctions").Should().Contain(IncrementalStepRunReason.Modified);
-        _Reasons(result, "RegistrationModel").Should().Contain(IncrementalStepRunReason.Modified);
+        IncrementalGeneratorAssertions
+            .StepReasons(result, "JobFunctions")
+            .Should()
+            .Contain(IncrementalStepRunReason.Modified);
+        IncrementalGeneratorAssertions
+            .StepReasons(result, "RegistrationModel")
+            .Should()
+            .Contain(IncrementalStepRunReason.Modified);
         result.GeneratedSources.Single().SourceText.ToString().Should().Contain("0 */10 * * * *");
     }
 
@@ -155,7 +160,10 @@ public sealed class IncrementalCachingTests : TestBase
         var edited = compilation.RemoveReferences(compilation.References.Last()).AddReferences(renamedProducer);
         var result = _Run(driver, edited);
 
-        _Reasons(result, "ReferencedFunctions").Should().Contain(IncrementalStepRunReason.Modified);
+        IncrementalGeneratorAssertions
+            .StepReasons(result, "ReferencedFunctions")
+            .Should()
+            .Contain(IncrementalStepRunReason.Modified);
         result
             .Diagnostics.Should()
             .ContainSingle(diagnostic => string.Equals(diagnostic.Id, "HF014", StringComparison.Ordinal));
@@ -175,21 +183,15 @@ public sealed class IncrementalCachingTests : TestBase
             [(_JobsPath, _JobsSource), (_UnrelatedPath, "public sealed class Unrelated { }")],
             [producer]
         );
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(
-            [new JobsIncrementalSourceGenerator().AsSourceGenerator()],
-            parseOptions: GeneratorTestHelper.ParseOptions,
-            driverOptions: new GeneratorDriverOptions(
-                IncrementalGeneratorOutputKind.None,
-                trackIncrementalGeneratorSteps: true
-            )
-        );
-        driver = driver.RunGenerators(compilation);
+        var driver = GeneratorCompilation
+            .CreateTrackingDriver(new JobsIncrementalSourceGenerator())
+            .RunGenerators(compilation);
 
         var initial = driver.GetRunResult().Results.Single();
         initial.Exception.Should().BeNull();
         initial.Diagnostics.Should().BeEmpty();
         initial.GeneratedSources.Should().ContainSingle();
-        _AssertNoSymbolsOrSyntax(initial);
+        IncrementalGeneratorAssertions.AssertNoSymbolsOrSyntax(initial, _TrackedSteps);
         return (driver, compilation);
     }
 
@@ -204,75 +206,5 @@ public sealed class IncrementalCachingTests : TestBase
     {
         var tree = compilation.SyntaxTrees.Single(x => string.Equals(x.FilePath, path, StringComparison.Ordinal));
         return compilation.ReplaceSyntaxTree(tree, tree.WithChangedText(SourceText.From(text)));
-    }
-
-    private static void _AssertAllStepsReused(GeneratorRunResult result)
-    {
-        foreach (var step in _TrackedSteps)
-        {
-            _Reasons(result, step)
-                .Should()
-                .NotBeEmpty($"step '{step}' must run")
-                .And.OnlyContain(
-                    reason => reason == IncrementalStepRunReason.Cached || reason == IncrementalStepRunReason.Unchanged,
-                    $"step '{step}' must be reused after an unrelated edit"
-                );
-        }
-    }
-
-    private static IncrementalStepRunReason[] _Reasons(GeneratorRunResult result, string step)
-    {
-        result.TrackedSteps.Should().ContainKey(step);
-        return [.. result.TrackedSteps[step].SelectMany(run => run.Outputs).Select(output => output.Reason)];
-    }
-
-    private static void _AssertNoSymbolsOrSyntax(GeneratorRunResult result)
-    {
-        foreach (var step in _TrackedSteps)
-        {
-            foreach (var (value, _) in result.TrackedSteps[step].SelectMany(run => run.Outputs))
-            {
-                _Visit(value, $"{step}", new HashSet<object>(ReferenceEqualityComparer.Instance));
-            }
-        }
-    }
-
-    private static void _Visit(object? value, string path, HashSet<object> visited)
-    {
-        if (value is null || value is string || value is DiagnosticDescriptor || value.GetType().IsPrimitive)
-        {
-            return;
-        }
-
-        value
-            .Should()
-            .NotBeAssignableTo<ISymbol>(path)
-            .And.NotBeAssignableTo<SyntaxNode>(path)
-            .And.NotBeAssignableTo<SyntaxTree>(path)
-            .And.NotBeAssignableTo<SemanticModel>(path)
-            .And.NotBeAssignableTo<Compilation>(path)
-            .And.NotBeAssignableTo<Location>(path);
-
-        var type = value.GetType();
-        if (type.IsEnum || (!type.IsValueType && !visited.Add(value)))
-        {
-            return;
-        }
-
-        if (value is IEnumerable items)
-        {
-            var index = 0;
-            foreach (var item in items)
-            {
-                _Visit(item, $"{path}[{index++}]", visited);
-            }
-
-            return;
-        }
-
-        foreach (var field in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
-        {
-            _Visit(field.GetValue(value), $"{path}.{field.Name}", visited);
-        }
     }
 }
