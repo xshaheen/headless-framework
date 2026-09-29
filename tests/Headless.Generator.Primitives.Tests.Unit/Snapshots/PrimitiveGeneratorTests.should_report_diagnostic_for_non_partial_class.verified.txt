@@ -1,6 +1,13 @@
 ﻿{
   Diagnostics: [
     {
+      Location: /*
+
+public struct NonPartialPrimitive : IPrimitive<int>
+              ^^^^^^^^^^^^^^^^^^^
+{
+*/
+ : (5,14)-(5,33),
       Message: Class must be partial to generate Empty constructor,
       Severity: Error,
       Descriptor: {

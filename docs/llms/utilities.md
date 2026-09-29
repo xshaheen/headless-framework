@@ -164,6 +164,8 @@ Primitive generator diagnostics use the framework-wide `HF` prefix. Existing sup
 | `HF1016` | Warning | A primitive wrapping a reference type should be a reference type. |
 | `HF1021` | Warning | Primitive validation throws an incompatible exception type. |
 
+`HF1002`, `HF1015`, and `HF1016` are reported on the primitive's type name, so `#pragma warning disable` and `.editorconfig` severity settings apply to them like any compiler diagnostic.
+
 ### Install
 
 ```bash

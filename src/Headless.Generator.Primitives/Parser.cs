@@ -2,8 +2,10 @@
 
 using System.Collections.Immutable;
 using Headless.Generator.Primitives.Extensions;
+using Headless.Generator.Primitives.Helpers;
 using Headless.Generator.Primitives.Models;
 using Headless.Generator.Primitives.Shared;
+using Headless.SourceGenerators;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -37,7 +39,8 @@ internal static class Parser
     /// <param name="ctx">The generator syntax context.</param>
     /// <param name="ct">CancellationToken</param>
     /// <returns>
-    /// The <see cref="PrimitiveTypeInfo"/> if the syntax node is a semantic target; otherwise, <see langword="null"/>.
+    /// The parsed primitive with its diagnostics if the syntax node is a semantic target; otherwise,
+    /// <see langword="null"/>.
     /// </returns>
     /// <remarks>
     /// This method analyzes a <see cref="TypeDeclarationSyntax"/> node to determine if it represents a semantic target
@@ -46,7 +49,10 @@ internal static class Parser
     /// All data needed for emission is extracted here to enable proper incremental caching.
     /// </remarks>
     /// <seealso cref="PrimitiveGenerator"/>
-    internal static PrimitiveTypeInfo? GetSemanticTargetForGeneration(GeneratorSyntaxContext ctx, CancellationToken ct)
+    internal static PrimitiveParseResult? GetSemanticTargetForGeneration(
+        GeneratorSyntaxContext ctx,
+        CancellationToken ct
+    )
     {
         ct.ThrowIfCancellationRequested();
 
@@ -67,7 +73,53 @@ internal static class Parser
         }
 
         // Extract all data needed for emission
-        return _ExtractPrimitiveTypeInfo(symbol, primitiveInterface, ct);
+        var info = _ExtractPrimitiveTypeInfo(symbol, primitiveInterface, ct);
+
+        if (info is null)
+        {
+            return null;
+        }
+
+        return new PrimitiveParseResult(info.Value, _GetDiagnostics(info.Value, typeSyntax.Identifier.GetLocation()));
+    }
+
+    /// <summary>
+    /// Finds the declaration problems the generator reports, anchored at the type's identifier so they point at the
+    /// offending declaration and honor <c>#pragma</c> suppression.
+    /// </summary>
+    private static EquatableArray<DiagnosticInfo> _GetDiagnostics(PrimitiveTypeInfo info, Location location)
+    {
+        var diagnostics = new List<DiagnosticInfo>(2);
+
+        if (info is { UnderlyingTypeIsValueType: true, IsValueType: false })
+        {
+            diagnostics.Add(
+                DiagnosticInfo.Create(
+                    DiagnosticHelper.TypeShouldBeValueTypeRule,
+                    location,
+                    info.ClassName,
+                    info.UnderlyingTypeFriendlyName
+                )
+            );
+        }
+        else if (info is { UnderlyingTypeIsValueType: false, IsValueType: true })
+        {
+            diagnostics.Add(
+                DiagnosticInfo.Create(
+                    DiagnosticHelper.TypeShouldBeReferenceTypeRule,
+                    location,
+                    info.ClassName,
+                    info.UnderlyingTypeFriendlyName
+                )
+            );
+        }
+
+        if (!info.Modifiers.Contains("partial"))
+        {
+            diagnostics.Add(DiagnosticInfo.Create(DiagnosticHelper.ClassMustBePartialRule, location));
+        }
+
+        return diagnostics.ToEquatableArray();
     }
 
     /// <summary>Extracts all data from the symbol into an equatable PrimitiveTypeInfo struct.</summary>
@@ -118,7 +170,7 @@ internal static class Parser
                 p.GetFriendlyName(),
                 p.IsValueType
             ))
-            .ToImmutableArray();
+            .ToEquatableArray();
 
         // Extract all needed attributes in single pass using cheap Name property
         AttributeData? supportedOpsAttr = null;
@@ -186,11 +238,6 @@ internal static class Parser
             underlyingImplementsIUtf8SpanFormattable
         ) = _ExtractInterfaceFlags(typeSymbol, primitiveType);
 
-        // Get location info for diagnostics
-        var location = typeSymbol.Locations.FirstOrDefault();
-        var locationFilePath = location?.SourceTree?.FilePath ?? "";
-        var locationLineStart = location?.GetLineSpan().StartLinePosition.Line ?? 0;
-
         // Get XML documentation for Swagger
         string? xmlDocumentation = null;
         try
@@ -235,8 +282,6 @@ internal static class Parser
             ImplementsISpanFormattable: implementsISpanFormattable,
             ImplementsIUtf8SpanFormattable: implementsIUtf8SpanFormattable,
             UnderlyingImplementsIUtf8SpanFormattable: underlyingImplementsIUtf8SpanFormattable,
-            LocationFilePath: locationFilePath,
-            LocationLineStart: locationLineStart,
             XmlDocumentation: xmlDocumentation
         );
     }

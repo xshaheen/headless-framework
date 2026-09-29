@@ -31,7 +31,7 @@ internal static class MethodGeneratorEmitter
             .AppendReturnsDescription("true if the conversion succeeded; otherwise, false.");
 
         var primitiveType =
-            data.ParentPrimitives.Length != 0 ? data.ParentPrimitives[0].FriendlyName : data.PrimitiveTypeFriendlyName;
+            data.ParentPrimitives.Count != 0 ? data.ParentPrimitives[0].FriendlyName : data.PrimitiveTypeFriendlyName;
 
         builder
             .Append("public static bool TryCreate(")
@@ -181,7 +181,7 @@ internal static class MethodGeneratorEmitter
             )
             .NewLine();
 
-        if (data.ParentPrimitives.Length != 0)
+        if (data.ParentPrimitives.Count != 0)
         {
             var parentClassName = data.ParentPrimitives[0].Name;
 
@@ -434,7 +434,7 @@ internal static class MethodGeneratorEmitter
     public static void GenerateParsable(this SourceCodeBuilder builder, GeneratorData data)
     {
         var underlyingType =
-            data.ParentPrimitives.Length == 0 ? data.PrimitiveTypeFriendlyName : data.ParentPrimitives[0].Name;
+            data.ParentPrimitives.Count == 0 ? data.PrimitiveTypeFriendlyName : data.ParentPrimitives[0].Name;
 
         var dataClassName = data.ClassName;
         var format = data.SerializationFormat;

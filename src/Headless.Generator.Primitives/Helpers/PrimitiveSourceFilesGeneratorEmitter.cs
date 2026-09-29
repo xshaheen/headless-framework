@@ -34,12 +34,6 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
     )
     {
         var modifiers = data.Modifiers;
-
-        if (!modifiers.Contains("partial"))
-        {
-            context.ReportDiagnostic(DiagnosticHelper.ClassMustBePartial(Location.None));
-        }
-
         var builder = new SourceCodeBuilder();
 
         var usings = new List<string>
@@ -51,7 +45,7 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
             AbstractionConstants.Namespace,
         };
 
-        if (data.ParentPrimitives.Length > 0)
+        if (data.ParentPrimitives.Count > 0)
         {
             usings.Add(data.ParentPrimitives[0].Namespace);
         }
@@ -81,7 +75,7 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
 
         var needsMathOperators = data.HasMathOperators();
 
-        var isByteOrShort = data.ParentPrimitives.Length == 0 && data.UnderlyingType.IsByteOrShort();
+        var isByteOrShort = data.ParentPrimitives.Count == 0 && data.UnderlyingType.IsByteOrShort();
 
         builder.AppendSourceHeader("Primitives Generator");
         builder.AppendUsings(usings);
