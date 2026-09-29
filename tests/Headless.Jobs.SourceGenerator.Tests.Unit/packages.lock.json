@@ -807,6 +807,18 @@
           "Headless.Serializer.Abstractions": "[1.0.0, )"
         }
       },
+      "headless.sourcegenerators.tests.harness": {
+        "type": "Project",
+        "dependencies": {
+          "AwesomeAssertions": "[9.6.0, )",
+          "AwesomeAssertions.Json": "[9.0.0, )",
+          "Bogus": "[35.6.5, )",
+          "DeepCloner": "[0.10.4, )",
+          "Headless.Testing": "[1.0.0, )",
+          "Microsoft.CodeAnalysis.CSharp": "[5.0.0, 5.0.0]",
+          "NSubstitute": "[5.3.0, )"
+        }
+      },
       "headless.testing": {
         "type": "Project",
         "dependencies": {
