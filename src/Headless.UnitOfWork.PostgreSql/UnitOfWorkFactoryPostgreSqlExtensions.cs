@@ -111,7 +111,7 @@ public static class UnitOfWorkFactoryPostgreSqlExtensions
             Argument.IsNotNull(operation);
 
             return UnitOfWorkRunner.RunAsync(
-                connection.UnitOfWork(),
+                () => DbConnectionUnitOfWorkBinding.TryGetAsync(connection),
                 ct =>
                     BoundConnectionUnitOfWork.BeginAsync(
                         factory,
@@ -126,7 +126,6 @@ public static class UnitOfWorkFactoryPostgreSqlExtensions
                     return true;
                 },
                 NoReplayUnitOfWorkExecutionStrategy.Instance,
-                UnitOfWorkAttemptUnwind.RollBack,
                 UnitOfWorkRunner.LoggerFor(factory),
                 cancellationToken
             );
@@ -158,7 +157,7 @@ public static class UnitOfWorkFactoryPostgreSqlExtensions
             Argument.IsNotNull(operation);
 
             return UnitOfWorkRunner.RunAsync(
-                connection.UnitOfWork(),
+                () => DbConnectionUnitOfWorkBinding.TryGetAsync(connection),
                 ct =>
                     BoundConnectionUnitOfWork.BeginAsync(
                         factory,
@@ -168,7 +167,6 @@ public static class UnitOfWorkFactoryPostgreSqlExtensions
                     ),
                 operation,
                 NoReplayUnitOfWorkExecutionStrategy.Instance,
-                UnitOfWorkAttemptUnwind.RollBack,
                 UnitOfWorkRunner.LoggerFor(factory),
                 cancellationToken
             );
