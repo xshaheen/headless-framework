@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Generator.Primitives.Shared;
+using Headless.SourceGenerators;
 using Microsoft.CodeAnalysis;
 
 namespace Headless.Generator.Primitives.Helpers;

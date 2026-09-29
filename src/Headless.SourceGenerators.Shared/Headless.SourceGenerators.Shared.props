@@ -32,6 +32,11 @@
   <ItemGroup Label="Packs the generator as an analyzer">
     <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
     <!-- Marks the package as supporting netstandard2.0 without adding a compile-time reference. -->
-    <None Include="$(MSBuildThisFileDirectory)lib\netstandard2.0\_._" Pack="true" PackagePath="lib\netstandard2.0\" Visible="false" />
+    <None
+      Include="$(MSBuildThisFileDirectory)lib\netstandard2.0\_._"
+      Pack="true"
+      PackagePath="lib\netstandard2.0\"
+      Visible="false"
+    />
   </ItemGroup>
 </Project>

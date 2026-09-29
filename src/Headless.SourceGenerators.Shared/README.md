@@ -19,7 +19,7 @@ The compiler does not resolve an analyzer's NuGet dependencies. A shared assembl
 | `LocationInfo` | Value-equal location that does not hold a `SyntaxTree`. |
 | `DiagnosticInfo` | Value-equal diagnostic computed in a cached step and materialized only when reported. |
 | `DiagnosticReporting.RegisterDiagnosticsOutput` | Reports `DiagnosticInfo` values against the live compilation's trees so `#pragma` suppression works. |
-| `SourceWriter` | Indented writer that emits final-layout source without a parse-and-normalize pass. |
+| `SourceCodeBuilder` | Fluent writer that emits final-layout source with automatic brace indentation and a fixed `\n` line terminator, so output is identical on every build machine. Generator-specific helpers belong in that generator as extension methods. |
 
 ## Pipeline rules for a generator built on this
 
