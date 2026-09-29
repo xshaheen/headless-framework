@@ -43,15 +43,38 @@ public sealed class RelationalTransientFaultsTests : TestBase
     }
 
     [Theory]
-    [InlineData(1205, true)]
-    [InlineData(3960, true)]
-    [InlineData(547, false)]
-    [InlineData(2627, false)]
-    public void should_classify_sql_server_deadlocks_and_snapshot_conflicts_by_error_number(int number, bool expected)
+    [InlineData(1205, true)] // deadlock victim
+    [InlineData(3960, true)] // snapshot isolation update conflict
+    [InlineData(233, true)] // connection initialization failed: the same set EF Core replays under EnableRetryOnFailure
+    [InlineData(40613, true)] // Azure SQL database unavailable
+    [InlineData(10054, true)] // connection forcibly closed
+    [InlineData(547, false)] // constraint violation: only the tree delete retries it
+    [InlineData(2627, false)] // unique constraint violation
+    [InlineData(-2, false)] // client-side command timeout: the statement may have completed on the server
+    [InlineData(203, false)] // transient only under a Win32Exception, which a driver-free read cannot see
+    public void should_classify_sql_server_faults_by_error_number(int number, bool expected)
     {
         var exception = new Microsoft.Data.SqlClient.SqlException(number);
 
         RelationalTransientFaults.IsTransient(exception, CancellationToken.None).Should().Be(expected);
+    }
+
+    [Fact]
+    public void should_classify_a_sql_server_error_that_is_not_the_first_in_the_batch()
+    {
+        // SqlClient's Number is Errors[0].Number; a deadlock reported behind another error still counts.
+        var exception = new Microsoft.Data.SqlClient.SqlException(2627, 1205);
+
+        RelationalTransientFaults.IsTransient(exception, CancellationToken.None).Should().BeTrue();
+        RelationalTransientFaults.GetErrorNumber(exception).Should().Be(2627);
+        RelationalTransientFaults.GetErrorNumbers(exception).Should().Equal(2627, 1205);
+    }
+
+    [Fact]
+    public void should_fall_back_to_the_single_error_number_when_the_driver_exposes_no_collection()
+    {
+        RelationalTransientFaults.GetErrorNumbers(new FakeDbException(number: 1205)).Should().Equal(1205);
+        RelationalTransientFaults.GetErrorNumbers(new NumberlessDbException()).Should().BeEmpty();
     }
 
     [Fact]
@@ -120,6 +143,8 @@ public sealed class RelationalTransientFaultsTests : TestBase
             .Should()
             .BeFalse();
     }
+
+    private sealed class NumberlessDbException() : DbException("fake database failure without an error number");
 
     private sealed class FakeDbException(
         string? sqlState = null,
