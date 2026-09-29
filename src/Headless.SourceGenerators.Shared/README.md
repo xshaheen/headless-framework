@@ -1,6 +1,11 @@
 # Headless.SourceGenerators.Shared
 
-Internal infrastructure shared by the Headless incremental source generators. It is not a package and has no project file: each generator imports `Headless.SourceGenerators.Shared.props`, which compiles these files into the generator as `internal` types in the `Headless.SourceGenerators` namespace.
+Internal infrastructure shared by the Headless incremental source generators (`Headless.Jobs.SourceGenerator` and `Headless.Generator.Primitives`). It is not a package and has no project file: each generator imports `Headless.SourceGenerators.Shared.props`, which
+
+- sets the Roslyn-component and packaging properties every generator package needs, references the Roslyn packages, and packs the generator under `analyzers/dotnet/cs` with the `lib/netstandard2.0/_._` marker;
+- compiles these files into the generator as `internal` types in the `Headless.SourceGenerators` namespace, plus the netstandard2.0 language polyfills in `Polyfills.cs`.
+
+A generator's `.csproj` keeps only its target framework, package metadata, and anything specific to it, such as extra DLLs to pack or `CompilerVisibleProperty` items.
 
 ## Why source inclusion
 
