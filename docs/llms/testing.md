@@ -1,6 +1,6 @@
 ---
 domain: Testing
-packages: Testing, Testing.AspNetCore, Testing.Testcontainers
+packages: Testing, Testing.AspNetCore, Testing.Testcontainers, EntityFramework.Testing
 ---
 
 # Testing
@@ -12,6 +12,7 @@ packages: Testing, Testing.AspNetCore, Testing.Testcontainers
 - `Headless.Testing` -- base classes (`TestBase`), retry attributes, fake helpers (`TestCurrentUser`, `TestCurrentTenant`), the `AddTestTimeProvider()` DI extension, and assertion extensions. Used for unit tests.
 - `Headless.Testing.AspNetCore` -- `HeadlessTestServer<TProgram>`, a `WebApplicationFactory<TProgram>` wrapper with deterministic time, DI-scope helpers, readiness polling, and Respawner-based database reset. Used for ASP.NET Core integration tests.
 - `Headless.Testing.Testcontainers` -- pre-configured Docker container fixtures (e.g., `HeadlessRedisFixture`). Used for integration tests requiring real infrastructure.
+- `Headless.EntityFramework.Testing` -- `TenantIsolationDbAssertions`, which prove a tenant-owned EF Core entity is invisible and unwritable to another tenant. Pairs with `TenantWorld` and `TenantIsolationHttpAssertions` from `Headless.Testing`; see [Tenant isolation](#tenant-isolation).
 - `Headless.Messaging.Testing` -- `MessagingTestHarness` that records messages at the transport boundary (covers outboxed and direct-published) and exposes typed `WaitForPublished`/`Consumed`/`Faulted`/`Exhausted` APIs.
 
 Typical unit test inherits from `TestBase`, which provides `Logger`, `Faker`, and `AbortToken` out of the box. Integration tests typically build a shared xUnit collection fixture around `HeadlessTestServer<TProgram>` plus any required Testcontainers fixtures, then derive per-test classes from an `IntegrationTestBase : TestBase` that resets fixture state per test.
@@ -22,6 +23,7 @@ Typical unit test inherits from `TestBase`, which provides `Logger`, `Faker`, an
 - Use `RetryFactAttribute` / `RetryTheoryAttribute` for flaky tests (e.g., network-dependent). Set `MaxRetries` explicitly.
 - Use `FakeTimeProvider` (from `Microsoft.Extensions.TimeProvider.Testing`) to control time in tests: construct one, inject it wherever a `TimeProvider` is needed, and call `Advance(TimeSpan)` / `SetUtcNow(...)` to simulate time passing. The framework ships no clock wrapper of its own -- `TimeProvider` **is** the abstraction.
 - Use `TestCurrentUser` and `TestCurrentTenant` for faking auth/tenant context in unit tests.
+- For tenant-isolation tests, use `TenantWorld` for the two tenants and their scopes, `TenantIsolationDbAssertions` for EF Core reads and writes, and `TenantIsolationHttpAssertions` for routes. Do not hand-roll a forged-claim battery: the tenant catalog's identifier/claim mismatch enforcement already rejects a principal whose tenant claim disagrees with the resolved tenant.
 - For ASP.NET Core integration tests, use `HeadlessTestServer<TProgram>` from `Headless.Testing.AspNetCore` rather than wiring `WebApplicationFactory<TProgram>` by hand. Wrap it for project-shaped helpers; do not reimplement its time control, DB reset, or scope-execution surface.
 - Tag every integration test with `[Trait("Category", "Integration")]` so CI can filter it from the unit-test lane and run it on a Docker-capable runner.
 - Use an xUnit collection fixture (not a class fixture) to share the test server across an entire test collection. Reset per-test state (DB, messaging harness, ambient time) via a `Fixture.ResetStateAsync()`-style hook called from `IntegrationTestBase.InitializeAsync()` so tests have no ordering dependency.
@@ -48,6 +50,8 @@ Core testing utilities and base classes for xUnit tests.
 - `AlfaTestsOrderer` - Alphabetical test ordering
 - `TestHelpers` - Logging factory and utility methods
 - `TestCurrentUser` / `TestCurrentTenant` - Fake context implementations
+- `TenantIsolationHttpAssertions.ShouldAnswerNotFoundAcrossTenantsAsync(...)` - Asserts a cross-tenant request answers exactly like a missing id, over any `HttpClient`; see [Tenant isolation](#tenant-isolation)
+- `TenantWorld` - Tenants A and B over one `ICurrentTenant`, with `AsTenantA()`, `AsTenantB()`, `AsTenant(id)`, and `AsHost()` scopes and a static `CreatePrincipal(tenantId)`; see [Tenant isolation](#tenant-isolation)
 - `AddTestTimeProvider()` - Replaces the container's `TimeProvider` with a `FakeTimeProvider` and returns it
 - Assertion extensions for async operations
 - `AllBeSecretHashes(algorithmId)` - Asserts a string collection (for example a queried hash column) holds only PHC-encoded secret hashes of one algorithm; failures name the offending index and reason, never the value (see [security.md](security.md))
@@ -432,6 +436,112 @@ No configuration required. Containers use sensible defaults.
 
 - Starts Docker containers during test execution
 - Containers are stopped after tests complete; with reuse enabled on the host they are kept stopped for the next run to reattach
+## Tenant isolation
+
+A tenant-isolation test seeds a row as tenant A and then probes it as tenant B. The kit spans two packages so `Headless.Testing` stays free of EF Core. The HTTP assertion needs only an `HttpClient`, so it works with `HeadlessTestServer.CreateClient()` or any other client:
+
+| Package | Type | Proves |
+| --- | --- | --- |
+| `Headless.Testing` | `TenantWorld` | Nothing by itself: supplies tenants A and B and the scopes that make one current. |
+| `Headless.Testing` | `TenantIsolationHttpAssertions` | A route answers a request for A's resource exactly as it answers a missing id. |
+| `Headless.EntityFramework.Testing` | `TenantIsolationDbAssertions` | Tenant B's query for A's row is empty, and B's update and delete of it throw `CrossTenantWriteException`. |
+
+### What the kit asserts, and what the framework guarantees
+
+The HTTP assertion checks an **application convention**, not a framework invariant: answer another tenant's id with the same 404 a missing id gets, so a response never confirms the resource exists. The framework's own tenant statuses are narrower:
+
+| Situation | Framework answer |
+| --- | --- |
+| Tenant resolution rejects the request (unknown, disabled, or claim-mismatched identifier) | 404 `g:tenant_resolution_failed` |
+| The EF write guard refuses a cross-tenant write | 409 `g:cross_tenant_write` |
+| A tenant-required path runs with no tenant | 403 `g:tenant_required` |
+
+An endpoint meets the convention when the tenant query filter hides the other tenant's row, so the handler takes its normal not-found path. A 403 `g:tenant_required` from the assertion is not a leak: the request carried no tenant, which usually means the test client was not authenticated as tenant B.
+
+Other cross-tenant surfaces already have their own enforcement and tests; the kit does not duplicate them: catalog [mismatch enforcement](multi-tenancy.md#mismatch-enforcement) for forged tenant claims, `RejectCrossTenantEnqueue()` for [background jobs](multi-tenancy.md#background-jobs), and [strict publish tenancy](multi-tenancy.md#strict-publish-tenancy-tenantcontextrequired) for messaging.
+
+### The two-tenant world
+
+`TenantWorld` wraps the `ICurrentTenant` the code under test reads. `TenantWorld.Create()` builds one over a fresh `TestCurrentTenant`; `new TenantWorld(currentTenant)` wraps an existing one, including the application's ambient `CurrentTenant`. Tenant ids default to `tenant-a` and `tenant-b`; blank or equal ids are rejected. Scopes nest and restore the previous tenant on dispose.
+
+The world writes nothing to the tenant catalog. EF Core's filter and guard key on the tenant id alone. A test that also exercises HTTP resolution by identifier seeds the same ids into the catalog store:
+
+```csharp
+builder.AddHeadlessTenancy(tenancy => tenancy.Catalog(catalog => catalog.UseInMemory(options =>
+{
+    options.Tenants.Add(new TenantInfo(TenantWorld.DefaultTenantA, "tenant-a", name: null, isEnabled: true));
+    options.Tenants.Add(new TenantInfo(TenantWorld.DefaultTenantB, "tenant-b", name: null, isEnabled: true));
+})));
+```
+
+`TenantWorld.CreatePrincipal(tenantId, userId)` returns an authenticated `ClaimsPrincipal` carrying the `UserClaimTypes.TenantId` claim, for a test authentication handler that signs a client in as one tenant's user.
+
+### EF Core assertions
+
+```csharp
+var world = new TenantWorld(currentTenant);
+
+Guid orderId;
+using (world.AsTenantA())
+await using (var db = contextFactory.CreateDbContext())
+{
+    var order = new Order();
+    db.Add(order);
+    await db.SaveChangesAsync(AbortToken);
+    orderId = order.Id;
+}
+
+await TenantIsolationDbAssertions.ShouldNotSeeAcrossTenantsAsync<Order>(
+    world,
+    () => contextFactory.CreateDbContext(),
+    orderId,
+    AbortToken
+);
+```
+
+- `ShouldNotReadAcrossTenantsAsync<TEntity>` fails when tenant B's untracked query finds the row: the entity has no tenant query filter.
+- `ShouldRefuseWritesAcrossTenantsAsync<TEntity>` loads the row as tenant B with only `HeadlessQueryFilters.MultiTenancyFilter` ignored, then expects `CrossTenantWriteException` from an update (an optional `Action<TEntity>` mutates the row first) and from a delete. It fails when either save succeeds, which means `GuardTenantWrites()` is off, and names any other exception a save throws.
+- `ShouldNotSeeAcrossTenantsAsync<TEntity>` runs both.
+- Every assertion first reads the row as tenant A and fails when it finds nothing, so a wrong key or a row seeded under the wrong tenant cannot pass.
+- The key is the entity's single primary-key value, of the key property's CLR type. Composite keys are rejected with `ArgumentException`.
+- The context factory is called inside each tenant scope and must return a new context each call; the assertion disposes it. A factory that picks a schema or database by the current tenant gets the probing tenant's placement.
+- Tenant B's probes identify tenant A's row by key and tenant, so under per-tenant placement a row tenant B owns under the same key is not mistaken for tenant A's. When tenant B's context cannot reach tenant A's row with every query filter off, the data is physically separate and the write check passes without writing. When another query filter hides the row from tenant B, the write check fails: the tenant write guard covers only entities marked `IsTenantOwned(...)` or implementing `IMultiTenant`.
+
+### HTTP assertion
+
+```csharp
+using var client = server.CreateClient(); // authenticated as tenant B
+
+await TenantIsolationHttpAssertions.ShouldAnswerNotFoundAcrossTenantsAsync(
+    client,
+    crossTenantUri: $"/orders/{orderOwnedByTenantA}",
+    missingUri: $"/orders/{Guid.NewGuid()}",
+    cancellationToken: AbortToken
+);
+```
+
+- The missing-id request runs first as a control and must answer 404; otherwise the comparison proves nothing.
+- Either request answering `g:tenant_required` (no tenant context) or `g:tenant_resolution_failed` (tenant resolution rejected it) fails the assertion as a test-setup problem, because the request never reached the endpoint as the probing tenant. Two identical tenant-resolution 404s would otherwise pass. Seed the probing tenant in the catalog, and authenticate the client as that tenant.
+- The cross-tenant request must answer 404 with the same content type and the same body once `traceId`, `timestamp`, and `instance` are removed and each request's own path is replaced with a placeholder, because the framework's endpoint-not-found detail quotes the path. Pass `ignoredMembers` for application-specific per-request members.
+- The `Func<HttpRequestMessage>` overload sends any verb or body.
+- Failure messages name the cause: a 2xx returned another tenant's resource; a bare 403 is an existence leak under the convention; 403 `g:tenant_required` and 409 `g:cross_tenant_write` are reported as the framework answers they are.
+- Build the test host with a production-style environment. The common ASP.NET pattern calls `UseExceptionHandler()` only outside Development, so a Development host answers framework exceptions with the developer error page instead of the ProblemDetails bodies this assertion reads.
+
+---
+## Headless.EntityFramework.Testing
+
+Tenant-isolation assertions for Headless EF Core contexts. The API and behavior are in [EF Core assertions](#ef-core-assertions).
+
+### Install
+
+```bash
+dotnet add package Headless.EntityFramework.Testing
+```
+
+### Runtime behavior
+
+Test-only: queries and saves through the contexts the caller's factory returns, and disposes each one.
+
 ---
 
 ## Messaging test harness

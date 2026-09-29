@@ -240,7 +240,7 @@ public abstract class MetadataTenantConformanceTests<TFixture>(TFixture fixture)
         await db.Database.OpenConnectionAsync(AbortToken);
         await using var command = db.Database.GetDbConnection().CreateCommand();
         command.CommandText =
-            $"SELECT {sql.DelimitIdentifier("tenant_key")} FROM {sql.DelimitIdentifier("Rows", "tenancy")}";
+            $"SELECT {sql.DelimitIdentifier("tenant_key")} FROM {sql.DelimitIdentifier("Rows", fixture.Placement.Schema)}";
         (await command.ExecuteScalarAsync(AbortToken)).Should().Be("stored:" + tenant);
     }
 
@@ -274,7 +274,11 @@ public abstract class MetadataTenantConformanceTests<TFixture>(TFixture fixture)
         var options = new DbContextOptionsBuilder<MetadataTenantContext>();
         fixture.ConfigureOptions(options);
         options.LogTo(sql.Add, [RelationalEventId.CommandExecuted]);
-        return new MetadataTenantContext(services.GetRequiredService<HeadlessDbContextServices>(), options.Options);
+        return new MetadataTenantContext(
+            services.GetRequiredService<HeadlessDbContextServices>(),
+            options.Options,
+            fixture.Placement
+        );
     }
 
     private async Task<Guid> _SeedAsync(string tenant, bool hidden = false, string? code = null)
