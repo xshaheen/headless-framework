@@ -56,11 +56,11 @@ public sealed record FakeApnsRequest(
 /// The <c>apns-unique-id</c> response header, which the APNs sandbox adds to identify the notification in its delivery
 /// log; omitted when <see langword="null"/>.
 /// </param>
-/// <param name="Headers">Extra response headers, such as the <c>apns-channel-id</c> of a created channel.</param>
 /// <param name="RetryAfterSeconds">
 /// The <c>Retry-After</c> response header in seconds; APNs does not document one, but a throttling proxy in front of
 /// it may send it, so the fake can carry it.
 /// </param>
+/// <param name="Headers">Extra response headers, such as the <c>apns-channel-id</c> of a created channel.</param>
 public sealed record FakeApnsReply(
     int Status,
     string? Reason = null,
@@ -576,7 +576,7 @@ public sealed class FakeApnsServer : IAsyncDisposable
 
             if (reply.RetryAfterSeconds is { } retryAfter)
             {
-                context.Response.Headers["Retry-After"] = retryAfter.ToString(CultureInfo.InvariantCulture);
+                context.Response.Headers.RetryAfter = retryAfter.ToString(CultureInfo.InvariantCulture);
             }
 
             if (reply.RawBody is not null)

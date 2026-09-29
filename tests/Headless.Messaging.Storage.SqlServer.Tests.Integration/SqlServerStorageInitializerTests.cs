@@ -215,13 +215,13 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
             connection,
             schema,
             "MessagingPublished",
-            $"IX_MessagingPublished_Version_NextRetryAt"
+            "IX_MessagingPublished_Version_NextRetryAt"
         );
         await _AssertRetryIndexShapeAsync(
             connection,
             schema,
             "MessagingReceived",
-            $"IX_MessagingReceived_Version_NextRetryAt"
+            "IX_MessagingReceived_Version_NextRetryAt"
         );
 
         // cleanup
@@ -428,14 +428,14 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
                 new
                 {
                     Schema = schema,
-                    ReceivedUnique = $"UX_MessagingReceived_InboxRootKey",
-                    ReceivedLifecycle = $"UX_MessagingReceived_InboxLifecycleGeneration",
-                    ReceivedVersionExpires = $"IX_MessagingReceived_Version_ExpiresAt_StatusName",
-                    ReceivedExpires = $"IX_MessagingReceived_ExpiresAt_StatusName",
-                    ReceivedRetry = $"IX_MessagingReceived_Version_NextRetryAt",
-                    PublishedVersionExpires = $"IX_MessagingPublished_Version_ExpiresAt_StatusName",
-                    PublishedExpires = $"IX_MessagingPublished_ExpiresAt_StatusName",
-                    PublishedRetry = $"IX_MessagingPublished_Version_NextRetryAt",
+                    ReceivedUnique = "UX_MessagingReceived_InboxRootKey",
+                    ReceivedLifecycle = "UX_MessagingReceived_InboxLifecycleGeneration",
+                    ReceivedVersionExpires = "IX_MessagingReceived_Version_ExpiresAt_StatusName",
+                    ReceivedExpires = "IX_MessagingReceived_ExpiresAt_StatusName",
+                    ReceivedRetry = "IX_MessagingReceived_Version_NextRetryAt",
+                    PublishedVersionExpires = "IX_MessagingPublished_Version_ExpiresAt_StatusName",
+                    PublishedExpires = "IX_MessagingPublished_ExpiresAt_StatusName",
+                    PublishedRetry = "IX_MessagingPublished_Version_NextRetryAt",
                 },
                 cancellationToken: AbortToken
             )

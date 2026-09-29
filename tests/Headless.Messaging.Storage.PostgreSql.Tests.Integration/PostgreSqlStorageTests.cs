@@ -2019,7 +2019,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
             const string indexCountSql = "SELECT COUNT(*) FROM pg_indexes WHERE schemaname=@Schema;";
             var expected = await connection.ExecuteScalarAsync<int>(indexCountSql, new { Schema = referenceSchema });
             var actual = await connection.ExecuteScalarAsync<int>(indexCountSql, new { Schema = concurrentSchema });
-            expected.Should().BeGreaterThan(0);
+            expected.Should().BePositive();
             actual.Should().Be(expected);
         }
         finally

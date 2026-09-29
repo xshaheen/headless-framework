@@ -87,10 +87,11 @@ public sealed class ApnsConnectionBoundTests : TestBase
         result.Responses.Select(r => r.ClientIdentifier).Should().Equal(tokens);
         server.MaxConcurrentConnections.Should().BeLessThanOrEqualTo(4);
         server.Requests.Should().HaveCount(104);
+
         server
-            .Requests.GroupBy(r => r.DeviceToken)
+            .Requests.GroupBy(r => r.DeviceToken, StringComparer.Ordinal)
             .Should()
-            .OnlyContain(g => g.Count() == 1, "a queued request must not be sent twice");
+            .OnlyContain(g => g.Take(2).Count() == 1, "a queued request must not be sent twice");
     }
 
     [Fact]

@@ -313,8 +313,11 @@ public sealed class ApnsBroadcastTests : TestBase
         await service.SendBroadcastAsync(_ChannelId, _Update(), AbortToken);
         clock.Advance(TimeSpan.FromMinutes(25));
         var firstBearer = _server.Requests.Single().Bearer;
+
         _server.Responder = request =>
-            request.Bearer == firstBearer ? new FakeApnsReply(403, "ExpiredProviderToken") : FakeApnsReply.Ok;
+            string.Equals(request.Bearer, firstBearer, StringComparison.Ordinal)
+                ? new FakeApnsReply(403, "ExpiredProviderToken")
+                : FakeApnsReply.Ok;
 
         // when
         var result = await service.SendBroadcastAsync(_ChannelId, _Update(), AbortToken);

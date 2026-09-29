@@ -91,7 +91,7 @@ public sealed class UnitOfWorkIdempotencySettlementTests : TestBase
             await context.Feature.CompleteAsync(
                 unit,
                 Admitted(),
-                new byte[] { 9 },
+                "\t"u8.ToArray(),
                 _Contract,
                 cancellationToken: AbortToken
             );

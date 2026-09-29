@@ -209,7 +209,7 @@ internal sealed class SqlServerStorageInitializer(
 
     private string _CreateInboxReadinessScript(string schema)
     {
-        var receivedPrefix = "MessagingReceived";
+        const string receivedPrefix = "MessagingReceived";
 
         return $"""
             IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxIdentity' AND parent_object_id=OBJECT_ID(N'{GetReceivedTableName()}'))
@@ -234,8 +234,8 @@ internal sealed class SqlServerStorageInitializer(
     {
         // Constraint names are unique per schema, so the table name alone keeps them distinct; every
         // existence probe below is scoped to its table because the same name exists in every schema.
-        var receivedPrefix = "MessagingReceived";
-        var publishedPrefix = "MessagingPublished";
+        const string receivedPrefix = "MessagingReceived";
+        const string publishedPrefix = "MessagingPublished";
 
         // Simplified SQL for Azure SQL Edge compatibility (no TEXTIMAGE_ON, simpler index options).
         // Each idempotent block is wrapped in BEGIN TRY ... BEGIN CATCH to absorb the narrow set of

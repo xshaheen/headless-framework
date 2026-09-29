@@ -194,10 +194,12 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             .Should()
             .ContainSingle(c => c.GetMethodInfo().Name == nameof(IIdempotentOperations.CompleteAsync))
             .Which.GetArguments();
+
         complete[0].Should().BeSameAs(seen.Admission);
-        complete[2].Should().Be(IdempotencyResponseSnapshot.Contract);
+        complete.Should().HaveElementAt(2, IdempotencyResponseSnapshot.Contract);
         complete[3].Should().BeNull("the admission's retention applies");
-        complete[4].Should().Be(CancellationToken.None, "a client disconnect must not strand the admission");
+        complete.Should().HaveElementAt(4, CancellationToken.None, "a client disconnect must not strand the admission");
+
         CallCount(operations, nameof(IIdempotentOperations.ReleaseAsync)).Should().Be(0);
 
         var stored = (ReadOnlyMemory<byte>)complete[1]!;
