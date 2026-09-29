@@ -106,13 +106,13 @@ constraint and index names derived from them (`PK_FencingLeases`, `IX_FencingLea
 `CK_IdempotencyRecords_Status`, `DF_FencingLeases_TakeoverCount`), and unquoted snake_case on PostgreSQL
 (`fencing_leases`, `ix_fencing_leases_active_expiry`). A new feature follows it on both providers.
 
-Messaging, Coordination, Fencing, Idempotency, Sequences, and Features follow the rule on both providers
-(`messaging_published` / `MessagingPublished`, `fencing_leases` / `FencingLeases`,
+Messaging, Coordination, Fencing, Idempotency, Sequences, Features, Permissions, and Settings follow the rule on both
+providers (`messaging_published` / `MessagingPublished`, `fencing_leases` / `FencingLeases`,
 `idempotency_record_generations` / `IdempotencyRecordGenerations`, `sequences` / `Sequences`,
-`feature_values` / `FeatureValues`). Not every family does yet: Permissions, Settings, and the EF-mapped Jobs tables
-use PascalCase on PostgreSQL as well (`PermissionGrants`, `CronJobs`), and AuditLog names its table `audit_log` on
-both providers. Converting those is separate work; do not rename a family's objects as a side effect of other
-changes.
+`feature_values` / `FeatureValues`, `permission_grants` / `PermissionGrants`, `setting_values` / `SettingValues`).
+Not every family does yet: the EF-mapped Jobs tables use PascalCase on PostgreSQL as well (`CronJobs`), and AuditLog
+names its table `audit_log` on both providers. Converting those is separate work; do not rename a family's objects as
+a side effect of other changes.
 
 #### One naming source for raw SQL and EF Core
 
@@ -133,8 +133,15 @@ database provisioned by one reads correctly through the other. `Headless.Hosting
 - Configurable table names are nullable. `null` means the convention's default
   (`HeadlessStorageNaming.Resolve(configured, style, "FeatureValues")`), a configured name is used verbatim,
   validators check it only when set, and derived key and index names embed it unchanged (`pk_MyValues`).
+- A configured table name is refused when its longest derived PostgreSQL name would pass 63 bytes, since
+  PostgreSQL truncates rather than rejects it. The feature's Core package lists each table's index name parts once
+  (`FeaturesStorageNames`); the EF mapping builds its index names from them, and every provider's options validator
+  passes them to `FitsDerivedPostgreSqlNames` (namespace `FluentValidation`, package `Headless.Hosting`). The
+  conventional default names must fit too: the permission grants index for host grants ends in `_no_tenant`, because
+  `_null_tenant_id` made its default name 67 bytes.
 - A parity test per provider creates the schema with the raw initializer and compares the catalog's columns and
-  index names with the EF model built for that provider. Features has one in its conformance harness.
+  index names with the EF model built for that provider. Features and Settings have one in their conformance
+  harness; Permissions has one in each provider's integration project.
 
 - A noun unique to the feature's family already counts as the prefix: `CronJobs`, `FeatureValues`,
   `PermissionGrants`, and `headless_distributed_locks_fence` need no extra `jobs_` or `features_`.

@@ -2,6 +2,7 @@ using Headless.Abstractions;
 using Headless.Caching;
 using Headless.DistributedLocks;
 using Headless.Domain;
+using Headless.Hosting.Initialization;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.MultiTenancy;
@@ -95,7 +96,10 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture) : Test
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddHeadlessPermissions(storageOptions.Value);
+            modelBuilder.AddHeadlessPermissions(
+                storageOptions.Value,
+                HeadlessStorageNaming.ForProvider(Database.ProviderName)
+            );
         }
     }
 

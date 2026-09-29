@@ -63,7 +63,8 @@ public static class SetupSettingsEntityFramework
     // EF dispatches to whatever DB the consumer wired up, so the validator uses the most
     // permissive identifier pattern (SqlServer, a superset of PostgreSQL's character set) and
     // the larger length cap (SqlServer). The underlying DB surfaces type/length issues at
-    // migration time.
+    // migration time, except derived key and index names, which PostgreSQL truncates instead
+    // of rejecting, so those are bounded here.
     /// <summary>
     /// Validates <see cref="SettingsStorageOptions"/> using cross-provider identifier rules
     /// (SQL Server superset) so that the same configuration is accepted by any EF provider.
@@ -74,8 +75,14 @@ public static class SetupSettingsEntityFramework
         public EntityFrameworkSettingsStorageOptionsValidator()
         {
             RuleFor(x => x.Schema).IsValidCrossProviderIdentifier();
-            RuleFor(x => x.SettingValuesTableName).IsValidCrossProviderIdentifier();
-            RuleFor(x => x.SettingDefinitionsTableName).IsValidCrossProviderIdentifier();
+            RuleFor(x => x.SettingValuesTableName)
+                .IsValidCrossProviderIdentifier()
+                .FitsDerivedPostgreSqlNames(SettingsStorageNames.ValuesIndexes)
+                .When(x => x.SettingValuesTableName is not null);
+            RuleFor(x => x.SettingDefinitionsTableName)
+                .IsValidCrossProviderIdentifier()
+                .FitsDerivedPostgreSqlNames(SettingsStorageNames.DefinitionsIndexes)
+                .When(x => x.SettingDefinitionsTableName is not null);
         }
     }
 }

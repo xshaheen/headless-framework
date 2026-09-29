@@ -1,33 +1,26 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Permissions;
-using Headless.Settings;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 
 namespace Headless.EntityFramework.Migrations.Startup;
 
-internal sealed class SettingsMigrationDbContext(
-    DbContextOptions<SettingsMigrationDbContext> options,
-    IOptions<SettingsStorageOptions> storageOptions
-) : DbContext(options)
+internal sealed class SettingsMigrationDbContext(DbContextOptions<SettingsMigrationDbContext> options)
+    : DbContext(options)
 {
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.AddHeadlessSettings(storageOptions.Value);
+        modelBuilder.AddHeadlessSettings(this);
     }
 }
 
-internal sealed class PermissionsMigrationDbContext(
-    DbContextOptions<PermissionsMigrationDbContext> options,
-    IOptions<PermissionsStorageOptions> storageOptions
-) : DbContext(options)
+internal sealed class PermissionsMigrationDbContext(DbContextOptions<PermissionsMigrationDbContext> options)
+    : DbContext(options)
 {
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.AddHeadlessPermissions(storageOptions.Value);
+        modelBuilder.AddHeadlessPermissions(this);
     }
 }
 

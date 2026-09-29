@@ -141,8 +141,14 @@ public static class SetupSettingsPostgreSql
         public PostgreSqlSettingsStorageOptionsValidator()
         {
             RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.PostgreSql);
-            RuleFor(x => x.SettingValuesTableName).IsValidIdentifierFor(StorageProvider.PostgreSql);
-            RuleFor(x => x.SettingDefinitionsTableName).IsValidIdentifierFor(StorageProvider.PostgreSql);
+            RuleFor(x => x.SettingValuesTableName)
+                .IsValidIdentifierFor(StorageProvider.PostgreSql)
+                .FitsDerivedPostgreSqlNames(SettingsStorageNames.ValuesIndexes)
+                .When(x => x.SettingValuesTableName is not null);
+            RuleFor(x => x.SettingDefinitionsTableName)
+                .IsValidIdentifierFor(StorageProvider.PostgreSql)
+                .FitsDerivedPostgreSqlNames(SettingsStorageNames.DefinitionsIndexes)
+                .When(x => x.SettingDefinitionsTableName is not null);
         }
     }
 }

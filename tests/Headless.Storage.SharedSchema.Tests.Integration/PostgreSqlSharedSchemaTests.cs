@@ -69,9 +69,9 @@ public sealed class PostgreSqlSharedSchemaTests(PostgreSqlSharedSchemaFixture fi
                 "messaging_received",
                 "messaging_schema_state",
             ],
-            ["Permissions"] = ["PermissionDefinitions", "PermissionGrants", "PermissionGroupDefinitions"],
+            ["Permissions"] = ["permission_definitions", "permission_grants", "permission_group_definitions"],
             ["Sequences"] = ["sequences"],
-            ["Settings"] = ["SettingDefinitions", "SettingValues"],
+            ["Settings"] = ["setting_definitions", "setting_values"],
         };
 
     // The audit log's identity column owns an implicit sequence named after the table and column.

@@ -92,9 +92,9 @@ internal sealed partial class PostgreSqlPermissionsStorageInitializer(
 
     private static string _CreateSchemaAndTablesScript(PermissionsStorageOptions options)
     {
-        var grantsTable = _Qualified(options.Schema, options.PermissionGrantsTableName);
-        var definitionsTable = _Qualified(options.Schema, options.PermissionDefinitionsTableName);
-        var groupsTable = _Qualified(options.Schema, options.PermissionGroupDefinitionsTableName);
+        var grantsName = _GrantsName(options);
+        var definitionsName = _DefinitionsName(options);
+        var groupsName = _GroupsName(options);
 
         // Serialize concurrent-startup DDL across replicas with a transaction-scoped advisory
         // lock keyed on the schema. Auto-released on COMMIT/ROLLBACK; no explicit release.
@@ -107,68 +107,48 @@ internal sealed partial class PostgreSqlPermissionsStorageInitializer(
             {PostgreSqlSchemaInitLock.AcquireStatement(options.Schema)}
             CREATE SCHEMA IF NOT EXISTS "{options.Schema}";
 
-            CREATE TABLE IF NOT EXISTS {groupsTable} (
-                "Id" uuid NOT NULL,
-                "Name" character varying({PermissionGroupDefinitionRecordConstants.NameMaxLength}) NOT NULL,
-                "DisplayName" character varying({PermissionGroupDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
-                "ExtraProperties" text NOT NULL,
-                CONSTRAINT "PK_{options.PermissionGroupDefinitionsTableName}" PRIMARY KEY ("Id")
+            CREATE TABLE IF NOT EXISTS {_Qualified(options.Schema, groupsName)} (
+                "id" uuid NOT NULL,
+                "name" character varying({PermissionGroupDefinitionRecordConstants.NameMaxLength}) NOT NULL,
+                "display_name" character varying({PermissionGroupDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
+                "extra_properties" text NOT NULL,
+                CONSTRAINT "pk_{groupsName}" PRIMARY KEY ("id")
             );
 
-            CREATE TABLE IF NOT EXISTS {definitionsTable} (
-                "Id" uuid NOT NULL,
-                "GroupName" character varying({PermissionGroupDefinitionRecordConstants.NameMaxLength}) NOT NULL,
-                "Name" character varying({PermissionDefinitionRecordConstants.NameMaxLength}) NOT NULL,
-                "DisplayName" character varying({PermissionDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
-                "IsEnabled" boolean NOT NULL,
-                "ParentName" character varying({PermissionDefinitionRecordConstants.NameMaxLength}),
-                "Providers" character varying({PermissionDefinitionRecordConstants.ProvidersMaxLength}),
-                "ExtraProperties" text NOT NULL,
-                CONSTRAINT "PK_{options.PermissionDefinitionsTableName}" PRIMARY KEY ("Id")
+            CREATE TABLE IF NOT EXISTS {_Qualified(options.Schema, definitionsName)} (
+                "id" uuid NOT NULL,
+                "group_name" character varying({PermissionGroupDefinitionRecordConstants.NameMaxLength}) NOT NULL,
+                "name" character varying({PermissionDefinitionRecordConstants.NameMaxLength}) NOT NULL,
+                "display_name" character varying({PermissionDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
+                "is_enabled" boolean NOT NULL,
+                "parent_name" character varying({PermissionDefinitionRecordConstants.NameMaxLength}),
+                "providers" character varying({PermissionDefinitionRecordConstants.ProvidersMaxLength}),
+                "extra_properties" text NOT NULL,
+                CONSTRAINT "pk_{definitionsName}" PRIMARY KEY ("id")
             );
 
-            CREATE TABLE IF NOT EXISTS {grantsTable} (
-                "Id" uuid NOT NULL,
-                "Name" character varying({PermissionGrantRecordConstants.NameMaxLength}) NOT NULL,
-                "ProviderName" character varying({PermissionGrantRecordConstants.ProviderNameMaxLength}) NOT NULL,
-                "ProviderKey" character varying({PermissionGrantRecordConstants.ProviderKeyMaxLength}) NOT NULL,
-                "TenantId" character varying({PermissionGrantRecordConstants.TenantIdMaxLength}),
-                "IsGranted" boolean NOT NULL DEFAULT TRUE,
-                "CreatedAt" timestamp with time zone NOT NULL,
-                "UpdatedAt" timestamp with time zone,
-                CONSTRAINT "PK_{options.PermissionGrantsTableName}" PRIMARY KEY ("Id")
+            CREATE TABLE IF NOT EXISTS {_Qualified(options.Schema, grantsName)} (
+                "id" uuid NOT NULL,
+                "name" character varying({PermissionGrantRecordConstants.NameMaxLength}) NOT NULL,
+                "provider_name" character varying({PermissionGrantRecordConstants.ProviderNameMaxLength}) NOT NULL,
+                "provider_key" character varying({PermissionGrantRecordConstants.ProviderKeyMaxLength}) NOT NULL,
+                "tenant_id" character varying({PermissionGrantRecordConstants.TenantIdMaxLength}),
+                "is_granted" boolean NOT NULL DEFAULT TRUE,
+                "created_at" timestamp with time zone NOT NULL,
+                "updated_at" timestamp with time zone,
+                CONSTRAINT "pk_{grantsName}" PRIMARY KEY ("id")
             );
-
-            DO $migration$
-            BEGIN
-                IF EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = '{options.Schema}' AND table_name = '{options.PermissionGrantsTableName}' AND column_name = 'DateCreated'
-                ) AND NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = '{options.Schema}' AND table_name = '{options.PermissionGrantsTableName}' AND column_name = 'CreatedAt'
-                ) THEN
-                    ALTER TABLE {grantsTable} RENAME COLUMN "DateCreated" TO "CreatedAt";
-                END IF;
-
-                IF EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = '{options.Schema}' AND table_name = '{options.PermissionGrantsTableName}' AND column_name = 'DateUpdated'
-                ) AND NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = '{options.Schema}' AND table_name = '{options.PermissionGrantsTableName}' AND column_name = 'UpdatedAt'
-                ) THEN
-                    ALTER TABLE {grantsTable} RENAME COLUMN "DateUpdated" TO "UpdatedAt";
-                END IF;
-            END $migration$;
             """;
     }
 
     private static string _CreateIndexesScript(PermissionsStorageOptions options)
     {
-        var grantsTable = _Qualified(options.Schema, options.PermissionGrantsTableName);
-        var definitionsTable = _Qualified(options.Schema, options.PermissionDefinitionsTableName);
-        var groupsTable = _Qualified(options.Schema, options.PermissionGroupDefinitionsTableName);
+        var grantsName = _GrantsName(options);
+        var definitionsName = _DefinitionsName(options);
+        var groupsName = _GroupsName(options);
+        var grantsTable = _Qualified(options.Schema, grantsName);
+        var definitionsTable = _Qualified(options.Schema, definitionsName);
+        var groupsTable = _Qualified(options.Schema, groupsName);
 
         var lockResource = $"headless_permissions_init:{options.Schema}";
         var acquireLock = $"SELECT pg_advisory_xact_lock(hashtextextended('{lockResource}', 0));";
@@ -176,19 +156,48 @@ internal sealed partial class PostgreSqlPermissionsStorageInitializer(
         return $"""
             {acquireLock}
 
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_{options.PermissionGroupDefinitionsTableName}_Name" ON {groupsTable} ("Name");
-            CREATE INDEX IF NOT EXISTS "IX_{options.PermissionDefinitionsTableName}_GroupName" ON {definitionsTable} ("GroupName");
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_{options.PermissionDefinitionsTableName}_Name" ON {definitionsTable} ("Name");
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_{options.PermissionGrantsTableName}_TenantId_Name_ProviderName_ProviderKey" ON {grantsTable} ("TenantId", "Name", "ProviderName", "ProviderKey") WHERE "TenantId" IS NOT NULL;
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_{options.PermissionGrantsTableName}_Name_ProviderName_ProviderKey_NullTenantId" ON {grantsTable} ("Name", "ProviderName", "ProviderKey") WHERE "TenantId" IS NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS "ix_{groupsName}_name" ON {groupsTable} ("name");
+            CREATE INDEX IF NOT EXISTS "ix_{definitionsName}_group_name" ON {definitionsTable} ("group_name");
+            CREATE UNIQUE INDEX IF NOT EXISTS "ix_{definitionsName}_name" ON {definitionsTable} ("name");
+            CREATE UNIQUE INDEX IF NOT EXISTS "ix_{grantsName}_tenant_id_name_provider_name_provider_key" ON {grantsTable} ("tenant_id", "name", "provider_name", "provider_key") WHERE "tenant_id" IS NOT NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS "ix_{grantsName}_name_provider_name_provider_key_no_tenant" ON {grantsTable} ("name", "provider_name", "provider_key") WHERE "tenant_id" IS NULL;
             """;
     }
 
-    internal static string Qualified(PermissionsStorageOptions options, string tableName)
+    /// <summary>Returns the qualified permission grants table.</summary>
+    internal static string GrantsTable(PermissionsStorageOptions options)
     {
-        return _Qualified(options.Schema, tableName);
+        return _Qualified(options.Schema, _GrantsName(options));
     }
 
+    /// <summary>Returns the qualified permission definitions table.</summary>
+    internal static string DefinitionsTable(PermissionsStorageOptions options)
+    {
+        return _Qualified(options.Schema, _DefinitionsName(options));
+    }
+
+    /// <summary>Returns the qualified permission group definitions table.</summary>
+    internal static string GroupsTable(PermissionsStorageOptions options)
+    {
+        return _Qualified(options.Schema, _GroupsName(options));
+    }
+
+    private static string _GrantsName(PermissionsStorageOptions options)
+    {
+        return options.ResolvePermissionGrantsTableName(StorageNamingStyle.SnakeCase);
+    }
+
+    private static string _DefinitionsName(PermissionsStorageOptions options)
+    {
+        return options.ResolvePermissionDefinitionsTableName(StorageNamingStyle.SnakeCase);
+    }
+
+    private static string _GroupsName(PermissionsStorageOptions options)
+    {
+        return options.ResolvePermissionGroupDefinitionsTableName(StorageNamingStyle.SnakeCase);
+    }
+
+    // Quoted so a configured table name keeps its exact case; the default snake_case names read the same unquoted.
     private static string _Qualified(string schema, string tableName)
     {
         return $"""

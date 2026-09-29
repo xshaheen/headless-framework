@@ -139,8 +139,14 @@ public static class SetupSettingsSqlServer
         public SqlServerSettingsStorageOptionsValidator()
         {
             RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.SqlServer);
-            RuleFor(x => x.SettingValuesTableName).IsValidIdentifierFor(StorageProvider.SqlServer);
-            RuleFor(x => x.SettingDefinitionsTableName).IsValidIdentifierFor(StorageProvider.SqlServer);
+            RuleFor(x => x.SettingValuesTableName)
+                .IsValidIdentifierFor(StorageProvider.SqlServer)
+                .FitsDerivedPostgreSqlNames(SettingsStorageNames.ValuesIndexes)
+                .When(x => x.SettingValuesTableName is not null);
+            RuleFor(x => x.SettingDefinitionsTableName)
+                .IsValidIdentifierFor(StorageProvider.SqlServer)
+                .FitsDerivedPostgreSqlNames(SettingsStorageNames.DefinitionsIndexes)
+                .When(x => x.SettingDefinitionsTableName is not null);
         }
     }
 }

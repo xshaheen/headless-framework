@@ -31,9 +31,11 @@ internal sealed class FeatureDefinitionRecordConfiguration(FeaturesStorageOption
         b.Property(x => x.Providers).HasMaxLength(FeatureDefinitionRecordConstants.ProvidersMaxLength);
         b.HasIndex(x => new { x.Name })
             .IsUnique()
-            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "Name"));
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, FeaturesStorageNames.DefinitionsByName));
         b.HasIndex(x => new { x.GroupName })
-            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "GroupName"));
+            .HasDatabaseName(
+                HeadlessStorageNaming.IndexName(style, table, FeaturesStorageNames.DefinitionsByGroupName)
+            );
         b.ApplyColumnNaming(style);
     }
 }

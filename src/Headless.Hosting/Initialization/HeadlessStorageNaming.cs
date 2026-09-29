@@ -128,4 +128,39 @@ public static class HeadlessStorageNaming
 
         return builder.ToString();
     }
+
+    /// <summary>
+    /// Returns the longest name derived from <paramref name="tableName"/> in <paramref name="style"/>: its primary key
+    /// and one index per entry of <paramref name="indexes"/>, each built by <see cref="IndexName"/>. Length is measured
+    /// in UTF-8 bytes, the unit database identifier limits use.
+    /// </summary>
+    /// <param name="style">The naming style of the target database.</param>
+    /// <param name="tableName">The resolved table name.</param>
+    /// <param name="indexes">The PascalCase parts of each index on the table.</param>
+    /// <returns>The derived name with the most UTF-8 bytes.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="tableName"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="tableName"/> is empty or white space.</exception>
+    public static string LongestDerivedName(
+        StorageNamingStyle style,
+        string tableName,
+        params ReadOnlySpan<string[]> indexes
+    )
+    {
+        var longest = PrimaryKeyName(style, tableName);
+        var longestBytes = Encoding.UTF8.GetByteCount(longest);
+
+        foreach (var parts in indexes)
+        {
+            var name = IndexName(style, tableName, parts);
+            var bytes = Encoding.UTF8.GetByteCount(name);
+
+            if (bytes > longestBytes)
+            {
+                longest = name;
+                longestBytes = bytes;
+            }
+        }
+
+        return longest;
+    }
 }

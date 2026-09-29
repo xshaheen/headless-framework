@@ -6,6 +6,9 @@
     <RootNamespace>Headless.Permissions</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Permissions.Storage.EntityFramework" />
+    <InternalsVisibleTo Include="Headless.Permissions.Storage.PostgreSql" />
+    <InternalsVisibleTo Include="Headless.Permissions.Storage.SqlServer" />
     <InternalsVisibleTo Include="Headless.Permissions.Composition.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>

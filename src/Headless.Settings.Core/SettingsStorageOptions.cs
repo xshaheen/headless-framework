@@ -14,11 +14,19 @@ public sealed class SettingsStorageOptions
     /// </summary>
     public string Schema { get; set; } = HeadlessStorageDefaults.Schema;
 
-    /// <summary>Gets or sets the name of the table that stores setting values. Defaults to <c>SettingValues</c>.</summary>
-    public string SettingValuesTableName { get; set; } = "SettingValues";
+    /// <summary>
+    /// Gets or sets the name of the table that stores setting values. Default: <see langword="null"/>, which uses the
+    /// database's conventional name: <c>setting_values</c> on PostgreSQL, <c>SettingValues</c> elsewhere. A configured
+    /// name is used verbatim, and the table's key and index names derive from it.
+    /// </summary>
+    public string? SettingValuesTableName { get; set; }
 
-    /// <summary>Gets or sets the name of the table that stores setting definitions. Defaults to <c>SettingDefinitions</c>.</summary>
-    public string SettingDefinitionsTableName { get; set; } = "SettingDefinitions";
+    /// <summary>
+    /// Gets or sets the name of the table that stores setting definitions. Default: <see langword="null"/>, which uses
+    /// the database's conventional name: <c>setting_definitions</c> on PostgreSQL, <c>SettingDefinitions</c> elsewhere.
+    /// A configured name is used verbatim.
+    /// </summary>
+    public string? SettingDefinitionsTableName { get; set; }
 
     /// <summary>
     /// When false, the startup storage initializer is skipped (no-op) — use when the schema is
@@ -27,6 +35,22 @@ public sealed class SettingsStorageOptions
     /// affects raw-DDL self-initializing providers; EF-mode storage uses migrations.
     /// </summary>
     public bool InitializeOnStartup { get; set; } = true;
+
+    /// <summary>Returns the setting values table name to use on a database with <paramref name="style"/>.</summary>
+    /// <param name="style">The naming style of the target database.</param>
+    /// <returns>The configured name, or the conventional default for <paramref name="style"/>.</returns>
+    public string ResolveSettingValuesTableName(StorageNamingStyle style)
+    {
+        return HeadlessStorageNaming.Resolve(SettingValuesTableName, style, "SettingValues");
+    }
+
+    /// <summary>Returns the setting definitions table name to use on a database with <paramref name="style"/>.</summary>
+    /// <param name="style">The naming style of the target database.</param>
+    /// <returns>The configured name, or the conventional default for <paramref name="style"/>.</returns>
+    public string ResolveSettingDefinitionsTableName(StorageNamingStyle style)
+    {
+        return HeadlessStorageNaming.Resolve(SettingDefinitionsTableName, style, "SettingDefinitions");
+    }
 
     /// <summary>
     /// Copies every property to <paramref name="target"/>. Centralizes the property list so

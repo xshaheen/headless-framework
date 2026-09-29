@@ -154,9 +154,18 @@ public static class SetupPermissionsSqlServer
         public SqlServerPermissionsStorageOptionsValidator()
         {
             RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.SqlServer);
-            RuleFor(x => x.PermissionGrantsTableName).IsValidIdentifierFor(StorageProvider.SqlServer);
-            RuleFor(x => x.PermissionDefinitionsTableName).IsValidIdentifierFor(StorageProvider.SqlServer);
-            RuleFor(x => x.PermissionGroupDefinitionsTableName).IsValidIdentifierFor(StorageProvider.SqlServer);
+            RuleFor(x => x.PermissionGrantsTableName)
+                .IsValidIdentifierFor(StorageProvider.SqlServer)
+                .FitsDerivedPostgreSqlNames(PermissionsStorageNames.GrantsIndexes)
+                .When(x => x.PermissionGrantsTableName is not null);
+            RuleFor(x => x.PermissionDefinitionsTableName)
+                .IsValidIdentifierFor(StorageProvider.SqlServer)
+                .FitsDerivedPostgreSqlNames(PermissionsStorageNames.DefinitionsIndexes)
+                .When(x => x.PermissionDefinitionsTableName is not null);
+            RuleFor(x => x.PermissionGroupDefinitionsTableName)
+                .IsValidIdentifierFor(StorageProvider.SqlServer)
+                .FitsDerivedPostgreSqlNames(PermissionsStorageNames.GroupsIndexes)
+                .When(x => x.PermissionGroupDefinitionsTableName is not null);
         }
     }
 }

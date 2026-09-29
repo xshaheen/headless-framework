@@ -53,7 +53,7 @@ internal sealed class SettingsEntityStartupValidator<TContext>(IDbContextFactory
 
         throw new InvalidOperationException(
             $"Headless.Settings: the registered DbContext `{context.GetType().FullName}` does not contain `{entityName}`. "
-                + "Call `modelBuilder.AddHeadlessSettings(settingsStorageOptions)` in your `OnModelCreating`."
+                + "Call `modelBuilder.AddHeadlessSettings(this)` in your `OnModelCreating`."
         );
     }
 }

@@ -155,14 +155,6 @@ internal sealed class SqlServerFeaturesStorageInitializer(
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
             END CATCH;
 
-            IF COL_LENGTH(N'{valuesObject}', N'DateCreated') IS NOT NULL
-               AND COL_LENGTH(N'{valuesObject}', N'CreatedAt') IS NULL
-                EXEC sys.sp_rename N'{valuesObject}.DateCreated', N'CreatedAt', N'COLUMN';
-
-            IF COL_LENGTH(N'{valuesObject}', N'DateUpdated') IS NOT NULL
-               AND COL_LENGTH(N'{valuesObject}', N'UpdatedAt') IS NULL
-                EXEC sys.sp_rename N'{valuesObject}.DateUpdated', N'UpdatedAt', N'COLUMN';
-
             BEGIN TRY
                 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{groupsName}_Name' AND object_id = OBJECT_ID(N'{groupsObject}'))
                     CREATE UNIQUE NONCLUSTERED INDEX [IX_{groupsName}_Name] ON {groupsTable} ([Name] ASC);

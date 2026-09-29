@@ -40,15 +40,19 @@ internal sealed class FeatureValueRecordConfiguration(FeaturesStorageOptions opt
             })
             .IsUnique()
             .HasFilter($"\"{providerKey}\" IS NOT NULL")
-            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "Name", "ProviderName", "ProviderKey"));
+            .HasDatabaseName(
+                HeadlessStorageNaming.IndexName(style, table, FeaturesStorageNames.ValuesByNameProviderKey)
+            );
 
         b.HasIndex(x => new { x.Name, x.ProviderName })
             .IsUnique()
             .HasFilter($"\"{providerKey}\" IS NULL")
-            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "Name", "ProviderName", "NullProviderKey"));
+            .HasDatabaseName(
+                HeadlessStorageNaming.IndexName(style, table, FeaturesStorageNames.ValuesByNameNullProviderKey)
+            );
 
         b.HasIndex(x => new { x.ProviderName, x.ProviderKey })
-            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "ProviderName", "ProviderKey"));
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, FeaturesStorageNames.ValuesByProvider));
 
         b.ApplyColumnNaming(style);
     }

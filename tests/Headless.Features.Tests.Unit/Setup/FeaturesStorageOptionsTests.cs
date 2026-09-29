@@ -137,6 +137,76 @@ public sealed class FeaturesStorageOptionsTests
     }
 
     [Fact]
+    public void should_accept_the_snake_case_defaults_when_configured_explicitly()
+    {
+        // given — the conventional names themselves must fit, or the defaults' derived names would be truncated
+        var services = _ServicesWithTableNames("feature_values", "feature_definitions", "feature_group_definitions");
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var act = () => provider.GetRequiredService<IOptions<FeaturesStorageOptions>>().Value;
+
+        // then
+        act.Should().NotThrow();
+    }
+
+    // The longest derived PostgreSQL names are ix_{values}_name_provider_name_null_provider_key (40 bytes besides the
+    // table), ix_{definitions}_group_name (14), and ix_{groups}_name (8), so the longest names that fit 63 bytes are
+    // 23, 49, and 55 characters.
+    [Theory]
+    [InlineData(23, 1, 1, true)]
+    [InlineData(24, 1, 1, false)]
+    [InlineData(1, 49, 1, true)]
+    [InlineData(1, 50, 1, false)]
+    [InlineData(1, 1, 55, true)]
+    [InlineData(1, 1, 56, false)]
+    public void should_refuse_a_table_name_whose_derived_postgresql_names_exceed_63_bytes(
+        int valuesLength,
+        int definitionsLength,
+        int groupsLength,
+        bool accepted
+    )
+    {
+        // given
+        var services = _ServicesWithTableNames(
+            new string('v', valuesLength),
+            new string('d', definitionsLength),
+            new string('g', groupsLength)
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var act = () => provider.GetRequiredService<IOptions<FeaturesStorageOptions>>().Value;
+
+        // then
+        if (accepted)
+        {
+            act.Should().NotThrow();
+        }
+        else
+        {
+            act.Should().Throw<OptionsValidationException>().WithMessage("*PostgreSQL truncates identifiers*");
+        }
+    }
+
+    private static ServiceCollection _ServicesWithTableNames(string values, string definitions, string groups)
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessFeatures(setup =>
+        {
+            setup.ConfigureStorage(options =>
+            {
+                options.FeatureValuesTableName = values;
+                options.FeatureDefinitionsTableName = definitions;
+                options.FeatureGroupDefinitionsTableName = groups;
+            });
+            setup.UseEntityFramework<TestDbContext>();
+        });
+
+        return services;
+    }
+
+    [Fact]
     public void should_apply_feature_model_configuration_when_entities_are_already_discovered()
     {
         // given

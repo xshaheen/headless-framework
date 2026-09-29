@@ -21,8 +21,8 @@ namespace Tests;
 /// <summary>
 /// Storage behavior every raw-ADO features provider must share: schema initialization, value and definition
 /// round-trip, name-filtered reads, atomic value batches, and concurrent first writes of one name. Backend-specific
-/// behavior (index repair, legacy column renames, chunk sizes, NULL provider-key uniqueness, chunked deletes) stays
-/// in each provider's integration project.
+/// behavior (index repair, chunk sizes, NULL provider-key uniqueness, chunked deletes) stays in each provider's
+/// integration project.
 /// </summary>
 public abstract class FeaturesStorageConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : IFeaturesStorageFixture

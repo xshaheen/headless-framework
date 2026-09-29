@@ -1,75 +1,69 @@
-﻿CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory" (
-                                                       "MigrationId" character varying(150) NOT NULL,
+CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory" (
+    "MigrationId" character varying(150) NOT NULL,
     "ProductVersion" character varying(32) NOT NULL,
     CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY ("MigrationId")
-    );
+);
 
 START TRANSACTION;
 
 DO $EF$
 BEGIN
-    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20250118002326_InitialMigration') THEN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260929000000_InitialMigration') THEN
         IF NOT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = 'headless') THEN
-CREATE SCHEMA headless;
-END IF;
-END IF;
+            CREATE SCHEMA headless;
+        END IF;
+    END IF;
 END $EF$;
 
 DO $EF$
 BEGIN
-    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20250118002326_InitialMigration') THEN
-CREATE TABLE headless."SettingDefinitions" (
-                                               "Id" uuid NOT NULL,
-                                               "Name" character varying(128) NOT NULL,
-                                               "DisplayName" character varying(256) NOT NULL,
-                                               "Description" character varying(512),
-                                               "DefaultValue" character varying(2000),
-                                               "IsVisibleToClients" boolean NOT NULL,
-                                               "IsInherited" boolean NOT NULL,
-                                               "IsEncrypted" boolean NOT NULL,
-                                               "Providers" character varying(1024),
-                                               "ExtraProperties" text NOT NULL,
-                                               CONSTRAINT "PK_SettingDefinitions" PRIMARY KEY ("Id")
-);
-END IF;
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260929000000_InitialMigration') THEN
+    CREATE TABLE headless.setting_definitions (
+        id uuid NOT NULL,
+        name character varying(128) NOT NULL,
+        display_name character varying(256) NOT NULL,
+        description character varying(512),
+        default_value character varying(2000),
+        is_visible_to_clients boolean NOT NULL,
+        is_inherited boolean NOT NULL,
+        is_encrypted boolean NOT NULL,
+        providers character varying(1024),
+        extra_properties text NOT NULL,
+        CONSTRAINT pk_setting_definitions PRIMARY KEY (id)
+    );
+    END IF;
 END $EF$;
 
 DO $EF$
 BEGIN
-    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20250118002326_InitialMigration') THEN
-CREATE TABLE headless."SettingValues" (
-                                          "Id" uuid NOT NULL,
-                                          "Name" character varying(128) NOT NULL,
-                                          "Value" character varying(2000) NOT NULL,
-                                          "ProviderName" character varying(64) NOT NULL,
-                                          "ProviderKey" character varying(64),
-                                          "CreatedAt" timestamp with time zone NOT NULL,
-                                          "UpdatedAt" timestamp with time zone,
-                                          CONSTRAINT "PK_SettingValues" PRIMARY KEY ("Id")
-);
-END IF;
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260929000000_InitialMigration') THEN
+    CREATE TABLE headless.setting_values (
+        id uuid NOT NULL,
+        name character varying(128) NOT NULL,
+        value character varying(2000) NOT NULL,
+        provider_name character varying(64) NOT NULL,
+        provider_key character varying(64),
+        created_at timestamp with time zone NOT NULL,
+        updated_at timestamp with time zone,
+        CONSTRAINT pk_setting_values PRIMARY KEY (id)
+    );
+    END IF;
 END $EF$;
 
 DO $EF$
 BEGIN
-    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20250118002326_InitialMigration') THEN
-CREATE UNIQUE INDEX "IX_SettingDefinitions_Name" ON headless."SettingDefinitions" ("Name");
-END IF;
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260929000000_InitialMigration') THEN
+    CREATE UNIQUE INDEX ix_setting_definitions_name ON headless.setting_definitions (name);
+    CREATE UNIQUE INDEX ix_setting_values_name_provider_name_provider_key ON headless.setting_values (name, provider_name, provider_key) WHERE "provider_key" IS NOT NULL;
+    CREATE UNIQUE INDEX ix_setting_values_name_provider_name_null_provider_key ON headless.setting_values (name, provider_name) WHERE "provider_key" IS NULL;
+    END IF;
 END $EF$;
 
 DO $EF$
 BEGIN
-    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20250118002326_InitialMigration') THEN
-CREATE UNIQUE INDEX "IX_SettingValues_Name_ProviderName_ProviderKey" ON headless."SettingValues" ("Name", "ProviderName", "ProviderKey") WHERE "ProviderKey" IS NOT NULL;
-CREATE UNIQUE INDEX "IX_SettingValues_Name_ProviderName_NullProviderKey" ON headless."SettingValues" ("Name", "ProviderName") WHERE "ProviderKey" IS NULL;
-END IF;
-END $EF$;
-
-DO $EF$
-BEGIN
-    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20250118002326_InitialMigration') THEN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260929000000_InitialMigration') THEN
     INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-    VALUES ('20250118002326_InitialMigration', '9.0.1');
-END IF;
+    VALUES ('20260929000000_InitialMigration', '10.0.12');
+    END IF;
 END $EF$;
 COMMIT;

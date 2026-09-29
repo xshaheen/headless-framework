@@ -140,12 +140,15 @@ public static class SetupFeaturesSqlServer
             RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.SqlServer);
             RuleFor(x => x.FeatureValuesTableName)
                 .IsValidIdentifierFor(StorageProvider.SqlServer)
+                .FitsDerivedPostgreSqlNames(FeaturesStorageNames.ValuesIndexes)
                 .When(x => x.FeatureValuesTableName is not null);
             RuleFor(x => x.FeatureDefinitionsTableName)
                 .IsValidIdentifierFor(StorageProvider.SqlServer)
+                .FitsDerivedPostgreSqlNames(FeaturesStorageNames.DefinitionsIndexes)
                 .When(x => x.FeatureDefinitionsTableName is not null);
             RuleFor(x => x.FeatureGroupDefinitionsTableName)
                 .IsValidIdentifierFor(StorageProvider.SqlServer)
+                .FitsDerivedPostgreSqlNames(FeaturesStorageNames.GroupsIndexes)
                 .When(x => x.FeatureGroupDefinitionsTableName is not null);
         }
     }

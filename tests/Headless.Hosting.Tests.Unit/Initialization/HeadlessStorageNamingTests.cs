@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using Headless.Hosting.Initialization;
 using Headless.Testing.Tests;
 
@@ -96,4 +97,73 @@ public sealed class HeadlessStorageNamingTests : TestBase
             .Should()
             .Be("FeatureValues");
     }
+
+    [Theory]
+    [InlineData(StorageNamingStyle.SnakeCase, "values", "ix_values_name_provider_name_null_provider_key")]
+    [InlineData(StorageNamingStyle.PascalCase, "Values", "IX_Values_Name_ProviderName_NullProviderKey")]
+    public void should_return_the_longest_derived_name(StorageNamingStyle style, string table, string expected)
+    {
+        HeadlessStorageNaming
+            .LongestDerivedName(style, table, ["Name"], ["Name", "ProviderName", "NullProviderKey"], ["ProviderKey"])
+            .Should()
+            .Be(expected);
+    }
+
+    [Fact]
+    public void should_return_the_primary_key_when_the_table_has_no_index()
+    {
+        HeadlessStorageNaming
+            .LongestDerivedName(StorageNamingStyle.SnakeCase, "values_table")
+            .Should()
+            .Be("pk_values_table");
+    }
+
+    [Theory]
+    [InlineData(55, true)] // ix_ + 55 + _name = 63 bytes
+    [InlineData(56, false)]
+    public void should_bound_a_table_name_by_its_longest_derived_postgresql_name(int length, bool valid)
+    {
+        // given
+        var validator = new InlineValidator<NamedTable>();
+        validator.RuleFor(x => x.TableName).FitsDerivedPostgreSqlNames(["Name"]);
+
+        // when
+        var result = validator.Validate(new NamedTable(new string('t', length)));
+
+        // then
+        result.IsValid.Should().Be(valid);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void should_leave_a_missing_table_name_to_the_identifier_rule(string? tableName)
+    {
+        // given
+        var validator = new InlineValidator<NamedTable>();
+        validator.RuleFor(x => x.TableName).FitsDerivedPostgreSqlNames(["Name"]);
+
+        // when
+        var result = validator.Validate(new NamedTable(tableName));
+
+        // then
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_name_the_derived_name_that_does_not_fit()
+    {
+        // given
+        var table = new string('t', 60);
+        var validator = new InlineValidator<NamedTable>();
+        validator.RuleFor(x => x.TableName).FitsDerivedPostgreSqlNames(["Name"]);
+
+        // when
+        var result = validator.Validate(new NamedTable(table));
+
+        // then
+        result.Errors.Should().ContainSingle().Which.ErrorMessage.Should().Contain($"ix_{table}_name");
+    }
+
+    public sealed record NamedTable(string? TableName);
 }

@@ -473,14 +473,16 @@ builder.Services.AddHeadlessPermissions(setup =>
     setup.ConfigureStorage(o =>
     {
         o.Schema = "headless"; // default, shared by every Headless feature
-        o.PermissionGrantsTableName = "PermissionGrants"; // default
-        o.PermissionDefinitionsTableName = "PermissionDefinitions"; // default
-        o.PermissionGroupDefinitionsTableName = "PermissionGroupDefinitions"; // default
+        o.PermissionGrantsTableName = null; // default: permission_grants on PostgreSQL, PermissionGrants elsewhere
+        o.PermissionDefinitionsTableName = null; // default: permission_definitions / PermissionDefinitions
+        o.PermissionGroupDefinitionsTableName = null; // default: permission_group_definitions / PermissionGroupDefinitions
         o.InitializeOnStartup = true; // default
     });
     setup.UseEntityFramework<AppDbContext>();
 });
 ```
+
+Every object follows its database's naming convention. On PostgreSQL the tables, columns, primary keys, and indexes are snake_case (`permission_grants`, `provider_key`, `pk_permission_grants`, `ix_permission_grants_name_provider_name_provider_key_no_tenant`); on SQL Server and other databases they are PascalCase (`PermissionGrants`, `ProviderKey`, `PK_PermissionGrants`, `IX_PermissionGrants_Name_ProviderName_ProviderKey_NoTenant`). A table-name option left `null` takes that convention's default. A table name you set is used verbatim, and its key and index names derive from it (`pk_MyGrants`). The raw providers and the EF mapping produce the same names on the same database. Because PostgreSQL silently truncates identifiers longer than 63 bytes, every provider refuses a configured table name whose longest derived PostgreSQL key or index name would exceed that: at most 18 characters for the grants table, 49 for definitions, and 55 for groups.
 
 `InitializeOnStartup = false` makes the raw-DDL startup initializer a no-op (useful when schema is provisioned out-of-band). It still reports `IsInitialized = true` so dependents do not block. Ignored by the EF provider (EF uses migrations).
 
@@ -509,8 +511,8 @@ Entity Framework Core storage implementation for permission management.
 ### API and behavior
 
 - `setup.UseEntityFramework<TContext>()` — registers the EF storage provider via `HeadlessPermissionsSetupBuilder`
-- `modelBuilder.AddHeadlessPermissions(DbContext context)` — applies entity configurations by resolving `PermissionsStorageOptions` from the context's service provider (no constructor injection required)
-- `modelBuilder.AddHeadlessPermissions(PermissionsStorageOptions options)` — overload for when you already hold the options
+- `modelBuilder.AddHeadlessPermissions(DbContext context)` — applies entity configurations by resolving `PermissionsStorageOptions` from the context's service provider (no constructor injection required) and the naming style from `context.Database.ProviderName`: snake_case on Npgsql, PascalCase on every other provider
+- `modelBuilder.AddHeadlessPermissions(PermissionsStorageOptions options, StorageNamingStyle style)` — overload for when you already hold the options; pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (namespace `Headless.Hosting.Initialization`) so the style matches the database
 - `EfPermissionGrantRepository<TContext>` — EF repository for `IPermissionGrantRepository`
 - `EfPermissionDefinitionRecordRepository<TContext>` — EF repository for `IPermissionDefinitionRecordRepository`
 - Startup gate that inspects the EF model before hosted services start and throws `InvalidOperationException` with an actionable message if any permissions entity is missing
@@ -557,12 +559,12 @@ builder.Services.AddHeadlessPermissions(setup =>
 `PermissionsStorageOptions` defaults:
 
 - `Schema = "headless"`, the schema every Headless feature shares (see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features))
-- `PermissionGrantsTableName = "PermissionGrants"`
-- `PermissionDefinitionsTableName = "PermissionDefinitions"`
-- `PermissionGroupDefinitionsTableName = "PermissionGroupDefinitions"`
+- `PermissionGrantsTableName = null`: `permission_grants` on PostgreSQL, `PermissionGrants` elsewhere
+- `PermissionDefinitionsTableName = null`: `permission_definitions` on PostgreSQL, `PermissionDefinitions` elsewhere
+- `PermissionGroupDefinitionsTableName = null`: `permission_group_definitions` on PostgreSQL, `PermissionGroupDefinitions` elsewhere
 - `InitializeOnStartup = true`
 
-Identifier names are validated using cross-provider rules (SQL Server superset) so the same options class works regardless of the underlying DB engine; the DB enforces type- and length-specific constraints at migration time. The startup gate inspects the EF model before hosted services start and fails with an actionable message if any permissions entity is missing.
+Identifier names are validated using cross-provider rules (SQL Server superset) so the same options class works regardless of the underlying DB engine; the DB enforces type- and length-specific constraints at migration time, except the length of derived key and index names, which the registration bounds as described under `PermissionsStorageOptions`. The startup gate inspects the EF model before hosted services start and fails with an actionable message if any permissions entity is missing.
 
 `InitializeOnStartup` is ignored by the EF provider — EF uses migrations, not startup DDL.
 
@@ -586,7 +588,7 @@ PostgreSQL raw-DDL storage for permission management.
 - `setup.UsePostgreSql(Action<PostgreSqlPermissionsOptions> configure)` — full option control
 - `setup.UsePostgreSql(Action<PostgreSqlPermissionsOptions, IServiceProvider> configure)` — with resolved services
 - `setup.UsePostgreSql()` — reads the connection registered by `AddPostgreSqlSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
-- Idempotent schema, table, and index creation at host startup via `PostgreSqlPermissionsStorageInitializer`
+- Idempotent schema, table, and index creation at host startup via `PostgreSqlPermissionsStorageInitializer`, with snake_case tables, columns, keys, and indexes (`permission_grants`, `tenant_id`, `ix_permission_grants_tenant_id_name_provider_name_provider_key`)
 - `PostgreSqlPermissionsOptions` — `ConnectionString` and `CommandTimeout` (default 30 seconds)
 - Shares `PermissionsStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
 - Identifier names validated against PostgreSQL naming rules
@@ -655,7 +657,7 @@ SQL Server raw-DDL storage for permission management.
 - `setup.UseSqlServer(Action<SqlServerPermissionsOptions> configure)` — full option control
 - `setup.UseSqlServer(Action<SqlServerPermissionsOptions, IServiceProvider> configure)` — with resolved services
 - `setup.UseSqlServer()` — reads the connection registered by `AddSqlServerSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
-- Idempotent schema, table, and index creation at host startup via `SqlServerPermissionsStorageInitializer`
+- Idempotent schema, table, and index creation at host startup via `SqlServerPermissionsStorageInitializer`, with PascalCase tables, columns, keys, and indexes (`PermissionGrants`, `TenantId`, `IX_PermissionGrants_TenantId_Name_ProviderName_ProviderKey`)
 - `SqlServerPermissionsOptions` — `ConnectionString` and `CommandTimeout` (default 30 seconds)
 - Shares `PermissionsStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
 - Identifier names validated against SQL Server naming rules

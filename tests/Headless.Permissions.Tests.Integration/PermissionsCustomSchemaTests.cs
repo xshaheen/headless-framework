@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
 using Headless.Permissions;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.Entities;
@@ -19,7 +20,7 @@ namespace Tests;
 public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture) : PermissionsTestBase(fixture)
 {
     private const string _Schema = "myapp_permissions";
-    private const string _GrantsTableName = "tbl_permission_grants";
+    private const string _GrantsTableName = "tbl_grants";
     private const string _DefinitionsTableName = "tbl_permission_definitions";
     private const string _GroupDefinitionsTableName = "tbl_permission_group_definitions";
     private const string _PermissionName = "CustomSchemaPermission";
@@ -67,13 +68,13 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
         // then
         grantsEntity.Should().NotBeNull();
         grantsEntity!.GetSchema().Should().Be("headless");
-        grantsEntity.GetTableName().Should().Be("PermissionGrants");
+        grantsEntity.GetTableName().Should().Be("permission_grants");
         definitionsEntity.Should().NotBeNull();
         definitionsEntity!.GetSchema().Should().Be("headless");
-        definitionsEntity.GetTableName().Should().Be("PermissionDefinitions");
+        definitionsEntity.GetTableName().Should().Be("permission_definitions");
         groupDefinitionsEntity.Should().NotBeNull();
         groupDefinitionsEntity!.GetSchema().Should().Be("headless");
-        groupDefinitionsEntity.GetTableName().Should().Be("PermissionGroupDefinitions");
+        groupDefinitionsEntity.GetTableName().Should().Be("permission_group_definitions");
     }
 
     [Fact]
@@ -94,7 +95,7 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
         (await _TableHasRowsAsync(_Schema, _GrantsTableName))
             .Should()
             .BeTrue();
-        (await _TableHasRowsAsync("headless", "PermissionGrants")).Should().BeFalse();
+        (await _TableHasRowsAsync("headless", "permission_grants")).Should().BeFalse();
     }
 
     [Fact]
@@ -205,7 +206,10 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddHeadlessPermissions(storageOptions.Value);
+            modelBuilder.AddHeadlessPermissions(
+                storageOptions.Value,
+                HeadlessStorageNaming.ForProvider(Database.ProviderName)
+            );
         }
     }
 
@@ -217,7 +221,10 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddHeadlessPermissions(storageOptions.Value);
+            modelBuilder.AddHeadlessPermissions(
+                storageOptions.Value,
+                HeadlessStorageNaming.ForProvider(Database.ProviderName)
+            );
         }
     }
 

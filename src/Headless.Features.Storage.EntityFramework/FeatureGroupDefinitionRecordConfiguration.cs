@@ -30,7 +30,7 @@ internal sealed class FeatureGroupDefinitionRecordConfiguration(
             .IsRequired();
         b.HasIndex(x => new { x.Name })
             .IsUnique()
-            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "Name"));
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, FeaturesStorageNames.GroupsByName));
         b.ApplyColumnNaming(style);
     }
 }
