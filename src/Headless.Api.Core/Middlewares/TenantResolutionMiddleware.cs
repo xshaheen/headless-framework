@@ -93,7 +93,7 @@ internal sealed partial class TenantResolutionMiddleware(
 
         // Claim-only host: no catalog resolution ran for this request, so no display name is known.
         using var _ = currentTenant.Change(tenantId);
-        await next(context).ConfigureAwait(false);
+        await TenantDataPlacementHttp.RunAsync(context, tenantId, () => next(context)).ConfigureAwait(false);
     }
 
     /// <summary>

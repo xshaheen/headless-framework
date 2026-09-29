@@ -64,7 +64,7 @@ app.UseAuthorization();
 - When using `IgnoreMultiTenancyFilter()`, add an inline `// MULTI-TENANCY-BYPASS: <reason>` comment naming the approved scenario (cross-tenant snapshot, admin lookup, system maintenance, etc.) so reviewers and post-incident readers can distinguish legitimate bypasses from drift.
 - Enable strict EF tenant writes with `.EntityFramework(ef => ef.GuardTenantWrites())` when tenant-owned saves must fail without a matching tenant context.
 - Enable strict EF tenant reads with `.EntityFramework(ef => ef.GuardTenantReads())` when a query over required-tenant rows must fail instead of returning nothing without a tenant. See [EF Tenant Read Guard](#ef-tenant-read-guard).
-- For schema-per-tenant or database-per-tenant data, route the context with `.EntityFramework(ef => ef.RouteTenantData<AppDbContext>())` plus one `.DataPlacement(...)` source, and create routed contexts with `await IDbContextFactory<AppDbContext>.CreateDbContextAsync()` under the tenant; never inject a routed context directly into tenant-scoped code. See [Tenant Data Placement](#tenant-data-placement).
+- For schema-per-tenant or database-per-tenant data, route the context with `.EntityFramework(ef => ef.RouteTenantData<AppDbContext>())` plus one `.DataPlacement(...)` source, and inject routed contexts where a Headless tenancy entry point set the tenant (HTTP tenant resolution, the messaging consume pipeline, Jobs execution); after changing the ambient tenant yourself, create them with `await IDbContextFactory<AppDbContext>.CreateDbContextAsync()`. See [Tenant Data Placement](#tenant-data-placement).
 - Keep outbox storage, the Jobs store, and the tenant catalog, Settings, Features, and Permissions stores on a context that is not tenant-routed; startup fails with `HEADLESS_TENANCY_ROUTED_CONTEXT_NOT_ALLOWED` otherwise.
 - Use `ITenantWriteGuardBypass.BeginBypass()` only around intentional admin or host-level writes. `IgnoreMultiTenancyFilter()` affects reads only; it does not bypass guarded writes.
 - Permission cache scoping depends on `ICurrentTenant.Id`. Host-level operations with no tenant use the shared `t:` scope by design.
@@ -683,16 +683,23 @@ A routed context refuses a tenant with no placement, so a hybrid setup, where mo
 
 With `UseResolver<T>()`, return `new TenantDataPlacement(schema: null, connectionString: sharedConnectionString)` for the shared tenants instead of `null`. Listing them is deliberate: a tenant nobody placed is an error, never a silent fall back to the shared database.
 
-Create routed contexts through the factory under the tenant:
+Where a Headless tenancy entry point set the tenant, inject the routed context as usual. The HTTP tenant resolution middlewares (`UseHeadlessTenantCatalogResolution()`, `UseHeadlessTenancy()`), the messaging consume pipeline, and Jobs execution resolve the tenant's placement right after they set the tenant, so the context can be built in the constructor:
 
 ```csharp
-public sealed class OrdersService(IDbContextFactory<AppDbContext> factory)
+public sealed class OrdersController(AppDbContext db) : ControllerBase
 {
-    public async Task<List<Order>> ListAsync(CancellationToken cancellationToken)
-    {
-        await using var db = await factory.CreateDbContextAsync(cancellationToken);
-        return await db.Orders.ToListAsync(cancellationToken);
-    }
+    [HttpGet]
+    public Task<List<Order>> ListAsync(CancellationToken cancellationToken) => db.Orders.ToListAsync(cancellationToken);
+}
+```
+
+Code that sets the tenant itself, such as a loop over tenants with `ICurrentTenant.Change`, a hosted service, or a Jobs failure callback, creates the context through the factory, which resolves the placement before building it:
+
+```csharp
+using (currentTenant.Change(tenantId))
+{
+    await using var db = await factory.CreateDbContextAsync(cancellationToken);
+    await db.Orders.Where(o => o.IsStale).ExecuteDeleteAsync(cancellationToken);
 }
 ```
 
@@ -708,8 +715,8 @@ public sealed class OrdersService(IDbContextFactory<AppDbContext> factory)
 ### Guarantees
 
 - **Pinned at creation.** A routed context pins its tenant and placement while it is constructed, because EF builds the model then and the model carries the schema. Once the ambient tenant changes, every use of that context throws `InvalidOperationException`: queries, `SaveChanges`, `Add`, connection opens, and every EF-issued command on an already-open connection, raw SQL through `Database.ExecuteSql*` and `FromSql` included. A command you build yourself on `db.Database.GetDbConnection()` (Dapper, raw ADO.NET) bypasses EF's command pipeline and is not checked, so resolve the connection from a context created for the current tenant. Create a new context per tenant.
-- **Factory creation only, under a tenant.** `CreateDbContextAsync()` resolves the placement asynchronously before the context is built. Injecting a routed context directly, or calling the synchronous `CreateDbContext()`, while a tenant is ambient throws. With no ambient tenant, both use the context's own registration (connection string and `DefaultSchema`), so design-time tooling and host work are unaffected.
-- **Fail closed.** A tenant with no placement is refused at `CreateDbContextAsync()`. A routed context never falls back to the shared database. `RouteTenantData` without a `DataPlacement(...)` source fails startup with `HEADLESS_TENANCY_EF_ROUTING_WITHOUT_PLACEMENT`.
+- **Resolved before construction.** The placement is resolved asynchronously before the context is built, either by the tenancy entry point for the tenant it set or by `CreateDbContextAsync()`. A placement resolved by an entry point belongs to that tenant only: under it, injection and the synchronous `CreateDbContext()` both work, but after `ICurrentTenant.Change` to another tenant either one throws and names `CreateDbContextAsync()`. With no ambient tenant, both use the context's own registration (connection string and `DefaultSchema`), so design-time tooling and host work are unaffected.
+- **Fail closed.** A tenant with no placement is refused when a routed context is built for it, injected or created. A placement source fault during entry-point resolution, a resolver timeout included, is held and rethrown, unchanged, when a routed context is built, so requests that never use one are unaffected. Only the pipeline's own cancellation propagates at once. A routed context never falls back to the shared database. `RouteTenantData` without a `DataPlacement(...)` source fails startup with `HEADLESS_TENANCY_EF_ROUTING_WITHOUT_PLACEMENT`.
 - **Enforced at the connection.** An interceptor checks that the context's connection reaches the pinned database, comparing database name and normalized data source, not the raw connection string. Provider administrative connections, such as the one `EnsureCreated` opens to run `CREATE DATABASE`, are not held to the tenant database. Error messages name the context and tenant only, never a connection string.
 - **Filters and guards unchanged.** The query filter, write guard, and read guard key on the canonical tenant id and apply inside each tenant's store exactly as in a shared schema.
 - **All tables in the tenant schema.** In a schema-placed context, any entity mapped to an explicit other schema fails model building: a tenant-owned table there would mix tenants, and a shared table would be created again by every tenant's migrations. Keep shared tables in a context that is not routed. A database-only placement keeps explicit schemas.
@@ -956,7 +963,7 @@ Tests that assert the normalized 403 `g:tenant_required` ProblemDetails (or any 
 - Forgetting `using` around `currentTenant.Change()` in non-HTTP code can leak tenant context within the current async flow.
 - Assuming host-level cache scope `t:` is tenant-isolated is incorrect; it is intentionally shared.
 - Assuming `IgnoreMultiTenancyFilter()` bypasses write protection is incorrect; it only affects reads.
-- Injecting a tenant-routed context into tenant-scoped code throws at construction; routed contexts come from `IDbContextFactory<T>.CreateDbContextAsync()`.
+- Injecting a tenant-routed context after changing the ambient tenant yourself throws at construction; the entry point resolved the placement for its own tenant only, so create that context with `IDbContextFactory<T>.CreateDbContextAsync()`.
 
 ---
 
@@ -1044,6 +1051,7 @@ None.
     - `HeadlessTenancyBuilder.DataPlacement(Action<HeadlessTenancyDataPlacementSetupBuilder> configure)` — exactly one of `UseConfiguration(...)` (three overloads) or `UseResolver<TResolver>()`; records the `DataPlacement` seam.
     - `TenantDataPlacementOptions` — `CacheExpiration` for `UseResolver<T>()` placements (default 5 min).
     - `ConfigurationTenantDataPlacementOptions` / `ConfigurationTenantDataPlacement` — the bound `Tenants` list of `{ TenantId, Schema, ConnectionString }`.
+    - `TenantDataPlacementPreloader` — resolves the ambient tenant's placement ahead of a pipeline's work (`RunAsync`), so an injected routed context can be built; the HTTP, messaging, and Jobs tenancy entry points call it. A custom entry point that sets the tenant calls it the same way. `TryGetPreloaded` reads it back for the current async flow.
     - `TenantDataRoutedContextRegistration` and `services.RequireUnroutedTenantDataContext(contextType, owner)` — the marker a routed context type registers and the guard a relay or host-level store uses to fail startup over one.
 
 ### Design constraints

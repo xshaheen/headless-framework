@@ -4,15 +4,20 @@ using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Messaging.Internal;
 using Headless.MultiTenancy;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.MultiTenancy;
 
-/// <summary>Restores <see cref="ICurrentTenant"/> from the resolved consume tenant for the inner handler.</summary>
+/// <summary>
+/// Restores <see cref="ICurrentTenant"/> from the resolved consume tenant for the inner handler, and preloads that
+/// tenant's data placement so a tenant-routed context injected into the consumer can be built.
+/// </summary>
 [PublicAPI]
 public sealed class TenantPropagationConsumeMiddleware(
     ICurrentTenant currentTenant,
-    ILogger<TenantPropagationConsumeMiddleware>? logger = null
+    ILogger<TenantPropagationConsumeMiddleware>? logger = null,
+    IServiceProvider? services = null
 ) : IConsumeMiddleware<ConsumeContext>
 {
     /// <summary>Framework priority for tenant restoration middleware.</summary>
@@ -35,6 +40,17 @@ public sealed class TenantPropagationConsumeMiddleware(
         logger?.TenantContextSwitched(value);
 
         using var scope = _currentTenant.Change(value);
+
+        // The middleware is scoped, so services is the message scope the consumer is resolved from.
+        if (services?.GetService<TenantDataPlacementPreloader>() is { } preloader)
+        {
+            await preloader
+                .RunAsync(services, value, () => next().AsTask(), context.CancellationToken)
+                .ConfigureAwait(false);
+
+            return;
+        }
+
         await next().ConfigureAwait(false);
     }
 }

@@ -8,6 +8,7 @@ using Headless.Jobs.Models;
 using Headless.Jobs.MultiTenancy;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Tests.MultiTenancy;
@@ -193,6 +194,48 @@ public sealed class TenantRestoreExecuteMiddlewareTests : TestBase
         }
     }
 
+    [Fact]
+    public async Task handler_observes_the_restored_tenant_data_placement_preloaded()
+    {
+        // given
+        var placement = new TenantDataPlacement("tenant_t1", connectionString: null);
+        await using var services = _PlacementServices(placement);
+        var middleware = _Create(new TestCurrentTenant(), propagate: true);
+        var execution = new JobExecutionState { FunctionName = _Function, TenantId = "t1" };
+        var context = new JobExecuteContext(
+            _Descriptor,
+            execution,
+            new JobFunctionContext { FunctionName = _Function },
+            attempt: 0,
+            services
+        );
+        TenantDataPlacement? observed = null;
+
+        // when
+        await middleware.InvokeAsync(
+            context,
+            _ =>
+            {
+                TenantDataPlacementPreloader.TryGetPreloaded("t1", out observed);
+                return Task.CompletedTask;
+            },
+            AbortToken
+        );
+
+        // then
+        observed.Should().BeSameAs(placement);
+    }
+
+    private static ServiceProvider _PlacementServices(TenantDataPlacement placement)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(new TenantDataRoutedContextRegistration(typeof(object)));
+        services.AddSingleton<TenantDataPlacementPreloader>();
+        services.AddSingleton<ITenantDataPlacementResolver>(new FixedPlacementResolver(placement));
+
+        return services.BuildServiceProvider();
+    }
+
     private static TenantRestoreExecuteMiddleware _Create(ICurrentTenant tenant, bool propagate)
     {
         return new TenantRestoreExecuteMiddleware(
@@ -207,6 +250,14 @@ public sealed class TenantRestoreExecuteMiddlewareTests : TestBase
         var functionContext = new JobFunctionContext { FunctionName = _Function };
 
         return new JobExecuteContext(_Descriptor, execution, functionContext, attempt: 0, NullServiceProvider.Instance);
+    }
+
+    private sealed class FixedPlacementResolver(TenantDataPlacement placement) : ITenantDataPlacementResolver
+    {
+        public Task<TenantDataPlacement?> ResolveAsync(
+            string tenantId,
+            CancellationToken cancellationToken = default
+        ) => Task.FromResult<TenantDataPlacement?>(placement);
     }
 
     // Per-instance AsyncLocal-backed tenant (mirrors CurrentTenant's scope semantics) so these tests exercise real

@@ -214,6 +214,37 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
             );
     }
 
+    [Fact]
+    public async Task should_preload_the_claim_tenant_data_placement_for_the_endpoint()
+    {
+        // given: a routed context exists, so the resolved tenant's placement is preloaded for the request
+        await using var app = await _CreateAppAsync(configureTenancy: tenancy =>
+        {
+            tenancy.Services.AddSingleton(new TenantDataRoutedContextRegistration(typeof(object)));
+            tenancy.DataPlacement(placement =>
+                placement.UseConfiguration(options =>
+                    options.Tenants.Add(new() { TenantId = "TENANT-1", Schema = "tenant_1" })
+                )
+            );
+        });
+        using var client = HttpTenancyTestHarness.CreateClient(app);
+        using var request = HttpTenancyTestHarness.CreateRequest(
+            HttpMethod.Get,
+            "/placement",
+            user: "alice",
+            tenantId: "TENANT-1",
+            customTenantId: null,
+            unauthenticated: false
+        );
+
+        // when
+        using var response = await client.SendAsync(request, AbortToken);
+
+        // then
+        response.EnsureSuccessStatusCode();
+        (await response.Content.ReadFromJsonAsync<string>(cancellationToken: AbortToken)).Should().Be("tenant_1");
+    }
+
     private async Task<WebApplication> _CreateAppAsync(
         Action<MultiTenancyOptions>? configure = null,
         TenancySetup setup = TenancySetup.RootHttp,
@@ -224,7 +255,8 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
         bool applyTenantMiddleware = true,
         bool applyTenantMiddlewareBeforeAuthentication = false,
         ILoggerProvider? loggerProvider = null,
-        bool start = true
+        bool start = true,
+        Action<HeadlessTenancyBuilder>? configureTenancy = null
     )
     {
         var builder = WebApplication.CreateBuilder(
@@ -254,7 +286,11 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
 
         if (setup == TenancySetup.RootHttp)
         {
-            builder.AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims(configure)));
+            builder.AddHeadlessTenancy(tenancy =>
+            {
+                tenancy.Http(http => http.ResolveFromClaims(configure));
+                configureTenancy?.Invoke(tenancy);
+            });
         }
         else if (setup == TenancySetup.RootNoHttp)
         {
@@ -297,6 +333,16 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
             "/tenant",
             (ICurrentTenant currentTenant) =>
                 Results.Json(new TenantResponse(currentTenant.Id, currentTenant.IsAvailable))
+        );
+
+        app.MapGet(
+            "/placement",
+            (ICurrentTenant currentTenant) =>
+                Results.Json(
+                    currentTenant.Id is { } id && TenantDataPlacementPreloader.TryGetPreloaded(id, out var placement)
+                        ? placement?.Schema
+                        : null
+                )
         );
 
         if (start)

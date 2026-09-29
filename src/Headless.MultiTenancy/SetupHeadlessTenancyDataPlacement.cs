@@ -3,6 +3,7 @@
 using Headless.Checks;
 using Headless.Hosting.Initialization;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.MultiTenancy;
 
@@ -47,6 +48,9 @@ public static class SetupHeadlessTenancyDataPlacement
         // Registered unconditionally so IOptions<TenantDataPlacementOptions> resolves with its defaults even when
         // the app never calls Configure(...).
         builder.Services.AddOptions<TenantDataPlacementOptions, TenantDataPlacementOptionsValidator>();
+
+        // Resolved optionally by the tenancy entry points; it stays inert until a context is tenant-routed.
+        builder.Services.TryAddSingleton<TenantDataPlacementPreloader>();
 
         var (label, register) = setup.Sources[0];
         register(builder.Services);

@@ -4,6 +4,7 @@ using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Jobs.Models;
 using Headless.MultiTenancy;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -18,7 +19,8 @@ namespace Headless.Jobs.MultiTenancy;
 /// succeeds, faults, or cancels. Polly re-dispatches this pipeline per attempt, so each retry is freshly scoped. When
 /// <see cref="JobsTenancyOptions.PropagateTenant"/> is enabled a <see langword="null"/> tenant still clears a leaked
 /// ambient so the attempt runs system scope; a genuinely tenant-free host (no persisted tenant, propagation off) is a
-/// pure pass-through.
+/// pure pass-through. A restored tenant's data placement is preloaded for the attempt, so a tenant-routed context
+/// injected into the handler can be built.
 /// </summary>
 [PublicAPI]
 public sealed class TenantRestoreExecuteMiddleware(
@@ -61,6 +63,17 @@ public sealed class TenantRestoreExecuteMiddleware(
         if (tenantId is not null)
         {
             logger?.TenantScopeRestored(tenantId);
+
+            // context.Services is the attempt scope the handler is resolved from, so a tenant-routed context
+            // injected into the handler finds the tenant's placement already resolved.
+            if (context.Services.GetService<TenantDataPlacementPreloader>() is { } preloader)
+            {
+                await preloader
+                    .RunAsync(context.Services, tenantId, () => next(cancellationToken), cancellationToken)
+                    .ConfigureAwait(false);
+
+                return;
+            }
         }
 
         await next(cancellationToken).ConfigureAwait(false);

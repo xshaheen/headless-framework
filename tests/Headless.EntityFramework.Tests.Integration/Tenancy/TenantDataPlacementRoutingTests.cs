@@ -222,6 +222,147 @@ public sealed class TenantDataPlacementRoutingTests(TenantPlacementDbContextTest
         createSync.Should().Throw<InvalidOperationException>().WithMessage("*CreateDbContextAsync*");
     }
 
+    [Theory]
+    [InlineData(_A, "placement_shared", "tenant_a")]
+    [InlineData(_DatabaseA, "tenant_da", "app")]
+    public async Task should_build_an_injected_context_from_the_preloaded_placement(
+        string tenantId,
+        string database,
+        string schema
+    )
+    {
+        // given: the entry point set the tenant and preloaded its placement
+        await _AddRowAsync(tenantId, "row");
+        using var tenant = fixture.CurrentTenant.Change(tenantId);
+        await using var scope = fixture.Services.CreateAsyncScope();
+        List<string> names = [];
+        string? connectedDatabase = null;
+        string? modelSchema = null;
+
+        // when: injected directly, as a controller or consumer would be
+        await _PreloadAsync(
+            scope.ServiceProvider,
+            tenantId,
+            async () =>
+            {
+                var db = scope.ServiceProvider.GetRequiredService<PlacementDbContext>();
+                connectedDatabase = new NpgsqlConnectionStringBuilder(db.Database.GetConnectionString()).Database;
+                modelSchema = db.Model.FindEntityType(typeof(PlacedRow))!.GetSchema();
+                names = await db.Rows.Select(x => x.Name).ToListAsync(AbortToken);
+            }
+        );
+
+        // then
+        connectedDatabase.Should().Be(database);
+        modelSchema.Should().Be(schema);
+        names.Should().Equal("row");
+    }
+
+    [Fact]
+    public async Task should_rethrow_the_preload_resolver_fault_when_a_routed_context_is_injected()
+    {
+        // given: the placement source faulted while the entry point preloaded
+        var fault = new InvalidOperationException("placement store down");
+        await using var faulting = new ServiceCollection()
+            .AddSingleton<ITenantDataPlacementResolver>(new FaultingResolver(fault))
+            .BuildServiceProvider();
+        using var tenant = fixture.CurrentTenant.Change(_A);
+        await using var scope = fixture.Services.CreateAsyncScope();
+        Exception? injected = null;
+        var nextRan = false;
+
+        // when
+        await _PreloadAsync(
+            faulting,
+            _A,
+            () =>
+            {
+                nextRan = true;
+                injected = Record.Exception(() => scope.ServiceProvider.GetRequiredService<PlacementDbContext>());
+                return Task.CompletedTask;
+            }
+        );
+
+        // then: work that never builds a routed context is not failed; the one that does gets the original fault
+        nextRan.Should().BeTrue();
+        injected.Should().BeSameAs(fault);
+    }
+
+    [Fact]
+    public async Task should_create_synchronously_through_the_factory_under_the_preloaded_tenant()
+    {
+        using var tenant = fixture.CurrentTenant.Change(_A);
+        await using var scope = fixture.Services.CreateAsyncScope();
+        string? modelSchema = null;
+
+        await _PreloadAsync(
+            scope.ServiceProvider,
+            _A,
+            () =>
+            {
+                using var db = fixture
+                    .Services.GetRequiredService<IDbContextFactory<PlacementDbContext>>()
+                    .CreateDbContext();
+                modelSchema = db.Model.FindEntityType(typeof(PlacedRow))!.GetSchema();
+                return Task.CompletedTask;
+            }
+        );
+
+        modelSchema.Should().Be("tenant_a");
+    }
+
+    [Fact]
+    public async Task should_refuse_injecting_for_a_preloaded_tenant_without_placement()
+    {
+        using var tenant = fixture.CurrentTenant.Change(TenantPlacementDbContextTestFixture.UnplacedTenant);
+        await using var scope = fixture.Services.CreateAsyncScope();
+        Exception? refusal = null;
+
+        await _PreloadAsync(
+            scope.ServiceProvider,
+            TenantPlacementDbContextTestFixture.UnplacedTenant,
+            () =>
+            {
+                refusal = Record.Exception(() => scope.ServiceProvider.GetRequiredService<PlacementDbContext>());
+                return Task.CompletedTask;
+            }
+        );
+
+        refusal
+            .Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Match("*'unplaced' has no data placement*never fall back to the shared database*");
+    }
+
+    [Fact]
+    public async Task should_refuse_injecting_after_the_ambient_tenant_changes_away_from_the_preloaded_one()
+    {
+        // given
+        using var tenant = fixture.CurrentTenant.Change(_A);
+        await using var scope = fixture.Services.CreateAsyncScope();
+        Exception? refusal = null;
+
+        // when: code switches tenant inside the request, then injects
+        await _PreloadAsync(
+            scope.ServiceProvider,
+            _A,
+            () =>
+            {
+                using var other = fixture.CurrentTenant.Change(_B);
+                refusal = Record.Exception(() => scope.ServiceProvider.GetRequiredService<PlacementDbContext>());
+                return Task.CompletedTask;
+            }
+        );
+
+        // then
+        refusal
+            .Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Match("*tenant 'b' without a resolved data placement*CreateDbContextAsync*");
+    }
+
     [Fact]
     public async Task should_leave_an_unrouted_context_on_the_live_ambient_tenant()
     {
@@ -391,6 +532,17 @@ public sealed class TenantDataPlacementRoutingTests(TenantPlacementDbContextTest
             .Which.Message.Should()
             .Contain("HEADLESS_TENANCY_EF_ROUTING_WITHOUT_PLACEMENT");
     }
+
+    private sealed class FaultingResolver(Exception fault) : ITenantDataPlacementResolver
+    {
+        public Task<TenantDataPlacement?> ResolveAsync(
+            string tenantId,
+            CancellationToken cancellationToken = default
+        ) => Task.FromException<TenantDataPlacement?>(fault);
+    }
+
+    private Task _PreloadAsync(IServiceProvider scope, string tenantId, Func<Task> next) =>
+        fixture.Services.GetRequiredService<TenantDataPlacementPreloader>().RunAsync(scope, tenantId, next, AbortToken);
 
     private async Task _AddRowAsync(string tenantId, string name)
     {

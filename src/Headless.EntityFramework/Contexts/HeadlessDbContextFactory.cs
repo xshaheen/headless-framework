@@ -96,16 +96,16 @@ internal sealed class HeadlessDbContextFactory<TDbContext>(IServiceScopeFactory 
             return;
         }
 
+        // Reuse what the tenancy entry point already resolved for this tenant, fault included.
         var placement =
-            await services
-                .GetRequiredService<ITenantDataPlacementResolver>()
-                .ResolveAsync(tenantId, cancellationToken)
-                .ConfigureAwait(false)
-            ?? throw new InvalidOperationException(
-                $"Tenant '{tenantId}' has no data placement, so the tenant-routed context "
-                    + $"'{typeof(TDbContext).Name}' cannot be created for it. Add the tenant's placement to the "
-                    + "configured placement source; routed contexts never fall back to the shared database."
-            );
+            (
+                TenantDataPlacementPreloader.TryGetPreloaded(tenantId, out var preloaded)
+                    ? preloaded
+                    : await services
+                        .GetRequiredService<ITenantDataPlacementResolver>()
+                        .ResolveAsync(tenantId, cancellationToken)
+                        .ConfigureAwait(false)
+            ) ?? throw HeadlessRoutedPlacement.NoPlacement(tenantId, typeof(TDbContext));
 
         services.GetRequiredService<HeadlessTenantPlacementPin>().Set(tenantId, placement);
     }

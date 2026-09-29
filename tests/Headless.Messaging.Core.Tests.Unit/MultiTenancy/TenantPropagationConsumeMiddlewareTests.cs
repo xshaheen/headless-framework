@@ -2,8 +2,10 @@
 
 using Headless.Messaging;
 using Headless.Messaging.MultiTenancy;
+using Headless.MultiTenancy;
 using Headless.Testing.Helpers;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.MultiTenancy;
 
@@ -95,6 +97,33 @@ public sealed class TenantPropagationConsumeMiddlewareTests : TestBase
     }
 
     [Fact]
+    public async Task should_preload_the_tenant_data_placement_for_the_consumer()
+    {
+        // given
+        var placement = new TenantDataPlacement("tenant_acme", connectionString: null);
+        var services = new ServiceCollection();
+        services.AddSingleton(new TenantDataRoutedContextRegistration(typeof(object)));
+        services.AddSingleton<TenantDataPlacementPreloader>();
+        services.AddSingleton<ITenantDataPlacementResolver>(new FixedPlacementResolver(placement));
+        await using var provider = services.BuildServiceProvider();
+        var middleware = new TenantPropagationConsumeMiddleware(new TestCurrentTenant(), services: provider);
+        TenantDataPlacement? observed = null;
+
+        // when
+        await middleware.InvokeAsync(
+            _CreateContext("acme"),
+            () =>
+            {
+                TenantDataPlacementPreloader.TryGetPreloaded("acme", out observed);
+                return ValueTask.CompletedTask;
+            }
+        );
+
+        // then
+        observed.Should().BeSameAs(placement);
+    }
+
+    [Fact]
     public void should_throw_argument_null_exception_when_constructed_with_null_tenant()
     {
         // when
@@ -120,4 +149,12 @@ public sealed class TenantPropagationConsumeMiddlewareTests : TestBase
     }
 
     private sealed record Payload(string Value);
+
+    private sealed class FixedPlacementResolver(TenantDataPlacement placement) : ITenantDataPlacementResolver
+    {
+        public Task<TenantDataPlacement?> ResolveAsync(
+            string tenantId,
+            CancellationToken cancellationToken = default
+        ) => Task.FromResult<TenantDataPlacement?>(placement);
+    }
 }

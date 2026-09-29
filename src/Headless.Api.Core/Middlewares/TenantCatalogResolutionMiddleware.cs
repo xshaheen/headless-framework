@@ -165,20 +165,29 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
                 // The rejection writer reads no ambient tenant state, so rejection semantics are unchanged.
                 using (currentTenant.Change(tenant.Id, tenant.Name))
                 {
-                    var rejected = await _RejectOnClaimMismatchAsync(
+                    // The placement is preloaded before the mismatch check too: it authenticates under the tenant,
+                    // and a tenant-owned identity store may sit on a routed context.
+                    await TenantDataPlacementHttp
+                        .RunAsync(
                             context,
                             tenant.Id,
-                            tenancyOptions.Value,
-                            options.Value.DetailedResolutionErrors
+                            async () =>
+                            {
+                                var rejected = await _RejectOnClaimMismatchAsync(
+                                        context,
+                                        tenant.Id,
+                                        tenancyOptions.Value,
+                                        options.Value.DetailedResolutionErrors
+                                    )
+                                    .ConfigureAwait(false);
+
+                                if (!rejected)
+                                {
+                                    await _InvokeNextAsync(context, endpointWasUnresolved).ConfigureAwait(false);
+                                }
+                            }
                         )
                         .ConfigureAwait(false);
-
-                    if (rejected)
-                    {
-                        return;
-                    }
-
-                    await _InvokeNextAsync(context, endpointWasUnresolved).ConfigureAwait(false);
                 }
 
                 return;

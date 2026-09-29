@@ -61,8 +61,9 @@ internal sealed class HeadlessRoutedPlacement : IDisposable
     /// <summary>
     /// Pins <paramref name="db"/> when its type is tenant-routed, or returns <see langword="null"/> for an unrouted
     /// context. Without an ambient tenant the context keeps its registration placement. Under a tenant the placement
-    /// must already be pinned in this scope by <c>IDbContextFactory&lt;T&gt;.CreateDbContextAsync</c>, which is the only
-    /// path that can resolve it asynchronously before the model is built.
+    /// must already be resolved, because the model is built in the constructor where nothing can be awaited: pinned
+    /// in this scope by <c>IDbContextFactory&lt;T&gt;.CreateDbContextAsync</c>, or preloaded for the ambient tenant by a
+    /// tenancy entry point through <see cref="TenantDataPlacementPreloader"/>.
     /// </summary>
     public static HeadlessRoutedPlacement? Pin(DbContext db, IServiceProvider services, string? ambientTenantId)
     {
@@ -91,26 +92,56 @@ internal sealed class HeadlessRoutedPlacement : IDisposable
             );
         }
 
-        var pin = services.GetService<HeadlessTenantPlacementPin>();
-
-        if (pin?.Placement is null || !string.Equals(pin.TenantId, tenantId, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                $"The tenant-routed context '{contextType.Name}' was resolved for tenant '{tenantId}' without a "
-                    + "resolved data placement. Create it with "
-                    + $"await IDbContextFactory<{contextType.Name}>.CreateDbContextAsync(), which resolves the "
-                    + "tenant's placement before the context is built, instead of injecting it directly."
-            );
-        }
+        var placement = _FindResolvedPlacement(services, contextType, tenantId);
 
         return new HeadlessRoutedPlacement(
             contextType,
             routing.GetModelCache(contextType),
             tenantId,
-            pin.Placement,
+            placement,
             defaultSchema
         );
     }
+
+    /// <summary>
+    /// The placement resolved for <paramref name="tenantId"/> before this constructor ran: the factory's pin for
+    /// the scope it created, else the placement the tenancy entry point preloaded for the ambient tenant.
+    /// </summary>
+    private static TenantDataPlacement _FindResolvedPlacement(
+        IServiceProvider services,
+        Type contextType,
+        string tenantId
+    )
+    {
+        if (
+            services.GetService<HeadlessTenantPlacementPin>() is { Placement: { } pinned } pin
+            && string.Equals(pin.TenantId, tenantId, StringComparison.Ordinal)
+        )
+        {
+            return pinned;
+        }
+
+        if (TenantDataPlacementPreloader.TryGetPreloaded(tenantId, out var preloaded))
+        {
+            return preloaded ?? throw NoPlacement(tenantId, contextType);
+        }
+
+        throw new InvalidOperationException(
+            $"The tenant-routed context '{contextType.Name}' was resolved for tenant '{tenantId}' without a "
+                + "resolved data placement. Inject it where a Headless tenancy entry point (HTTP tenant resolution, "
+                + "the messaging consume pipeline, or Jobs execution) established the tenant, or create it with "
+                + $"await IDbContextFactory<{contextType.Name}>.CreateDbContextAsync(), for example after changing "
+                + "the ambient tenant yourself."
+        );
+    }
+
+    /// <summary>The fail-closed refusal for a tenant whose placement source has no entry for it.</summary>
+    public static InvalidOperationException NoPlacement(string tenantId, Type contextType) =>
+        new(
+            $"Tenant '{tenantId}' has no data placement, so the tenant-routed context '{contextType.Name}' cannot be "
+                + "created for it. Add the tenant's placement to the configured placement source; routed contexts "
+                + "never fall back to the shared database."
+        );
 
     /// <summary>
     /// Returns the pinned tenant id, or throws when the ambient tenant changed since the pin: the context's model
