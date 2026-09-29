@@ -12,7 +12,7 @@ namespace Headless.Sequences.SqlServer;
 public sealed class SqlServerSequencesOptions
 {
     /// <summary>The table used when <see cref="TableName" /> is not set.</summary>
-    public const string DefaultTableName = "sequences";
+    public const string DefaultTableName = "Sequences";
 
     /// <summary>
     /// Gets or sets the SqlClient connection string of the database that holds the counters. Fast-mode calls open
@@ -30,7 +30,7 @@ public sealed class SqlServerSequencesOptions
     /// </summary>
     public string Schema { get; set; } = HeadlessStorageDefaults.Schema;
 
-    /// <summary>Gets or sets the name of the counter table. Default: <c>sequences</c>.</summary>
+    /// <summary>Gets or sets the name of the counter table. Default: <c>Sequences</c>.</summary>
     public string TableName { get; set; } = DefaultTableName;
 
     /// <summary>

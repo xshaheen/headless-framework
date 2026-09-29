@@ -5,22 +5,22 @@ namespace Headless.Idempotency.SqlServer;
 /// <summary>Object and column names of the record storage, shared by the initializer's DDL and the store's statements.</summary>
 internal static class SqlServerIdempotencySchema
 {
-    public const string TableName = "idempotency_records";
-    public const string SequenceName = "idempotency_record_generations";
+    public const string TableName = "IdempotencyRecords";
+    public const string SequenceName = "IdempotencyRecordGenerations";
 
-    public const string TenantId = "[tenant_id]";
-    public const string Key = "[idempotency_key]";
-    public const string Status = "[status]";
-    public const string FingerprintAlgorithm = "[fingerprint_algorithm]";
-    public const string Fingerprint = "[fingerprint]";
-    public const string Generation = "[generation]";
-    public const string LeaseExpiresAt = "[lease_expires_at]";
-    public const string Result = "[result]";
-    public const string ResultContract = "[result_contract]";
-    public const string RetentionUntil = "[retention_until]";
-    public const string RecoveryPoint = "[recovery_point]";
-    public const string RecoveryState = "[recovery_state]";
-    public const string RecoveryContract = "[recovery_contract]";
+    public const string TenantId = "[TenantId]";
+    public const string Key = "[IdempotencyKey]";
+    public const string Status = "[Status]";
+    public const string FingerprintAlgorithm = "[FingerprintAlgorithm]";
+    public const string Fingerprint = "[Fingerprint]";
+    public const string Generation = "[Generation]";
+    public const string LeaseExpiresAt = "[LeaseExpiresAt]";
+    public const string Result = "[Result]";
+    public const string ResultContract = "[ResultContract]";
+    public const string RetentionUntil = "[RetentionUntil]";
+    public const string RecoveryPoint = "[RecoveryPoint]";
+    public const string RecoveryState = "[RecoveryState]";
+    public const string RecoveryContract = "[RecoveryContract]";
 
     // Stored as smallint, with the values of IdempotencyRecordStatus.
     public const short Pending = (short)IdempotencyRecordStatus.Pending;

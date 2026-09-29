@@ -87,7 +87,7 @@ builder.Services.AddHeadlessIdempotency(setup => setup.UsePostgreSql());
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UsePostgreSql());
 ```
 
-Every relational feature creates its tables in the `headless` schema (`HeadlessStorageDefaults.Schema` in `Headless.Hosting.Initialization`) unless you configure another one. Each feature prefixes its object names with the feature, for example `fencing_leases` and `idempotency_records`, so all features coexist in the one schema.
+Every relational feature creates its tables in the `headless` schema (`HeadlessStorageDefaults.Schema` in `Headless.Hosting.Initialization`) unless you configure another one. Each feature prefixes its object names with the feature, for example `fencing_leases` and `idempotency_records` on PostgreSQL or `FencingLeases` and `IdempotencyRecords` on SQL Server, so all features coexist in the one schema.
 
 Precedence, per feature:
 

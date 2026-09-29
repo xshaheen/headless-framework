@@ -23,7 +23,7 @@ namespace Tests;
 public sealed class SqlServerSequenceDeadlockRetryTests(SqlServerSequencesFixture fixture) : TestBase
 {
     private const string _Schema = "sequences_mssql_deadlock";
-    private const string _Table = "sequences";
+    private const string _Table = "Sequences";
     private const string _Gate = $"[{_Schema}].[deadlock_gate]";
 
     [Fact]
@@ -52,7 +52,7 @@ public sealed class SqlServerSequenceDeadlockRetryTests(SqlServerSequencesFixtur
         await _ScalarAsync<long>(
             holder,
             holderTransaction,
-            $"SELECT [value] FROM [{_Schema}].[{_Table}] WITH (UPDLOCK) WHERE [name] = N'deadlock';"
+            $"SELECT [Value] FROM [{_Schema}].[{_Table}] WITH (UPDLOCK) WHERE [Name] = N'deadlock';"
         );
         await holderTransaction.CommitAsync(AbortToken);
 

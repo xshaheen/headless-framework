@@ -86,7 +86,7 @@ The `IsCompleted`-guarded `Interlocked.Exchange` is load-bearing. The earlier (`
 
 **PostgreSQL** (`PostgreSqlAuditLogStorageInitializer._CreateScript`): each statement is `CREATE … IF NOT EXISTS`, and the script takes two transaction-scoped advisory locks before it runs:
 
-1. **The feature lock**, namespaced by feature and keyed on the objects it owns, for example `headless_audit_init:{schema}.{table}` or `headless_fencing_init:{schema}.fencing_leases`. It comes first.
+1. **The feature lock**, namespaced by feature and keyed on the objects it owns, for example `headless_audit_init:{schema}.{table}` or `headless_fencing_init:{schema}.fencing_leases` on PostgreSQL. It comes first.
 2. **The schema-wide lock**, immediately before `CREATE SCHEMA IF NOT EXISTS`. Every PostgreSQL initializer takes it, whatever its feature, and builds it only through `PostgreSqlSchemaInitLock.AcquireStatement(schema)` in `Headless.Sql.PostgreSql`. That method is the single owner of the lock key. Never inline the `hashtextextended(...)` literal: a key that drifts in one feature stops that feature serializing against the others.
 
 ```csharp

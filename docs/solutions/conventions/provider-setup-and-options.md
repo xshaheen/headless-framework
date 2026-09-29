@@ -101,13 +101,17 @@ options with the same default.
 Every table, sequence, index, and constraint the feature creates carries the feature in its name, because
 PostgreSQL index and constraint names are unique per schema, not per table.
 
-Casing is not uniform yet. Each existing feature keeps the table and column casing it already has on each
-provider: Messaging and Coordination switch from snake_case on PostgreSQL to PascalCase on SQL Server
-(`messaging_published` / `MessagingPublished`), Features, Permissions, and Settings use PascalCase on both
-(`FeatureValues`), and AuditLog, Fencing, Idempotency, and Sequences keep snake_case on both (`audit_log`,
-`fencing_leases`, `idempotency_record_generations`, `sequences`). A new feature follows the provider's majority
-style: snake_case on PostgreSQL, PascalCase on SQL Server. Unifying the casing of existing features is a planned
-follow-up; do not rename an existing feature's objects as a side effect of other work.
+The rule is one casing per database: PascalCase on SQL Server for tables, columns, and sequences, with
+constraint and index names derived from them (`PK_FencingLeases`, `IX_FencingLeases_ActiveExpiry`,
+`CK_IdempotencyRecords_Status`, `DF_FencingLeases_TakeoverCount`), and unquoted snake_case on PostgreSQL
+(`fencing_leases`, `ix_fencing_leases_active_expiry`). A new feature follows it on both providers.
+
+Messaging, Coordination, Fencing, Idempotency, and Sequences follow the rule on both providers
+(`messaging_published` / `MessagingPublished`, `fencing_leases` / `FencingLeases`,
+`idempotency_record_generations` / `IdempotencyRecordGenerations`, `sequences` / `Sequences`). Not every family
+does yet: Features, Permissions, Settings, and the EF-mapped Jobs tables use PascalCase on PostgreSQL as well
+(`FeatureValues`, `CronJobs`), and AuditLog names its table `audit_log` on both providers. Converting those is
+separate work; do not rename a family's objects as a side effect of other changes.
 
 - A noun unique to the feature's family already counts as the prefix: `CronJobs`, `FeatureValues`,
   `PermissionGrants`, and `headless_distributed_locks_fence` need no extra `jobs_` or `features_`.

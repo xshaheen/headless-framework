@@ -41,8 +41,8 @@ public sealed class SqlServerSharedSchemaTests(SqlServerSharedSchemaFixture fixt
             ["Coordination"] = ["CoordinationDescriptor", "CoordinationLiveness", "CoordinationNodeGeneration"],
             ["DistributedLocks"] = [],
             ["Features"] = ["FeatureDefinitions", "FeatureGroupDefinitions", "FeatureValues"],
-            ["Fencing"] = ["fencing_leases"],
-            ["Idempotency"] = ["idempotency_records"],
+            ["Fencing"] = ["FencingLeases"],
+            ["Idempotency"] = ["IdempotencyRecords"],
             ["Messaging"] =
             [
                 "MessagingInboxAudit",
@@ -52,7 +52,7 @@ public sealed class SqlServerSharedSchemaTests(SqlServerSharedSchemaFixture fixt
                 "MessagingSchemaState",
             ],
             ["Permissions"] = ["PermissionDefinitions", "PermissionGrants", "PermissionGroupDefinitions"],
-            ["Sequences"] = ["sequences"],
+            ["Sequences"] = ["Sequences"],
             ["Settings"] = ["SettingDefinitions", "SettingValues"],
         };
 
@@ -61,8 +61,8 @@ public sealed class SqlServerSharedSchemaTests(SqlServerSharedSchemaFixture fixt
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
             ["DistributedLocks"] = ["headless_distlocks_fence_distributed_lock"],
-            ["Fencing"] = ["fencing_lease_generations"],
-            ["Idempotency"] = ["idempotency_record_generations"],
+            ["Fencing"] = ["FencingLeaseGenerations"],
+            ["Idempotency"] = ["IdempotencyRecordGenerations"],
         };
 
     protected override async Task<string> CreateDatabaseAsync(CancellationToken cancellationToken)

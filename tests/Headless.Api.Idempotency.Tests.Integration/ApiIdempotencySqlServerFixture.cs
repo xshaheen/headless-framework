@@ -53,8 +53,8 @@ public sealed class ApiIdempotencySqlServerFixture
         await connection.OpenAsync(CancellationToken.None);
         await using var reset = new SqlCommand(
             $"""
-            IF OBJECT_ID(N'{HeadlessStorageDefaults.Schema}.idempotency_records', N'U') IS NOT NULL DROP TABLE [{HeadlessStorageDefaults.Schema}].[idempotency_records];
-            IF OBJECT_ID(N'{HeadlessStorageDefaults.Schema}.idempotency_record_generations', N'SO') IS NOT NULL DROP SEQUENCE [{HeadlessStorageDefaults.Schema}].[idempotency_record_generations];
+            IF OBJECT_ID(N'{HeadlessStorageDefaults.Schema}.IdempotencyRecords', N'U') IS NOT NULL DROP TABLE [{HeadlessStorageDefaults.Schema}].[IdempotencyRecords];
+            IF OBJECT_ID(N'{HeadlessStorageDefaults.Schema}.IdempotencyRecordGenerations', N'SO') IS NOT NULL DROP SEQUENCE [{HeadlessStorageDefaults.Schema}].[IdempotencyRecordGenerations];
             IF SCHEMA_ID(N'{HeadlessStorageDefaults.Schema}') IS NOT NULL EXEC(N'DROP SCHEMA [{HeadlessStorageDefaults.Schema}]');
             """,
             connection

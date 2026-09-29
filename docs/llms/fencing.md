@@ -114,7 +114,7 @@ A lease is identified by `(TenantId, Kind, Resource)` — the tenant from `ICurr
 
 ### Lease state
 
-State is `Active | Settled | Released | Abandoned`. "Expired" is never stored — it is `Active` with `expires_at <= (database clock)`, evaluated fresh inside each statement.
+State is `Active | Settled | Released | Abandoned`. "Expired" is never stored — it is `Active` with an expiry at or before the database clock, evaluated fresh inside each statement.
 
 ```mermaid
 stateDiagram-v2
@@ -246,7 +246,7 @@ Applications reach it through a provider package; call `AddHeadlessFencing` as s
 | Builder member | Effect |
 | --- | --- |
 | `ConfigureOptions(Action<FencingOptions>)` | Sets `MinimumLeaseDuration` (default 1 second) and `MaximumLeaseDuration` (default 1 day); every grant and renewal duration must fall within these bounds. Also sets `TakeoverWarningThreshold` (default `null`, off; must be positive when set): the takeover count at which a takeover grant or committed sweep abandonment logs a warning |
-| `ConfigureStorage(Action<FencingStorageOptions>)` / `ConfigureStorage(IConfiguration)` | Sets `Schema` (default `"headless"`, the schema every Headless feature shares), the schema the `fencing_leases` table and its `fencing_lease_generations` sequence live in |
+| `ConfigureStorage(Action<FencingStorageOptions>)` / `ConfigureStorage(IConfiguration)` | Sets `Schema` (default `"headless"`, the schema every Headless feature shares), the schema the lease table and its generation sequence live in (`fencing_leases` and `fencing_lease_generations` on PostgreSQL, `FencingLeases` and `FencingLeaseGenerations` on SQL Server) |
 
 ### Design and runtime behavior
 
@@ -281,7 +281,7 @@ builder.Services.AddHeadlessFencing(setup => setup.UseInMemory());
 - `FenceAsync` holds the key until the unit ends, so no grant, renewal, or sweep in this process changes the lease under the unit. It guards nothing outside the process and is not coupled to any database transaction: writes the unit makes to a database are not fenced atomically.
 - Completion callbacks the unit registered before its first lease call run before the lease writes are visible; a callback that waits on the same key there would wait until the unit ends. Register such work after the lease calls, or run it after the unit completes.
 - There is no deadlock detection. Units that lock several keys must lock them in one consistent order, and callers should pass a cancellation token that bounds the wait.
-- Sweeps skip a key another unit holds (the in-memory form of `SKIP LOCKED`) and visit expired leases in `(expires_at, tenant_id, resource)` order, compared ordinally. Each claim runs in a resource-less owned unit, so the handler's handoff must be something that joins such a unit (for example `unit.Outbox` on the in-memory messaging storage) or is idempotent.
+- Sweeps skip a key another unit holds (the in-memory form of `SKIP LOCKED`) and visit expired leases in (expiry, tenant id, resource) order, compared ordinally. Each claim runs in a resource-less owned unit, so the handler's handoff must be something that joins such a unit (for example `unit.Outbox` on the in-memory messaging storage) or is idempotent.
 - `PurgeAsync` deletes ended leases past the cutoff and skips a key a unit holds; an age reaching past the earliest representable instant deletes nothing.
 
 ---
@@ -354,7 +354,7 @@ The lease row stores progress as `progress varbinary(max)` plus `progress_contra
 | --- | --- | --- |
 | `ConnectionString` | required | The database that holds the leases and that enlisted units must run on |
 | `CommandTimeout` | 30 seconds | Also bounds how long a grant waits behind another transaction's open fence |
-| `InitializeOnStartup` | `true` | When `false`, the application creates the schema, the `fencing_leases` table and its indexes, and the `fencing_lease_generations` sequence |
+| `InitializeOnStartup` | `true` | When `false`, the application creates the schema, the `FencingLeases` table and its indexes, and the `FencingLeaseGenerations` sequence |
 
 ### Design and runtime behavior
 

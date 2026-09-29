@@ -116,8 +116,8 @@ public sealed class SqlServerSequencesFixture
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(
             $"""
-            SELECT [value] FROM [{schema}].[{table}]
-            WHERE [tenant_id] = @tenant AND [name] = @name AND [partition] = @partition
+            SELECT [Value] FROM [{schema}].[{table}]
+            WHERE [TenantId] = @tenant AND [Name] = @name AND [Partition] = @partition
             """,
             connection
         );

@@ -43,7 +43,7 @@ public sealed class SqlServerRcsiFencingFixture
 public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IAsyncLifetime, ILeasesFixture
 {
     private const string _OtherDatabase = "fencing_other";
-    private const string _HandoffTable = "[dbo].[fencing_handoffs]";
+    private const string _HandoffTable = "[dbo].[FencingHandoffs]";
 
     protected abstract string LeaseDatabase { get; }
 
@@ -91,10 +91,10 @@ public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IA
             IF OBJECT_ID(N'{_HandoffTable}', N'U') IS NOT NULL DROP TABLE {_HandoffTable};
             CREATE TABLE {_HandoffTable} (
                 [id] bigint IDENTITY(1, 1) PRIMARY KEY,
-                [tenant_id] nvarchar(128) NOT NULL,
-                [kind] nvarchar(64) NOT NULL,
-                [resource] nvarchar(256) NOT NULL,
-                [generation] bigint NOT NULL
+                [TenantId] nvarchar(128) NOT NULL,
+                [Kind] nvarchar(64) NOT NULL,
+                [Resource] nvarchar(256) NOT NULL,
+                [Generation] bigint NOT NULL
             );
             """,
             CancellationToken.None
@@ -155,8 +155,8 @@ public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IA
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(
             $"""
-            SELECT [generation], [state], [granted_at], [expires_at], [ended_at] FROM [{schema}].[fencing_leases]
-            WHERE [tenant_id] = @tenant AND [kind] = @kind AND [resource] = @resource
+            SELECT [Generation], [State], [GrantedAt], [ExpiresAt], [EndedAt] FROM [{schema}].[FencingLeases]
+            WHERE [TenantId] = @tenant AND [Kind] = @kind AND [Resource] = @resource
             """,
             connection
         );
@@ -189,11 +189,11 @@ public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IA
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(
             $"""
-            UPDATE [{HeadlessStorageDefaults.Schema}].[fencing_leases]
-            SET [granted_at] = {string.Format(CultureInfo.InvariantCulture, shift, "[granted_at]")},
-                [expires_at] = {string.Format(CultureInfo.InvariantCulture, shift, "[expires_at]")},
-                [ended_at] = {string.Format(CultureInfo.InvariantCulture, shift, "[ended_at]")}
-            WHERE [tenant_id] = @tenant AND [kind] = @kind AND [resource] = @resource
+            UPDATE [{HeadlessStorageDefaults.Schema}].[FencingLeases]
+            SET [GrantedAt] = {string.Format(CultureInfo.InvariantCulture, shift, "[GrantedAt]")},
+                [ExpiresAt] = {string.Format(CultureInfo.InvariantCulture, shift, "[ExpiresAt]")},
+                [EndedAt] = {string.Format(CultureInfo.InvariantCulture, shift, "[EndedAt]")}
+            WHERE [TenantId] = @tenant AND [Kind] = @kind AND [Resource] = @resource
             """,
             connection
         );
@@ -214,7 +214,7 @@ public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IA
     {
         var resource = (IRelationalUnitOfWorkResource)unit.Resource!;
         await using var command = new SqlCommand(
-            $"INSERT INTO {_HandoffTable} ([tenant_id], [kind], [resource], [generation]) VALUES (@tenant, @kind, @resource, @generation)",
+            $"INSERT INTO {_HandoffTable} ([TenantId], [Kind], [Resource], [Generation]) VALUES (@tenant, @kind, @resource, @generation)",
             (SqlConnection)resource.Connection,
             (SqlTransaction)resource.Transaction
         );
@@ -231,7 +231,7 @@ public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IA
         await using var connection = new SqlConnection(LeaseConnectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(
-            $"SELECT [tenant_id], [resource], [generation] FROM {_HandoffTable} WHERE [kind] = @kind",
+            $"SELECT [TenantId], [Resource], [Generation] FROM {_HandoffTable} WHERE [Kind] = @kind",
             connection
         );
         command.Parameters.AddWithValue(nameof(kind), kind);
@@ -277,8 +277,8 @@ public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IA
     public static string DropStorageSql(string schema)
     {
         return $"""
-            IF OBJECT_ID(N'{schema}.fencing_leases', N'U') IS NOT NULL DROP TABLE [{schema}].[fencing_leases];
-            IF OBJECT_ID(N'{schema}.fencing_lease_generations', N'SO') IS NOT NULL DROP SEQUENCE [{schema}].[fencing_lease_generations];
+            IF OBJECT_ID(N'{schema}.FencingLeases', N'U') IS NOT NULL DROP TABLE [{schema}].[FencingLeases];
+            IF OBJECT_ID(N'{schema}.FencingLeaseGenerations', N'SO') IS NOT NULL DROP SEQUENCE [{schema}].[FencingLeaseGenerations];
             IF SCHEMA_ID(N'{schema}') IS NOT NULL EXEC(N'DROP SCHEMA [{schema}]');
             """;
     }

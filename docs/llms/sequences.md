@@ -66,7 +66,7 @@ Formatting stays in the application. The framework returns a `long`. Prefixes (`
 
 ### Counter key and policy
 
-The stored key is `(tenant_id, name, partition)`. The host tenant and "no partition" are both stored as `''`. A `SequencePolicy` sets `Start` (default 1), `Step` (greater than 0, default 1) and `Mode` (default `Fast`). `setup.DefaultPolicy(...)` applies to every name without its own `setup.Policy(name, ...)`.
+The stored key is (tenant id, name, partition). The host tenant and "no partition" are both stored as `''`. A `SequencePolicy` sets `Start` (default 1), `Step` (greater than 0, default 1) and `Mode` (default `Fast`). `setup.DefaultPolicy(...)` applies to every name without its own `setup.Policy(name, ...)`.
 
 `Start` is read only when a key's row is created, so changing it never moves an existing counter. A changed `Step` applies from the next call, and the existing counter then mixes both steps.
 
@@ -204,13 +204,13 @@ Gap-free units begin over a SQL Server connection or an EF `DbContext` (`AddSqlS
 | --- | --- | --- |
 | `ConnectionString` | required | The database that holds the counters and that gap-free units must run on |
 | `CommandTimeout` | 30 seconds | Also bounds how long a gap-free call waits for another unit's locks |
-| `Schema` / `TableName` | `headless` / `sequences` | Validated as SQL Server identifiers. Sequences has no `ConfigureStorage`; the schema is a provider option. `headless` is the schema every Headless feature shares |
+| `Schema` / `TableName` | `headless` / `Sequences` | Validated as SQL Server identifiers. Sequences has no `ConfigureStorage`; the schema is a provider option. `headless` is the schema every Headless feature shares |
 | `InitializeOnStartup` | `true` | When `false`, the application creates the table |
 
 ### Design and runtime behavior
 
 - Each call is one batch: `UPDATE … WITH (UPDLOCK, HOLDLOCK)`, then an `INSERT` in the same transaction when the key is new, with both results collected into a table variable and read back once. The batch has no `TRY/CATCH`, so a caller transaction running `SET XACT_ABORT ON` is never doomed by a caught duplicate key.
-- Key columns use a binary (`_BIN2`) collation, so names compare ordinally, as on PostgreSQL. The clustered primary key is exactly `(tenant_id, name, partition)`, and it is what makes the range lock above serialize first use.
+- Key columns use a binary (`_BIN2`) collation, so names compare ordinally, as on PostgreSQL. The clustered primary key is exactly `(TenantId, Name, Partition)`, and it is what makes the range lock above serialize first use.
 - The fast path opens its own connection, runs in an explicit READ COMMITTED transaction, and retries a deadlock (1205) in a fresh transaction up to 3 attempts, waiting a jittered delay (`n × 10–50 ms` before retry `n`, on the registered `TimeProvider`) between them.
 - The gap-free path runs on the unit's own connection and transaction with no retry. With `XACT_ABORT ON`, a timeout or cancellation rolls back the caller's transaction.
 - The initializer serializes concurrent hosts with `sp_getapplock` and creates the schema, table, and key idempotently.
