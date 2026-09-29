@@ -683,7 +683,7 @@ A routed context refuses a tenant with no placement, so a hybrid setup, where mo
 
 With `UseResolver<T>()`, return `new TenantDataPlacement(schema: null, connectionString: sharedConnectionString)` for the shared tenants instead of `null`. Listing them is deliberate: a tenant nobody placed is an error, never a silent fall back to the shared database.
 
-Where a Headless tenancy entry point set the tenant, inject the routed context as usual. The HTTP tenant resolution middlewares (`UseHeadlessTenantCatalogResolution()`, `UseHeadlessTenancy()`), the messaging consume pipeline, and Jobs execution resolve the tenant's placement right after they set the tenant, so the context can be built in the constructor:
+Where a Headless tenancy entry point set the tenant, inject the routed context as usual. The HTTP tenant resolution middlewares (`UseHeadlessTenantCatalogResolution()`, `UseHeadlessTenancy()`), the messaging consume pipeline and its `OnExhausted` callbacks (a routed context resolved from `FailedInfo.ServiceProvider`), and Jobs execution resolve the tenant's placement right after they set the tenant, so the context can be built in the constructor:
 
 ```csharp
 public sealed class OrdersController(AppDbContext db) : ControllerBase

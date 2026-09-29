@@ -300,9 +300,11 @@ public sealed class TenantDataPlacementRoutingTests(TenantPlacementDbContextTest
             _A,
             () =>
             {
+#pragma warning disable RCS1261, VSTHRD103 // The synchronous CreateDbContext path is the subject under test.
                 using var db = fixture
                     .Services.GetRequiredService<IDbContextFactory<PlacementDbContext>>()
                     .CreateDbContext();
+#pragma warning restore RCS1261, VSTHRD103
                 modelSchema = db.Model.FindEntityType(typeof(PlacedRow))!.GetSchema();
                 return Task.CompletedTask;
             }

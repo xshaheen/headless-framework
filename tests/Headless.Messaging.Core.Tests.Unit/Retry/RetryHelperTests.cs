@@ -5,9 +5,12 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Retry;
+using Headless.MultiTenancy;
+using Headless.Testing.Helpers;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests.Retry;
 
@@ -401,6 +404,123 @@ public sealed class RetryHelperTests : TestBase
                         .Any(e => string.Equals(e.Name, "ExecutedThresholdCallbackFailed", StringComparison.Ordinal)),
                 because: "a cooperative-callback OCE during shutdown must not log ExecutedThresholdCallbackFailed"
             );
+    }
+
+    // ─── RunOnExhaustedAsync: tenant data placement ─────────────────────────────────────────
+
+    [Fact]
+    public async Task should_run_on_exhausted_under_the_message_tenant_with_its_placement_preloaded()
+    {
+        // given
+        var placement = new TenantDataPlacement("tenant_acme", connectionString: null);
+        await using var services = _TenantServices(new PlacementResolver(placement));
+        var currentTenant = services.GetRequiredService<ICurrentTenant>();
+        (string? Tenant, bool Found, TenantDataPlacement? Placement) observed = default;
+        var policy = _Policy(maxRetryAttempts: 1);
+        policy.OnExhausted = (_, _) =>
+        {
+            observed.Tenant = currentTenant.Id;
+            observed.Found = TenantDataPlacementPreloader.TryGetPreloaded("acme", out observed.Placement);
+            return Task.CompletedTask;
+        };
+
+        // when
+        await RetryHelper.RunOnExhaustedAsync(
+            policy,
+            _TenantMessage("acme"),
+            new InvalidOperationException("boom"),
+            services,
+            MessageType.Subscribe,
+            NullLogger.Instance,
+            TimeProvider.System,
+            AbortToken
+        );
+
+        // then
+        observed.Tenant.Should().Be("acme");
+        observed.Found.Should().BeTrue();
+        observed.Placement.Should().BeSameAs(placement);
+    }
+
+    [Fact]
+    public async Task should_skip_on_exhausted_when_shutdown_cancels_the_placement_resolution()
+    {
+        // given: the host stops while the placement is still resolving
+        using var shutdown = new CancellationTokenSource();
+        await shutdown.CancelAsync();
+        await using var services = _TenantServices(new PlacementResolver(shutdown.Token));
+        var invoked = false;
+        var policy = _Policy(maxRetryAttempts: 1);
+        policy.OnExhausted = (_, _) =>
+        {
+            invoked = true;
+            return Task.CompletedTask;
+        };
+
+        // when
+        var act = () =>
+            RetryHelper.RunOnExhaustedAsync(
+                policy,
+                _TenantMessage("acme"),
+                new InvalidOperationException("boom"),
+                services,
+                MessageType.Subscribe,
+                NullLogger.Instance,
+                TimeProvider.System,
+                shutdown.Token
+            );
+
+        // then: absorbed like a callback cancelled at shutdown
+        await act.Should().NotThrowAsync();
+        invoked.Should().BeFalse();
+    }
+
+    private static ServiceProvider _TenantServices(ITenantDataPlacementResolver resolver)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<ICurrentTenant>(new TestCurrentTenant());
+        services.AddSingleton(new TenantDataRoutedContextRegistration(typeof(object)));
+        services.AddSingleton<TenantDataPlacementPreloader>();
+        services.AddSingleton(resolver);
+
+        return services.BuildServiceProvider();
+    }
+
+    private static MediumMessage _TenantMessage(string tenantId)
+    {
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = Guid.NewGuid().ToString(),
+            [Headers.MessageName] = "test.messageName",
+            [Headers.TenantId] = tenantId,
+        };
+
+        return new MediumMessage
+        {
+            StorageId = Guid.NewGuid(),
+            Origin = new Message(headers, "{}"),
+            Content = "{}",
+            Lane = MessageLane.Bus,
+            Added = DateTimeOffset.UtcNow,
+        };
+    }
+
+    private sealed class PlacementResolver : ITenantDataPlacementResolver
+    {
+        private readonly TenantDataPlacement? _placement;
+        private readonly CancellationToken _cancelledBy;
+
+        public PlacementResolver(TenantDataPlacement placement) => _placement = placement;
+
+        public PlacementResolver(CancellationToken cancelledBy) => _cancelledBy = cancelledBy;
+
+        public Task<TenantDataPlacement?> ResolveAsync(
+            string tenantId,
+            CancellationToken cancellationToken = default
+        ) =>
+            _cancelledBy.IsCancellationRequested
+                ? Task.FromCanceled<TenantDataPlacement?>(_cancelledBy)
+                : Task.FromResult(_placement);
     }
 
     private static RetryPolicyOptions _Policy(int maxRetryAttempts)

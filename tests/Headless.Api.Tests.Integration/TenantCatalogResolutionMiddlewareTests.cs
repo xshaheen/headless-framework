@@ -314,6 +314,22 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
     }
 
     [Fact]
+    public async Task should_preload_the_tenant_placement_before_the_claim_mismatch_check_authenticates()
+    {
+        // given: the mismatch check authenticates under the resolved tenant, and a tenant-owned identity store
+        // may sit on a routed context, so the placement must already be preloaded by then
+        await using var app = await _CreateAppAsync(requireAuthenticatedUser: true, preloadPlacement: true);
+        using var client = HttpTenancyTestHarness.CreateClient(app);
+
+        // when
+        using var response = await _SendAsync(client, identifier: "acme", user: "alice", tenantId: "ten_123");
+
+        // then: the first authentication of the request already saw the tenant's placement
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        app.Services.GetRequiredService<PlacementAtAuthenticationRecorder>().FirstSchema.Should().Be("tenant_123");
+    }
+
+    [Fact]
     public async Task should_pass_authenticated_request_when_catalog_only_host_claim_matches_resolved_tenant()
     {
         await using var app = await _CreateAppAsync(requireAuthenticatedUser: true);
@@ -711,7 +727,8 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         bool useSecondaryScheme = false,
         bool useIsolatedSecondaryScheme = false,
         bool redirectOnForbid = false,
-        bool registerSecondIdentifierSource = false
+        bool registerSecondIdentifierSource = false,
+        bool preloadPlacement = false
     )
     {
         var builder = WebApplication.CreateBuilder(
@@ -765,7 +782,23 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
                     }
                 });
             });
+
+            if (preloadPlacement)
+            {
+                tenancy.Services.AddSingleton(new TenantDataRoutedContextRegistration(typeof(object)));
+                tenancy.DataPlacement(placement =>
+                    placement.UseConfiguration(o =>
+                        o.Tenants.Add(new() { TenantId = "ten_123", Schema = "tenant_123" })
+                    )
+                );
+            }
         });
+
+        if (preloadPlacement)
+        {
+            builder.Services.AddSingleton<PlacementAtAuthenticationRecorder>();
+            builder.Services.AddTransient<IClaimsTransformation, PlacementRecordingClaimsTransformation>();
+        }
 
         builder.Services.Configure<TenantCatalogOptions>(o =>
         {
@@ -918,6 +951,41 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
 
         await app.StartAsync(AbortToken);
         return app;
+    }
+
+    /// <summary>Records what the first authentication of a request saw as the preloaded placement.</summary>
+    private sealed class PlacementAtAuthenticationRecorder
+    {
+        private int _recorded;
+
+        public string? FirstSchema { get; private set; }
+
+        public void Record(string? tenantId)
+        {
+            if (Interlocked.Exchange(ref _recorded, 1) != 0)
+            {
+                return;
+            }
+
+            FirstSchema =
+                tenantId is not null && TenantDataPlacementPreloader.TryGetPreloaded(tenantId, out var placement)
+                    ? placement?.Schema
+                    : "<not preloaded>";
+        }
+    }
+
+    // Claims transformation runs inside every AuthenticateAsync, including the catalog middleware's own.
+    private sealed class PlacementRecordingClaimsTransformation(
+        ICurrentTenant currentTenant,
+        PlacementAtAuthenticationRecorder recorder
+    ) : IClaimsTransformation
+    {
+        public Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal)
+        {
+            recorder.Record(currentTenant.Id);
+
+            return Task.FromResult(principal);
+        }
     }
 
     private async Task<TenantCatalogResponse> _GetTenantAsync(

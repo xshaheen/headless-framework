@@ -1193,37 +1193,41 @@ internal sealed class ConsumerRegister(
                         // cooperative callback can short-circuit when the consumer is stopping.
                         await using var exhaustedScope = serviceScopeFactory.CreateAsyncScope();
 
-                        using var tenantScope = TenantContextScope.ChangeFromEnvelope(
-                            exhaustedScope.ServiceProvider,
-                            message,
-                            _logger
-                        );
+                        var failedInfo = new FailedInfo
+                        {
+                            ServiceProvider = exhaustedScope.ServiceProvider,
+                            MessageType = MessageType.Subscribe,
+                            Message = message,
+                            Lane = lane,
+                            Exception =
+                                dispatchBypassException
+                                ?? new InvalidOperationException(
+                                    exceptionInfo ?? "Received message contains exception information."
+                                ),
+                            // Poisoned-on-arrival messages bypass the dispatch scope and have
+                            // no associated MediumMessage; storageId is the storage's
+                            // sentinel here too (Guid.Empty == "no row identifier"), and the
+                            // retry count is zero because no consume attempt ever ran.
+                            StorageId = Guid.Empty,
+                            RetryCount = 0,
+                        };
 
                         await RetryHelper
-                            .InvokeOnExhaustedAsync(
-                                bypassCallback,
-                                new FailedInfo
-                                {
-                                    ServiceProvider = exhaustedScope.ServiceProvider,
-                                    MessageType = MessageType.Subscribe,
-                                    Message = message,
-                                    Lane = lane,
-                                    Exception =
-                                        dispatchBypassException
-                                        ?? new InvalidOperationException(
-                                            exceptionInfo ?? "Received message contains exception information."
-                                        ),
-                                    // Poisoned-on-arrival messages bypass the dispatch scope and have
-                                    // no associated MediumMessage; storageId is the storage's
-                                    // sentinel here too (Guid.Empty == "no row identifier"), and the
-                                    // retry count is zero because no consume attempt ever ran.
-                                    StorageId = Guid.Empty,
-                                    RetryCount = 0,
-                                },
-                                _options.RetryPolicy.OnExhaustedTimeout,
-                                storageId: Guid.Empty,
+                            .RunOnExhaustedInEnvelopeTenantAsync(
+                                exhaustedScope.ServiceProvider,
+                                message,
+                                Guid.Empty,
                                 _logger,
-                                _timeProvider,
+                                () =>
+                                    RetryHelper.InvokeOnExhaustedAsync(
+                                        bypassCallback,
+                                        failedInfo,
+                                        _options.RetryPolicy.OnExhaustedTimeout,
+                                        storageId: Guid.Empty,
+                                        _logger,
+                                        _timeProvider,
+                                        hostShutdownToken
+                                    ),
                                 hostShutdownToken
                             )
                             .ConfigureAwait(false);

@@ -232,26 +232,62 @@ internal static class RetryHelper
 
         // Use the live dispatch scope so scoped services resolved by the callback are the same
         // instances seen during the consume/send attempt. The caller (Dispatcher) owns this scope.
-        using var tenantScope = TenantContextScope.ChangeFromEnvelope(dispatchServices, message.Origin, logger);
-        await InvokeOnExhaustedAsync(
-                callback,
-                new FailedInfo
-                {
-                    ServiceProvider = dispatchServices,
-                    MessageType = messageType,
-                    Message = message.Origin,
-                    Lane = message.Lane,
-                    Exception = exception,
-                    StorageId = message.StorageId,
-                    RetryCount = message.Retries,
-                },
-                policy.OnExhaustedTimeout,
+        var failedInfo = new FailedInfo
+        {
+            ServiceProvider = dispatchServices,
+            MessageType = messageType,
+            Message = message.Origin,
+            Lane = message.Lane,
+            Exception = exception,
+            StorageId = message.StorageId,
+            RetryCount = message.Retries,
+        };
+
+        await RunOnExhaustedInEnvelopeTenantAsync(
+                dispatchServices,
+                message.Origin,
                 message.StorageId,
                 logger,
-                timeProvider,
+                () =>
+                    InvokeOnExhaustedAsync(
+                        callback,
+                        failedInfo,
+                        policy.OnExhaustedTimeout,
+                        message.StorageId,
+                        logger,
+                        timeProvider,
+                        cancellationToken
+                    ),
                 cancellationToken
             )
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Runs an <c>OnExhausted</c> invocation under the message's tenant with that tenant's data placement
+    /// preloaded, so the callback can resolve a tenant-routed context from <see cref="FailedInfo.ServiceProvider"/>.
+    /// Shutdown while the placement is still resolving skips the callback, the same outcome
+    /// <see cref="InvokeOnExhaustedAsync"/> gives a callback cancelled at shutdown.
+    /// </summary>
+    internal static async Task RunOnExhaustedInEnvelopeTenantAsync(
+        IServiceProvider services,
+        Message message,
+        Guid storageId,
+        ILogger logger,
+        Func<Task> invokeCallback,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            await TenantContextScope
+                .RunInEnvelopeTenantAsync(services, message, logger, invokeCallback, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            logger.OnExhaustedCallbackCancelledAtShutdown(storageId);
+        }
     }
 
     /// <summary>
