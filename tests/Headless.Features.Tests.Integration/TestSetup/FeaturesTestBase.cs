@@ -5,6 +5,7 @@ using Headless.Caching;
 using Headless.DistributedLocks;
 using Headless.Domain;
 using Headless.Features;
+using Headless.Hosting.Initialization;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.MultiTenancy;
@@ -95,7 +96,10 @@ public abstract class FeaturesTestBase(FeaturesTestFixture fixture) : TestBase
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddHeadlessFeatures(storageOptions.Value);
+            modelBuilder.AddHeadlessFeatures(
+                storageOptions.Value,
+                HeadlessStorageNaming.ForProvider(Database.ProviderName)
+            );
         }
     }
 }

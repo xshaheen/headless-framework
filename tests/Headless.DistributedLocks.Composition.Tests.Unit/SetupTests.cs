@@ -210,6 +210,12 @@ public sealed class SetupTests : TestBase
         act.Should().Throw<InvalidOperationException>().WithMessage("*Multiple providers*");
     }
 
+    [Fact]
+    public void should_default_the_storage_schema_to_the_shared_headless_schema()
+    {
+        new DistributedLocksStorageOptions().Schema.Should().Be("headless");
+    }
+
     /// <summary>Records only the event names the lock primitives log, which is all these tests assert on.</summary>
     private sealed class BusAbsenceLoggerProvider : ILoggerProvider
     {

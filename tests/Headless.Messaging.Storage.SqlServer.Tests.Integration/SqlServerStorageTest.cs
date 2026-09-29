@@ -56,8 +56,8 @@ public sealed class SqlServerStorageTest(SqlServerTestFixture fixture) : IAsyncL
     }
 
     [Theory]
-    [InlineData("messaging.Published")]
-    [InlineData("messaging.Received")]
+    [InlineData("headless.MessagingPublished")]
+    [InlineData("headless.MessagingReceived")]
     public void should_create_table(string tableName)
     {
         using var connection = new SqlConnection(fixture.ConnectionString);

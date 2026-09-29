@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
+
 namespace Headless.Idempotency;
 
 /// <summary>
@@ -10,12 +12,10 @@ namespace Headless.Idempotency;
 [PublicAPI]
 public sealed class IdempotencyStorageOptions
 {
-    /// <summary>The schema the record table is created in when none is configured.</summary>
-    public const string DefaultSchema = "idempotency";
-
     /// <summary>
     /// Gets or sets the database schema that holds the record table. Must be a valid identifier for the selected
-    /// provider; validated on startup. Default: <see cref="DefaultSchema" /> (<c>"idempotency"</c>).
+    /// provider; validated on startup. Default: <see cref="HeadlessStorageDefaults.Schema" /> (<c>"headless"</c>),
+    /// the schema every Headless feature shares.
     /// </summary>
-    public string Schema { get; set; } = DefaultSchema;
+    public string Schema { get; set; } = HeadlessStorageDefaults.Schema;
 }

@@ -5,20 +5,20 @@ namespace Headless.Fencing.SqlServer;
 /// <summary>Object and column names of the lease storage, shared by the initializer's DDL and the store's statements.</summary>
 internal static class SqlServerFencingSchema
 {
-    public const string TableName = "leases";
-    public const string SequenceName = "lease_generations";
+    public const string TableName = "FencingLeases";
+    public const string SequenceName = "FencingLeaseGenerations";
 
-    public const string TenantId = "[tenant_id]";
-    public const string Kind = "[kind]";
-    public const string Resource = "[resource]";
-    public const string Generation = "[generation]";
-    public const string State = "[state]";
-    public const string GrantedAt = "[granted_at]";
-    public const string ExpiresAt = "[expires_at]";
-    public const string EndedAt = "[ended_at]";
-    public const string TakeoverCount = "[takeover_count]";
-    public const string Progress = "[progress]";
-    public const string ProgressContract = "[progress_contract]";
+    public const string TenantId = "[TenantId]";
+    public const string Kind = "[Kind]";
+    public const string Resource = "[Resource]";
+    public const string Generation = "[Generation]";
+    public const string State = "[State]";
+    public const string GrantedAt = "[GrantedAt]";
+    public const string ExpiresAt = "[ExpiresAt]";
+    public const string EndedAt = "[EndedAt]";
+    public const string TakeoverCount = "[TakeoverCount]";
+    public const string Progress = "[Progress]";
+    public const string ProgressContract = "[ProgressContract]";
 
     // Stored as smallint. Expired is never stored: it is Active with an expiry at or before the database clock.
     public const short Active = 0;

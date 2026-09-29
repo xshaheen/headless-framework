@@ -12,6 +12,16 @@ namespace Headless.Fencing;
 /// </summary>
 internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOptionsMonitor<FencingOptions> options)
 {
+    // SQL Server pads nvarchar values with trailing spaces before comparing them, under every collation and in
+    // primary-key uniqueness, so "a" and "a " would share one lease there while PostgreSQL keeps them apart. Refusing
+    // surrounding whitespace keeps key parts ordinal on every provider.
+    private const string _MergeReason =
+        " must not start or end with whitespace: some providers ignore trailing spaces when comparing keys, which "
+        + "would merge two leases.";
+    private const string _KindWhitespaceMessage = "A lease kind" + _MergeReason;
+    private const string _ResourceWhitespaceMessage = "A lease resource" + _MergeReason;
+    private const string _TenantIdWhitespaceMessage = "A lease tenant id" + _MergeReason;
+
     /// <summary>Validates a grant's arguments and the current tenant, and returns the lease key.</summary>
     /// <exception cref="ArgumentException">The kind, resource, or current tenant id is invalid.</exception>
     public LeaseKey Resolve(string kind, string resource)
@@ -104,14 +114,14 @@ internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOption
     {
         Argument.IsNotNullOrWhiteSpace(kind, paramName: paramName);
         Argument.HasMaxLength(kind, FencingFieldLimits.KindMaxLength, paramName: paramName);
-        LeaseKeyText.EnsureNoSurroundingWhitespace(kind, "kind", paramName);
+        Argument.HasNoSurroundingWhiteSpace(kind, _KindWhitespaceMessage, paramName);
     }
 
     private static void _ValidateResource(string resource, string paramName)
     {
         Argument.IsNotNullOrWhiteSpace(resource, paramName: paramName);
         Argument.HasMaxLength(resource, FencingFieldLimits.ResourceMaxLength, paramName: paramName);
-        LeaseKeyText.EnsureNoSurroundingWhitespace(resource, "resource", paramName);
+        Argument.HasNoSurroundingWhiteSpace(resource, _ResourceWhitespaceMessage, paramName);
     }
 
     private static string _NormalizeTenantId(string? tenantId, string what, string paramName)
@@ -140,7 +150,7 @@ internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOption
             );
         }
 
-        LeaseKeyText.EnsureNoSurroundingWhitespace(tenantId, "tenant id", paramName);
+        Argument.HasNoSurroundingWhiteSpace(tenantId, _TenantIdWhitespaceMessage, paramName);
 
         return tenantId;
     }

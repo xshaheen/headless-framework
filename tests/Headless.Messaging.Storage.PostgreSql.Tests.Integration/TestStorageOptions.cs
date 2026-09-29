@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
 using Headless.Messaging.Configuration;
 using Microsoft.Extensions.Options;
 
@@ -11,7 +12,7 @@ namespace Tests;
 /// </summary>
 internal static class TestStorageOptions
 {
-    public static IOptions<MessagingStorageOptions> For(string schema = MessagingStorageOptions.DefaultSchema)
+    public static IOptions<MessagingStorageOptions> For(string schema = HeadlessStorageDefaults.Schema)
     {
         return Options.Create(new MessagingStorageOptions { Schema = schema });
     }

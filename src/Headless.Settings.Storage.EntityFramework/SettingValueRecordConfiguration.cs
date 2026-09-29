@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
 using Headless.Settings.Entities;
+using Headless.Settings.Internal;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -14,18 +16,24 @@ namespace Headless.Settings;
 /// <c>ProviderKey</c>.
 /// </summary>
 /// <param name="options">Storage options that supply the table name and schema.</param>
-internal sealed class SettingValueRecordConfiguration(SettingsStorageOptions options)
+/// <param name="style">The naming style of the database the model targets.</param>
+internal sealed class SettingValueRecordConfiguration(SettingsStorageOptions options, StorageNamingStyle style)
     : IEntityTypeConfiguration<SettingValueRecord>
 {
     /// <inheritdoc/>
     public void Configure(EntityTypeBuilder<SettingValueRecord> b)
     {
-        b.ToTable(options.SettingValuesTableName, options.Schema);
+        var table = options.ResolveSettingValuesTableName(style);
+
+        b.ToTable(table, options.Schema);
         b.ConfigureHeadlessConvention();
+        b.HasKey(x => x.Id).HasName(HeadlessStorageNaming.PrimaryKeyName(style, table));
         b.Property(x => x.Name).HasMaxLength(SettingValueRecordConstants.NameMaxLength).IsRequired();
         b.Property(x => x.Value).HasMaxLength(SettingValueRecordConstants.ValueMaxLength).IsRequired();
         b.Property(x => x.ProviderName).HasMaxLength(SettingValueRecordConstants.ProviderNameMaxLength).IsRequired();
         b.Property(x => x.ProviderKey).HasMaxLength(SettingValueRecordConstants.ProviderKeyMaxLength).IsRequired(false);
+
+        var providerKey = HeadlessStorageNaming.Apply(style, nameof(SettingValueRecord.ProviderKey));
 
         // PostgreSQL and SQLite treat NULLs as distinct in a unique index, so a single index over the
         // nullable ProviderKey would let concurrent inserts create duplicate global (NULL-key) rows.
@@ -37,12 +45,18 @@ internal sealed class SettingValueRecordConfiguration(SettingsStorageOptions opt
                 x.ProviderKey,
             })
             .IsUnique()
-            .HasFilter("\"ProviderKey\" IS NOT NULL")
-            .HasDatabaseName($"IX_{options.SettingValuesTableName}_Name_ProviderName_ProviderKey");
+            .HasFilter($"\"{providerKey}\" IS NOT NULL")
+            .HasDatabaseName(
+                HeadlessStorageNaming.IndexName(style, table, SettingsStorageNames.ValuesByNameProviderKey)
+            );
 
         b.HasIndex(x => new { x.Name, x.ProviderName })
             .IsUnique()
-            .HasFilter("\"ProviderKey\" IS NULL")
-            .HasDatabaseName($"IX_{options.SettingValuesTableName}_Name_ProviderName_NullProviderKey");
+            .HasFilter($"\"{providerKey}\" IS NULL")
+            .HasDatabaseName(
+                HeadlessStorageNaming.IndexName(style, table, SettingsStorageNames.ValuesByNameNullProviderKey)
+            );
+
+        b.ApplyColumnNaming(style);
     }
 }

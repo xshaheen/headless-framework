@@ -96,6 +96,12 @@ public sealed class CoordinationSetupBuilderTests
         provider.GetRequiredService<INodeMembership>().Should().BeOfType<MembershipService>();
     }
 
+    [Fact]
+    public void should_default_the_storage_schema_to_the_shared_headless_schema()
+    {
+        new CoordinationStorageOptions().Schema.Should().Be("headless");
+    }
+
     private sealed class FakeCoordinationProviderOptionsExtension : ICoordinationProviderOptionsExtension
     {
         public void AddServices(IServiceCollection services)

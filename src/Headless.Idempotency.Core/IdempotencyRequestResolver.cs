@@ -15,6 +15,16 @@ internal sealed class IdempotencyRequestResolver(
     IOptionsMonitor<IdempotentOperationsOptions> options
 )
 {
+    // SQL Server pads nvarchar values with trailing spaces before comparing them, under every collation and in
+    // primary-key uniqueness, so "a" and "a " would share one record there while PostgreSQL keeps them apart. Refusing
+    // surrounding whitespace keeps key parts ordinal on every provider.
+    private const string _MergeReason =
+        " must not start or end with whitespace: some providers ignore trailing spaces when comparing keys, which "
+        + "would merge two records.";
+    private const string _ContractWhitespaceMessage = "An idempotency contract" + _MergeReason;
+    private const string _KeyWhitespaceMessage = "An idempotency key" + _MergeReason;
+    private const string _TenantIdWhitespaceMessage = "An idempotency tenant id" + _MergeReason;
+
     /// <summary>Validates an admission's arguments and the current tenant, and returns the record key.</summary>
     /// <exception cref="ArgumentException">The key, fingerprint, contract, or current tenant id is invalid.</exception>
     public IdempotencyRecordKey ResolveAdmission(
@@ -107,7 +117,7 @@ internal sealed class IdempotencyRequestResolver(
     {
         Argument.IsNotNullOrWhiteSpace(contract, paramName: paramName);
         Argument.HasMaxLength(contract, IdempotencyFieldLimits.ContractMaxLength, paramName: paramName);
-        _EnsureNoSurroundingWhitespace(contract, "contract", paramName);
+        Argument.HasNoSurroundingWhiteSpace(contract, _ContractWhitespaceMessage, paramName);
     }
 
     /// <summary>Validates a recovery point's name, state, and contract tag.</summary>
@@ -167,7 +177,7 @@ internal sealed class IdempotencyRequestResolver(
     {
         Argument.IsNotNullOrWhiteSpace(key, paramName: paramName);
         Argument.HasMaxLength(key, IdempotencyFieldLimits.KeyMaxLength, paramName: paramName);
-        _EnsureNoSurroundingWhitespace(key, "key", paramName);
+        Argument.HasNoSurroundingWhiteSpace(key, _KeyWhitespaceMessage, paramName);
     }
 
     private static string _NormalizeTenantId(string? tenantId, string what, string paramName)
@@ -196,23 +206,8 @@ internal sealed class IdempotencyRequestResolver(
             );
         }
 
-        _EnsureNoSurroundingWhitespace(tenantId, "tenant id", paramName);
+        Argument.HasNoSurroundingWhiteSpace(tenantId, _TenantIdWhitespaceMessage, paramName);
 
         return tenantId;
-    }
-
-    private static void _EnsureNoSurroundingWhitespace(string value, string what, string paramName)
-    {
-        // SQL Server pads nvarchar values with trailing spaces before comparing them, under every collation and in
-        // primary-key uniqueness, so "a" and "a " would share one record there while PostgreSQL keeps them apart.
-        // Refusing surrounding whitespace keeps key parts ordinal on both providers.
-        if (value.Length > 0 && (char.IsWhiteSpace(value[0]) || char.IsWhiteSpace(value[^1])))
-        {
-            throw new ArgumentException(
-                $"An idempotency {what} must not start or end with whitespace: some providers ignore trailing spaces "
-                    + "when comparing keys, which would merge two records.",
-                paramName
-            );
-        }
     }
 }

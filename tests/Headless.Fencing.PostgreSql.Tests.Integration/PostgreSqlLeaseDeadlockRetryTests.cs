@@ -78,6 +78,6 @@ public sealed class PostgreSqlLeaseDeadlockRetryTests(PostgreSqlFencingFixture f
 
     private PostgreSqlDeadlockInjector _Injector()
     {
-        return new PostgreSqlDeadlockInjector(fixture.ConnectionString, _Schema, "leases");
+        return new PostgreSqlDeadlockInjector(fixture.ConnectionString, _Schema, "fencing_leases");
     }
 }

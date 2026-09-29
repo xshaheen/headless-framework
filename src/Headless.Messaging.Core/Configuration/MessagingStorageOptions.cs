@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
+
 namespace Headless.Messaging.Configuration;
 
 /// <summary>
@@ -17,13 +19,11 @@ namespace Headless.Messaging.Configuration;
 [PublicAPI]
 public sealed class MessagingStorageOptions
 {
-    /// <summary>The schema default, matching the feature name.</summary>
-    public const string DefaultSchema = "messaging";
-
     /// <summary>
-    /// Gets or sets the database schema that holds the messaging tables. Default: <c>"messaging"</c>.
+    /// Gets or sets the database schema that holds the messaging tables. Default:
+    /// <see cref="HeadlessStorageDefaults.Schema"/> (<c>"headless"</c>), the schema every Headless feature shares.
     /// Validated at startup against the identifier rules of whichever storage provider is registered,
     /// so an invalid name fails the host rather than a later DDL statement.
     /// </summary>
-    public string Schema { get; set; } = DefaultSchema;
+    public string Schema { get; set; } = HeadlessStorageDefaults.Schema;
 }

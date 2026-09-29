@@ -498,7 +498,7 @@ options.PollingCadenceFraction = 0.5;
 options.AutoExtensionCadenceFraction = 1.0 / 3.0;
 ```
 
-Storage naming is a separate, feature-owned options type. `DistributedLocksStorageOptions.Schema` (default `"locks"`) names the database schema that holds the fencing sequence, and it is configured on the setup builder rather than on any one provider:
+Storage naming is a separate, feature-owned options type. `DistributedLocksStorageOptions.Schema` (default `"headless"`, the schema every Headless feature shares) names the database schema that holds the fencing sequence, and it is configured on the setup builder rather than on any one provider:
 
 ```csharp
 services.AddHeadlessDistributedLocks(setup =>
@@ -686,6 +686,7 @@ builder.Services.AddHeadlessDistributedLocks(setup =>
         options.KeyPrefix = "distributed-lock:";
     })
 );
+// or reuse the connection from services.AddPostgreSqlSql(connectionString): setup.UsePostgreSql()
 
 await using var lease = await lockProvider.AcquireAsync(
     "orders:123",
@@ -697,6 +698,8 @@ await using var lease = await lockProvider.AcquireAsync(
     ct
 );
 ```
+
+The parameterless overload and the shared `headless` schema are described in [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features).
 
 Transaction-coupled locking:
 
@@ -789,7 +792,7 @@ services.AddHeadlessDistributedLocks(setup =>
 });
 ```
 
-The default is the feature name `"locks"`. Earlier versions of this provider had no schema setting at all and created `headless_distributed_locks_fence` unqualified, so it landed wherever `search_path` pointed; it is now created inside the configured schema (which the provider creates when absent) and read back as `"schema"."headless_distributed_locks_fence"`. The provider validates the schema against PostgreSQL's unquoted-identifier rules at startup.
+The default is `"headless"`. The provider creates the `headless_distributed_locks_fence` sequence inside the configured schema, creating the schema when absent, and reads it as `"schema"."headless_distributed_locks_fence"`, so it never depends on `search_path`. The provider validates the schema against PostgreSQL's unquoted-identifier rules at startup.
 
 ### Runtime behavior
 
@@ -893,6 +896,7 @@ builder.Services.AddHeadlessDistributedLocks(setup =>
         options.KeyPrefix = "distributed-lock:";
     })
 );
+// or reuse the connection from services.AddSqlServerSql(connectionString): setup.UseSqlServer()
 
 await using var lease = await lockProvider.AcquireAsync(
     "orders:123",
@@ -904,6 +908,8 @@ await using var lease = await lockProvider.AcquireAsync(
     ct
 );
 ```
+
+The parameterless overload and the shared `headless` schema are described in [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features).
 
 Transaction-coupled locking:
 
@@ -937,7 +943,7 @@ services.AddHeadlessDistributedLocks(setup =>
 });
 ```
 
-The default is the feature name `"locks"`, not `dbo`; the initializer creates the schema when absent. The provider validates it against SQL Server's regular-identifier rules at startup.
+The default is `"headless"`, not `dbo`; the initializer creates the schema when absent. The provider validates it against SQL Server's regular-identifier rules at startup. The sequence inside it is named `DistributedLocksFence_{KeyPrefix}`, with every run of characters outside `A-Za-z0-9_` in the prefix collapsed to `_` and the name truncated to 128 characters, so the default prefix `distributed-lock:` gives `DistributedLocksFence_distributed_lock`. Each key prefix gets its own sequence, so replicas that share a prefix share a fence.
 
 ### Runtime behavior
 

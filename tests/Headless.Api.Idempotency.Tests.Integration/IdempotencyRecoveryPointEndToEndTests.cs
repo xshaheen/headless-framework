@@ -3,6 +3,7 @@
 using System.Net;
 using System.Text;
 using Headless.Constants;
+using Headless.Hosting.Initialization;
 using Headless.Idempotency;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
@@ -80,7 +81,7 @@ public sealed class IdempotencyRecoveryPointPostgreSqlEndToEndTests(ApiIdempoten
                 await connection.OpenAsync(cancellationToken);
                 await using var command = new NpgsqlCommand(
                     $"""
-                    UPDATE "{IdempotencyStorageOptions.DefaultSchema}".records
+                    UPDATE "{HeadlessStorageDefaults.Schema}".idempotency_records
                     SET lease_expires_at = lease_expires_at - interval '1 hour'
                     WHERE tenant_id = @tenant AND idempotency_key = @key
                     """,

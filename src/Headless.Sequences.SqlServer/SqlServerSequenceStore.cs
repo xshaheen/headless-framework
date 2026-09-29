@@ -208,7 +208,7 @@ internal sealed class SqlServerSequenceStore(IOptions<SqlServerSequencesOptions>
         // No SET options in the batch: a SET issued in an ad-hoc batch outlives it for the rest of the session, and in
         // a gap-free call that session is the caller's.
         return $"""
-            DECLARE @allocated table ([value] bigint NOT NULL);
+            DECLARE @allocated table ([Value] bigint NOT NULL);
 
             UPDATE {table} WITH (UPDLOCK, HOLDLOCK)
             SET {SqlServerSequencesSchema.Value} = {SqlServerSequencesSchema.Value} + @Delta,
@@ -230,7 +230,7 @@ internal sealed class SqlServerSequenceStore(IOptions<SqlServerSequencesOptions>
                 OUTPUT inserted.{SqlServerSequencesSchema.Value} INTO @allocated
                 VALUES (@TenantId, @Name, @Partition, @InsertValue, SYSUTCDATETIME(), SYSUTCDATETIME());
 
-            SELECT TOP (1) [value] FROM @allocated;
+            SELECT TOP (1) [Value] FROM @allocated;
             """;
     }
 }

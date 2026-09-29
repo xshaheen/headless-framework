@@ -28,14 +28,35 @@ internal sealed class SqlServerPermissionsStorageInitializer(
         return $"[{options.Schema}].[{tableName}]";
     }
 
+    /// <summary>Returns the qualified permission grants table.</summary>
+    internal static string GrantsTable(PermissionsStorageOptions options)
+    {
+        return Qualified(options, options.ResolvePermissionGrantsTableName(StorageNamingStyle.PascalCase));
+    }
+
+    /// <summary>Returns the qualified permission definitions table.</summary>
+    internal static string DefinitionsTable(PermissionsStorageOptions options)
+    {
+        return Qualified(options, options.ResolvePermissionDefinitionsTableName(StorageNamingStyle.PascalCase));
+    }
+
+    /// <summary>Returns the qualified permission group definitions table.</summary>
+    internal static string GroupsTable(PermissionsStorageOptions options)
+    {
+        return Qualified(options, options.ResolvePermissionGroupDefinitionsTableName(StorageNamingStyle.PascalCase));
+    }
+
     private static string _CreateScript(PermissionsStorageOptions options)
     {
-        var grantsTable = Qualified(options, options.PermissionGrantsTableName);
-        var definitionsTable = Qualified(options, options.PermissionDefinitionsTableName);
-        var groupsTable = Qualified(options, options.PermissionGroupDefinitionsTableName);
-        var grantsObject = $"{options.Schema}.{options.PermissionGrantsTableName}";
-        var definitionsObject = $"{options.Schema}.{options.PermissionDefinitionsTableName}";
-        var groupsObject = $"{options.Schema}.{options.PermissionGroupDefinitionsTableName}";
+        var grantsName = options.ResolvePermissionGrantsTableName(StorageNamingStyle.PascalCase);
+        var grantsTable = Qualified(options, grantsName);
+        var definitionsName = options.ResolvePermissionDefinitionsTableName(StorageNamingStyle.PascalCase);
+        var definitionsTable = Qualified(options, definitionsName);
+        var groupsName = options.ResolvePermissionGroupDefinitionsTableName(StorageNamingStyle.PascalCase);
+        var groupsTable = Qualified(options, groupsName);
+        var grantsObject = $"{options.Schema}.{grantsName}";
+        var definitionsObject = $"{options.Schema}.{definitionsName}";
+        var groupsObject = $"{options.Schema}.{groupsName}";
 
         // Serialize concurrent-startup DDL across replicas with a session-scoped advisory lock.
         var lockResource = $"headless_permissions_init:{options.Schema}";
@@ -63,7 +84,7 @@ internal sealed class SqlServerPermissionsStorageInitializer(
                         [Name] nvarchar({PermissionGroupDefinitionRecordConstants.NameMaxLength}) NOT NULL,
                         [DisplayName] nvarchar({PermissionGroupDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
                         [ExtraProperties] nvarchar(max) NOT NULL,
-                        CONSTRAINT [PK_{options.PermissionGroupDefinitionsTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
+                        CONSTRAINT [PK_{groupsName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
                 END;
             END TRY
@@ -71,8 +92,8 @@ internal sealed class SqlServerPermissionsStorageInitializer(
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
             END CATCH;
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.PermissionGroupDefinitionsTableName}_Name' AND object_id = OBJECT_ID(N'{groupsObject}'))
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.PermissionGroupDefinitionsTableName}_Name] ON {groupsTable} ([Name] ASC);
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{groupsName}_Name' AND object_id = OBJECT_ID(N'{groupsObject}'))
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{groupsName}_Name] ON {groupsTable} ([Name] ASC);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
@@ -90,7 +111,7 @@ internal sealed class SqlServerPermissionsStorageInitializer(
                         [ParentName] nvarchar({PermissionDefinitionRecordConstants.NameMaxLength}) NULL,
                         [Providers] nvarchar({PermissionDefinitionRecordConstants.ProvidersMaxLength}) NULL,
                         [ExtraProperties] nvarchar(max) NOT NULL,
-                        CONSTRAINT [PK_{options.PermissionDefinitionsTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
+                        CONSTRAINT [PK_{definitionsName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
                 END;
             END TRY
@@ -98,16 +119,16 @@ internal sealed class SqlServerPermissionsStorageInitializer(
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
             END CATCH;
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.PermissionDefinitionsTableName}_GroupName' AND object_id = OBJECT_ID(N'{definitionsObject}'))
-                    CREATE NONCLUSTERED INDEX [IX_{options.PermissionDefinitionsTableName}_GroupName] ON {definitionsTable} ([GroupName] ASC);
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{definitionsName}_GroupName' AND object_id = OBJECT_ID(N'{definitionsObject}'))
+                    CREATE NONCLUSTERED INDEX [IX_{definitionsName}_GroupName] ON {definitionsTable} ([GroupName] ASC);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
             END CATCH;
 
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.PermissionDefinitionsTableName}_Name' AND object_id = OBJECT_ID(N'{definitionsObject}'))
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.PermissionDefinitionsTableName}_Name] ON {definitionsTable} ([Name] ASC);
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{definitionsName}_Name' AND object_id = OBJECT_ID(N'{definitionsObject}'))
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{definitionsName}_Name] ON {definitionsTable} ([Name] ASC);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
@@ -125,7 +146,7 @@ internal sealed class SqlServerPermissionsStorageInitializer(
                         [IsGranted] bit NOT NULL DEFAULT CAST(1 AS bit),
                         [CreatedAt] datetimeoffset NOT NULL,
                         [UpdatedAt] datetimeoffset NULL,
-                        CONSTRAINT [PK_{options.PermissionGrantsTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
+                        CONSTRAINT [PK_{grantsName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
                 END;
             END TRY
@@ -133,17 +154,9 @@ internal sealed class SqlServerPermissionsStorageInitializer(
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
             END CATCH;
 
-            IF COL_LENGTH(N'{grantsObject}', N'DateCreated') IS NOT NULL
-               AND COL_LENGTH(N'{grantsObject}', N'CreatedAt') IS NULL
-                EXEC sys.sp_rename N'{grantsObject}.DateCreated', N'CreatedAt', N'COLUMN';
-
-            IF COL_LENGTH(N'{grantsObject}', N'DateUpdated') IS NOT NULL
-               AND COL_LENGTH(N'{grantsObject}', N'UpdatedAt') IS NULL
-                EXEC sys.sp_rename N'{grantsObject}.DateUpdated', N'UpdatedAt', N'COLUMN';
-
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.PermissionGrantsTableName}_TenantId_Name_ProviderName_ProviderKey' AND object_id = OBJECT_ID(N'{grantsObject}'))
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.PermissionGrantsTableName}_TenantId_Name_ProviderName_ProviderKey] ON {grantsTable} ([TenantId] ASC, [Name] ASC, [ProviderName] ASC, [ProviderKey] ASC) WHERE [TenantId] IS NOT NULL;
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{grantsName}_TenantId_Name_ProviderName_ProviderKey' AND object_id = OBJECT_ID(N'{grantsObject}'))
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{grantsName}_TenantId_Name_ProviderName_ProviderKey] ON {grantsTable} ([TenantId] ASC, [Name] ASC, [ProviderName] ASC, [ProviderKey] ASC) WHERE [TenantId] IS NOT NULL;
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
@@ -152,8 +165,8 @@ internal sealed class SqlServerPermissionsStorageInitializer(
                 -- Mirror the PG sibling: a filtered unique index for host-scoped grants (TenantId
                 -- IS NULL) so SqlServer's standard NULL-distinct semantics don't allow duplicate
                 -- host grants for the same (Name, ProviderName, ProviderKey).
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.PermissionGrantsTableName}_Name_ProviderName_ProviderKey_NullTenantId' AND object_id = OBJECT_ID(N'{grantsObject}'))
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.PermissionGrantsTableName}_Name_ProviderName_ProviderKey_NullTenantId] ON {grantsTable} ([Name] ASC, [ProviderName] ASC, [ProviderKey] ASC) WHERE [TenantId] IS NULL;
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{grantsName}_Name_ProviderName_ProviderKey_NoTenant' AND object_id = OBJECT_ID(N'{grantsObject}'))
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{grantsName}_Name_ProviderName_ProviderKey_NoTenant] ON {grantsTable} ([Name] ASC, [ProviderName] ASC, [ProviderKey] ASC) WHERE [TenantId] IS NULL;
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;

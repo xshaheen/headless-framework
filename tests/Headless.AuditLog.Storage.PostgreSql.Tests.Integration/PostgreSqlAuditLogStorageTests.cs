@@ -56,8 +56,8 @@ public sealed class PostgreSqlAuditLogStorageTests(PostgreSqlAuditLogFixture fix
 
         // then
         initializer.IsInitialized.Should().BeTrue();
-        (await _TableExistsAsync("audit_log")).Should().BeTrue();
-        (await _JsonColumnTypeAsync("NewValues")).Should().Be("jsonb");
+        (await _TableExistsAsync("audit_log_entries")).Should().BeTrue();
+        (await _JsonColumnTypeAsync("new_values")).Should().Be("jsonb");
         entries.Should().ContainSingle();
         entries[0].EntityId.Should().Be("ORD-1");
         entries[0].ChangedFields.Should().Equal("total");
@@ -332,7 +332,7 @@ public sealed class PostgreSqlAuditLogStorageTests(PostgreSqlAuditLogFixture fix
             """
             SELECT data_type
             FROM information_schema.columns
-            WHERE table_schema = @schema AND table_name = 'audit_log' AND column_name = @column
+            WHERE table_schema = @schema AND table_name = 'audit_log_entries' AND column_name = @column
             """,
             connection
         );

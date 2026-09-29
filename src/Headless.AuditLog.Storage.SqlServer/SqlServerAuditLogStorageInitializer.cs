@@ -24,18 +24,25 @@ internal sealed class SqlServerAuditLogStorageInitializer(
 
     internal static string Qualified(AuditLogStorageOptions options)
     {
-        return $"[{options.Schema}].[{options.TableName}]";
+        return $"[{options.Schema}].[{TableName(options)}]";
     }
 
     internal static string ObjectName(AuditLogStorageOptions options)
     {
-        return $"{options.Schema}.{options.TableName}";
+        return $"{options.Schema}.{TableName(options)}";
+    }
+
+    internal static string TableName(AuditLogStorageOptions options)
+    {
+        return options.ResolveTableName(StorageNamingStyle.PascalCase);
     }
 
     private static string _CreateScript(AuditLogStorageOptions options)
     {
+        var tableName = TableName(options);
         var table = Qualified(options);
         var objectName = ObjectName(options);
+        var primaryKey = HeadlessStorageNaming.PrimaryKeyName(StorageNamingStyle.PascalCase, tableName);
         var jsonColumnType = (options.JsonColumnType ?? AuditLogJsonColumnType.NvarcharMax).ToSqlFragment();
         var createdAtColumnType = string.IsNullOrWhiteSpace(options.CreatedAtColumnType)
             ? "datetime2"
@@ -47,8 +54,8 @@ internal sealed class SqlServerAuditLogStorageInitializer(
         // failure path; connection-close auto-release is a backstop, not the primary mechanism.
         var acquireLock = $"""
             DECLARE @lockResult int;
-            EXEC @lockResult = sp_getapplock @Resource = N'headless_audit_init:{options.Schema}.{options.TableName}', @LockMode = N'Exclusive', @LockOwner = N'Session', @LockTimeout = 30000;
-            IF @lockResult < 0 THROW 50000, N'Headless.AuditLog: failed to acquire init lock on the audit_log schema. Another initializer may be holding it.', 1;
+            EXEC @lockResult = sp_getapplock @Resource = N'headless_audit_init:{options.Schema}.{tableName}', @LockMode = N'Exclusive', @LockOwner = N'Session', @LockTimeout = 30000;
+            IF @lockResult < 0 THROW 50000, N'Headless.AuditLog: failed to acquire init lock on the audit log table {options.Schema}.{tableName}. Another initializer may be holding it.', 1;
             """;
 
         var createSchema = $"""
@@ -83,7 +90,7 @@ internal sealed class SqlServerAuditLogStorageInitializer(
                         [ChangedFields] {jsonColumnType} NULL,
                         [Success] bit NOT NULL,
                         [ErrorCode] nvarchar({AuditLogFieldLimits.ErrorCode}) NULL,
-                        CONSTRAINT [PK_{options.TableName}] PRIMARY KEY CLUSTERED ([CreatedAt] ASC, [Id] ASC)
+                        CONSTRAINT [{primaryKey}] PRIMARY KEY CLUSTERED ([CreatedAt] ASC, [Id] ASC)
                     );
                 END;
             END TRY
@@ -102,37 +109,37 @@ internal sealed class SqlServerAuditLogStorageInitializer(
             new[]
             {
                 _IndexStatement(
-                    "ix_audit_log_tenant_time",
+                    _IndexName(tableName, AuditLogStorageNames.TenantTime),
                     table,
                     objectName,
                     "[TenantId] ASC, [CreatedAt] ASC, [Id] ASC"
                 ),
                 _IndexStatement(
-                    "ix_audit_log_tenant_action_time",
+                    _IndexName(tableName, AuditLogStorageNames.TenantActionTime),
                     table,
                     objectName,
                     "[TenantId] ASC, [Action] ASC, [CreatedAt] ASC, [Id] ASC"
                 ),
                 _IndexStatement(
-                    "ix_audit_log_tenant_entity_time",
+                    _IndexName(tableName, AuditLogStorageNames.TenantEntityTime),
                     table,
                     objectName,
                     "[TenantId] ASC, [EntityType] ASC, [EntityId] ASC, [CreatedAt] ASC, [Id] ASC"
                 ),
                 _IndexStatement(
-                    "ix_audit_log_tenant_actor_time",
+                    _IndexName(tableName, AuditLogStorageNames.TenantActorTime),
                     table,
                     objectName,
                     "[TenantId] ASC, [UserId] ASC, [CreatedAt] ASC, [Id] ASC"
                 ),
                 _IndexStatement(
-                    "ix_audit_log_tenant_account_time",
+                    _IndexName(tableName, AuditLogStorageNames.TenantAccountTime),
                     table,
                     objectName,
                     "[TenantId] ASC, [AccountId] ASC, [CreatedAt] ASC, [Id] ASC"
                 ),
                 _IndexStatement(
-                    "ix_audit_log_correlation",
+                    _IndexName(tableName, AuditLogStorageNames.Correlation),
                     table,
                     objectName,
                     "[CorrelationId] ASC, [CreatedAt] ASC, [Id] ASC"
@@ -144,7 +151,7 @@ internal sealed class SqlServerAuditLogStorageInitializer(
         // an outer TRY/CATCH guarantees the release runs before the connection returns to the pool;
         // a Session-scoped applock that leaks past the throw would otherwise persist and starve the
         // next replica's sp_getapplock until the connection is physically reset.
-        var lockResource = $"headless_audit_init:{options.Schema}.{options.TableName}";
+        var lockResource = $"headless_audit_init:{options.Schema}.{tableName}";
         var releaseLock = $"EXEC sp_releaseapplock @Resource = N'{lockResource}', @LockOwner = N'Session';";
 
         // Wrap the DDL body in BEGIN TRAN / COMMIT TRAN so a mid-script failure (constraint-violation,
@@ -189,6 +196,11 @@ internal sealed class SqlServerAuditLogStorageInitializer(
                 THROW;
             END CATCH;
             """;
+    }
+
+    private static string _IndexName(string tableName, string[] parts)
+    {
+        return HeadlessStorageNaming.IndexName(StorageNamingStyle.PascalCase, tableName, parts);
     }
 
     private static string _IndexStatement(string indexName, string table, string objectName, string columns)

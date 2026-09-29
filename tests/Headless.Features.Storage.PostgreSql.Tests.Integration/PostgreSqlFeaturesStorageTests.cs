@@ -85,39 +85,14 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
         await host.StartAsync(AbortToken);
 
         // then
-        (await _IndexExistsAsync("IX_FeatureGroupDefinitions_Name"))
+        (await _IndexExistsAsync("ix_feature_group_definitions_name"))
             .Should()
             .BeTrue();
-        (await _IndexExistsAsync("IX_FeatureDefinitions_GroupName")).Should().BeTrue();
-        (await _IndexExistsAsync("IX_FeatureDefinitions_Name")).Should().BeTrue();
-        (await _IndexExistsAsync("IX_FeatureValues_ProviderName_ProviderKey")).Should().BeTrue();
-        (await _IndexExistsAsync("IX_FeatureValues_Name_ProviderName_ProviderKey")).Should().BeTrue();
-        (await _IndexExistsAsync("IX_FeatureValues_Name_ProviderName_NullProviderKey")).Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task should_rename_legacy_timestamp_columns_without_losing_feature_value()
-    {
-        // given
-        await fixture.DropSchemaAsync(_Schema, AbortToken);
-        var id = Guid.NewGuid();
-        var createdAt = new DateTimeOffset(2026, 7, 25, 10, 0, 0, TimeSpan.Zero);
-        var updatedAt = createdAt.AddMinutes(5);
-        await _CreateLegacyValueTableAsync(id, createdAt, updatedAt);
-        using var host = fixture.CreateHost(_Schema);
-
-        // when
-        await host.StartAsync(AbortToken);
-        var repository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
-        var stored = await repository.FindAsync("Legacy.Feature", "Edition", "pro", AbortToken);
-
-        // then
-        stored.Should().NotBeNull();
-        stored!.Id.Should().Be(id);
-        stored.CreatedAt.Should().Be(createdAt);
-        stored.UpdatedAt.Should().Be(updatedAt);
-        (await _ColumnExistsAsync("FeatureValues", "DateCreated")).Should().BeFalse();
-        (await _ColumnExistsAsync("FeatureValues", "DateUpdated")).Should().BeFalse();
+        (await _IndexExistsAsync("ix_feature_definitions_group_name")).Should().BeTrue();
+        (await _IndexExistsAsync("ix_feature_definitions_name")).Should().BeTrue();
+        (await _IndexExistsAsync("ix_feature_values_provider_name_provider_key")).Should().BeTrue();
+        (await _IndexExistsAsync("ix_feature_values_name_provider_name_provider_key")).Should().BeTrue();
+        (await _IndexExistsAsync("ix_feature_values_name_provider_name_null_provider_key")).Should().BeTrue();
     }
 
     private async Task<bool> _IndexExistsAsync(string indexName)
@@ -140,54 +115,6 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
         return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
     }
 
-    private async Task<bool> _ColumnExistsAsync(string tableName, string columnName)
-    {
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        await using var command = new NpgsqlCommand(
-            """
-            SELECT EXISTS (
-                SELECT 1 FROM information_schema.columns
-                WHERE table_schema = @schema AND table_name = @table AND column_name = @column
-            )
-            """,
-            connection
-        );
-        command.Parameters.AddWithValue("schema", _Schema);
-        command.Parameters.AddWithValue("table", tableName);
-        command.Parameters.AddWithValue("column", columnName);
-
-        return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
-    }
-
-    private async Task _CreateLegacyValueTableAsync(Guid id, DateTimeOffset createdAt, DateTimeOffset updatedAt)
-    {
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        await using var command = new NpgsqlCommand(
-            $"""
-            CREATE SCHEMA "{_Schema}";
-            CREATE TABLE "{_Schema}"."FeatureValues" (
-                "Id" uuid NOT NULL PRIMARY KEY,
-                "Name" character varying(128) NOT NULL,
-                "Value" character varying(128) NOT NULL,
-                "ProviderName" character varying(64) NOT NULL,
-                "ProviderKey" character varying(64),
-                "DateCreated" timestamp with time zone NOT NULL,
-                "DateUpdated" timestamp with time zone
-            );
-            INSERT INTO "{_Schema}"."FeatureValues"
-                ("Id", "Name", "Value", "ProviderName", "ProviderKey", "DateCreated", "DateUpdated")
-            VALUES (@id, 'Legacy.Feature', 'true', 'Edition', 'pro', @createdAt, @updatedAt);
-            """,
-            connection
-        );
-        command.Parameters.AddWithValue(nameof(id), id);
-        command.Parameters.AddWithValue(nameof(createdAt), createdAt);
-        command.Parameters.AddWithValue(nameof(updatedAt), updatedAt);
-        await command.ExecuteNonQueryAsync(AbortToken);
-    }
-
     private async Task _CreateTablesWithoutIndexesAsync()
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
@@ -196,36 +123,38 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
             $"""
             CREATE SCHEMA IF NOT EXISTS "{_Schema}";
 
-            CREATE TABLE IF NOT EXISTS "{_Schema}"."FeatureGroupDefinitions" (
-                "Id" uuid NOT NULL,
-                "Name" character varying(128) NOT NULL,
-                "DisplayName" character varying(256) NOT NULL,
-                "ExtraProperties" text NOT NULL,
-                CONSTRAINT "PK_FeatureGroupDefinitions" PRIMARY KEY ("Id")
+            CREATE TABLE IF NOT EXISTS "{_Schema}".feature_group_definitions (
+                id uuid NOT NULL,
+                name character varying(128) NOT NULL,
+                display_name character varying(256) NOT NULL,
+                extra_properties text NOT NULL,
+                CONSTRAINT pk_feature_group_definitions PRIMARY KEY (id)
             );
 
-            CREATE TABLE IF NOT EXISTS "{_Schema}"."FeatureDefinitions" (
-                "Id" uuid NOT NULL,
-                "GroupName" character varying(128) NOT NULL,
-                "Name" character varying(128) NOT NULL,
-                "DisplayName" character varying(256) NOT NULL,
-                "ParentName" character varying(128),
-                "Description" character varying(256),
-                "DefaultValue" character varying(256),
-                "IsVisibleToClients" boolean NOT NULL,
-                "IsAvailableToHost" boolean NOT NULL,
-                "Providers" character varying(256),
-                "ExtraProperties" text NOT NULL,
-                CONSTRAINT "PK_FeatureDefinitions" PRIMARY KEY ("Id")
+            CREATE TABLE IF NOT EXISTS "{_Schema}".feature_definitions (
+                id uuid NOT NULL,
+                group_name character varying(128) NOT NULL,
+                name character varying(128) NOT NULL,
+                display_name character varying(256) NOT NULL,
+                parent_name character varying(128),
+                description character varying(256),
+                default_value character varying(256),
+                is_visible_to_clients boolean NOT NULL,
+                is_available_to_host boolean NOT NULL,
+                providers character varying(256),
+                extra_properties text NOT NULL,
+                CONSTRAINT pk_feature_definitions PRIMARY KEY (id)
             );
 
-            CREATE TABLE IF NOT EXISTS "{_Schema}"."FeatureValues" (
-                "Id" uuid NOT NULL,
-                "Name" character varying(128) NOT NULL,
-                "Value" character varying(128) NOT NULL,
-                "ProviderName" character varying(64) NOT NULL,
-                "ProviderKey" character varying(64),
-                CONSTRAINT "PK_FeatureValues" PRIMARY KEY ("Id")
+            CREATE TABLE IF NOT EXISTS "{_Schema}".feature_values (
+                id uuid NOT NULL,
+                name character varying(128) NOT NULL,
+                value character varying(128) NOT NULL,
+                provider_name character varying(64) NOT NULL,
+                provider_key character varying(64),
+                created_at timestamp with time zone NOT NULL,
+                updated_at timestamp with time zone,
+                CONSTRAINT pk_feature_values PRIMARY KEY (id)
             );
             """,
             connection

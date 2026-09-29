@@ -173,14 +173,14 @@ public sealed class FencingSetupTests : TestBase
     }
 
     [Fact]
-    public void should_default_the_storage_schema_to_fencing()
+    public void should_default_the_storage_schema_to_the_shared_headless_schema()
     {
         var services = new ServiceCollection();
         services.AddHeadlessFencing(static setup => setup.RegisterExtension(new FakeProvider()));
 
         var storage = services.BuildServiceProvider().GetRequiredService<IOptions<FencingStorageOptions>>();
 
-        storage.Value.Schema.Should().Be("fencing");
+        storage.Value.Schema.Should().Be("headless");
     }
 
     [Fact]
