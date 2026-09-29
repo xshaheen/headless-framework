@@ -173,9 +173,11 @@ dotnet add package Headless.Generator.Primitives
 ### Setup and use
 
 ```csharp
+using System.Text.Json;
+
 // Define your primitive
 [StringLength(1, 50)]
-public readonly partial struct Email : IPrimitive<string>
+public sealed partial class Email : IPrimitive<string>
 {
     public static PrimitiveValidationResult Validate(string value)
     {
@@ -187,8 +189,8 @@ public readonly partial struct Email : IPrimitive<string>
 }
 
 // Generated code provides:
-var email = Email.From("user@example.com"); // Factory method
-var value = email.Value; // Underlying value
+var email = new Email("user@example.com"); // Validating constructor; Email.TryCreate(...) does not throw
+string value = email; // Implicit conversion to the underlying value
 var json = JsonSerializer.Serialize(email); // JSON: "user@example.com"
 ```
 
@@ -247,7 +249,7 @@ dotnet add package Headless.Generator.Primitives.Abstractions
 using Headless.Generator.Primitives;
 
 [StringLength(1, 100)]
-public readonly partial struct ProductName : IPrimitive<string>
+public sealed partial class ProductName : IPrimitive<string>
 {
     public static PrimitiveValidationResult Validate(string value)
     {
@@ -262,7 +264,7 @@ public readonly partial struct ProductName : IPrimitive<string>
 #### With Supported Operations
 
 ```csharp
-[SupportedOperations(Comparison = true, Math = true)]
+[SupportedOperations(Addition = true, Subtraction = true)]
 public readonly partial struct Quantity : IPrimitive<int>
 {
     public static PrimitiveValidationResult Validate(int value)
@@ -363,7 +365,7 @@ await app.Services.SeedAsync();
 
 ```csharp
 services.AddOrReplaceScoped<IService, NewImpl>();
-services.AddOrReplaceSingleton<IService>(sp => new Impl(sp.GetRequired<IDep>()));
+services.AddOrReplaceSingleton<IService>(sp => new Impl(sp.GetRequiredService<IDep>()));
 
 // Replaces a known TFallback registration only; preserves consumer-provided non-fallback
 // registrations. Use when multiple packages each register a safe default and a higher-level
@@ -518,7 +520,7 @@ var overlap = geom1.ComputeOverlap(geom2);
 #### Ring Orientation
 
 ```csharp
-var fixed = polygon.EnsureIsOrientedCounterClockwise();
+var oriented = polygon.EnsureIsOrientedCounterClockwise();
 ```
 
 ### Configuration
@@ -555,12 +557,30 @@ dotnet add package Headless.Redis
 ### Setup and use
 
 ```csharp
+using Headless.Redis;
+using StackExchange.Redis;
+
 var builder = WebApplication.CreateBuilder(args);
 
 var redis = await ConnectionMultiplexer.ConnectAsync("localhost");
 var scriptsLoader = new HeadlessRedisScriptsLoader(redis);
 
-await scriptsLoader.LoadAsync([IncrementWithExpireScriptDefinition.Instance]);
+await scriptsLoader.LoadAsync([IncrementWithExpireScript.Instance]);
+
+// The loader caches loaded scripts by definition type, so each definition exposes one shared instance.
+public sealed class IncrementWithExpireScript : RedisScriptDefinition
+{
+    public static IncrementWithExpireScript Instance { get; } = new();
+
+    private IncrementWithExpireScript()
+        : base(
+            """
+            redis.call('incrby', @key, @value)
+            redis.call('pexpire', @key, @expires)
+            return redis.call('get', @key)
+            """
+        ) { }
+}
 ```
 
 ### Setup and use
@@ -568,10 +588,13 @@ await scriptsLoader.LoadAsync([IncrementWithExpireScriptDefinition.Instance]);
 #### Script Execution
 
 ```csharp
+using StackExchange.Redis;
+
 var db = redis.GetDatabase();
 var result = await scriptsLoader.EvaluateAsync(
     db,
-    IncrementWithExpireScriptDefinition.Instance,
+    IncrementWithExpireScript.Instance,
+
     new
     {
         key = (RedisKey)"counter",

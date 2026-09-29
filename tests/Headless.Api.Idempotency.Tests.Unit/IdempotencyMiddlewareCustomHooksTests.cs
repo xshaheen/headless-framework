@@ -1,13 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
 using Headless.Api.Idempotency;
-using Headless.Caching;
-using Headless.MultiTenancy;
+using Headless.Idempotency;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using IdempotencyMiddleware = Headless.Api.Idempotency.IdempotencyMiddleware;
 
 namespace Tests;
@@ -16,22 +13,10 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
 {
     private IdempotencyMiddleware _CreateMiddlewareWithOptions(
         IdempotencyOptions options,
-        ICache cache,
-        ICurrentTenant? tenant = null
+        IIdempotentOperations operations
     )
     {
-        var monitor = Substitute.For<IOptionsMonitor<IdempotencyOptions>>();
-        monitor.CurrentValue.Returns(options);
-
-        // Default to a present tenant so the default key derivation produces a non-empty key;
-        // tests that exercise pass-through-by-missing-identity supply their own substitutes.
-        if (tenant is null)
-        {
-            tenant = Substitute.For<ICurrentTenant>();
-            tenant.Id.Returns("t1");
-        }
-
-        return CreateMiddleware(options: monitor, cache: cache, currentTenant: tenant);
+        return CreateMiddleware(options: Monitor(options), operations: operations);
     }
 
     private static DefaultHttpContext _CreateLocalContext(
@@ -41,8 +26,7 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
         string path = "/v1/x"
     )
     {
-        var ctx = CreateContext(idempotencyKey: key, method: method, path: path, body: body);
-        return ctx;
+        return CreateContext(idempotencyKey: key, method: method, path: path, body: body);
     }
 
     // ── KeyDeriver ─────────────────────────────────────────────────────────────
@@ -50,22 +34,9 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
     [Fact]
     public async Task should_use_custom_key_deriver_when_provided()
     {
-        var cache = Substitute.For<ICache>();
-        cache
-            .GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(CacheValue<IdempotencyRecord>.NoValue);
-        cache
-            .TryInsertAsync(
-                Arg.Any<string>(),
-                Arg.Any<IdempotencyRecord>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(true);
-
+        var operations = CreateAdmittingOperations();
         var options = new IdempotencyOptions { KeyDeriver = (_, header) => $"custom:user42:{header}" };
-
-        var middleware = _CreateMiddlewareWithOptions(options, cache);
+        var middleware = _CreateMiddlewareWithOptions(options, operations);
         var context = _CreateLocalContext(key: "abc");
 
         await middleware.InvokeAsync(
@@ -77,9 +48,8 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
             }
         );
 
-        await cache
-            .Received()
-            .GetAsync<IdempotencyRecord>(Arg.Is<string>(k => k == "custom:user42:abc"), Arg.Any<CancellationToken>());
+        var expectedKey = IdempotencyMiddleware.HashScope("custom:user42:abc");
+        AdmittedKeys(operations).Should().ContainSingle().Which.Should().Be(expectedKey);
     }
 
     // ── RequestFingerprint ───────────────────────────────────────────────────
@@ -87,25 +57,10 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
     [Fact]
     public async Task should_use_custom_fingerprint_when_provided()
     {
-        var cache = Substitute.For<ICache>();
-        cache
-            .GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(CacheValue<IdempotencyRecord>.NoValue);
-
-        byte[] capturedFingerprint = [];
-        cache
-            .TryInsertAsync(
-                Arg.Any<string>(),
-                Arg.Do<IdempotencyRecord>(r => capturedFingerprint = r.Fingerprint!),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(true);
-
+        var operations = CreateAdmittingOperations();
         byte[] customFp = [0xAA, 0xBB, 0xCC];
         var options = new IdempotencyOptions { RequestFingerprint = _ => new ValueTask<byte[]>(customFp) };
-
-        var middleware = _CreateMiddlewareWithOptions(options, cache);
+        var middleware = _CreateMiddlewareWithOptions(options, operations);
         var context = _CreateLocalContext(body: [1, 2, 3]);
 
         await middleware.InvokeAsync(
@@ -117,13 +72,22 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
             }
         );
 
-        capturedFingerprint.Should().Equal(customFp);
+        await operations
+            .Received(1)
+            .AdmitAsync(
+                Arg.Any<string>(),
+                Arg.Is(IdempotencyFingerprint.Compute(customFp)),
+                Arg.Any<string?>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
     public async Task should_not_invoke_custom_fingerprint_when_body_exceeds_cap()
     {
-        var cache = Substitute.For<ICache>();
+        var operations = CreateAdmittingOperations();
         var fingerprintInvoked = false;
 
         var options = new IdempotencyOptions
@@ -137,7 +101,7 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
             },
         };
 
-        var middleware = _CreateMiddlewareWithOptions(options, cache);
+        var middleware = _CreateMiddlewareWithOptions(options, operations);
         var context = _CreateLocalContext(body: [1, 2, 3, 4, 5]); // 5 > cap=3
 
         await middleware.InvokeAsync(
@@ -150,23 +114,13 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
         );
 
         fingerprintInvoked.Should().BeFalse();
+        operations.ReceivedCalls().Should().BeEmpty();
     }
 
     [Fact]
     public async Task should_rewind_request_body_after_custom_fingerprint_returns()
     {
-        var cache = Substitute.For<ICache>();
-        cache
-            .GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(CacheValue<IdempotencyRecord>.NoValue);
-        cache
-            .TryInsertAsync(
-                Arg.Any<string>(),
-                Arg.Any<IdempotencyRecord>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(true);
+        var operations = CreateAdmittingOperations();
 
         long innerHandlerStartPosition = -1;
         var options = new IdempotencyOptions
@@ -180,7 +134,7 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
             },
         };
 
-        var middleware = _CreateMiddlewareWithOptions(options, cache);
+        var middleware = _CreateMiddlewareWithOptions(options, operations);
         var context = _CreateLocalContext(body: [1, 2, 3]);
 
         await middleware.InvokeAsync(
@@ -201,11 +155,9 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
     [Fact]
     public async Task should_pass_through_when_should_apply_returns_false()
     {
-        var cache = Substitute.For<ICache>();
-
+        var operations = CreateAdmittingOperations();
         var options = new IdempotencyOptions { ShouldApply = _ => false };
-
-        var middleware = _CreateMiddlewareWithOptions(options, cache);
+        var middleware = _CreateMiddlewareWithOptions(options, operations);
         var context = _CreateLocalContext();
         var nextCalled = false;
 
@@ -219,31 +171,18 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
         );
 
         nextCalled.Should().BeTrue();
-        await cache.DidNotReceive().GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        operations.ReceivedCalls().Should().BeEmpty();
     }
 
     [Fact]
     public async Task should_apply_idempotency_when_should_apply_returns_true()
     {
-        var cache = Substitute.For<ICache>();
-        cache
-            .GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(CacheValue<IdempotencyRecord>.NoValue);
-        cache
-            .TryInsertAsync(
-                Arg.Any<string>(),
-                Arg.Any<IdempotencyRecord>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(true);
-
+        var operations = CreateAdmittingOperations();
         var options = new IdempotencyOptions
         {
             ShouldApply = ctx => ctx.Request.Path.StartsWithSegments("/v1", StringComparison.Ordinal),
         };
-
-        var middleware = _CreateMiddlewareWithOptions(options, cache);
+        var middleware = _CreateMiddlewareWithOptions(options, operations);
         var context = _CreateLocalContext(path: "/v1/x");
 
         await middleware.InvokeAsync(
@@ -255,8 +194,7 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
             }
         );
 
-        // Initial lookup happens (one or more times — marker re-check before upsert may add another).
-        await cache.Received().GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        AdmittedKeys(operations).Should().ContainSingle();
     }
 
     // ── Per-endpoint metadata merge ────────────────────────────────────────────
@@ -264,32 +202,15 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
     [Fact]
     public async Task should_apply_per_endpoint_metadata_override()
     {
-        var cache = Substitute.For<ICache>();
-        cache
-            .GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(CacheValue<IdempotencyRecord>.NoValue);
-
-        TimeSpan? capturedTtl = null;
-        cache
-            .TryInsertAsync(
-                Arg.Any<string>(),
-                Arg.Any<IdempotencyRecord>(),
-                Arg.Do<TimeSpan?>(ttl => capturedTtl = ttl),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(true);
-
-        var appOptions = new IdempotencyOptions { IdempotencyKeyExpiration = TimeSpan.FromHours(24) };
-
-        var middleware = _CreateMiddlewareWithOptions(appOptions, cache);
+        var operations = CreateAdmittingOperations();
+        var appOptions = new IdempotencyOptions { Retention = TimeSpan.FromHours(24) };
+        var middleware = _CreateMiddlewareWithOptions(appOptions, operations);
         var context = _CreateLocalContext();
 
-        // Attach endpoint metadata: override expiration to 7 days
+        // Attach endpoint metadata: override retention to 7 days
         var endpoint = new Endpoint(
             requestDelegate: _ => Task.CompletedTask,
-            metadata: new EndpointMetadataCollection(
-                new IdempotencyMetadata(o => o.IdempotencyKeyExpiration = TimeSpan.FromDays(7))
-            ),
+            metadata: new EndpointMetadataCollection(new IdempotencyMetadata(o => o.Retention = TimeSpan.FromDays(7))),
             displayName: "test"
         );
         context.Features.Set<IEndpointFeature>(new EndpointFeature { Endpoint = endpoint });
@@ -303,33 +224,29 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
             }
         );
 
-        // Marker TTL = InFlightLockTimeout + 5s (not the IdempotencyKeyExpiration); just verify the merged path was used by checking expiration applied to Complete record
-        capturedTtl.Should().NotBeNull();
+        await operations
+            .Received(1)
+            .AdmitAsync(
+                Arg.Any<string>(),
+                Arg.Any<IdempotencyFingerprint>(),
+                Arg.Any<string?>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Is<TimeSpan?>(TimeSpan.FromDays(7)),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
     public async Task should_not_mutate_app_level_methods_when_endpoint_overrides_them()
     {
-        var cache = Substitute.For<ICache>();
-        cache
-            .GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(CacheValue<IdempotencyRecord>.NoValue);
-        cache
-            .TryInsertAsync(
-                Arg.Any<string>(),
-                Arg.Any<IdempotencyRecord>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(true);
-
+        var operations = CreateAdmittingOperations();
         var appOptions = new IdempotencyOptions
         {
             Methods = new HashSet<string>(["POST"], StringComparer.OrdinalIgnoreCase),
         };
         var originalMethodsRef = appOptions.Methods;
 
-        var middleware = _CreateMiddlewareWithOptions(appOptions, cache);
+        var middleware = _CreateMiddlewareWithOptions(appOptions, operations);
         var context = _CreateLocalContext(method: "PUT");
 
         // Endpoint metadata adds PUT to the methods
@@ -361,22 +278,9 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
         // App-level HeaderName is "X-Custom-Idempotency-Key"; endpoint metadata tries to
         // override it to "X-Other-Header". The middleware reads the request header BEFORE
         // resolving endpoint metadata, so the metadata override is silently ignored.
-        var cache = Substitute.For<ICache>();
-        cache
-            .GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(CacheValue<IdempotencyRecord>.NoValue);
-        cache
-            .TryInsertAsync(
-                Arg.Any<string>(),
-                Arg.Any<IdempotencyRecord>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(true);
-
+        var operations = CreateAdmittingOperations();
         var appOptions = new IdempotencyOptions { HeaderName = "X-Custom-Idempotency-Key" };
-
-        var middleware = _CreateMiddlewareWithOptions(appOptions, cache);
+        var middleware = _CreateMiddlewareWithOptions(appOptions, operations);
 
         var context = new DefaultHttpContext
         {
@@ -411,13 +315,12 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
             }
         );
 
-        // Cache key carries the app-level header value (app-key), not the override (ignored-override-key)
-        await cache
-            .Received()
-            .GetAsync<IdempotencyRecord>(
-                Arg.Is<string>(k => k.EndsWith(":app-key", StringComparison.Ordinal)),
-                Arg.Any<CancellationToken>()
-            );
+        // The admitted key carries the app-level header value (app-key), not the override (ignored-override-key).
+        var expectedKey = IdempotencyMiddleware.HashScope("idem:u1:POST:/v1/x:app-key");
+        var ignoredKey = IdempotencyMiddleware.HashScope("idem:u1:POST:/v1/x:ignored-override-key");
+        var admittedKeys = AdmittedKeys(operations);
+        admittedKeys.Should().ContainSingle().Which.Should().Be(expectedKey);
+        admittedKeys.Should().NotContain(ignoredKey);
     }
 
     private sealed class EndpointFeature : IEndpointFeature

@@ -38,7 +38,7 @@ public static class JobsHelper
 
         var serialized = data is byte[] bytes
             ? bytes
-            : JsonSerializer.SerializeToUtf8Bytes(data, options.SerializerOptions);
+            : JsonSerializer.SerializeToUtf8Bytes(data, JobsRequestJson.TypeInfo<T>(options.SerializerOptions));
 
         return _CompressIfEnabled(serialized, options);
     }
@@ -71,7 +71,7 @@ public static class JobsHelper
 
         var serialized = data is byte[] bytes
             ? bytes
-            : JsonSerializer.SerializeToUtf8Bytes(data, inputType, options.SerializerOptions);
+            : JsonSerializer.SerializeToUtf8Bytes(data, options.SerializerOptions.GetTypeInfo(inputType));
 
         return _CompressIfEnabled(serialized, options);
     }
@@ -141,13 +141,13 @@ public static class JobsHelper
 
         if (!options.UseGZipCompression)
         {
-            return JsonSerializer.Deserialize<T>(gzipBytes, options.SerializerOptions);
+            return JsonSerializer.Deserialize(gzipBytes, JobsRequestJson.TypeInfo<T>(options.SerializerOptions));
         }
 
         using var memoryStream = _OpenCompressedPayload(gzipBytes);
         using var gzipStream = new GZipStream(memoryStream, CompressionMode.Decompress);
 
-        return JsonSerializer.Deserialize<T>(gzipStream, options.SerializerOptions);
+        return JsonSerializer.Deserialize(gzipStream, JobsRequestJson.TypeInfo<T>(options.SerializerOptions));
     }
 
     /// <summary>

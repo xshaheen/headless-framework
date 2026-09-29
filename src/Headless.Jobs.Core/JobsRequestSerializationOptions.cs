@@ -22,10 +22,21 @@ public sealed class JobsRequestSerializationOptions
     public static JobsRequestSerializationOptions Default { get; } = new();
 
     /// <summary>
-    /// The <see cref="JsonSerializerOptions"/> used to serialize and deserialize job request payloads.
-    /// Defaults to <see cref="JsonSerializerOptions.Default"/>.
+    /// The <see cref="JsonSerializerOptions"/> used to serialize and deserialize job request payloads. Defaults to
+    /// general-purpose options equivalent to <see cref="JsonSerializerOptions.Default"/>.
     /// </summary>
-    public JsonSerializerOptions SerializerOptions { get; init; } = JsonSerializerOptions.Default;
+    /// <remarks>
+    /// Payload metadata is resolved through these options' <see cref="JsonSerializerOptions.TypeInfoResolver"/>. The
+    /// assigned options are made read-only, and a missing resolver is filled with the reflection-based resolver when the
+    /// app allows reflection-based serialization. A trimmed or native AOT app must supply metadata for every request
+    /// type, for example by inserting a <c>JsonSerializerContext</c> into
+    /// <see cref="JsonSerializerOptions.TypeInfoResolverChain"/>.
+    /// </remarks>
+    public JsonSerializerOptions SerializerOptions
+    {
+        get;
+        init => field = JobsRequestJson.Prepare(value);
+    } = JobsRequestJson.DefaultOptions;
 
     /// <summary>
     /// Whether job request payloads are GZip-compressed. When <see langword="false"/> (default), requests

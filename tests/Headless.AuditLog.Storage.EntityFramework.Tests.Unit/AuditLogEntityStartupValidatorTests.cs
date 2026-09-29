@@ -2,6 +2,7 @@
 
 using Headless.AuditLog;
 using Headless.AuditLog.Internal;
+using Headless.Hosting.Initialization;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -97,7 +98,7 @@ public sealed class AuditLogEntityStartupValidatorTests : TestBase
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessAuditLog(new AuditLogStorageOptions());
+            modelBuilder.AddHeadlessAuditLog(new AuditLogStorageOptions(), StorageNamingStyle.PascalCase);
         }
     }
 }

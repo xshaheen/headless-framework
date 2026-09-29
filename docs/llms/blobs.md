@@ -404,8 +404,11 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHeadlessBlobs(blobs =>
     blobs.UseAws(options => { }, awsOptions: builder.Configuration.GetAWSOptions())
 );
+```
 
-// Explicit credentials:
+Pick one shape — `AddHeadlessBlobs` may be called only once per service collection. Explicit credentials:
+
+```csharp
 builder.Services.AddHeadlessBlobs(blobs =>
     blobs.UseAws(
         options => { },
@@ -416,8 +419,11 @@ builder.Services.AddHeadlessBlobs(blobs =>
         }
     )
 );
+```
 
-// Named store with per-store credentials; keyed IPresignedUrlBlobStorage registered automatically.
+Named store with per-store credentials; keyed `IPresignedUrlBlobStorage` registered automatically:
+
+```csharp
 builder.Services.AddHeadlessBlobs(blobs =>
     blobs.AddNamed(
         "archive",
@@ -467,8 +473,11 @@ builder.Services.AddHeadlessBlobs(blobs =>
         options => options.AllowInsecureHttp = true
     )
 );
+```
 
-// Bind from configuration, and add a named store on a second endpoint.
+Or bind from configuration, and add a named store on a second endpoint (`AddHeadlessBlobs` may be called only once per service collection):
+
+```csharp
 builder.Services.AddHeadlessBlobs(blobs =>
 {
     blobs.UseS3Compatible(builder.Configuration.GetSection("Minio"));
@@ -867,7 +876,7 @@ builder.Services.AddHeadlessBlobs(blobs =>
     blobs.UseSsh(options =>
     {
         options.ConnectionString = "sftp://user@sftp.example.com:22/home/user/uploads";
-        options.PrivateKey = File.OpenRead("/path/to/key");
+        options.PrivateKey = System.IO.File.OpenRead("/path/to/key");
         options.PrivateKeyPassPhrase = "optional-passphrase"; // nullable
     })
 );
@@ -897,7 +906,7 @@ dotnet add package Headless.Blobs.SignedUrlEndpoint
 builder.Services.AddHeadlessBlobs(setup =>
 {
     setup.UseFileSystem(options => options.BaseDirectoryPath = "/var/app/blobs");
-    setup.AddNamed("exports", instance => instance.UseRedis(options => { /* ... */ }));
+    setup.AddNamed("exports", instance => instance.UseRedis(options => options.ConnectionMultiplexer = redis));
     setup.UseSignedUrlEndpoint(options => options.BaseUrl = new Uri("https://api.example.com"));
 });
 

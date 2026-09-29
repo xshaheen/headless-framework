@@ -17,6 +17,7 @@
     <!-- Prevent analyzer/generator authors from using banned APIs -->
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
   </PropertyGroup>
+  <Import Project="..\Headless.SourceGenerators.Shared\Headless.SourceGenerators.Shared.props" />
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />

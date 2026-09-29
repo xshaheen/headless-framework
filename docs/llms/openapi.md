@@ -39,7 +39,7 @@ For versioned APIs, replace `app.MapNswagOpenApi()` with `app.MapNswagOpenApiVer
 - Call `AddNswagOpenApi()` to register OpenAPI document generation. Do NOT call NSwag's `AddOpenApiDocument()` directly — the framework wires all processors in the correct order.
 - **Processor registration order matters**: `GenericNullabilitySchemaProcessor` is registered before `NullabilityAsRequiredSchemaProcessor` intentionally. If you inject processors via `setupGeneratorActions`, add them after the framework processors (they run last) unless the intent is to override defaults.
 - `AddNswagOpenApi` takes an optional `setupGeneratorActions` callback that receives the NSwag `AspNetCoreOpenApiDocumentGeneratorSettings`. The framework processors are added first (in `_ConfigureGeneratorSettings`), then your callback runs, then security/primitive-mapping finalisation runs. Use this ordering to avoid conflicts.
-- For OData endpoints: add `ODataOperationFilter` inside `setupGeneratorActions`, not as a standalone service. Detection is automatic — any endpoint with an `ODataQueryOptions` parameter or `[EnableQuery]` attribute will have the seven OData parameters injected.
+- For OData endpoints: add `ODataOperationProcessor` inside `setupGeneratorActions`, not as a standalone service. Detection is automatic — any endpoint with an `ODataQueryOptions` parameter or `[EnableQuery]` attribute will have the seven OData parameters injected.
 - Do NOT call `app.UseSwaggerUi()` separately — `MapNswagOpenApi()` and `MapNswagOpenApiVersions()` both call it internally. If you also call `MapScalarOpenApi()`, Swagger UI and Scalar UI will both be served; pick one or the other unless you explicitly want both.
 - `HeadlessNswagOptions.AddBearerSecurity` defaults to `true`. If your API uses no auth, set it to `false` to remove the security scheme from the spec.
 - `HeadlessNswagOptions.AddPrimitiveMappings` defaults to `true`. It maps `Money`, `Month`, `AccountId`, and `UserId` from `Headless.Primitives`. Disable only if your API does not expose those types.
@@ -180,7 +180,7 @@ NSwag operation filter that injects OData query parameters into the OpenAPI spec
 
 ### API and behavior
 
-- `ODataOperationFilter : IOperationProcessor` — detects endpoints via `ODataQueryOptions` parameter type or `[EnableQuery]` attribute and injects seven OData parameters: `$select`, `$expand`, `$filter`, `$search`, `$top`, `$skip`, `$orderby`
+- `ODataOperationProcessor : IOperationProcessor` — detects endpoints via `ODataQueryOptions` parameter type or `[EnableQuery]` attribute and injects seven OData parameters: `$select`, `$expand`, `$filter`, `$search`, `$top`, `$skip`, `$orderby`
 - The raw `ODataQueryOptions` parameter is removed from the operation so it does not appear as an undocumented parameter alongside the injected ones
 - Detection works on both the method and the declaring controller type for `[EnableQuery]`
 
@@ -197,7 +197,7 @@ builder.Services.AddNswagOpenApi(
     setupHeadlessAction: null,
     setupGeneratorActions: settings =>
     {
-        settings.OperationProcessors.Add(new ODataOperationFilter());
+        settings.OperationProcessors.Add(new ODataOperationProcessor());
     }
 );
 ```
@@ -212,7 +212,7 @@ builder.Services.AddNswagOpenApi(
     },
     setupGeneratorActions: (settings, serviceProvider) =>
     {
-        settings.OperationProcessors.Add(new ODataOperationFilter());
+        settings.OperationProcessors.Add(new ODataOperationProcessor());
     }
 );
 ```
@@ -223,7 +223,7 @@ None.
 
 ### Runtime behavior
 
-None. `ODataOperationFilter` is instantiated and registered manually inside `setupGeneratorActions`; no DI registrations are made.
+None. `ODataOperationProcessor` is instantiated and registered manually inside `setupGeneratorActions`; no DI registrations are made.
 
 ---
 ## Headless.OpenApi.Scalar

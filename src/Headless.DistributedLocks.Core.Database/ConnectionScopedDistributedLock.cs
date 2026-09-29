@@ -16,7 +16,7 @@ namespace Headless.DistributedLocks;
 /// DoS protection, and fencing-token stamping on exclusive handles.
 /// </summary>
 /// <remarks>
-/// Connection-scoped locks have no TTL: <see cref="RenewAsync"/> is a no-op success and
+/// Connection-scoped locks have no TTL: <see cref="RenewAsync"/> only confirms the lock is still held and
 /// <see cref="GetExpirationAsync"/> returns <see langword="null"/>. Lock loss is tied to the storage
 /// connection and surfaced through <see cref="ConnectionScopedLockHandle.ConnectionLostToken"/> only when
 /// acquire-time monitoring is enabled.
@@ -224,6 +224,7 @@ internal sealed class ConnectionScopedDistributedLock(
                         options?.ReleaseOnDispose ?? true,
                         timeProvider,
                         _ReleaseAsync,
+                        _IsHeldAsync,
                         logger
                     );
                 }
@@ -301,14 +302,25 @@ internal sealed class ConnectionScopedDistributedLock(
     }
 
     /// <summary>
-    /// No-op for connection-scoped locks: advisory locks are held for the lifetime of the connection and
-    /// have no TTL to extend. Always returns <see langword="true"/>.
+    /// Confirms that this provider instance still holds <paramref name="leaseId"/> on <paramref name="resource"/>.
+    /// A connection-scoped lock has no TTL, so there is nothing to extend: renewal succeeds exactly when the lock is
+    /// still held, which keeps the <see cref="IDistributedLock"/> contract that a lost lease renews as
+    /// <see langword="false"/>.
     /// </summary>
-    /// <param name="resource">The locked resource (unused).</param>
-    /// <param name="leaseId">The lease identifier (unused).</param>
+    /// <remarks>
+    /// The answer comes from local state, never from a database round trip. Connection death is part of it only when
+    /// the storage has observed it; see <see cref="IConnectionScopedLockStorage.IsHeldAsync"/>.
+    /// </remarks>
+    /// <param name="resource">The locked resource.</param>
+    /// <param name="leaseId">The lease id the lock must currently be held by.</param>
     /// <param name="timeUntilExpires">Ignored; connection-scoped locks have no expiry.</param>
-    /// <param name="cancellationToken">Token observed before returning.</param>
-    /// <returns><see langword="true"/> unconditionally.</returns>
+    /// <param name="cancellationToken">Token observed before the ownership check.</param>
+    /// <returns>
+    /// <see langword="true"/> when this instance holds <paramref name="leaseId"/> on <paramref name="resource"/> and no
+    /// loss has been observed; otherwise <see langword="false"/>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="resource"/> or <paramref name="leaseId"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="resource"/> or <paramref name="leaseId"/> is empty or whitespace.</exception>
     /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is already cancelled.</exception>
     public Task<bool> RenewAsync(
         string resource,
@@ -317,8 +329,10 @@ internal sealed class ConnectionScopedDistributedLock(
         CancellationToken cancellationToken = default
     )
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(true);
+        Argument.IsNotNullOrWhiteSpace(resource);
+        Argument.IsNotNullOrWhiteSpace(leaseId);
+
+        return storage.IsHeldAsync(resource, leaseId, cancellationToken).AsTask();
     }
 
     /// <summary>
@@ -454,6 +468,11 @@ internal sealed class ConnectionScopedDistributedLock(
     {
         await storage.ReleaseAsync(handle, cancellationToken).ConfigureAwait(false);
         await _PublishReleaseAsync(handle.Resource, handle.LeaseId).ConfigureAwait(false);
+    }
+
+    private ValueTask<bool> _IsHeldAsync(ConnectionScopedLockHandle handle, CancellationToken cancellationToken)
+    {
+        return storage.IsHeldAsync(handle.Resource, handle.LeaseId, cancellationToken);
     }
 
     private async ValueTask _PublishReleaseAsync(string resource, string leaseId)

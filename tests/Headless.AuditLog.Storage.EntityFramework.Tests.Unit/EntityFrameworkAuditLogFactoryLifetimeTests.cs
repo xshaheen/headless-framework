@@ -2,6 +2,7 @@
 
 using Headless.AuditLog;
 using Headless.Hosting.DependencyInjection;
+using Headless.Hosting.Initialization;
 using Headless.Hosting.Validation;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -111,7 +112,7 @@ public sealed class EntityFrameworkAuditLogFactoryLifetimeTests : TestBase
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessAuditLog(new AuditLogStorageOptions());
+            modelBuilder.AddHeadlessAuditLog(new AuditLogStorageOptions(), StorageNamingStyle.PascalCase);
         }
     }
 }

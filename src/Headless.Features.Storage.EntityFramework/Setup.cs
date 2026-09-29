@@ -61,7 +61,8 @@ public static class SetupFeaturesEntityFramework
     // EF dispatches to whatever DB the consumer wired up, so the validator uses the most
     // permissive identifier pattern (SqlServer, a superset of PostgreSQL's character set) and
     // the larger length cap (SqlServer). The underlying DB surfaces type/length issues at
-    // migration time.
+    // migration time, except derived key and index names, which PostgreSQL truncates instead
+    // of rejecting, so those are bounded here.
     /// <summary>
     /// Validates <see cref="FeaturesStorageOptions"/> using cross-provider identifier rules
     /// (SQL Server superset) so the same validation works for every EF-backed database.
@@ -72,9 +73,18 @@ public static class SetupFeaturesEntityFramework
         public EntityFrameworkFeaturesStorageOptionsValidator()
         {
             RuleFor(x => x.Schema).IsValidCrossProviderIdentifier();
-            RuleFor(x => x.FeatureValuesTableName).IsValidCrossProviderIdentifier();
-            RuleFor(x => x.FeatureDefinitionsTableName).IsValidCrossProviderIdentifier();
-            RuleFor(x => x.FeatureGroupDefinitionsTableName).IsValidCrossProviderIdentifier();
+            RuleFor(x => x.FeatureValuesTableName)
+                .IsValidCrossProviderIdentifier()
+                .FitsDerivedPostgreSqlNames(FeaturesStorageNames.ValuesIndexes)
+                .When(x => x.FeatureValuesTableName is not null);
+            RuleFor(x => x.FeatureDefinitionsTableName)
+                .IsValidCrossProviderIdentifier()
+                .FitsDerivedPostgreSqlNames(FeaturesStorageNames.DefinitionsIndexes)
+                .When(x => x.FeatureDefinitionsTableName is not null);
+            RuleFor(x => x.FeatureGroupDefinitionsTableName)
+                .IsValidCrossProviderIdentifier()
+                .FitsDerivedPostgreSqlNames(FeaturesStorageNames.GroupsIndexes)
+                .When(x => x.FeatureGroupDefinitionsTableName is not null);
         }
     }
 }

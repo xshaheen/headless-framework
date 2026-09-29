@@ -25,7 +25,8 @@ builder
     })
     .AddImageSharpContributors(options =>
     {
-        options.DefaultCompressQuality = 80;
+        options.JpegCompressEncoder = new JpegEncoder { Quality = 80 };
+        options.WebpCompressEncoder = new WebpEncoder { Quality = 80 };
     });
 ```
 
@@ -246,14 +247,17 @@ builder
     .Services.AddImaging()
     .AddImageSharpContributors(options =>
     {
-        options.DefaultCompressQuality = 80; // sets JPEG + WebP encoder quality
+        // DefaultCompressQuality only seeds the default encoders when the options object is constructed,
+        // so set quality on the encoder instances.
+        options.JpegCompressEncoder = new JpegEncoder { Quality = 80 };
+        options.WebpCompressEncoder = new WebpEncoder { Quality = 80 };
     });
 ```
 
 To override a specific encoder:
 
 ```csharp
-.AddImageSharpContributors(options =>
+builder.Services.AddImaging().AddImageSharpContributors(options =>
 {
     options.JpegCompressEncoder = new JpegEncoder { Quality = 90 };
     options.PngCompressEncoder  = new PngEncoder  { CompressionLevel = PngCompressionLevel.BestCompression, SkipMetadata = true };
@@ -264,13 +268,13 @@ Three `AddImageSharpContributors` overloads are available (mirrors `AddImaging`)
 
 ```csharp
 // Bind from IConfiguration section
-builder.AddImageSharpContributors(config.GetSection("Headless:ImageSharp"));
+services.AddImaging().AddImageSharpContributors(config.GetSection("Headless:ImageSharp"));
 
 // Configure with action
-builder.AddImageSharpContributors(options => options.DefaultCompressQuality = 85);
+services.AddImaging().AddImageSharpContributors(options => options.JpegCompressEncoder = new JpegEncoder { Quality = 85 });
 
 // Configure with action + IServiceProvider
-builder.AddImageSharpContributors((options, sp) => options.DefaultCompressQuality = 85);
+services.AddImaging().AddImageSharpContributors((options, sp) => options.JpegCompressEncoder = new JpegEncoder { Quality = 85 });
 ```
 
 ### Configuration

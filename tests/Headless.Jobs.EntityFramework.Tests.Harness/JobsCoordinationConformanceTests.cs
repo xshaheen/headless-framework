@@ -2044,7 +2044,10 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         {
             if (
                 !command.CommandText.Contains("INSERT", StringComparison.OrdinalIgnoreCase)
-                || !command.CommandText.Contains("CronJobs", StringComparison.OrdinalIgnoreCase)
+                || !(
+                    command.CommandText.Contains("CronJobs", StringComparison.OrdinalIgnoreCase)
+                    || command.CommandText.Contains("cron_jobs", StringComparison.Ordinal)
+                )
             )
             {
                 return;
