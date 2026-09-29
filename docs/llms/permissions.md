@@ -129,7 +129,7 @@ The message carries permission names and the scope that changed, never grant val
 
 `IBus` is optional. A host that never calls `AddHeadlessMessaging` writes grants exactly as before and publishes nothing. A failed publish is logged and never fails the write that already succeeded. In both cases a peer keeps its copy until it re-reads for its own reasons, so a consumer that must converge without a bus still needs a periodic refresh.
 
-The announcement follows the write but not the commit. The injected `IBus` never enlists in a transaction, so when `SetAsync` runs inside a caller's unit of work (`RunAsync(db, …)`) the message goes out before that unit commits. A peer that re-reads in that window loads the old grant with no further signal. Call `SetAsync` outside a surrounding unit, or keep the backstop refresh above, when that window matters.
+The announcement follows a committed write. A grant write never joins a unit of work the caller has open: the EF store saves through a fresh context from `IDbContextFactory<TContext>`, and the PostgreSQL and SQL Server stores open their own connection and transaction. `SetAsync` commits before it returns, even inside a caller's `RunAsync(db, …)`, and the message goes out after that commit, so a peer that re-reads on it loads the new grant. The write is not atomic with the caller's other writes: a `SetAsync` inside a unit that later rolls back leaves the grant changed.
 
 This signal is separate from grant-cache coherence. A store-backed write evicts the affected cache entries directly. `PermissionGrantChangedMessage` exists for state the framework cannot see, such as a resolved grant decision that a consumer copied into a field of its own.
 
@@ -190,14 +190,15 @@ dotnet add package Headless.Permissions.Abstractions
 ```csharp
 public sealed class OrderService(IPermissionManager permissions, ICurrentUser currentUser)
 {
-    public async Task DeleteOrderAsync(Guid orderId, CancellationToken ct)
+    public async Task<ApiResult> DeleteOrderAsync(Guid orderId, CancellationToken ct)
     {
         var result = await permissions.GetAsync("Orders.Delete", currentUser, cancellationToken: ct);
 
         if (!result.IsGranted)
-            throw new ForbiddenException();
+            return ApiResult.Forbidden("Orders.Delete is not granted."); // maps to 403
 
         // Delete order...
+        return ApiResult.Ok();
     }
 }
 
@@ -282,6 +283,7 @@ The always-allow test doubles (`AlwaysAllowPermissionManager` / `AlwaysAllowAuth
 - **Caching.** A resolved name keeps its policy for the process lifetime, and the provider lets the authorization middleware cache the combined policy per endpoint. Misses are not cached, so a permission added later through the dynamic store resolves without a restart (after `DynamicDefinitionsMemoryCacheExpiration`); a permission deleted after first use keeps its policy, and `PermissionRequirementHandler` denies it because undefined permissions are never granted.
 - **Failures propagate.** A definition-store failure (cache, lock, or database) while resolving a policy surfaces as that exception, never as "policy not found", and is not cached. The provider contract has no cancellation token, so with the dynamic store enabled a first lookup during an outage can wait up to `CrossApplicationsCommonLockAcquireTimeout`.
 - **Policy catalog limits.** ASP.NET Core exposes no listing of registered policies, so `IAuthorizationPolicyCatalog.GetRegisteredPolicyNamesAsync()` reads the private map on `AuthorizationOptions` through `[UnsafeAccessor]`; an ASP.NET Core release that renames or removes it makes the call throw `MissingMethodException`, and a unit test pins it so an upgrade fails CI first. Policies a custom `IAuthorizationPolicyProvider` produces on demand have no list and are not included.
+- **Keys must not start or end with white space.** Every `IPermissionGrantStore` entry point throws `ArgumentException` before touching storage when a permission name, provider name, provider key, or explicit tenant id starts or ends with white space, on reads as well as writes. SQL Server ignores trailing spaces when it compares keys, so `"acme "` would read and overwrite the `"acme"` row there while PostgreSQL keeps the two apart. Normalize keys at your own boundary; the store refuses rather than trims. `IPermissionManager.DeleteAsync` and `GrantPermissionsSeedHelper` apply the same rule; the ambient `ICurrentTenant.Id` is not checked here.
 - The grant cache is tenant-scoped (`ScopedCache<PermissionGrantCacheItem>` keyed on `ICurrentTenant.Id`). A permission check for tenant A never returns a cached result for tenant B.
 - `PermissionsInitializationBackgroundService` implements `IInitializer`: anything awaiting `WaitForInitializationAsync()` blocks until both the save and pre-cache steps complete. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; other failures retain 10 retries, and the terminal exception is surfaced to every waiter. If the host stops before initialization finishes, the background task and waiters are cancelled.
 - `PermissionGrantRecord` implements `ICreateAudit` / `IUpdateAudit` and carries `CreatedAt` (non-null) and `UpdatedAt` (nullable) audit timestamps. Grants are insert-only — a revoke deletes the row and inserts a replacement rather than updating — so `UpdatedAt` is normally null. The EF provider stamps `CreatedAt` through the audit save-processor; the raw-SQL providers stamp it from the injected `TimeProvider`. Hydrate from storage with the `PermissionGrantRecord.FromStorage(...)` factory, which sets the audit fields.

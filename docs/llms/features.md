@@ -20,6 +20,11 @@ Install `Headless.Features.Abstractions` plus `Headless.Features.Core` and exact
 Typical registration:
 
 ```csharp
+// Required dependencies
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
+
 // 1. Register feature definitions
 builder.Services.AddFeatureDefinitionProvider<MyFeatureDefinitionProvider>();
 
@@ -98,7 +103,7 @@ The message carries feature names and the scope where they changed, never values
 
 `IBus` is optional. A host that never calls `AddHeadlessMessaging` writes feature values exactly as before and publishes nothing. A failed publish is logged and never fails the write that already succeeded. In both cases, a peer keeps its copy until it re-reads for its own reasons, so a consumer that must converge without a bus still needs a periodic refresh.
 
-The announcement follows the write but not the commit. The injected `IBus` never enlists in a transaction, so when `SetAsync` runs inside a caller's unit of work (`RunAsync(db, …)`) the message goes out before that unit commits. A peer that re-reads in that window loads the old value with no further signal. Call `SetAsync` outside a surrounding unit, or keep the backstop refresh above, when that window matters.
+The announcement follows a committed write. A feature write never joins a unit of work the caller has open: the EF store saves through a fresh context from `IDbContextFactory<TContext>`, and the PostgreSQL and SQL Server stores open their own connection and transaction. `SetAsync` commits before it returns, even inside a caller's `RunAsync(db, …)`, and the message goes out after that commit, so a peer that re-reads on it loads the new value. The write is not atomic with the caller's other writes: a `SetAsync` inside a unit that later rolls back leaves the feature value changed.
 
 This signal is separate from cache coherence, which `FeatureValueStore` already handles. A store-backed write updates or evicts its cache entry, and a distributed cache propagates the change through `CacheInvalidationMessage`. `FeatureChangedMessage` covers state that the framework cannot see, such as a value that a consumer copied into a field.
 
@@ -235,6 +240,7 @@ Core implementation of feature management with caching, value providers, and def
 
 - Value providers are registered with the last-added provider having the highest resolution priority. The built-in order is `DefaultValue` → `Edition` → `Tenant` (Tenant wins). Custom providers added via `AddFeatureValueProvider<T>()` are appended after `Tenant` and therefore have the highest priority. This matters when writing custom providers that must override built-in resolution.
 - `TenantFeatureValueProvider` and `EditionFeatureValueProvider` resolve their store key as `providerKey ?? ambient` — an explicit key (e.g. `GetForTenantAsync(name, tenantId)`) always wins, and a `null` key falls back to `ICurrentTenant.Id` / the principal's edition claim. The same rule applies to reads and writes, so a value written for one tenant is read back for that tenant only.
+- **Keys must not start or end with white space.** Every `IFeatureValueStore` entry point throws `ArgumentException` before touching storage when a feature name, provider name, or provider key starts or ends with white space, on reads as well as writes. SQL Server ignores trailing spaces when it compares keys, so `"acme "` would read and overwrite the `"acme"` row there while PostgreSQL keeps the two apart. Normalize keys at your own boundary; the store refuses rather than trims.
 - `AddHeadlessFeatures` is guarded on `IFeatureManager` so it is safe to call more than once (only the first call registers the core; the storage extension always applies). However, only one storage provider extension may be registered — a second call with a different provider throws at startup.
 - `FeaturesInitializationBackgroundService` implements `IInitializer` so anything that awaits `WaitForInitializationAsync()` blocks until the seed and pre-cache steps complete. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; other failures retain 10 retries, and the terminal exception is surfaced to every waiter. If the host is stopped before initialization finishes, the background task and waiters are cancelled.
 - `FeatureValueRecord` implements `ICreateAudit` / `IUpdateAudit`, carrying `CreatedAt` (stamped on insert) and `UpdatedAt` (stamped on update). On the EF path these are populated by the Headless audit save-processor; the raw-SQL PostgreSQL / SQL Server providers stamp them from the registered `TimeProvider`. Features scope tenancy through `ProviderName`/`ProviderKey` (e.g. `ProviderName == "Tenant"` with the tenant id in `ProviderKey`) — there is deliberately no first-class `TenantId` column nor `IMultiTenant`; a scoping value provider expresses tenant, edition, and other scopes uniformly. This is an intentional divergence from `PermissionGrantRecord`, not drift.
@@ -253,6 +259,11 @@ Register the required services (`TimeProvider`, `ICache`, `IDistributedLock`, `I
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
+
+// Required dependencies
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 
 // Register feature definitions
 builder.Services.AddFeatureDefinitionProvider<MyFeatureDefinitionProvider>();
@@ -430,8 +441,11 @@ builder.Services.AddHeadlessFeatures(setup =>
     setup.ConfigureStorage(storage => storage.Schema = "features");
     setup.UsePostgreSql(connectionString);
 });
+```
 
-// Or with full option control:
+Or with full option control:
+
+```csharp
 builder.Services.AddHeadlessFeatures(setup =>
 {
     setup.UsePostgreSql(options =>
@@ -494,8 +508,11 @@ builder.Services.AddHeadlessFeatures(setup =>
     setup.ConfigureStorage(storage => storage.Schema = "features");
     setup.UseSqlServer(connectionString);
 });
+```
 
-// Or with full option control:
+Or with full option control:
+
+```csharp
 builder.Services.AddHeadlessFeatures(setup =>
 {
     setup.UseSqlServer(options =>

@@ -126,7 +126,11 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
         // token must allow bucket creation).
         await _EnsureBucketAsync(client, container, AbortToken);
 
-        var uploadUrl = await presigned.GetPresignedUploadUrlAsync(location, TimeSpan.FromMinutes(5), AbortToken);
+        var uploadUrl = await presigned.GetPresignedUploadUrlAsync(
+            location,
+            TimeSpan.FromMinutes(5),
+            cancellationToken: AbortToken
+        );
 
         using (var http = new HttpClient())
         using (var body = new ByteArrayContent(content))

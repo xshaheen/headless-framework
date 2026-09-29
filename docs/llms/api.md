@@ -127,15 +127,15 @@ dotnet add package Headless.Api.Abstractions
 Inject `IRequestContext` to access request-scoped information:
 
 ```csharp
-public sealed class OrderService(IRequestContext context)
+public sealed class OrderService(IRequestContext context, IOrderRepository repository)
 {
     public async Task<Order> CreateOrderAsync(CreateOrderRequest request, CancellationToken ct)
     {
-        var userId = context.User.Id;
+        var userId = context.User.UserId;
         var tenantId = context.Tenant.Id;
         var correlationId = context.CorrelationId;
 
-        return await _repository
+        return await repository
             .CreateAsync(
                 new Order
                 {
@@ -176,6 +176,7 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 - `AddHeadlessApiResponseCompression()` — Brotli + Gzip at `Fastest` level; extends MIME list with `application/problem+json`, `image/svg+xml`, `image/x-icon`
 - `AddHeadlessAntiforgery()` — antiforgery service registration
 - `AddStatusCodesRewriterMiddleware()` + `UseStatusCodesRewriter()` — rewrites bare 401, 403, 404 to structured `application/problem+json` via `IProblemDetailsCreator`
+- `IStatusCodeRejectionFeature` — a handler that fails a request (an authorization handler, a filter) can supply the response the rewriter writes instead of the bare-status rewrite. Set it with `httpContext.TrySetStatusCodeRejection(rejection)`, which stores it under the interface type only when no rejection is already set, so the first failure keeps ownership. `TryWriteResponseAsync` returns `false` to decline and fall back to the bare-status rewrite. The tenant identifier mismatch rejection is the one exception that always replaces an earlier rejection, because it must stay byte-identical to the unknown-tenant response
 - `ConfigureHeadlessDefaultApi()` — Kestrel limits (no `Server` header, 30 MB body, 40 headers), HSTS (365-day max-age, subdomain, preload), lowercase route URLs, form limits (4 MB value, 16 KB multipart headers, 30 MB multipart body), default `self` liveness health check
 - `AddHeadlessJsonService()` — `IJsonOptionsProvider`, `IJsonSerializer`, `ITextSerializer`, `ISerializer` (all `TryAddSingleton` — safe to override)
 - `AddHeadlessTimeService()` — `TimeProvider.System`, `ITimezoneProvider` (all `TryAddSingleton`)
@@ -214,6 +215,10 @@ Composing primitives without ServiceDefaults:
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+// Clock, build-information, and HTTP-context services the problem-details factory resolves; AddHeadless() registers them.
+builder.Services.AddHeadlessTimeService();
+builder.Services.AddHeadlessHostIdentity();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddHeadlessProblemDetails();
 builder.Services.AddHeadlessApiResponseCompression();
 builder.Services.ConfigureHeadlessDefaultApi(); // Kestrel limits + HSTS + health check + routing
@@ -586,6 +591,7 @@ dotnet add package Headless.Api.DataProtection
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+// Resolves the registered IBlobStorage (and IBlobContainerManager, when present); register a blob provider first.
 builder.Services.AddDataProtection()
     .PersistKeysToBlobStorage()
     // Opt-in: probe the key ring at startup so a missing container / bad credentials fails the deploy,
@@ -738,6 +744,10 @@ dotnet add package Headless.Api.Idempotency
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+builder.AddHeadless(); // current user, problem details, and clock services the middleware resolves
+builder.AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims()));
+builder.Services.AddAuthentication(); // add your scheme, such as JWT bearer
+builder.Services.AddAuthorization();
 builder.Services.AddHeadlessIdempotency(setup => setup.UsePostgreSql(connectionString)); // or setup.UseSqlServer(...)
 // tests, local development, one instance: AddHeadlessIdempotency(setup => setup.UseInMemory())
 // replicas sharing Redis, no SQL: AddHeadlessCaching(c => c.UseRedis(...)) + AddHeadlessIdempotency(setup => setup.UseCache())
@@ -749,12 +759,13 @@ builder.Services.AddIdempotency(o =>
 
 var app = builder.Build();
 
+app.UseHeadless(); // includes UseResponseCompression, which must stay OUTSIDE (before) UseIdempotency
 app.UseAuthentication();
 app.UseHeadlessTenancy(); // tenant must be resolved before idempotency
 app.UseAuthorization();
-app.UseResponseCompression(); // must be OUTSIDE (before) UseIdempotency
 app.UseIdempotency(); // installs response-capture stream; place AFTER auth and tenancy
 
+app.MapHeadlessEndpoints();
 app.MapPost("/disbursements", CreateDisbursement);
 app.Run();
 ```
@@ -845,14 +856,19 @@ dotnet add package Headless.Api.Logging.Serilog
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+builder.AddHeadless(); // registers IRequestContext, which the enrichers read
+
 // Register enrichers
 builder.Services.AddSerilogEnrichers();
 
 var app = builder.Build();
 
+app.UseHeadless();
+
 // Use enrichers middleware (place early in pipeline)
 app.UseSerilogEnrichers();
 
+app.MapHeadlessEndpoints();
 app.Run();
 ```
 
@@ -895,6 +911,9 @@ builder.AddHeadless().ConfigureMinimalApi();
 builder.Services.AddHeadlessMinimalApiEntityTagConcurrency();
 
 var app = builder.Build();
+
+app.UseHeadless();
+app.MapHeadlessEndpoints();
 
 app.MapGet(
     "/orders/{id:guid}",
@@ -975,6 +994,8 @@ builder.Services.AddHeadlessMvcEntityTagConcurrency();
 
 var app = builder.Build();
 
+app.UseHeadless();
+app.MapHeadlessEndpoints();
 app.MapControllers();
 app.Run();
 ```

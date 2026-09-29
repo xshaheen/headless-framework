@@ -192,10 +192,10 @@ public sealed class TestFixture : IAsyncLifetime
         App.WaitForReadiness(async sp =>
         {
             var bootstrapper = sp.GetRequiredService<IBootstrapper>();
-            await bootstrapper.WaitUntilStartedAsync();
+            await bootstrapper.BootstrapAsync(); // joins the in-flight startup; returns once it completes
         });
 
-        App.ConfigureDatabaseReset(options => options.ConnectionString = "...");
+        App.ConfigureDatabaseReset(options => options.ConnectionProvider = _ => new NpgsqlConnection("..."));
 
         await App.InitializeAsync();
     }

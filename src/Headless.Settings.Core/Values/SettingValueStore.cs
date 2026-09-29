@@ -15,6 +15,11 @@ namespace Headless.Settings.Values;
 /// Persistence and caching layer for raw setting values. Abstracts repository access and manages
 /// the <see cref="SettingValueCacheItem"/> cache so callers never interact with the store directly.
 /// </summary>
+/// <remarks>
+/// Every member throws <see cref="ArgumentException"/> before touching storage when a setting name, provider name, or
+/// provider key starts or ends with white space. SQL Server ignores trailing spaces when it compares keys while
+/// PostgreSQL keeps them, so <c>"acme"</c> and <c>"acme "</c> would address one row on one provider and two on the other.
+/// </remarks>
 public interface ISettingValueStore
 {
     /// <summary>Returns the stored value for the given setting, provider, and key, or <see langword="null"/> if not set.</summary>
@@ -120,6 +125,21 @@ public sealed class SettingValueStore(
     /// <summary>How many times a batch is planned and saved before a concurrent-writer collision is surfaced.</summary>
     private const int _MaxSaveAttempts = 3;
 
+    private static void _EnsureKey(string? providerName, string? providerKey, string? name = null)
+    {
+        Argument.HasNoSurroundingWhiteSpace(providerName);
+        Argument.HasNoSurroundingWhiteSpace(providerKey);
+        Argument.HasNoSurroundingWhiteSpace(name);
+    }
+
+    private static void _EnsureNames(IEnumerable<string> names)
+    {
+        foreach (var name in names)
+        {
+            Argument.HasNoSurroundingWhiteSpace(name);
+        }
+    }
+
     /// <inheritdoc/>
     public async Task<string?> GetOrDefaultAsync(
         string name,
@@ -128,6 +148,8 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken = default
     )
     {
+        _EnsureKey(providerName, providerKey, name);
+
         var cacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
         var existValueCacheItem = await cache.GetAsync(cacheKey, cancellationToken).ConfigureAwait(false);
 
@@ -154,6 +176,8 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken = default
     )
     {
+        _EnsureKey(providerName, providerKey);
+
         var settings = await valueRepository
             .GetListAsync(providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
@@ -170,6 +194,8 @@ public sealed class SettingValueStore(
     )
     {
         Argument.IsNotNullOrEmpty(names);
+        _EnsureKey(providerName, providerKey);
+        _EnsureNames(names);
 
         if (names.Count == 1)
         {
@@ -195,6 +221,8 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken = default
     )
     {
+        _EnsureKey(providerName, providerKey, name);
+
         var settingValue = await valueRepository
             .FindAsync(name, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
@@ -232,6 +260,8 @@ public sealed class SettingValueStore(
     {
         Argument.IsNotNull(values);
         Argument.IsNotNull(providerName);
+        _EnsureKey(providerName, providerKey);
+        _EnsureNames(values.Keys);
 
         if (values.Count == 0)
         {
@@ -355,6 +385,8 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken = default
     )
     {
+        _EnsureKey(providerName, providerKey, name);
+
         var settings = await valueRepository
             .FindAllAsync(name, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);

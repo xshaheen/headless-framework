@@ -512,6 +512,21 @@ public sealed class PermissionManagerTests : TestBase
         await _repository.Received(1).DeleteManyAsync(grants, AbortToken);
     }
 
+    [Theory]
+    [InlineData("Role ", "admin")]
+    [InlineData("Role", "admin ")]
+    [InlineData("Role", " admin")]
+    public async Task should_refuse_delete_when_key_has_surrounding_white_space(string providerName, string providerKey)
+    {
+        // when
+        var action = () => _sut.DeleteAsync(providerName, providerKey, AbortToken);
+
+        // then
+        await action.Should().ThrowExactlyAsync<ArgumentException>();
+        _repository.ReceivedCalls().Should().BeEmpty();
+        _bus.ReceivedCalls().Should().BeEmpty();
+    }
+
     #endregion
 
     #region Change signal

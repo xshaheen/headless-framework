@@ -355,24 +355,29 @@ services.AddHeadlessAuditLog(setup =>
 #### DbContext setup
 
 ```csharp
-public AppDbContext(DbContextOptions<AppDbContext> options, IOptions<AuditLogStorageOptions> auditLogStorage)
-    : base(options)
+public sealed class AppDbContext : DbContext
 {
-    _auditLogStorage = auditLogStorage;
-}
+    private readonly IOptions<AuditLogStorageOptions> _auditLogStorage;
 
-protected override void OnModelCreating(ModelBuilder modelBuilder)
-{
-    base.OnModelCreating(modelBuilder);
-    modelBuilder.AddHeadlessAuditLog(_auditLogStorage.Value);
-
-    modelBuilder.Entity<Patient>(patient =>
+    public AppDbContext(DbContextOptions<AppDbContext> options, IOptions<AuditLogStorageOptions> auditLogStorage)
+        : base(options)
     {
-        patient.IsAudited();
-        patient.Property(x => x.NationalId).IsAuditSensitive();
-        patient.Property(x => x.CreditCardToken).IsAuditSensitive(SensitiveDataStrategy.Exclude);
-        patient.Property(x => x.LastComputedAt).ExcludeFromAudit();
-    });
+        _auditLogStorage = auditLogStorage;
+    }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+        modelBuilder.AddHeadlessAuditLog(_auditLogStorage.Value);
+
+        modelBuilder.Entity<Patient>(patient =>
+        {
+            patient.IsAudited();
+            patient.Property(x => x.NationalId).IsAuditSensitive();
+            patient.Property(x => x.CreditCardToken).IsAuditSensitive(SensitiveDataStrategy.Exclude);
+            patient.Property(x => x.LastComputedAt).ExcludeFromAudit();
+        });
+    }
 }
 ```
 
@@ -430,7 +435,8 @@ Entity policy is tri-state: `IsAudited()` and `ExcludeFromAudit()` override `Aud
 SQLite key override (required when targeting SQLite):
 
 ```csharp
-builder.HasKey(e => e.Id); // single-column PK for SQLite
+// After AddHeadlessAuditLog, so it replaces the default composite key.
+modelBuilder.Entity<AuditLogEntry>().HasKey(e => e.Id); // single-column PK for SQLite
 ```
 
 ### Runtime behavior
@@ -507,10 +513,15 @@ setup.UsePostgreSql(options =>
 });
 ```
 
-Bind provider options from configuration, or configure with service resolution:
+Bind provider options from configuration:
 
 ```csharp
 setup.UsePostgreSql(builder.Configuration.GetSection("Headless:AuditLog:PostgreSql"));
+```
+
+Or configure with service resolution:
+
+```csharp
 setup.UsePostgreSql((options, sp) =>
     options.ConnectionString = sp.GetRequiredService<IConfiguration>().GetConnectionString("AuditLog")!);
 ```
@@ -602,10 +613,15 @@ setup.UseSqlServer(options =>
 });
 ```
 
-Bind provider options from configuration, or configure with service resolution:
+Bind provider options from configuration:
 
 ```csharp
 setup.UseSqlServer(builder.Configuration.GetSection("Headless:AuditLog:SqlServer"));
+```
+
+Or configure with service resolution:
+
+```csharp
 setup.UseSqlServer((options, sp) =>
     options.ConnectionString = sp.GetRequiredService<IConfiguration>().GetConnectionString("AuditLog")!);
 ```
