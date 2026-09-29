@@ -11,6 +11,9 @@ namespace Tests;
 
 internal static class GeneratorTestHelper
 {
+    public static CSharpParseOptions ParseOptions { get; } =
+        CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.CSharp14);
+
     private static readonly Lazy<ImmutableArray<MetadataReference>> _References = new(() =>
         [
             .. AppDomain
@@ -72,7 +75,7 @@ internal static class GeneratorTestHelper
         return MetadataReference.CreateFromImage(stream.ToArray());
     }
 
-    private static CSharpCompilation CreateCompilation(
+    public static CSharpCompilation CreateCompilation(
         string assemblyName,
         IReadOnlyCollection<(string Path, string Source)> sources,
         IReadOnlyCollection<MetadataReference> additionalReferences
@@ -80,13 +83,7 @@ internal static class GeneratorTestHelper
     {
         return CSharpCompilation.Create(
             assemblyName,
-            sources.Select(source =>
-                CSharpSyntaxTree.ParseText(
-                    source.Source,
-                    CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.CSharp14),
-                    source.Path
-                )
-            ),
+            sources.Select(source => CSharpSyntaxTree.ParseText(source.Source, ParseOptions, source.Path)),
             [.. _References.Value, .. additionalReferences],
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
         );
