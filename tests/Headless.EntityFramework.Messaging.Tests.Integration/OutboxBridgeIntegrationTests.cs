@@ -591,7 +591,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         await connection.OpenAsync(AbortToken);
 
         await using var command = connection.CreateCommand();
-        command.CommandText = """SELECT COUNT(*) FROM headless."messaging_published" WHERE "Content" LIKE @marker""";
+        command.CommandText = """SELECT COUNT(*) FROM headless."messaging_published" WHERE "content" LIKE @marker""";
         var parameter = command.CreateParameter();
         parameter.ParameterName = "marker";
         parameter.Value = $"%{marker}%";
@@ -607,7 +607,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         await connection.OpenAsync(AbortToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
-            """SELECT "MessageId", "Content" FROM headless."messaging_published" WHERE "Content" LIKE @marker""";
+            """SELECT "message_id", "content" FROM headless."messaging_published" WHERE "content" LIKE @marker""";
         command.Parameters.AddWithValue(nameof(marker), $"%{marker}%");
         await using var reader = await command.ExecuteReaderAsync(AbortToken);
         var serializer = provider.GetRequiredService<ISerializer>();

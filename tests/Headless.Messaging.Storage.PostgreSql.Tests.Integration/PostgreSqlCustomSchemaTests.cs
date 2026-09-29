@@ -60,7 +60,7 @@ public sealed class PostgreSqlCustomSchemaTests(PostgreSqlTestFixture fixture) :
             tables.Should().Contain(["messaging_published", "messaging_received"]);
 
             var rows = await connection.QueryFirstAsync<int>(
-                $"""SELECT COUNT(*) FROM "{_Schema}"."messaging_published" WHERE "Id"=@Id;""",
+                $"""SELECT COUNT(*) FROM "{_Schema}"."messaging_published" WHERE "id"=@Id;""",
                 new { Id = stored.StorageId }
             );
             rows.Should().Be(1, "the write must land in the configured schema, not the default one");

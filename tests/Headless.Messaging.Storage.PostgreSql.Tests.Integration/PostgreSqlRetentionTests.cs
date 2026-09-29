@@ -68,8 +68,8 @@ public sealed class PostgreSqlRetentionTests(PostgreSqlTestFixture fixture) : Te
             new CommandDefinition(
                 $$"""
                 DROP INDEX IF EXISTS "{{_schema}}".idx_messaging_received_inbox_retention;
-                INSERT INTO {{_table}} ("Id","Version","Name","Content","Retries","Added","StatusName","MessageId",
-                    "IntentType","IsInboxRecord","GenerationIncarnationId","LifecycleId","ContractIdentity","ContractVersion","ConsumerIdentity","EffectiveExpiresAt","ExpiresAt")
+                INSERT INTO {{_table}} ("id","version","name","content","retries","added","status_name","message_id",
+                    "intent_type","is_inbox_record","generation_incarnation_id","lifecycle_id","contract_identity","contract_version","consumer_identity","effective_expires_at","expires_at")
                 SELECT id,'v1','retention.plan','{}',0,statement_timestamp(),'Succeeded',i::text,
                     0,i%2=0,id,id,'retention.plan','v1','retention.plan',
                     statement_timestamp() + CASE WHEN i<=10 THEN INTERVAL '-1 day' ELSE INTERVAL '1 day' END,

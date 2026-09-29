@@ -54,7 +54,7 @@ public sealed partial class OutboxBridgeIntegrationTests
             await connection.OpenAsync(AbortToken);
             await using var command = connection.CreateCommand();
             command.CommandText =
-                """SELECT "StatusName", "ExpiresAt" FROM headless."messaging_published" WHERE "MessageId" = @id""";
+                """SELECT "status_name", "expires_at" FROM headless."messaging_published" WHERE "message_id" = @id""";
             command.Parameters.AddWithValue("id", marker);
             await using var reader = await command.ExecuteReaderAsync(AbortToken);
             (await reader.ReadAsync(AbortToken)).Should().BeTrue();

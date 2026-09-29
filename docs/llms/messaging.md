@@ -319,6 +319,8 @@ Table names are not configurable; each provider creates its own fixed set inside
 | `messaging_inbox_audit` | `MessagingInboxAudit` | Operator and cleanup audit |
 | `messaging_schema_state` | `MessagingSchemaState` | Schema readiness versions |
 
+Columns, indexes, and constraints follow the same split: snake_case on PostgreSQL (`status_name`, `next_retry_at`, `idx_messaging_received_status_name_added`) and PascalCase on SQL Server (`StatusName`, `NextRetryAt`). Raw SQL against the PostgreSQL tables needs no identifier quoting except for the `"group"` column, whose name is a reserved word.
+
 ## Headless.Messaging.Abstractions
 
 ### API and behavior
@@ -1735,7 +1737,7 @@ History retention uses the shared `MessagingOptions` defaults: cleanup receipts/
 - **`DdlCommandTimeout`** (`TimeSpan?`, default `null`): timeout budget for schema-init DDL — the `CREATE INDEX CONCURRENTLY` / `DROP INDEX CONCURRENTLY` builds, the `CREATE EXTENSION` probe, and the advisory-lock waits that gate them. Decoupled from the OLTP `MessagingOptions.CommandTimeout` (~30s) because these can run for minutes-to-hours on a large table; a premature kill leaves a `CONCURRENTLY` index `INVALID` for the next boot to repair. Default `null` (and `TimeSpan.Zero`) mean **no timeout** (wait indefinitely). A negative value is rejected at validation time.
 - **Initializer lock**: concurrent replicas serialize on the session advisory lock `headless_messaging_init:{schema}`. The initializer polls `pg_try_advisory_lock` instead of blocking in `pg_advisory_lock`, because a blocked statement holds a snapshot that the lock holder's `CREATE INDEX CONCURRENTLY` waits on, which deadlocks two booting replicas. The schema transaction also takes `headless_schema_init:{schema}` before `CREATE SCHEMA`, so another feature creating the same schema cannot roll back the messaging DDL.
 - **`pg_trgm` on managed PostgreSQL**: dashboard content (ILIKE) search uses GIN trigram indexes that need the `pg_trgm` extension. The initializer runs `CREATE EXTENSION IF NOT EXISTS pg_trgm` best-effort **outside** the schema transaction. On managed PostgreSQL (AWS RDS, Azure, Neon, Supabase) the app role usually lacks `CREATE EXTENSION`; it logs a warning, **skips the trigram content indexes**, and continues — write/retry paths are unaffected, only dashboard content search is disabled until a DBA pre-installs `pg_trgm`. (Previously `CREATE EXTENSION` ran as the first statement of the schema transaction, so a permission error rolled back the entire schema batch and left messaging dead at startup.)
-- **Bootstrap indexes**: fresh schemas directly create `("StatusName","Added")` indexes for dashboard timelines/statistics and a partial `("Version","ExpiresAt") WHERE "StatusName" = 'Queued'` index for delayed-message scheduling. The initializer is schema bootstrap, not a migration runner, so it does not alter legacy columns or drop superseded indexes.
+- **Bootstrap indexes**: fresh schemas directly create `(status_name, added)` indexes for dashboard timelines/statistics and a partial `(version, expires_at) WHERE status_name = 'Queued'` index for delayed-message scheduling. The initializer is schema bootstrap, not a migration runner, so it does not alter legacy columns or drop superseded indexes.
 
 ### Runtime behavior
 

@@ -399,7 +399,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         await using (var connection = new NpgsqlConnection(fixture.ConnectionString))
         {
             await connection.ExecuteAsync(
-                "UPDATE headless.messaging_published SET \"Content\" = @Content WHERE \"Id\" = @Id",
+                "UPDATE headless.messaging_published SET \"content\" = @Content WHERE \"id\" = @Id",
                 new { Content = "not-a-message-envelope", Id = malformedPublished.StorageId }
             );
         }
@@ -447,7 +447,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
     {
         var ids = Enumerable.Range(0, 205).Select(_ => Guid.NewGuid()).ToArray();
         var now = TimeProvider.System.GetUtcNow();
-        var receivedColumns = messageType == MessageType.Subscribe ? ", \"Group\", \"ExceptionInfo\"" : string.Empty;
+        var receivedColumns = messageType == MessageType.Subscribe ? ", \"group\", \"exception_info\"" : string.Empty;
         var receivedValues = messageType == MessageType.Subscribe ? ", 'unknown-lane-group', NULL" : string.Empty;
 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
@@ -455,7 +455,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         await connection.ExecuteAsync(
             $"""
             INSERT INTO headless.{tableName}
-                ("Id", "Version", "Name", "Content", "IntentType", "Retries", "InlineAttempts", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId"{receivedColumns})
+                ("id", "version", "name", "content", "intent_type", "retries", "inline_attempts", "added", "expires_at", "next_retry_at", "locked_until", "owner", "status_name", "message_id"{receivedColumns})
             SELECT id, 'v1', 'unknown-lane-diagnostic', 'not-a-message-envelope', 77, 0, 0,
                    @Added, NULL, @NextRetryAt, NULL, NULL, 'Failed', id::text{receivedValues}
             FROM unnest(@Ids::uuid[]) AS id;
@@ -468,7 +468,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
             }
         );
         var before = await connection.QuerySingleAsync<string>(
-            $"""SELECT to_jsonb(message)::text FROM headless.{tableName} AS message WHERE "Id" = @Id""",
+            $"""SELECT to_jsonb(message)::text FROM headless.{tableName} AS message WHERE "id" = @Id""",
             new { Id = ids[0] }
         );
 
@@ -503,7 +503,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
             .NotIntersectWith(secondPage.Items.Select(item => item.StorageId));
         (
             await connection.QuerySingleAsync<string>(
-                $"""SELECT to_jsonb(message)::text FROM headless.{tableName} AS message WHERE "Id" = @Id""",
+                $"""SELECT to_jsonb(message)::text FROM headless.{tableName} AS message WHERE "id" = @Id""",
                 new { Id = ids[0] }
             )
         )
@@ -521,7 +521,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
     {
         var id = Guid.NewGuid();
         var now = TimeProvider.System.GetUtcNow();
-        var receivedColumns = messageType == MessageType.Subscribe ? ", \"Group\", \"ExceptionInfo\"" : string.Empty;
+        var receivedColumns = messageType == MessageType.Subscribe ? ", \"group\", \"exception_info\"" : string.Empty;
         var receivedValues = messageType == MessageType.Subscribe ? ", 'unknown-lane-group', NULL" : string.Empty;
 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
@@ -529,7 +529,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         await connection.ExecuteAsync(
             $"""
             INSERT INTO headless.{tableName}
-                ("Id", "Version", "Name", "Content", "IntentType", "Retries", "InlineAttempts", "Added", "ExpiresAt", "NextRetryAt", "LockedUntil", "Owner", "StatusName", "MessageId"{receivedColumns})
+                ("id", "version", "name", "content", "intent_type", "retries", "inline_attempts", "added", "expires_at", "next_retry_at", "locked_until", "owner", "status_name", "message_id"{receivedColumns})
             VALUES (@Id, 'v1', 'unknown-lane-ordinary-read', 'not-a-message-envelope', 77, 0, 0, @Added, NULL, @Added, NULL, NULL, 'Failed', @MessageId{receivedValues});
             """,
             new

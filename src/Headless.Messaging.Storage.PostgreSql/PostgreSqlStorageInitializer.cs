@@ -161,7 +161,7 @@ internal sealed class PostgreSqlStorageInitializer(
             await _EnsureRetryPickupIndexConcurrentlyAsync(
                     connection,
                     GetReceivedTableName(),
-                    indexName: "idx_messaging_received_Version_NextRetryAt",
+                    indexName: "idx_messaging_received_version_next_retry_at",
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -169,7 +169,7 @@ internal sealed class PostgreSqlStorageInitializer(
             await _EnsureRetryPickupIndexConcurrentlyAsync(
                     connection,
                     GetPublishedTableName(),
-                    indexName: "idx_messaging_published_Version_NextRetryAt",
+                    indexName: "idx_messaging_published_version_next_retry_at",
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -182,7 +182,7 @@ internal sealed class PostgreSqlStorageInitializer(
                 await _EnsureContentTrgmIndexConcurrentlyAsync(
                         connection,
                         GetReceivedTableName(),
-                        indexName: "idx_messaging_received_Content_trgm",
+                        indexName: "idx_messaging_received_content_trgm",
                         cancellationToken
                     )
                     .ConfigureAwait(false);
@@ -190,7 +190,7 @@ internal sealed class PostgreSqlStorageInitializer(
                 await _EnsureContentTrgmIndexConcurrentlyAsync(
                         connection,
                         GetPublishedTableName(),
-                        indexName: "idx_messaging_published_Content_trgm",
+                        indexName: "idx_messaging_published_content_trgm",
                         cancellationToken
                     )
                     .ConfigureAwait(false);
@@ -203,7 +203,7 @@ internal sealed class PostgreSqlStorageInitializer(
             await _EnsureOwnerIndexConcurrentlyAsync(
                     connection,
                     GetReceivedTableName(),
-                    indexName: "idx_messaging_received_Owner_not_null",
+                    indexName: "idx_messaging_received_owner_not_null",
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -211,7 +211,7 @@ internal sealed class PostgreSqlStorageInitializer(
             await _EnsureOwnerIndexConcurrentlyAsync(
                     connection,
                     GetPublishedTableName(),
-                    indexName: "idx_messaging_published_Owner_not_null",
+                    indexName: "idx_messaging_published_owner_not_null",
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -223,14 +223,14 @@ internal sealed class PostgreSqlStorageInitializer(
                     (
                         "idx_messaging_inbox_receipts_type_created",
                         "messaging_inbox_operation_receipts",
-                        "\"OperationType\",\"CreatedAt\""
+                        "\"operation_type\",\"created_at\""
                     ),
                     (
                         "idx_messaging_inbox_audit_type_created",
                         "messaging_inbox_audit",
-                        "\"OperationType\",\"CreatedAt\""
+                        "\"operation_type\",\"created_at\""
                     ),
-                    ("idx_messaging_inbox_audit_operation", "messaging_inbox_audit", "\"OperationId\""),
+                    ("idx_messaging_inbox_audit_operation", "messaging_inbox_audit", "\"operation_id\""),
                 }
             )
             {
@@ -382,7 +382,7 @@ internal sealed class PostgreSqlStorageInitializer(
         await _DropInvalidIndexConcurrentlyAsync(connection, indexName, cancellationToken).ConfigureAwait(false);
 
         var createIndex = $"""
-            CREATE INDEX CONCURRENTLY IF NOT EXISTS "{indexName}" ON {qualifiedTable} ("Version","IntentType","NextRetryAt") INCLUDE ("Retries","LockedUntil") WHERE "NextRetryAt" IS NOT NULL;
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS "{indexName}" ON {qualifiedTable} ("version","intent_type","next_retry_at") INCLUDE ("retries","locked_until") WHERE "next_retry_at" IS NOT NULL;
             """;
 
         await connection
@@ -407,7 +407,7 @@ internal sealed class PostgreSqlStorageInitializer(
         await _DropInvalidIndexConcurrentlyAsync(connection, indexName, cancellationToken).ConfigureAwait(false);
 
         var createIndex = $"""
-            CREATE INDEX CONCURRENTLY IF NOT EXISTS "{indexName}" ON {qualifiedTable} USING gin ("Content" gin_trgm_ops);
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS "{indexName}" ON {qualifiedTable} USING gin ("content" gin_trgm_ops);
             """;
 
         await connection
@@ -429,7 +429,7 @@ internal sealed class PostgreSqlStorageInitializer(
         await _DropInvalidIndexConcurrentlyAsync(connection, indexName, cancellationToken).ConfigureAwait(false);
 
         var createIndex = $"""
-            CREATE INDEX CONCURRENTLY IF NOT EXISTS "{indexName}" ON {qualifiedTable} ("Owner") WHERE "Owner" IS NOT NULL;
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS "{indexName}" ON {qualifiedTable} ("owner") WHERE "owner" IS NOT NULL;
             """;
 
         await connection
@@ -524,26 +524,26 @@ internal sealed class PostgreSqlStorageInitializer(
                     AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname='ck_messaging_received_inbox_lifecycle'
                         AND conrelid = format('%I.messaging_received', @Schema)::regclass)
                     AND EXISTS (SELECT 1 FROM information_schema.columns
-                        WHERE table_schema=@Schema AND table_name='messaging_received' AND column_name='LifecycleId')
+                        WHERE table_schema=@Schema AND table_name='messaging_received' AND column_name='lifecycle_id')
                     AND EXISTS (
                         SELECT 1 FROM information_schema.columns
-                        WHERE table_schema=@Schema AND table_name='messaging_inbox_operation_receipts' AND column_name='ExpectedStatus'
+                        WHERE table_schema=@Schema AND table_name='messaging_inbox_operation_receipts' AND column_name='expected_status'
                     )
                     AND EXISTS (
                         SELECT 1 FROM information_schema.columns
-                        WHERE table_schema=@Schema AND table_name='messaging_inbox_operation_receipts' AND column_name='Outcome'
+                        WHERE table_schema=@Schema AND table_name='messaging_inbox_operation_receipts' AND column_name='outcome'
                     )
                     AND EXISTS (
                         SELECT 1 FROM information_schema.columns
-                        WHERE table_schema=@Schema AND table_name='messaging_inbox_operation_receipts' AND column_name='TargetKind'
+                        WHERE table_schema=@Schema AND table_name='messaging_inbox_operation_receipts' AND column_name='target_kind'
                     )
                     AND EXISTS (
                         SELECT 1 FROM information_schema.columns
-                        WHERE table_schema=@Schema AND table_name='messaging_inbox_operation_receipts' AND column_name='ExpectedDueAt'
+                        WHERE table_schema=@Schema AND table_name='messaging_inbox_operation_receipts' AND column_name='expected_due_at'
                     )
                     AND EXISTS (
                         SELECT 1 FROM information_schema.columns
-                        WHERE table_schema=@Schema AND table_name='messaging_inbox_audit' AND column_name='TargetKind'
+                        WHERE table_schema=@Schema AND table_name='messaging_inbox_audit' AND column_name='target_kind'
                     )
                 )::int;
                 """,
@@ -560,10 +560,10 @@ internal sealed class PostgreSqlStorageInitializer(
         }
 
         var sql = $"""
-            INSERT INTO "{storageOptions.Value.Schema}"."messaging_schema_state" ("Component","SchemaVersion","ReadyAt")
+            INSERT INTO "{storageOptions.Value.Schema}"."messaging_schema_state" ("component","schema_version","ready_at")
             VALUES ('inbox', 1, statement_timestamp())
-            ON CONFLICT ("Component") DO UPDATE
-            SET "SchemaVersion"=EXCLUDED."SchemaVersion", "ReadyAt"=EXCLUDED."ReadyAt";
+            ON CONFLICT ("component") DO UPDATE
+            SET "schema_version"=EXCLUDED."schema_version", "ready_at"=EXCLUDED."ready_at";
             """;
         await connection
             .ExecuteNonQueryAsync(sql, commandTimeout: _GetDdlCommandTimeout(), cancellationToken: cancellationToken)
@@ -587,9 +587,9 @@ internal sealed class PostgreSqlStorageInitializer(
             DECLARE current_schema_version integer;
             BEGIN
                 IF to_regclass('"{schema}"."messaging_schema_state"') IS NOT NULL THEN
-                    SELECT "SchemaVersion" INTO current_schema_version
+                    SELECT "schema_version" INTO current_schema_version
                     FROM "{schema}"."messaging_schema_state"
-                    WHERE "Component"='inbox';
+                    WHERE "component"='inbox';
 
                     IF current_schema_version > 1 THEN
                         RAISE EXCEPTION 'Headless.Messaging inbox schema version % is newer than supported version 1. Upgrade the application before starting this binary.', current_schema_version;
@@ -599,44 +599,44 @@ internal sealed class PostgreSqlStorageInitializer(
             $inbox_schema_guard$;
 
             CREATE TABLE IF NOT EXISTS {GetReceivedTableName()}(
-                "Id" UUID PRIMARY KEY NOT NULL,
-                "Version" VARCHAR(20) NOT NULL,
-            	"Name" VARCHAR(200) NOT NULL,
-            	"Group" VARCHAR(200) NULL,
-            	"Content" TEXT NULL,
-                "IntentType" SMALLINT NOT NULL,
-                "Retries" INT NOT NULL,
-                "InlineAttempts" INT NOT NULL DEFAULT 0,
-            	"Added" TIMESTAMPTZ NOT NULL,
-                "ExpiresAt" TIMESTAMPTZ NULL,
-                "NextRetryAt" TIMESTAMPTZ NULL,
-                "LockedUntil" TIMESTAMPTZ NULL,
-                "Owner" VARCHAR({postgreSqlOptions.Value.OwnerColumnMaxLength}) NULL,
-            	"StatusName" VARCHAR(50) NOT NULL,
-                "MessageId" VARCHAR(200) COLLATE "C" NOT NULL,
-                "ExceptionInfo" text NULL,
-                "IsInboxRecord" BOOLEAN NOT NULL DEFAULT FALSE,
-                "TenantPresent" BOOLEAN NOT NULL DEFAULT FALSE,
-                "TenantId" VARCHAR(200) COLLATE "C" NOT NULL DEFAULT '',
-                "ContractIdentity" VARCHAR(200) COLLATE "C" NOT NULL DEFAULT '',
-                "ContractVersion" VARCHAR(100) COLLATE "C" NOT NULL DEFAULT '',
-                "ConsumerIdentity" VARCHAR(200) COLLATE "C" NOT NULL DEFAULT '',
-                "Generation" BIGINT NOT NULL DEFAULT 0,
-                "GenerationIncarnationId" UUID NULL,
-                "LifecycleId" UUID NULL,
-                "AttemptId" UUID NULL,
-                "IsInboxOrphaned" BOOLEAN NOT NULL DEFAULT FALSE,
-                "IsCurrentGeneration" BOOLEAN NOT NULL DEFAULT TRUE,
-                "ReplayParentIncarnationId" UUID NULL,
-                "ReplayOperationId" UUID NULL,
-                "TerminalAt" TIMESTAMPTZ NULL,
-                "EffectiveExpiresAt" TIMESTAMPTZ NULL,
-                "IsHeld" BOOLEAN NOT NULL DEFAULT FALSE,
-                "HeldAt" TIMESTAMPTZ NULL,
-                "HeldBy" VARCHAR(200) COLLATE "C" NULL,
-                "HoldReason" VARCHAR(1000) NULL,
-                "HoldOperationId" UUID NULL,
-                "InboxRetentionSeconds" BIGINT NOT NULL DEFAULT 2592000
+                "id" UUID PRIMARY KEY NOT NULL,
+                "version" VARCHAR(20) NOT NULL,
+            	"name" VARCHAR(200) NOT NULL,
+            	"group" VARCHAR(200) NULL,
+            	"content" TEXT NULL,
+                "intent_type" SMALLINT NOT NULL,
+                "retries" INT NOT NULL,
+                "inline_attempts" INT NOT NULL DEFAULT 0,
+            	"added" TIMESTAMPTZ NOT NULL,
+                "expires_at" TIMESTAMPTZ NULL,
+                "next_retry_at" TIMESTAMPTZ NULL,
+                "locked_until" TIMESTAMPTZ NULL,
+                "owner" VARCHAR({postgreSqlOptions.Value.OwnerColumnMaxLength}) NULL,
+            	"status_name" VARCHAR(50) NOT NULL,
+                "message_id" VARCHAR(200) COLLATE "C" NOT NULL,
+                "exception_info" text NULL,
+                "is_inbox_record" BOOLEAN NOT NULL DEFAULT FALSE,
+                "tenant_present" BOOLEAN NOT NULL DEFAULT FALSE,
+                "tenant_id" VARCHAR(200) COLLATE "C" NOT NULL DEFAULT '',
+                "contract_identity" VARCHAR(200) COLLATE "C" NOT NULL DEFAULT '',
+                "contract_version" VARCHAR(100) COLLATE "C" NOT NULL DEFAULT '',
+                "consumer_identity" VARCHAR(200) COLLATE "C" NOT NULL DEFAULT '',
+                "generation" BIGINT NOT NULL DEFAULT 0,
+                "generation_incarnation_id" UUID NULL,
+                "lifecycle_id" UUID NULL,
+                "attempt_id" UUID NULL,
+                "is_inbox_orphaned" BOOLEAN NOT NULL DEFAULT FALSE,
+                "is_current_generation" BOOLEAN NOT NULL DEFAULT TRUE,
+                "replay_parent_incarnation_id" UUID NULL,
+                "replay_operation_id" UUID NULL,
+                "terminal_at" TIMESTAMPTZ NULL,
+                "effective_expires_at" TIMESTAMPTZ NULL,
+                "is_held" BOOLEAN NOT NULL DEFAULT FALSE,
+                "held_at" TIMESTAMPTZ NULL,
+                "held_by" VARCHAR(200) COLLATE "C" NULL,
+                "hold_reason" VARCHAR(1000) NULL,
+                "hold_operation_id" UUID NULL,
+                "inbox_retention_seconds" BIGINT NOT NULL DEFAULT 2592000
             );
 
             DO $headless$
@@ -646,15 +646,15 @@ internal sealed class PostgreSqlStorageInitializer(
                     AND conrelid = '{GetReceivedTableName()}'::regclass
                 ) THEN
                     ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT "ck_messaging_received_inbox_identity" CHECK (
-                        NOT "IsInboxRecord" OR (
-                            "Generation" >= 0
-                            AND "InboxRetentionSeconds" BETWEEN 1 AND 2147483647
-                            AND "GenerationIncarnationId" IS NOT NULL
-                            AND length("MessageId") BETWEEN 1 AND 200
-                            AND length("ContractIdentity") BETWEEN 1 AND 200
-                            AND length("ContractVersion") BETWEEN 1 AND 100
-                            AND length("ConsumerIdentity") BETWEEN 1 AND 200
-                            AND ((NOT "TenantPresent" AND "TenantId" = '') OR ("TenantPresent" AND length("TenantId") BETWEEN 1 AND 200))
+                        NOT "is_inbox_record" OR (
+                            "generation" >= 0
+                            AND "inbox_retention_seconds" BETWEEN 1 AND 2147483647
+                            AND "generation_incarnation_id" IS NOT NULL
+                            AND length("message_id") BETWEEN 1 AND 200
+                            AND length("contract_identity") BETWEEN 1 AND 200
+                            AND length("contract_version") BETWEEN 1 AND 100
+                            AND length("consumer_identity") BETWEEN 1 AND 200
+                            AND ((NOT "tenant_present" AND "tenant_id" = '') OR ("tenant_present" AND length("tenant_id") BETWEEN 1 AND 200))
                         )
                     );
                 END IF;
@@ -666,111 +666,111 @@ internal sealed class PostgreSqlStorageInitializer(
                 IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_messaging_received_inbox_lifecycle'
                     AND conrelid = '{GetReceivedTableName()}'::regclass) THEN
                     ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT "ck_messaging_received_inbox_lifecycle" CHECK (
-                        NOT "IsInboxRecord" OR ("LifecycleId" IS NOT NULL
-                            AND ("ReplayParentIncarnationId" IS NOT NULL OR "LifecycleId" = "GenerationIncarnationId"))
+                        NOT "is_inbox_record" OR ("lifecycle_id" IS NOT NULL
+                            AND ("replay_parent_incarnation_id" IS NOT NULL OR "lifecycle_id" = "generation_incarnation_id"))
                     );
                 END IF;
             END
             $headless$;
 
             CREATE UNIQUE INDEX IF NOT EXISTS "uq_messaging_received_inbox_root_key" ON {GetReceivedTableName()}
-                ("TenantPresent","TenantId","MessageId","IntentType","ContractIdentity","ContractVersion","ConsumerIdentity","Generation")
-                WHERE "IsInboxRecord" AND "ReplayParentIncarnationId" IS NULL;
+                ("tenant_present","tenant_id","message_id","intent_type","contract_identity","contract_version","consumer_identity","generation")
+                WHERE "is_inbox_record" AND "replay_parent_incarnation_id" IS NULL;
             CREATE UNIQUE INDEX IF NOT EXISTS "uq_messaging_received_inbox_lifecycle_generation" ON {GetReceivedTableName()}
-                ("LifecycleId","Generation") WHERE "IsInboxRecord";
-            CREATE UNIQUE INDEX IF NOT EXISTS "uq_messaging_received_generation_incarnation" ON {GetReceivedTableName()} ("GenerationIncarnationId")
-                WHERE "GenerationIncarnationId" IS NOT NULL;
+                ("lifecycle_id","generation") WHERE "is_inbox_record";
+            CREATE UNIQUE INDEX IF NOT EXISTS "uq_messaging_received_generation_incarnation" ON {GetReceivedTableName()} ("generation_incarnation_id")
+                WHERE "generation_incarnation_id" IS NOT NULL;
             CREATE UNIQUE INDEX IF NOT EXISTS "uq_messaging_received_non_inbox_transport_identity" ON {GetReceivedTableName()}
-                ("Version","MessageId",(COALESCE("Group",'')),"IntentType") WHERE NOT "IsInboxRecord";
-            CREATE INDEX IF NOT EXISTS "idx_messaging_received_inbox_retention" ON {GetReceivedTableName()} ("EffectiveExpiresAt","Id")
-                INCLUDE ("StatusName","NextRetryAt","IntentType") WHERE "IsInboxRecord" AND NOT "IsHeld";
-            CREATE INDEX IF NOT EXISTS "idx_messaging_received_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("ExpiresAt","StatusName");
-            CREATE INDEX IF NOT EXISTS "idx_messaging_received_Version_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("Version","ExpiresAt","StatusName");
-            -- #8 — The partial retry-pickup index (idx_messaging_received_Version_NextRetryAt) is created
+                ("version","message_id",(COALESCE("group",'')),"intent_type") WHERE NOT "is_inbox_record";
+            CREATE INDEX IF NOT EXISTS "idx_messaging_received_inbox_retention" ON {GetReceivedTableName()} ("effective_expires_at","id")
+                INCLUDE ("status_name","next_retry_at","intent_type") WHERE "is_inbox_record" AND NOT "is_held";
+            CREATE INDEX IF NOT EXISTS "idx_messaging_received_expires_at_status_name" ON {GetReceivedTableName()} ("expires_at","status_name");
+            CREATE INDEX IF NOT EXISTS "idx_messaging_received_version_expires_at_status_name" ON {GetReceivedTableName()} ("version","expires_at","status_name");
+            -- #8 — The partial retry-pickup index (idx_messaging_received_version_next_retry_at) is created
             -- post-transaction with CREATE INDEX CONCURRENTLY in _EnsureRetryPickupIndexConcurrentlyAsync.
             -- CREATE INDEX CONCURRENTLY cannot run inside a transaction; doing the create here would
             -- take an AccessExclusiveLock and block all writers to the hot retry-pickup path during
             -- every replica boot.
-            CREATE INDEX IF NOT EXISTS "idx_messaging_received_delayed" ON {GetReceivedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
-            -- #508 — ("StatusName","Added") serves BOTH the dashboard hourly-timeline query
-            -- (WHERE "StatusName"=$1 AND "Added" BETWEEN … — a StatusName seek + Added range scan) and the
-            -- per-status COUNTs in GetStatisticsAsync via its "StatusName" prefix. The initializer creates
+            CREATE INDEX IF NOT EXISTS "idx_messaging_received_delayed" ON {GetReceivedTableName()} ("status_name","expires_at") WHERE "status_name" = 'Delayed';
+            -- #508 — ("status_name","added") serves BOTH the dashboard hourly-timeline query
+            -- (WHERE "status_name"=$1 AND "added" BETWEEN … — a status_name seek + added range scan) and the
+            -- per-status COUNTs in GetStatisticsAsync via its "status_name" prefix. The initializer creates
             -- the final schema directly; it does not carry migration DDL for superseded index shapes.
-            CREATE INDEX IF NOT EXISTS "idx_messaging_received_StatusName_Added" ON {GetReceivedTableName()} ("StatusName","Added");
+            CREATE INDEX IF NOT EXISTS "idx_messaging_received_status_name_added" ON {GetReceivedTableName()} ("status_name","added");
 
             CREATE TABLE IF NOT EXISTS "{schema}"."messaging_inbox_operation_receipts"(
-                "OperationId" UUID PRIMARY KEY NOT NULL,
-                "TargetKind" VARCHAR(50) COLLATE "C" NOT NULL DEFAULT 'Inbox',
-                "GenerationIncarnationId" UUID NULL,
-                "OperationType" VARCHAR(50) COLLATE "C" NOT NULL,
-                "ExpectedStatus" VARCHAR(50) COLLATE "C" NULL,
-                "ExpectedDueAt" TIMESTAMPTZ NULL,
-                "Actor" VARCHAR(200) COLLATE "C" NOT NULL,
-                "Reason" VARCHAR(1000) NOT NULL,
-                "Outcome" VARCHAR(50) COLLATE "C" NOT NULL,
-                "StorageId" UUID NULL,
-                "MessageName" VARCHAR(200) NULL,
-                "MessageId" VARCHAR(200) COLLATE "C" NULL,
-                "Lane" VARCHAR(50) COLLATE "C" NULL,
-                "ChildStorageId" UUID NULL,
-                "ChildGeneration" BIGINT NULL,
-                "ChildIncarnationId" UUID NULL,
-                "CreatedAt" TIMESTAMPTZ NOT NULL
+                "operation_id" UUID PRIMARY KEY NOT NULL,
+                "target_kind" VARCHAR(50) COLLATE "C" NOT NULL DEFAULT 'Inbox',
+                "generation_incarnation_id" UUID NULL,
+                "operation_type" VARCHAR(50) COLLATE "C" NOT NULL,
+                "expected_status" VARCHAR(50) COLLATE "C" NULL,
+                "expected_due_at" TIMESTAMPTZ NULL,
+                "actor" VARCHAR(200) COLLATE "C" NOT NULL,
+                "reason" VARCHAR(1000) NOT NULL,
+                "outcome" VARCHAR(50) COLLATE "C" NOT NULL,
+                "storage_id" UUID NULL,
+                "message_name" VARCHAR(200) NULL,
+                "message_id" VARCHAR(200) COLLATE "C" NULL,
+                "lane" VARCHAR(50) COLLATE "C" NULL,
+                "child_storage_id" UUID NULL,
+                "child_generation" BIGINT NULL,
+                "child_incarnation_id" UUID NULL,
+                "created_at" TIMESTAMPTZ NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS "{schema}"."messaging_inbox_audit"(
-                "AuditId" UUID PRIMARY KEY NOT NULL,
-                "OperationId" UUID NOT NULL,
-                "TargetKind" VARCHAR(50) COLLATE "C" NOT NULL DEFAULT 'Inbox',
-                "GenerationIncarnationId" UUID NULL,
-                "OperationType" VARCHAR(50) COLLATE "C" NOT NULL,
-                "Actor" VARCHAR(200) COLLATE "C" NOT NULL,
-                "Reason" VARCHAR(1000) NOT NULL,
-                "Outcome" VARCHAR(50) COLLATE "C" NOT NULL,
-                "CreatedAt" TIMESTAMPTZ NOT NULL,
-                CONSTRAINT "fk_messaging_inbox_audit_operation" FOREIGN KEY ("OperationId")
-                    REFERENCES "{schema}"."messaging_inbox_operation_receipts"("OperationId") ON DELETE RESTRICT
+                "audit_id" UUID PRIMARY KEY NOT NULL,
+                "operation_id" UUID NOT NULL,
+                "target_kind" VARCHAR(50) COLLATE "C" NOT NULL DEFAULT 'Inbox',
+                "generation_incarnation_id" UUID NULL,
+                "operation_type" VARCHAR(50) COLLATE "C" NOT NULL,
+                "actor" VARCHAR(200) COLLATE "C" NOT NULL,
+                "reason" VARCHAR(1000) NOT NULL,
+                "outcome" VARCHAR(50) COLLATE "C" NOT NULL,
+                "created_at" TIMESTAMPTZ NOT NULL,
+                CONSTRAINT "fk_messaging_inbox_audit_operation" FOREIGN KEY ("operation_id")
+                    REFERENCES "{schema}"."messaging_inbox_operation_receipts"("operation_id") ON DELETE RESTRICT
             );
-            CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_audit_incarnation_created" ON "{schema}"."messaging_inbox_audit" ("GenerationIncarnationId","CreatedAt");
+            CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_audit_incarnation_created" ON "{schema}"."messaging_inbox_audit" ("generation_incarnation_id","created_at");
 
             CREATE TABLE IF NOT EXISTS "{schema}"."messaging_schema_state"(
-                "Component" VARCHAR(50) COLLATE "C" PRIMARY KEY NOT NULL,
-                "SchemaVersion" INT NOT NULL,
-                "ReadyAt" TIMESTAMPTZ NOT NULL
+                "component" VARCHAR(50) COLLATE "C" PRIMARY KEY NOT NULL,
+                "schema_version" INT NOT NULL,
+                "ready_at" TIMESTAMPTZ NOT NULL
             );
-            DELETE FROM "{schema}"."messaging_schema_state" WHERE "Component"='inbox';
+            DELETE FROM "{schema}"."messaging_schema_state" WHERE "component"='inbox';
 
             CREATE TABLE IF NOT EXISTS {GetPublishedTableName()}(
-                "Id" UUID PRIMARY KEY NOT NULL,
-                "Version" VARCHAR(20) NOT NULL,
-            	"Name" VARCHAR(200) NOT NULL,
-            	"Content" TEXT NULL,
-                "IntentType" SMALLINT NOT NULL,
-                "Retries" INT NOT NULL,
-                "InlineAttempts" INT NOT NULL DEFAULT 0,
-            	"Added" TIMESTAMPTZ NOT NULL,
-                "ExpiresAt" TIMESTAMPTZ NULL,
-                "NextRetryAt" TIMESTAMPTZ NULL,
-                "LockedUntil" TIMESTAMPTZ NULL,
-                "Owner" VARCHAR({postgreSqlOptions.Value.OwnerColumnMaxLength}) NULL,
-            	"StatusName" VARCHAR(50) NOT NULL,
-                "MessageId" VARCHAR(200) NOT NULL
+                "id" UUID PRIMARY KEY NOT NULL,
+                "version" VARCHAR(20) NOT NULL,
+            	"name" VARCHAR(200) NOT NULL,
+            	"content" TEXT NULL,
+                "intent_type" SMALLINT NOT NULL,
+                "retries" INT NOT NULL,
+                "inline_attempts" INT NOT NULL DEFAULT 0,
+            	"added" TIMESTAMPTZ NOT NULL,
+                "expires_at" TIMESTAMPTZ NULL,
+                "next_retry_at" TIMESTAMPTZ NULL,
+                "locked_until" TIMESTAMPTZ NULL,
+                "owner" VARCHAR({postgreSqlOptions.Value.OwnerColumnMaxLength}) NULL,
+            	"status_name" VARCHAR(50) NOT NULL,
+                "message_id" VARCHAR(200) NOT NULL
             );
 
-            CREATE INDEX IF NOT EXISTS "idx_messaging_published_ExpiresAt_StatusName" ON {GetPublishedTableName()}("ExpiresAt","StatusName");
-            CREATE INDEX IF NOT EXISTS "idx_messaging_published_Version_ExpiresAt_StatusName" ON {GetPublishedTableName()} ("Version","ExpiresAt","StatusName");
+            CREATE INDEX IF NOT EXISTS "idx_messaging_published_expires_at_status_name" ON {GetPublishedTableName()}("expires_at","status_name");
+            CREATE INDEX IF NOT EXISTS "idx_messaging_published_version_expires_at_status_name" ON {GetPublishedTableName()} ("version","expires_at","status_name");
             -- #8 — see the matching comment on the received-table block above; the partial
             -- retry-pickup index for published is also created post-transaction via
             -- _EnsureRetryPickupIndexConcurrentlyAsync.
-            CREATE INDEX IF NOT EXISTS "idx_messaging_published_delayed" ON {GetPublishedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
+            CREATE INDEX IF NOT EXISTS "idx_messaging_published_delayed" ON {GetPublishedTableName()} ("status_name","expires_at") WHERE "status_name" = 'Delayed';
             -- #509 — partial index for the Queued branch of ScheduleMessagesOfDelayedAsync's OR predicate
-            -- (WHERE "Version"=$1 AND ("ExpiresAt"<$2 AND "StatusName"='Queued')). Leading with
-            -- ("Version","ExpiresAt") gives a version seek + ExpiresAt range scan, which the planner can
+            -- (WHERE "version"=$1 AND ("expires_at"<$2 AND "status_name"='Queued')). Leading with
+            -- ("version","expires_at") gives a version seek + expires_at range scan, which the planner can
             -- bitmap-OR with the Delayed partial index above instead of sequentially scanning a large
             -- Queued backlog (e.g. accumulated during broker downtime).
-            CREATE INDEX IF NOT EXISTS "idx_messaging_published_Version_ExpiresAt_Queued" ON {GetPublishedTableName()} ("Version","ExpiresAt") WHERE "StatusName" = 'Queued';
+            CREATE INDEX IF NOT EXISTS "idx_messaging_published_version_expires_at_queued" ON {GetPublishedTableName()} ("version","expires_at") WHERE "status_name" = 'Queued';
             -- #508 — see the received-table note above; create the final dashboard timeline/statistics index.
-            CREATE INDEX IF NOT EXISTS "idx_messaging_published_StatusName_Added" ON {GetPublishedTableName()} ("StatusName","Added");
+            CREATE INDEX IF NOT EXISTS "idx_messaging_published_status_name_added" ON {GetPublishedTableName()} ("status_name","added");
 
             """
         );

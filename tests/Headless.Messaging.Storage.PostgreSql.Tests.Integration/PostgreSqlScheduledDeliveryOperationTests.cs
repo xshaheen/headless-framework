@@ -20,8 +20,8 @@ public sealed class PostgreSqlScheduledDeliveryOperationTests(PostgreSqlTestFixt
         await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand(
             $"""
-            UPDATE "{schema}"."messaging_inbox_operation_receipts" SET "CreatedAt"="CreatedAt"-@Age;
-            UPDATE "{schema}"."messaging_inbox_audit" SET "CreatedAt"="CreatedAt"-@Age;
+            UPDATE "{schema}"."messaging_inbox_operation_receipts" SET "created_at"="created_at"-@Age;
+            UPDATE "{schema}"."messaging_inbox_audit" SET "created_at"="created_at"-@Age;
             """,
             connection
         );
