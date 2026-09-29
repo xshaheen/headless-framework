@@ -94,7 +94,7 @@ internal sealed class SecretHasherCostCheckService(
     /// <inheritdoc />
     public Task StartedAsync(CancellationToken cancellationToken)
     {
-        if (Interlocked.Exchange(ref _deferredAlgorithm, null) is { } algorithm)
+        if (Interlocked.Exchange(ref _deferredAlgorithm, value: null) is { } algorithm)
         {
             var costCheck = options.Value.CostCheck;
             _backgroundCheck = Task.Run(

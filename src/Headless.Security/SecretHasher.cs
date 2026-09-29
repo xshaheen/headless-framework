@@ -120,7 +120,7 @@ internal sealed class SecretHasher : ISecretHasher
         var upgrade =
             !string.Equals(stored.Id, _selectedAlgorithmId, StringComparison.Ordinal) || algorithm.NeedsRehash(stored);
 
-        return new SecretVerification(true, upgrade ? _GetSelectedAlgorithm().Hash(secret) : null);
+        return new SecretVerification(Succeeded: true, upgrade ? _GetSelectedAlgorithm().Hash(secret) : null);
     }
 
     private ISecretHashAlgorithm _GetSelectedAlgorithm()

@@ -220,7 +220,7 @@ internal sealed class SqlServerStorageInitializer(
 
     private string _CreateInboxReadinessScript(string schema)
     {
-        var receivedPrefix = "MessagingReceived";
+        const string receivedPrefix = "MessagingReceived";
 
         return $"""
             IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxIdentity' AND parent_object_id=OBJECT_ID(N'{GetReceivedTableName()}'))

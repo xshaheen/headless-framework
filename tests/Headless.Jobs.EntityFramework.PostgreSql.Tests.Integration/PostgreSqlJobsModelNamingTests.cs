@@ -81,7 +81,14 @@ public sealed class PostgreSqlJobsModelNamingTests : TestBase
 
         var unique = occurrence
             .GetIndexes()
-            .Single(index => index.GetDatabaseName() == "uq_cron_job_occurrences_cron_job_id_execution_time");
+            .Single(index =>
+                string.Equals(
+                    index.GetDatabaseName(),
+                    "uq_cron_job_occurrences_cron_job_id_execution_time",
+                    StringComparison.Ordinal
+                )
+            );
+
         unique.GetFilter().Should().Be("\"status\" IN ('Idle', 'Queued', 'InProgress')");
     }
 

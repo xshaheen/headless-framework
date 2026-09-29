@@ -133,24 +133,30 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
         Logger.LogInformation("Baseline cleanup plan: {Plan}", baseline);
         Logger.LogInformation("Indexed cleanup plan: {Plan}", plan);
         XNamespace ns = "http://schemas.microsoft.com/sqlserver/2004/07/showplan";
+
         plan.Descendants(ns + "RelOp")
             .Where(node => string.Equals((string?)node.Attribute("PhysicalOp"), "Index Seek", StringComparison.Ordinal))
             .SelectMany(node => node.Descendants(ns + "Object"))
             .Should()
-            .Contain(node => (string?)node.Attribute("Index") == $"[IX_MessagingReceived_InboxRetention]");
+            .Contain(node => (string?)node.Attribute("Index") == "[IX_MessagingReceived_InboxRetention]");
+
         var baselineRows = _CandidateRowsRead(baseline);
         var indexedRows = _CandidateRowsRead(plan);
+
         Logger.LogInformation(
             "Cleanup candidate rows read: baseline={Baseline}, indexed={Indexed}",
             baselineRows,
             indexedRows
         );
+
         baselineRows.Should().BeGreaterThan(10000);
         indexedRows.Should().BeLessThan(100);
         indexedRows.Should().BeLessThan(baselineRows / 10);
+
         (await _storage.DeleteExpiresAsync(_initializer.GetReceivedTableName(), DateTimeOffset.UtcNow, 20, AbortToken))
             .Should()
             .Be(7);
+
         (await _storage.DeleteExpiresAsync(_initializer.GetReceivedTableName(), DateTimeOffset.UtcNow, 20, AbortToken))
             .Should()
             .Be(0);

@@ -121,14 +121,17 @@ public sealed class ApnsPushTypeCompletenessTests : TestBase
         // given
         var pushTypes = typeof(ApnsNotification)
             .Assembly.GetTypes()
-            .Where(t => t is { IsClass: true, IsAbstract: false, IsSealed: true })
-            .Where(t => t.IsSubclassOf(typeof(ApnsNotification)))
+            .Where(t =>
+                t is { IsClass: true, IsAbstract: false, IsSealed: true } && t.IsSubclassOf(typeof(ApnsNotification))
+            )
             .ToList();
+
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 9, 25, 10, 0, 0, TimeSpan.Zero));
 
         // then
         pushTypes.Should().NotBeEmpty();
         var missing = pushTypes.Where(t => !_Factories.ContainsKey(t)).Select(t => t.Name).ToList();
+
         missing
             .Should()
             .BeEmpty(

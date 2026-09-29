@@ -94,12 +94,12 @@ public sealed class SqlServerDeliveryCoordinationTests(SqlServerTestFixture fixt
     {
         if (dataSource.StartsWith("localhost", StringComparison.OrdinalIgnoreCase))
         {
-            return string.Concat("127.0.0.1", dataSource.AsSpan("localhost".Length));
+            return $"127.0.0.1{dataSource.AsSpan("localhost".Length)}";
         }
 
         if (dataSource.StartsWith("127.0.0.1", StringComparison.Ordinal))
         {
-            return string.Concat("localhost", dataSource.AsSpan("127.0.0.1".Length));
+            return $"localhost{dataSource.AsSpan("127.0.0.1".Length)}";
         }
 
         Assert.Skip($"The container host '{dataSource}' is not a loopback address, so there is no alias to swap.");

@@ -1239,7 +1239,7 @@ public sealed class ApnsPayloadWriterTests : TestBase
         data.ToJsonString().Should().Be(before);
         data.Parent.Should().BeNull();
         nested.Parent.Should().BeSameAs(data);
-        data.Count.Should().Be(2);
+        data.Should().HaveCount(2);
     }
 
     [Fact]

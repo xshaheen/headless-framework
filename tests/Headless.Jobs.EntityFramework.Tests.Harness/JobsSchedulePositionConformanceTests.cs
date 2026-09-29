@@ -1124,6 +1124,7 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
             // contract this test asserts is that the tick was ACCOUNTED FOR — the occurrence above proves it fired, and this
             // proves nothing will reconsider it.
             var position = await fixture.ReadCronSchedulePositionAsync(definitionId, ct);
+
             position
                 .ReconciledThroughUtc.Should()
                 .BeOnOrAfter(seededNextDueUtc, "the watermark moved through the tick it resolved");

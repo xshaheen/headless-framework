@@ -130,12 +130,14 @@ public abstract class SharedSchemaTestsBase : TestBase
         // starts against the populated database
         using var hostC = _BuildHost(connectionString, "node-c", includeJobs: true);
         await _CreateJobsTablesAsync(hostC);
+
         var withJobs = await ReadCatalogAsync(connectionString, AbortToken);
         _AssertExpectedObjects(withJobs, includeJobs: true);
         withJobs.Should().Contain(rawObjects, "creating the Jobs tables must leave every other family's objects alone");
+
         withJobs
             .Except(rawObjects)
-            .Where(o => o.Type == TableType)
+            .Where(o => string.Equals(o.Type, TableType, StringComparison.Ordinal))
             .Select(o => o.Name)
             .Should()
             .BeEquivalentTo(ExpectedJobsTables, "the consumer's create script adds only the Jobs model");

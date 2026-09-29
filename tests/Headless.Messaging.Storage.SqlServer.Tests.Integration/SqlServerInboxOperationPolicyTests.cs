@@ -106,9 +106,9 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
             """,
             connection
         );
-        count.Parameters.Add(new SqlParameter("@Receipts", $"IX_MessagingInboxOperationReceipts_Type_CreatedAt"));
-        count.Parameters.Add(new SqlParameter("@Audits", $"IX_MessagingInboxAudit_Type_CreatedAt"));
-        count.Parameters.Add(new SqlParameter("@Operation", $"IX_MessagingInboxAudit_Operation"));
+        count.Parameters.Add(new SqlParameter("@Receipts", "IX_MessagingInboxOperationReceipts_Type_CreatedAt"));
+        count.Parameters.Add(new SqlParameter("@Audits", "IX_MessagingInboxAudit_Type_CreatedAt"));
+        count.Parameters.Add(new SqlParameter("@Operation", "IX_MessagingInboxAudit_Operation"));
         (await count.ExecuteScalarAsync(AbortToken)).Should().Be(3);
         await using var drop = new SqlCommand(
             $"""

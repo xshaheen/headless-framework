@@ -52,8 +52,10 @@ public sealed class SqlServerSequenceDeadlockRetryTests(SqlServerSequencesFixtur
         await _ScalarAsync<long>(
             holder,
             holderTransaction,
-            $"SELECT [Value] FROM [{_Schema}].[{_Table}] WITH (UPDLOCK) WHERE [Name] = N'deadlock';"
+            $"SELECT [Value] FROM [{_Schema}].[{_Table}] WITH (UPDLOCK) WHERE [Name] = N'deadlock';",
+            AbortToken
         );
+
         await holderTransaction.CommitAsync(AbortToken);
 
         // then: the victim waits on the frozen clock instead of retrying at once
