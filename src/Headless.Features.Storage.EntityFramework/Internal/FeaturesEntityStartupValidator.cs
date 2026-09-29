@@ -47,7 +47,7 @@ internal sealed class FeaturesEntityStartupValidator<TContext>(IDbContextFactory
 
         throw new InvalidOperationException(
             $"Headless.Features: the registered DbContext `{context.GetType().FullName}` does not contain `{entityName}`. "
-                + "Call `modelBuilder.AddHeadlessFeatures(featuresStorageOptions)` in your `OnModelCreating`."
+                + "Call `modelBuilder.AddHeadlessFeatures(this)` in your `OnModelCreating`."
         );
     }
 }

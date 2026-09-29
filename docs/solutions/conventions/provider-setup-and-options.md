@@ -1,7 +1,7 @@
 ---
 title: "Provider setup classes and the options pattern"
 date: 2026-09-18
-last_updated: 2026-09-27
+last_updated: 2026-09-29
 category: conventions
 module: headless-framework
 problem_type: design_pattern
@@ -106,12 +106,35 @@ constraint and index names derived from them (`PK_FencingLeases`, `IX_FencingLea
 `CK_IdempotencyRecords_Status`, `DF_FencingLeases_TakeoverCount`), and unquoted snake_case on PostgreSQL
 (`fencing_leases`, `ix_fencing_leases_active_expiry`). A new feature follows it on both providers.
 
-Messaging, Coordination, Fencing, Idempotency, and Sequences follow the rule on both providers
+Messaging, Coordination, Fencing, Idempotency, Sequences, and Features follow the rule on both providers
 (`messaging_published` / `MessagingPublished`, `fencing_leases` / `FencingLeases`,
-`idempotency_record_generations` / `IdempotencyRecordGenerations`, `sequences` / `Sequences`). Not every family
-does yet: Features, Permissions, Settings, and the EF-mapped Jobs tables use PascalCase on PostgreSQL as well
-(`FeatureValues`, `CronJobs`), and AuditLog names its table `audit_log` on both providers. Converting those is
-separate work; do not rename a family's objects as a side effect of other changes.
+`idempotency_record_generations` / `IdempotencyRecordGenerations`, `sequences` / `Sequences`,
+`feature_values` / `FeatureValues`). Not every family does yet: Permissions, Settings, and the EF-mapped Jobs tables
+use PascalCase on PostgreSQL as well (`PermissionGrants`, `CronJobs`), and AuditLog names its table `audit_log` on
+both providers. Converting those is separate work; do not rename a family's objects as a side effect of other
+changes.
+
+#### One naming source for raw SQL and EF Core
+
+A feature that ships both a raw provider and an EF Core mapping derives every name from the same place, so a
+database provisioned by one reads correctly through the other. `Headless.Hosting.Initialization` owns it:
+
+- `StorageNamingStyle` is `PascalCase` or `SnakeCase`. A raw provider hardcodes its database's style;
+  `HeadlessStorageNaming.ForProvider(DbContext.Database.ProviderName)` returns `SnakeCase` for Npgsql and
+  `PascalCase` for every other EF provider.
+- `HeadlessStorageNaming.Apply(style, "ProviderKey")` converts one PascalCase part. `PrimaryKeyName(style, table)`
+  and `IndexName(style, table, "ProviderName", "ProviderKey")` build `pk_`/`PK_` and `ix_`/`IX_` names from
+  converted parts around the resolved table name, which they never convert.
+- The EF mapping sets the table, every column (`HasColumnName`, applied last so it also renames columns that
+  `ConfigureHeadlessConvention()` and `TryConfigureExtraProperties()` added), the key (`HasKey(...).HasName`), and
+  every index (`HasDatabaseName`, with filters quoting the converted column). The model-builder entry point that
+  takes a `DbContext` detects the style from `Database.ProviderName`; the one that takes options also takes a
+  required `StorageNamingStyle`.
+- Configurable table names are nullable. `null` means the convention's default
+  (`HeadlessStorageNaming.Resolve(configured, style, "FeatureValues")`), a configured name is used verbatim,
+  validators check it only when set, and derived key and index names embed it unchanged (`pk_MyValues`).
+- A parity test per provider creates the schema with the raw initializer and compares the catalog's columns and
+  index names with the EF model built for that provider. Features has one in its conformance harness.
 
 - A noun unique to the feature's family already counts as the prefix: `CronJobs`, `FeatureValues`,
   `PermissionGrants`, and `headless_distributed_locks_fence` need no extra `jobs_` or `features_`.

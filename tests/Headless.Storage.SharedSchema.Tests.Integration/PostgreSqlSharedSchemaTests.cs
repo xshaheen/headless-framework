@@ -58,7 +58,7 @@ public sealed class PostgreSqlSharedSchemaTests(PostgreSqlSharedSchemaFixture fi
             ["AuditLog"] = ["audit_log"],
             ["Coordination"] = ["coordination_descriptor", "coordination_liveness", "coordination_node_generation"],
             ["DistributedLocks"] = [],
-            ["Features"] = ["FeatureDefinitions", "FeatureGroupDefinitions", "FeatureValues"],
+            ["Features"] = ["feature_definitions", "feature_group_definitions", "feature_values"],
             ["Fencing"] = ["fencing_leases"],
             ["Idempotency"] = ["idempotency_records"],
             ["Messaging"] =

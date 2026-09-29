@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Features;
 using Headless.Permissions;
 using Headless.Settings;
 using Microsoft.EntityFrameworkCore;
@@ -32,14 +31,12 @@ internal sealed class PermissionsMigrationDbContext(
     }
 }
 
-internal sealed class FeaturesMigrationDbContext(
-    DbContextOptions<FeaturesMigrationDbContext> options,
-    IOptions<FeaturesStorageOptions> storageOptions
-) : DbContext(options)
+internal sealed class FeaturesMigrationDbContext(DbContextOptions<FeaturesMigrationDbContext> options)
+    : DbContext(options)
 {
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.AddHeadlessFeatures(storageOptions.Value);
+        modelBuilder.AddHeadlessFeatures(this);
     }
 }

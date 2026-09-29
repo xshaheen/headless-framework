@@ -138,9 +138,15 @@ public static class SetupFeaturesSqlServer
         public SqlServerFeaturesStorageOptionsValidator()
         {
             RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.SqlServer);
-            RuleFor(x => x.FeatureValuesTableName).IsValidIdentifierFor(StorageProvider.SqlServer);
-            RuleFor(x => x.FeatureDefinitionsTableName).IsValidIdentifierFor(StorageProvider.SqlServer);
-            RuleFor(x => x.FeatureGroupDefinitionsTableName).IsValidIdentifierFor(StorageProvider.SqlServer);
+            RuleFor(x => x.FeatureValuesTableName)
+                .IsValidIdentifierFor(StorageProvider.SqlServer)
+                .When(x => x.FeatureValuesTableName is not null);
+            RuleFor(x => x.FeatureDefinitionsTableName)
+                .IsValidIdentifierFor(StorageProvider.SqlServer)
+                .When(x => x.FeatureDefinitionsTableName is not null);
+            RuleFor(x => x.FeatureGroupDefinitionsTableName)
+                .IsValidIdentifierFor(StorageProvider.SqlServer)
+                .When(x => x.FeatureGroupDefinitionsTableName is not null);
         }
     }
 }

@@ -67,9 +67,15 @@ public static class SetupFeaturesEntityFramework
         public EntityFrameworkFeaturesStorageOptionsValidator()
         {
             RuleFor(x => x.Schema).IsValidCrossProviderIdentifier();
-            RuleFor(x => x.FeatureValuesTableName).IsValidCrossProviderIdentifier();
-            RuleFor(x => x.FeatureDefinitionsTableName).IsValidCrossProviderIdentifier();
-            RuleFor(x => x.FeatureGroupDefinitionsTableName).IsValidCrossProviderIdentifier();
+            RuleFor(x => x.FeatureValuesTableName)
+                .IsValidCrossProviderIdentifier()
+                .When(x => x.FeatureValuesTableName is not null);
+            RuleFor(x => x.FeatureDefinitionsTableName)
+                .IsValidCrossProviderIdentifier()
+                .When(x => x.FeatureDefinitionsTableName is not null);
+            RuleFor(x => x.FeatureGroupDefinitionsTableName)
+                .IsValidCrossProviderIdentifier()
+                .When(x => x.FeatureGroupDefinitionsTableName is not null);
         }
     }
 }

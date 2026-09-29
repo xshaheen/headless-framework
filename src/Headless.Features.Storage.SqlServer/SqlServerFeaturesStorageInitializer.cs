@@ -49,14 +49,35 @@ internal sealed class SqlServerFeaturesStorageInitializer(
         return $"[{options.Schema}].[{tableName}]";
     }
 
+    /// <summary>Returns the qualified feature values table.</summary>
+    internal static string ValuesTable(FeaturesStorageOptions options)
+    {
+        return Qualified(options, options.ResolveFeatureValuesTableName(StorageNamingStyle.PascalCase));
+    }
+
+    /// <summary>Returns the qualified feature definitions table.</summary>
+    internal static string DefinitionsTable(FeaturesStorageOptions options)
+    {
+        return Qualified(options, options.ResolveFeatureDefinitionsTableName(StorageNamingStyle.PascalCase));
+    }
+
+    /// <summary>Returns the qualified feature group definitions table.</summary>
+    internal static string GroupsTable(FeaturesStorageOptions options)
+    {
+        return Qualified(options, options.ResolveFeatureGroupDefinitionsTableName(StorageNamingStyle.PascalCase));
+    }
+
     private static string _CreateScript(FeaturesStorageOptions options)
     {
-        var valuesTable = Qualified(options, options.FeatureValuesTableName);
-        var definitionsTable = Qualified(options, options.FeatureDefinitionsTableName);
-        var groupsTable = Qualified(options, options.FeatureGroupDefinitionsTableName);
-        var valuesObject = $"{options.Schema}.{options.FeatureValuesTableName}";
-        var definitionsObject = $"{options.Schema}.{options.FeatureDefinitionsTableName}";
-        var groupsObject = $"{options.Schema}.{options.FeatureGroupDefinitionsTableName}";
+        var valuesName = options.ResolveFeatureValuesTableName(StorageNamingStyle.PascalCase);
+        var definitionsName = options.ResolveFeatureDefinitionsTableName(StorageNamingStyle.PascalCase);
+        var groupsName = options.ResolveFeatureGroupDefinitionsTableName(StorageNamingStyle.PascalCase);
+        var valuesTable = Qualified(options, valuesName);
+        var definitionsTable = Qualified(options, definitionsName);
+        var groupsTable = Qualified(options, groupsName);
+        var valuesObject = $"{options.Schema}.{valuesName}";
+        var definitionsObject = $"{options.Schema}.{definitionsName}";
+        var groupsObject = $"{options.Schema}.{groupsName}";
 
         // Serialize concurrent-startup DDL across replicas with a session-scoped advisory lock.
         var lockResource = $"headless_features_init:{options.Schema}";
@@ -84,7 +105,7 @@ internal sealed class SqlServerFeaturesStorageInitializer(
                         [Name] nvarchar({FeatureGroupDefinitionRecordConstants.NameMaxLength}) NOT NULL,
                         [DisplayName] nvarchar({FeatureGroupDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
                         [ExtraProperties] nvarchar(max) NOT NULL,
-                        CONSTRAINT [PK_{options.FeatureGroupDefinitionsTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
+                        CONSTRAINT [PK_{groupsName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
                 END;
             END TRY
@@ -107,7 +128,7 @@ internal sealed class SqlServerFeaturesStorageInitializer(
                         [IsAvailableToHost] bit NOT NULL,
                         [Providers] nvarchar({FeatureDefinitionRecordConstants.ProvidersMaxLength}) NULL,
                         [ExtraProperties] nvarchar(max) NOT NULL,
-                        CONSTRAINT [PK_{options.FeatureDefinitionsTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
+                        CONSTRAINT [PK_{definitionsName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
                 END;
             END TRY
@@ -126,7 +147,7 @@ internal sealed class SqlServerFeaturesStorageInitializer(
                         [ProviderKey] nvarchar({FeatureValueRecordConstants.ProviderKeyMaxLength}) NULL,
                         [CreatedAt] datetimeoffset NOT NULL,
                         [UpdatedAt] datetimeoffset NULL,
-                        CONSTRAINT [PK_{options.FeatureValuesTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
+                        CONSTRAINT [PK_{valuesName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
                 END;
             END TRY
@@ -143,48 +164,48 @@ internal sealed class SqlServerFeaturesStorageInitializer(
                 EXEC sys.sp_rename N'{valuesObject}.DateUpdated', N'UpdatedAt', N'COLUMN';
 
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.FeatureGroupDefinitionsTableName}_Name' AND object_id = OBJECT_ID(N'{groupsObject}'))
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.FeatureGroupDefinitionsTableName}_Name] ON {groupsTable} ([Name] ASC);
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{groupsName}_Name' AND object_id = OBJECT_ID(N'{groupsObject}'))
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{groupsName}_Name] ON {groupsTable} ([Name] ASC);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
             END CATCH;
 
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.FeatureDefinitionsTableName}_GroupName' AND object_id = OBJECT_ID(N'{definitionsObject}'))
-                    CREATE NONCLUSTERED INDEX [IX_{options.FeatureDefinitionsTableName}_GroupName] ON {definitionsTable} ([GroupName] ASC);
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{definitionsName}_GroupName' AND object_id = OBJECT_ID(N'{definitionsObject}'))
+                    CREATE NONCLUSTERED INDEX [IX_{definitionsName}_GroupName] ON {definitionsTable} ([GroupName] ASC);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
             END CATCH;
 
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.FeatureDefinitionsTableName}_Name' AND object_id = OBJECT_ID(N'{definitionsObject}'))
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.FeatureDefinitionsTableName}_Name] ON {definitionsTable} ([Name] ASC);
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{definitionsName}_Name' AND object_id = OBJECT_ID(N'{definitionsObject}'))
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{definitionsName}_Name] ON {definitionsTable} ([Name] ASC);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
             END CATCH;
 
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.FeatureValuesTableName}_ProviderName_ProviderKey' AND object_id = OBJECT_ID(N'{valuesObject}'))
-                    CREATE NONCLUSTERED INDEX [IX_{options.FeatureValuesTableName}_ProviderName_ProviderKey] ON {valuesTable} ([ProviderName] ASC, [ProviderKey] ASC);
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{valuesName}_ProviderName_ProviderKey' AND object_id = OBJECT_ID(N'{valuesObject}'))
+                    CREATE NONCLUSTERED INDEX [IX_{valuesName}_ProviderName_ProviderKey] ON {valuesTable} ([ProviderName] ASC, [ProviderKey] ASC);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
             END CATCH;
 
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.FeatureValuesTableName}_Name_ProviderName_ProviderKey' AND object_id = OBJECT_ID(N'{valuesObject}'))
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.FeatureValuesTableName}_Name_ProviderName_ProviderKey] ON {valuesTable} ([Name] ASC, [ProviderName] ASC, [ProviderKey] ASC) WHERE [ProviderKey] IS NOT NULL;
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{valuesName}_Name_ProviderName_ProviderKey' AND object_id = OBJECT_ID(N'{valuesObject}'))
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{valuesName}_Name_ProviderName_ProviderKey] ON {valuesTable} ([Name] ASC, [ProviderName] ASC, [ProviderKey] ASC) WHERE [ProviderKey] IS NOT NULL;
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
             END CATCH;
 
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.FeatureValuesTableName}_Name_ProviderName_NullProviderKey' AND object_id = OBJECT_ID(N'{valuesObject}'))
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.FeatureValuesTableName}_Name_ProviderName_NullProviderKey] ON {valuesTable} ([Name] ASC, [ProviderName] ASC) WHERE [ProviderKey] IS NULL;
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{valuesName}_Name_ProviderName_NullProviderKey' AND object_id = OBJECT_ID(N'{valuesObject}'))
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{valuesName}_Name_ProviderName_NullProviderKey] ON {valuesTable} ([Name] ASC, [ProviderName] ASC) WHERE [ProviderKey] IS NULL;
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;

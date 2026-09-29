@@ -14,14 +14,26 @@ public sealed class FeaturesStorageOptions
     /// </summary>
     public string Schema { get; set; } = HeadlessStorageDefaults.Schema;
 
-    /// <summary>Gets or sets the name of the table that stores per-provider feature values. Default: <c>"FeatureValues"</c>.</summary>
-    public string FeatureValuesTableName { get; set; } = "FeatureValues";
+    /// <summary>
+    /// Gets or sets the name of the table that stores per-provider feature values. Default: <see langword="null"/>,
+    /// which uses the database's conventional name: <c>feature_values</c> on PostgreSQL, <c>FeatureValues</c>
+    /// elsewhere. A configured name is used verbatim, and the table's key and index names derive from it.
+    /// </summary>
+    public string? FeatureValuesTableName { get; set; }
 
-    /// <summary>Gets or sets the name of the table that stores feature definitions. Default: <c>"FeatureDefinitions"</c>.</summary>
-    public string FeatureDefinitionsTableName { get; set; } = "FeatureDefinitions";
+    /// <summary>
+    /// Gets or sets the name of the table that stores feature definitions. Default: <see langword="null"/>, which uses
+    /// the database's conventional name: <c>feature_definitions</c> on PostgreSQL, <c>FeatureDefinitions</c>
+    /// elsewhere. A configured name is used verbatim.
+    /// </summary>
+    public string? FeatureDefinitionsTableName { get; set; }
 
-    /// <summary>Gets or sets the name of the table that stores feature group definitions. Default: <c>"FeatureGroupDefinitions"</c>.</summary>
-    public string FeatureGroupDefinitionsTableName { get; set; } = "FeatureGroupDefinitions";
+    /// <summary>
+    /// Gets or sets the name of the table that stores feature group definitions. Default: <see langword="null"/>,
+    /// which uses the database's conventional name: <c>feature_group_definitions</c> on PostgreSQL,
+    /// <c>FeatureGroupDefinitions</c> elsewhere. A configured name is used verbatim.
+    /// </summary>
+    public string? FeatureGroupDefinitionsTableName { get; set; }
 
     /// <summary>
     /// When <see langword="true"/> (default), the startup storage initializer creates the schema, tables, and indexes
@@ -31,6 +43,30 @@ public sealed class FeaturesStorageOptions
     /// (PostgreSQL, SQL Server); EF Core storage is always schema-managed by migrations.
     /// </summary>
     public bool InitializeOnStartup { get; set; } = true;
+
+    /// <summary>Returns the feature values table name to use on a database with <paramref name="style"/>.</summary>
+    /// <param name="style">The naming style of the target database.</param>
+    /// <returns>The configured name, or the conventional default for <paramref name="style"/>.</returns>
+    public string ResolveFeatureValuesTableName(StorageNamingStyle style)
+    {
+        return HeadlessStorageNaming.Resolve(FeatureValuesTableName, style, "FeatureValues");
+    }
+
+    /// <summary>Returns the feature definitions table name to use on a database with <paramref name="style"/>.</summary>
+    /// <param name="style">The naming style of the target database.</param>
+    /// <returns>The configured name, or the conventional default for <paramref name="style"/>.</returns>
+    public string ResolveFeatureDefinitionsTableName(StorageNamingStyle style)
+    {
+        return HeadlessStorageNaming.Resolve(FeatureDefinitionsTableName, style, "FeatureDefinitions");
+    }
+
+    /// <summary>Returns the feature group definitions table name to use on a database with <paramref name="style"/>.</summary>
+    /// <param name="style">The naming style of the target database.</param>
+    /// <returns>The configured name, or the conventional default for <paramref name="style"/>.</returns>
+    public string ResolveFeatureGroupDefinitionsTableName(StorageNamingStyle style)
+    {
+        return HeadlessStorageNaming.Resolve(FeatureGroupDefinitionsTableName, style, "FeatureGroupDefinitions");
+    }
 
     /// <summary>
     /// Copies every property to <paramref name="target"/>. Centralizes the property list so

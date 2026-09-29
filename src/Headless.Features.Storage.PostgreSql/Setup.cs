@@ -140,9 +140,15 @@ public static class SetupFeaturesPostgreSql
         public PostgreSqlFeaturesStorageOptionsValidator()
         {
             RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.PostgreSql);
-            RuleFor(x => x.FeatureValuesTableName).IsValidIdentifierFor(StorageProvider.PostgreSql);
-            RuleFor(x => x.FeatureDefinitionsTableName).IsValidIdentifierFor(StorageProvider.PostgreSql);
-            RuleFor(x => x.FeatureGroupDefinitionsTableName).IsValidIdentifierFor(StorageProvider.PostgreSql);
+            RuleFor(x => x.FeatureValuesTableName)
+                .IsValidIdentifierFor(StorageProvider.PostgreSql)
+                .When(x => x.FeatureValuesTableName is not null);
+            RuleFor(x => x.FeatureDefinitionsTableName)
+                .IsValidIdentifierFor(StorageProvider.PostgreSql)
+                .When(x => x.FeatureDefinitionsTableName is not null);
+            RuleFor(x => x.FeatureGroupDefinitionsTableName)
+                .IsValidIdentifierFor(StorageProvider.PostgreSql)
+                .When(x => x.FeatureGroupDefinitionsTableName is not null);
         }
     }
 }

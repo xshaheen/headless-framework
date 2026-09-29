@@ -2,6 +2,7 @@
 
 using Headless.Features;
 using Headless.Features.Entities;
+using Headless.Hosting.Initialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -94,9 +95,45 @@ public sealed class FeaturesStorageOptionsTests
         // then
         var resolved = act.Should().NotThrow().Subject;
         resolved.Schema.Should().Be("headless");
-        resolved.FeatureValuesTableName.Should().Be("FeatureValues");
-        resolved.FeatureDefinitionsTableName.Should().Be("FeatureDefinitions");
-        resolved.FeatureGroupDefinitionsTableName.Should().Be("FeatureGroupDefinitions");
+        resolved.FeatureValuesTableName.Should().BeNull();
+        resolved.FeatureDefinitionsTableName.Should().BeNull();
+        resolved.FeatureGroupDefinitionsTableName.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(StorageNamingStyle.PascalCase, "FeatureValues", "FeatureDefinitions", "FeatureGroupDefinitions")]
+    [InlineData(StorageNamingStyle.SnakeCase, "feature_values", "feature_definitions", "feature_group_definitions")]
+    public void should_resolve_default_table_names_in_the_database_naming_style(
+        StorageNamingStyle style,
+        string valuesTable,
+        string definitionsTable,
+        string groupDefinitionsTable
+    )
+    {
+        // given
+        var options = new FeaturesStorageOptions();
+
+        // when / then
+        options.ResolveFeatureValuesTableName(style).Should().Be(valuesTable);
+        options.ResolveFeatureDefinitionsTableName(style).Should().Be(definitionsTable);
+        options.ResolveFeatureGroupDefinitionsTableName(style).Should().Be(groupDefinitionsTable);
+    }
+
+    [Fact]
+    public void should_resolve_configured_table_names_verbatim_in_every_naming_style()
+    {
+        // given
+        var options = new FeaturesStorageOptions
+        {
+            FeatureValuesTableName = "MyValues",
+            FeatureDefinitionsTableName = "MyDefinitions",
+            FeatureGroupDefinitionsTableName = "MyGroups",
+        };
+
+        // when / then
+        options.ResolveFeatureValuesTableName(StorageNamingStyle.SnakeCase).Should().Be("MyValues");
+        options.ResolveFeatureDefinitionsTableName(StorageNamingStyle.SnakeCase).Should().Be("MyDefinitions");
+        options.ResolveFeatureGroupDefinitionsTableName(StorageNamingStyle.PascalCase).Should().Be("MyGroups");
     }
 
     [Fact]
@@ -145,7 +182,7 @@ public sealed class FeaturesStorageOptionsTests
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessFeatures(storageOptions);
+            modelBuilder.AddHeadlessFeatures(storageOptions, StorageNamingStyle.PascalCase);
         }
     }
 }

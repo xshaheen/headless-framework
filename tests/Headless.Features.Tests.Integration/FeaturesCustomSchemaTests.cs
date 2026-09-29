@@ -5,6 +5,7 @@ using Headless.Features.Definitions;
 using Headless.Features.Entities;
 using Headless.Features.Models;
 using Headless.Features.Values;
+using Headless.Hosting.Initialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -79,13 +80,13 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
         // then
         valuesEntity.Should().NotBeNull();
         valuesEntity!.GetSchema().Should().Be("headless");
-        valuesEntity.GetTableName().Should().Be("FeatureValues");
+        valuesEntity.GetTableName().Should().Be("feature_values");
         definitionsEntity.Should().NotBeNull();
         definitionsEntity!.GetSchema().Should().Be("headless");
-        definitionsEntity.GetTableName().Should().Be("FeatureDefinitions");
+        definitionsEntity.GetTableName().Should().Be("feature_definitions");
         groupDefinitionsEntity.Should().NotBeNull();
         groupDefinitionsEntity!.GetSchema().Should().Be("headless");
-        groupDefinitionsEntity.GetTableName().Should().Be("FeatureGroupDefinitions");
+        groupDefinitionsEntity.GetTableName().Should().Be("feature_group_definitions");
     }
 
     [Fact]
@@ -107,7 +108,7 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
         // then
         storedValue.Value.Should().Be(value);
         (await _TableHasRowsAsync(_Schema, _ValuesTableName)).Should().BeTrue();
-        (await _TableHasRowsAsync("headless", "FeatureValues")).Should().BeFalse();
+        (await _TableHasRowsAsync("headless", "feature_values")).Should().BeFalse();
     }
 
     [Fact]
@@ -218,7 +219,10 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddHeadlessFeatures(storageOptions.Value);
+            modelBuilder.AddHeadlessFeatures(
+                storageOptions.Value,
+                HeadlessStorageNaming.ForProvider(Database.ProviderName)
+            );
         }
     }
 
@@ -230,7 +234,10 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddHeadlessFeatures(storageOptions.Value);
+            modelBuilder.AddHeadlessFeatures(
+                storageOptions.Value,
+                HeadlessStorageNaming.ForProvider(Database.ProviderName)
+            );
         }
     }
 
@@ -242,7 +249,10 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddHeadlessFeatures(storageOptions.Value);
+            modelBuilder.AddHeadlessFeatures(
+                storageOptions.Value,
+                HeadlessStorageNaming.ForProvider(Database.ProviderName)
+            );
         }
     }
 

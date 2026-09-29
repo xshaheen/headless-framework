@@ -321,14 +321,16 @@ services.AddHeadlessFeatures(setup =>
     setup.ConfigureStorage(o =>
     {
         o.Schema = "headless"; // default, shared by every Headless feature
-        o.FeatureValuesTableName = "FeatureValues"; // default
-        o.FeatureDefinitionsTableName = "FeatureDefinitions"; // default
-        o.FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions"; // default
+        o.FeatureValuesTableName = null; // default: feature_values on PostgreSQL, FeatureValues elsewhere
+        o.FeatureDefinitionsTableName = null; // default: feature_definitions / FeatureDefinitions
+        o.FeatureGroupDefinitionsTableName = null; // default: feature_group_definitions / FeatureGroupDefinitions
         o.InitializeOnStartup = true; // default; set false when schema is provisioned out-of-band
     });
     setup.UseEntityFramework<AppDbContext>();
 });
 ```
+
+Every object follows its database's naming convention. On PostgreSQL the tables, columns, primary keys, and indexes are snake_case (`feature_values`, `provider_key`, `pk_feature_values`, `ix_feature_values_provider_name_provider_key`); on SQL Server and other databases they are PascalCase (`FeatureValues`, `ProviderKey`, `PK_FeatureValues`, `IX_FeatureValues_ProviderName_ProviderKey`). A table-name option left `null` takes that convention's default. A table name you set is used verbatim, and its key and index names derive from it (`pk_MyValues`). The raw providers and the EF mapping produce the same names on the same database.
 
 ### Runtime behavior
 
@@ -347,8 +349,8 @@ Entity Framework Core storage implementation for feature management.
 ### API and behavior
 
 - `setup.UseEntityFramework<TContext>()` — registers the EF storage provider via the `HeadlessFeaturesSetupBuilder`
-- `modelBuilder.AddHeadlessFeatures(DbContext context)` — applies entity configurations by resolving `FeaturesStorageOptions` from the context's service provider (no constructor injection required)
-- `modelBuilder.AddHeadlessFeatures(FeaturesStorageOptions options)` — overload for when you already hold the options
+- `modelBuilder.AddHeadlessFeatures(DbContext context)` — applies entity configurations by resolving `FeaturesStorageOptions` from the context's service provider (no constructor injection required) and the naming style from `context.Database.ProviderName`: snake_case on Npgsql, PascalCase on every other provider
+- `modelBuilder.AddHeadlessFeatures(FeaturesStorageOptions options, StorageNamingStyle style)` — overload for when you already hold the options; pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (namespace `Headless.Hosting.Initialization`) so the style matches the database
 - EF repositories for `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository`
 - `FeatureValueRecord` maps `CreatedAt` / `UpdatedAt` audit columns (via `ConfigureHeadlessConvention`); the Headless audit save-processor stamps them on `SaveChanges`
 - `FeaturesStorageOptions` for schema and table-name configuration (shared with raw-DDL providers)
@@ -392,9 +394,9 @@ builder.Services.AddHeadlessFeatures(setup =>
 `FeaturesStorageOptions` defaults:
 
 - `Schema = "headless"`, the schema every Headless feature shares (see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features))
-- `FeatureValuesTableName = "FeatureValues"`
-- `FeatureDefinitionsTableName = "FeatureDefinitions"`
-- `FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions"`
+- `FeatureValuesTableName = null`: `feature_values` on PostgreSQL, `FeatureValues` elsewhere
+- `FeatureDefinitionsTableName = null`: `feature_definitions` on PostgreSQL, `FeatureDefinitions` elsewhere
+- `FeatureGroupDefinitionsTableName = null`: `feature_group_definitions` on PostgreSQL, `FeatureGroupDefinitions` elsewhere
 - `InitializeOnStartup = true`
 
 The registration validates identifier names using cross-provider rules (SQL Server superset). The startup gate inspects the EF model before hosted services start and fails with an actionable message if any features entity is missing.
@@ -421,7 +423,7 @@ PostgreSQL raw-DDL storage for feature management.
 - `setup.UsePostgreSql(Action<PostgreSqlFeaturesOptions> configure)` — overload for full option control
 - `setup.UsePostgreSql(Action<PostgreSqlFeaturesOptions, IServiceProvider> configure)` — overload with service-provider access for late-bound configuration
 - `setup.UsePostgreSql()` — reads the connection registered by `AddPostgreSqlSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
-- Idempotent schema, table, and index creation at host startup via `PostgreSqlFeaturesStorageInitializer`
+- Idempotent schema, table, and index creation at host startup via `PostgreSqlFeaturesStorageInitializer`, with snake_case tables, columns, keys, and indexes (`feature_values`, `provider_key`, `ix_feature_values_provider_name_provider_key`)
 - Raw ADO.NET repositories for feature values, feature definitions, and feature group definitions
 - `PostgreSqlFeaturesOptions` — connection string and command timeout (`CommandTimeout`, default 30 seconds)
 - Shares `FeaturesStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)

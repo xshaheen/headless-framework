@@ -4,12 +4,15 @@ using System.Data;
 using System.Data.Common;
 using Headless.Abstractions;
 using Headless.Caching;
+using Headless.Features;
 using Headless.Features.Definitions;
 using Headless.Features.Entities;
 using Headless.Features.Repositories;
 using Headless.Features.Values;
 using Headless.Hosting.Initialization;
 using Headless.Testing.Tests;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -25,6 +28,69 @@ public abstract class FeaturesStorageConformanceTests<TFixture>(TFixture fixture
     where TFixture : IFeaturesStorageFixture
 {
     private const string _Schema = "features_conformance";
+
+    [Fact]
+    public async Task should_create_the_same_tables_columns_and_indexes_the_ef_model_maps()
+    {
+        // given — the raw initializer and the EF mapping must agree name for name, or an application that
+        // provisions with one and reads with the other fails at its first query
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
+        await host.StartAsync(AbortToken);
+        var builder = new DbContextOptionsBuilder<ParityDbContext>();
+        fixture.UseEntityFrameworkProvider(builder, fixture.ConnectionString);
+        await using var context = new ParityDbContext(
+            builder.Options,
+            new FeaturesStorageOptions { Schema = _Schema },
+            fixture.NamingStyle
+        );
+
+        // when
+        var created = await fixture.ReadStoreObjectsAsync(_Schema, AbortToken);
+        var mapped = _MappedObjects(context.Model);
+
+        // then
+        created.Columns.Should().BeEquivalentTo(mapped.Columns);
+        created.Indexes.Should().BeEquivalentTo(mapped.Indexes);
+    }
+
+    private static FeaturesStoreObjects _MappedObjects(IModel model)
+    {
+        var columns = new HashSet<string>(StringComparer.Ordinal);
+        var indexes = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var entity in model.GetEntityTypes())
+        {
+            var tableName = entity.GetTableName()!;
+            var table = StoreObjectIdentifier.Table(tableName, entity.GetSchema());
+
+            foreach (var property in entity.GetProperties())
+            {
+                columns.Add($"{tableName}.{property.GetColumnName(table)}");
+            }
+
+            indexes.Add($"{tableName}.{entity.FindPrimaryKey()!.GetName()}");
+
+            foreach (var index in entity.GetIndexes())
+            {
+                indexes.Add($"{tableName}.{index.GetDatabaseName()}");
+            }
+        }
+
+        return new FeaturesStoreObjects(columns, indexes);
+    }
+
+    private sealed class ParityDbContext(
+        DbContextOptions<ParityDbContext> options,
+        FeaturesStorageOptions storageOptions,
+        StorageNamingStyle style
+    ) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.AddHeadlessFeatures(storageOptions, style);
+        }
+    }
 
     [Fact]
     public async Task should_initialize_tables_and_round_trip_feature_value_and_definition()
@@ -58,9 +124,28 @@ public abstract class FeaturesStorageConformanceTests<TFixture>(TFixture fixture
 
         // then
         initializer.IsInitialized.Should().BeTrue();
-        (await fixture.TableExistsAsync(_Schema, "FeatureValues", AbortToken)).Should().BeTrue();
-        (await fixture.TableExistsAsync(_Schema, "FeatureDefinitions", AbortToken)).Should().BeTrue();
-        (await fixture.TableExistsAsync(_Schema, "FeatureGroupDefinitions", AbortToken)).Should().BeTrue();
+        var names = new FeaturesStorageOptions();
+        (await fixture.TableExistsAsync(_Schema, names.ResolveFeatureValuesTableName(fixture.NamingStyle), AbortToken))
+            .Should()
+            .BeTrue();
+        (
+            await fixture.TableExistsAsync(
+                _Schema,
+                names.ResolveFeatureDefinitionsTableName(fixture.NamingStyle),
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+        (
+            await fixture.TableExistsAsync(
+                _Schema,
+                names.ResolveFeatureGroupDefinitionsTableName(fixture.NamingStyle),
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
         stored.Should().NotBeNull();
         stored!.Value.Should().Be("true");
         storedGroups.Should().ContainSingle(x => x.Name == "Checkout");
