@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
 using Headless.Hosting.Initialization;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -136,7 +137,10 @@ public static class DependencyInjectionExtensions
     /// <exception cref="InvalidOperationException">
     /// Thrown when no unkeyed registration exists for <typeparamref name="TService"/>.
     /// </exception>
-    public static IServiceCollection Decorate<TService, TDecorator>(this IServiceCollection services)
+    public static IServiceCollection Decorate<
+        TService,
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TDecorator
+    >(this IServiceCollection services)
         where TService : class
         where TDecorator : class, TService
     {
@@ -183,7 +187,10 @@ public static class DependencyInjectionExtensions
     /// <param name="services">The service collection.</param>
     /// <returns><see langword="true"/> if at least one registration was decorated; otherwise <see langword="false"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is <see langword="null"/>.</exception>
-    public static bool TryDecorate<TService, TDecorator>(this IServiceCollection services)
+    public static bool TryDecorate<
+        TService,
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TDecorator
+    >(this IServiceCollection services)
         where TService : class
         where TDecorator : class, TService
     {
@@ -388,7 +395,10 @@ public static class DependencyInjectionExtensions
     /// <param name="services">The service collection.</param>
     /// <returns><see langword="true"/> if an existing registration was removed (replaced); <see langword="false"/> if the service was newly added.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is <see langword="null"/>.</exception>
-    public static bool AddOrReplaceScoped<TService, TImplementation>(this IServiceCollection services)
+    public static bool AddOrReplaceScoped<
+        TService,
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TImplementation
+    >(this IServiceCollection services)
         where TService : class
         where TImplementation : class, TService
     {
@@ -422,7 +432,10 @@ public static class DependencyInjectionExtensions
     /// <param name="services">The service collection.</param>
     /// <returns><see langword="true"/> if an existing registration was removed (replaced); <see langword="false"/> if the service was newly added.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is <see langword="null"/>.</exception>
-    public static bool AddOrReplaceTransient<TService, TImplementation>(this IServiceCollection services)
+    public static bool AddOrReplaceTransient<
+        TService,
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TImplementation
+    >(this IServiceCollection services)
         where TService : class
         where TImplementation : class, TService
     {
@@ -456,7 +469,10 @@ public static class DependencyInjectionExtensions
     /// <param name="services">The service collection.</param>
     /// <returns><see langword="true"/> if an existing registration was removed (replaced); <see langword="false"/> if the service was newly added.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is <see langword="null"/>.</exception>
-    public static bool AddOrReplaceSingleton<TService, TImplementation>(this IServiceCollection services)
+    public static bool AddOrReplaceSingleton<
+        TService,
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TImplementation
+    >(this IServiceCollection services)
         where TService : class
         where TImplementation : class, TService
     {
@@ -502,9 +518,11 @@ public static class DependencyInjectionExtensions
     /// is indistinguishable from a consumer override here and is intentionally preserved. Register
     /// fallbacks by type to make them replaceable.
     /// </remarks>
-    public static bool AddOrReplaceFallbackSingleton<TService, TFallback, TImplementation>(
-        this IServiceCollection services
-    )
+    public static bool AddOrReplaceFallbackSingleton<
+        TService,
+        TFallback,
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TImplementation
+    >(this IServiceCollection services)
         where TService : class
         where TFallback : class, TService
         where TImplementation : class, TService
@@ -760,7 +778,9 @@ public static class DependencyInjectionExtensions
     /// two-argument overload of <c>ServiceDescriptor.Singleton&lt;TService, TImplementation&gt;</c>
     /// is what allows <c>TryAddEnumerable</c> to deduplicate by implementation type.
     /// </remarks>
-    public static IServiceCollection AddInitializerHostedService<T>(this IServiceCollection services)
+    public static IServiceCollection AddInitializerHostedService<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T
+    >(this IServiceCollection services)
         where T : class, IHostedService, IInitializer
     {
         Argument.IsNotNull(services);

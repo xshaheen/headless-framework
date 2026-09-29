@@ -454,6 +454,8 @@ No configuration required.
 ### Runtime behavior
 
 None directly. Utilities for managing service registration.
+
+`Headless.Hosting` declares `IsAotCompatible`. The helpers that construct a type argument (`AddOrReplace*`, `Decorate`, `AddOptions<TOptions, TValidator>`, `Configure<TOption, TOptionValidator>`, `AddSeeder`, `AddStartupValidator`) annotate it with `DynamicallyAccessedMembers`, so trimming keeps the constructor the container calls. The helpers that bind an `IConfiguration` (`GetOptions`, `GetRequired`, and the `Configure*` overloads that take one) or validate with data annotations are marked `[RequiresUnreferencedCode]`, and the binding ones also `[RequiresDynamicCode]`, so a trimmed or native AOT app gets a warning at the call site instead of a failure at startup. In such an app, configure options through the `Action<TOptions>` overloads with FluentValidation.
 ---
 ## Headless.NetTopologySuite
 
