@@ -3,10 +3,10 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
-using Headless.Testing.AspNetCore;
+using Headless.Testing.Helpers;
 using Headless.Testing.Tests;
 
-namespace Tests;
+namespace Tests.Helpers;
 
 public sealed class TenantIsolationHttpAssertionsTests : TestBase
 {

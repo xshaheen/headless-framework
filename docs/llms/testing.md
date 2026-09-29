@@ -12,7 +12,7 @@ packages: Testing, Testing.AspNetCore, Testing.Testcontainers, EntityFramework.T
 - `Headless.Testing` -- base classes (`TestBase`), retry attributes, fake helpers (`TestCurrentUser`, `TestCurrentTenant`), the `AddTestTimeProvider()` DI extension, and assertion extensions. Used for unit tests.
 - `Headless.Testing.AspNetCore` -- `HeadlessTestServer<TProgram>`, a `WebApplicationFactory<TProgram>` wrapper with deterministic time, DI-scope helpers, readiness polling, and Respawner-based database reset. Used for ASP.NET Core integration tests.
 - `Headless.Testing.Testcontainers` -- pre-configured Docker container fixtures (e.g., `HeadlessRedisFixture`). Used for integration tests requiring real infrastructure.
-- `Headless.EntityFramework.Testing` -- `TenantIsolationDbAssertions`, which prove a tenant-owned EF Core entity is invisible and unwritable to another tenant. Pairs with `TenantWorld` from `Headless.Testing` and `TenantIsolationHttpAssertions` from `Headless.Testing.AspNetCore`; see [Tenant isolation](#tenant-isolation).
+- `Headless.EntityFramework.Testing` -- `TenantIsolationDbAssertions`, which prove a tenant-owned EF Core entity is invisible and unwritable to another tenant. Pairs with `TenantWorld` and `TenantIsolationHttpAssertions` from `Headless.Testing`; see [Tenant isolation](#tenant-isolation).
 - `Headless.Messaging.Testing` -- `MessagingTestHarness` that records messages at the transport boundary (covers outboxed and direct-published) and exposes typed `WaitForPublished`/`Consumed`/`Faulted`/`Exhausted` APIs.
 
 Typical unit test inherits from `TestBase`, which provides `Logger`, `Faker`, and `AbortToken` out of the box. Integration tests typically build a shared xUnit collection fixture around `HeadlessTestServer<TProgram>` plus any required Testcontainers fixtures, then derive per-test classes from an `IntegrationTestBase : TestBase` that resets fixture state per test.
@@ -50,6 +50,7 @@ Core testing utilities and base classes for xUnit tests.
 - `AlfaTestsOrderer` - Alphabetical test ordering
 - `TestHelpers` - Logging factory and utility methods
 - `TestCurrentUser` / `TestCurrentTenant` - Fake context implementations
+- `TenantIsolationHttpAssertions.ShouldAnswerNotFoundAcrossTenantsAsync(...)` - Asserts a cross-tenant request answers exactly like a missing id, over any `HttpClient`; see [Tenant isolation](#tenant-isolation)
 - `TenantWorld` - Tenants A and B over one `ICurrentTenant`, with `AsTenantA()`, `AsTenantB()`, `AsTenant(id)`, and `AsHost()` scopes and a static `CreatePrincipal(tenantId)`; see [Tenant isolation](#tenant-isolation)
 - `AddTestTimeProvider()` - Replaces the container's `TimeProvider` with a `FakeTimeProvider` and returns it
 - Assertion extensions for async operations
@@ -161,7 +162,6 @@ ASP.NET Core integration-test host wrapper with controllable time, DI-scope help
   database, I/O, socket, and broken-connection failures up to three times, replacing the reset
   connection between attempts.
 - `ResetMessagingHarnessAsync()` waits for the `MessagingTestHarness`'s in-flight publish and consume work, then clears its observation buffers and in-memory storage between tests.
-- `TenantIsolationHttpAssertions.ShouldAnswerNotFoundAcrossTenantsAsync(...)` asserts a cross-tenant request answers exactly like a missing id; see [Tenant isolation](#tenant-isolation).
 
 ### Design constraints
 
@@ -438,13 +438,13 @@ No configuration required. Containers use sensible defaults.
 - Containers are stopped after tests complete; with reuse enabled on the host they are kept stopped for the next run to reattach
 ## Tenant isolation
 
-A tenant-isolation test seeds a row as tenant A and then probes it as tenant B. The kit spans three packages so `Headless.Testing` stays free of EF Core and ASP.NET Core:
+A tenant-isolation test seeds a row as tenant A and then probes it as tenant B. The kit spans two packages so `Headless.Testing` stays free of EF Core. The HTTP assertion needs only an `HttpClient`, so it works with `HeadlessTestServer.CreateClient()` or any other client:
 
 | Package | Type | Proves |
 | --- | --- | --- |
 | `Headless.Testing` | `TenantWorld` | Nothing by itself: supplies tenants A and B and the scopes that make one current. |
+| `Headless.Testing` | `TenantIsolationHttpAssertions` | A route answers a request for A's resource exactly as it answers a missing id. |
 | `Headless.EntityFramework.Testing` | `TenantIsolationDbAssertions` | Tenant B's query for A's row is empty, and B's update and delete of it throw `CrossTenantWriteException`. |
-| `Headless.Testing.AspNetCore` | `TenantIsolationHttpAssertions` | A route answers a request for A's resource exactly as it answers a missing id. |
 
 ### What the kit asserts, and what the framework guarantees
 
