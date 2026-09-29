@@ -143,13 +143,12 @@ internal static partial class UnitOfWorkRunner
                 {
                     var connection = await openConnection(ct).ConfigureAwait(false);
 
-                    // Disposed only after the attempt returns, which is after its unit was unwound or completed.
+                    // Disposed only after the attempt returns, which is after its unit was rolled back or completed.
                     await using (connection.ConfigureAwait(false))
                     {
                         return await _RunAttemptAsync(
                                 attemptCt => begin(connection, attemptCt),
                                 (unitOfWork, attemptCt) => operation(unitOfWork, connection, attemptCt),
-                                UnitOfWorkAttemptUnwind.RollBack,
                                 logger,
                                 ct
                             )
