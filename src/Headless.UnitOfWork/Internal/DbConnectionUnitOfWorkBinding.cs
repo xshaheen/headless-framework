@@ -20,10 +20,22 @@ internal static class DbConnectionUnitOfWorkBinding
 
     public static bool TryGet(DbConnection connection, out IUnitOfWork unit) => _Binding.TryGet(connection, out unit);
 
+    /// <summary>The lookup for a caller about to begin on <paramref name="connection" />: a stale unit is abandoned before this returns.</summary>
+    public static ValueTask<IUnitOfWork?> TryGetAsync(DbConnection connection) => _Binding.TryGetAsync(connection);
+
     /// <summary>Throws the catalogued refusal when <paramref name="connection" /> already carries a live unit.</summary>
     public static void ThrowIfBound(DbConnection connection)
     {
         if (TryGet(connection, out _))
+        {
+            throw new InvalidOperationException(AlreadyBoundMessage);
+        }
+    }
+
+    /// <summary><see cref="ThrowIfBound" /> for a begin: a stale unit's rollback and connection close finish first.</summary>
+    public static async ValueTask ThrowIfBoundAsync(DbConnection connection)
+    {
+        if (await TryGetAsync(connection).ConfigureAwait(false) is not null)
         {
             throw new InvalidOperationException(AlreadyBoundMessage);
         }

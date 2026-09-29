@@ -182,8 +182,9 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
                 async ct =>
                 {
                     // An owning begin on a context (or connection) that already carries a live unit is refused:
-                    // RunAsync is the join, and a second transaction on the same context is never the answer.
-                    DbContextUnitOfWorkBinding.ThrowIfBound(db);
+                    // RunAsync is the join, and a second transaction on the same context is never the answer. A
+                    // stale unit is abandoned inline, so its transaction is gone before the begin below.
+                    await DbContextUnitOfWorkBinding.ThrowIfBoundAsync(db).ConfigureAwait(false);
 
                     if (db.Database.CurrentTransaction is not null)
                     {
@@ -228,27 +229,29 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
     {
         Argument.IsNotNull(db);
 
-        // A joined block belongs to the owner's unit and the owner's execution strategy: it runs inline, a fault
-        // propagates to the owner's block, which is what unwinds the unit, and a block that ends the unit itself
-        // is refused once it returns.
-        if (DbContextUnitOfWorkBinding.TryGet(db, out var joined))
-        {
-            return UnitOfWorkRunner.RunJoinedAsync(joined, operation, cancellationToken);
-        }
-
-        // Refused here, before the strategy, so the caller sees the EF-specific remedy: the connection-owned unit
-        // is a raw-ADO one, and an EF block cannot join it (the context would begin a second transaction on the
-        // connection the ADO unit already owns).
-        DbContextUnitOfWorkBinding.ThrowIfConnectionBound(db);
-
         return UnitOfWorkRunner.RunAsync(
-            joined: null,
+            async () =>
+            {
+                // A context (or the connection beneath it) that already carries a live unit joins it: the block
+                // runs inline inside the owner's unit, outside any strategy of its own, and a block that ends
+                // the unit is refused once it returns.
+                if (await DbContextUnitOfWorkBinding.TryGetAsync(db).ConfigureAwait(false) is { } joined)
+                {
+                    return joined;
+                }
+
+                // Refused here, before the strategy, so the caller sees the EF-specific remedy: the connection-owned
+                // unit came from a raw-ADO begin, which an EF block can neither own nor join (the context would
+                // begin a second transaction on the connection the ADO unit already owns).
+                await DbContextUnitOfWorkBinding.ThrowIfConnectionBoundAsync(db).ConfigureAwait(false);
+
+                return null;
+            },
             // Retries are legal here: this begin runs inside the strategy, so the retrying check is suppressed and
             // a transient failure replays with a fresh unit and transaction.
             ct => _BeginAsync(factory, db, isolation, rejectRetryingStrategy: false, ct),
             operation,
             new EfUnitOfWorkExecutionStrategy(db.Database.CreateExecutionStrategy()),
-            UnitOfWorkAttemptUnwind.Dispose,
             UnitOfWorkRunner.LoggerFor(factory),
             cancellationToken
         );
