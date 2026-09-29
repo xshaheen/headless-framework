@@ -64,6 +64,37 @@ public sealed class TenantCatalogOptionsValidatorTests
     }
 
     [Theory]
+    [InlineData(1)]
+    [InlineData(63)]
+    [InlineData(253)]
+    public void should_accept_max_identifier_length_up_to_the_hostname_limit(int length)
+    {
+        // given
+        var options = new TenantCatalogOptions { MaxIdentifierLength = length };
+
+        // when
+        var result = _sut.TestValidate(options);
+
+        // then
+        result.ShouldNotHaveValidationErrorFor(x => x.MaxIdentifierLength);
+    }
+
+    [Theory]
+    [InlineData(254)]
+    [InlineData(int.MaxValue)]
+    public void should_reject_max_identifier_length_above_the_hostname_limit(int length)
+    {
+        // given
+        var options = new TenantCatalogOptions { MaxIdentifierLength = length };
+
+        // when
+        var result = _sut.TestValidate(options);
+
+        // then
+        result.ShouldHaveValidationErrorFor(x => x.MaxIdentifierLength);
+    }
+
+    [Theory]
     [InlineData(0)]
     [InlineData(-1)]
     public void should_reject_zero_or_negative_max_identifier_length(int length)
