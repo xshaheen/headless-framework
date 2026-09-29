@@ -5,7 +5,6 @@ using Headless.Abstractions;
 using Headless.Api.Idempotency;
 using Headless.Constants;
 using Headless.Idempotency;
-using Headless.MultiTenancy;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
@@ -59,23 +58,6 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         var nextCalled = false;
 
         await middleware.InvokeAsync(context, _ => _Run(() => nextCalled = true));
-
-        nextCalled.Should().BeTrue();
-        operations.ReceivedCalls().Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task should_pass_through_without_store_call_when_tenant_and_user_are_null()
-    {
-        var operations = CreateAdmittingOperations();
-        var tenant = Substitute.For<ICurrentTenant>();
-        tenant.Id.Returns((string?)null);
-        var user = Substitute.For<ICurrentUser>();
-        user.UserId.Returns((UserId?)null);
-        var middleware = CreateMiddleware(operations: operations, currentTenant: tenant, currentUser: user);
-        var nextCalled = false;
-
-        await middleware.InvokeAsync(CreateContext(idempotencyKey: "k1"), _ => _Run(() => nextCalled = true));
 
         nextCalled.Should().BeTrue();
         operations.ReceivedCalls().Should().BeEmpty();

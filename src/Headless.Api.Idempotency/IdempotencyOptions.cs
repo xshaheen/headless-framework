@@ -81,19 +81,28 @@ public sealed class IdempotencyOptions
     public OnStoreErrorBehavior OnStoreError { get; set; } = OnStoreErrorBehavior.Throw;
 
     /// <summary>
-    /// Whether the default <see cref="KeyDeriver"/> requires an authenticated user identity in
-    /// addition to a tenant. Defaults to <see langword="true"/>. When <see langword="true"/>,
+    /// Whether the default key derivation requires an authenticated user identity. Defaults to
+    /// <see langword="true"/>. When <see langword="true"/> and no <see cref="KeyDeriver"/> is set,
     /// requests without a resolved <c>ICurrentUser.UserId</c> are passed through without
-    /// idempotency — preventing two anonymous callers in the same tenant from cross-replaying
-    /// each other's responses on a shared idempotency key.
+    /// idempotency, so two anonymous callers cannot cross-replay each other's responses on a
+    /// shared idempotency key.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Set to <see langword="false"/> for endpoints that legitimately accept anonymous traffic
-    /// at the tenant level (webhook receivers, OAuth callbacks). The key scope falls back
-    /// to <c>idem::{method}:{path}{?query}:{key}</c> within the tenant — two anonymous callers in
-    /// the same tenant sharing an Idempotency-Key WILL replay each other's responses. Operators
-    /// turning this off should ensure callers within the tenant boundary are mutually trusted
-    /// or configure <see cref="KeyDeriver"/> with a stable per-caller identifier.
+    /// (webhook receivers, OAuth callbacks). The key scope falls back to
+    /// <c>idem::{method}:{path}{?query}:{key}</c>, and the store keys every anonymous record under
+    /// the host scope (no tenant), whatever tenant pre-auth resolution routed the request to: a
+    /// caller-controlled host or header must not choose a tenant's namespace.
+    /// </para>
+    /// <para>
+    /// All anonymous callers therefore share one namespace across tenants. Two anonymous callers
+    /// sending the same key to the same method, path, and query replay each other's responses,
+    /// even when they were routed to different tenants, and any caller can pre-seed a key an
+    /// anonymous sender will later use. Configure <see cref="KeyDeriver"/> with a verified
+    /// per-caller discriminator (for example the account a webhook signature was verified for)
+    /// when callers are not mutually trusted.
+    /// </para>
     /// </remarks>
     public bool RequireUserIdentity { get; set; } = true;
 
@@ -152,11 +161,19 @@ public sealed class IdempotencyOptions
     /// skips idempotency for the request.
     /// </summary>
     /// <remarks>
-    /// The durable store scopes every key by the current tenant, so the scope does not need to carry it. The store key
-    /// is the SHA-256 hex of the scope, which keeps long paths and header values within the store's key limit. The
-    /// default derivation is unsafe for fully anonymous routes (no tenant, no authenticated user): if both identifiers
-    /// are missing, the middleware refuses to apply idempotency and passes the request through. For anonymous or
-    /// single-tenant endpoints, configure <see cref="KeyDeriver"/> explicitly so the scope is unambiguous.
+    /// <para>
+    /// The durable store keys every record by the authenticated principal's tenant claim (the claim type
+    /// <c>MultiTenancyOptions.ClaimType</c> configures), or by the host scope for a principal without one and for
+    /// anonymous requests, so the scope does not need to carry the tenant. The ambient tenant is never used: pre-auth
+    /// resolution sets it from the host or a header the caller controls. A custom deriver changes only the scope; the
+    /// store tenant follows the same rule. An authenticated principal without a tenant claim shares the host scope
+    /// with every tenant's claim-less users, so its records stay apart only while user ids are unique across tenants.
+    /// </para>
+    /// <para>
+    /// The store key is the SHA-256 hex of the scope, which keeps long paths and header values within the store's key
+    /// limit. A custom deriver runs before and instead of the <see cref="RequireUserIdentity"/> check, so it can admit
+    /// anonymous requests with a scope that carries its own verified discriminator.
+    /// </para>
     /// </remarks>
     public Func<HttpContext, string, string>? KeyDeriver { get; set; }
 

@@ -2,6 +2,7 @@
 
 using System.Security.Cryptography;
 using Headless.Abstractions;
+using Headless.Api;
 using Headless.Api.Idempotency;
 using Headless.Constants;
 using Headless.Idempotency;
@@ -31,6 +32,7 @@ public abstract class IdempotencyMiddlewareTestBase : TestBase
         IIdempotentOperations? operations = null,
         ICurrentTenant? currentTenant = null,
         ICurrentUser? currentUser = null,
+        IOptions<MultiTenancyOptions>? tenancyOptions = null,
         IProblemDetailsCreator? problemDetailsCreator = null,
         TimeProvider? timeProvider = null,
         ICancellationTokenProvider? cancellationTokenProvider = null,
@@ -56,6 +58,7 @@ public abstract class IdempotencyMiddlewareTestBase : TestBase
             currentUser.UserId.Returns(new UserId("u1"));
         }
 
+        tenancyOptions ??= Options.Create(new MultiTenancyOptions());
         problemDetailsCreator ??= CreateProblemDetailsCreator();
         timeProvider ??= new FakeTimeProvider(DateTimeOffset.UtcNow);
 
@@ -72,6 +75,7 @@ public abstract class IdempotencyMiddlewareTestBase : TestBase
             operations,
             currentTenant,
             currentUser,
+            tenancyOptions,
             problemDetailsCreator,
             timeProvider,
             cancellationTokenProvider,

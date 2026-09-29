@@ -52,6 +52,27 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
         AdmittedKeys(operations).Should().ContainSingle().Which.Should().Be(expectedKey);
     }
 
+    [Fact]
+    public async Task should_pass_through_without_store_call_when_key_deriver_returns_empty_scope()
+    {
+        var operations = CreateAdmittingOperations();
+        var options = new IdempotencyOptions { KeyDeriver = (_, _) => string.Empty };
+        var middleware = _CreateMiddlewareWithOptions(options, operations);
+        var nextCalled = false;
+
+        await middleware.InvokeAsync(
+            _CreateLocalContext(key: "abc"),
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            }
+        );
+
+        nextCalled.Should().BeTrue();
+        operations.ReceivedCalls().Should().BeEmpty();
+    }
+
     // ── RequestFingerprint ───────────────────────────────────────────────────
 
     [Fact]

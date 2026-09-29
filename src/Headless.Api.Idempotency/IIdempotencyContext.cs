@@ -37,7 +37,8 @@ public interface IIdempotencyContext
 
     /// <summary>
     /// Gets the idempotency key the durable store admitted: the lowercase SHA-256 hex of <see cref="Scope" />. The
-    /// store scopes it by the current tenant.
+    /// store scopes it by the authenticated principal's tenant claim (the host scope when there is none), recorded on
+    /// <see cref="Admission" />.
     /// </summary>
     string Key { get; }
 
