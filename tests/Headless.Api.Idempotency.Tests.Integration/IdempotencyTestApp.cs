@@ -1,12 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using Headless.Abstractions;
 using Headless.Api.Abstractions;
 using Headless.Api.Idempotency;
-using Headless.Caching;
 using Headless.Core;
-using Headless.DistributedLocks;
 using Headless.MultiTenancy;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Builder;
@@ -16,24 +13,22 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
 
 /// <summary>
-/// Minimal test harness: wires the idempotency middleware against an in-memory cache,
-/// exposes endpoints that exercise specific response shapes the integration tests assert on.
+/// Minimal test harness: wires the idempotency middleware against a real durable store (PostgreSQL or SQL Server,
+/// chosen by the caller's fixture) and exposes endpoints that exercise specific response shapes the integration
+/// tests assert on.
 /// </summary>
 internal static class IdempotencyTestApp
 {
     public static async Task<WebApplication> CreateAsync(
+        Action<IServiceCollection> configureStore,
         Action<IdempotencyOptions>? configure = null,
         Action<WebApplication>? mapAdditionalEndpoints = null,
         string? tenantHeaderName = null,
-        bool withLockProvider = false,
-        TestHandlerGate? handlerGate = null,
-        InMemoryDistributedLockDouble? lockProvider = null,
-        Action<IServiceCollection>? configureServices = null
+        TestHandlerGate? handlerGate = null
     )
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Test" });
@@ -46,7 +41,6 @@ internal static class IdempotencyTestApp
 
         // Framework primitives required by IdempotencyMiddleware constructor
         builder.Services.TryAddSingleton(TimeProvider.System);
-        builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.TryAddSingleton<ICancellationTokenProvider, HttpContextCancellationTokenProvider>();
         builder.Services.TryAddSingleton<IBuildInformationAccessor, NullBuildInformationAccessor>();
         builder.Services.AddHttpContextAccessor();
@@ -58,29 +52,14 @@ internal static class IdempotencyTestApp
         builder.Services.AddScoped<ICurrentTenant>(_ => tenantState.CurrentForRequest());
 
         // Current user: a context-driven singleton so tests can swap user identity
-        // per request. Defaults to an authenticated test user — the default cache-key
+        // per request. Defaults to an authenticated test user — the default key
         // composition refuses idempotency when both tenant and user are absent.
         var userState = new TestCurrentUserState();
         builder.Services.AddSingleton(userState);
         builder.Services.AddScoped<ICurrentUser>(_ => userState.CurrentForRequest());
 
-        // In-memory cache (no Redis dependency for v1)
-        builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
-
-        // Optional in-memory distributed-lock provider for WaitAndReplay tests. Built on a
-        // SemaphoreSlim-per-resource map; the production wiring (DistributedLock in
-        // Headless.DistributedLocks.Core) depends on IBus which would force the
-        // tests to spin up the messaging infrastructure. The middleware only exercises
-        // TryAcquireAsync + IDistributedLease.DisposeAsync, so the test double covers exactly
-        // the surface under test.
-        if (lockProvider is not null)
-        {
-            builder.Services.AddSingleton<IDistributedLock>(lockProvider);
-        }
-        else if (withLockProvider)
-        {
-            builder.Services.AddSingleton<IDistributedLock, InMemoryDistributedLockDouble>();
-        }
+        // Durable store: fencing + idempotency against the fixture's database.
+        configureStore(builder.Services);
 
         // Optional handler gate for concurrency tests. When the gate is supplied
         // the default /echo endpoint awaits the gate before completing, so tests can hold the
@@ -97,13 +76,9 @@ internal static class IdempotencyTestApp
             configure?.Invoke(o);
         });
 
-        // Tests can override or replace any of the above registrations (e.g., swap ICache for a
-        // throwing decorator). Runs after the default wiring so Replace<TService>() works.
-        configureServices?.Invoke(builder.Services);
-
         var app = builder.Build();
 
-        // Tenant resolution from a custom header BEFORE idempotency (so the cache-key sees the tenant)
+        // Tenant resolution from a custom header BEFORE idempotency (so the store key sees the tenant)
         if (tenantHeaderName is not null)
         {
             app.Use(
@@ -159,6 +134,29 @@ internal static class IdempotencyTestApp
             (HttpContext ctx, [FromQuery] int code) =>
             {
                 ctx.Response.StatusCode = code;
+                return Task.CompletedTask;
+            }
+        );
+
+        // Surfaces the admission a handler reaches through IIdempotencyContext, so tests can assert on it.
+        app.MapPost(
+            "/context",
+            ctx =>
+            {
+                var idempotency = ctx.GetIdempotencyContext();
+                if (idempotency is null)
+                {
+                    ctx.Response.StatusCode = StatusCodes.Status200OK;
+                    return Task.CompletedTask;
+                }
+
+                ctx.Response.Headers["X-Idempotency-Key"] = idempotency.Key;
+                ctx.Response.Headers["X-Idempotency-Admission-Key"] = idempotency.Admission.Key.Key;
+                ctx.Response.Headers["X-Idempotency-Generation"] = idempotency.Generation.ToString(
+                    CultureInfo.InvariantCulture
+                );
+                ctx.Response.Headers["X-Idempotency-Takeover"] = idempotency.IsTakeover.ToString();
+                ctx.Response.StatusCode = StatusCodes.Status201Created;
                 return Task.CompletedTask;
             }
         );
@@ -328,533 +326,6 @@ internal static class IdempotencyTestApp
             {
                 await Task.Delay(20).ConfigureAwait(false);
             }
-        }
-    }
-
-    /// <summary>
-    /// <para>
-    /// In-memory <see cref="IDistributedLock"/> that models lease expiry. Each resource
-    /// tracks an owner lock-id and an absolute expiration timestamp; <c>TryAcquireAsync</c>
-    /// considers the slot free either when no owner is set OR when the current owner's lease has
-    /// elapsed (lock stealing). Releasing a lock whose lease already expired is a silent no-op so
-    /// the original holder cannot disturb a successor.
-    /// </para>
-    /// <para>
-    /// Why model expiry: production lock providers (Redis SET NX PX, ZooKeeper ephemeral nodes)
-    /// always allow another caller to acquire a previously-leased resource once the lease elapses,
-    /// even if the original holder has not released. A pure semaphore-per-resource double hides
-    /// this behavior — handler code that depends on lease semantics (e.g., short
-    /// <c>WinnerLockLease</c> values, lease-shorter-than-handler-runtime bugs) passes integration
-    /// tests against a semaphore double and fails in production against Redis.
-    /// </para>
-    /// <para>
-    /// Implements only TryAcquireAsync + IDistributedLease.DisposeAsync — the surface the
-    /// idempotency middleware actually uses. Other interface methods throw NotSupportedException.
-    /// </para>
-    /// </summary>
-    internal sealed class InMemoryDistributedLockDouble(TimeProvider timeProvider) : IDistributedLock
-    {
-        internal sealed class LockSlot(TimeProvider timeProvider)
-        {
-            private readonly Lock _sync = new();
-            private string _ownerLockId = string.Empty;
-            private DateTimeOffset _expiresAt = DateTimeOffset.MinValue;
-
-            public string? TryAcquireOrSteal(TimeSpan lease)
-            {
-                lock (_sync)
-                {
-                    var now = timeProvider.GetUtcNow();
-                    if (_ownerLockId.Length != 0 && now < _expiresAt)
-                    {
-                        return null;
-                    }
-
-                    var newLockId = Guid.NewGuid().ToString("N");
-                    _ownerLockId = newLockId;
-                    _expiresAt = now + lease;
-                    return newLockId;
-                }
-            }
-
-            public void ReleaseIfOwner(string leaseId)
-            {
-                lock (_sync)
-                {
-                    if (string.Equals(_ownerLockId, leaseId, StringComparison.Ordinal))
-                    {
-                        _ownerLockId = string.Empty;
-                        _expiresAt = DateTimeOffset.MinValue;
-                    }
-                }
-            }
-        }
-
-        private readonly ConcurrentDictionary<string, LockSlot> _slots = new(StringComparer.Ordinal);
-
-        /// <summary>
-        /// Test hook fired before the lock state is evaluated. Receives the resource name, the
-        /// lease (<c>timeUntilExpires</c>), the acquire timeout, and the cancellation token.
-        /// Tests use this to widen specific race windows (e.g., the WaitAndReplay
-        /// TryInsert→TryAcquire race), capture argument values for assertions, or throw to
-        /// simulate provider outages. No mutual exclusion is held during the hook.
-        /// </summary>
-        public Func<string, TimeSpan?, TimeSpan?, CancellationToken, Task>? BeforeAcquireAsync { get; init; }
-
-        public TimeProvider TimeProvider => timeProvider;
-
-        public ILogger Logger => NullLogger.Instance;
-
-        public TimeSpan DefaultTimeUntilExpires => TimeSpan.FromMinutes(20);
-
-        public TimeSpan DefaultAcquireTimeout => TimeSpan.FromSeconds(30);
-
-        public async Task<IDistributedLease> AcquireAsync(
-            string resource,
-            DistributedLockAcquireOptions? options = null,
-            CancellationToken cancellationToken = default
-        )
-        {
-            return await TryAcquireAsync(resource, options, cancellationToken).ConfigureAwait(false)
-                ?? throw new LockAcquisitionTimeoutException(resource);
-        }
-
-        public async Task<IDistributedLease?> TryAcquireAsync(
-            string resource,
-            DistributedLockAcquireOptions? options = null,
-            CancellationToken cancellationToken = default
-        )
-        {
-            var timeUntilExpires = options?.TimeUntilExpires;
-            var acquireTimeout = options?.AcquireTimeout;
-
-            if (BeforeAcquireAsync is not null)
-            {
-                await BeforeAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            var lease = timeUntilExpires ?? DefaultTimeUntilExpires;
-            var acquireTimeoutEffective = acquireTimeout ?? DefaultAcquireTimeout;
-            var slot = _slots.GetOrAdd(resource, static (_, provider) => new LockSlot(provider), timeProvider);
-            var deadline = timeProvider.GetUtcNow() + acquireTimeoutEffective;
-
-            while (true)
-            {
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    return null;
-                }
-
-                var acquiredLockId = slot.TryAcquireOrSteal(lease);
-                if (acquiredLockId is not null)
-                {
-                    return new InMemoryDistributedLease(resource, acquiredLockId, slot, timeProvider);
-                }
-
-                if (timeProvider.GetUtcNow() >= deadline)
-                {
-                    return null;
-                }
-
-                try
-                {
-                    await timeProvider.Delay(TimeSpan.FromMilliseconds(10), cancellationToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    return null;
-                }
-            }
-        }
-
-        public Task<bool> RenewAsync(
-            string resource,
-            string leaseId,
-            TimeSpan? timeUntilExpires = null,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<string?> GetLeaseIdAsync(string resource, CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<TimeSpan?> GetExpirationAsync(string resource, CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<DistributedLockInfo?> GetLockInfoAsync(
-            string resource,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-    }
-
-    /// <summary>
-    /// <see cref="ICache"/> stand-in that throws <see cref="InvalidOperationException"/> on every
-    /// call. Used by the cache-failure integration tests to simulate a hard cache outage. The
-    /// idempotency middleware should either fail open (default) or rethrow depending on
-    /// <see cref="IdempotencyOptions.OnCacheError"/>.
-    /// </summary>
-    internal sealed class ThrowingCache : ICache
-    {
-        private static InvalidOperationException _Boom()
-        {
-            return new("simulated cache outage");
-        }
-
-        public CacheEntryOptions? DefaultEntryOptions => null;
-
-        public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
-            string key,
-            Func<CancellationToken, ValueTask<T?>> factory,
-            CacheEntryOptions options,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
-            string key,
-            Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
-            CacheEntryOptions options,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<bool> UpsertAsync<T>(
-            string key,
-            T? value,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<bool> UpsertEntryAsync<T>(
-            string key,
-            T? value,
-            CacheEntryOptions options,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<int> UpsertAllAsync<T>(
-            IDictionary<string, T> value,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<bool> TryInsertAsync<T>(
-            string key,
-            T? value,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<bool> TryReplaceAsync<T>(
-            string key,
-            T? value,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<bool> TryReplaceIfEqualAsync<T>(
-            string key,
-            T? expected,
-            T? value,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<double> IncrementAsync(
-            string key,
-            double amount,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<long> IncrementAsync(
-            string key,
-            long amount,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<double> SetIfHigherAsync(
-            string key,
-            double value,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<long> SetIfHigherAsync(
-            string key,
-            long value,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<double> SetIfLowerAsync(
-            string key,
-            double value,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<long> SetIfLowerAsync(
-            string key,
-            long value,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<long> SetAddAsync<T>(
-            string key,
-            IEnumerable<T> value,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
-            IEnumerable<string> cacheKeys,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
-            string prefix,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
-            string prefix,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default)
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
-            string key,
-            int? pageIndex = null,
-            int pageSize = 100,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw _Boom();
-        }
-
-        public ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default)
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default)
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default)
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<bool> RemoveIfEqualAsync<T>(
-            string key,
-            T? expected,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<int> RemoveAllAsync(
-            IEnumerable<string> cacheKeys,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
-        {
-            throw _Boom();
-        }
-
-        public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
-        {
-            throw _Boom();
-        }
-
-        public ValueTask ClearAsync(CancellationToken cancellationToken = default)
-        {
-            throw _Boom();
-        }
-
-        public ValueTask<long> SetRemoveAsync<T>(
-            string key,
-            IEnumerable<T> value,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        )
-        {
-            throw _Boom();
-        }
-
-        public ValueTask FlushAsync(CancellationToken cancellationToken = default)
-        {
-            throw _Boom();
-        }
-    }
-
-    internal sealed class InMemoryDistributedLease(
-        string resource,
-        string leaseId,
-        InMemoryDistributedLockDouble.LockSlot slot,
-        TimeProvider timeProvider
-    ) : IDistributedLease
-    {
-        private int _released;
-
-        public string LeaseId { get; } = leaseId;
-
-        public long? FencingToken => null;
-
-        public string Resource { get; } = resource;
-
-        public int RenewalCount => 0;
-
-        public DateTimeOffset AcquiredAt { get; } = timeProvider.GetUtcNow();
-
-        public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
-
-        public CancellationToken LostToken => CancellationToken.None;
-
-        public bool CanObserveLoss => false;
-
-        public Task ReleaseAsync()
-        {
-            _ReleaseIfStillOwner();
-            return Task.CompletedTask;
-        }
-
-        public Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            _ReleaseIfStillOwner();
-            return ValueTask.CompletedTask;
-        }
-
-        private void _ReleaseIfStillOwner()
-        {
-            if (Interlocked.Exchange(ref _released, 1) != 0)
-            {
-                return;
-            }
-
-            // Silent no-op if our lease already expired and another acquirer took over.
-            // This mirrors Redis-style lock providers, where ReleaseAsync uses a Lua script
-            // that checks the stored token before deleting — preventing a lapsed holder from
-            // releasing a successor's lock.
-            slot.ReleaseIfOwner(LeaseId);
         }
     }
 }

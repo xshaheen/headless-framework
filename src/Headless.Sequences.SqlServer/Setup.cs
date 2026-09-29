@@ -131,6 +131,8 @@ public static class SetupSequencesSqlServer
             }
 
             services.AddInitializerHostedService<SqlServerSequencesStorageInitializer>();
+            // The store waits between deadlock retries on this clock.
+            services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<ISequenceStore, SqlServerSequenceStore>();
         }
     }

@@ -1,0 +1,19 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>SQL Server provider for Headless durable idempotency: an idempotency record table whose rows carry their own lease and generation, with database-clock leases and retention and a bounded retention purge.</Description>
+    <PackageTags>headless;idempotency;idempotency-key;sql-server;dotnet</PackageTags>
+    <RootNamespace>Headless.Idempotency.SqlServer</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.Idempotency.Core\Headless.Idempotency.Core.csproj" />
+    <ProjectReference Include="..\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />
+    <ProjectReference Include="..\Headless.UnitOfWork.SqlServer\Headless.UnitOfWork.SqlServer.csproj" />
+  </ItemGroup>
+</Project>

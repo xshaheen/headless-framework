@@ -133,6 +133,8 @@ public static class SetupSequencesPostgreSql
             }
 
             services.AddInitializerHostedService<PostgreSqlSequencesStorageInitializer>();
+            // The store waits between deadlock retries on this clock.
+            services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<ISequenceStore, PostgreSqlSequenceStore>();
         }
     }

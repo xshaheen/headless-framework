@@ -24,6 +24,10 @@ The store is the temporal authority. PostgreSQL uses `clock_timestamp()`, SQL Se
 - Choose stable node ids deliberately. Kubernetes StatefulSet ordinal names are the strongest default; Deployment pod name plus namespace is stable for the pod lifetime; generated ids are local/dev only.
 - Keep `MembershipLostBehavior.StopApplication` unless every ownership-sensitive worker observes `LocalMembershipLostToken`.
 
+## How this differs from locks and leases
+
+Membership answers "which node incarnations are alive?". It reports liveness only and never grants ownership. To decide who may run or who owns work, use a [distributed lock](distributed-locks.md) (a live process), a [fenced lease](fencing.md) (a durable row any executor carries), or a lease on your own work row stamped with `NodeIdentity`, as Jobs does. Comparison of all four primitives: [Choosing a coordination primitive](fencing.md#choosing-a-coordination-primitive).
+
 ## Core Concepts
 
 ### Node Identity

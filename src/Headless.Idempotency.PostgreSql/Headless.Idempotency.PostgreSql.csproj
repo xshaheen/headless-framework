@@ -1,0 +1,19 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>PostgreSQL provider for Headless durable idempotency: an idempotency record table whose rows carry their own lease and generation, with database-clock leases and retention and a bounded retention purge.</Description>
+    <PackageTags>headless;idempotency;idempotency-key;postgresql;dotnet</PackageTags>
+    <RootNamespace>Headless.Idempotency.PostgreSql</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.Idempotency.Core\Headless.Idempotency.Core.csproj" />
+    <ProjectReference Include="..\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />
+    <ProjectReference Include="..\Headless.UnitOfWork.PostgreSql\Headless.UnitOfWork.PostgreSql.csproj" />
+  </ItemGroup>
+</Project>

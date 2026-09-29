@@ -170,7 +170,7 @@ Gap-free units begin over a PostgreSQL connection or an EF `DbContext` (`AddPost
 ### Design and runtime behavior
 
 - Each call is one `INSERT … ON CONFLICT (tenant_id, name, partition) DO UPDATE … RETURNING`, so concurrent first calls on a new key never collide. Key columns use `COLLATE "C"`.
-- The fast path opens its own connection, runs in an explicit READ COMMITTED transaction, and retries a deadlock (`40P01`) up to 3 attempts.
+- The fast path opens its own connection, runs in an explicit READ COMMITTED transaction, and retries a deadlock (`40P01`) in a fresh transaction up to 3 attempts, waiting a jittered delay (`n × 10–50 ms` before retry `n`, on the registered `TimeProvider`) between them.
 - The gap-free path runs on the unit's own connection and transaction, with no retry. A failed or cancelled statement aborts the caller's PostgreSQL transaction, so the unit can then only roll back.
 - The initializer serializes concurrent hosts with an advisory lock and creates the schema and table idempotently.
 
@@ -205,6 +205,6 @@ Gap-free units begin over a SQL Server connection or an EF `DbContext` (`AddSqlS
 
 - Each call is one batch: `UPDATE … WITH (UPDLOCK, HOLDLOCK)`, then an `INSERT` in the same transaction when the key is new, with both results collected into a table variable and read back once. The batch has no `TRY/CATCH`, so a caller transaction running `SET XACT_ABORT ON` is never doomed by a caught duplicate key.
 - Key columns use a binary (`_BIN2`) collation, so names compare ordinally, as on PostgreSQL. The clustered primary key is exactly `(tenant_id, name, partition)`, and it is what makes the range lock above serialize first use.
-- The fast path opens its own connection, runs in an explicit READ COMMITTED transaction, and retries a deadlock (1205) up to 3 attempts.
+- The fast path opens its own connection, runs in an explicit READ COMMITTED transaction, and retries a deadlock (1205) in a fresh transaction up to 3 attempts, waiting a jittered delay (`n × 10–50 ms` before retry `n`, on the registered `TimeProvider`) between them.
 - The gap-free path runs on the unit's own connection and transaction with no retry. With `XACT_ABORT ON`, a timeout or cancellation rolls back the caller's transaction.
 - The initializer serializes concurrent hosts with `sp_getapplock` and creates the schema, table, and key idempotently.

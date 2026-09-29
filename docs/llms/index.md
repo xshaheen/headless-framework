@@ -51,6 +51,8 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | React when a setting, feature, or permission grant changes instead of polling | [Settings](settings.md), [Features](features.md), [Permissions](permissions.md) — each has a "Reacting to a change" section |
 | Record entity changes or explicit audit events | [Audit Log](audit-log.md) |
 | Issue per-tenant consecutive numbers (receipts, invoices, case numbers), gap-free when audited | [Sequences](sequences.md) |
+| Grant a durable, cross-process lease that fences a stale or zombie attempt's writes; hand work to an external executor | [Fencing](fencing.md) |
+| Admit a keyed operation once across retries, processes, or executors, and replay its stored result | [Idempotency](idempotency.md) |
 
 ### Distributed runtime
 
@@ -86,6 +88,20 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | Configure Serilog defaults | [Logging](logging.md) |
 | Use hosting helpers, validators, source-generated primitives, Redis scripts, geospatial helpers, sitemaps, or slugs | [Utilities](utilities.md) |
 | Write unit/integration tests or use Testcontainers and the messaging harness | [Testing](testing.md) |
+
+## Choosing a coordination primitive
+
+Choose by the question, not by the words "lock" or "lease". [Fencing § Choosing a coordination primitive](fencing.md#choosing-a-coordination-primitive) owns the full comparison: what each primitive holds, what refuses a stale holder, and how a fence differs from a token and a lease.
+
+| Question | Use | Guide |
+| --- | --- | --- |
+| May this process run now? | Distributed lock (`IDistributedLock`) | [Distributed Locks](distributed-locks.md) |
+| Who owns this work, at which generation, until when? | Fenced lease (`IFencedLeases`, `unit.Leases`) | [Fencing](fencing.md) |
+| Has this operation already happened, and what was its result? | Idempotent admission (`IIdempotentOperations`, `unit.Idempotency`; `Headless.Api.Idempotency` for HTTP) | [Idempotency](idempotency.md) |
+| Which node incarnations are alive? | Membership (`INodeMembership`) | [Coordination](coordination.md) |
+| Does the work already have a row you own? | A lease in that row's own columns, claimed and renewed by guarded updates, as Jobs and Messaging do | [Fencing § Work that already has a row](fencing.md#work-that-already-has-a-row) |
+
+**A lock alone never protects data.** A holder can pause, lose its lock or lease, and resume writing without knowing. Protect a correctness invariant with a fence at the write: a transaction-coupled lock, a fenced lease, an admission generation, or a guarded row update. No fence recalls a side effect already made outside the database; make it idempotent at its own boundary, or trigger it from the committed row.
 
 ## Cross-domain changes
 

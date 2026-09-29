@@ -1,13 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Security.Cryptography;
 using Headless.Abstractions;
 using Headless.Api.Idempotency;
-using Headless.Caching;
 using Headless.Constants;
+using Headless.Idempotency;
 using Headless.MultiTenancy;
 using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -17,32 +19,26 @@ using IdempotencyMiddleware = Headless.Api.Idempotency.IdempotencyMiddleware;
 namespace Tests;
 
 /// <summary>
-/// Shared fixture-style helpers used by IdempotencyMiddleware unit tests. Centralizes the
-/// substitute graph (tenant, user, clock, ct provider, logger, service provider) so individual
-/// tests can override only the collaborators they care about.
+/// Shared helpers for IdempotencyMiddleware unit tests. Centralizes the substitute graph (store, tenant, user, clock,
+/// ct provider, logger) so individual tests override only the collaborators they care about.
 /// </summary>
 public abstract class IdempotencyMiddlewareTestBase : TestBase
 {
+    internal const string TestTenant = "t1";
+
     internal IdempotencyMiddleware CreateMiddleware(
         IOptionsMonitor<IdempotencyOptions>? options = null,
-        ICache? cache = null,
+        IIdempotentOperations? operations = null,
         ICurrentTenant? currentTenant = null,
         ICurrentUser? currentUser = null,
         IProblemDetailsCreator? problemDetailsCreator = null,
         TimeProvider? timeProvider = null,
         ICancellationTokenProvider? cancellationTokenProvider = null,
-        ILogger<IdempotencyMiddleware>? logger = null,
-        IServiceProvider? serviceProvider = null
+        ILogger<IdempotencyMiddleware>? logger = null
     )
     {
-        if (options is null)
-        {
-            var snapshot = Substitute.For<IOptionsMonitor<IdempotencyOptions>>();
-            snapshot.CurrentValue.Returns(new IdempotencyOptions());
-            options = snapshot;
-        }
-
-        cache ??= Substitute.For<ICache>();
+        options ??= Monitor(new IdempotencyOptions());
+        operations ??= CreateAdmittingOperations();
 
         // Default test identity: tenant "t1" + authenticated user "u1". A real user is the
         // default because IdempotencyOptions.RequireUserIdentity defaults to true — anonymous
@@ -51,7 +47,7 @@ public abstract class IdempotencyMiddlewareTestBase : TestBase
         if (currentTenant is null)
         {
             currentTenant = Substitute.For<ICurrentTenant>();
-            currentTenant.Id.Returns("t1");
+            currentTenant.Id.Returns(TestTenant);
         }
 
         if (currentUser is null)
@@ -60,8 +56,7 @@ public abstract class IdempotencyMiddlewareTestBase : TestBase
             currentUser.UserId.Returns(new UserId("u1"));
         }
 
-        problemDetailsCreator ??= Substitute.For<IProblemDetailsCreator>();
-
+        problemDetailsCreator ??= CreateProblemDetailsCreator();
         timeProvider ??= new FakeTimeProvider(DateTimeOffset.UtcNow);
 
         if (cancellationTokenProvider is null)
@@ -71,18 +66,170 @@ public abstract class IdempotencyMiddlewareTestBase : TestBase
         }
 
         logger ??= LoggerFactory.CreateLogger<IdempotencyMiddleware>();
-        serviceProvider ??= new ServiceCollection().AddLogging().BuildServiceProvider();
 
         return new IdempotencyMiddleware(
             options,
-            cache,
+            operations,
             currentTenant,
             currentUser,
             problemDetailsCreator,
             timeProvider,
             cancellationTokenProvider,
-            logger,
-            serviceProvider
+            logger
+        );
+    }
+
+    internal static IOptionsMonitor<IdempotencyOptions> Monitor(IdempotencyOptions options)
+    {
+        var monitor = Substitute.For<IOptionsMonitor<IdempotencyOptions>>();
+        monitor.CurrentValue.Returns(options);
+        return monitor;
+    }
+
+    /// <summary>Problem-details creator whose results carry the status code and the first error code.</summary>
+    internal static IProblemDetailsCreator CreateProblemDetailsCreator()
+    {
+        var creator = Substitute.For<IProblemDetailsCreator>();
+        creator
+            .Conflict(Arg.Any<IReadOnlyCollection<ErrorDescriptor>>())
+            .Returns(ci => new ProblemDetails
+            {
+                Status = StatusCodes.Status409Conflict,
+                Detail = ci.Arg<IReadOnlyCollection<ErrorDescriptor>>().First().Code,
+            });
+        creator
+            .UnprocessableEntity(Arg.Any<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>())
+            .Returns(ci => new ProblemDetails
+            {
+                Status = StatusCodes.Status422UnprocessableEntity,
+                Detail = ci.Arg<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>().Values.First()[0].Code,
+            });
+        creator
+            .BadRequest(Arg.Any<string?>(), Arg.Any<ErrorDescriptor?>())
+            .Returns(ci => new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Detail = ci.ArgAt<ErrorDescriptor?>(1)?.Code,
+            });
+        return creator;
+    }
+
+    /// <summary>A store that admits every request as its owner and accepts every renewal, completion, and release.</summary>
+    internal static IIdempotentOperations CreateAdmittingOperations(bool isTakeover = false)
+    {
+        var operations = Substitute.For<IIdempotentOperations>();
+        operations
+            .AdmitAsync(
+                Arg.Any<string>(),
+                Arg.Any<IdempotencyFingerprint>(),
+                Arg.Any<string?>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ci => new ValueTask<IdempotentAdmission>(
+                Admitted(ci.ArgAt<string>(0), ci.ArgAt<IdempotencyFingerprint>(1), isTakeover)
+            ));
+        operations
+            .ReleaseAsync(Arg.Any<IdempotentAdmission>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IdempotentLeaseStatus>(IdempotentLeaseStatus.Released));
+        operations
+            .RenewAsync(Arg.Any<IdempotentAdmission>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(
+                new ValueTask<IdempotentLeaseRenewal>(
+                    new IdempotentLeaseRenewal(IdempotentLeaseStatus.Current, DateTimeOffset.UtcNow.AddMinutes(1))
+                )
+            );
+        return operations;
+    }
+
+    /// <summary>Makes every admission return the given admissions in order (the last repeats).</summary>
+    internal static void AdmitReturns(
+        IIdempotentOperations operations,
+        params Func<string, IdempotentAdmission>[] steps
+    )
+    {
+        var index = 0;
+        operations
+            .AdmitAsync(
+                Arg.Any<string>(),
+                Arg.Any<IdempotencyFingerprint>(),
+                Arg.Any<string?>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ci =>
+            {
+                var step = steps[Math.Min(Interlocked.Increment(ref index) - 1, steps.Length - 1)];
+                return new ValueTask<IdempotentAdmission>(step(ci.ArgAt<string>(0)));
+            });
+    }
+
+    /// <summary>Makes every peek return the given statuses in order (the last repeats).</summary>
+    internal static void PeekReturns(IIdempotentOperations operations, params IdempotencyPeekStatus[] steps)
+    {
+        var index = 0;
+        operations
+            .PeekAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                var step = steps[Math.Min(Interlocked.Increment(ref index) - 1, steps.Length - 1)];
+                return new ValueTask<IdempotencyPeekStatus>(step);
+            });
+    }
+
+    internal static IdempotencyFingerprint FingerprintOf(byte[] body)
+    {
+        return IdempotencyFingerprint.Compute(SHA256.HashData(body));
+    }
+
+    internal static IdempotentAdmission Admitted(
+        string key,
+        IdempotencyFingerprint fingerprint,
+        bool isTakeover = false
+    )
+    {
+        return IdempotentAdmission.Admitted(
+            new IdempotencyKey(TestTenant, key),
+            fingerprint,
+            7,
+            DateTimeOffset.UtcNow.AddMinutes(1),
+            isTakeover,
+            TimeSpan.FromHours(24)
+        );
+    }
+
+    internal static IdempotentAdmission InFlight(string key)
+    {
+        return IdempotentAdmission.InFlight(
+            new IdempotencyKey(TestTenant, key),
+            IdempotencyFingerprint.Compute("any"),
+            5,
+            DateTimeOffset.UtcNow.AddMinutes(1)
+        );
+    }
+
+    internal static IdempotentAdmission Replay(string key, IdempotencyResponseSnapshot snapshot)
+    {
+        var payload = JsonSerializer.SerializeToUtf8Bytes(
+            snapshot,
+            IdempotencyJsonContext.Default.IdempotencyResponseSnapshot
+        );
+
+        return IdempotentAdmission.Replay(
+            new IdempotencyKey(TestTenant, key),
+            IdempotencyFingerprint.Compute("any"),
+            new IdempotentResult(payload, IdempotencyResponseSnapshot.Contract)
+        );
+    }
+
+    internal static IdempotentAdmission FingerprintConflict(string key)
+    {
+        return IdempotentAdmission.FingerprintConflict(
+            new IdempotencyKey(TestTenant, key),
+            IdempotencyFingerprint.Compute("mine"),
+            IdempotencyFingerprint.Compute("stored")
         );
     }
 
@@ -108,5 +255,35 @@ public abstract class IdempotencyMiddlewareTestBase : TestBase
         }
 
         return ctx;
+    }
+
+    protected static async Task<string> ReadResponseAsync(HttpContext context)
+    {
+        context.Response.Body.Position = 0;
+        using var reader = new StreamReader(context.Response.Body, leaveOpen: true);
+        return await reader.ReadToEndAsync();
+    }
+
+    /// <summary>The idempotency keys the store was asked to admit, in call order.</summary>
+    internal static List<string> AdmittedKeys(IIdempotentOperations operations)
+    {
+        return operations
+            .ReceivedCalls()
+            .Where(c =>
+                string.Equals(
+                    c.GetMethodInfo().Name,
+                    nameof(IIdempotentOperations.AdmitAsync),
+                    StringComparison.Ordinal
+                )
+            )
+            .Select(c => (string)c.GetArguments()[0]!)
+            .ToList();
+    }
+
+    internal static int CallCount(IIdempotentOperations operations, string method)
+    {
+        return operations
+            .ReceivedCalls()
+            .Count(c => string.Equals(c.GetMethodInfo().Name, method, StringComparison.Ordinal));
     }
 }
