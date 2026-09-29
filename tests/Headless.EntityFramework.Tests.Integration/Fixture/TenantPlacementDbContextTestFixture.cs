@@ -18,7 +18,8 @@ namespace Tests.Fixture;
 
 /// <summary>
 /// One PostgreSQL container hosting the shared database (schema <c>app</c>), two tenant schemas
-/// (<c>tenant_a</c>, <c>tenant_b</c>), and two tenant databases (<c>tenant_da</c>, <c>tenant_db</c>).
+/// (<c>tenant_a</c>, <c>tenant_b</c>), two tenant databases (<c>tenant_da</c>, <c>tenant_db</c>), and two tenants
+/// (<c>sa</c>, <c>sb</c>) whose placement names the shared database, so they stay in the shared schema.
 /// </summary>
 public sealed class TenantPlacementDbContextTestFixture : IAsyncLifetime
 {
@@ -26,6 +27,8 @@ public sealed class TenantPlacementDbContextTestFixture : IAsyncLifetime
     public const string SchemaTenantB = "b";
     public const string DatabaseTenantA = "da";
     public const string DatabaseTenantB = "db";
+    public const string SharedTenantA = "sa";
+    public const string SharedTenantB = "sb";
     public const string UnplacedTenant = "unplaced";
     public const int ManySchemaTenantCount = 45;
 
@@ -89,7 +92,17 @@ public sealed class TenantPlacementDbContextTestFixture : IAsyncLifetime
 
     public async Task ResetAsync()
     {
-        foreach (var tenant in new[] { SchemaTenantA, SchemaTenantB, DatabaseTenantA, DatabaseTenantB })
+        foreach (
+            var tenant in new[]
+            {
+                SchemaTenantA,
+                SchemaTenantB,
+                DatabaseTenantA,
+                DatabaseTenantB,
+                SharedTenantA,
+                SharedTenantB,
+            }
+        )
         {
             using var _ = CurrentTenant.Change(tenant);
             await using var db = await CreateAsync<PlacementDbContext>();
@@ -142,6 +155,8 @@ public sealed class TenantPlacementDbContextTestFixture : IAsyncLifetime
 
     private void _ConfigurePlacements(ConfigurationTenantDataPlacementOptions options)
     {
+        options.Tenants.Add(new() { TenantId = SharedTenantA, ConnectionString = SharedConnectionString });
+        options.Tenants.Add(new() { TenantId = SharedTenantB, ConnectionString = SharedConnectionString });
         options.Tenants.Add(new() { TenantId = SchemaTenantA, Schema = "tenant_a" });
         options.Tenants.Add(new() { TenantId = SchemaTenantB, Schema = "tenant_b" });
         options.Tenants.Add(

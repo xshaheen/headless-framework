@@ -19,6 +19,8 @@ public sealed class TenantDataPlacementRoutingTests(TenantPlacementDbContextTest
     private const string _B = TenantPlacementDbContextTestFixture.SchemaTenantB;
     private const string _DatabaseA = TenantPlacementDbContextTestFixture.DatabaseTenantA;
     private const string _DatabaseB = TenantPlacementDbContextTestFixture.DatabaseTenantB;
+    private const string _SharedA = TenantPlacementDbContextTestFixture.SharedTenantA;
+    private const string _SharedB = TenantPlacementDbContextTestFixture.SharedTenantB;
 
     public override async ValueTask InitializeAsync()
     {
@@ -95,6 +97,26 @@ public sealed class TenantDataPlacementRoutingTests(TenantPlacementDbContextTest
 
         // then: still cached, and building 45+ tenant models did not create a service provider per tenant
         again.Should().BeSameAs(first);
+    }
+
+    [Fact]
+    public async Task should_keep_hybrid_shared_tenants_in_the_shared_schema_separated_by_the_filter()
+    {
+        // given: two tenants whose placement names only the shared database, next to schema tenant a
+        await _AddRowAsync(_SharedA, "row-sa");
+        await _AddRowAsync(_SharedB, "row-sb");
+        await _AddRowAsync(_A, "row-a");
+
+        // when
+        var sharedARows = await _ReadNamesAsync(_SharedA);
+        var sharedBRows = await _ReadNamesAsync(_SharedB);
+
+        // then
+        sharedARows.Should().Equal("row-sa");
+        sharedBRows.Should().Equal("row-sb");
+        (await _CountRawAsync(fixture.SharedConnectionString, "app")).Should().Be(2);
+        (await _CountRawAsync(fixture.SharedConnectionString, "tenant_a")).Should().Be(1);
+        (await _ModelAsync(_SharedA)).FindEntityType(typeof(PlacedRow))!.GetSchema().Should().Be("app");
     }
 
     [Fact]

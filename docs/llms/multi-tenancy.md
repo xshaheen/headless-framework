@@ -671,6 +671,18 @@ builder.AddHeadlessTenancy(tenancy => tenancy
 }
 ```
 
+A routed context refuses a tenant with no placement, so a hybrid setup, where most tenants stay in the shared schema and a few are isolated, gives each shared tenant a placement that names only the shared database. That tenant gets the registration schema and the shared database, and the query filter separates it from the other shared tenants:
+
+```json
+"Tenants": [
+  { "TenantId": "acme", "ConnectionString": "Host=db;Database=app;..." },
+  { "TenantId": "initech", "ConnectionString": "Host=db;Database=app;..." },
+  { "TenantId": "globex", "Schema": "tenant_globex" }
+]
+```
+
+With `UseResolver<T>()`, return `new TenantDataPlacement(schema: null, connectionString: sharedConnectionString)` for the shared tenants instead of `null`. Listing them is deliberate: a tenant nobody placed is an error, never a silent fall back to the shared database.
+
 Create routed contexts through the factory under the tenant:
 
 ```csharp
