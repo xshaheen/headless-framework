@@ -1465,7 +1465,6 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
                 _AwaitSync(
                     unitOfWorkFactory.BeginAsync(
                         _ => ValueTask.FromResult<IUnitOfWorkResource>(new FakeRelationalResource(_LiveTransaction())),
-                        options: null,
                         cancellationToken: default
                     )
                 )
@@ -1480,7 +1479,6 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
                     unitOfWorkFactory.BeginAsync(
                         _ =>
                             ValueTask.FromResult<IUnitOfWorkResource>(new FakeRelationalResource(_ClosedTransaction())),
-                        options: null,
                         cancellationToken: default
                     )
                 )

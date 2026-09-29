@@ -211,12 +211,11 @@ Defines the public unit-of-work contracts without provider dependencies: the sin
 
 ### API and behavior
 
-- `IUnitOfWorkFactory` (singleton): the resource-less `BeginAsync(options?, ct)`, plus the provider primitives — the resource-factory `BeginAsync` (hidden from IntelliSense) and observed-mode `Enlist` (hidden).
+- `IUnitOfWorkFactory` (singleton): the resource-less `BeginAsync(ct)`, plus the provider primitives — the resource-factory `BeginAsync` (hidden from IntelliSense) and observed-mode `Enlist` (hidden).
 - `IUnitOfWork`: `State`, `Failure`, `Resource`, `OnCompleted(Func<ValueTask>)`, `OnFailed(Func<UnitOfWorkFailure, ValueTask>)`, `GetOrAdd<TState>` (both overloads), `GetFeature<TFeature>()`, `PreventRetry()` / `IsRetryPrevented`, `CompleteAsync(ct)`, idempotent `RollbackAsync()`, dispose both ways.
 - `IUnitOfWorkFeature`: the marker a bridge's singleton feature service implements so `GetFeature` can hand it out. See [Typed features on a unit](#typed-features-on-a-unit-getfeature).
 - `IUnitOfWorkResource` (`IsOwned`, `IsTransactionCompleted`, `CommitAsync`, `RollbackAsync`) and `IRelationalUnitOfWorkResource` (`Connection`, `Transaction`, non-null while active).
 - `UnitOfWorkState` (`Active = 0`, `Completed = 1`, `Failed = 2`); `UnitOfWorkFailure` with `UnitOfWorkFailureReason` (`Unspecified`, `RolledBack`, `Abandoned`, `Faulted`, `InDoubt`); `UnitOfWorkInDoubtException`, which `CompleteAsync` throws for an in-doubt commit. See [Commit outcome guarantees](#commit-outcome-guarantees).
-- `UnitOfWorkOptions`: intentionally empty today; propagation knobs land here additively.
 - `TransactionEnlistment { Optional = 0, Required = 1 }`: Jobs only. See [Guarantee Matrix](#guarantee-matrix).
 
 ### Design constraints

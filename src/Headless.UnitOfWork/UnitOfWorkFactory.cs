@@ -49,10 +49,7 @@ internal sealed partial class UnitOfWorkFactory(
     internal IUnitOfWorkExecutionStrategy DefaultReplayStrategy => _defaultReplayStrategy.Value;
 
     /// <inheritdoc />
-    public ValueTask<IUnitOfWork> BeginAsync(
-        UnitOfWorkOptions? options = null,
-        CancellationToken cancellationToken = default
-    )
+    public ValueTask<IUnitOfWork> BeginAsync(CancellationToken cancellationToken = default)
     {
 #pragma warning disable CA2000 // The handle is the value being handed out; the caller completes or disposes it.
         return ValueTask.FromResult<IUnitOfWork>(_Open(resource: null));
@@ -62,7 +59,6 @@ internal sealed partial class UnitOfWorkFactory(
     /// <inheritdoc />
     public async ValueTask<IUnitOfWork> BeginAsync(
         Func<CancellationToken, ValueTask<IUnitOfWorkResource>> beginResource,
-        UnitOfWorkOptions? options,
         CancellationToken cancellationToken
     )
     {
@@ -74,7 +70,7 @@ internal sealed partial class UnitOfWorkFactory(
     }
 
     /// <inheritdoc />
-    public IUnitOfWork Enlist(IUnitOfWorkResource resource, UnitOfWorkOptions? options = null)
+    public IUnitOfWork Enlist(IUnitOfWorkResource resource)
     {
         Argument.IsNotNull(resource);
 

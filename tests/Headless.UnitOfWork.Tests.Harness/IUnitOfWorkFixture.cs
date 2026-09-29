@@ -29,7 +29,7 @@ public sealed class UnitOfWorkSession(IUnitOfWorkFactory factory, IReadOnlyColle
     /// <summary>Everything the factory (and its units) logged in this session, in emission order.</summary>
     public IReadOnlyCollection<LogEntry> Logs { get; } = logs;
 
-    /// <summary>Begins a resource-less unit; convenience over <see cref="IUnitOfWorkFactory.BeginAsync(Headless.UnitOfWork.UnitOfWorkOptions?, System.Threading.CancellationToken)" />.</summary>
+    /// <summary>Begins a resource-less unit; convenience over <see cref="IUnitOfWorkFactory.BeginAsync(System.Threading.CancellationToken)" />.</summary>
     public ValueTask<IUnitOfWork> BeginAsync(CancellationToken cancellationToken = default)
     {
         return Factory.BeginAsync(cancellationToken: cancellationToken);
