@@ -64,6 +64,11 @@ public static class SetupPermissionsEntityFramework
                 typeof(IPermissionDefinitionRecordRepository),
                 typeof(EfPermissionDefinitionRecordRepository<>).MakeGenericType(dbContextType)
             );
+            services.RequireSingletonService(
+                typeof(IDbContextFactory<>).MakeGenericType(dbContextType),
+                requiredBy: "Headless permissions EF storage",
+                remedy: "Register it with AddDbContextFactory<TContext>() or AddPooledDbContextFactory<TContext>() at the default singleton lifetime; the store is a singleton and would keep one scoped or transient factory for the life of the host."
+            );
             services.AddStartupValidator(typeof(PermissionsEntityStartupValidator<>).MakeGenericType(dbContextType));
         }
     }

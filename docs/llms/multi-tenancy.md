@@ -1036,7 +1036,8 @@ Custom validators implement `IHeadlessTenancyValidator` and register themselves 
 - `setup.UseEntityFramework<TContext>()` — registers the EF storage provider via `HeadlessTenancyCatalogSetupBuilder`. It also registers a startup gate (`IHostedLifecycleService`) that validates `TContext`'s model was configured through `modelBuilder.AddHeadlessTenancyCatalog(this)`; a `DbContext` missing that call fails host startup with an actionable message instead of failing lazily the first time the catalog resolves a tenant.
 - `modelBuilder.AddHeadlessTenancyCatalog(DbContext context)` — applies the `TenantRecord` entity configuration, reading the active EF Core provider so the unique identifier index can be pinned to a deterministic collation
 - `TenantRecord` — the single-table entity: `Id`, `Identifier`, `NormalizedIdentifier`, `Name`, `IsEnabled`, `ExtraProperties`
-- Unique index on `NormalizedIdentifier`, pinned to a case- and accent-sensitive collation (`Latin1_General_100_BIN2` on SQL Server, `C` on PostgreSQL) so a lookup never matches a row differing only by case — SQL Server's default collation is case-insensitive and would otherwise break the catalog service's ordinal lookup contract
+- Unique index on `NormalizedIdentifier`, pinned to a case- and accent-sensitive collation (`Latin1_General_100_BIN2` on SQL Server, `C` on PostgreSQL, `BINARY` on SQLite) so a lookup never matches a row differing only by case — SQL Server's default collation is case-insensitive and would otherwise break the catalog service's ordinal lookup contract
+- Other relational providers (MySQL, Oracle, and any third-party provider) get no collation pin and keep their default, which is often case-insensitive. Pin a binary collation yourself after the catalog configuration: `modelBuilder.AddHeadlessTenancyCatalog(this); modelBuilder.Entity<TenantRecord>().Property(x => x.NormalizedIdentifier).UseCollation("utf8mb4_bin");` (`utf8mb4_bin` on MySQL, `BINARY` on Oracle)
 
 ### Design constraints
 
@@ -1044,7 +1045,7 @@ Custom validators implement `IHeadlessTenancyValidator` and register themselves 
 
 This package ships no framework write path — read-only `FindByIdentifierAsync`/`FindByIdAsync`/`GetAllAsync` only, matching `ITenantStore`/`ITenantDirectory`. Apps insert, update, and migrate `TenantRecord` directly against their own `DbContext`.
 
-Read paths use `IDbContextFactory<TContext>` and `AsNoTracking()`, matching `Headless.Settings.Storage.EntityFramework`.
+Read paths use `IDbContextFactory<TContext>` and `AsNoTracking()`, matching `Headless.Settings.Storage.EntityFramework`. The store is a singleton, so the factory must be one too: `AddDbContextFactory<TContext>()` and `AddPooledDbContextFactory<TContext>()` default to singleton. A scoped or transient factory would be captured by the store for the life of the host, so `UseEntityFramework<TContext>()` declares it through `RequireSingletonService` and host startup fails with `InvalidServiceLifetimeException` in every environment; a missing factory fails with `MissingRequiredServiceException`.
 
 ### Install
 

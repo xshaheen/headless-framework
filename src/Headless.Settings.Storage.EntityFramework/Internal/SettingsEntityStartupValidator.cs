@@ -3,6 +3,7 @@
 using Headless.Hosting.Validation;
 using Headless.Settings.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Settings.Internal;
 
@@ -13,9 +14,11 @@ namespace Headless.Settings.Internal;
 /// configuration is missing.
 /// </summary>
 /// <typeparam name="TContext">The <see cref="DbContext"/> type to inspect at startup.</typeparam>
-/// <param name="dbFactory">Factory used to obtain a <typeparamref name="TContext"/> for model inspection.</param>
-internal sealed class SettingsEntityStartupValidator<TContext>(IDbContextFactory<TContext> dbFactory)
-    : IHeadlessStartupValidator
+/// <param name="services">
+/// Provider the factory is resolved from inside <c>ValidateAsync</c>, not the constructor: the startup runner builds every
+/// validator up front, so a missing factory would otherwise fail its activation before the required-service check reports it.
+/// </param>
+internal sealed class SettingsEntityStartupValidator<TContext>(IServiceProvider services) : IHeadlessStartupValidator
     where TContext : DbContext
 {
     /// <summary>
@@ -29,6 +32,14 @@ internal sealed class SettingsEntityStartupValidator<TContext>(IDbContextFactory
     /// </exception>
     public async Task ValidateAsync(CancellationToken cancellationToken)
     {
+        await using var scope = services.CreateAsyncScope();
+        var dbFactory = scope.ServiceProvider.GetService<IDbContextFactory<TContext>>();
+
+        if (dbFactory is null)
+        {
+            return;
+        }
+
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         _EnsureEntity(context, typeof(SettingValueRecord), nameof(SettingValueRecord));

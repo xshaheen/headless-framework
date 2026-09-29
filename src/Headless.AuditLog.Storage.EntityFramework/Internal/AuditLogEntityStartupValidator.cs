@@ -2,15 +2,26 @@
 
 using Headless.Hosting.Validation;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.AuditLog.Internal;
 
-internal sealed class AuditLogEntityStartupValidator<TContext>(IDbContextFactory<TContext> dbFactory)
-    : IHeadlessStartupValidator
+// Resolves the factory inside ValidateAsync rather than injecting it: the startup runner constructs every validator
+// up front, so a missing factory in the constructor would fail the runner itself with an opaque activation error
+// before the required-service and singleton-lifetime checks could report it.
+internal sealed class AuditLogEntityStartupValidator<TContext>(IServiceProvider services) : IHeadlessStartupValidator
     where TContext : DbContext
 {
     public async Task ValidateAsync(CancellationToken cancellationToken)
     {
+        await using var scope = services.CreateAsyncScope();
+        var dbFactory = scope.ServiceProvider.GetService<IDbContextFactory<TContext>>();
+
+        if (dbFactory is null)
+        {
+            return;
+        }
+
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         if (context.Model.FindAnnotation(AuditLogStorageModelAnnotations.IsConfigured)?.Value is not true)
