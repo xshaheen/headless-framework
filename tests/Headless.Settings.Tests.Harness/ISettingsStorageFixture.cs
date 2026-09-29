@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
+using Headless.Hosting.Initialization;
 using Headless.Security;
 using Headless.Settings;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -34,7 +36,22 @@ public interface ISettingsStorageFixture
 
     /// <summary>Reports whether <paramref name="tableName" /> exists in <paramref name="schema" />.</summary>
     Task<bool> TableExistsAsync(string schema, string tableName, CancellationToken cancellationToken);
+
+    /// <summary>The naming style of the fixture's database, which decides the default object names.</summary>
+    StorageNamingStyle NamingStyle { get; }
+
+    /// <summary>Points <paramref name="builder" /> at this backend's EF Core provider (no connection is opened).</summary>
+    void UseEntityFrameworkProvider(DbContextOptionsBuilder builder, string connectionString);
+
+    /// <summary>
+    /// Reads the objects the initializer created in <paramref name="schema" />: every column as <c>table.column</c>
+    /// and every index, primary key included, as <c>table.index</c>.
+    /// </summary>
+    Task<SettingsStoreObjects> ReadStoreObjectsAsync(string schema, CancellationToken cancellationToken);
 }
+
+/// <summary>A schema's columns and indexes as <c>table.name</c> strings, compared between raw DDL and the EF model.</summary>
+public sealed record SettingsStoreObjects(IReadOnlySet<string> Columns, IReadOnlySet<string> Indexes);
 
 /// <summary>Shared host bootstrap for <see cref="ISettingsStorageFixture" /> implementations.</summary>
 public static class SettingsStorageFixtureExtensions

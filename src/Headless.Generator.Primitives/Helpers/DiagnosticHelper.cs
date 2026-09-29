@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Generator.Primitives.Shared;
+using Headless.SourceGenerators;
 using Microsoft.CodeAnalysis;
 
 namespace Headless.Generator.Primitives.Helpers;
@@ -9,6 +10,36 @@ namespace Headless.Generator.Primitives.Helpers;
 internal static class DiagnosticHelper
 {
     private const string _Category = AbstractionConstants.Namespace;
+
+    internal static DiagnosticDescriptor ClassMustBePartialRule { get; } =
+        new DiagnosticDescriptor(
+            "HF1002",
+            "Class must be partial to generate Empty constructor",
+            "Class must be partial to generate Empty constructor",
+            _Category,
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true
+        );
+
+    internal static DiagnosticDescriptor TypeShouldBeReferenceTypeRule { get; } =
+        new DiagnosticDescriptor(
+            "HF1016",
+            "Type should be a reference type",
+            "Type `{0}` should be a reference type as it's wrapping a reference type of `{1}`",
+            _Category,
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true
+        );
+
+    internal static DiagnosticDescriptor TypeShouldBeValueTypeRule { get; } =
+        new DiagnosticDescriptor(
+            "HF1015",
+            "Type should be a value type",
+            "Type `{0}` should be a value type as it's wrapping a value type of `{1}`",
+            _Category,
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true
+        );
 
     /// <summary>Creates a diagnostic for general error</summary>
     /// <param name="location">The location where the diagnostic occurs.</param>
@@ -113,17 +144,7 @@ internal static class DiagnosticHelper
     /// <returns>A diagnostic indicating that a class must be partial to generate an empty constructor.</returns>
     internal static Diagnostic ClassMustBePartial(Location? location)
     {
-        return Diagnostic.Create(
-            new DiagnosticDescriptor(
-                "HF1002",
-                "Class must be partial to generate Empty constructor",
-                "Class must be partial to generate Empty constructor",
-                _Category,
-                DiagnosticSeverity.Error,
-                isEnabledByDefault: true
-            ),
-            location
-        );
+        return Diagnostic.Create(ClassMustBePartialRule, location);
     }
 
     /// <summary>Creates a diagnostic for a type that should be a reference type.</summary>
@@ -133,19 +154,7 @@ internal static class DiagnosticHelper
     /// <returns>A diagnostic indicating that the type should be a reference type.</returns>
     internal static Diagnostic TypeShouldBeReferenceType(string className, string baseTypeName, Location? location)
     {
-        return Diagnostic.Create(
-            new DiagnosticDescriptor(
-                "HF1016",
-                "Type should be a reference type",
-                "Type `{0}` should be a reference type as it's wrapping a reference type of `{1}`",
-                _Category,
-                DiagnosticSeverity.Warning,
-                isEnabledByDefault: true
-            ),
-            location,
-            className,
-            baseTypeName
-        );
+        return Diagnostic.Create(TypeShouldBeReferenceTypeRule, location, className, baseTypeName);
     }
 
     /// <summary>Creates a diagnostic for a type that should be a value type.</summary>
@@ -155,19 +164,7 @@ internal static class DiagnosticHelper
     /// <returns>A diagnostic indicating that the type should be a value type.</returns>
     internal static Diagnostic TypeShouldBeValueType(string className, string baseTypeName, Location? location)
     {
-        return Diagnostic.Create(
-            new DiagnosticDescriptor(
-                "HF1015",
-                "Type should be a value type",
-                "Type `{0}` should be a value type as it's wrapping a value type of `{1}`",
-                _Category,
-                DiagnosticSeverity.Warning,
-                isEnabledByDefault: true
-            ),
-            location,
-            className,
-            baseTypeName
-        );
+        return Diagnostic.Create(TypeShouldBeValueTypeRule, location, className, baseTypeName);
     }
 
     /// <summary>Creates a diagnostic for a class that must not have a parameterized constructor to generate members.</summary>

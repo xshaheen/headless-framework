@@ -31,6 +31,10 @@ namespace Headless.Idempotency;
 /// Whether <paramref name="LeaseExpiresAt" /> is after the database clock read with <paramref name="IsRetentionElapsed" />;
 /// <see langword="false" /> when there is no lease.
 /// </param>
+/// <param name="RecoveryPoint">
+/// The last recovery point an attempt recorded, or <see langword="null" /> when none did since the record was inserted,
+/// completed, or reset after its retention.
+/// </param>
 [PublicAPI]
 public sealed record IdempotencyRecordState(
     bool Inserted,
@@ -41,7 +45,8 @@ public sealed record IdempotencyRecordState(
     IdempotentResult? Result,
     DateTimeOffset RetentionUntil,
     bool IsRetentionElapsed,
-    bool IsLeaseLive
+    bool IsLeaseLive,
+    IdempotentRecoveryPoint? RecoveryPoint = null
 )
 {
     /// <summary>

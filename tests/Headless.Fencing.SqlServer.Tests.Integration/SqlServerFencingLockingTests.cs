@@ -113,7 +113,7 @@ public sealed class SqlServerFencingLockingTests(SqlServerFencingFixture fixture
 
         (
             await fixture.ScalarAsync(
-                "SELECT COUNT(*) FROM [fencing].[leases] WHERE [kind] = @kind",
+                "SELECT COUNT(*) FROM [headless].[FencingLeases] WHERE [Kind] = @kind",
                 AbortToken,
                 ("kind", kind)
             )

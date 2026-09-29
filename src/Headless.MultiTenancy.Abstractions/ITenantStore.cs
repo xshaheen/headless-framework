@@ -27,12 +27,20 @@ public interface ITenantStore
     /// Implementations compare this value ordinally and must not re-normalize it.
     /// </param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <returns>The matching <see cref="TenantInfo"/>, or <see langword="null"/> when no tenant has that identifier.</returns>
+    /// <returns>
+    /// The matching <see cref="TenantInfo"/>, whose <see cref="TenantInfo.Identifier"/> is exactly
+    /// <paramref name="normalizedIdentifier"/>, or <see langword="null"/> when no tenant has that identifier. The
+    /// catalog service refuses any other answer with <see cref="InvalidOperationException"/>, so return the
+    /// normalized form, not a display-cased one.
+    /// </returns>
     Task<TenantInfo?> FindByIdentifierAsync(string normalizedIdentifier, CancellationToken cancellationToken = default);
 
     /// <summary>Finds the tenant whose canonical identifier equals <paramref name="id"/>.</summary>
     /// <param name="id">The canonical tenant identifier.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <returns>The matching <see cref="TenantInfo"/>, or <see langword="null"/> when no tenant has that id.</returns>
+    /// <returns>
+    /// The matching <see cref="TenantInfo"/>, whose <see cref="TenantInfo.Id"/> is exactly <paramref name="id"/>, or
+    /// <see langword="null"/> when no tenant has that id. The catalog service refuses any other answer.
+    /// </returns>
     Task<TenantInfo?> FindByIdAsync(string id, CancellationToken cancellationToken = default);
 }

@@ -59,8 +59,8 @@ public static class SetupJobs
     /// the <c>IJobScheduler</c> facade, background services (unless disabled), the in-memory persistence
     /// default (replaced by durable providers such as <c>UseEntityFramework</c>), and the per-host
     /// <see cref="JobsRequestSerializationOptions"/> singleton. The <paramref name="optionsBuilder"/>
-    /// callback also completes job-function discovery: every <c>AddJobsDiscovery</c> assembly must be
-    /// registered inside it, after which the host's function registry is frozen.
+    /// callback also completes job-function discovery: every generated module must be added inside it with
+    /// <c>AddModule</c>, after which the host's function registry is frozen.
     /// </summary>
     /// <typeparam name="TTimeJob">The application's concrete time job entity type.</typeparam>
     /// <typeparam name="TCronJob">The application's concrete cron job entity type.</typeparam>
@@ -128,6 +128,10 @@ public static class SetupJobs
             "SchedulerOptionsBuilder.DefaultMissedRunGraceSeconds must be greater than zero."
         );
         Ensure.True(
+            schedulerOptionsBuilder.DefaultOverlapPolicy is CronOverlapPolicy.Allow or CronOverlapPolicy.Skip,
+            "SchedulerOptionsBuilder.DefaultOverlapPolicy must be a defined CronOverlapPolicy value."
+        );
+        Ensure.True(
             schedulerOptionsBuilder.FingerprintSweepInterval > TimeSpan.Zero,
             "SchedulerOptionsBuilder.FingerprintSweepInterval must be greater than zero."
         );
@@ -170,7 +174,7 @@ public static class SetupJobs
         // singleton so components resolve THIS host's settings — never process-global state shared across hosts.
         var requestSerializationOptions = new JobsRequestSerializationOptions
         {
-            SerializerOptions = optionInstance.RequestJsonSerializerOptions ?? JsonSerializerOptions.Default,
+            SerializerOptions = optionInstance.RequestJsonSerializerOptions ?? JobsRequestJson.DefaultOptions,
             UseGZipCompression = optionInstance.RequestGZipCompressionEnabled,
             MaxDecompressedRequestBytes = optionInstance.RequestGZipMaxDecompressedBytes,
         };

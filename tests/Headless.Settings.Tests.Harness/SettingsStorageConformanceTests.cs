@@ -5,12 +5,15 @@ using System.Data.Common;
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Hosting.Initialization;
+using Headless.Settings;
 using Headless.Settings.Definitions;
 using Headless.Settings.Entities;
 using Headless.Settings.Models;
 using Headless.Settings.Repositories;
 using Headless.Settings.Values;
 using Headless.Testing.Tests;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -19,13 +22,76 @@ namespace Tests;
 
 /// <summary>
 /// Storage behavior every raw-ADO settings provider must share: schema initialization, value round-trip, atomic
-/// value batches, and concurrent first writes of one name. Backend-specific behavior (index repair, legacy column
-/// renames, NULL provider-key uniqueness, chunked deletes) stays in each provider's integration project.
+/// value batches, and concurrent first writes of one name. Backend-specific behavior (index repair, NULL provider-key
+/// uniqueness, chunked deletes) stays in each provider's integration project.
 /// </summary>
 public abstract class SettingsStorageConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : ISettingsStorageFixture
 {
     private const string _Schema = "settings_conformance";
+
+    [Fact]
+    public async Task should_create_the_same_tables_columns_and_indexes_the_ef_model_maps()
+    {
+        // given — the raw initializer and the EF mapping must agree name for name, or an application that
+        // provisions with one and reads with the other fails at its first query
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
+        await host.StartAsync(AbortToken);
+        var builder = new DbContextOptionsBuilder<ParityDbContext>();
+        fixture.UseEntityFrameworkProvider(builder, fixture.ConnectionString);
+        await using var context = new ParityDbContext(
+            builder.Options,
+            new SettingsStorageOptions { Schema = _Schema },
+            fixture.NamingStyle
+        );
+
+        // when
+        var created = await fixture.ReadStoreObjectsAsync(_Schema, AbortToken);
+        var mapped = _MappedObjects(context.Model);
+
+        // then
+        created.Columns.Should().BeEquivalentTo(mapped.Columns);
+        created.Indexes.Should().BeEquivalentTo(mapped.Indexes);
+    }
+
+    private static SettingsStoreObjects _MappedObjects(IModel model)
+    {
+        var columns = new HashSet<string>(StringComparer.Ordinal);
+        var indexes = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var entity in model.GetEntityTypes())
+        {
+            var tableName = entity.GetTableName()!;
+            var table = StoreObjectIdentifier.Table(tableName, entity.GetSchema());
+
+            foreach (var property in entity.GetProperties())
+            {
+                columns.Add($"{tableName}.{property.GetColumnName(table)}");
+            }
+
+            indexes.Add($"{tableName}.{entity.FindPrimaryKey()!.GetName()}");
+
+            foreach (var index in entity.GetIndexes())
+            {
+                indexes.Add($"{tableName}.{index.GetDatabaseName()}");
+            }
+        }
+
+        return new SettingsStoreObjects(columns, indexes);
+    }
+
+    private sealed class ParityDbContext(
+        DbContextOptions<ParityDbContext> options,
+        SettingsStorageOptions storageOptions,
+        StorageNamingStyle style
+    ) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.AddHeadlessSettings(storageOptions, style);
+        }
+    }
 
     [Fact]
     public async Task should_initialize_tables_and_round_trip_setting_value()
@@ -49,8 +115,19 @@ public abstract class SettingsStorageConformanceTests<TFixture>(TFixture fixture
 
         // then
         initializer.IsInitialized.Should().BeTrue();
-        (await fixture.TableExistsAsync(_Schema, "SettingValues", AbortToken)).Should().BeTrue();
-        (await fixture.TableExistsAsync(_Schema, "SettingDefinitions", AbortToken)).Should().BeTrue();
+        var names = new SettingsStorageOptions();
+        (await fixture.TableExistsAsync(_Schema, names.ResolveSettingValuesTableName(fixture.NamingStyle), AbortToken))
+            .Should()
+            .BeTrue();
+        (
+            await fixture.TableExistsAsync(
+                _Schema,
+                names.ResolveSettingDefinitionsTableName(fixture.NamingStyle),
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
         stored.Should().NotBeNull();
         stored!.Value.Should().Be("Dark");
         stored.CreatedAt.Should().NotBe(default);
@@ -172,5 +249,38 @@ public abstract class SettingsStorageConformanceTests<TFixture>(TFixture fixture
         // then every write succeeds and exactly one row holds one of their values
         var stored = await repository.GetListAsync("Tenant", "t1", AbortToken);
         stored.Should().ContainSingle().Which.Value.Should().MatchRegex("^v[0-7]$");
+    }
+
+    [Fact]
+    public async Task should_refuse_a_padded_provider_key_and_leave_the_unpadded_row_intact()
+    {
+        // given a stored "acme" row; SQL Server compares "acme " equal to it, PostgreSQL does not
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<ISettingValueRecordRepository>();
+        var store = new SettingValueStore(
+            repository,
+            Substitute.For<ISettingDefinitionManager>(),
+            new SequentialGuidGenerator(SequentialGuidType.Version7),
+            host.Services.GetRequiredService<ICache<SettingValueCacheItem>>(),
+            Options.Create(new SettingManagementOptions())
+        );
+        await repository.InsertAsync(
+            new SettingValueRecord(Guid.NewGuid(), "Theme", "Dark", "Tenant", "acme"),
+            AbortToken
+        );
+
+        // when
+        var set = async () => await store.SetAsync("Theme", "Light", "Tenant", "acme ", AbortToken);
+        var get = async () => await store.GetOrDefaultAsync("Theme", "Tenant", "acme ", AbortToken);
+        var delete = async () => await store.DeleteAsync("Theme", "Tenant", "acme ", AbortToken);
+
+        // then
+        await set.Should().ThrowExactlyAsync<ArgumentException>();
+        await get.Should().ThrowExactlyAsync<ArgumentException>();
+        await delete.Should().ThrowExactlyAsync<ArgumentException>();
+        var stored = await repository.GetListAsync("Tenant", "acme", AbortToken);
+        stored.Should().ContainSingle().Which.Value.Should().Be("Dark");
     }
 }

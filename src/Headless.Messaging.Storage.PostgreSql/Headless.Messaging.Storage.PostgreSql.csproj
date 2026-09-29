@@ -17,5 +17,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
+    <ProjectReference Include="..\Headless.Sql.PostgreSql\Headless.Sql.PostgreSql.csproj" />
   </ItemGroup>
 </Project>

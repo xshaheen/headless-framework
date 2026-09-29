@@ -1,13 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reflection;
-using System.Runtime.Loader;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using GeneratedFixture = Headless.Jobs.GeneratedDiscoveryFixture;
+using MiddlewareFixture = Headless.Jobs.DiscoveryFixture;
 
 namespace Tests;
 
@@ -163,41 +163,30 @@ public sealed class JobFunctionProviderTests : TestBase
     }
 
     [Fact]
-    public async Task should_freeze_generated_discovery_metadata_and_middleware_loaded_by_the_options_callback()
+    public async Task should_freeze_generated_functions_and_middleware_from_an_added_module()
     {
-        const string assemblyName = "Headless.Jobs.GeneratedDiscoveryFixture.dll";
-        const string functionName = "tests.discovery.generated";
-        const string requestTypeName = "Headless.Jobs.GeneratedDiscoveryFixture.DiscoveryRequest";
-        const string middlewareTypeName = "Headless.Jobs.GeneratedDiscoveryFixture.DiscoveryScheduleMiddleware";
-        Assembly? discoveredAssembly = null;
-        AssemblyLoadContext
-            .Default.Assemblies.Should()
-            .NotContain(assembly =>
-                string.Equals(
-                    assembly.GetName().Name,
-                    Path.GetFileNameWithoutExtension(assemblyName),
-                    StringComparison.Ordinal
-                )
-            );
+        const string functionName = GeneratedFixture.DiscoveryJobs.FunctionName;
 
-        new ServiceCollection().AddHeadlessJobs(options =>
-        {
-            discoveredAssembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(
-                Path.Combine(AppContext.BaseDirectory, "fixtures", assemblyName)
-            );
-            options.AddJobsDiscovery([discoveredAssembly]);
-        });
+        new ServiceCollection().AddHeadlessJobs(options => options.AddModule<GeneratedFixture.JobsModule>());
 
         JobFunctionProvider.JobFunctions.Should().ContainKey(functionName);
         JobFunctionProvider.JobFunctionDescriptors.Should().ContainKey(functionName);
-        JobFunctionProvider.JobFunctionRequestTypes[functionName].Item2.FullName.Should().Be(requestTypeName);
+        JobFunctionProvider
+            .JobFunctionRequestTypes[functionName]
+            .Item2.Should()
+            .Be<GeneratedFixture.DiscoveryRequest>();
 
-        var middlewareType = discoveredAssembly!.GetType(middlewareTypeName, throwOnError: true)!;
-        var services = new ServiceCollection().AddSingleton(middlewareType).BuildServiceProvider();
-        var descriptor = JobFunctionProvider.JobFunctionDescriptors[functionName];
+        await using var services = new ServiceCollection()
+            .AddSingleton<GeneratedFixture.DiscoveryScheduleMiddleware>()
+            .BuildServiceProvider();
+        var invocationsBefore = GeneratedFixture.DiscoveryScheduleMiddleware.InvocationCount;
         var nextCalled = false;
         await JobMiddlewareRegistry.DispatchScheduleAsync(
-            new JobScheduleContext(descriptor, new TimeJobEntity(), services),
+            new JobScheduleContext(
+                JobFunctionProvider.JobFunctionDescriptors[functionName],
+                new TimeJobEntity(),
+                services
+            ),
             _ =>
             {
                 nextCalled = true;
@@ -207,7 +196,38 @@ public sealed class JobFunctionProviderTests : TestBase
         );
 
         nextCalled.Should().BeTrue();
-        middlewareType.GetProperty("InvocationCount")!.GetValue(null).Should().Be(1);
+        GeneratedFixture.DiscoveryScheduleMiddleware.InvocationCount.Should().Be(invocationsBefore + 1);
+    }
+
+    [Fact]
+    public void should_register_nothing_from_a_referenced_assembly_whose_module_is_not_added()
+    {
+        // The fixture assembly is referenced and loaded by this test assembly; loading alone must register nothing.
+        _ = typeof(GeneratedFixture.DiscoveryJobs);
+
+        new ServiceCollection().AddHeadlessJobs();
+
+        JobFunctionProvider.JobFunctions.Should().NotContainKey(GeneratedFixture.DiscoveryJobs.FunctionName);
+    }
+
+    [Fact]
+    public void should_accept_known_modules_and_reject_unseen_modules_after_the_catalog_froze()
+    {
+        new ServiceCollection().AddHeadlessJobs(options => options.AddModule<GeneratedFixture.JobsModule>());
+
+        var addKnownModule = () =>
+            new ServiceCollection().AddHeadlessJobs(options => options.AddModule<GeneratedFixture.JobsModule>());
+        var addUnseenModule = () =>
+            new ServiceCollection().AddHeadlessJobs(options => options.AddModule<MiddlewareFixture.JobsModule>());
+
+        addKnownModule.Should().NotThrow();
+        addUnseenModule
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                $"*'{typeof(MiddlewareFixture.JobsModule).FullName}'*after the process-wide job catalog closed*"
+            );
+        JobFunctionProvider.JobFunctions.Keys.Should().Equal(GeneratedFixture.DiscoveryJobs.FunctionName);
     }
 
     [Fact]
@@ -396,33 +416,19 @@ public sealed class JobFunctionProviderTests : TestBase
     }
 
     [Fact]
-    public async Task should_load_middleware_only_discovery_once_before_registry_freeze()
+    public async Task should_register_a_middleware_only_module_once_when_it_is_added_repeatedly()
     {
-        const string assemblyName = "Headless.Jobs.DiscoveryFixture.dll";
-        const string middlewareTypeName = "Headless.Jobs.DiscoveryFixture.DiscoveryScheduleMiddleware";
-        Assembly? discoveredAssembly = null;
-        AssemblyLoadContext
-            .Default.Assemblies.Should()
-            .NotContain(assembly =>
-                string.Equals(
-                    assembly.GetName().Name,
-                    Path.GetFileNameWithoutExtension(assemblyName),
-                    StringComparison.Ordinal
-                )
-            );
-
         new ServiceCollection().AddHeadlessJobs(options =>
         {
-            discoveredAssembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(
-                Path.Combine(AppContext.BaseDirectory, "fixtures", assemblyName)
-            );
-            options.AddJobsDiscovery([discoveredAssembly]);
-            options.AddJobsDiscovery([discoveredAssembly]);
+            options.AddModule<MiddlewareFixture.JobsModule>();
+            options.AddModule<MiddlewareFixture.JobsModule>();
         });
         JobFunctionProvider.Build();
 
-        var middlewareType = discoveredAssembly!.GetType(middlewareTypeName, throwOnError: true)!;
-        await using var services = new ServiceCollection().AddSingleton(middlewareType).BuildServiceProvider();
+        await using var services = new ServiceCollection()
+            .AddSingleton<MiddlewareFixture.DiscoveryScheduleMiddleware>()
+            .BuildServiceProvider();
+        var invocationsBefore = MiddlewareFixture.DiscoveryScheduleMiddleware.InvocationCount;
         var nextCalled = false;
         await JobMiddlewareRegistry.DispatchScheduleAsync(
             new JobScheduleContext(_Descriptor("fixture", null), new TimeJobEntity(), services),
@@ -431,11 +437,11 @@ public sealed class JobFunctionProviderTests : TestBase
                 nextCalled = true;
                 return Task.CompletedTask;
             },
-            TestContext.Current.CancellationToken
+            AbortToken
         );
 
         nextCalled.Should().BeTrue();
-        middlewareType.GetProperty("InvocationCount")!.GetValue(null).Should().Be(1);
+        MiddlewareFixture.DiscoveryScheduleMiddleware.InvocationCount.Should().Be(invocationsBefore + 1);
     }
 
     private static KeyValuePair<string, JobFunctionRegistration> _Function(string name, string cronExpression = "")

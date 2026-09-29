@@ -8,7 +8,8 @@ namespace Headless.DistributedLocks;
 /// <summary>
 /// <see cref="IDistributedReadWriteLock"/> implementation that maps read/write locks onto the
 /// shared/exclusive modes of a <see cref="ConnectionScopedDistributedLock"/>: read locks acquire in
-/// shared mode, write locks in exclusive mode. Reader-writer handles never carry a fencing token.
+/// shared mode, write locks in exclusive mode. Read handles never carry a fencing token; write handles are exclusive
+/// acquisitions, so they carry one whenever the mutex provider has an <see cref="IFencingTokenSource"/>.
 /// </summary>
 /// <param name="mutexProvider">The connection-scoped mutex provider whose shared/exclusive storage backs this.</param>
 internal sealed class ConnectionScopedReadWriteLock(ConnectionScopedDistributedLock mutexProvider)

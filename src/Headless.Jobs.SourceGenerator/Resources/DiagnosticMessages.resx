@@ -102,4 +102,46 @@
   <data name="InvalidMissedRunGraceMessage" xml:space="preserve">
     <value>The missed-run grace value '{0}' must be greater than zero seconds</value>
   </data>
+  <data name="InvalidOverlapPolicyTitle" xml:space="preserve">
+    <value>Invalid overlap policy</value>
+  </data>
+  <data name="InvalidOverlapPolicyMessage" xml:space="preserve">
+    <value>The overlap policy value '{0}' is not defined</value>
+  </data>
+  <data name="UnknownMiddlewareTargetTitle" xml:space="preserve">
+    <value>Unknown Jobs middleware target</value>
+  </data>
+  <data name="UnknownMiddlewareTargetMessage" xml:space="preserve">
+    <value>The Jobs middleware target '{0}' does not match a generated job-function descriptor</value>
+  </data>
+  <data name="DuplicateMiddlewareTitle" xml:space="preserve">
+    <value>Duplicate Jobs middleware declaration</value>
+  </data>
+  <data name="DuplicateMiddlewareMessage" xml:space="preserve">
+    <value>The Jobs middleware declaration for '{0}' is duplicated</value>
+  </data>
+  <data name="MethodMiddlewareRequiresJobFunctionTitle" xml:space="preserve">
+    <value>Method Jobs middleware requires JobFunction</value>
+  </data>
+  <data name="MethodMiddlewareRequiresJobFunctionMessage" xml:space="preserve">
+    <value>Method-level Jobs middleware must be declared beside a [JobFunction] attribute</value>
+  </data>
+  <data name="MethodMiddlewareFunctionTargetTitle" xml:space="preserve">
+    <value>Method Jobs middleware cannot specify Function</value>
+  </data>
+  <data name="MethodMiddlewareFunctionTargetMessage" xml:space="preserve">
+    <value>Method-level Jobs middleware derives its target from [JobFunction]; remove the Function property</value>
+  </data>
+  <data name="LocalAssemblyMiddlewareTargetTitle" xml:space="preserve">
+    <value>Assembly Jobs middleware cannot target a local function</value>
+  </data>
+  <data name="LocalAssemblyMiddlewareTargetMessage" xml:space="preserve">
+    <value>The Jobs middleware target '{0}' is declared in this assembly; place the middleware attribute beside that [JobFunction] method</value>
+  </data>
+  <data name="InaccessibleMiddlewareTypeTitle" xml:space="preserve">
+    <value>Jobs middleware type is inaccessible to generated code</value>
+  </data>
+  <data name="InaccessibleMiddlewareTypeMessage" xml:space="preserve">
+    <value>The Jobs middleware type '{0}' must be accessible from generated code in the declaring assembly</value>
+  </data>
 </root>

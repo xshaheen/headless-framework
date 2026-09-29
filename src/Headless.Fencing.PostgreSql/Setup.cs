@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Fencing.PostgreSql;
+using Headless.Sql;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,6 +17,22 @@ public static class SetupFencingPostgreSql
 {
     extension(HeadlessFencingSetupBuilder setup)
     {
+        /// <summary>
+        /// Configures PostgreSQL storage with the connection registered by <c>AddPostgreSqlSql</c>, so one
+        /// connection string serves every feature that shares the database.
+        /// </summary>
+        /// <returns>The setup builder for chaining.</returns>
+        /// <remarks>
+        /// Options resolution throws <see cref="InvalidOperationException"/> when <c>AddPostgreSqlSql</c> was not
+        /// called or registered another provider's connection.
+        /// </remarks>
+        public HeadlessFencingSetupBuilder UsePostgreSql()
+        {
+            return setup.UsePostgreSql(
+                (options, services) => options.ConnectionString = services.GetPostgreSqlConnectionString()
+            );
+        }
+
         /// <summary>Stores leases in PostgreSQL, in the database named by <paramref name="connectionString" />.</summary>
         /// <param name="connectionString">The Npgsql connection string.</param>
         /// <returns>The builder, to allow chaining.</returns>
@@ -136,6 +153,8 @@ public static class SetupFencingPostgreSql
             services.AddPostgreSqlUnitOfWork();
 
             services.AddInitializerHostedService<PostgreSqlFencingStorageInitializer>();
+            // The store waits between deadlock retries on this clock.
+            services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<ILeaseStore, PostgreSqlLeaseStore>();
         }
     }

@@ -67,7 +67,10 @@ public sealed record StoredRecord(
     DateTimeOffset? LeaseExpiresAt,
     byte[]? Result,
     string? ResultContract,
-    DateTimeOffset RetentionUntil
+    DateTimeOffset RetentionUntil,
+    string? RecoveryPoint,
+    byte[]? RecoveryState,
+    string? RecoveryContract
 );
 
 public static class IdempotencyFixtureExtensions

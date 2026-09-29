@@ -31,7 +31,8 @@ public interface IFencedLeases
     /// <param name="cancellationToken">Token used to cancel the database call.</param>
     /// <returns>
     /// <see cref="LeaseGrantStatus.Granted" /> or <see cref="LeaseGrantStatus.Takeover" /> with the new lease, or
-    /// <see cref="LeaseGrantStatus.Held" /> with the live holder's generation and expiry.
+    /// <see cref="LeaseGrantStatus.Held" /> with the live holder's generation and expiry. Every result carries the
+    /// lease's takeover count, and a grant that resumes an expired attempt carries that attempt's last progress.
     /// </returns>
     /// <exception cref="ArgumentException">The kind, resource, or current tenant id is invalid.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="duration" /> is outside the configured bounds.</exception>
@@ -43,6 +44,7 @@ public interface IFencedLeases
     );
 
     /// <summary>Moves a live lease's expiry to <paramref name="duration" /> from now, by the database clock.</summary>
+    /// <remarks>Any progress recorded by an earlier renewal is kept.</remarks>
     /// <param name="lease">The lease to renew.</param>
     /// <param name="duration">The new time to live; bounded by the configured limits.</param>
     /// <param name="cancellationToken">Token used to cancel the database call.</param>
@@ -54,6 +56,35 @@ public interface IFencedLeases
     ValueTask<LeaseRenewalResult> RenewAsync(
         FencedLease lease,
         TimeSpan duration,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Moves a live lease's expiry to <paramref name="duration" /> from now, by the database clock, and records how
+    /// far the attempt got.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="progress" /> is stored in the same guarded write that extends the lease, so it is recorded
+    /// only when the renewal succeeds: a stale, expired, or ended attempt never overwrites it. A later
+    /// <see cref="LeaseGrantStatus.Takeover" /> grant returns the last recorded progress so the new attempt can resume.
+    /// </remarks>
+    /// <param name="lease">The lease to renew.</param>
+    /// <param name="duration">The new time to live; bounded by the configured limits.</param>
+    /// <param name="progress">How far the attempt got, replacing any progress recorded before.</param>
+    /// <param name="cancellationToken">Token used to cancel the database call.</param>
+    /// <returns>
+    /// <see cref="LeaseRenewalStatus.Renewed" /> with the new expiry, or why the lease was not extended and the
+    /// progress not recorded.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="progress" /> is <see langword="null" />.</exception>
+    /// <exception cref="ArgumentException">
+    /// The lease's identity or generation is invalid, or <paramref name="progress" /> exceeds its size limits.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="duration" /> is outside the configured bounds.</exception>
+    ValueTask<LeaseRenewalResult> RenewAsync(
+        FencedLease lease,
+        TimeSpan duration,
+        LeaseProgress progress,
         CancellationToken cancellationToken = default
     );
 

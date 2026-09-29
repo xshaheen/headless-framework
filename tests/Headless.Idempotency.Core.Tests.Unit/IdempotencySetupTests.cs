@@ -159,7 +159,7 @@ public sealed class IdempotencySetupTests : TestBase
         var fromConfiguration = _Storage(setup => setup.ConfigureStorage(configuration));
 
         // then
-        byDefault.Schema.Should().Be("idempotency");
+        byDefault.Schema.Should().Be("headless");
         fromDelegate.Schema.Should().Be("custom");
         fromConfiguration.Schema.Should().Be("keys");
     }

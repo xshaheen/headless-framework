@@ -79,4 +79,28 @@ internal static partial class PostgreSqlLoggerExtensions
         Message = "Could not reconcile an ambiguous transactional inbox commit; recovery will treat the outcome as indeterminate."
     )]
     public static partial void LogInboxCommitProbeFailed(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 9,
+        EventName = "SchemaRaceObserved",
+        Level = LogLevel.Information,
+        Message = "Messaging schema initialization absorbed a concurrent-DDL race (SqlState={SqlState}): {Detail}. Retrying the DDL once in a fresh transaction."
+    )]
+    public static partial void LogSchemaRaceObserved(this ILogger logger, string sqlState, string detail);
+
+    [LoggerMessage(
+        EventId = 10,
+        EventName = "InitLockReleaseFailed",
+        Level = LogLevel.Warning,
+        Message = "Could not release the messaging initialization lock {LockResource}; it is released when the session closes."
+    )]
+    public static partial void LogInitLockReleaseFailed(this ILogger logger, string lockResource, Exception exception);
+
+    [LoggerMessage(
+        EventId = 11,
+        EventName = "WaitingForInitLock",
+        Level = LogLevel.Information,
+        Message = "Waiting for the messaging initialization lock {LockResource}, held by another session, for {Elapsed}."
+    )]
+    public static partial void LogWaitingForInitLock(this ILogger logger, string lockResource, TimeSpan elapsed);
 }

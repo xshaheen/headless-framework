@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.Hosting.Initialization;
 using Headless.Sequences;
 using Headless.Sequences.PostgreSql;
 using Headless.Testing.Testcontainers;
@@ -44,7 +45,7 @@ public sealed class PostgreSqlSequencesFixture
         // The container is reused across runs, so start from no counter table and let the initializer create it.
         await using (
             var drop = new NpgsqlCommand(
-                $"""DROP SCHEMA IF EXISTS "{PostgreSqlSequencesOptions.DefaultSchema}" CASCADE;""",
+                $"""DROP SCHEMA IF EXISTS "{HeadlessStorageDefaults.Schema}" CASCADE;""",
                 connection
             )
         )
@@ -102,7 +103,7 @@ public sealed class PostgreSqlSequencesFixture
     {
         return ReadValueAsync(
             key,
-            PostgreSqlSequencesOptions.DefaultSchema,
+            HeadlessStorageDefaults.Schema,
             PostgreSqlSequencesOptions.DefaultTableName,
             cancellationToken
         );

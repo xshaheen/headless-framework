@@ -51,7 +51,7 @@ internal sealed partial class PostgreSqlDataStorage(
     /// paths that pass <c>@OriginalRetries</c>.
     /// </summary>
     private const string _TerminalRowGuardWithRetries =
-        "NOT (\"StatusName\" IN ('Succeeded','Failed') AND \"NextRetryAt\" IS NULL) AND (@OriginalRetries IS NULL OR \"Retries\"=@OriginalRetries) AND (@OriginalInlineAttempts IS NULL OR \"InlineAttempts\"=@OriginalInlineAttempts)";
+        "NOT (\"status_name\" IN ('Succeeded','Failed') AND \"next_retry_at\" IS NULL) AND (@OriginalRetries IS NULL OR \"retries\"=@OriginalRetries) AND (@OriginalInlineAttempts IS NULL OR \"inline_attempts\"=@OriginalInlineAttempts)";
 
     /// <summary>
     /// Reusable WHERE-clause fragment for paths that do not supply <c>@OriginalRetries</c>
@@ -59,7 +59,7 @@ internal sealed partial class PostgreSqlDataStorage(
     /// <see cref="_TerminalRowGuardWithRetries"/> without the concurrency-token clause.
     /// </summary>
     private const string _TerminalRowGuardSimple =
-        "NOT (\"StatusName\" IN ('Succeeded','Failed') AND \"NextRetryAt\" IS NULL)";
+        "NOT (\"status_name\" IN ('Succeeded','Failed') AND \"next_retry_at\" IS NULL)";
 
     /// <summary>
     /// Lookahead window for delayed messages.
@@ -140,7 +140,7 @@ internal sealed partial class PostgreSqlDataStorage(
         // stale LockedUntil/Owner would fence the row from re-claim until the lease expires (delayed message
         // delivered up to DispatchTimeout late after restart).
         var sql =
-            $"UPDATE {_publishedTable} SET \"StatusName\"=@StatusName, \"LockedUntil\"=NULL, \"Owner\"=NULL WHERE \"Id\" = ANY(@Ids) AND {_TerminalRowGuardSimple};";
+            $"UPDATE {_publishedTable} SET \"status_name\"=@StatusName, \"locked_until\"=NULL, \"owner\"=NULL WHERE \"id\" = ANY(@Ids) AND {_TerminalRowGuardSimple};";
 
         object[] sqlParams =
         [
@@ -339,9 +339,9 @@ internal sealed partial class PostgreSqlDataStorage(
         // processor can rewrite it on the next pickup. The plan's stricter form would block
         // that, breaking the persisted-retry flow.
         var refreshContent = contentWrite is MessageContentWrite.Refresh;
-        var contentAssignment = refreshContent ? "\"Content\"=@Content," : "";
+        var contentAssignment = refreshContent ? "\"content\"=@Content," : "";
         var sql =
-            $"UPDATE {_receivedTable} SET {contentAssignment}\"Retries\"=@Retries,\"InlineAttempts\"=@InlineAttempts,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"LockedUntil\"=@LockedUntil,\"Owner\"=@Owner,\"StatusName\"=@StatusName,\"ExceptionInfo\"=@ExceptionInfo,\"AttemptId\"=CASE WHEN @LockedUntil IS NULL THEN NULL ELSE \"AttemptId\" END,\"TerminalAt\"=CASE WHEN \"IsInboxRecord\" AND @IsTerminal THEN statement_timestamp() ELSE \"TerminalAt\" END,\"EffectiveExpiresAt\"=CASE WHEN \"IsInboxRecord\" AND @IsTerminal THEN statement_timestamp() + (\"InboxRetentionSeconds\" * INTERVAL '1 second') ELSE \"EffectiveExpiresAt\" END WHERE \"Id\"=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (\"LockedUntil\" IS NOT DISTINCT FROM @OriginalLockedUntil AND \"Owner\" IS NOT DISTINCT FROM @OriginalOwner AND \"LockedUntil\">statement_timestamp())) AND (NOT \"IsInboxRecord\" OR (\"IntentType\"=@InboxIntentType AND \"Generation\"=@InboxGeneration AND \"GenerationIncarnationId\"=@InboxGenerationIncarnationId AND \"AttemptId\"=@InboxAttemptId AND \"Owner\" IS NOT DISTINCT FROM @InboxOwner AND \"LockedUntil\"=@InboxLockedUntil))";
+            $"UPDATE {_receivedTable} SET {contentAssignment}\"retries\"=@Retries,\"inline_attempts\"=@InlineAttempts,\"expires_at\"=@ExpiresAt,\"next_retry_at\"=@NextRetryAt,\"locked_until\"=@LockedUntil,\"owner\"=@Owner,\"status_name\"=@StatusName,\"exception_info\"=@ExceptionInfo,\"attempt_id\"=CASE WHEN @LockedUntil IS NULL THEN NULL ELSE \"attempt_id\" END,\"terminal_at\"=CASE WHEN \"is_inbox_record\" AND @IsTerminal THEN statement_timestamp() ELSE \"terminal_at\" END,\"effective_expires_at\"=CASE WHEN \"is_inbox_record\" AND @IsTerminal THEN statement_timestamp() + (\"inbox_retention_seconds\" * INTERVAL '1 second') ELSE \"effective_expires_at\" END WHERE \"id\"=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (\"locked_until\" IS NOT DISTINCT FROM @OriginalLockedUntil AND \"owner\" IS NOT DISTINCT FROM @OriginalOwner AND \"locked_until\">statement_timestamp())) AND (NOT \"is_inbox_record\" OR (\"intent_type\"=@InboxIntentType AND \"generation\"=@InboxGeneration AND \"generation_incarnation_id\"=@InboxGenerationIncarnationId AND \"attempt_id\"=@InboxAttemptId AND \"owner\" IS NOT DISTINCT FROM @InboxOwner AND \"locked_until\"=@InboxLockedUntil))";
 
         var inboxFence = message.InboxAttemptFence;
 
@@ -460,13 +460,13 @@ internal sealed partial class PostgreSqlDataStorage(
         }
 
         var sql = $"""
-            SELECT "StatusName"='Succeeded' AND "NextRetryAt" IS NULL AND "AttemptId" IS NULL
+            SELECT "status_name"='Succeeded' AND "next_retry_at" IS NULL AND "attempt_id" IS NULL
             FROM {_receivedTable}
-            WHERE "Id"=@Id
-              AND "IsInboxRecord"
-              AND "IntentType"=@IntentType
-              AND "Generation"=@Generation
-              AND "GenerationIncarnationId"=@GenerationIncarnationId;
+            WHERE "id"=@Id
+              AND "is_inbox_record"
+              AND "intent_type"=@IntentType
+              AND "generation"=@Generation
+              AND "generation_incarnation_id"=@GenerationIncarnationId;
             """;
         object[] sqlParams =
         [
@@ -575,7 +575,7 @@ internal sealed partial class PostgreSqlDataStorage(
     )
     {
         var sql =
-            $"INSERT INTO {_publishedTable} (\"Id\",\"Version\",\"Name\",\"Content\",\"IntentType\",\"Retries\",\"InlineAttempts\",\"Added\",\"ExpiresAt\",\"NextRetryAt\",\"LockedUntil\",\"Owner\",\"StatusName\",\"MessageId\")"
+            $"INSERT INTO {_publishedTable} (\"id\",\"version\",\"name\",\"content\",\"intent_type\",\"retries\",\"inline_attempts\",\"added\",\"expires_at\",\"next_retry_at\",\"locked_until\",\"owner\",\"status_name\",\"message_id\")"
             + $"VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId);";
 
         var added = timeProvider.GetUtcNow();
@@ -799,8 +799,8 @@ internal sealed partial class PostgreSqlDataStorage(
         ];
 
         // #5 — adopt the authoritative persisted row id. On a concurrent redelivery that takes the ON
-        // CONFLICT UPDATE branch the row keeps its original "Id", so the freshly-generated StorageId would
-        // be stale and the caller's later ChangeReceiveStateAsync (WHERE "Id"=@Id) would silently no-op.
+        // CONFLICT UPDATE branch the row keeps its original "id", so the freshly-generated StorageId would
+        // be stale and the caller's later ChangeReceiveStateAsync (WHERE "id"=@Id) would silently no-op.
         var rowId = await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
         if (rowId is { } id)
         {
@@ -858,33 +858,33 @@ internal sealed partial class PostgreSqlDataStorage(
                 .ExecuteReaderAsync(
                     $"""
                     WITH candidates AS MATERIALIZED (
-                        SELECT "Id","IsInboxRecord","GenerationIncarnationId","StatusName",
-                               "ConsumerIdentity","IntentType",
-                               CASE WHEN "IsInboxRecord" THEN gen_random_uuid() END AS "OperationId",
-                               CASE WHEN "IsInboxRecord" THEN gen_random_uuid() END AS "AuditId"
+                        SELECT "id","is_inbox_record","generation_incarnation_id","status_name",
+                               "consumer_identity","intent_type",
+                               CASE WHEN "is_inbox_record" THEN gen_random_uuid() END AS "operation_id",
+                               CASE WHEN "is_inbox_record" THEN gen_random_uuid() END AS "audit_id"
                         FROM {_receivedTable}
-                        WHERE ((NOT "IsInboxRecord" AND "ExpiresAt" < @timeout)
-                               OR ("IsInboxRecord" AND NOT "IsHeld" AND "EffectiveExpiresAt" < transaction_timestamp()))
-                          AND "StatusName" IN ('Succeeded','Failed') AND "NextRetryAt" IS NULL AND "IntentType" IN (0,1)
-                        ORDER BY "EffectiveExpiresAt" NULLS LAST,"Id"
+                        WHERE ((NOT "is_inbox_record" AND "expires_at" < @timeout)
+                               OR ("is_inbox_record" AND NOT "is_held" AND "effective_expires_at" < transaction_timestamp()))
+                          AND "status_name" IN ('Succeeded','Failed') AND "next_retry_at" IS NULL AND "intent_type" IN (0,1)
+                        ORDER BY "effective_expires_at" NULLS LAST,"id"
                         FOR UPDATE SKIP LOCKED LIMIT @batchCount
                     ), receipts AS (
-                        INSERT INTO {InboxReceiptsTable}("OperationId","GenerationIncarnationId","OperationType","ExpectedStatus","Actor","Reason","Outcome","StorageId","CreatedAt")
-                        SELECT "OperationId","GenerationIncarnationId",'Cleanup',"StatusName",'headless.messaging.collector','retention_expired','Applied',"Id",transaction_timestamp()
-                        FROM candidates WHERE "IsInboxRecord"
-                        RETURNING "OperationId"
+                        INSERT INTO {InboxReceiptsTable}("operation_id","generation_incarnation_id","operation_type","expected_status","actor","reason","outcome","storage_id","created_at")
+                        SELECT "operation_id","generation_incarnation_id",'Cleanup',"status_name",'headless.messaging.collector','retention_expired','Applied',"id",transaction_timestamp()
+                        FROM candidates WHERE "is_inbox_record"
+                        RETURNING "operation_id"
                     ), audits AS (
-                        INSERT INTO {InboxAuditTable}("AuditId","OperationId","GenerationIncarnationId","OperationType","Actor","Reason","Outcome","CreatedAt")
-                        SELECT c."AuditId",c."OperationId",c."GenerationIncarnationId",'Cleanup','headless.messaging.collector','retention_expired','Applied',transaction_timestamp()
-                        FROM candidates c JOIN receipts r ON r."OperationId"=c."OperationId"
-                        RETURNING "OperationId"
+                        INSERT INTO {InboxAuditTable}("audit_id","operation_id","generation_incarnation_id","operation_type","actor","reason","outcome","created_at")
+                        SELECT c."audit_id",c."operation_id",c."generation_incarnation_id",'Cleanup','headless.messaging.collector','retention_expired','Applied',transaction_timestamp()
+                        FROM candidates c JOIN receipts r ON r."operation_id"=c."operation_id"
+                        RETURNING "operation_id"
                     ), deleted AS (
                     DELETE FROM {_receivedTable} target
                     USING candidates c
-                    WHERE target."Id"=c."Id" AND (NOT c."IsInboxRecord" OR EXISTS (SELECT 1 FROM audits a WHERE a."OperationId"=c."OperationId"))
-                    RETURNING target."IsInboxRecord",target."ConsumerIdentity",target."IntentType"
+                    WHERE target."id"=c."id" AND (NOT c."is_inbox_record" OR EXISTS (SELECT 1 FROM audits a WHERE a."operation_id"=c."operation_id"))
+                    RETURNING target."is_inbox_record",target."consumer_identity",target."intent_type"
                     )
-                    SELECT "IsInboxRecord","ConsumerIdentity","IntentType" FROM deleted;
+                    SELECT "is_inbox_record","consumer_identity","intent_type" FROM deleted;
                     """,
                     static async (reader, token) =>
                     {
@@ -930,13 +930,13 @@ internal sealed partial class PostgreSqlDataStorage(
             .ExecuteNonQueryAsync(
                 $"""
                 DELETE FROM {table}
-                WHERE "Id" IN (
-                    SELECT "Id"
+                WHERE "id" IN (
+                    SELECT "id"
                     FROM {table}
-                    WHERE "ExpiresAt" < @timeout
-                    AND "StatusName" IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}')
-                    AND "NextRetryAt" IS NULL
-                    AND "IntentType" IN (0, 1)
+                    WHERE "expires_at" < @timeout
+                    AND "status_name" IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}')
+                    AND "next_retry_at" IS NULL
+                    AND "intent_type" IN (0, 1)
                     LIMIT @batchCount
                 )
                 """,
@@ -1028,20 +1028,20 @@ internal sealed partial class PostgreSqlDataStorage(
     {
         var sql = $"""
             UPDATE {_receivedTable}
-            SET "NextRetryAt" = @NextRetryAt, "Owner" = NULL, "LockedUntil" = NULL
-            WHERE "Id" = @Id
-              AND "IntentType" = @IntentType
-              AND "Owner" IS NOT DISTINCT FROM @Owner
-              AND "LockedUntil" = @LockedUntil
-              AND "LockedUntil" > statement_timestamp()
-              AND (NOT "IsInboxRecord" OR (
-                    "Id"=@InboxStorageId
-                AND "IntentType"=@InboxIntentType
-                AND "Generation"=@InboxGeneration
-                AND "GenerationIncarnationId"=@InboxGenerationIncarnationId
-                AND "AttemptId"=@InboxAttemptId
-                AND "Owner" IS NOT DISTINCT FROM @InboxOwner
-                AND "LockedUntil"=@InboxLockedUntil))
+            SET "next_retry_at" = @NextRetryAt, "owner" = NULL, "locked_until" = NULL
+            WHERE "id" = @Id
+              AND "intent_type" = @IntentType
+              AND "owner" IS NOT DISTINCT FROM @Owner
+              AND "locked_until" = @LockedUntil
+              AND "locked_until" > statement_timestamp()
+              AND (NOT "is_inbox_record" OR (
+                    "id"=@InboxStorageId
+                AND "intent_type"=@InboxIntentType
+                AND "generation"=@InboxGeneration
+                AND "generation_incarnation_id"=@InboxGenerationIncarnationId
+                AND "attempt_id"=@InboxAttemptId
+                AND "owner" IS NOT DISTINCT FROM @InboxOwner
+                AND "locked_until"=@InboxLockedUntil))
               AND {_TerminalRowGuardSimple};
             """;
         var identity = deferral.Identity;
@@ -1122,15 +1122,15 @@ internal sealed partial class PostgreSqlDataStorage(
     {
         var isReceivedTable = string.Equals(table, _receivedTable, StringComparison.Ordinal);
         var inboxGuard = isReceivedTable
-            ? " AND (NOT \"IsInboxRecord\" OR (\"Id\"=@InboxStorageId AND \"IntentType\"=@InboxIntentType AND \"Generation\"=@InboxGeneration AND \"GenerationIncarnationId\"=@InboxGenerationIncarnationId AND \"AttemptId\"=@InboxAttemptId AND \"Owner\" IS NOT DISTINCT FROM @InboxOwner AND \"LockedUntil\"=@InboxLockedUntil))"
+            ? " AND (NOT \"is_inbox_record\" OR (\"id\"=@InboxStorageId AND \"intent_type\"=@InboxIntentType AND \"generation\"=@InboxGeneration AND \"generation_incarnation_id\"=@InboxGenerationIncarnationId AND \"attempt_id\"=@InboxAttemptId AND \"owner\" IS NOT DISTINCT FROM @InboxOwner AND \"locked_until\"=@InboxLockedUntil))"
             : string.Empty;
         var sql = $"""
             UPDATE {table}
-            SET "Owner" = NULL, "LockedUntil" = NULL
-            WHERE "Id" = @Id
-              AND "IntentType" = @IntentType
-              AND "Owner" IS NOT DISTINCT FROM @Owner
-              AND "LockedUntil" = @LockedUntil
+            SET "owner" = NULL, "locked_until" = NULL
+            WHERE "id" = @Id
+              AND "intent_type" = @IntentType
+              AND "owner" IS NOT DISTINCT FROM @Owner
+              AND "locked_until" = @LockedUntil
               AND {_TerminalRowGuardSimple}{inboxGuard};
             """;
         var inboxFence = identity.InboxAttemptFence;
@@ -1210,21 +1210,21 @@ internal sealed partial class PostgreSqlDataStorage(
                 var inboxFence = identity.InboxAttemptFence;
                 var inboxGuard = isReceivedTable
                     ? $"""
-                         AND (NOT "IsInboxRecord" OR (
-                                "Id"=@InboxStorageId{parameterSuffix}
-                            AND "IntentType"=@InboxIntentType{parameterSuffix}
-                            AND "Generation"=@InboxGeneration{parameterSuffix}
-                            AND "GenerationIncarnationId"=@InboxGenerationIncarnationId{parameterSuffix}
-                            AND "AttemptId"=@InboxAttemptId{parameterSuffix}
-                            AND "Owner" IS NOT DISTINCT FROM @InboxOwner{parameterSuffix}
-                            AND "LockedUntil"=@InboxLockedUntil{parameterSuffix}))
+                         AND (NOT "is_inbox_record" OR (
+                                "id"=@InboxStorageId{parameterSuffix}
+                            AND "intent_type"=@InboxIntentType{parameterSuffix}
+                            AND "generation"=@InboxGeneration{parameterSuffix}
+                            AND "generation_incarnation_id"=@InboxGenerationIncarnationId{parameterSuffix}
+                            AND "attempt_id"=@InboxAttemptId{parameterSuffix}
+                            AND "owner" IS NOT DISTINCT FROM @InboxOwner{parameterSuffix}
+                            AND "locked_until"=@InboxLockedUntil{parameterSuffix}))
                         """
                     : string.Empty;
                 predicates[index] = $"""
-                    ("Id" = @Id{parameterSuffix}
-                     AND "IntentType" = @IntentType{parameterSuffix}
-                     AND "Owner" IS NOT DISTINCT FROM @Owner{parameterSuffix}
-                     AND "LockedUntil" = @LockedUntil{parameterSuffix}{inboxGuard})
+                    ("id" = @Id{parameterSuffix}
+                     AND "intent_type" = @IntentType{parameterSuffix}
+                     AND "owner" IS NOT DISTINCT FROM @Owner{parameterSuffix}
+                     AND "locked_until" = @LockedUntil{parameterSuffix}{inboxGuard})
                     """;
                 sqlParams.Add(new NpgsqlParameter($"@Id{parameterSuffix}", identity.StorageId));
                 sqlParams.Add(
@@ -1296,7 +1296,7 @@ internal sealed partial class PostgreSqlDataStorage(
 
             var sql = $"""
                 UPDATE {table}
-                SET "Owner" = NULL, "LockedUntil" = NULL
+                SET "owner" = NULL, "locked_until" = NULL
                 WHERE {_TerminalRowGuardSimple}
                   AND ({string.Join(" OR ", predicates)});
                 """;
@@ -1317,7 +1317,7 @@ internal sealed partial class PostgreSqlDataStorage(
     /// <returns>1 if the row was deleted; 0 if not found.</returns>
     public async ValueTask<int> DeleteReceivedMessageAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var sql = $"""DELETE FROM {_receivedTable} WHERE "Id"=@Id""";
+        var sql = $"""DELETE FROM {_receivedTable} WHERE "id"=@Id""";
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         var result = await connection
@@ -1335,7 +1335,7 @@ internal sealed partial class PostgreSqlDataStorage(
     /// <returns>1 if the row was deleted; 0 if not found.</returns>
     public async ValueTask<int> DeletePublishedMessageAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var sql = $"""DELETE FROM {_publishedTable} WHERE "Id"=@Id""";
+        var sql = $"""DELETE FROM {_publishedTable} WHERE "id"=@Id""";
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         var result = await connection
@@ -1361,7 +1361,7 @@ internal sealed partial class PostgreSqlDataStorage(
             return 0;
         }
 
-        var sql = $"""DELETE FROM {_receivedTable} WHERE "Id" = ANY(@Ids)""";
+        var sql = $"""DELETE FROM {_receivedTable} WHERE "id" = ANY(@Ids)""";
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         return await connection
@@ -1386,7 +1386,7 @@ internal sealed partial class PostgreSqlDataStorage(
             return 0;
         }
 
-        var sql = $"""DELETE FROM {_publishedTable} WHERE "Id" = ANY(@Ids)""";
+        var sql = $"""DELETE FROM {_publishedTable} WHERE "id" = ANY(@Ids)""";
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         return await connection
@@ -1411,10 +1411,10 @@ internal sealed partial class PostgreSqlDataStorage(
     {
         var isReceivedTable = string.Equals(tableName, _receivedTable, StringComparison.Ordinal);
         var inboxGuard = isReceivedTable
-            ? " AND (NOT \"IsInboxRecord\" OR (\"IntentType\"=@InboxIntentType AND \"Generation\"=@InboxGeneration AND \"GenerationIncarnationId\"=@InboxGenerationIncarnationId AND \"AttemptId\"=@InboxAttemptId AND \"Id\"=@InboxStorageId AND \"Owner\" IS NOT DISTINCT FROM @InboxOwner AND \"LockedUntil\"=@InboxLockedUntil))"
+            ? " AND (NOT \"is_inbox_record\" OR (\"intent_type\"=@InboxIntentType AND \"generation\"=@InboxGeneration AND \"generation_incarnation_id\"=@InboxGenerationIncarnationId AND \"attempt_id\"=@InboxAttemptId AND \"id\"=@InboxStorageId AND \"owner\" IS NOT DISTINCT FROM @InboxOwner AND \"locked_until\"=@InboxLockedUntil))"
             : string.Empty;
         var sql =
-            $"UPDATE {tableName} SET \"InlineAttempts\"=@InlineAttempts WHERE \"Id\"=@Id AND {_TerminalRowGuardWithRetries} AND \"LockedUntil\" IS NOT DISTINCT FROM @LockedUntil AND \"Owner\" IS NOT DISTINCT FROM @CurrentOwner AND \"LockedUntil\">statement_timestamp(){inboxGuard}";
+            $"UPDATE {tableName} SET \"inline_attempts\"=@InlineAttempts WHERE \"id\"=@Id AND {_TerminalRowGuardWithRetries} AND \"locked_until\" IS NOT DISTINCT FROM @LockedUntil AND \"owner\" IS NOT DISTINCT FROM @CurrentOwner AND \"locked_until\">statement_timestamp(){inboxGuard}";
         var inboxFence = message.InboxAttemptFence;
         object[] sqlParams =
         [
@@ -1482,9 +1482,9 @@ internal sealed partial class PostgreSqlDataStorage(
     )
     {
         var refreshContent = contentWrite is MessageContentWrite.Refresh;
-        var contentAssignment = refreshContent ? "\"Content\"=@Content," : "";
+        var contentAssignment = refreshContent ? "\"content\"=@Content," : "";
         var sql =
-            $"UPDATE {tableName} SET {contentAssignment}\"Retries\"=@Retries,\"InlineAttempts\"=@InlineAttempts,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"LockedUntil\"=@LockedUntil,\"Owner\"=@Owner,\"StatusName\"=@StatusName WHERE \"Id\"=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (\"LockedUntil\" IS NOT DISTINCT FROM @OriginalLockedUntil AND \"Owner\" IS NOT DISTINCT FROM @OriginalOwner AND \"LockedUntil\">statement_timestamp()))";
+            $"UPDATE {tableName} SET {contentAssignment}\"retries\"=@Retries,\"inline_attempts\"=@InlineAttempts,\"expires_at\"=@ExpiresAt,\"next_retry_at\"=@NextRetryAt,\"locked_until\"=@LockedUntil,\"owner\"=@Owner,\"status_name\"=@StatusName WHERE \"id\"=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (\"locked_until\" IS NOT DISTINCT FROM @OriginalLockedUntil AND \"owner\" IS NOT DISTINCT FROM @OriginalOwner AND \"locked_until\">statement_timestamp()))";
 
         object[] stateParams =
         [
@@ -1572,9 +1572,9 @@ internal sealed partial class PostgreSqlDataStorage(
     )
     {
         // Atomic upsert via INSERT ... ON CONFLICT ON CONSTRAINT against the partial unique index
-        // (MessageId, COALESCE("Group", '')) created by PostgreSqlStorageInitializer. The COALESCE
+        // (MessageId, COALESCE("group", '')) created by PostgreSqlStorageInitializer. The COALESCE
         // expression collapses NULL groups to the empty string so NULL-Group rows participate in
-        // the uniqueness check (a plain ("MessageId","Group") unique constraint treats NULLs as
+        // the uniqueness check (a plain ("message_id","group") unique constraint treats NULLs as
         // distinct, which would let two concurrent broker redeliveries of a no-group message both
         // insert and produce duplicate rows).
         //
@@ -1583,10 +1583,10 @@ internal sealed partial class PostgreSqlDataStorage(
         // already-exhausted message cannot overwrite a previously-Succeeded row's status back to
         // Failed (which would re-fire OnExhausted spuriously).
         //
-        // RETURNING "Id" surfaces the authoritative persisted row id and discriminates written vs no-op:
+        // RETURNING "id" surfaces the authoritative persisted row id and discriminates written vs no-op:
         //   one row returned → a fresh INSERT, OR an ON CONFLICT DO UPDATE whose WHERE guard passed; its
-        //                      "Id" is the canonical row id. On the UPDATE branch the existing row keeps
-        //                      its original "Id" (EXCLUDED."Id" is intentionally not in the SET list), which
+        //                      "id" is the canonical row id. On the UPDATE branch the existing row keeps
+        //                      its original "id" (EXCLUDED."id" is intentionally not in the SET list), which
         //                      differs from the freshly-generated @Id — so callers must adopt this value.
         //   no row returned  → ON CONFLICT matched but the DO UPDATE WHERE guard blocked the update
         //                      (terminal-row guard or active-lease guard) → returns null ("not modified").
@@ -1599,30 +1599,30 @@ internal sealed partial class PostgreSqlDataStorage(
         // overwrite LockedUntil = NULL, releasing the active pickup lease mid-attempt and letting
         // the retry processor re-pick the row while the inline retry burst is still in flight.
         // Ownership time is the DATABASE's: the guard compares against statement_timestamp(), the same
-        // clock that wrote "LockedUntil" in _LeaseAndReserveAttemptAsync. Sampling the app clock here
+        // clock that wrote "locked_until" in _LeaseAndReserveAttemptAsync. Sampling the app clock here
         // instead would let a node running ahead of the server see a live lease as expired and CLEAR it.
-        // The DO UPDATE SET list deliberately excludes "Retries" and "InlineAttempts" so a benign
+        // The DO UPDATE SET list deliberately excludes "retries" and "inline_attempts" so a benign
         // redelivery collapse never resets the durable retry counters.
         // Mirrors the matching guard in SqlServerDataStorage._StoreReceivedMessage.
         var sql = $"""
-            INSERT INTO {_receivedTable}("Id","Version","Name","Group","Content","IntentType","Retries","InlineAttempts","Added","ExpiresAt","NextRetryAt","LockedUntil","Owner","StatusName","MessageId","ExceptionInfo")
+            INSERT INTO {_receivedTable}("id","version","name","group","content","intent_type","retries","inline_attempts","added","expires_at","next_retry_at","locked_until","owner","status_name","message_id","exception_info")
             VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Group,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId,@ExceptionInfo)
-            ON CONFLICT ("Version", "MessageId", (COALESCE("Group", '')), "IntentType")
-            WHERE NOT "IsInboxRecord"
+            ON CONFLICT ("version", "message_id", (COALESCE("group", '')), "intent_type")
+            WHERE NOT "is_inbox_record"
             DO UPDATE SET
-                "StatusName"=EXCLUDED."StatusName",
-                "ExpiresAt"=EXCLUDED."ExpiresAt",
-                "NextRetryAt"=EXCLUDED."NextRetryAt",
-                "LockedUntil"=EXCLUDED."LockedUntil",
-                "Owner"=EXCLUDED."Owner",
-                "Content"=EXCLUDED."Content",
-                "ExceptionInfo"=EXCLUDED."ExceptionInfo"
-            WHERE NOT {_receivedTable}."IsInboxRecord"
-              AND NOT ({_receivedTable}."StatusName" IN ('{nameof(StatusName.Succeeded)}','{nameof(
+                "status_name"=EXCLUDED."status_name",
+                "expires_at"=EXCLUDED."expires_at",
+                "next_retry_at"=EXCLUDED."next_retry_at",
+                "locked_until"=EXCLUDED."locked_until",
+                "owner"=EXCLUDED."owner",
+                "content"=EXCLUDED."content",
+                "exception_info"=EXCLUDED."exception_info"
+            WHERE NOT {_receivedTable}."is_inbox_record"
+              AND NOT ({_receivedTable}."status_name" IN ('{nameof(StatusName.Succeeded)}','{nameof(
                 StatusName.Failed
-            )}') AND {_receivedTable}."NextRetryAt" IS NULL)
-              AND ({_receivedTable}."LockedUntil" IS NULL OR {_receivedTable}."LockedUntil" <= statement_timestamp())
-            RETURNING "Id"
+            )}') AND {_receivedTable}."next_retry_at" IS NULL)
+              AND ({_receivedTable}."locked_until" IS NULL OR {_receivedTable}."locked_until" <= statement_timestamp())
+            RETURNING "id"
             """;
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
@@ -1656,20 +1656,20 @@ internal sealed partial class PostgreSqlDataStorage(
         // byte-for-byte aligned with durable state.
         var isReceivedTable = string.Equals(tableName, _receivedTable, StringComparison.Ordinal);
         var attemptAssignment = isReceivedTable
-            ? ",\n                \"AttemptId\"=CASE WHEN message.\"IsInboxRecord\" THEN gen_random_uuid() ELSE NULL END"
+            ? ",\n                \"attempt_id\"=CASE WHEN message.\"is_inbox_record\" THEN gen_random_uuid() ELSE NULL END"
             : string.Empty;
-        var attemptProjection = isReceivedTable ? "message.\"AttemptId\"" : "NULL::uuid";
+        var attemptProjection = isReceivedTable ? "message.\"attempt_id\"" : "NULL::uuid";
         var sql = $"""
             WITH clock AS (SELECT statement_timestamp() AS now)
             UPDATE {tableName} AS message
-            SET "LockedUntil"=clock.now + (@LeaseSeconds * INTERVAL '1 second'),
-                "Owner"=@Owner,
-                "InlineAttempts"=@InlineAttempts{attemptAssignment}
+            SET "locked_until"=clock.now + (@LeaseSeconds * INTERVAL '1 second'),
+                "owner"=@Owner,
+                "inline_attempts"=@InlineAttempts{attemptAssignment}
             FROM clock
-            WHERE message."Id"=@Id
-              AND (message."LockedUntil" IS NULL OR message."LockedUntil" <= clock.now)
+            WHERE message."id"=@Id
+              AND (message."locked_until" IS NULL OR message."locked_until" <= clock.now)
               AND {_TerminalRowGuardWithRetries}
-            RETURNING message."LockedUntil",message."Owner",{attemptProjection}
+            RETURNING message."locked_until",message."owner",{attemptProjection}
             """;
 
         var owner = nodeMembership.GetOwnerTag();
@@ -1710,13 +1710,13 @@ internal sealed partial class PostgreSqlDataStorage(
         var sql = $"""
             WITH clock AS (SELECT statement_timestamp() AS now)
             UPDATE {tableName} AS message
-            SET "LockedUntil"=clock.now + (@LeaseSeconds * INTERVAL '1 second'),
-                "Owner"=@Owner
+            SET "locked_until"=clock.now + (@LeaseSeconds * INTERVAL '1 second'),
+                "owner"=@Owner
             FROM clock
-            WHERE message."Id"=@Id
-              AND (message."LockedUntil" IS NULL OR message."LockedUntil" <= clock.now)
+            WHERE message."id"=@Id
+              AND (message."locked_until" IS NULL OR message."locked_until" <= clock.now)
               AND {_TerminalRowGuardSimple}
-            RETURNING message."LockedUntil",message."Owner"
+            RETURNING message."locked_until",message."owner"
             """;
 
         var owner = nodeMembership.GetOwnerTag();
@@ -1766,13 +1766,13 @@ internal sealed partial class PostgreSqlDataStorage(
         var intentValue = MessageLaneCompatibility.ToPersistedValue(lane);
         var isReceivedTable = string.Equals(tableName, _receivedTable, StringComparison.Ordinal);
         var orphanFilter = isReceivedTable
-            ? (orphaned ? "AND message.\"IsInboxOrphaned\" = TRUE" : "AND message.\"IsInboxOrphaned\" = FALSE")
+            ? (orphaned ? "AND message.\"is_inbox_orphaned\" = TRUE" : "AND message.\"is_inbox_orphaned\" = FALSE")
             : string.Empty;
         var attemptAssignment = isReceivedTable
-            ? ",\n                \"AttemptId\" = CASE WHEN message.\"IsInboxRecord\" THEN gen_random_uuid() ELSE NULL END"
+            ? ",\n                \"attempt_id\" = CASE WHEN message.\"is_inbox_record\" THEN gen_random_uuid() ELSE NULL END"
             : string.Empty;
         var inboxProjection = isReceivedTable
-            ? "message.\"IsInboxRecord\",message.\"TenantPresent\",message.\"TenantId\",message.\"MessageId\",message.\"ContractIdentity\",message.\"ContractVersion\",message.\"ConsumerIdentity\",message.\"Generation\",message.\"GenerationIncarnationId\",message.\"AttemptId\",message.\"IsInboxOrphaned\""
+            ? "message.\"is_inbox_record\",message.\"tenant_present\",message.\"tenant_id\",message.\"message_id\",message.\"contract_identity\",message.\"contract_version\",message.\"consumer_identity\",message.\"generation\",message.\"generation_incarnation_id\",message.\"attempt_id\",message.\"is_inbox_orphaned\""
             : "FALSE";
         // Transactional poison handling and claim-and-return. Unknown persisted lanes are excluded
         // before ordering and limiting, so they cannot consume a batch slot and are never leased,
@@ -1793,25 +1793,25 @@ internal sealed partial class PostgreSqlDataStorage(
         // clock query.
         var sql = $"""
             WITH candidates AS (
-                SELECT message."Id"
+                SELECT message."id"
                 FROM {tableName} AS message
-                WHERE "Retries" <= @Retries
-                  AND "Version" = @Version
-                  AND message."IntentType" = @IntentType
-                  AND "NextRetryAt" IS NOT NULL AND "NextRetryAt" <= @Now
-                  AND ("LockedUntil" IS NULL OR "LockedUntil" <= statement_timestamp())
+                WHERE "retries" <= @Retries
+                  AND "version" = @Version
+                  AND message."intent_type" = @IntentType
+                  AND "next_retry_at" IS NOT NULL AND "next_retry_at" <= @Now
+                  AND ("locked_until" IS NULL OR "locked_until" <= statement_timestamp())
                   {orphanFilter}
                   AND {_TerminalRowGuardSimple}
-                ORDER BY "NextRetryAt", "Id"
+                ORDER BY "next_retry_at", "id"
                 LIMIT @BatchSize
                 FOR UPDATE SKIP LOCKED
             )
             UPDATE {tableName} AS message
-            SET "LockedUntil" = statement_timestamp() + (@LeaseSeconds * INTERVAL '1 second'),
-                "Owner" = @Owner{attemptAssignment}
+            SET "locked_until" = statement_timestamp() + (@LeaseSeconds * INTERVAL '1 second'),
+                "owner" = @Owner{attemptAssignment}
             FROM candidates
-            WHERE message."Id" = candidates."Id"
-            RETURNING message."Id",message."Content",message."IntentType",message."Retries",message."InlineAttempts",message."Added",message."NextRetryAt",message."LockedUntil",message."Owner",
+            WHERE message."id" = candidates."id"
+            RETURNING message."id",message."content",message."intent_type",message."retries",message."inline_attempts",message."added",message."next_retry_at",message."locked_until",message."owner",
                 {inboxProjection};
             """;
 
@@ -1958,20 +1958,20 @@ internal sealed partial class PostgreSqlDataStorage(
         var sql = isReceivedTable
             ? $"""
                 UPDATE {tableName} AS target
-                SET "StatusName"=@StatusName,"NextRetryAt"=NULL,"LockedUntil"=NULL,"Owner"=NULL,
-                    "ExpiresAt"=@ExpiresAt,"ExceptionInfo"=poison."ExceptionInfo",
-                    "AttemptId"=CASE WHEN target."IsInboxRecord" THEN NULL ELSE target."AttemptId" END,
-                    "TerminalAt"=CASE WHEN target."IsInboxRecord" THEN statement_timestamp() ELSE target."TerminalAt" END,
-                    "EffectiveExpiresAt"=CASE WHEN target."IsInboxRecord"
-                        THEN statement_timestamp() + (target."InboxRetentionSeconds" * INTERVAL '1 second')
-                        ELSE target."EffectiveExpiresAt" END
-                FROM unnest(@Ids::uuid[], @ExceptionInfos::text[]) AS poison("Id", "ExceptionInfo")
-                WHERE target."Id"=poison."Id" AND {_TerminalRowGuardSimple};
+                SET "status_name"=@StatusName,"next_retry_at"=NULL,"locked_until"=NULL,"owner"=NULL,
+                    "expires_at"=@ExpiresAt,"exception_info"=poison."exception_info",
+                    "attempt_id"=CASE WHEN target."is_inbox_record" THEN NULL ELSE target."attempt_id" END,
+                    "terminal_at"=CASE WHEN target."is_inbox_record" THEN statement_timestamp() ELSE target."terminal_at" END,
+                    "effective_expires_at"=CASE WHEN target."is_inbox_record"
+                        THEN statement_timestamp() + (target."inbox_retention_seconds" * INTERVAL '1 second')
+                        ELSE target."effective_expires_at" END
+                FROM unnest(@Ids::uuid[], @ExceptionInfos::text[]) AS poison("id", "exception_info")
+                WHERE target."id"=poison."id" AND {_TerminalRowGuardSimple};
                 """
             : $"""
                 UPDATE {tableName}
-                SET "StatusName"=@StatusName,"NextRetryAt"=NULL,"LockedUntil"=NULL,"Owner"=NULL,"ExpiresAt"=@ExpiresAt
-                WHERE "Id"=ANY(@Ids) AND {_TerminalRowGuardSimple};
+                SET "status_name"=@StatusName,"next_retry_at"=NULL,"locked_until"=NULL,"owner"=NULL,"expires_at"=@ExpiresAt
+                WHERE "id"=ANY(@Ids) AND {_TerminalRowGuardSimple};
                 """;
         var sqlParams = new List<object>
         {
@@ -2070,11 +2070,11 @@ internal sealed partial class PostgreSqlDataStorage(
         // service version is allowed to dispatch.
         var sql = $"""
             UPDATE {tableName} AS message
-            SET "LockedUntil" = statement_timestamp()
-            WHERE "Owner" IS NOT NULL
-              AND "Owner" = ANY(@DeadOwners)
-              AND "LockedUntil" > statement_timestamp()
-              AND message."IntentType" IN (0, 1)
+            SET "locked_until" = statement_timestamp()
+            WHERE "owner" IS NOT NULL
+              AND "owner" = ANY(@DeadOwners)
+              AND "locked_until" > statement_timestamp()
+              AND message."intent_type" IN (0, 1)
               AND {_TerminalRowGuardSimple};
             """;
 

@@ -10,10 +10,18 @@ namespace Headless.Api.Idempotency;
 /// was admitted; read it with <c>HttpContext.GetIdempotencyContext()</c>.
 /// </summary>
 /// <remarks>
+/// <para>
 /// A handler whose writes must commit only while it still owns the key fences them in its own unit of work with
 /// <c>unit.Idempotency.FenceAsync(context.Admission)</c>. The middleware completes the admission with the captured
 /// response after the handler returns, so a crash between the handler's commit and that completion re-runs the
 /// handler on the next retry with <see cref="IsTakeover" /> set.
+/// </para>
+/// <para>
+/// A handler closes that window by recording a recovery point in the same unit as its last writes:
+/// <c>unit.Idempotency.SetRecoveryPointAsync(context.Admission, "done", resultState, contract)</c>. The retry that
+/// takes the key over reads it from <see cref="RecoveryPoint" /> and rebuilds its response from that state instead of
+/// running the work again. A multi-step handler records one point per step the same way and resumes after the last.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public interface IIdempotencyContext
@@ -49,6 +57,12 @@ public interface IIdempotencyContext
     /// check before redoing them.
     /// </summary>
     bool IsTakeover { get; }
+
+    /// <summary>
+    /// Gets the last recovery point an earlier attempt with this key recorded before it ended without completing, or
+    /// <see langword="null" /> when none did. The same value as <c>Admission.RecoveryPoint</c>.
+    /// </summary>
+    IdempotentRecoveryPoint? RecoveryPoint { get; }
 }
 
 internal sealed class IdempotencyContext(string headerKey, string scope, string key, IdempotentAdmission admission)
@@ -65,4 +79,6 @@ internal sealed class IdempotencyContext(string headerKey, string scope, string 
     public long Generation { get; } = admission.Generation!.Value;
 
     public bool IsTakeover => Admission.IsTakeover;
+
+    public IdempotentRecoveryPoint? RecoveryPoint => Admission.RecoveryPoint;
 }

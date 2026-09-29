@@ -47,6 +47,38 @@ public static class IdempotentOperationsJsonExtensions
 
             return operations.CompleteAsync(admission, payload, contract, retention, cancellationToken);
         }
+
+        /// <summary>
+        /// Serializes <paramref name="state" /> as UTF-8 JSON and records it with <paramref name="point" /> as the
+        /// admitted operation's last finished step.
+        /// </summary>
+        /// <typeparam name="T">The state type.</typeparam>
+        /// <param name="admission">The admitted operation.</param>
+        /// <param name="point">The finished step's name.</param>
+        /// <param name="state">The state the step left behind.</param>
+        /// <param name="typeInfo">The state type's JSON metadata.</param>
+        /// <param name="contract">The contract tag the JSON is written under.</param>
+        /// <param name="cancellationToken">Token used to cancel the database calls before the commit.</param>
+        /// <returns>A task that completes when the recovery point is committed.</returns>
+        /// <exception cref="ArgumentNullException">An argument is <see langword="null" />.</exception>
+        /// <exception cref="ArgumentException">The point name, the serialized state, or the contract is invalid or too long.</exception>
+        /// <exception cref="StaleAdmissionException">The attempt no longer owns the key; nothing was stored.</exception>
+        public ValueTask SetRecoveryPointAsync<T>(
+            IdempotentAdmission admission,
+            string point,
+            T state,
+            JsonTypeInfo<T> typeInfo,
+            string contract,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Argument.IsNotNull(operations);
+            Argument.IsNotNull(typeInfo);
+
+            var payload = JsonSerializer.SerializeToUtf8Bytes(state, typeInfo);
+
+            return operations.SetRecoveryPointAsync(admission, point, payload, contract, cancellationToken);
+        }
     }
 
     extension(UnitOfWorkIdempotency idempotency)
@@ -81,6 +113,38 @@ public static class IdempotentOperationsJsonExtensions
 
             return idempotency.CompleteAsync(admission, payload, contract, retention, cancellationToken);
         }
+
+        /// <summary>
+        /// Serializes <paramref name="state" /> as UTF-8 JSON and records it with <paramref name="point" /> as the
+        /// admitted operation's last finished step inside the bound unit's transaction.
+        /// </summary>
+        /// <typeparam name="T">The state type.</typeparam>
+        /// <param name="admission">The admitted operation.</param>
+        /// <param name="point">The finished step's name.</param>
+        /// <param name="state">The state the step left behind.</param>
+        /// <param name="typeInfo">The state type's JSON metadata.</param>
+        /// <param name="contract">The contract tag the JSON is written under.</param>
+        /// <param name="cancellationToken">Token used to cancel the database commands.</param>
+        /// <returns>A task that completes when the recovery point is written.</returns>
+        /// <exception cref="ArgumentNullException">An argument is <see langword="null" />.</exception>
+        /// <exception cref="ArgumentException">The point name, the serialized state, or the contract is invalid or too long.</exception>
+        /// <exception cref="StaleAdmissionException">The attempt no longer owns the key; nothing was written.</exception>
+        public ValueTask SetRecoveryPointAsync<T>(
+            IdempotentAdmission admission,
+            string point,
+            T state,
+            JsonTypeInfo<T> typeInfo,
+            string contract,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Argument.IsNotNull(idempotency);
+            Argument.IsNotNull(typeInfo);
+
+            var payload = JsonSerializer.SerializeToUtf8Bytes(state, typeInfo);
+
+            return idempotency.SetRecoveryPointAsync(admission, point, payload, contract, cancellationToken);
+        }
     }
 
     extension(IdempotentResult result)
@@ -97,6 +161,23 @@ public static class IdempotentOperationsJsonExtensions
             Argument.IsNotNull(typeInfo);
 
             return JsonSerializer.Deserialize(result.Payload.Span, typeInfo);
+        }
+    }
+
+    extension(IdempotentRecoveryPoint recoveryPoint)
+    {
+        /// <summary>Deserializes the recovery point's UTF-8 JSON state.</summary>
+        /// <typeparam name="T">The state type.</typeparam>
+        /// <param name="typeInfo">The state type's JSON metadata.</param>
+        /// <returns>The state.</returns>
+        /// <exception cref="ArgumentNullException">An argument is <see langword="null" />.</exception>
+        /// <exception cref="JsonException">The stored bytes are not valid JSON for <typeparamref name="T" />.</exception>
+        public T? Deserialize<T>(JsonTypeInfo<T> typeInfo)
+        {
+            Argument.IsNotNull(recoveryPoint);
+            Argument.IsNotNull(typeInfo);
+
+            return JsonSerializer.Deserialize(recoveryPoint.State.Span, typeInfo);
         }
     }
 }

@@ -164,6 +164,8 @@ Primitive generator diagnostics use the framework-wide `HF` prefix. Existing sup
 | `HF1016` | Warning | A primitive wrapping a reference type should be a reference type. |
 | `HF1021` | Warning | Primitive validation throws an incompatible exception type. |
 
+`HF1002`, `HF1015`, and `HF1016` are reported on the primitive's type name, so `#pragma warning disable` and `.editorconfig` severity settings apply to them like any compiler diagnostic.
+
 ### Install
 
 ```bash
@@ -173,9 +175,11 @@ dotnet add package Headless.Generator.Primitives
 ### Setup and use
 
 ```csharp
+using System.Text.Json;
+
 // Define your primitive
 [StringLength(1, 50)]
-public readonly partial struct Email : IPrimitive<string>
+public sealed partial class Email : IPrimitive<string>
 {
     public static PrimitiveValidationResult Validate(string value)
     {
@@ -187,8 +191,8 @@ public readonly partial struct Email : IPrimitive<string>
 }
 
 // Generated code provides:
-var email = Email.From("user@example.com"); // Factory method
-var value = email.Value; // Underlying value
+var email = new Email("user@example.com"); // Validating constructor; Email.TryCreate(...) does not throw
+string value = email; // Implicit conversion to the underlying value
 var json = JsonSerializer.Serialize(email); // JSON: "user@example.com"
 ```
 
@@ -247,7 +251,7 @@ dotnet add package Headless.Generator.Primitives.Abstractions
 using Headless.Generator.Primitives;
 
 [StringLength(1, 100)]
-public readonly partial struct ProductName : IPrimitive<string>
+public sealed partial class ProductName : IPrimitive<string>
 {
     public static PrimitiveValidationResult Validate(string value)
     {
@@ -262,7 +266,7 @@ public readonly partial struct ProductName : IPrimitive<string>
 #### With Supported Operations
 
 ```csharp
-[SupportedOperations(Comparison = true, Math = true)]
+[SupportedOperations(Addition = true, Subtraction = true)]
 public readonly partial struct Quantity : IPrimitive<int>
 {
     public static PrimitiveValidationResult Validate(int value)
@@ -288,7 +292,7 @@ Core hosting utilities and extensions for ASP.NET Core applications.
 
 ### API and behavior
 
-- DI extensions: `AddIf`, `AddIfElse`, `AddOrReplace*`, `Unregister<T>`
+- DI extensions: `AddIf`, `AddIfElse`, `AddOrReplace*`, `Unregister<T>`, and decorators (`Decorate`/`TryDecorate` for unkeyed registrations, `TryDecorateKeyed` for one service key) that preserve each registration's lifetime
 - Startup validators (`IHeadlessStartupValidator`, `AddStartupValidator`) that run before any hosted service starts and report every failure together
 - Required-service declarations (`RequireRegisteredService<T>`) that fail the host at startup instead of at first use
 - Options validation with FluentValidation
@@ -363,13 +367,25 @@ await app.Services.SeedAsync();
 
 ```csharp
 services.AddOrReplaceScoped<IService, NewImpl>();
-services.AddOrReplaceSingleton<IService>(sp => new Impl(sp.GetRequired<IDep>()));
+services.AddOrReplaceSingleton<IService>(sp => new Impl(sp.GetRequiredService<IDep>()));
 
 // Replaces a known TFallback registration only; preserves consumer-provided non-fallback
 // registrations. Use when multiple packages each register a safe default and a higher-level
 // package wants to swap only those defaults.
 services.AddOrReplaceFallbackSingleton<IService, NullFallback, DefaultImpl>();
 ```
+
+#### Decorators
+
+```csharp
+// Wraps every unkeyed IService registration; the factory receives the original instance.
+services.TryDecorate<IService>((inner, sp) => new LoggingService(inner));
+
+// Wraps only the registrations under one key; other keys and the unkeyed registration are untouched.
+services.TryDecorateKeyed<IService>("reports", (inner, sp) => new LoggingService(inner));
+```
+
+A decorator that returns a different instance owns disposing the inner one, because the container only tracks what the factory returns. Decorating turns every registration into a factory, so an instance the application registered and owned (`AddSingleton(instance)`) becomes container-disposed. `TryDecorateKeyed` does not decorate a `KeyedService.AnyKey` registration, which serves every key.
 
 #### Startup Validators
 
@@ -414,6 +430,22 @@ services.RequireRegisteredService<ICache<SettingValueCacheItem>>(
 - **Aggregated.** Requirements from every feature in the host are collected and reported in one `MissingRequiredServiceException` (`Headless.Hosting.DependencyInjection`), each line naming its `requiredBy` and `remedy`. A host missing one shared provider sees every affected feature at once instead of one failure per restart. Identical declarations collapse to a single line, and the startup check itself is registered once no matter how many features declare requirements.
 
 `Headless.MultiTenancy`, `Headless.Settings.Core`, `Headless.Permissions.Core`, `Headless.Features.Core`, and `Headless.Api.Idempotency` all use this to require a caching provider.
+
+`RequireSingletonService<T>(requiredBy, remedy)` (and the `Type` overload) goes one step further for a service that a feature's *singleton* injects but the application registers:
+
+```csharp
+services.RequireSingletonService(
+    typeof(IDbContextFactory<>).MakeGenericType(dbContextType),
+    requiredBy: "Headless settings EF storage",
+    remedy: "Register the factory with AddDbContextFactory<TContext>() or AddPooledDbContextFactory<TContext>() at the default singleton lifetime."
+);
+```
+
+- **Refuses a captive dependency in every environment.** A scoped or transient registration would be captured by the singleton for the life of the host. Scope validation catches the scoped case only while it is on (the development default) and never catches the transient one, so the check reads the lifetime from the service collection instead and throws `InvalidServiceLifetimeException` (`Headless.Hosting.DependencyInjection`) listing every violation.
+- **Judges the registration the container resolves.** The last unkeyed registration of the closed type wins; with none, the last unkeyed open-generic registration of its definition decides. Keyed registrations are ignored. Registrations added after the declaration are seen, and the service is never resolved.
+- **Also requires the registration.** It declares `RequireRegisteredService` for the same type, so a missing registration still fails with `MissingRequiredServiceException`.
+
+The EF storage providers of `Headless.MultiTenancy`, `Headless.Settings`, `Headless.Features`, `Headless.Permissions`, `Headless.AuditLog`, and `Headless.Jobs` use it to require a singleton `IDbContextFactory<TContext>`.
 
 ### Configuration
 
@@ -490,7 +522,7 @@ var overlap = geom1.ComputeOverlap(geom2);
 #### Ring Orientation
 
 ```csharp
-var fixed = polygon.EnsureIsOrientedCounterClockwise();
+var oriented = polygon.EnsureIsOrientedCounterClockwise();
 ```
 
 ### Configuration
@@ -527,12 +559,30 @@ dotnet add package Headless.Redis
 ### Setup and use
 
 ```csharp
+using Headless.Redis;
+using StackExchange.Redis;
+
 var builder = WebApplication.CreateBuilder(args);
 
 var redis = await ConnectionMultiplexer.ConnectAsync("localhost");
 var scriptsLoader = new HeadlessRedisScriptsLoader(redis);
 
-await scriptsLoader.LoadAsync([IncrementWithExpireScriptDefinition.Instance]);
+await scriptsLoader.LoadAsync([IncrementWithExpireScript.Instance]);
+
+// The loader caches loaded scripts by definition type, so each definition exposes one shared instance.
+public sealed class IncrementWithExpireScript : RedisScriptDefinition
+{
+    public static IncrementWithExpireScript Instance { get; } = new();
+
+    private IncrementWithExpireScript()
+        : base(
+            """
+            redis.call('incrby', @key, @value)
+            redis.call('pexpire', @key, @expires)
+            return redis.call('get', @key)
+            """
+        ) { }
+}
 ```
 
 ### Setup and use
@@ -540,10 +590,13 @@ await scriptsLoader.LoadAsync([IncrementWithExpireScriptDefinition.Instance]);
 #### Script Execution
 
 ```csharp
+using StackExchange.Redis;
+
 var db = redis.GetDatabase();
 var result = await scriptsLoader.EvaluateAsync(
     db,
-    IncrementWithExpireScriptDefinition.Instance,
+    IncrementWithExpireScript.Instance,
+
     new
     {
         key = (RedisKey)"counter",

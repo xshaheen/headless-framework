@@ -711,6 +711,222 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
 
     #endregion
 
+    #region Progress and takeover count
+
+    public virtual async Task should_return_the_last_renewed_progress_to_a_takeover()
+    {
+        var (kind, resource) = (CreateKind(), CreateResource());
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+        var first = Progress("exports.cursor/v1", 1, 2, 3);
+        var last = new LeaseProgress(
+            Enumerable.Range(0, FencingFieldLimits.ProgressMaxBytes).Select(static i => (byte)i).ToArray(),
+            new string('c', FencingFieldLimits.ProgressContractMaxLength)
+        );
+
+        var granted = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+        granted.TakeoverCount.Should().Be(0);
+        granted.Progress.Should().BeNull("a new lease has no earlier attempt to resume");
+
+        (await host.Leases.RenewAsync(granted.Lease!, LongDuration, first, AbortToken)).IsRenewed.Should().BeTrue();
+        (await host.Leases.RenewAsync(granted.Lease!, LongDuration, last, AbortToken)).IsRenewed.Should().BeTrue();
+        (await host.Leases.RenewAsync(granted.Lease!, LongDuration, AbortToken))
+            .IsRenewed.Should()
+            .BeTrue("a renewal without progress keeps what was recorded");
+
+        await ExpireAsync(HostKey(kind, resource));
+        var takeover = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+
+        takeover.Status.Should().Be(LeaseGrantStatus.Takeover);
+        takeover.TakeoverCount.Should().Be(1);
+        ShouldCarry(takeover.Progress, last);
+    }
+
+    public virtual async Task should_not_let_a_stale_or_expired_renewal_overwrite_the_progress()
+    {
+        var (kind, resource) = (CreateKind(), CreateResource());
+        var key = HostKey(kind, resource);
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+        var recorded = Progress("exports.cursor/v1", 1);
+
+        var first = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+        await host.Leases.RenewAsync(first.Lease!, LongDuration, recorded, AbortToken);
+        await ExpireAsync(key);
+
+        (await host.Leases.RenewAsync(first.Lease!, LongDuration, Progress("exports.cursor/v1", 2), AbortToken))
+            .Status.Should()
+            .Be(LeaseRenewalStatus.Expired);
+
+        var second = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+        second.Status.Should().Be(LeaseGrantStatus.Takeover);
+        ShouldCarry(second.Progress, recorded);
+
+        (await host.Leases.RenewAsync(first.Lease!, LongDuration, Progress("exports.cursor/v1", 3), AbortToken))
+            .Status.Should()
+            .Be(LeaseRenewalStatus.Stale);
+
+        await ExpireAsync(key);
+        var third = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+
+        third.Status.Should().Be(LeaseGrantStatus.Takeover);
+        ShouldCarry(third.Progress, recorded, "no later attempt recorded any");
+    }
+
+    public virtual async Task should_reject_oversized_progress_before_any_write()
+    {
+        var (kind, resource) = (CreateKind(), CreateResource());
+        var key = HostKey(kind, resource);
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+        var recorded = Progress("exports.cursor/v1", 7);
+        var oversized = new LeaseProgress(new byte[FencingFieldLimits.ProgressMaxBytes + 1], "exports.cursor/v1");
+
+        var granted = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+        await host.Leases.RenewAsync(granted.Lease!, LongDuration, recorded, AbortToken);
+        var before = await Fixture.ReadLeaseAsync(key, AbortToken);
+
+        var autonomous = async () => await host.Leases.RenewAsync(granted.Lease!, LongDuration, oversized, AbortToken);
+        await autonomous.Should().ThrowAsync<ArgumentException>().WithParameterName("progress");
+
+        await using (var unit = await Fixture.BeginUnitAsync(host, AbortToken))
+        {
+            var enlisted = async () =>
+                await unit.Unit.Leases.RenewAsync(granted.Lease!, LongDuration, oversized, AbortToken);
+
+            await enlisted.Should().ThrowAsync<ArgumentException>().WithParameterName("progress");
+            unit.Unit.IsRetryPrevented.Should().BeFalse("a refused call never marks the unit");
+            await unit.CommitAsync(AbortToken);
+        }
+
+        (await Fixture.ReadLeaseAsync(key, AbortToken)).Should().Be(before, "nothing was written");
+
+        await ExpireAsync(key);
+        ShouldCarry((await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken)).Progress, recorded);
+    }
+
+    public virtual async Task should_record_enlisted_progress_only_when_the_unit_commits()
+    {
+        var (kind, resource) = (CreateKind(), CreateResource());
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+        var committed = Progress("exports.cursor/v1", 1);
+
+        var granted = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+
+        await using (var unit = await Fixture.BeginUnitAsync(host, AbortToken))
+        {
+            (await unit.Unit.Leases.RenewAsync(granted.Lease!, LongDuration, committed, AbortToken))
+                .IsRenewed.Should()
+                .BeTrue();
+            await unit.CommitAsync(AbortToken);
+        }
+
+        await using (var unit = await Fixture.BeginUnitAsync(host, AbortToken))
+        {
+            (
+                await unit.Unit.Leases.RenewAsync(
+                    granted.Lease!,
+                    LongDuration,
+                    Progress("exports.cursor/v1", 2),
+                    AbortToken
+                )
+            )
+                .IsRenewed.Should()
+                .BeTrue();
+            await unit.RollbackAsync();
+        }
+
+        await ExpireAsync(HostKey(kind, resource));
+        var takeover = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+
+        ShouldCarry(takeover.Progress, committed, "the rolled-back renewal never happened");
+    }
+
+    public virtual async Task should_count_consecutive_takeovers_and_reset_on_settle_or_release()
+    {
+        var (kind, resource) = (CreateKind(), CreateResource());
+        var key = HostKey(kind, resource);
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        (await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken)).TakeoverCount.Should().Be(0);
+        await ExpireAsync(key);
+        var first = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+        var held = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+        await ExpireAsync(key);
+        var second = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+
+        first.Status.Should().Be(LeaseGrantStatus.Takeover);
+        first.TakeoverCount.Should().Be(1);
+        held.Status.Should().Be(LeaseGrantStatus.Held);
+        held.TakeoverCount.Should().Be(1, "a held grant reports the live holder's count");
+        second.Status.Should().Be(LeaseGrantStatus.Takeover);
+        second.TakeoverCount.Should().Be(2);
+
+        await host.Leases.RenewAsync(second.Lease!, LongDuration, Progress("exports.cursor/v1", 1), AbortToken);
+        (await host.Leases.SettleAsync(second.Lease!, AbortToken)).Should().Be(LeaseSettlementStatus.Settled);
+        var afterSettle = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+
+        afterSettle.Status.Should().Be(LeaseGrantStatus.Granted);
+        afterSettle.TakeoverCount.Should().Be(0);
+        afterSettle.Progress.Should().BeNull("a settled lease's work is finished");
+
+        await ExpireAsync(key);
+        var third = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+        third.TakeoverCount.Should().Be(1);
+        await host.Leases.RenewAsync(third.Lease!, LongDuration, Progress("exports.cursor/v1", 2), AbortToken);
+        (await host.Leases.ReleaseAsync(third.Lease!, AbortToken)).Should().Be(LeaseSettlementStatus.Released);
+        var afterRelease = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+
+        afterRelease.Status.Should().Be(LeaseGrantStatus.Granted);
+        afterRelease.TakeoverCount.Should().Be(0);
+        afterRelease.Progress.Should().BeNull("a released lease gave its work up");
+    }
+
+    public virtual async Task should_hand_the_sweep_the_progress_and_count_an_abandoned_lease_once()
+    {
+        var (kind, resource) = (CreateKind(), CreateResource());
+        var key = HostKey(kind, resource);
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+        var recorded = Progress("exports.cursor/v1", 4, 2);
+
+        var granted = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+        await host.Leases.RenewAsync(granted.Lease!, LongDuration, recorded, AbortToken);
+        await ExpireAsync(key);
+
+        var swept = await host.Leases.SweepExpiredAsync(kind, (_, _, _) => ValueTask.CompletedTask, 10, AbortToken);
+        var abandoned = swept.Handled.Should().ContainSingle().Subject;
+
+        abandoned.Generation.Should().Be(granted.Lease!.Generation);
+        abandoned.TakeoverCount.Should().Be(1);
+        ShouldCarry(abandoned.Progress, recorded);
+
+        var resumed = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+
+        resumed.Status.Should().Be(LeaseGrantStatus.Granted);
+        resumed.TakeoverCount.Should().Be(1, "the sweep already counted the abandonment");
+        ShouldCarry(resumed.Progress, recorded, "the grant resumes the abandoned attempt");
+
+        await ExpireAsync(key);
+        var takeover = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+
+        takeover.Status.Should().Be(LeaseGrantStatus.Takeover);
+        takeover.TakeoverCount.Should().Be(2);
+        ShouldCarry(takeover.Progress, recorded);
+    }
+
+    #endregion
+
+    /// <summary>Returns a progress record over <paramref name="payload" />.</summary>
+    protected static LeaseProgress Progress(string contract, params byte[] payload)
+    {
+        return new LeaseProgress(payload, contract);
+    }
+
+    /// <summary>Asserts <paramref name="actual" /> carries the bytes and contract of <paramref name="expected" />.</summary>
+    protected static void ShouldCarry(LeaseProgress? actual, LeaseProgress expected, string because = "")
+    {
+        actual.Should().NotBeNull(because);
+        actual!.Contract.Should().Be(expected.Contract, because);
+        actual.Payload.ToArray().Should().Equal(expected.Payload.ToArray(), because);
+    }
+
     /// <summary>The stored key of a host-scope lease.</summary>
     protected static LeaseKey HostKey(string kind, string resource)
     {

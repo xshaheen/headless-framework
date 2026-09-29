@@ -277,24 +277,6 @@ internal sealed class JobsExecutionTaskHandler
             // milliseconds, and no consumer expects negative lateness. For a recovery run this measures from the
             // first unaccounted-for missed instant, so it spans the unresolved outage rather than the dispatch delay.
             Lateness = _Lateness(context.ExecutionTime, _timeProvider.GetUtcNow().UtcDateTime),
-            CronOccurrenceOperations = new CronOccurrenceOperations(() =>
-            {
-                if (context.Type == JobType.TimeJob)
-                {
-                    return;
-                }
-
-                // Check for other running occurrences of the same parent (excluding self)
-                // Since we're already registered, we need to exclude ourselves from the check
-                var isRunning =
-                    context.ParentId.HasValue
-                    && _cancellationRegistry.IsParentRunningExcludingSelf(context.ParentId.Value, context.JobId);
-
-                if (isRunning)
-                {
-                    throw new TerminateExecutionException("Another CronOccurrence is already running!");
-                }
-            }),
         };
 
         // #316 sliding lease: renew this job's lease on a cadence for the whole execution (every retry attempt and
@@ -1261,7 +1243,8 @@ internal sealed class JobsExecutionTaskHandler
             {
                 Message = ex.Message,
                 StackTrace = frame?.ToString() ?? rootException.StackTrace,
-            }
+            },
+            JobsExceptionJsonContext.Default.ExceptionDetailClassForSerialization
         );
     }
 
@@ -1493,8 +1476,8 @@ internal static partial class JobsExecutionTaskHandlerLog
         EventName = "JobFunctionNotRegisteredOnNode",
         Level = LogLevel.Error,
         Message = "Job {JobId} references function '{Function}' which is not registered on this node; the row was "
-            + "released for another node to claim. Ensure every scheduler node loads the assembly that declares the "
-            + "function (AddJobsDiscovery), or expect claim churn until one does."
+            + "released for another node to claim. Ensure every scheduler node adds the generated module of the "
+            + "assembly that declares the function (AddModule), or expect claim churn until one does."
     )]
     public static partial void LogJobFunctionNotRegisteredOnNode(this ILogger logger, Guid jobId, string function);
 

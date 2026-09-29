@@ -2,6 +2,7 @@
 
 using System.Data;
 using System.Data.Common;
+using Headless.Hosting.Initialization;
 using Headless.Idempotency;
 using Headless.Testing.Testcontainers;
 using Headless.UnitOfWork;
@@ -43,7 +44,7 @@ public sealed class SqlServerRcsiIdempotencyFixture
 
 public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture, IAsyncLifetime, IIdempotencyFixture
 {
-    private const string _Records = $"[{IdempotencyStorageOptions.DefaultSchema}].[records]";
+    private const string _Records = $"[{HeadlessStorageDefaults.Schema}].[IdempotencyRecords]";
 
     protected abstract string Database { get; }
 
@@ -83,9 +84,9 @@ public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture
         await connection.OpenAsync(CancellationToken.None);
         await using var reset = new SqlCommand(
             $"""
-            IF OBJECT_ID(N'{IdempotencyStorageOptions.DefaultSchema}.records', N'U') IS NOT NULL DROP TABLE {_Records};
-            IF OBJECT_ID(N'{IdempotencyStorageOptions.DefaultSchema}.record_generations', N'SO') IS NOT NULL DROP SEQUENCE [{IdempotencyStorageOptions.DefaultSchema}].[record_generations];
-            IF SCHEMA_ID(N'{IdempotencyStorageOptions.DefaultSchema}') IS NOT NULL EXEC(N'DROP SCHEMA [{IdempotencyStorageOptions.DefaultSchema}]');
+            IF OBJECT_ID(N'{HeadlessStorageDefaults.Schema}.IdempotencyRecords', N'U') IS NOT NULL DROP TABLE {_Records};
+            IF OBJECT_ID(N'{HeadlessStorageDefaults.Schema}.IdempotencyRecordGenerations', N'SO') IS NOT NULL DROP SEQUENCE [{HeadlessStorageDefaults.Schema}].[IdempotencyRecordGenerations];
+            IF SCHEMA_ID(N'{HeadlessStorageDefaults.Schema}') IS NOT NULL EXEC(N'DROP SCHEMA [{HeadlessStorageDefaults.Schema}]');
             SELECT CAST(is_read_committed_snapshot_on AS int) FROM sys.databases WHERE database_id = DB_ID();
             """,
             connection
@@ -133,10 +134,10 @@ public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(
             $"""
-            SELECT [status], [fingerprint_algorithm], [fingerprint], [generation], [lease_expires_at], [result],
-                [result_contract], [retention_until]
+            SELECT [Status], [FingerprintAlgorithm], [Fingerprint], [Generation], [LeaseExpiresAt], [Result],
+                [ResultContract], [RetentionUntil], [RecoveryPoint], [RecoveryState], [RecoveryContract]
             FROM {_Records}
-            WHERE [tenant_id] = @tenant AND [idempotency_key] = @recordKey
+            WHERE [TenantId] = @tenant AND [IdempotencyKey] = @recordKey
             """,
             connection
         );
@@ -161,7 +162,12 @@ public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture
                 ? null
                 : await reader.GetFieldValueAsync<byte[]>(5, cancellationToken),
             await reader.IsDBNullAsync(6, cancellationToken) ? null : reader.GetString(6),
-            await reader.GetFieldValueAsync<DateTimeOffset>(7, cancellationToken)
+            await reader.GetFieldValueAsync<DateTimeOffset>(7, cancellationToken),
+            await reader.IsDBNullAsync(8, cancellationToken) ? null : reader.GetString(8),
+            await reader.IsDBNullAsync(9, cancellationToken)
+                ? null
+                : await reader.GetFieldValueAsync<byte[]>(9, cancellationToken),
+            await reader.IsDBNullAsync(10, cancellationToken) ? null : reader.GetString(10)
         );
     }
 
@@ -176,8 +182,8 @@ public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture
         await using var command = new SqlCommand(
             $"""
             UPDATE {_Records}
-            SET [retention_until] = {_Shifted("[retention_until]")}
-            WHERE [tenant_id] = @tenant AND [idempotency_key] = @recordKey
+            SET [RetentionUntil] = {_Shifted("[RetentionUntil]")}
+            WHERE [TenantId] = @tenant AND [IdempotencyKey] = @recordKey
             """,
             connection
         );
@@ -198,8 +204,8 @@ public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture
         await using var command = new SqlCommand(
             $"""
             UPDATE {_Records}
-            SET [lease_expires_at] = {_Shifted("[lease_expires_at]")}
-            WHERE [tenant_id] = @tenant AND [idempotency_key] = @recordKey AND [lease_expires_at] IS NOT NULL
+            SET [LeaseExpiresAt] = {_Shifted("[LeaseExpiresAt]")}
+            WHERE [TenantId] = @tenant AND [IdempotencyKey] = @recordKey AND [LeaseExpiresAt] IS NOT NULL
             """,
             connection
         );

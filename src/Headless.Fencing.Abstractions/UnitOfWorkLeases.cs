@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.UnitOfWork;
 
 namespace Headless.Fencing;
@@ -48,7 +49,7 @@ public sealed class UnitOfWorkLeases
         return _leases.GrantAsync(_unitOfWork, kind, resource, duration, cancellationToken);
     }
 
-    /// <summary>Renews the lease inside the bound unit's transaction.</summary>
+    /// <summary>Renews the lease inside the bound unit's transaction, keeping any progress recorded before.</summary>
     /// <param name="lease">The lease to renew.</param>
     /// <param name="duration">The new time to live; bounded by the configured limits.</param>
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
@@ -62,7 +63,35 @@ public sealed class UnitOfWorkLeases
         CancellationToken cancellationToken = default
     )
     {
-        return _leases.RenewAsync(_unitOfWork, lease, duration, cancellationToken);
+        return _leases.RenewAsync(_unitOfWork, lease, duration, progress: null, cancellationToken);
+    }
+
+    /// <summary>Renews the lease inside the bound unit's transaction and records how far the attempt got.</summary>
+    /// <remarks>
+    /// <paramref name="progress" /> is written with the renewal, so it commits or rolls back with the unit and is
+    /// recorded only when the renewal succeeds.
+    /// </remarks>
+    /// <param name="lease">The lease to renew.</param>
+    /// <param name="duration">The new time to live; bounded by the configured limits.</param>
+    /// <param name="progress">How far the attempt got, replacing any progress recorded before.</param>
+    /// <param name="cancellationToken">Token used to cancel the database command.</param>
+    /// <returns>The renewal's result.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="progress" /> is <see langword="null" />.</exception>
+    /// <exception cref="ArgumentException">
+    /// The lease's identity or generation is invalid, or <paramref name="progress" /> exceeds its size limits.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="duration" /> is outside the configured bounds.</exception>
+    /// <exception cref="InvalidOperationException">The bound unit is no longer active or cannot host the write.</exception>
+    public ValueTask<LeaseRenewalResult> RenewAsync(
+        FencedLease lease,
+        TimeSpan duration,
+        LeaseProgress progress,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(progress);
+
+        return _leases.RenewAsync(_unitOfWork, lease, duration, progress, cancellationToken);
     }
 
     /// <summary>

@@ -4,6 +4,7 @@ using System.Data;
 using System.Data.Common;
 using Headless.Checks;
 using Headless.Constants;
+using Headless.Threading;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -39,11 +40,6 @@ namespace Headless.Idempotency.PostgreSql;
 #pragma warning disable CA2100 // SQL text is built from the validated schema name plus internal object and column constants.
 internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
 {
-    // A deadlock or serialization failure is the one failure a fresh transaction can clear on its own; the first
-    // attempt plus two retries. Only the autonomous renewal and purge retry: an enlisted verb's failure has already
-    // rolled back the caller's transaction, so only the unit's owner can decide whether to run it again.
-    private const int _MaxAttempts = 3;
-
     // A lost insert race means another transaction committed the row between the insert and the locking read, so the
     // next round's insert does nothing and its locking read finds it. Only a row purged again in that window could
     // send the loop round once more.
@@ -55,11 +51,13 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
 
     private readonly PostgreSqlIdempotencyOptions _options;
     private readonly IUnitOfWorkFactory _unitOfWorkFactory;
+    private readonly TimeProvider _timeProvider;
     private readonly string _lockOrInsertSql;
     private readonly string _lockSql;
     private readonly string _admitSql;
     private readonly string _completeSql;
     private readonly string _releaseSql;
+    private readonly string _setRecoveryPointSql;
     private readonly string _renewSql;
     private readonly string _peekSql;
     private readonly string _purgeSql;
@@ -67,11 +65,13 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
     public PostgreSqlIdempotencyRecordStore(
         IOptions<PostgreSqlIdempotencyOptions> options,
         IOptions<IdempotencyStorageOptions> storageOptions,
-        IUnitOfWorkFactory unitOfWorkFactory
+        IUnitOfWorkFactory unitOfWorkFactory,
+        TimeProvider timeProvider
     )
     {
         _options = options.Value;
         _unitOfWorkFactory = unitOfWorkFactory;
+        _timeProvider = timeProvider;
 
         var schema = storageOptions.Value.Schema;
         var table = PostgreSqlIdempotencySchema.QualifiedTable(schema);
@@ -82,6 +82,7 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
         _admitSql = _BuildAdmitSql(table, sequence);
         _completeSql = _BuildCompleteSql(table);
         _releaseSql = _BuildReleaseSql(table);
+        _setRecoveryPointSql = _BuildSetRecoveryPointSql(table);
         _renewSql = _BuildRenewSql(table);
         _peekSql = _BuildPeekSql(table);
         _purgeSql = _BuildPurgeSql(table);
@@ -233,6 +234,16 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
         var retentionUntil = await reader
             .GetFieldValueAsync<DateTimeOffset>(7, cancellationToken)
             .ConfigureAwait(false);
+        IdempotentRecoveryPoint? recoveryPoint = null;
+
+        if (!await reader.IsDBNullAsync(8, cancellationToken).ConfigureAwait(false))
+        {
+            recoveryPoint = new IdempotentRecoveryPoint(
+                reader.GetString(8),
+                await reader.GetFieldValueAsync<byte[]>(9, cancellationToken).ConfigureAwait(false),
+                reader.GetString(10)
+            );
+        }
 
         await reader.NextResultAsync(cancellationToken).ConfigureAwait(false);
         await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
@@ -247,7 +258,8 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
             result,
             retentionUntil,
             IsRetentionElapsed: retentionUntil <= now,
-            IsLeaseLive: leaseExpiresAt > now
+            IsLeaseLive: leaseExpiresAt > now,
+            recoveryPoint
         );
     }
 
@@ -261,6 +273,7 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
         IdempotencyFingerprint fingerprint,
         TimeSpan leaseDuration,
         TimeSpan retention,
+        bool keepRecoveryPoint,
         CancellationToken cancellationToken = default
     )
     {
@@ -273,6 +286,9 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
         command.Parameters.Add(_BytesParameter("Fingerprint", fingerprint.Hash));
         command.Parameters.Add(_IntervalParameter("LeaseDuration", leaseDuration));
         command.Parameters.Add(_IntervalParameter("Retention", retention));
+        command.Parameters.Add(
+            new NpgsqlParameter<bool>("KeepRecoveryPoint", NpgsqlDbType.Boolean) { TypedValue = keepRecoveryPoint }
+        );
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
@@ -326,6 +342,34 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
         command.Parameters.Add(_IntervalParameter("Retention", retention));
 
         _EnsureWritten(await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false), key, "release");
+    }
+
+    public async ValueTask SetRecoveryPointAsync(
+        IUnitOfWork unitOfWork,
+        IdempotencyRecordKey key,
+        long generation,
+        string point,
+        ReadOnlyMemory<byte> state,
+        string contract,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(unitOfWork);
+        Argument.IsNotNull(point);
+        Argument.IsNotNull(contract);
+        var (connection, transaction) = _RequireLive(_Relational(unitOfWork));
+
+        await using var command = _CreateCommand(_setRecoveryPointSql, connection, transaction, key);
+        command.Parameters.Add(_GenerationParameter(generation));
+        command.Parameters.Add(_TextParameter("RecoveryPoint", point));
+        command.Parameters.Add(_BytesParameter("RecoveryState", state));
+        command.Parameters.Add(_TextParameter("RecoveryContract", contract));
+
+        _EnsureWritten(
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false),
+            key,
+            "set the recovery point of"
+        );
     }
 
     private static void _EnsureWritten(int affected, IdempotencyRecordKey key, string verb)
@@ -497,39 +541,45 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
     /// Runs <paramref name="work" /> in a fresh READ COMMITTED transaction on the provider's own connection and commits
     /// it, retrying a deadlock or serialization failure in a new transaction.
     /// </summary>
-    private async ValueTask<T> _RunAutonomousAsync<T>(
+    private ValueTask<T> _RunAutonomousAsync<T>(
         Func<NpgsqlConnection, NpgsqlTransaction, CancellationToken, Task<T>> work,
         CancellationToken cancellationToken
     )
     {
-        for (var attempt = 1; ; attempt++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            try
-            {
-                await using var connection = _options.CreateConnection();
-                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-                // Explicit so the call runs at READ COMMITTED even when the server's default isolation level is
-                // stricter, where a skipped or concurrently changed row would surface as a serialization failure.
-                await using var transaction = await connection
-                    .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
-                    .ConfigureAwait(false);
-
-                var result = await work(connection, transaction, cancellationToken).ConfigureAwait(false);
-
-                // The write already happened and the result describes it; a late cancel must not roll it back.
-                await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
-
-                return result;
-            }
-            catch (PostgresException ex) when (_IsRetryable(ex) && attempt < _MaxAttempts)
-            {
-                // The victim's transaction is already rolled back and disposed above; the next attempt starts clean.
-            }
-        }
+        // Each attempt opens its own connection and transaction, so the victim's rolled-back transaction is
+        // already disposed and the retry starts clean.
+        return TransientRetry.RunAsync(
+            ct => _RunOnceAsync(work, ct),
+            static ex => ex is PostgresException provider && _IsRetryable(provider),
+            _timeProvider,
+            cancellationToken
+        );
     }
 
+    private async ValueTask<T> _RunOnceAsync<T>(
+        Func<NpgsqlConnection, NpgsqlTransaction, CancellationToken, Task<T>> work,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = _options.CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        // Explicit so the call runs at READ COMMITTED even when the server's default isolation level is
+        // stricter, where a skipped or concurrently changed row would surface as a serialization failure.
+        await using var transaction = await connection
+            .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+            .ConfigureAwait(false);
+
+        var result = await work(connection, transaction, cancellationToken).ConfigureAwait(false);
+
+        // The write already happened and the result describes it; a late cancel must not roll it back.
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+
+        return result;
+    }
+
+    // A deadlock or serialization failure is the one failure a fresh transaction can clear on its own. Only
+    // autonomous calls retry: an enlisted call's failure has already rolled back the caller's transaction, so only
+    // the unit's owner can decide whether to run it again.
     private static bool _IsRetryable(PostgresException ex)
     {
         return string.Equals(ex.SqlState, SqlErrorCodes.PostgreSql.DeadlockDetected, StringComparison.Ordinal)
@@ -633,7 +683,10 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
                 r.{PostgreSqlIdempotencySchema.LeaseExpiresAt},
                 r.{PostgreSqlIdempotencySchema.Result},
                 r.{PostgreSqlIdempotencySchema.ResultContract},
-                r.{PostgreSqlIdempotencySchema.RetentionUntil}
+                r.{PostgreSqlIdempotencySchema.RetentionUntil},
+                r.{PostgreSqlIdempotencySchema.RecoveryPoint},
+                r.{PostgreSqlIdempotencySchema.RecoveryState},
+                r.{PostgreSqlIdempotencySchema.RecoveryContract}
             FROM {table} AS r
             WHERE {_KeyPredicate("r")}
             FOR NO KEY UPDATE;
@@ -690,8 +743,8 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
     {
         // Runs on a row this transaction already locked, so its clock and its nextval() both come after any wait: a
         // generation drawn before the lock could be lower than one a still-open admission already holds. Also the
-        // in-place reset of a record past its retention: every outcome column is overwritten. Retention extends,
-        // never shortens.
+        // in-place reset of a record past its retention: every outcome column is overwritten, and the recovery point is
+        // kept only for an attempt that resumes the earlier one. Retention extends, never shortens.
         return $"""
             WITH clock AS MATERIALIZED (SELECT clock_timestamp() AS now)
             UPDATE {table} AS r
@@ -702,6 +755,9 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
                 {PostgreSqlIdempotencySchema.LeaseExpiresAt} = clock.now + @LeaseDuration,
                 {PostgreSqlIdempotencySchema.Result} = NULL,
                 {PostgreSqlIdempotencySchema.ResultContract} = NULL,
+                {PostgreSqlIdempotencySchema.RecoveryPoint} = CASE WHEN @KeepRecoveryPoint THEN r.{PostgreSqlIdempotencySchema.RecoveryPoint} END,
+                {PostgreSqlIdempotencySchema.RecoveryState} = CASE WHEN @KeepRecoveryPoint THEN r.{PostgreSqlIdempotencySchema.RecoveryState} END,
+                {PostgreSqlIdempotencySchema.RecoveryContract} = CASE WHEN @KeepRecoveryPoint THEN r.{PostgreSqlIdempotencySchema.RecoveryContract} END,
                 {PostgreSqlIdempotencySchema.RetentionUntil} = GREATEST(
                     r.{PostgreSqlIdempotencySchema.RetentionUntil},
                     clock.now + @Retention
@@ -723,6 +779,9 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
                 {PostgreSqlIdempotencySchema.LeaseExpiresAt} = NULL,
                 {PostgreSqlIdempotencySchema.Result} = @Result,
                 {PostgreSqlIdempotencySchema.ResultContract} = @ResultContract,
+                {PostgreSqlIdempotencySchema.RecoveryPoint} = NULL,
+                {PostgreSqlIdempotencySchema.RecoveryState} = NULL,
+                {PostgreSqlIdempotencySchema.RecoveryContract} = NULL,
                 {PostgreSqlIdempotencySchema.RetentionUntil} = GREATEST(
                     r.{PostgreSqlIdempotencySchema.RetentionUntil},
                     clock.now + @Retention
@@ -735,6 +794,7 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
 
     private static string _BuildReleaseSql(string table)
     {
+        // The recovery point is kept: a released attempt may have finished steps the next attempt should not redo.
         return $"""
             WITH clock AS MATERIALIZED (SELECT clock_timestamp() AS now)
             UPDATE {table} AS r
@@ -748,6 +808,20 @@ internal sealed class PostgreSqlIdempotencyRecordStore : IIdempotencyRecordStore
                     clock.now + @Retention
                 )
             FROM clock
+            WHERE {_KeyPredicate("r")}
+                AND r.{PostgreSqlIdempotencySchema.Generation} = @Generation;
+            """;
+    }
+
+    private static string _BuildSetRecoveryPointSql(string table)
+    {
+        // Runs on a row this transaction already locked and found held by the generation, so the guard only restates
+        // that; no clock is read, since the lease was judged live under the same lock.
+        return $"""
+            UPDATE {table} AS r
+            SET {PostgreSqlIdempotencySchema.RecoveryPoint} = @RecoveryPoint,
+                {PostgreSqlIdempotencySchema.RecoveryState} = @RecoveryState,
+                {PostgreSqlIdempotencySchema.RecoveryContract} = @RecoveryContract
             WHERE {_KeyPredicate("r")}
                 AND r.{PostgreSqlIdempotencySchema.Generation} = @Generation;
             """;

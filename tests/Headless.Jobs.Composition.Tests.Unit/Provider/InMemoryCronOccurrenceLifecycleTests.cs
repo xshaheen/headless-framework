@@ -33,6 +33,7 @@ public sealed class InMemoryCronOccurrenceLifecycleTests : TestBase
             "* * * * *",
             MissedRunPolicy.Skip,
             60,
+            CronOverlapPolicy.Allow,
             ContractVersion: "1"
         );
         await provider.MigrateDefinedCronJobsAsync([seed], AbortToken);

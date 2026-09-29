@@ -104,18 +104,31 @@ internal sealed class InMemoryLeaseStore(
 
         if (existing is { State: InMemoryLeaseState.Active } live && live.ExpiresAt > now)
         {
-            return (LeaseGrantResult.Held(live.Generation, live.ExpiresAt), null);
+            return (LeaseGrantResult.Held(live.Generation, live.ExpiresAt, live.TakeoverCount), null);
         }
 
         // Drawn only now, under the key's lock: a generation drawn before the lock could be lower than one a
         // still-open grant already holds.
         var generation = storage.NextGeneration();
-        var row = new InMemoryLease(generation, InMemoryLeaseState.Active, now, _Add(now, duration), EndedAt: null);
+        var isTakeover = existing is { State: InMemoryLeaseState.Active };
+
+        // A takeover counts one more expired holder; any other grant keeps the count, which a settlement or release
+        // already reset and a sweep's abandonment already raised. Progress is kept either way, so every later
+        // attempt resumes from the last one recorded until the work settles.
+        var row = new InMemoryLease(
+            generation,
+            InMemoryLeaseState.Active,
+            now,
+            _Add(now, duration),
+            EndedAt: null,
+            TakeoverCount: (existing?.TakeoverCount ?? 0) + (isTakeover ? 1 : 0),
+            Progress: existing?.Progress
+        );
         var lease = key.ToLease(generation);
 
-        var result = existing is { State: InMemoryLeaseState.Active } expired
-            ? LeaseGrantResult.Takeover(lease, row.ExpiresAt, expired.Generation)
-            : LeaseGrantResult.Granted(lease, row.ExpiresAt);
+        var result = isTakeover
+            ? LeaseGrantResult.Takeover(lease, row.ExpiresAt, existing!.Generation, row.TakeoverCount, row.Progress)
+            : LeaseGrantResult.Granted(lease, row.ExpiresAt, row.TakeoverCount, row.Progress);
 
         return (result, row);
     }
@@ -128,12 +141,13 @@ internal sealed class InMemoryLeaseStore(
         LeaseKey key,
         long generation,
         TimeSpan duration,
+        LeaseProgress? progress,
         CancellationToken cancellationToken = default
     )
     {
         using var held = await Table.LockAsync(key, cancellationToken).ConfigureAwait(false);
 
-        var (result, row) = _Renew(Table.Read(key), generation, duration);
+        var (result, row) = _Renew(Table.Read(key), generation, duration, progress);
 
         if (row is not null)
         {
@@ -148,12 +162,13 @@ internal sealed class InMemoryLeaseStore(
         LeaseKey key,
         long generation,
         TimeSpan duration,
+        LeaseProgress? progress,
         CancellationToken cancellationToken = default
     )
     {
         var transaction = await _LockAsync(unitOfWork, key, cancellationToken).ConfigureAwait(false);
 
-        var (result, row) = _Renew(transaction.Read(key), generation, duration);
+        var (result, row) = _Renew(transaction.Read(key), generation, duration, progress);
 
         if (row is not null)
         {
@@ -240,12 +255,14 @@ internal sealed class InMemoryLeaseStore(
     private (LeaseRenewalResult Result, InMemoryLease? Row) _Renew(
         InMemoryLease? existing,
         long generation,
-        TimeSpan duration
+        TimeSpan duration,
+        LeaseProgress? progress
     )
     {
         var now = timeProvider.GetUtcNow();
         var renewedUntil = _Add(now, duration);
 
+        // Progress is written only in the row that extends the lease, so a refused renewal leaves it untouched.
         return _Classify(existing, generation, now) switch
         {
             LeaseFenceStatus.Current => (
@@ -253,6 +270,7 @@ internal sealed class InMemoryLeaseStore(
                 existing! with
                 {
                     ExpiresAt = renewedUntil,
+                    Progress = progress ?? existing.Progress,
                 }
             ),
             LeaseFenceStatus.Expired => (new LeaseRenewalResult(LeaseRenewalStatus.Expired, existing!.ExpiresAt), null),
@@ -281,6 +299,8 @@ internal sealed class InMemoryLeaseStore(
                 {
                     State = ended,
                     EndedAt = now,
+                    TakeoverCount = 0,
+                    Progress = null,
                 }
             ),
             LeaseFenceStatus.Settled => (LeaseSettlementStatus.Settled, null),
@@ -357,9 +377,22 @@ internal sealed class InMemoryLeaseStore(
                 continue;
             }
 
-            transaction.Stage(key, row with { State = InMemoryLeaseState.Abandoned, EndedAt = now });
+            var abandoned = row with
+            {
+                State = InMemoryLeaseState.Abandoned,
+                EndedAt = now,
+                TakeoverCount = row.TakeoverCount + 1,
+            };
+            transaction.Stage(key, abandoned);
 
-            return ValueTask.FromResult<ExpiredLease?>(key.ToExpiredLease(row.Generation, row.ExpiresAt));
+            return ValueTask.FromResult<ExpiredLease?>(
+                key.ToExpiredLease(
+                    abandoned.Generation,
+                    abandoned.ExpiresAt,
+                    abandoned.TakeoverCount,
+                    abandoned.Progress
+                )
+            );
         }
 
         return ValueTask.FromResult<ExpiredLease?>(null);

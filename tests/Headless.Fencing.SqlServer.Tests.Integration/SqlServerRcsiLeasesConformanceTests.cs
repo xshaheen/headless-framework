@@ -71,4 +71,10 @@ public sealed class SqlServerRcsiLeasesConformanceTests(SqlServerRcsiFencingFixt
     {
         return base.should_purge_only_old_ended_leases_and_never_reissue_a_generation();
     }
+
+    [Fact]
+    public override Task should_hand_the_sweep_the_progress_and_count_an_abandoned_lease_once()
+    {
+        return base.should_hand_the_sweep_the_progress_and_count_an_abandoned_lease_once();
+    }
 }

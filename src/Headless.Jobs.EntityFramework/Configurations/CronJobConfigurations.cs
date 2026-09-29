@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.EntityFramework.Configurations;
+using Headless.Hosting.Initialization;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
@@ -9,7 +10,15 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Headless.Jobs.Configurations;
 
-public class CronJobConfigurations<TCronJob>(string schema, string? contractCollation = null)
+/// <summary>EF Core mapping of the Jobs cron-definition table.</summary>
+/// <param name="schema">The schema that holds the table.</param>
+/// <param name="style">
+/// The naming style of the database the model targets: <see cref="StorageNamingStyle.SnakeCase"/> on PostgreSQL and
+/// <see cref="StorageNamingStyle.PascalCase"/> elsewhere. Pass <c>HeadlessStorageNaming.ForProvider(Database.ProviderName)</c>
+/// so the model matches the names the Jobs runtime expects on that database.
+/// </param>
+/// <param name="contractCollation">The ordinal collation for the identity columns, or <see langword="null"/>.</param>
+public class CronJobConfigurations<TCronJob>(string schema, StorageNamingStyle style, string? contractCollation = null)
     : IEntityTypeConfiguration<TCronJob>
     where TCronJob : CronJobEntity, new()
 {
@@ -37,7 +46,9 @@ public class CronJobConfigurations<TCronJob>(string schema, string? contractColl
             builder.Property(x => x.ContractVersion).UseCollation(contractCollation);
         }
 
-        builder.HasKey("Id");
+        var table = JobsStorageNaming.Table(style, JobsStorageNaming.CronJobs);
+
+        builder.HasKey("Id").HasName(HeadlessStorageNaming.PrimaryKeyName(style, table));
 
         builder.Property(e => e.Id).ValueGeneratedNever();
 
@@ -58,6 +69,13 @@ public class CronJobConfigurations<TCronJob>(string schema, string? contractColl
             .HasMaxLength(32)
             .HasDefaultValue(MissedRunPolicy.Coalesce);
 
+        // Same valid-enum-name default rule as OnMissedRun.
+        builder
+            .Property(e => e.OnOverlap)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(CronOverlapPolicy.Allow);
+
         builder.Property(e => e.EvaluationFingerprint).HasMaxLength(128);
         builder.Property(e => e.FingerprintFailureCount).HasDefaultValue(0);
         builder.Property(e => e.FingerprintRetryAfterUtc).HasConversion(nullableUtcDateTimeConverter);
@@ -71,14 +89,14 @@ public class CronJobConfigurations<TCronJob>(string schema, string? contractColl
         // with. The fingerprint sweep selects on staleness independently of due-ness, hence the second index.
         builder
             .HasIndex(nameof(CronJobEntity.IsPaused), nameof(CronJobEntity.NextDueUtc))
-            .HasDatabaseName("IX_CronJobs_IsPaused_NextDueUtc");
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "IsPaused", "NextDueUtc"));
 
         builder
             .HasIndex(nameof(CronJobEntity.EvaluationFingerprint))
-            .HasDatabaseName("IX_CronJobs_EvaluationFingerprint");
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "EvaluationFingerprint"));
         builder
             .HasIndex(nameof(CronJobEntity.FingerprintRetryAfterUtc), nameof(CronJobEntity.Id))
-            .HasDatabaseName("IX_CronJobs_FingerprintRetryAfterUtc_Id");
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "FingerprintRetryAfterUtc", "Id"));
 
         // Cron is system-scope by contract (a tenant-scoped cron definition is rejected at schedule time), so
         // TenantId always persists null. Bound the column length for parity with time jobs; no tenant index — cron
@@ -92,11 +110,14 @@ public class CronJobConfigurations<TCronJob>(string schema, string? contractColl
         // (mirrors TimeJobConfigurations).
         builder.Ignore(e => e.Enlistment);
 
-        builder.HasIndex("Expression").HasDatabaseName("IX_CronJobs_Expression");
+        builder.HasIndex("Expression").HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "Expression"));
 
         // Index for common lookups by function + expression
-        builder.HasIndex("Function", "Expression").HasDatabaseName("IX_Function_Expression");
+        builder
+            .HasIndex("Function", "Expression")
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "Function", "Expression"));
 
-        builder.ToTable("CronJobs", schema);
+        builder.ToTable(table, schema);
+        builder.ApplyJobsColumnNaming(style);
     }
 }

@@ -73,6 +73,35 @@ public interface IIdempotentOperations
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Records <paramref name="point" /> as the last step the admitted operation finished, with the state it needs to
+    /// resume after that step, in its own committed transaction. The next admission of the key after this attempt ends
+    /// without completing reads it from <see cref="IdempotentAdmission.RecoveryPoint" />.
+    /// </summary>
+    /// <remarks>
+    /// A later call replaces the earlier point; completion clears it, and a release keeps it. Prefer
+    /// <c>unit.Idempotency.SetRecoveryPointAsync</c> when the step's own writes run in a unit of work, so the point
+    /// commits or rolls back with them; this autonomous form suits a step whose effect lives outside any database the
+    /// unit could join, such as a payment API call.
+    /// </remarks>
+    /// <param name="admission">The admitted operation.</param>
+    /// <param name="point">The finished step's name.</param>
+    /// <param name="state">The state the step left behind.</param>
+    /// <param name="contract">The contract tag the state is written under.</param>
+    /// <param name="cancellationToken">Token used to cancel the database calls before the commit.</param>
+    /// <returns>A task that completes when the recovery point is committed.</returns>
+    /// <exception cref="ArgumentException">
+    /// The admission is not admitted, or the point name, state, or contract is invalid or too long.
+    /// </exception>
+    /// <exception cref="StaleAdmissionException">The attempt no longer owns the key; nothing was stored.</exception>
+    ValueTask SetRecoveryPointAsync(
+        IdempotentAdmission admission,
+        string point,
+        ReadOnlyMemory<byte> state,
+        string contract,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Gives the admitted operation up without a result, so the next admission of the key proceeds at once.</summary>
     /// <param name="admission">The admitted operation.</param>
     /// <param name="cancellationToken">Token used to cancel the database calls before the commit.</param>

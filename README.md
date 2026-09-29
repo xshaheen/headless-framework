@@ -14,7 +14,7 @@
 
 [اللغة: العربية](README.ar.md)
 
-168 packages &bull; One setup grammar &bull; Swap any provider in one line
+185 packages &bull; One setup grammar &bull; Swap any provider in one line
 
 [Why Headless](#why-headless) &bull; [60-second start](#60-second-start) &bull; [One grammar, every domain](#one-grammar-every-domain) &bull; [What is in the box](#what-is-in-the-box) &bull; [Package catalog](#package-catalog)
 
@@ -44,9 +44,9 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 Every service, repository, and handler that injects `ICache` is untouched by that edit. The same holds for `IBlobStorage` across S3, Azure, Cloudflare R2, the file system, Redis, and SFTP; for `IEmailSender` across SES, Azure Communication Services, and SMTP; and for messaging across eight transports.
 
-**You install three packages, not 168.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching.Core`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in one thing: `Headless.Extensions`.
+**You install three packages, not 185.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching.Core`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in one thing: `Headless.Extensions`.
 
-**Tests do not need Docker to be fast.** Caching, distributed locks, and messaging ship in-memory providers; email, SMS, and push notifications ship dev providers that send nothing; blob storage runs against the local file system. Unit tests exercise the real contract with no containers. When you want the real backend, `Headless.Testing.Testcontainers` supplies the fixtures. The repository itself runs 130 unit-test projects and 60 integration-test projects on that split.
+**Tests do not need Docker to be fast.** Caching, distributed locks, and messaging ship in-memory providers; email, SMS, and push notifications ship dev providers that send nothing; blob storage runs against the local file system. Unit tests exercise the real contract with no containers. When you want the real backend, `Headless.Testing.Testcontainers` supplies the fixtures. The repository itself runs 122 unit-test projects and 63 integration-test projects on that split.
 
 **The hard parts are already written.** Background jobs claim work atomically with `FOR UPDATE SKIP LOCKED` on PostgreSQL and `UPDLOCK, READPAST, ROWLOCK` on SQL Server. Messaging writes to a transactional outbox inside your EF Core save. Distributed locks use PostgreSQL advisory locks and SQL Server application locks rather than an improvised `SET NX`. Node membership reads liveness from the server clock, not the node's clock. Each of these is a place where a plausible-looking implementation loses messages or runs a job twice.
 
@@ -143,7 +143,7 @@ builder.Services.AddHeadlessBlobs(blobs =>
 
 ### Go further
 
-A full worked service — validated upload, blob write, read-through cache, and a background job — lives in [`docs/llms/index.md`](docs/llms/index.md). Twenty runnable demos live in [`demo/`](demo/).
+[`docs/llms/index.md`](docs/llms/index.md) routes each task to the domain guide that owns its setup, runtime behavior, and provider limits. Runnable demos live in [`demo/`](demo/).
 
 ## One grammar, every domain
 
@@ -159,12 +159,12 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Blob storage | `AddHeadlessBlobs` | `UseAws`, `UseAzure`, `UseCloudflareR2`, `UseFileSystem`, `UseRedis`, `UseSsh` |
 | Email | `AddHeadlessEmails` | `UseAwsSes`, `UseAzure`, `UseMailkit`, `UseDevelopment`, `UseNoop` |
 | SMS | `AddHeadlessSms` | `UseTwilio`, `UseAwsSns`, `UseInfobip`, `UseCequens`, `UseConnekio`, `UseVictoryLink`, `UseVodafone`, `UseDevelopment` |
-| Push notifications | `AddHeadlessPushNotifications` | `UseFirebase`, `UseNoop` |
+| Push notifications | `AddHeadlessPushNotifications` | `UseFirebase`, `UseApns`, `UseNoop` |
 | Distributed locks | `AddHeadlessDistributedLocks` | `UseInMemory`, `UseRedis`, `UsePostgreSql`, `UseSqlServer` |
 | Node membership | `AddHeadlessCoordination` | `UseRedis`, `UsePostgreSql`, `UseSqlServer` |
 | Sequences | `AddHeadlessSequences` | `UsePostgreSql`, `UseSqlServer` |
 | Fencing (durable leases) | `AddHeadlessFencing` | `UsePostgreSql`, `UseSqlServer`, `UseInMemory` |
-| Idempotency | `AddHeadlessIdempotency` | `UsePostgreSql`, `UseSqlServer`, `UseInMemory` |
+| Idempotency | `AddHeadlessIdempotency` | `UsePostgreSql`, `UseSqlServer`, `UseInMemory`, `UseCache` |
 | Feature flags | `AddHeadlessFeatures` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
 | Dynamic settings | `AddHeadlessSettings` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
 | Permissions | `AddHeadlessPermissions` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
@@ -185,7 +185,7 @@ Two rules follow from that shape:
 | **API host** | `AddHeadless()` one-line bootstrap: problem details, OpenTelemetry, OpenAPI, health checks, compression, forwarded headers, HSTS, startup validation. Minimal API and MVC integrations, FluentValidation filters, Stripe-style HTTP idempotency. |
 | **Data** | EF Core conventions, global filters, soft deletes, DDD base types, seed data. Raw connection factories for PostgreSQL, SQL Server, and SQLite. Couchbase. Geospatial support through NetTopologySuite. |
 | **State and storage** | Caching (memory, Redis, hybrid L1/L2, tagging, stampede protection). Blob storage across six backends. Dynamic settings, feature flags, permissions, and audit logs, each with three storage providers. |
-| **Distributed runtime** | Messaging with a transactional outbox, retries, and delayed delivery over eight transports. Background jobs with cron, retries, and source-generated registration. Distributed locks. Attempt limiting for OTP, password-reset, and PIN flows. Node membership and liveness. A scoped unit of work that drains outbox and job work atomically on commit. |
+| **Distributed runtime** | Messaging with a transactional outbox, retries, and delayed delivery over eight transports. Background jobs with cron, retries, and source-generated registration. Distributed locks, fenced leases that refuse a stale holder's write, and durable idempotent admission that replays a stored result on retry. Attempt limiting for OTP, password-reset, and PIN flows. Node membership and liveness. An explicit unit of work that commits outbox messages and durable jobs with the transaction and dispatches them after commit. |
 | **Integrations** | Email, SMS, push notifications, CAPTCHA, image processing, media text extraction, Paymob payments, TUS resumable uploads, sitemaps, slugs, URL building. |
 | **Multi-tenancy** | Tenant context that flows through HTTP resolution, EF Core query filters, permission caching, and messaging headers, plus an optional tenant catalog. |
 | **Testing** | xUnit v3 base classes, Bogus builders, `WebApplicationFactory` fixtures with database reset, Testcontainers fixtures, and a messaging test harness that asserts on published, consumed, and faulted messages. |
@@ -252,7 +252,7 @@ Provider packages are ordinary NuGet packages. To add a custom backend, implemen
 ## Package catalog
 
 <details>
-<summary><strong>All 168 packages, grouped by domain</strong> — expand to browse</summary>
+<summary><strong>All 185 packages, grouped by domain</strong> — expand to browse</summary>
 
 ### API & Web
 
@@ -314,6 +314,7 @@ One blob storage interface with providers for every major cloud and protocol.
 | [Headless.Blobs.CloudflareR2](src/Headless.Blobs.CloudflareR2/README.md) | Cloudflare R2 (S3-compatible) blob storage |
 | [Headless.Blobs.FileSystem](src/Headless.Blobs.FileSystem/README.md) | Local filesystem storage |
 | [Headless.Blobs.Redis](src/Headless.Blobs.Redis/README.md) | Redis blob storage |
+| [Headless.Blobs.SignedUrlEndpoint](src/Headless.Blobs.SignedUrlEndpoint/README.md) | Signed download and upload URLs for blob stores without native presign |
 | [Headless.Blobs.SshNet](src/Headless.Blobs.SshNet/README.md) | SFTP blob storage |
 
 ### Caching
@@ -499,11 +500,12 @@ Database-backed permission system. Define permissions as code, store assignments
 
 ### Push Notifications
 
-Firebase Cloud Messaging behind a clean abstraction, with a no-op dev provider for local testing.
+Firebase Cloud Messaging and Apple Push Notification service behind a clean abstraction, with a no-op dev provider for local testing.
 
 | Package | Description |
 |---------|-------------|
 | [Headless.PushNotifications.Abstractions](src/Headless.PushNotifications.Abstractions/README.md) | Push notification interfaces |
+| [Headless.PushNotifications.Apns](src/Headless.PushNotifications.Apns/README.md) | Apple Push Notification service (APNs) |
 | [Headless.PushNotifications.Core](src/Headless.PushNotifications.Core/README.md) | Unified setup builder for composing named push-notification services |
 | [Headless.PushNotifications.Dev](src/Headless.PushNotifications.Dev/README.md) | Development push provider |
 | [Headless.PushNotifications.Firebase](src/Headless.PushNotifications.Firebase/README.md) | Firebase Cloud Messaging |
@@ -568,12 +570,13 @@ Durable, cross-process leases that fence a stale or zombie attempt's writes at t
 
 ### Idempotency
 
-Durable, tenant-scoped idempotent admission: admit a key once across processes and replay its stored result on retry, independent of any cache TTL. Each record row carries its own lease and generation.
+Durable, tenant-scoped idempotent admission: admit a key once across processes and replay its stored result on retry, independent of any cache TTL on the relational providers. Each record carries its own lease and generation.
 
 | Package | Description |
 |---------|-------------|
 | [Headless.Idempotency.Abstractions](src/Headless.Idempotency.Abstractions/README.md) | `IIdempotentOperations`, `IdempotentAdmission`, and the `unit.Idempotency` accessor |
 | [Headless.Idempotency.Core](src/Headless.Idempotency.Core/README.md) | Registration, admission orchestration, and the retention purge |
+| [Headless.Idempotency.Caching](src/Headless.Idempotency.Caching/README.md) | Idempotency records in a shared cache (Redis) for autonomous calls across replicas without SQL |
 | [Headless.Idempotency.InMemory](src/Headless.Idempotency.InMemory/README.md) | In-process idempotency records for tests and single-instance hosts |
 | [Headless.Idempotency.PostgreSql](src/Headless.Idempotency.PostgreSql/README.md) | PostgreSQL idempotency records |
 | [Headless.Idempotency.SqlServer](src/Headless.Idempotency.SqlServer/README.md) | SQL Server idempotency records |
@@ -650,6 +653,7 @@ Base classes, builders, fixtures, and Testcontainers integration for real-databa
 | [Headless.Testing](src/Headless.Testing/README.md) | Testing utilities and base classes |
 | [Headless.Testing.AspNetCore](src/Headless.Testing.AspNetCore/README.md) | ASP.NET Core integration-test server with time control and DB reset |
 | [Headless.Testing.Testcontainers](src/Headless.Testing.Testcontainers/README.md) | Testcontainers fixtures |
+| [Headless.EntityFramework.Testing](src/Headless.EntityFramework.Testing/README.md) | Tenant-isolation assertions for EF Core: cross-tenant reads empty, cross-tenant writes refused |
 
 ### TUS (Resumable Uploads)
 

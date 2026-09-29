@@ -19,7 +19,7 @@ public sealed class IdempotentOperationsTests : TestBase
             .Store.LockOrInsertAsync(unit, RecordKey, Fingerprint, context.Retention, AbortToken)
             .Returns(Inserted());
         context
-            .Store.AdmitAsync(unit, RecordKey, Fingerprint, context.LeaseDuration, context.Retention, AbortToken)
+            .Store.AdmitAsync(unit, RecordKey, Fingerprint, context.LeaseDuration, context.Retention, false, AbortToken)
             .Returns(Grant);
 
         // when
@@ -29,7 +29,7 @@ public sealed class IdempotentOperationsTests : TestBase
         admission.Disposition.Should().Be(IdempotentDisposition.Admitted);
         await context
             .Store.Received(1)
-            .AdmitAsync(unit, RecordKey, Fingerprint, context.LeaseDuration, context.Retention, AbortToken);
+            .AdmitAsync(unit, RecordKey, Fingerprint, context.LeaseDuration, context.Retention, false, AbortToken);
         await unit.Received(1).CompleteAsync(CancellationToken.None);
         await unit.DidNotReceive().RollbackAsync();
         unit.DidNotReceive().PreventRetry();

@@ -20,6 +20,11 @@ Install `Headless.Features.Abstractions` plus `Headless.Features.Core` and exact
 Typical registration:
 
 ```csharp
+// Required dependencies
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
+
 // 1. Register feature definitions
 builder.Services.AddFeatureDefinitionProvider<MyFeatureDefinitionProvider>();
 
@@ -37,7 +42,7 @@ builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbCont
 - `AddHeadlessFeatures(configure)` is the single entry point — it registers the management core automatically alongside the selected storage provider. Only one storage provider (EF / PostgreSQL / SqlServer) can be registered per application.
 - To tune management options, call `setup.ConfigureManagement(options => ...)` inside the `AddHeadlessFeatures` block. An `(options, IServiceProvider)` overload is available for late-bound configuration. `services.Configure<FeatureManagementOptions>(...)` also works and composes regardless of call order.
 - To tune storage options (schema, table names), call `setup.ConfigureStorage(o => ...)` inside the `AddHeadlessFeatures` block. The `IConfiguration` overload binds the `Headless:Features:Storage` section instead.
-- For EF storage: register `AddDbContextFactory<TContext>()` and call `modelBuilder.AddHeadlessFeatures(this)` in `OnModelCreating` before calling `setup.UseEntityFramework<TContext>()`.
+- For EF storage: register `AddDbContextFactory<TContext>()` and call `modelBuilder.AddHeadlessFeatures(this)` in `OnModelCreating` before calling `setup.UseEntityFramework<TContext>()`. The factory must be a singleton (the `AddDbContextFactory` / `AddPooledDbContextFactory` default): the EF repositories are singletons that would capture a scoped or transient factory for the life of the host, so startup refuses one with `InvalidServiceLifetimeException`.
 - `FeaturesInitializationBackgroundService` runs at startup — do NOT manually initialize features or call `IDynamicFeatureDefinitionStore.SaveAsync` directly. A host that must not touch the store at startup (a test host, a read-only replica) calls `setup.DisableStartupInitialization()`; static definitions stay available in memory and nothing else changes.
 - Feature value caching is automatic. Both `IFeatureManager` writes and direct `IFeatureValueRecordRepository` writes invalidate the affected cache entry (the repository removes it after `SaveChangesAsync`), and a distributed cache propagates the eviction across nodes. Only writes that bypass the repository entirely (raw SQL, direct `DbContext`) leave the cache stale.
 - Custom value providers must implement `IFeatureValueReadProvider` (read-only) or `IFeatureValueProvider` (read-write). Register with `services.AddFeatureValueProvider<T>()`. The last-registered provider has the highest resolution priority. `FeatureManager` writes through `IFeatureValueProvider.SetAllAsync`; its default implementation calls `SetAsync` / `ClearAsync` once per entry, so a custom provider overrides it when its source can apply a batch atomically.
@@ -98,7 +103,7 @@ The message carries feature names and the scope where they changed, never values
 
 `IBus` is optional. A host that never calls `AddHeadlessMessaging` writes feature values exactly as before and publishes nothing. A failed publish is logged and never fails the write that already succeeded. In both cases, a peer keeps its copy until it re-reads for its own reasons, so a consumer that must converge without a bus still needs a periodic refresh.
 
-The announcement follows the write but not the commit. The injected `IBus` never enlists in a transaction, so when `SetAsync` runs inside a caller's unit of work (`RunAsync(db, …)`) the message goes out before that unit commits. A peer that re-reads in that window loads the old value with no further signal. Call `SetAsync` outside a surrounding unit, or keep the backstop refresh above, when that window matters.
+The announcement follows a committed write. A feature write never joins a unit of work the caller has open: the EF store saves through a fresh context from `IDbContextFactory<TContext>`, and the PostgreSQL and SQL Server stores open their own connection and transaction. `SetAsync` commits before it returns, even inside a caller's `RunAsync(db, …)`, and the message goes out after that commit, so a peer that re-reads on it loads the new value. The write is not atomic with the caller's other writes: a `SetAsync` inside a unit that later rolls back leaves the feature value changed.
 
 This signal is separate from cache coherence, which `FeatureValueStore` already handles. A store-backed write updates or evicts its cache entry, and a distributed cache propagates the change through `CacheInvalidationMessage`. `FeatureChangedMessage` covers state that the framework cannot see, such as a value that a consumer copied into a field.
 
@@ -235,6 +240,7 @@ Core implementation of feature management with caching, value providers, and def
 
 - Value providers are registered with the last-added provider having the highest resolution priority. The built-in order is `DefaultValue` → `Edition` → `Tenant` (Tenant wins). Custom providers added via `AddFeatureValueProvider<T>()` are appended after `Tenant` and therefore have the highest priority. This matters when writing custom providers that must override built-in resolution.
 - `TenantFeatureValueProvider` and `EditionFeatureValueProvider` resolve their store key as `providerKey ?? ambient` — an explicit key (e.g. `GetForTenantAsync(name, tenantId)`) always wins, and a `null` key falls back to `ICurrentTenant.Id` / the principal's edition claim. The same rule applies to reads and writes, so a value written for one tenant is read back for that tenant only.
+- **Keys must not start or end with white space.** Every `IFeatureValueStore` entry point throws `ArgumentException` before touching storage when a feature name, provider name, or provider key starts or ends with white space, on reads as well as writes. SQL Server ignores trailing spaces when it compares keys, so `"acme "` would read and overwrite the `"acme"` row there while PostgreSQL keeps the two apart. Normalize keys at your own boundary; the store refuses rather than trims.
 - `AddHeadlessFeatures` is guarded on `IFeatureManager` so it is safe to call more than once (only the first call registers the core; the storage extension always applies). However, only one storage provider extension may be registered — a second call with a different provider throws at startup.
 - `FeaturesInitializationBackgroundService` implements `IInitializer` so anything that awaits `WaitForInitializationAsync()` blocks until the seed and pre-cache steps complete. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; other failures retain 10 retries, and the terminal exception is surfaced to every waiter. If the host is stopped before initialization finishes, the background task and waiters are cancelled.
 - `FeatureValueRecord` implements `ICreateAudit` / `IUpdateAudit`, carrying `CreatedAt` (stamped on insert) and `UpdatedAt` (stamped on update). On the EF path these are populated by the Headless audit save-processor; the raw-SQL PostgreSQL / SQL Server providers stamp them from the registered `TimeProvider`. Features scope tenancy through `ProviderName`/`ProviderKey` (e.g. `ProviderName == "Tenant"` with the tenant id in `ProviderKey`) — there is deliberately no first-class `TenantId` column nor `IMultiTenant`; a scoping value provider expresses tenant, edition, and other scopes uniformly. This is an intentional divergence from `PermissionGrantRecord`, not drift.
@@ -253,6 +259,11 @@ Register the required services (`TimeProvider`, `ICache`, `IDistributedLock`, `I
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
+
+// Required dependencies
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 
 // Register feature definitions
 builder.Services.AddFeatureDefinitionProvider<MyFeatureDefinitionProvider>();
@@ -309,15 +320,17 @@ services.AddHeadlessFeatures(setup =>
 {
     setup.ConfigureStorage(o =>
     {
-        o.Schema = "features"; // default
-        o.FeatureValuesTableName = "FeatureValues"; // default
-        o.FeatureDefinitionsTableName = "FeatureDefinitions"; // default
-        o.FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions"; // default
+        o.Schema = "headless"; // default, shared by every Headless feature
+        o.FeatureValuesTableName = null; // default: feature_values on PostgreSQL, FeatureValues elsewhere
+        o.FeatureDefinitionsTableName = null; // default: feature_definitions / FeatureDefinitions
+        o.FeatureGroupDefinitionsTableName = null; // default: feature_group_definitions / FeatureGroupDefinitions
         o.InitializeOnStartup = true; // default; set false when schema is provisioned out-of-band
     });
     setup.UseEntityFramework<AppDbContext>();
 });
 ```
+
+Every object follows its database's naming convention. On PostgreSQL the tables, columns, primary keys, and indexes are snake_case (`feature_values`, `provider_key`, `pk_feature_values`, `ix_feature_values_provider_name_provider_key`); on SQL Server and other databases they are PascalCase (`FeatureValues`, `ProviderKey`, `PK_FeatureValues`, `IX_FeatureValues_ProviderName_ProviderKey`). A table-name option left `null` takes that convention's default. A table name you set is used verbatim, and its key and index names derive from it (`pk_MyValues`). The raw providers and the EF mapping produce the same names on the same database. Because PostgreSQL silently truncates identifiers longer than 63 bytes, every provider refuses a configured table name whose longest derived PostgreSQL key or index name would exceed that: at most 23 characters for the values table, 49 for definitions, and 55 for groups.
 
 ### Runtime behavior
 
@@ -336,8 +349,8 @@ Entity Framework Core storage implementation for feature management.
 ### API and behavior
 
 - `setup.UseEntityFramework<TContext>()` — registers the EF storage provider via the `HeadlessFeaturesSetupBuilder`
-- `modelBuilder.AddHeadlessFeatures(DbContext context)` — applies entity configurations by resolving `FeaturesStorageOptions` from the context's service provider (no constructor injection required)
-- `modelBuilder.AddHeadlessFeatures(FeaturesStorageOptions options)` — overload for when you already hold the options
+- `modelBuilder.AddHeadlessFeatures(DbContext context)` — applies entity configurations by resolving `FeaturesStorageOptions` from the context's service provider (no constructor injection required) and the naming style from `context.Database.ProviderName`: snake_case on Npgsql, PascalCase on every other provider
+- `modelBuilder.AddHeadlessFeatures(FeaturesStorageOptions options, StorageNamingStyle style)` — overload for when you already hold the options; pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (namespace `Headless.Hosting.Initialization`) so the style matches the database
 - EF repositories for `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository`
 - `FeatureValueRecord` maps `CreatedAt` / `UpdatedAt` audit columns (via `ConfigureHeadlessConvention`); the Headless audit save-processor stamps them on `SaveChanges`
 - `FeaturesStorageOptions` for schema and table-name configuration (shared with raw-DDL providers)
@@ -380,10 +393,10 @@ builder.Services.AddHeadlessFeatures(setup =>
 
 `FeaturesStorageOptions` defaults:
 
-- `Schema = "features"`
-- `FeatureValuesTableName = "FeatureValues"`
-- `FeatureDefinitionsTableName = "FeatureDefinitions"`
-- `FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions"`
+- `Schema = "headless"`, the schema every Headless feature shares (see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features))
+- `FeatureValuesTableName = null`: `feature_values` on PostgreSQL, `FeatureValues` elsewhere
+- `FeatureDefinitionsTableName = null`: `feature_definitions` on PostgreSQL, `FeatureDefinitions` elsewhere
+- `FeatureGroupDefinitionsTableName = null`: `feature_group_definitions` on PostgreSQL, `FeatureGroupDefinitions` elsewhere
 - `InitializeOnStartup = true`
 
 The registration validates identifier names using cross-provider rules (SQL Server superset). The startup gate inspects the EF model before hosted services start and fails with an actionable message if any features entity is missing.
@@ -409,7 +422,8 @@ PostgreSQL raw-DDL storage for feature management.
 - `setup.UsePostgreSql(IConfiguration configuration)` — binds `PostgreSqlFeaturesOptions` from a configuration section
 - `setup.UsePostgreSql(Action<PostgreSqlFeaturesOptions> configure)` — overload for full option control
 - `setup.UsePostgreSql(Action<PostgreSqlFeaturesOptions, IServiceProvider> configure)` — overload with service-provider access for late-bound configuration
-- Idempotent schema, table, and index creation at host startup via `PostgreSqlFeaturesStorageInitializer`
+- `setup.UsePostgreSql()` — reads the connection registered by `AddPostgreSqlSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
+- Idempotent schema, table, and index creation at host startup via `PostgreSqlFeaturesStorageInitializer`, with snake_case tables, columns, keys, and indexes (`feature_values`, `provider_key`, `ix_feature_values_provider_name_provider_key`)
 - Raw ADO.NET repositories for feature values, feature definitions, and feature group definitions
 - `PostgreSqlFeaturesOptions` — connection string and command timeout (`CommandTimeout`, default 30 seconds)
 - Shares `FeaturesStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
@@ -425,13 +439,20 @@ dotnet add package Headless.Features.Storage.PostgreSql
 Register the required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and `IGuidGenerator`. `AddHeadlessFeatures` registers the management core automatically.
 
 ```csharp
+builder.Services.AddPostgreSqlSql(connectionString);
+builder.Services.AddHeadlessFeatures(setup => setup.UsePostgreSql());
+
+// Or give this feature its own connection and schema:
 builder.Services.AddHeadlessFeatures(setup =>
 {
-    setup.ConfigureStorage(storage => storage.Schema = "features");
+    setup.ConfigureStorage(storage => storage.Schema = "app_features");
     setup.UsePostgreSql(connectionString);
 });
+```
 
-// Or with full option control:
+Or with full option control:
+
+```csharp
 builder.Services.AddHeadlessFeatures(setup =>
 {
     setup.UsePostgreSql(options =>
@@ -473,6 +494,7 @@ SQL Server raw-DDL storage for feature management.
 - `setup.UseSqlServer(IConfiguration configuration)` — binds `SqlServerFeaturesOptions` from a configuration section
 - `setup.UseSqlServer(Action<SqlServerFeaturesOptions> configure)` — overload for full option control
 - `setup.UseSqlServer(Action<SqlServerFeaturesOptions, IServiceProvider> configure)` — overload with service-provider access for late-bound configuration
+- `setup.UseSqlServer()` — reads the connection registered by `AddSqlServerSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
 - Idempotent schema, table, and index creation at host startup via `SqlServerFeaturesStorageInitializer`
 - Raw ADO.NET repositories for feature values, feature definitions, and feature group definitions
 - `SqlServerFeaturesOptions` — connection string and command timeout (`CommandTimeout`, default 30 seconds)
@@ -489,13 +511,20 @@ dotnet add package Headless.Features.Storage.SqlServer
 Register the required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and `IGuidGenerator`. `AddHeadlessFeatures` registers the management core automatically.
 
 ```csharp
+builder.Services.AddSqlServerSql(connectionString);
+builder.Services.AddHeadlessFeatures(setup => setup.UseSqlServer());
+
+// Or give this feature its own connection and schema:
 builder.Services.AddHeadlessFeatures(setup =>
 {
-    setup.ConfigureStorage(storage => storage.Schema = "features");
+    setup.ConfigureStorage(storage => storage.Schema = "app_features");
     setup.UseSqlServer(connectionString);
 });
+```
 
-// Or with full option control:
+Or with full option control:
+
+```csharp
 builder.Services.AddHeadlessFeatures(setup =>
 {
     setup.UseSqlServer(options =>

@@ -8,13 +8,13 @@ namespace Headless.Jobs;
 /// <summary>
 /// Named registration for a single <c>[JobFunction]</c>. Carries the per-function scheduling knobs the source
 /// generator emits at build time and the scheduler reads at dispatch time. This type is the ABI between the
-/// generated per-assembly <c>[ModuleInitializer]</c> in every consuming assembly and the
+/// generated per-assembly <c>JobsModule</c> in every consuming assembly and the
 /// <c>JobFunctionProvider</c> registry in <c>Headless.Jobs.Core</c>.
 /// </summary>
 /// <remarks>
 /// <para>
 /// <b>Additive-only evolution policy.</b> This record struct is baked into every consumer assembly's compiled
-/// <c>[ModuleInitializer]</c>, so its shape is a binary contract. New per-function knobs must be added ONLY as new
+/// <c>JobsModule</c>, so its shape is a binary contract. New per-function knobs must be added ONLY as new
 /// optional <c>init</c> members carrying a safe default — never reorder, rename, or remove existing members, never
 /// tighten an existing member to <c>required</c>, and never convert this to a positional record. Because the
 /// generator (and every hand-written registration) constructs it via an object initializer, adding an optional
@@ -65,4 +65,11 @@ public readonly record struct JobFunctionRegistration
     /// </summary>
     /// <remarks>Same optionality and creation-only seeding rule as <see cref="OnMissedRun"/>.</remarks>
     public int? MissedRunGraceSeconds { get; init; }
+
+    /// <summary>
+    /// Overlap policy to seed onto this function's cron definition when it is first created, or
+    /// <see langword="null"/> to take the scheduler-wide default. Ignored for time jobs.
+    /// </summary>
+    /// <remarks>Same optionality and creation-only seeding rule as <see cref="OnMissedRun"/>.</remarks>
+    public CronOverlapPolicy? OnOverlap { get; init; }
 }

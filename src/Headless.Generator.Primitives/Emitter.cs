@@ -5,6 +5,7 @@ using System.Globalization;
 using Headless.Generator.Primitives.Helpers;
 using Headless.Generator.Primitives.Models;
 using Headless.Generator.Primitives.Shared;
+using Headless.SourceGenerators;
 using Microsoft.CodeAnalysis;
 
 namespace Headless.Generator.Primitives;
@@ -19,7 +20,7 @@ internal static class Emitter
     /// <param name="globalOptions">The global options for primitive generation.</param>
     internal static void Execute(
         in SourceProductionContext context,
-        in ImmutableArray<PrimitiveTypeInfo?> typesToGenerate,
+        in ImmutableArray<PrimitiveTypeInfo> typesToGenerate,
         in string assemblyName,
         in PrimitiveGlobalOptions globalOptions
     )
@@ -37,38 +38,9 @@ internal static class Emitter
 
         try
         {
-            foreach (var typeInfo in typesToGenerate)
+            foreach (var info in typesToGenerate)
             {
                 context.CancellationToken.ThrowIfCancellationRequested();
-
-                if (typeInfo is null)
-                {
-                    continue;
-                }
-
-                var info = typeInfo.Value;
-
-                // Check for type mismatch between primitive and underlying type
-                if (info is { UnderlyingTypeIsValueType: true, IsValueType: false })
-                {
-                    context.ReportDiagnostic(
-                        DiagnosticHelper.TypeShouldBeValueType(
-                            info.ClassName,
-                            info.UnderlyingTypeFriendlyName,
-                            Location.None
-                        )
-                    );
-                }
-                else if (info is { UnderlyingTypeIsValueType: false, IsValueType: true })
-                {
-                    context.ReportDiagnostic(
-                        DiagnosticHelper.TypeShouldBeReferenceType(
-                            info.ClassName,
-                            info.UnderlyingTypeFriendlyName,
-                            Location.None
-                        )
-                    );
-                }
 
                 var generatorData = GeneratorData.FromTypeInfo(info, globalOptions);
 

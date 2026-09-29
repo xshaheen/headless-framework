@@ -5,8 +5,8 @@ namespace Headless.Fencing.PostgreSql;
 /// <summary>Object and column names of the lease storage, shared by the initializer's DDL and the store's statements.</summary>
 internal static class PostgreSqlFencingSchema
 {
-    public const string TableName = "leases";
-    public const string SequenceName = "lease_generations";
+    public const string TableName = "fencing_leases";
+    public const string SequenceName = "fencing_lease_generations";
 
     public const string TenantId = "tenant_id";
     public const string Kind = "kind";
@@ -16,6 +16,9 @@ internal static class PostgreSqlFencingSchema
     public const string GrantedAt = "granted_at";
     public const string ExpiresAt = "expires_at";
     public const string EndedAt = "ended_at";
+    public const string TakeoverCount = "takeover_count";
+    public const string Progress = "progress";
+    public const string ProgressContract = "progress_contract";
 
     // Stored as smallint. Expired is never stored: it is Active with an expiry at or before the database clock.
     public const short Active = 0;

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
 using Headless.Jobs;
 using Headless.Jobs.Customizer;
 using Headless.Jobs.Entities;
@@ -45,16 +46,37 @@ public sealed class JobsModelCustomizerSchemaTests : TestBase
     }
 
     [Fact]
+    public void customizer_names_the_cron_indexes_after_their_tables()
+    {
+        // Every Headless feature shares one default schema, where PostgreSQL index names must be unique, so each
+        // index name carries the table it belongs to.
+        using var context = _CreateCustomizedContext(_CustomSchema);
+
+        context
+            .Model.FindEntityType(typeof(CronJobEntity))!
+            .GetIndexes()
+            .Select(index => index.GetDatabaseName())
+            .Should()
+            .Contain("IX_CronJobs_Function_Expression");
+        context
+            .Model.FindEntityType(typeof(CronJobOccurrenceEntity<CronJobEntity>))!
+            .GetIndexes()
+            .Select(index => index.GetDatabaseName())
+            .Should()
+            .Contain("UQ_CronJobOccurrences_CronJobId_ExecutionTime");
+    }
+
+    [Fact]
     public void customizer_falls_back_to_the_default_schema_when_nothing_is_configured()
     {
-        using var context = _CreateCustomizedContext(JobsStorageOptions.DefaultSchema);
+        using var context = _CreateCustomizedContext(HeadlessStorageDefaults.Schema);
 
         context
             .Model.FindEntityType(typeof(JobIdempotencyReservationEntity))!
             .GetSchema()
             .Should()
-            .Be(JobsStorageOptions.DefaultSchema);
-        context.Model.FindEntityType(typeof(TimeJobEntity))!.GetSchema().Should().Be(JobsStorageOptions.DefaultSchema);
+            .Be(HeadlessStorageDefaults.Schema);
+        context.Model.FindEntityType(typeof(TimeJobEntity))!.GetSchema().Should().Be(HeadlessStorageDefaults.Schema);
     }
 
     /// <summary>

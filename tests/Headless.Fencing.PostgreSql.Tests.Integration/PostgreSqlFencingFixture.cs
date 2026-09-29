@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using Headless.Fencing;
+using Headless.Hosting.Initialization;
 using Headless.Testing.Testcontainers;
 using Headless.UnitOfWork;
 using Npgsql;
@@ -45,7 +46,7 @@ public sealed class PostgreSqlFencingFixture
         await using (
             var reset = new NpgsqlCommand(
                 $"""
-                DROP SCHEMA IF EXISTS "{FencingStorageOptions.DefaultSchema}" CASCADE;
+                DROP SCHEMA IF EXISTS "{HeadlessStorageDefaults.Schema}" CASCADE;
                 DROP TABLE IF EXISTS {_HandoffTable};
                 CREATE TABLE {_HandoffTable} (
                     id bigserial PRIMARY KEY,
@@ -105,7 +106,7 @@ public sealed class PostgreSqlFencingFixture
 
     public Task<StoredLease?> ReadLeaseAsync(LeaseKey key, CancellationToken cancellationToken)
     {
-        return ReadLeaseAsync(key, FencingStorageOptions.DefaultSchema, cancellationToken);
+        return ReadLeaseAsync(key, HeadlessStorageDefaults.Schema, cancellationToken);
     }
 
     public async Task<StoredLease?> ReadLeaseAsync(LeaseKey key, string schema, CancellationToken cancellationToken)
@@ -114,7 +115,7 @@ public sealed class PostgreSqlFencingFixture
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(
             $"""
-            SELECT generation, state, granted_at, expires_at, ended_at FROM "{schema}".leases
+            SELECT generation, state, granted_at, expires_at, ended_at FROM "{schema}".fencing_leases
             WHERE tenant_id = @tenant AND kind = @kind AND resource = @resource
             """,
             connection
@@ -145,7 +146,7 @@ public sealed class PostgreSqlFencingFixture
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(
             $"""
-            UPDATE "{FencingStorageOptions.DefaultSchema}".leases
+            UPDATE "{HeadlessStorageDefaults.Schema}".fencing_leases
             SET granted_at = granted_at - @by, expires_at = expires_at - @by, ended_at = ended_at - @by
             WHERE tenant_id = @tenant AND kind = @kind AND resource = @resource
             """,

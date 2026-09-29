@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
 using Headless.Permissions;
 using Headless.Permissions.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -59,7 +60,7 @@ public sealed class PermissionsStorageOptionsTests
             setup.ConfigureStorage(options =>
             {
                 options.Schema = "custom_permissions";
-                options.PermissionGrantsTableName = "tbl_permission_grants";
+                options.PermissionGrantsTableName = "tbl_grants";
                 options.PermissionDefinitionsTableName = "tbl_permission_definitions";
                 options.PermissionGroupDefinitionsTableName = "tbl_permission_group_definitions";
             });
@@ -74,7 +75,7 @@ public sealed class PermissionsStorageOptionsTests
         // then
         var resolved = act.Should().NotThrow().Subject;
         resolved.Schema.Should().Be("custom_permissions");
-        resolved.PermissionGrantsTableName.Should().Be("tbl_permission_grants");
+        resolved.PermissionGrantsTableName.Should().Be("tbl_grants");
         resolved.PermissionDefinitionsTableName.Should().Be("tbl_permission_definitions");
         resolved.PermissionGroupDefinitionsTableName.Should().Be("tbl_permission_group_definitions");
     }
@@ -93,10 +94,130 @@ public sealed class PermissionsStorageOptionsTests
 
         // then
         var resolved = act.Should().NotThrow().Subject;
-        resolved.Schema.Should().Be("permissions");
-        resolved.PermissionGrantsTableName.Should().Be("PermissionGrants");
-        resolved.PermissionDefinitionsTableName.Should().Be("PermissionDefinitions");
-        resolved.PermissionGroupDefinitionsTableName.Should().Be("PermissionGroupDefinitions");
+        resolved.Schema.Should().Be("headless");
+        resolved.PermissionGrantsTableName.Should().BeNull();
+        resolved.PermissionDefinitionsTableName.Should().BeNull();
+        resolved.PermissionGroupDefinitionsTableName.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(
+        StorageNamingStyle.PascalCase,
+        "PermissionGrants",
+        "PermissionDefinitions",
+        "PermissionGroupDefinitions"
+    )]
+    [InlineData(
+        StorageNamingStyle.SnakeCase,
+        "permission_grants",
+        "permission_definitions",
+        "permission_group_definitions"
+    )]
+    public void should_resolve_default_table_names_in_the_database_naming_style(
+        StorageNamingStyle style,
+        string grantsTable,
+        string definitionsTable,
+        string groupDefinitionsTable
+    )
+    {
+        // given
+        var options = new PermissionsStorageOptions();
+
+        // when / then
+        options.ResolvePermissionGrantsTableName(style).Should().Be(grantsTable);
+        options.ResolvePermissionDefinitionsTableName(style).Should().Be(definitionsTable);
+        options.ResolvePermissionGroupDefinitionsTableName(style).Should().Be(groupDefinitionsTable);
+    }
+
+    [Fact]
+    public void should_resolve_configured_table_names_verbatim_in_every_naming_style()
+    {
+        // given
+        var options = new PermissionsStorageOptions
+        {
+            PermissionGrantsTableName = "MyGrants",
+            PermissionDefinitionsTableName = "MyDefinitions",
+            PermissionGroupDefinitionsTableName = "MyGroups",
+        };
+
+        // when / then
+        options.ResolvePermissionGrantsTableName(StorageNamingStyle.SnakeCase).Should().Be("MyGrants");
+        options.ResolvePermissionDefinitionsTableName(StorageNamingStyle.SnakeCase).Should().Be("MyDefinitions");
+        options.ResolvePermissionGroupDefinitionsTableName(StorageNamingStyle.PascalCase).Should().Be("MyGroups");
+    }
+
+    [Fact]
+    public void should_accept_the_snake_case_defaults_when_configured_explicitly()
+    {
+        // given — the conventional names themselves must fit, or the defaults' derived names would be truncated
+        var services = _ServicesWithTableNames(
+            "permission_grants",
+            "permission_definitions",
+            "permission_group_definitions"
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var act = () => provider.GetRequiredService<IOptions<PermissionsStorageOptions>>().Value;
+
+        // then
+        act.Should().NotThrow();
+    }
+
+    // The longest derived PostgreSQL names are ix_{grants}_tenant_id_name_provider_name_provider_key (45 bytes besides
+    // the table), ix_{definitions}_group_name (14), and ix_{groups}_name (8), so the longest names that fit 63 bytes
+    // are 18, 49, and 55 characters.
+    [Theory]
+    [InlineData(18, 1, 1, true)]
+    [InlineData(19, 1, 1, false)]
+    [InlineData(1, 49, 1, true)]
+    [InlineData(1, 50, 1, false)]
+    [InlineData(1, 1, 55, true)]
+    [InlineData(1, 1, 56, false)]
+    public void should_refuse_a_table_name_whose_derived_postgresql_names_exceed_63_bytes(
+        int grantsLength,
+        int definitionsLength,
+        int groupsLength,
+        bool accepted
+    )
+    {
+        // given
+        var services = _ServicesWithTableNames(
+            new string('g', grantsLength),
+            new string('d', definitionsLength),
+            new string('p', groupsLength)
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var act = () => provider.GetRequiredService<IOptions<PermissionsStorageOptions>>().Value;
+
+        // then
+        if (accepted)
+        {
+            act.Should().NotThrow();
+        }
+        else
+        {
+            act.Should().Throw<OptionsValidationException>().WithMessage("*PostgreSQL truncates identifiers*");
+        }
+    }
+
+    private static ServiceCollection _ServicesWithTableNames(string grants, string definitions, string groups)
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessPermissions(setup =>
+        {
+            setup.ConfigureStorage(options =>
+            {
+                options.PermissionGrantsTableName = grants;
+                options.PermissionDefinitionsTableName = definitions;
+                options.PermissionGroupDefinitionsTableName = groups;
+            });
+            setup.UseEntityFramework<OptionsTestDbContext>();
+        });
+
+        return services;
     }
 
     [Fact]
@@ -160,7 +281,7 @@ public sealed class PermissionsStorageOptionsTests
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessPermissions(storageOptions);
+            modelBuilder.AddHeadlessPermissions(storageOptions, StorageNamingStyle.PascalCase);
         }
     }
 }

@@ -9,9 +9,9 @@ namespace Headless.Jobs.Base;
 /// </summary>
 /// <remarks>
 /// Apply this attribute to a <see langword="public"/> or <see langword="internal"/> method on a non-nested,
-/// non-abstract class. The source generator emits a <c>ModuleInitializer</c>-based registration (via
-/// <c>JobFunctionProvider.RegisterFunctions</c>) that wires the method delegate into the scheduler at
-/// application startup — no manual <c>AddJobsDiscovery</c> call is needed for each function.
+/// non-abstract class. The source generator emits the method's delegate into the assembly's generated
+/// <c>JobsModule</c>; the host registers every function in the assembly at once with
+/// <c>AddModule&lt;TAssemblyNamespace.JobsModule&gt;()</c> inside <c>AddHeadlessJobs</c>.
 /// <para>
 /// The method may accept a <c>JobFunctionContext</c>, <c>JobFunctionContext&lt;T&gt;</c>, or
 /// <c>CancellationToken</c> parameter, or have no parameters at all.
@@ -126,10 +126,25 @@ public sealed class JobFunctionAttribute : Attribute
         set => _missedRunGraceSeconds = value;
     }
 
+    /// <summary>
+    /// Policy applied when an occurrence becomes due while an earlier occurrence of this cron definition is still
+    /// unfinished. Ignored for time jobs.
+    /// </summary>
+    /// <remarks>
+    /// Same seeding rule as <see cref="OnMissedRun"/>: creation only, never reapplied, so a value later set through
+    /// <c>ICronJobManager</c> stays in force. Leave unset to take the scheduler-wide default.
+    /// </remarks>
+    public CronOverlapPolicy OnOverlap
+    {
+        get => _onOverlap ?? CronOverlapPolicy.Allow;
+        set => _onOverlap = value;
+    }
+
     // Attribute arguments cannot be nullable value types, so "unset" is tracked separately from the public
     // non-nullable surface. The source generator reads these through the attribute's named arguments and emits only
     // the ones actually written, which is what lets an unset knob fall through to the scheduler-wide default rather
     // than silently pinning every definition to the framework default at creation.
     private MissedRunPolicy? _onMissedRun;
     private int? _missedRunGraceSeconds;
+    private CronOverlapPolicy? _onOverlap;
 }

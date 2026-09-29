@@ -760,7 +760,8 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
                     "migrate-reset",
                     "0 */5 * * * *",
                     MissedRunPolicy.Coalesce,
-                    JobsRecoveryDefaults.MissedRunGraceSeconds
+                    JobsRecoveryDefaults.MissedRunGraceSeconds,
+                    CronOverlapPolicy.Allow
                 ),
             ],
             ct
@@ -1263,8 +1264,14 @@ internal sealed class FailAfterCronPositionUpdateInterceptor : DbCommandIntercep
         if (
             Volatile.Read(ref _armed) == 1
             && command.CommandText.Contains("UPDATE", StringComparison.OrdinalIgnoreCase)
-            && command.CommandText.Contains("ReconciledThroughUtc", StringComparison.Ordinal)
-            && command.CommandText.Contains("NextDueUtc", StringComparison.Ordinal)
+            && (
+                command.CommandText.Contains("ReconciledThroughUtc", StringComparison.Ordinal)
+                || command.CommandText.Contains("reconciled_through_utc", StringComparison.Ordinal)
+            )
+            && (
+                command.CommandText.Contains("NextDueUtc", StringComparison.Ordinal)
+                || command.CommandText.Contains("next_due_utc", StringComparison.Ordinal)
+            )
         )
         {
             Interlocked.Exchange(ref _positionUpdated, 1);

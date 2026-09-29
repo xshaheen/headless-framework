@@ -240,4 +240,58 @@ public sealed class LeaseRequestResolverTests : TestBase
 
         act.Should().Throw<ArgumentException>();
     }
+
+    [Fact]
+    public void should_accept_no_progress_and_progress_exactly_at_its_limits()
+    {
+        var atLimit = new LeaseProgress(
+            new byte[FencingFieldLimits.ProgressMaxBytes],
+            new string('c', FencingFieldLimits.ProgressContractMaxLength)
+        );
+
+        LeaseRequestResolver.ValidateProgress(null).Should().BeNull();
+        LeaseRequestResolver.ValidateProgress(atLimit).Should().BeSameAs(atLimit);
+    }
+
+    [Fact]
+    public void should_reject_a_progress_payload_over_the_limit()
+    {
+        var progress = new LeaseProgress(new byte[FencingFieldLimits.ProgressMaxBytes + 1], "exports.cursor/v1");
+
+        var act = () => LeaseRequestResolver.ValidateProgress(progress);
+
+        act.Should().Throw<ArgumentException>().WithParameterName("progress").WithMessage("*65536*");
+    }
+
+    [Fact]
+    public void should_reject_a_progress_contract_over_the_limit()
+    {
+        var progress = new LeaseProgress([1], new string('c', FencingFieldLimits.ProgressContractMaxLength + 1));
+
+        var act = () => LeaseRequestResolver.ValidateProgress(progress);
+
+        act.Should().Throw<ArgumentException>().WithParameterName("progress");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void should_refuse_a_blank_progress_contract(string contract)
+    {
+        var act = () => new LeaseProgress([1], contract);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_copy_the_progress_payload()
+    {
+        byte[] payload = [1, 2, 3];
+
+        var progress = new LeaseProgress(payload, "exports.cursor/v1");
+        payload[0] = 9;
+
+        progress.Payload.ToArray().Should().Equal(1, 2, 3);
+        progress.Contract.Should().Be("exports.cursor/v1");
+    }
 }

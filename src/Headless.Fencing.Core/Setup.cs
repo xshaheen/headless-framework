@@ -58,6 +58,7 @@ public static class SetupFencing
             services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
 
             services.TryAddSingleton<LeaseRequestResolver>();
+            services.TryAddSingleton<LeaseTakeoverAlerts>();
             services.TryAddSingleton<IFencedLeases, FencedLeases>();
             services.TryAddSingleton<IUnitOfWorkLeases, UnitOfWorkLeasesFeature>();
 

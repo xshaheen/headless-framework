@@ -54,12 +54,13 @@ internal sealed class SqlServerFencingStorageInitializer(
         // IF NOT EXISTS and the CREATE after it are not atomic, so a foreign process running the same DDL can still
         // win the race; each block absorbs "already exists" (2714, 1913, 2759) because the object exists either way.
         //
-        // The clustered primary key over exactly (tenant_id, kind, resource) is load-bearing, not an index choice:
+        // The clustered primary key over exactly (TenantId, Kind, Resource) is load-bearing, not an index choice:
         // a grant's HOLDLOCK read takes its key-range lock on this index, which is what serializes concurrent first
         // grants of a new key. The key-part limits total 448 nvarchar characters, under the 900-byte clustered key
         // limit. One store-wide sequence issues every generation, so a lease granted again after its row was purged
         // still gets a generation above every earlier one. The active index serves the sweep's keyset walk in
-        // (expires_at, tenant_id, resource) order; the ended index serves purge.
+        // (ExpiresAt, TenantId, Resource) order; the ended index serves purge. Progress and its contract are stored
+        // together or not at all.
         return $"""
             DECLARE @lockResult int;
             EXEC @lockResult = sp_getapplock @Resource = @LockResource, @LockMode = N'Exclusive', @LockOwner = N'Session', @LockTimeout = 30000;
@@ -96,18 +97,26 @@ internal sealed class SqlServerFencingStorageInitializer(
                             {SqlServerFencingSchema.GrantedAt} datetimeoffset(7) NOT NULL,
                             {SqlServerFencingSchema.ExpiresAt} datetimeoffset(7) NOT NULL,
                             {SqlServerFencingSchema.EndedAt} datetimeoffset(7) NULL,
+                            {SqlServerFencingSchema.TakeoverCount} int NOT NULL CONSTRAINT [DF_{t}_TakeoverCount] DEFAULT 0,
+                            {SqlServerFencingSchema.Progress} varbinary(max) NULL,
+                            {SqlServerFencingSchema.ProgressContract} nvarchar({FencingFieldLimits.ProgressContractMaxLength}) NULL,
                             CONSTRAINT [PK_{t}] PRIMARY KEY CLUSTERED (
                                 {SqlServerFencingSchema.TenantId} ASC,
                                 {SqlServerFencingSchema.Kind} ASC,
                                 {SqlServerFencingSchema.Resource} ASC
                             ),
-                            CONSTRAINT [CK_{t}_generation] CHECK ({SqlServerFencingSchema.Generation} > 0),
-                            CONSTRAINT [CK_{t}_state] CHECK (
+                            CONSTRAINT [CK_{t}_Generation] CHECK ({SqlServerFencingSchema.Generation} > 0),
+                            CONSTRAINT [CK_{t}_State] CHECK (
                                 {SqlServerFencingSchema.State} BETWEEN {SqlServerFencingSchema.Active} AND {SqlServerFencingSchema.Abandoned}
                             ),
-                            CONSTRAINT [CK_{t}_ended_at] CHECK (
+                            CONSTRAINT [CK_{t}_EndedAt] CHECK (
                                 ({SqlServerFencingSchema.State} = {SqlServerFencingSchema.Active} AND {SqlServerFencingSchema.EndedAt} IS NULL)
                                 OR ({SqlServerFencingSchema.State} <> {SqlServerFencingSchema.Active} AND {SqlServerFencingSchema.EndedAt} IS NOT NULL)
+                            ),
+                            CONSTRAINT [CK_{t}_TakeoverCount] CHECK ({SqlServerFencingSchema.TakeoverCount} >= 0),
+                            CONSTRAINT [CK_{t}_Progress] CHECK (
+                                ({SqlServerFencingSchema.Progress} IS NULL AND {SqlServerFencingSchema.ProgressContract} IS NULL)
+                                OR ({SqlServerFencingSchema.Progress} IS NOT NULL AND {SqlServerFencingSchema.ProgressContract} IS NOT NULL)
                             )
                         );
                     END;
@@ -117,8 +126,8 @@ internal sealed class SqlServerFencingStorageInitializer(
                 END CATCH;
 
                 BEGIN TRY
-                    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'{tableName}') AND name = N'IX_{t}_active_expiry')
-                        CREATE INDEX [IX_{t}_active_expiry]
+                    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'{tableName}') AND name = N'IX_{t}_ActiveExpiry')
+                        CREATE INDEX [IX_{t}_ActiveExpiry]
                             ON {table} (
                                 {SqlServerFencingSchema.Kind},
                                 {SqlServerFencingSchema.ExpiresAt},
@@ -132,8 +141,8 @@ internal sealed class SqlServerFencingStorageInitializer(
                 END CATCH;
 
                 BEGIN TRY
-                    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'{tableName}') AND name = N'IX_{t}_ended')
-                        CREATE INDEX [IX_{t}_ended]
+                    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'{tableName}') AND name = N'IX_{t}_Ended')
+                        CREATE INDEX [IX_{t}_Ended]
                             ON {table} ({SqlServerFencingSchema.Kind}, {SqlServerFencingSchema.EndedAt})
                             WHERE {SqlServerFencingSchema.State} <> {SqlServerFencingSchema.Active};
                 END TRY

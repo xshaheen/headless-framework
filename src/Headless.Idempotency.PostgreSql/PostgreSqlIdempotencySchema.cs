@@ -5,8 +5,8 @@ namespace Headless.Idempotency.PostgreSql;
 /// <summary>Object and column names of the record storage, shared by the initializer's DDL and the store's statements.</summary>
 internal static class PostgreSqlIdempotencySchema
 {
-    public const string TableName = "records";
-    public const string SequenceName = "record_generations";
+    public const string TableName = "idempotency_records";
+    public const string SequenceName = "idempotency_record_generations";
 
     public const string TenantId = "tenant_id";
     public const string Key = "idempotency_key";
@@ -18,6 +18,9 @@ internal static class PostgreSqlIdempotencySchema
     public const string Result = "result";
     public const string ResultContract = "result_contract";
     public const string RetentionUntil = "retention_until";
+    public const string RecoveryPoint = "recovery_point";
+    public const string RecoveryState = "recovery_state";
+    public const string RecoveryContract = "recovery_contract";
 
     // Stored as smallint, with the values of IdempotencyRecordStatus.
     public const short Pending = (short)IdempotencyRecordStatus.Pending;

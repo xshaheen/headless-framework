@@ -63,7 +63,9 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         {
             await using var connection = new NpgsqlConnection(fixture.ConnectionString);
             await connection.OpenAsync();
-            await connection.ExecuteAsync("TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received;");
+            await connection.ExecuteAsync(
+                "TRUNCATE TABLE headless.messaging_published; TRUNCATE TABLE headless.messaging_received;"
+            );
         }
         catch (PostgresException)
         {
@@ -92,7 +94,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var count = await connection.QueryFirstAsync<int>(
-            "SELECT COUNT(*) FROM messaging.published WHERE \"Id\"=@Id",
+            "SELECT COUNT(*) FROM headless.messaging_published WHERE \"id\"=@Id",
             new { Id = id }
         );
         count.Should().Be(0);
@@ -137,7 +139,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var count = await connection.QueryFirstAsync<int>(
-            "SELECT COUNT(*) FROM messaging.received WHERE \"Id\"=@Id",
+            "SELECT COUNT(*) FROM headless.messaging_received WHERE \"id\"=@Id",
             new { Id = id }
         );
         count.Should().Be(0);
@@ -183,7 +185,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                INSERT INTO messaging.published ("Id","Version","Name","Content","IntentType","Retries","Added","ExpiresAt","StatusName","MessageId")
+                INSERT INTO headless.messaging_published ("id","version","name","content","intent_type","retries","added","expires_at","status_name","message_id")
                 VALUES (@Id,'v1','test.topic','{}',0,0,@Added,@ExpiresAt,'Succeeded',@MessageId)
                 """,
                 new
@@ -261,7 +263,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                INSERT INTO messaging.published ("Id","Version","Name","Content","IntentType","Retries","Added","ExpiresAt","NextRetryAt","StatusName","MessageId")
+                INSERT INTO headless.messaging_published ("id","version","name","content","intent_type","retries","added","expires_at","next_retry_at","status_name","message_id")
                 VALUES (@Id,'v1','test.topic',@Content,0,0,@Added,NULL,@NextRetryAt,'Failed',@MessageId)
                 """,
                 new
@@ -298,7 +300,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                INSERT INTO messaging.received ("Id","Version","Name","Group","Content","IntentType","Retries","Added","ExpiresAt","NextRetryAt","StatusName","MessageId")
+                INSERT INTO headless.messaging_received ("id","version","name","group","content","intent_type","retries","added","expires_at","next_retry_at","status_name","message_id")
                 VALUES (@Id,'v1','test.topic','test.group',@Content,0,0,@Added,NULL,@NextRetryAt,'Failed',@MessageId)
                 """,
                 new
@@ -334,7 +336,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         var content = "{\"Headers\":{\"headless-msg-id\":\"" + messageId + "\"},\"Value\":null}";
         await connection.ExecuteAsync(
             """
-            INSERT INTO messaging.published ("Id","Version","Name","Content","IntentType","Retries","Added","ExpiresAt","NextRetryAt","StatusName","MessageId")
+            INSERT INTO headless.messaging_published ("id","version","name","content","intent_type","retries","added","expires_at","next_retry_at","status_name","message_id")
             VALUES (@Id,'v1','test.topic',@Content,0,10,@Added,NULL,@NextRetryAt,'Failed',@MessageId)
             """,
             new
@@ -375,7 +377,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
 
         var status = await connection.QueryFirstOrDefaultAsync<string>(
             new CommandDefinition(
-                "SELECT \"StatusName\" FROM messaging.received WHERE \"MessageId\"=@MessageId",
+                "SELECT \"status_name\" FROM headless.messaging_received WHERE \"message_id\"=@MessageId",
                 new { MessageId = msgId },
                 cancellationToken: AbortToken
             )

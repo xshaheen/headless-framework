@@ -318,7 +318,15 @@ public sealed class CronOccupiedInstantMatrixTests : TestBase
         // Producer 1 — startup seeding migration. It retires the old-expression row and creates NOTHING to take its
         // place, so the fire is still owed.
         await provider.MigrateDefinedCronJobsAsync(
-            [new CronSeedDefinition("seeded-cron", "0 * * * * *", MissedRunPolicy.Coalesce, 60)],
+            [
+                new CronSeedDefinition(
+                    "seeded-cron",
+                    "0 * * * * *",
+                    MissedRunPolicy.Coalesce,
+                    60,
+                    CronOverlapPolicy.Allow
+                ),
+            ],
             AbortToken
         );
         var seededDefinition = (await provider.GetCronJobsAsync(null, AbortToken)).Should().ContainSingle().Subject;
@@ -326,7 +334,15 @@ public sealed class CronOccupiedInstantMatrixTests : TestBase
         await provider.InsertCronJobOccurrencesAsync([migratedOccurrence], AbortToken);
 
         await provider.MigrateDefinedCronJobsAsync(
-            [new CronSeedDefinition("seeded-cron", "*/5 * * * * *", MissedRunPolicy.Coalesce, 60)],
+            [
+                new CronSeedDefinition(
+                    "seeded-cron",
+                    "*/5 * * * * *",
+                    MissedRunPolicy.Coalesce,
+                    60,
+                    CronOverlapPolicy.Allow
+                ),
+            ],
             AbortToken
         );
 

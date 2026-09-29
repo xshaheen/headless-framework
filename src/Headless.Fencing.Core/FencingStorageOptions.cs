@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
+
 namespace Headless.Fencing;
 
 /// <summary>
@@ -10,13 +12,10 @@ namespace Headless.Fencing;
 [PublicAPI]
 public sealed class FencingStorageOptions
 {
-    /// <summary>The schema the lease table and generation sequence are created in when none is configured.</summary>
-    public const string DefaultSchema = "fencing";
-
     /// <summary>
     /// Gets or sets the database schema that holds the lease table and its generation sequence. Must be a valid
-    /// identifier for the selected provider; validated on startup. Default: <see cref="DefaultSchema" />
-    /// (<c>"fencing"</c>).
+    /// identifier for the selected provider; validated on startup. Default:
+    /// <see cref="HeadlessStorageDefaults.Schema" /> (<c>"headless"</c>), the schema every Headless feature shares.
     /// </summary>
-    public string Schema { get; set; } = DefaultSchema;
+    public string Schema { get; set; } = HeadlessStorageDefaults.Schema;
 }

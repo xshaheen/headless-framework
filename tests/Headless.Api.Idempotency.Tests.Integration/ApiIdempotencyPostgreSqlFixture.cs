@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
 using Headless.Idempotency;
 using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.DependencyInjection;
@@ -40,7 +41,7 @@ public sealed class ApiIdempotencyPostgreSqlFixture
         // The container is reused across runs, so start from no storage and let the initializers create it.
         await using var reset = new NpgsqlCommand(
             $"""
-            DROP SCHEMA IF EXISTS "{IdempotencyStorageOptions.DefaultSchema}" CASCADE;
+            DROP SCHEMA IF EXISTS "{HeadlessStorageDefaults.Schema}" CASCADE;
             """,
             connection
         );

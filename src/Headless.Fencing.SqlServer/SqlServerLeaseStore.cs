@@ -5,6 +5,7 @@ using System.Data.Common;
 using System.Runtime.InteropServices;
 using Headless.Checks;
 using Headless.Constants;
+using Headless.Threading;
 using Headless.UnitOfWork;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
@@ -35,10 +36,6 @@ namespace Headless.Fencing.SqlServer;
 #pragma warning disable CA2100 // SQL text is built from the validated schema name plus internal object and column constants.
 internal sealed class SqlServerLeaseStore : ILeaseStore
 {
-    // A deadlock or snapshot update conflict is the one failure a fresh transaction can clear on its own; the first
-    // attempt plus two retries.
-    private const int _MaxAttempts = 3;
-
     // Each purge batch is its own short transaction so a large purge never holds many row locks at once.
     private const int _PurgeBatchSize = 1000;
 
@@ -51,9 +48,11 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
 
     private readonly SqlServerFencingOptions _options;
     private readonly IUnitOfWorkFactory _unitOfWorkFactory;
+    private readonly TimeProvider _timeProvider;
     private readonly string _table;
     private readonly string _grantSql;
     private readonly string _renewSql;
+    private readonly string _renewWithProgressSql;
     private readonly string _settleSql;
     private readonly string _releaseSql;
     private readonly string _fenceSql;
@@ -64,11 +63,13 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
     public SqlServerLeaseStore(
         IOptions<SqlServerFencingOptions> options,
         IOptions<FencingStorageOptions> storageOptions,
-        IUnitOfWorkFactory unitOfWorkFactory
+        IUnitOfWorkFactory unitOfWorkFactory,
+        TimeProvider timeProvider
     )
     {
         _options = options.Value;
         _unitOfWorkFactory = unitOfWorkFactory;
+        _timeProvider = timeProvider;
 
         var schema = storageOptions.Value.Schema;
         _table = SqlServerFencingSchema.QualifiedTable(schema);
@@ -81,6 +82,20 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
 
                 UPDATE {_table}
                 SET {SqlServerFencingSchema.ExpiresAt} = @changed
+                WHERE {_KeyPredicate()};
+            """
+        );
+
+        // Progress rides in the renewal's own guarded update, so it lands only when the renewal does.
+        _renewWithProgressSql = _BuildTransitionSql(
+            _table,
+            $"""
+            SET @changed = {_DeadlineSql("@now")};
+
+                UPDATE {_table}
+                SET {SqlServerFencingSchema.ExpiresAt} = @changed,
+                    {SqlServerFencingSchema.Progress} = @Progress,
+                    {SqlServerFencingSchema.ProgressContract} = @ProgressContract
                 WHERE {_KeyPredicate()};
             """
         );
@@ -184,13 +199,19 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
         var outcome = reader.GetByte(0);
         var generation = reader.GetInt64(1);
         var expiresAt = await reader.GetFieldValueAsync<DateTimeOffset>(2, cancellationToken).ConfigureAwait(false);
+        var takeoverCount = reader.GetInt32(4);
 
-        return outcome switch
+        if (outcome == _GrantOutcomeHeld)
         {
-            _GrantOutcomeHeld => LeaseGrantResult.Held(generation, expiresAt),
-            _GrantOutcomeTakeover => LeaseGrantResult.Takeover(key.ToLease(generation), expiresAt, reader.GetInt64(3)),
-            _ => LeaseGrantResult.Granted(key.ToLease(generation), expiresAt),
-        };
+            return LeaseGrantResult.Held(generation, expiresAt, takeoverCount);
+        }
+
+        var lease = key.ToLease(generation);
+        var progress = await _ReadProgressAsync(reader, 5, cancellationToken).ConfigureAwait(false);
+
+        return outcome == _GrantOutcomeTakeover
+            ? LeaseGrantResult.Takeover(lease, expiresAt, reader.GetInt64(3), takeoverCount, progress)
+            : LeaseGrantResult.Granted(lease, expiresAt, takeoverCount, progress);
     }
 
     #endregion
@@ -201,11 +222,13 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
         LeaseKey key,
         long generation,
         TimeSpan duration,
+        LeaseProgress? progress,
         CancellationToken cancellationToken = default
     )
     {
         return _RunAutonomousAsync(
-            (connection, transaction, ct) => _RenewAsync(connection, transaction, key, generation, duration, ct),
+            (connection, transaction, ct) =>
+                _RenewAsync(connection, transaction, key, generation, duration, progress, ct),
             cancellationToken
         );
     }
@@ -215,13 +238,14 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
         LeaseKey key,
         long generation,
         TimeSpan duration,
+        LeaseProgress? progress,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNull(unitOfWork);
         var (connection, transaction) = _RequireLive(_Relational(unitOfWork));
 
-        return await _RenewAsync(connection, transaction, key, generation, duration, cancellationToken)
+        return await _RenewAsync(connection, transaction, key, generation, duration, progress, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -301,16 +325,18 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
         LeaseKey key,
         long generation,
         TimeSpan duration,
+        LeaseProgress? progress,
         CancellationToken cancellationToken
     )
     {
         var (row, changedExpiresAt) = await _TransitionAsync(
                 connection,
                 transaction,
-                _renewSql,
+                progress is null ? _renewSql : _renewWithProgressSql,
                 key,
                 generation,
                 duration,
+                progress,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -348,6 +374,7 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
                 key,
                 generation,
                 duration: null,
+                progress: null,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -377,6 +404,7 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
         LeaseKey key,
         long generation,
         TimeSpan? duration,
+        LeaseProgress? progress,
         CancellationToken cancellationToken
     )
     {
@@ -386,6 +414,20 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
         if (duration is { } value)
         {
             _AddSpanParameters(command, value);
+        }
+
+        if (progress is not null)
+        {
+            // Size -1 is varbinary(max): the payload limit is checked before the call, not by the parameter.
+            command.Parameters.Add(
+                new SqlParameter("Progress", SqlDbType.VarBinary, -1) { Value = progress.Payload.ToArray() }
+            );
+            command.Parameters.Add(
+                new SqlParameter("ProgressContract", SqlDbType.NVarChar, FencingFieldLimits.ProgressContractMaxLength)
+                {
+                    Value = progress.Contract,
+                }
+            );
         }
 
         await using var reader = await _ExecuteReaderAsync(command, cancellationToken).ConfigureAwait(false);
@@ -477,8 +519,10 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
         var key = new LeaseKey(reader.GetString(0), kind, reader.GetString(1));
         var generation = reader.GetInt64(2);
         var expiresAt = await reader.GetFieldValueAsync<DateTimeOffset>(3, cancellationToken).ConfigureAwait(false);
+        var takeoverCount = reader.GetInt32(4);
+        var progress = await _ReadProgressAsync(reader, 5, cancellationToken).ConfigureAwait(false);
 
-        return key.ToExpiredLease(generation, expiresAt);
+        return key.ToExpiredLease(generation, expiresAt, takeoverCount, progress);
     }
 
     public async ValueTask<int> PurgeAsync(
@@ -537,41 +581,47 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
 
     #region Helpers
 
-    private async ValueTask<T> _RunAutonomousAsync<T>(
+    private ValueTask<T> _RunAutonomousAsync<T>(
         Func<SqlConnection, SqlTransaction, CancellationToken, Task<T>> body,
         CancellationToken cancellationToken
     )
     {
-        for (var attempt = 1; ; attempt++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            try
-            {
-                await using var connection = _options.CreateConnection();
-                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-                // Explicit so the verb runs at READ COMMITTED whatever isolation level a pooled session last used:
-                // READPAST is refused above it, and a stricter level turns a lock wait into a conflict.
-                await using var transaction = (SqlTransaction)
-                    await connection
-                        .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
-                        .ConfigureAwait(false);
-
-                var result = await body(connection, transaction, cancellationToken).ConfigureAwait(false);
-
-                // The batch already decided and the result describes it; a late cancel must not roll back a write the
-                // caller is about to be told happened.
-                await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
-
-                return result;
-            }
-            catch (SqlException ex) when (_IsRetryable(ex) && attempt < _MaxAttempts)
-            {
-                // The victim's transaction is already rolled back and disposed above; the next attempt starts clean.
-            }
-        }
+        // Each attempt opens its own connection and transaction, so the victim's rolled-back transaction is
+        // already disposed and the retry starts clean.
+        return TransientRetry.RunAsync(
+            ct => _RunOnceAsync(body, ct),
+            static ex => ex is SqlException provider && _IsRetryable(provider),
+            _timeProvider,
+            cancellationToken
+        );
     }
 
+    private async ValueTask<T> _RunOnceAsync<T>(
+        Func<SqlConnection, SqlTransaction, CancellationToken, Task<T>> body,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = _options.CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        // Explicit so the verb runs at READ COMMITTED whatever isolation level a pooled session last used:
+        // READPAST is refused above it, and a stricter level turns a lock wait into a conflict.
+        await using var transaction = (SqlTransaction)
+            await connection
+                .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+                .ConfigureAwait(false);
+
+        var result = await body(connection, transaction, cancellationToken).ConfigureAwait(false);
+
+        // The batch already decided and the result describes it; a late cancel must not roll back a write the
+        // caller is about to be told happened.
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+
+        return result;
+    }
+
+    // A deadlock or snapshot update conflict is the one failure a fresh transaction can clear on its own. Only
+    // autonomous calls retry: an enlisted call's failure has already rolled back the caller's transaction, so only
+    // the unit's owner can decide whether to run it again.
     private static bool _IsRetryable(SqlException ex)
     {
         return ex.Number is SqlErrorCodes.SqlServer.DeadlockVictim or SqlErrorCodes.SqlServer.SnapshotUpdateConflict;
@@ -689,6 +739,23 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
         return new LeaseRow(generation, state, expiresAt, reader.GetBoolean(3));
     }
 
+    /// <summary>Reads a progress payload and its contract from two adjacent columns; both are null when none is stored.</summary>
+    private static async Task<LeaseProgress?> _ReadProgressAsync(
+        DbDataReader reader,
+        int payloadOrdinal,
+        CancellationToken cancellationToken
+    )
+    {
+        if (await reader.IsDBNullAsync(payloadOrdinal, cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var payload = await reader.GetFieldValueAsync<byte[]>(payloadOrdinal, cancellationToken).ConfigureAwait(false);
+
+        return new LeaseProgress(payload, reader.GetString(payloadOrdinal + 1));
+    }
+
     private static LeaseFenceStatus _Classify(LeaseRow? row, long generation)
     {
         if (row is not { } value || value.Generation != generation)
@@ -786,13 +853,16 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
     {
         // Takes the row's update-intent lock into variables, then reads the clock. The clock statement runs only
         // after the locking read has waited out any other holder, so every decision below sees a clock from after
-        // the wait. When the row is absent every variable stays NULL.
+        // the wait. When the row is absent every variable stays NULL. The takeover count is read for a held grant,
+        // which updates nothing; the progress is not, so a renewal never loads the stored payload.
         return $"""
-            DECLARE @rowGeneration bigint, @rowState smallint, @rowExpiresAt datetimeoffset(7), @now datetimeoffset(7);
+            DECLARE @rowGeneration bigint, @rowState smallint, @rowExpiresAt datetimeoffset(7), @rowTakeoverCount int,
+                @now datetimeoffset(7);
 
             SELECT @rowGeneration = {SqlServerFencingSchema.Generation},
                 @rowState = {SqlServerFencingSchema.State},
-                @rowExpiresAt = {SqlServerFencingSchema.ExpiresAt}
+                @rowExpiresAt = {SqlServerFencingSchema.ExpiresAt},
+                @rowTakeoverCount = {SqlServerFencingSchema.TakeoverCount}
             FROM {table} WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
             WHERE {_KeyPredicate()};
 
@@ -805,12 +875,16 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
         // NEXT VALUE FOR is illegal inside CASE, OUTPUT, WHERE, subqueries, and MERGE, so the generation is drawn
         // into a variable, and only on the branch that grants, after the locking read: a generation drawn before the
         // lock could be lower than one a still-open grant already holds. A row that exists is never inserted over,
-        // so the batch cannot raise a duplicate-key error inside a caller's transaction.
+        // so the batch cannot raise a duplicate-key error inside a caller's transaction. Only a takeover of an expired
+        // active attempt counts one more, because a sweep already counted an abandoned one and a settlement or
+        // release reset the count; progress is left as it is, so the new attempt can resume from it. The final read
+        // returns the row this batch just wrote, under the lock it already holds.
         return $"""
             {_LockThenClockSql(table)}
 
             IF @rowState = {SqlServerFencingSchema.Active} AND @rowExpiresAt > @now
-                SELECT CAST({_GrantOutcomeHeld} AS tinyint), @rowGeneration, @rowExpiresAt, CAST(NULL AS bigint);
+                SELECT CAST({_GrantOutcomeHeld} AS tinyint), @rowGeneration, @rowExpiresAt, CAST(NULL AS bigint),
+                    @rowTakeoverCount, CAST(NULL AS varbinary(max)), CAST(NULL AS nvarchar(1));
             ELSE
             BEGIN
                 DECLARE @granted bigint, @grantedUntil datetimeoffset(7);
@@ -835,25 +909,38 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
                         {SqlServerFencingSchema.State} = {SqlServerFencingSchema.Active},
                         {SqlServerFencingSchema.GrantedAt} = @now,
                         {SqlServerFencingSchema.ExpiresAt} = @grantedUntil,
-                        {SqlServerFencingSchema.EndedAt} = NULL
+                        {SqlServerFencingSchema.EndedAt} = NULL,
+                        {SqlServerFencingSchema.TakeoverCount} = CASE
+                            WHEN @rowState = {SqlServerFencingSchema.Active} THEN @rowTakeoverCount + 1
+                            ELSE @rowTakeoverCount
+                        END
                     WHERE {_KeyPredicate()};
 
                 -- An expired active row is a takeover and reports its generation; an ended row is simply free.
                 SELECT CAST(CASE WHEN @rowState = {SqlServerFencingSchema.Active} THEN {_GrantOutcomeTakeover} ELSE {_GrantOutcomeGranted} END AS tinyint),
                     @granted,
                     @grantedUntil,
-                    @rowGeneration;
+                    @rowGeneration,
+                    {SqlServerFencingSchema.TakeoverCount},
+                    {SqlServerFencingSchema.Progress},
+                    {SqlServerFencingSchema.ProgressContract}
+                FROM {table}
+                WHERE {_KeyPredicate()};
             END;
             """;
     }
 
     private static string _EndStatement(string table, short state)
     {
+        // An ended attempt's progress and takeover count belong to work that is finished, so the next grant starts
+        // clean.
         return $"""
             UPDATE {table}
-                SET {SqlServerFencingSchema.State} = {state.ToString(
-                CultureInfo.InvariantCulture
-            )}, {SqlServerFencingSchema.EndedAt} = @now
+                SET {SqlServerFencingSchema.State} = {state.ToString(CultureInfo.InvariantCulture)},
+                    {SqlServerFencingSchema.EndedAt} = @now,
+                    {SqlServerFencingSchema.TakeoverCount} = 0,
+                    {SqlServerFencingSchema.Progress} = NULL,
+                    {SqlServerFencingSchema.ProgressContract} = NULL
                 WHERE {_KeyPredicate()};
 
                 SET @changed = @rowExpiresAt;
@@ -896,7 +983,8 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
         // READPAST passes over a lease another sweeper is claiming or a fence is holding, so concurrent sweepers never
         // hand one lease to two handlers and never wait on each other; since nothing waits, the clock can be read
         // first. The keyset cursor walks the active expiry index; a lease the caller already visited is behind it, so
-        // a lease whose handler threw is left for a later call.
+        // a lease whose handler threw is left for a later call. Abandoning counts one takeover and keeps the progress,
+        // so the handler can route a resumable attempt and the next grant resumes it.
         var cursor = withCursor
             ? $"""
                 AND (
@@ -921,7 +1009,10 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
                     {SqlServerFencingSchema.Generation},
                     {SqlServerFencingSchema.State},
                     {SqlServerFencingSchema.ExpiresAt},
-                    {SqlServerFencingSchema.EndedAt}
+                    {SqlServerFencingSchema.EndedAt},
+                    {SqlServerFencingSchema.TakeoverCount},
+                    {SqlServerFencingSchema.Progress},
+                    {SqlServerFencingSchema.ProgressContract}
                 FROM {table} WITH ({hints})
                 WHERE {SqlServerFencingSchema.Kind} = @Kind
                     AND {SqlServerFencingSchema.State} = {SqlServerFencingSchema.Active}
@@ -931,11 +1022,15 @@ internal sealed class SqlServerLeaseStore : ILeaseStore
             )
             UPDATE candidate
             SET {SqlServerFencingSchema.State} = {SqlServerFencingSchema.Abandoned},
-                {SqlServerFencingSchema.EndedAt} = @now
+                {SqlServerFencingSchema.EndedAt} = @now,
+                {SqlServerFencingSchema.TakeoverCount} = {SqlServerFencingSchema.TakeoverCount} + 1
             OUTPUT inserted.{SqlServerFencingSchema.TenantId},
                 inserted.{SqlServerFencingSchema.Resource},
                 inserted.{SqlServerFencingSchema.Generation},
-                inserted.{SqlServerFencingSchema.ExpiresAt};
+                inserted.{SqlServerFencingSchema.ExpiresAt},
+                inserted.{SqlServerFencingSchema.TakeoverCount},
+                inserted.{SqlServerFencingSchema.Progress},
+                inserted.{SqlServerFencingSchema.ProgressContract};
             """;
     }
 

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.Hosting.Initialization;
 using Headless.Idempotency;
 using Headless.Testing.Testcontainers;
 using Headless.UnitOfWork;
@@ -22,7 +23,7 @@ public sealed class PostgreSqlIdempotencyFixture
         ICollectionFixture<PostgreSqlIdempotencyFixture>,
         IIdempotencyFixture
 {
-    private const string _Records = $"\"{IdempotencyStorageOptions.DefaultSchema}\".records";
+    private const string _Records = $"\"{HeadlessStorageDefaults.Schema}\".idempotency_records";
 
     public string ConnectionString => Container.GetConnectionString();
 
@@ -45,7 +46,7 @@ public sealed class PostgreSqlIdempotencyFixture
         // The container is reused across runs, so start from no storage and let the initializers create it.
         await using var reset = new NpgsqlCommand(
             $"""
-            DROP SCHEMA IF EXISTS "{IdempotencyStorageOptions.DefaultSchema}" CASCADE;
+            DROP SCHEMA IF EXISTS "{HeadlessStorageDefaults.Schema}" CASCADE;
             """,
             connection
         );
@@ -78,7 +79,7 @@ public sealed class PostgreSqlIdempotencyFixture
         await using var command = new NpgsqlCommand(
             $"""
             SELECT status, fingerprint_algorithm, fingerprint, generation, lease_expires_at, result, result_contract,
-                retention_until
+                retention_until, recovery_point, recovery_state, recovery_contract
             FROM {_Records}
             WHERE tenant_id = @tenant AND idempotency_key = @recordKey
             """,
@@ -105,7 +106,12 @@ public sealed class PostgreSqlIdempotencyFixture
                 ? null
                 : await reader.GetFieldValueAsync<byte[]>(5, cancellationToken),
             await reader.IsDBNullAsync(6, cancellationToken) ? null : reader.GetString(6),
-            await reader.GetFieldValueAsync<DateTimeOffset>(7, cancellationToken)
+            await reader.GetFieldValueAsync<DateTimeOffset>(7, cancellationToken),
+            await reader.IsDBNullAsync(8, cancellationToken) ? null : reader.GetString(8),
+            await reader.IsDBNullAsync(9, cancellationToken)
+                ? null
+                : await reader.GetFieldValueAsync<byte[]>(9, cancellationToken),
+            await reader.IsDBNullAsync(10, cancellationToken) ? null : reader.GetString(10)
         );
     }
 

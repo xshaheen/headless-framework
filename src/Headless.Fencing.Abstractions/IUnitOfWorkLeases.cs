@@ -41,15 +41,22 @@ public interface IUnitOfWorkLeases : IUnitOfWorkFeature
     /// <param name="unitOfWork">The unit whose transaction holds the renewal.</param>
     /// <param name="lease">The lease to renew.</param>
     /// <param name="duration">The new time to live; bounded by the configured limits.</param>
+    /// <param name="progress">
+    /// How far the attempt got, stored only when the renewal succeeds; <see langword="null" /> keeps the last recorded
+    /// progress.
+    /// </param>
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
     /// <returns>The renewal's result.</returns>
-    /// <exception cref="ArgumentException">The lease's identity or generation is invalid.</exception>
+    /// <exception cref="ArgumentException">
+    /// The lease's identity or generation is invalid, or <paramref name="progress" /> exceeds its size limits.
+    /// </exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="duration" /> is outside the configured bounds.</exception>
     /// <exception cref="InvalidOperationException">The unit cannot host the write.</exception>
     ValueTask<LeaseRenewalResult> RenewAsync(
         IUnitOfWork unitOfWork,
         FencedLease lease,
         TimeSpan duration,
+        LeaseProgress? progress,
         CancellationToken cancellationToken = default
     );
 

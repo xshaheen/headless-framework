@@ -208,6 +208,7 @@ dotnet add package Headless.Tus.Azure
 ```csharp
 using Azure.Storage.Blobs;
 using Headless.Tus;
+using tusdotnet;
 using tusdotnet.Models;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -235,7 +236,9 @@ Serializing concurrent PATCHes across nodes (multi-node deployments) with `Headl
 
 ```csharp
 using Headless.Tus; // AddDistributedLockTusLockProvider
+using tusdotnet;
 using tusdotnet.Interfaces;
+using tusdotnet.Models;
 
 // Register an IDistributedLock backend (Redis, SQL Server, …) first, then the TUS lock adapter:
 builder.Services.AddDistributedLockTusLockProvider();
@@ -329,12 +332,16 @@ dotnet add package Headless.Tus.DistributedLocks
 
 ```csharp
 using Headless.Tus;
+using StackExchange.Redis;
+using tusdotnet;
 using tusdotnet.Interfaces;
 using tusdotnet.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Register a Headless distributed lock backend (Redis shown; any backend works)
+// 1. Register a Headless distributed lock backend (Redis shown; any backend works).
+//    The Redis backend resolves the IConnectionMultiplexer from DI when the host starts.
+builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect("localhost:6379"));
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 
 // 2. Register the TUS lock provider

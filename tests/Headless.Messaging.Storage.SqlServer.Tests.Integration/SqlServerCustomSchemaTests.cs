@@ -57,10 +57,10 @@ public sealed class SqlServerCustomSchemaTests(SqlServerTestFixture fixture) : T
                 "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA=@Schema ORDER BY TABLE_NAME;",
                 new { Schema = _Schema }
             );
-            tables.Should().Contain(["Published", "Received"]);
+            tables.Should().Contain(["MessagingPublished", "MessagingReceived"]);
 
             var rows = await connection.QueryFirstAsync<int>(
-                $"SELECT COUNT(*) FROM [{_Schema}].[Published] WHERE [Id]=@Id;",
+                $"SELECT COUNT(*) FROM [{_Schema}].[MessagingPublished] WHERE [Id]=@Id;",
                 new { Id = stored.StorageId }
             );
             rows.Should().Be(1, "the write must land in the configured schema, not the default one");
@@ -71,11 +71,11 @@ public sealed class SqlServerCustomSchemaTests(SqlServerTestFixture fixture) : T
             await cleanup.OpenAsync(AbortToken);
             await cleanup.ExecuteAsync(
                 $"""
-                DROP TABLE IF EXISTS [{_Schema}].[InboxAudit];
-                DROP TABLE IF EXISTS [{_Schema}].[InboxOperationReceipts];
-                DROP TABLE IF EXISTS [{_Schema}].[SchemaState];
-                DROP TABLE IF EXISTS [{_Schema}].[Published];
-                DROP TABLE IF EXISTS [{_Schema}].[Received];
+                DROP TABLE IF EXISTS [{_Schema}].[MessagingInboxAudit];
+                DROP TABLE IF EXISTS [{_Schema}].[MessagingInboxOperationReceipts];
+                DROP TABLE IF EXISTS [{_Schema}].[MessagingSchemaState];
+                DROP TABLE IF EXISTS [{_Schema}].[MessagingPublished];
+                DROP TABLE IF EXISTS [{_Schema}].[MessagingReceived];
                 DROP TYPE IF EXISTS [{_Schema}].[HeadlessMessagingIdList];
                 DROP TYPE IF EXISTS [{_Schema}].[HeadlessMessagingOwnerList];
                 DROP TYPE IF EXISTS [{_Schema}].[HeadlessMessagingPoisonMessageList];

@@ -1,14 +1,20 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.Caching;
 using Headless.Hosting.Initialization;
 using Headless.MultiTenancy;
 using Headless.Permissions;
+using Headless.Permissions.Definitions;
 using Headless.Permissions.Entities;
+using Headless.Permissions.Grants;
+using Headless.Permissions.Models;
 using Headless.Permissions.Repositories;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace Tests;
@@ -44,9 +50,9 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
 
         // then
         initializer.IsInitialized.Should().BeTrue();
-        (await _TableExistsAsync("PermissionGrants")).Should().BeTrue();
-        (await _TableExistsAsync("PermissionDefinitions")).Should().BeTrue();
-        (await _TableExistsAsync("PermissionGroupDefinitions")).Should().BeTrue();
+        (await _TableExistsAsync("permission_grants")).Should().BeTrue();
+        (await _TableExistsAsync("permission_definitions")).Should().BeTrue();
+        (await _TableExistsAsync("permission_group_definitions")).Should().BeTrue();
         stored.Should().NotBeNull();
         stored!.IsGranted.Should().BeTrue();
         storedGroups.Should().ContainSingle(x => x.Name == "Users");
@@ -227,35 +233,49 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
         await host.StartAsync(AbortToken);
 
         // then
-        (await _IndexExistsAsync("IX_PermissionGroupDefinitions_Name"))
+        (await _IndexExistsAsync("ix_permission_group_definitions_name"))
             .Should()
             .BeTrue();
-        (await _IndexExistsAsync("IX_PermissionDefinitions_GroupName")).Should().BeTrue();
-        (await _IndexExistsAsync("IX_PermissionDefinitions_Name")).Should().BeTrue();
-        (await _IndexExistsAsync("IX_PermissionGrants_TenantId_Name_ProviderName_ProviderKey")).Should().BeTrue();
-        (await _IndexExistsAsync("IX_PermissionGrants_Name_ProviderName_ProviderKey_NullTenantId")).Should().BeTrue();
+        (await _IndexExistsAsync("ix_permission_definitions_group_name")).Should().BeTrue();
+        (await _IndexExistsAsync("ix_permission_definitions_name")).Should().BeTrue();
+        (await _IndexExistsAsync("ix_permission_grants_tenant_id_name_provider_name_provider_key")).Should().BeTrue();
+        (await _IndexExistsAsync("ix_permission_grants_name_provider_name_provider_key_no_tenant")).Should().BeTrue();
     }
 
     [Fact]
-    public async Task should_rename_legacy_timestamp_columns_without_losing_permission_grant()
+    public async Task should_refuse_a_padded_provider_key_and_leave_the_unpadded_grant_intact()
     {
+        // given a stored grant for "acme"; SQL Server compares "acme " equal to it, PostgreSQL does not
         await _DropSchemaAsync();
-        var id = Guid.NewGuid();
-        var createdAt = new DateTimeOffset(2026, 7, 25, 10, 0, 0, TimeSpan.Zero);
-        var updatedAt = createdAt.AddMinutes(5);
-        await _CreateLegacyGrantTableAsync(id, createdAt, updatedAt);
         using var host = _CreateHost();
-
         await host.StartAsync(AbortToken);
         var repository = host.Services.GetRequiredService<IPermissionGrantRepository>();
-        var stored = await repository.FindAsync("Legacy.Permission", "Role", "admin", AbortToken);
+        var store = new PermissionGrantStore(
+            Substitute.For<IPermissionDefinitionManager>(),
+            repository,
+            new SequentialGuidGenerator(SequentialGuidType.Version7),
+            Substitute.For<ICache<PermissionGrantCacheItem>>(),
+            Substitute.For<ICurrentTenant>(),
+            Options.Create(new PermissionManagementOptions()),
+            NullLogger<PermissionGrantStore>.Instance
+        );
+        await repository.InsertAsync(
+            new PermissionGrantRecord(Guid.NewGuid(), "Users.Create", "Role", "acme", isGranted: true),
+            AbortToken
+        );
 
-        stored.Should().NotBeNull();
-        stored!.Id.Should().Be(id);
-        stored.CreatedAt.Should().Be(createdAt);
-        stored.UpdatedAt.Should().Be(updatedAt);
-        (await _ColumnExistsAsync("PermissionGrants", "DateCreated")).Should().BeFalse();
-        (await _ColumnExistsAsync("PermissionGrants", "DateUpdated")).Should().BeFalse();
+        // when
+        var revoke = async () => await store.RevokeAsync("Users.Create", "Role", "acme ", AbortToken);
+        var isGranted = async () => await store.IsGrantedAsync("Users.Create", "Role", "acme ", AbortToken);
+        var grantToPaddedTenant = async () =>
+            await store.GrantAsync("Users.Delete", "Role", "acme", tenantId: "t1 ", AbortToken);
+
+        // then
+        await revoke.Should().ThrowExactlyAsync<ArgumentException>();
+        await isGranted.Should().ThrowExactlyAsync<ArgumentException>();
+        await grantToPaddedTenant.Should().ThrowExactlyAsync<ArgumentException>();
+        var stored = await repository.GetListAsync("Role", "acme", AbortToken);
+        stored.Should().ContainSingle().Which.IsGranted.Should().BeTrue();
     }
 
     private IHost _CreateHost(ICurrentTenant? currentTenant = null)
@@ -268,6 +288,8 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
 
         // unify: management-core deps
         builder.Services.AddSingleton(TimeProvider.System);
+        // Grant caching is required, and the host refuses to start without a registered cache.
+        builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
         builder.Services.AddHeadlessPermissions(setup =>
         {
             setup.ConfigureStorage(options => options.Schema = _Schema);
@@ -325,55 +347,6 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
         return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
     }
 
-    private async Task<bool> _ColumnExistsAsync(string tableName, string columnName)
-    {
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        await using var command = new NpgsqlCommand(
-            """
-            SELECT EXISTS (
-                SELECT 1 FROM information_schema.columns
-                WHERE table_schema = @schema AND table_name = @table AND column_name = @column
-            )
-            """,
-            connection
-        );
-        command.Parameters.AddWithValue("schema", _Schema);
-        command.Parameters.AddWithValue("table", tableName);
-        command.Parameters.AddWithValue("column", columnName);
-
-        return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
-    }
-
-    private async Task _CreateLegacyGrantTableAsync(Guid id, DateTimeOffset createdAt, DateTimeOffset updatedAt)
-    {
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        await using var command = new NpgsqlCommand(
-            $"""
-            CREATE SCHEMA "{_Schema}";
-            CREATE TABLE "{_Schema}"."PermissionGrants" (
-                "Id" uuid NOT NULL PRIMARY KEY,
-                "Name" character varying(128) NOT NULL,
-                "ProviderName" character varying(64) NOT NULL,
-                "ProviderKey" character varying(64) NOT NULL,
-                "TenantId" character varying(41),
-                "IsGranted" boolean NOT NULL,
-                "DateCreated" timestamp with time zone NOT NULL,
-                "DateUpdated" timestamp with time zone
-            );
-            INSERT INTO "{_Schema}"."PermissionGrants"
-                ("Id", "Name", "ProviderName", "ProviderKey", "TenantId", "IsGranted", "DateCreated", "DateUpdated")
-            VALUES (@id, 'Legacy.Permission', 'Role', 'admin', NULL, TRUE, @createdAt, @updatedAt);
-            """,
-            connection
-        );
-        command.Parameters.AddWithValue(nameof(id), id);
-        command.Parameters.AddWithValue(nameof(createdAt), createdAt);
-        command.Parameters.AddWithValue(nameof(updatedAt), updatedAt);
-        await command.ExecuteNonQueryAsync(AbortToken);
-    }
-
     private async Task _CreateInsertCommandCounterAsync()
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
@@ -393,7 +366,7 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
             $function$;
 
             CREATE TRIGGER "TR_PermissionGrant_InsertCommandCounter"
-            AFTER INSERT ON "{_Schema}"."PermissionGrants"
+            AFTER INSERT ON "{_Schema}".permission_grants
             FOR EACH STATEMENT
             EXECUTE FUNCTION "{_Schema}"."CountPermissionGrantInsertCommand"();
             """,
@@ -422,34 +395,36 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
             $"""
             CREATE SCHEMA IF NOT EXISTS "{_Schema}";
 
-            CREATE TABLE IF NOT EXISTS "{_Schema}"."PermissionGroupDefinitions" (
-                "Id" uuid NOT NULL,
-                "Name" character varying(128) NOT NULL,
-                "DisplayName" character varying(256) NOT NULL,
-                "ExtraProperties" text NOT NULL,
-                CONSTRAINT "PK_PermissionGroupDefinitions" PRIMARY KEY ("Id")
+            CREATE TABLE IF NOT EXISTS "{_Schema}".permission_group_definitions (
+                id uuid NOT NULL,
+                name character varying(128) NOT NULL,
+                display_name character varying(256) NOT NULL,
+                extra_properties text NOT NULL,
+                CONSTRAINT pk_permission_group_definitions PRIMARY KEY (id)
             );
 
-            CREATE TABLE IF NOT EXISTS "{_Schema}"."PermissionDefinitions" (
-                "Id" uuid NOT NULL,
-                "GroupName" character varying(128) NOT NULL,
-                "Name" character varying(128) NOT NULL,
-                "DisplayName" character varying(256) NOT NULL,
-                "IsEnabled" boolean NOT NULL,
-                "ParentName" character varying(128),
-                "Providers" character varying(128),
-                "ExtraProperties" text NOT NULL,
-                CONSTRAINT "PK_PermissionDefinitions" PRIMARY KEY ("Id")
+            CREATE TABLE IF NOT EXISTS "{_Schema}".permission_definitions (
+                id uuid NOT NULL,
+                group_name character varying(128) NOT NULL,
+                name character varying(128) NOT NULL,
+                display_name character varying(256) NOT NULL,
+                is_enabled boolean NOT NULL,
+                parent_name character varying(128),
+                providers character varying(128),
+                extra_properties text NOT NULL,
+                CONSTRAINT pk_permission_definitions PRIMARY KEY (id)
             );
 
-            CREATE TABLE IF NOT EXISTS "{_Schema}"."PermissionGrants" (
-                "Id" uuid NOT NULL,
-                "Name" character varying(128) NOT NULL,
-                "ProviderName" character varying(64) NOT NULL,
-                "ProviderKey" character varying(64) NOT NULL,
-                "TenantId" character varying(41),
-                "IsGranted" boolean NOT NULL DEFAULT TRUE,
-                CONSTRAINT "PK_PermissionGrants" PRIMARY KEY ("Id")
+            CREATE TABLE IF NOT EXISTS "{_Schema}".permission_grants (
+                id uuid NOT NULL,
+                name character varying(128) NOT NULL,
+                provider_name character varying(64) NOT NULL,
+                provider_key character varying(64) NOT NULL,
+                tenant_id character varying(41),
+                is_granted boolean NOT NULL DEFAULT TRUE,
+                created_at timestamp with time zone NOT NULL,
+                updated_at timestamp with time zone,
+                CONSTRAINT pk_permission_grants PRIMARY KEY (id)
             );
             """,
             connection

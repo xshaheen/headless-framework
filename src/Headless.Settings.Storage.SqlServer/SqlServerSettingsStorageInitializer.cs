@@ -41,6 +41,18 @@ internal sealed class SqlServerSettingsStorageInitializer(
         return $"[{options.Schema}].[{tableName}]";
     }
 
+    /// <summary>Returns the qualified setting values table.</summary>
+    internal static string ValuesTable(SettingsStorageOptions options)
+    {
+        return Qualified(options, options.ResolveSettingValuesTableName(StorageNamingStyle.PascalCase));
+    }
+
+    /// <summary>Returns the qualified setting definitions table.</summary>
+    internal static string DefinitionsTable(SettingsStorageOptions options)
+    {
+        return Qualified(options, options.ResolveSettingDefinitionsTableName(StorageNamingStyle.PascalCase));
+    }
+
     /// <summary>
     /// Builds the idempotent SQL Server DDL script that creates the schema, tables, indexes, and TVP types.
     /// The script acquires an exclusive <c>sp_getapplock</c> session lock, wraps all DDL in a single
@@ -48,10 +60,12 @@ internal sealed class SqlServerSettingsStorageInitializer(
     /// </summary>
     private static string _CreateScript(SettingsStorageOptions options)
     {
-        var valuesTable = Qualified(options, options.SettingValuesTableName);
-        var definitionsTable = Qualified(options, options.SettingDefinitionsTableName);
-        var valuesObject = $"{options.Schema}.{options.SettingValuesTableName}";
-        var definitionsObject = $"{options.Schema}.{options.SettingDefinitionsTableName}";
+        var valuesName = options.ResolveSettingValuesTableName(StorageNamingStyle.PascalCase);
+        var valuesTable = Qualified(options, valuesName);
+        var definitionsName = options.ResolveSettingDefinitionsTableName(StorageNamingStyle.PascalCase);
+        var definitionsTable = Qualified(options, definitionsName);
+        var valuesObject = $"{options.Schema}.{valuesName}";
+        var definitionsObject = $"{options.Schema}.{definitionsName}";
 
         var lockResource = $"headless_settings_init:{options.Schema}";
         var acquireLock = $"""
@@ -86,7 +100,7 @@ internal sealed class SqlServerSettingsStorageInitializer(
                         [IsEncrypted] bit NOT NULL,
                         [Providers] nvarchar({SettingDefinitionRecordConstants.ProvidersMaxLength}) NULL,
                         [ExtraProperties] nvarchar(max) NOT NULL,
-                        CONSTRAINT [PK_{options.SettingDefinitionsTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
+                        CONSTRAINT [PK_{definitionsName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
                 END;
             END TRY
@@ -107,7 +121,7 @@ internal sealed class SqlServerSettingsStorageInitializer(
                         [ProviderKey] nvarchar({SettingValueRecordConstants.ProviderKeyMaxLength}) NULL,
                         [CreatedAt] datetimeoffset NOT NULL,
                         [UpdatedAt] datetimeoffset NULL,
-                        CONSTRAINT [PK_{options.SettingValuesTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
+                        CONSTRAINT [PK_{valuesName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
                 END;
             END TRY
@@ -116,20 +130,10 @@ internal sealed class SqlServerSettingsStorageInitializer(
             END CATCH;
             """;
 
-        var migrateValuesTimestampColumns = $"""
-            IF COL_LENGTH(N'{valuesObject}', N'DateCreated') IS NOT NULL
-               AND COL_LENGTH(N'{valuesObject}', N'CreatedAt') IS NULL
-                EXEC sys.sp_rename N'{valuesObject}.DateCreated', N'CreatedAt', N'COLUMN';
-
-            IF COL_LENGTH(N'{valuesObject}', N'DateUpdated') IS NOT NULL
-               AND COL_LENGTH(N'{valuesObject}', N'UpdatedAt') IS NULL
-                EXEC sys.sp_rename N'{valuesObject}.DateUpdated', N'UpdatedAt', N'COLUMN';
-            """;
-
         var createDefinitionsIndex = $"""
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.SettingDefinitionsTableName}_Name' AND object_id = OBJECT_ID(N'{definitionsObject}'))
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.SettingDefinitionsTableName}_Name] ON {definitionsTable} ([Name] ASC);
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{definitionsName}_Name' AND object_id = OBJECT_ID(N'{definitionsObject}'))
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{definitionsName}_Name] ON {definitionsTable} ([Name] ASC);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
@@ -141,15 +145,15 @@ internal sealed class SqlServerSettingsStorageInitializer(
         // (Name, ProviderName) host-scope rows slip past a plain unique index without the filter.
         var createValuesIndexes = $"""
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.SettingValuesTableName}_Name_ProviderName_ProviderKey' AND object_id = OBJECT_ID(N'{valuesObject}'))
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.SettingValuesTableName}_Name_ProviderName_ProviderKey] ON {valuesTable} ([Name] ASC, [ProviderName] ASC, [ProviderKey] ASC) WHERE [ProviderKey] IS NOT NULL;
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{valuesName}_Name_ProviderName_ProviderKey' AND object_id = OBJECT_ID(N'{valuesObject}'))
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{valuesName}_Name_ProviderName_ProviderKey] ON {valuesTable} ([Name] ASC, [ProviderName] ASC, [ProviderKey] ASC) WHERE [ProviderKey] IS NOT NULL;
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
             END CATCH;
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.SettingValuesTableName}_Name_ProviderName_NullProviderKey' AND object_id = OBJECT_ID(N'{valuesObject}'))
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.SettingValuesTableName}_Name_ProviderName_NullProviderKey] ON {valuesTable} ([Name] ASC, [ProviderName] ASC) WHERE [ProviderKey] IS NULL;
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{valuesName}_Name_ProviderName_NullProviderKey' AND object_id = OBJECT_ID(N'{valuesObject}'))
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{valuesName}_Name_ProviderName_NullProviderKey] ON {valuesTable} ([Name] ASC, [ProviderName] ASC) WHERE [ProviderKey] IS NULL;
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
@@ -190,8 +194,6 @@ internal sealed class SqlServerSettingsStorageInitializer(
                 {createDefinitionsTable}
 
                 {createValuesTable}
-
-                {migrateValuesTimestampColumns}
 
                 {createDefinitionsIndex}
 

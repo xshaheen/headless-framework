@@ -17,6 +17,12 @@ namespace Headless.Fencing;
 /// earlier one for that key, including after the row was purged.
 /// </para>
 /// <para>
+/// Each row also carries the last progress a successful renewal recorded and a takeover count. A takeover grant and a
+/// sweep's abandonment each add one to the count and keep the progress; a grant over an abandoned row keeps both
+/// without adding; a settlement or release clears both. A grant that acquires the lease returns the row's count and,
+/// unless the row was settled or released, its progress; a held grant returns the holder's count and no progress.
+/// </para>
+/// <para>
 /// Autonomous verbs commit before returning; a relational provider opens its own connection at READ COMMITTED and
 /// retries only deadlocks. Enlisted verbs run inside the unit (a relational provider on its connection and
 /// transaction), never commit, and never retry. Argument, tenant, duration, and unit-state checks happen before a call
@@ -77,12 +83,17 @@ public interface ILeaseStore
     /// <param name="key">The lease key.</param>
     /// <param name="generation">The caller's generation.</param>
     /// <param name="duration">The new time to live from the database's clock.</param>
+    /// <param name="progress">
+    /// Progress to store in the same guarded write as the new expiry, only when the renewal succeeds;
+    /// <see langword="null" /> leaves the stored progress as it is. Already checked against the size limits.
+    /// </param>
     /// <param name="cancellationToken">Token used to cancel the database call.</param>
     /// <returns>The renewal's result; an absent row is <see cref="LeaseRenewalStatus.Stale" />.</returns>
     ValueTask<LeaseRenewalResult> RenewAsync(
         LeaseKey key,
         long generation,
         TimeSpan duration,
+        LeaseProgress? progress,
         CancellationToken cancellationToken = default
     );
 
@@ -91,6 +102,7 @@ public interface ILeaseStore
     /// <param name="key">The lease key.</param>
     /// <param name="generation">The caller's generation.</param>
     /// <param name="duration">The new time to live from the database's clock.</param>
+    /// <param name="progress">The same as for <see cref="RenewAsync" />.</param>
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
     /// <returns>The renewal's result; an absent row is <see cref="LeaseRenewalStatus.Stale" />.</returns>
     ValueTask<LeaseRenewalResult> RenewEnlistedAsync(
@@ -98,6 +110,7 @@ public interface ILeaseStore
         LeaseKey key,
         long generation,
         TimeSpan duration,
+        LeaseProgress? progress,
         CancellationToken cancellationToken = default
     );
 
@@ -185,7 +198,10 @@ public interface ILeaseStore
     /// <see langword="null" /> tenant is the host scope's stored empty tenant.
     /// </param>
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
-    /// <returns>The claimed lease, or <see langword="null" /> when none is left after the cursor.</returns>
+    /// <returns>
+    /// The claimed lease with its takeover count after the abandonment and its last progress, or
+    /// <see langword="null" /> when none is left after the cursor.
+    /// </returns>
     ValueTask<ExpiredLease?> ClaimExpiredEnlistedAsync(
         IUnitOfWork unitOfWork,
         string kind,

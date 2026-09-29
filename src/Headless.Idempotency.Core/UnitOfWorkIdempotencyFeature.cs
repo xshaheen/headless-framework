@@ -72,8 +72,15 @@ internal sealed class UnitOfWorkIdempotencyFeature(IdempotencyRequestResolver re
         // names none.
         var isTakeover = record is { Inserted: false, Status: IdempotencyRecordStatus.Pending, Generation: not null };
 
+        // The new attempt resumes the earlier one only when it runs the same operation: a pending record still bound
+        // to the key. A record reset after its retention is a new operation, possibly for another request, so its
+        // earlier recovery point is dropped rather than handed to it. Reaching here with a bound record means it is
+        // pending and no live attempt holds it (a crashed, stalled, or released attempt).
+        var resumes = !record.Inserted && !record.IsRetentionElapsed;
+        var recoveryPoint = resumes ? record.RecoveryPoint : null;
+
         var grant = await store
-            .AdmitAsync(unitOfWork, recordKey, fingerprint, lease, keep, cancellationToken)
+            .AdmitAsync(unitOfWork, recordKey, fingerprint, lease, keep, resumes, cancellationToken)
             .ConfigureAwait(false);
 
         return IdempotentAdmission.Admitted(
@@ -82,7 +89,8 @@ internal sealed class UnitOfWorkIdempotencyFeature(IdempotencyRequestResolver re
             grant.Generation,
             grant.LeaseExpiresAt,
             isTakeover,
-            keep
+            keep,
+            recoveryPoint
         );
     }
 
@@ -109,6 +117,31 @@ internal sealed class UnitOfWorkIdempotencyFeature(IdempotencyRequestResolver re
 
         await store
             .CompleteAsync(unitOfWork, recordKey, generation, result, contract, keep, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async ValueTask SetRecoveryPointAsync(
+        IUnitOfWork unitOfWork,
+        IdempotentAdmission admission,
+        string point,
+        ReadOnlyMemory<byte> state,
+        string contract,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(unitOfWork);
+        var recordKey = IdempotencyRequestResolver.ResolveAdmitted(admission);
+        IdempotencyRequestResolver.ValidateRecoveryPoint(point, state, contract);
+        var generation = admission.Generation!.Value;
+
+        _Enlist(unitOfWork, isWrite: true);
+
+        // Fenced like a completion: an attempt that lost the key must not tell the one that took it over where to
+        // resume, since its step may be one the new owner is about to redo differently.
+        await _LockOwnRecordAsync(unitOfWork, recordKey, admission, cancellationToken).ConfigureAwait(false);
+
+        await store
+            .SetRecoveryPointAsync(unitOfWork, recordKey, generation, point, state, contract, cancellationToken)
             .ConfigureAwait(false);
     }
 

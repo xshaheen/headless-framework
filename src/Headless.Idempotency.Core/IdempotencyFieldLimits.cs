@@ -27,4 +27,13 @@ public static class IdempotencyFieldLimits
 
     /// <summary>The maximum length, in bytes, of a fingerprint digest.</summary>
     public const int FingerprintMaxLength = 64;
+
+    /// <summary>The maximum length of a recovery point's name.</summary>
+    public const int RecoveryPointMaxLength = 128;
+
+    /// <summary>
+    /// The maximum length, in bytes, of a recovery point's state. Resume state belongs on the record only when it is
+    /// small; a larger payload belongs in the operation's own storage, with the recovery point naming it.
+    /// </summary>
+    public const int RecoveryStateMaxLength = 64 * 1024;
 }

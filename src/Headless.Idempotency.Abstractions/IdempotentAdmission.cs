@@ -27,7 +27,8 @@ public sealed class IdempotentAdmission
         TimeSpan? retention = null,
         IdempotentResult? result = null,
         IdempotencyFingerprint? storedFingerprint = null,
-        string? storedContract = null
+        string? storedContract = null,
+        IdempotentRecoveryPoint? recoveryPoint = null
     )
     {
         Disposition = disposition;
@@ -40,6 +41,7 @@ public sealed class IdempotentAdmission
         Result = result;
         StoredFingerprint = storedFingerprint;
         StoredContract = storedContract;
+        RecoveryPoint = recoveryPoint;
     }
 
     /// <summary>Gets what the admission decided.</summary>
@@ -69,7 +71,8 @@ public sealed class IdempotentAdmission
     /// <summary>
     /// Gets whether an earlier attempt was admitted for this key and ended without completing or releasing (it
     /// crashed or stalled past its lease). Its partial side effects may exist, so an
-    /// operation that is not naturally idempotent should check before redoing them.
+    /// operation that is not naturally idempotent should check before redoing them; <see cref="RecoveryPoint" /> says
+    /// how far it got when it recorded one.
     /// </summary>
     public bool IsTakeover { get; }
 
@@ -97,6 +100,14 @@ public sealed class IdempotentAdmission
     /// </summary>
     public string? StoredContract { get; }
 
+    /// <summary>
+    /// Gets the last recovery point an earlier attempt of this key recorded when <see cref="Disposition" /> is
+    /// <see cref="IdempotentDisposition.Admitted" /> and that attempt ended without completing: it crashed, stalled past
+    /// its lease, or released the key. Resume after that step instead of running it again. <see langword="null" /> for
+    /// a first admission, for a record reset after its retention elapsed, and for every other disposition.
+    /// </summary>
+    public IdempotentRecoveryPoint? RecoveryPoint { get; }
+
     /// <summary>Gets whether the caller owns the operation under <see cref="Generation" />.</summary>
     [MemberNotNullWhen(true, nameof(Generation), nameof(LeaseExpiresAt), nameof(Retention))]
     public bool IsAdmitted => Disposition == IdempotentDisposition.Admitted;
@@ -108,6 +119,7 @@ public sealed class IdempotentAdmission
     /// <param name="leaseExpiresAt">The lease's expiry.</param>
     /// <param name="isTakeover">Whether an earlier admitted attempt ended without completing or releasing.</param>
     /// <param name="retention">How long the record is kept after completion or release by default.</param>
+    /// <param name="recoveryPoint">The last recovery point an earlier attempt of the key recorded, if any.</param>
     /// <returns>The admission.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="fingerprint" /> is <see langword="null" />.</exception>
     /// <exception cref="ArgumentOutOfRangeException">
@@ -119,14 +131,24 @@ public sealed class IdempotentAdmission
         long generation,
         DateTimeOffset leaseExpiresAt,
         bool isTakeover,
-        TimeSpan retention
+        TimeSpan retention,
+        IdempotentRecoveryPoint? recoveryPoint = null
     )
     {
         Argument.IsNotNull(fingerprint);
         Argument.IsPositive(generation);
         Argument.IsPositive(retention);
 
-        return new(IdempotentDisposition.Admitted, key, fingerprint, generation, leaseExpiresAt, isTakeover, retention);
+        return new(
+            IdempotentDisposition.Admitted,
+            key,
+            fingerprint,
+            generation,
+            leaseExpiresAt,
+            isTakeover,
+            retention,
+            recoveryPoint: recoveryPoint
+        );
     }
 
     /// <summary>Creates an admission refused because a live attempt owns the operation.</summary>

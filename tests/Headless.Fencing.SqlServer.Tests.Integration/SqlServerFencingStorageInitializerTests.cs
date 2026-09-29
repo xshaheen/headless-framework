@@ -194,14 +194,14 @@ public sealed class SqlServerFencingStorageInitializerTests(SqlServerFencingFixt
             await fixture.ScalarAsync(
                 "SELECT COUNT(*) FROM sys.indexes WHERE object_id = OBJECT_ID(@table) AND index_id > 0",
                 AbortToken,
-                ("table", $"{schema}.leases")
+                ("table", $"{schema}.FencingLeases")
             )
         )
             .Should()
             .Be(3, "the clustered primary key, the active-expiry index, and the ended index");
         (
             await fixture.ScalarAsync(
-                "SELECT COUNT(*) FROM sys.sequences WHERE schema_id = SCHEMA_ID(@schema)",
+                "SELECT COUNT(*) FROM sys.sequences WHERE schema_id = SCHEMA_ID(@schema) AND name = 'FencingLeaseGenerations'",
                 AbortToken,
                 ("schema", schema)
             )
@@ -218,7 +218,7 @@ public sealed class SqlServerFencingStorageInitializerTests(SqlServerFencingFixt
     private Task<int> _CountTablesAsync(string schema)
     {
         return fixture.ScalarAsync(
-            "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(@schema) AND name = 'leases'",
+            "SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(@schema) AND name = 'FencingLeases'",
             AbortToken,
             ("schema", schema)
         );

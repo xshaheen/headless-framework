@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
@@ -13,8 +14,8 @@ namespace Headless.Jobs;
 
 /// <summary>
 /// Fluent builder for configuring the Jobs subsystem, returned by the operational-store registration
-/// extension (e.g., <c>UseEntityFramework</c>) and passed to optional add-ons such as
-/// <c>AddDashboard</c> and <c>AddJobsDiscovery</c>.
+/// extension (e.g., <c>UseEntityFramework</c>) and passed to optional add-ons such as <c>AddDashboard</c>.
+/// Generated job modules are added with <see cref="AddModule{TModule}"/>.
 /// </summary>
 /// <typeparam name="TTimeJob">The application's concrete time job entity type.</typeparam>
 /// <typeparam name="TCronJob">The application's concrete cron job entity type.</typeparam>
@@ -26,6 +27,28 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     private JobOptions _jobDefaults = new();
     private readonly Dictionary<Type, JobOptions> _jobOptionsByRequest = [];
     private readonly Dictionary<JobFunctionDescriptor, JobOptions> _jobOptionsByDescriptor = [];
+
+    /// <summary>
+    /// Adds one assembly's generated job functions and middleware, for example
+    /// <c>AddModule&lt;Billing.JobsModule&gt;()</c>. Call it inside the <c>AddHeadlessJobs</c> callback once for every
+    /// assembly the host runs jobs or middleware from, including the host's own assembly.
+    /// </summary>
+    /// <remarks>
+    /// The job catalog is process-wide and frozen when the first host completes its <c>AddHeadlessJobs</c> callback.
+    /// Adding a module that an earlier host already added is a no-op, so every host may list the same modules; adding
+    /// one no earlier host added fails, because it can no longer join the frozen catalog.
+    /// </remarks>
+    /// <typeparam name="TModule">The generated <see cref="IJobsModule"/> of the assembly.</typeparam>
+    /// <returns>This builder, for chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The module was not already registered and the process-wide catalog is closed.
+    /// </exception>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> AddModule<TModule>()
+        where TModule : IJobsModule
+    {
+        JobFunctionProvider.RegisterModule(typeof(TModule), static () => TModule.Register());
+        return this;
+    }
 
     /// <summary>Sets retry, node-death, and atomic-enlistment defaults for this host. Invocation metadata is not accepted.</summary>
     public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureDefaults(JobOptions options)
@@ -214,6 +237,9 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// serialization settings.
     /// </summary>
     internal Action<IServiceCollection, JobsRequestSerializationOptions>? DashboardServiceAction { get; set; }
+
+    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+    [field: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
     internal Type? JobExceptionHandlerType { get; private set; }
     internal JobsRetryOptions RetryOptions { get; } = new();
 
@@ -251,6 +277,11 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// Configures the <c>JsonSerializerOptions</c> used to serialize and deserialize job request
     /// payloads. When not called, the default <c>JsonSerializerOptions</c> are used.
     /// </summary>
+    /// <remarks>
+    /// Payload metadata comes from the options' <c>TypeInfoResolver</c>. If none is set, reflection-based metadata is
+    /// used when the app allows it. A trimmed or native AOT app must add a <c>JsonSerializerContext</c> covering every
+    /// request type, for example <c>json.TypeInfoResolverChain.Insert(0, AppJsonContext.Default)</c>.
+    /// </remarks>
     /// <param name="configure">Action that mutates the serializer options.</param>
     /// <returns>This builder for method chaining.</returns>
     public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureRequestJsonOptions(Action<JsonSerializerOptions>? configure)
@@ -376,7 +407,9 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// A type implementing <c>IJobExceptionHandler</c> that is registered in the DI container.
     /// </typeparam>
     /// <returns>This builder for method chaining.</returns>
-    public JobsOptionsBuilder<TTimeJob, TCronJob> SetExceptionHandler<THandler>()
+    public JobsOptionsBuilder<TTimeJob, TCronJob> SetExceptionHandler<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] THandler
+    >()
         where THandler : IJobExceptionHandler
     {
         JobExceptionHandlerType = typeof(THandler);
@@ -466,6 +499,16 @@ public sealed class SchedulerOptionsBuilder
     /// classify every tick delayed by a garbage collection as a misfire.
     /// </remarks>
     public int DefaultMissedRunGraceSeconds { get; set; } = JobsRecoveryDefaults.MissedRunGraceSeconds;
+
+    /// <summary>
+    /// Overlap policy seeded onto cron definitions created without one on their <c>[JobFunction]</c> attribute.
+    /// Defaults to <see cref="CronOverlapPolicy.Allow"/>.
+    /// </summary>
+    /// <remarks>
+    /// Same creation-only rule as <see cref="DefaultMissedRunPolicy"/>: changing it later does not alter existing
+    /// definitions.
+    /// </remarks>
+    public CronOverlapPolicy DefaultOverlapPolicy { get; set; } = CronOverlapPolicy.Allow;
 
     /// <summary>
     /// How long a per-row pickup lease is held before it expires and the row becomes re-claimable. Stamped as

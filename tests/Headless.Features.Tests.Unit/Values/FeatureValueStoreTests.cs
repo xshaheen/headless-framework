@@ -431,4 +431,64 @@ public sealed class FeatureValueStoreTests : TestBase
     }
 
     #endregion
+
+    #region Surrounding white space
+
+    // SQL Server ignores trailing spaces when comparing keys and PostgreSQL does not, so a padded key part would
+    // address another key's row on one provider only; the store must refuse it before any storage call.
+    public static readonly TheoryData<string> PaddedKeyCalls =
+    [
+        "get-name",
+        "get-provider-name",
+        "get-provider-key",
+        "get-leading-provider-key",
+        "set-name",
+        "set-provider-key",
+        "set-all-names",
+        "set-all-provider-key",
+        "delete-provider-key",
+    ];
+
+    [Theory]
+    [MemberData(nameof(PaddedKeyCalls))]
+    public async Task should_refuse_key_with_surrounding_white_space_before_touching_storage(string call)
+    {
+        // when
+        Func<Task> action = call switch
+        {
+            "get-name" => async () => await _sut.GetOrDefaultAsync("Reports ", "Tenant", "acme", AbortToken),
+            "get-provider-name" => async () => await _sut.GetOrDefaultAsync("Reports", "Tenant ", "acme", AbortToken),
+            "get-provider-key" => async () => await _sut.GetOrDefaultAsync("Reports", "Tenant", "acme ", AbortToken),
+            "get-leading-provider-key" => async () =>
+                await _sut.GetOrDefaultAsync("Reports", "Tenant", " acme", AbortToken),
+            "set-name" => async () => await _sut.SetAsync("Reports ", "true", "Tenant", "acme", AbortToken),
+            "set-provider-key" => async () => await _sut.SetAsync("Reports", "true", "Tenant", "acme ", AbortToken),
+            "set-all-names" => async () =>
+                await _sut.SetAllAsync(
+                    new Dictionary<string, string?> { ["Reports "] = "true" },
+                    "Tenant",
+                    "acme",
+                    AbortToken
+                ),
+            "set-all-provider-key" => async () =>
+                await _sut.SetAllAsync(
+                    new Dictionary<string, string?> { ["Reports"] = "true" },
+                    "Tenant",
+                    "acme ",
+                    AbortToken
+                ),
+            "delete-provider-key" => async () => await _sut.DeleteAsync("Reports", "Tenant", "acme ", AbortToken),
+            _ => throw new ArgumentOutOfRangeException(nameof(call), call, null),
+        };
+
+        // then
+        await action
+            .Should()
+            .ThrowExactlyAsync<ArgumentException>()
+            .WithMessage("*must not start or end with white space*");
+        _repository.ReceivedCalls().Should().BeEmpty();
+        _cache.ReceivedCalls().Should().BeEmpty();
+    }
+
+    #endregion
 }

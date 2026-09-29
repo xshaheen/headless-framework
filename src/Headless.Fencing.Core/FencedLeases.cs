@@ -9,7 +9,8 @@ namespace Headless.Fencing;
 /// Autonomous leases: each verb is one committed call on the provider's own connection, and the sweep runs each claim
 /// and its handler in an owned unit the store begins.
 /// </summary>
-internal sealed class FencedLeases(LeaseRequestResolver resolver, ILeaseStore store) : IFencedLeases
+internal sealed class FencedLeases(LeaseRequestResolver resolver, ILeaseStore store, LeaseTakeoverAlerts alerts)
+    : IFencedLeases
 {
     public async ValueTask<LeaseGrantResult> GrantAsync(
         string kind,
@@ -21,19 +22,47 @@ internal sealed class FencedLeases(LeaseRequestResolver resolver, ILeaseStore st
         var key = resolver.Resolve(kind, resource);
         resolver.ValidateDuration(duration);
 
-        return await store.GrantAsync(key, duration, cancellationToken).ConfigureAwait(false);
+        var result = await store.GrantAsync(key, duration, cancellationToken).ConfigureAwait(false);
+        alerts.OnGranted(result);
+
+        return result;
     }
 
-    public async ValueTask<LeaseRenewalResult> RenewAsync(
+    public ValueTask<LeaseRenewalResult> RenewAsync(
         FencedLease lease,
         TimeSpan duration,
         CancellationToken cancellationToken = default
     )
     {
+        return _RenewAsync(lease, duration, progress: null, cancellationToken);
+    }
+
+    public ValueTask<LeaseRenewalResult> RenewAsync(
+        FencedLease lease,
+        TimeSpan duration,
+        LeaseProgress progress,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(progress);
+
+        return _RenewAsync(lease, duration, progress, cancellationToken);
+    }
+
+    private async ValueTask<LeaseRenewalResult> _RenewAsync(
+        FencedLease lease,
+        TimeSpan duration,
+        LeaseProgress? progress,
+        CancellationToken cancellationToken
+    )
+    {
         var key = LeaseRequestResolver.ResolveLease(lease);
         resolver.ValidateDuration(duration);
+        LeaseRequestResolver.ValidateProgress(progress);
 
-        return await store.RenewAsync(key, lease.Generation, duration, cancellationToken).ConfigureAwait(false);
+        return await store
+            .RenewAsync(key, lease.Generation, duration, progress, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async ValueTask<LeaseSettlementStatus> SettleAsync(
@@ -157,6 +186,9 @@ internal sealed class FencedLeases(LeaseRequestResolver resolver, ILeaseStore st
 
                 return (lease, new LeaseSweepFailure(lease, e));
             }
+
+            // Reported only once the abandonment committed: a claim the handler rolled back never counted.
+            alerts.OnAbandoned(lease);
 
             return (lease, null);
         }
