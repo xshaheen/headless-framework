@@ -45,7 +45,8 @@ public sealed class PrimitiveGenerator : IIncrementalGenerator
             .WithTrackingName(TrackingNames.ParseResults);
 
         var primitivesToGenerate = parseResults
-            .Select(static (x, _) => x.Info)
+            .Where(static x => x.Info is not null)
+            .Select(static (x, _) => x.Info!.Value)
             .WithTrackingName(TrackingNames.Primitives);
 
         var assemblyNames = context

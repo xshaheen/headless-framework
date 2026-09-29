@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Hosting.Options;
@@ -11,7 +12,9 @@ namespace Headless.Hosting.Options;
 /// </remarks>
 /// <typeparam name="TOptions">Options type.</typeparam>
 [PublicAPI]
-public sealed class OptionsSnapshotWrapper<TOptions>(TOptions options) : IOptionsSnapshot<TOptions>
+public sealed class OptionsSnapshotWrapper<
+    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions
+>(TOptions options) : IOptionsSnapshot<TOptions>
     where TOptions : class
 {
     /// <summary>Gets the fixed options value. Always returns the value provided at construction.</summary>

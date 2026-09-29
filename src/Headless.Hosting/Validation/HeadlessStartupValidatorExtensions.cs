@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
 using Headless.Hosting.Validation;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -18,7 +19,9 @@ public static class HeadlessStartupValidatorExtensions
         /// <typeparam name="TValidator">The validator type, constructed by the container.</typeparam>
         /// <returns>The same <see cref="IServiceCollection" /> for chaining.</returns>
         /// <remarks>Idempotent per validator type: a second call for the same type adds nothing.</remarks>
-        public IServiceCollection AddStartupValidator<TValidator>()
+        public IServiceCollection AddStartupValidator<
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TValidator
+        >()
             where TValidator : class, IHeadlessStartupValidator
         {
             return services.AddStartupValidator(typeof(TValidator));
@@ -32,7 +35,9 @@ public static class HeadlessStartupValidatorExtensions
         /// <returns>The same <see cref="IServiceCollection" /> for chaining.</returns>
         /// <remarks>Idempotent per validator type: a second call for the same type adds nothing.</remarks>
         /// <exception cref="ArgumentException"><paramref name="validatorType" /> does not implement <see cref="IHeadlessStartupValidator" />.</exception>
-        public IServiceCollection AddStartupValidator(Type validatorType)
+        public IServiceCollection AddStartupValidator(
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type validatorType
+        )
         {
             Argument.IsNotNull(services);
             Argument.IsNotNull(validatorType);

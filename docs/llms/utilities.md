@@ -151,20 +151,19 @@ Roslyn source generator for creating strongly-typed domain primitives.
 
 Primitive generator diagnostics use the framework-wide `HF` prefix. Existing suppressions for legacy `AL` IDs must move to the corresponding `HF` ID. The former duplicate `AL1012` is split: date-format validation uses `HF1012`, while numeric-operation validation uses `HF1013`.
 
-| ID | Severity | Meaning |
-| --- | --- | --- |
-| `HF1000` | Error | The generator failed with an exception. |
-| `HF1001` | Error | The primitive has an unsupported base type. |
-| `HF1002` | Error | The primitive must be partial. |
-| `HF1003` | Error | The primitive has a non-obsolete default constructor. |
-| `HF1011` | Error | The primitive has a parameterized constructor. |
-| `HF1012` | Error | `SerializationFormatAttribute` requires a date primitive. |
-| `HF1013` | Error | `SupportedOperationsAttribute` requires an operational numeric primitive. |
-| `HF1015` | Warning | A primitive wrapping a value type should be a value type. |
-| `HF1016` | Warning | A primitive wrapping a reference type should be a reference type. |
-| `HF1021` | Warning | Primitive validation throws an incompatible exception type. |
+| ID | Severity | Meaning | Fix |
+| --- | --- | --- | --- |
+| <a id="hf1000"></a>`HF1000` | Error | The generator threw an exception; the message carries it. | Report it as a generator bug with the message. |
+| <a id="hf1001"></a>`HF1001` | Error | The primitive wraps a type the generator does not support, such as a custom class or a nullable value type. Nothing is generated for it. | Wrap a string, `Guid`, `bool`, `char`, numeric, or date and time type, or another primitive. |
+| <a id="hf1002"></a>`HF1002` | Error | The primitive is not declared `partial`. | Add `partial` to the declaration. |
+| <a id="hf1012"></a>`HF1012` | Error | `[SerializationFormat]` is on a primitive that does not wrap `DateTime`, `DateTimeOffset`, `DateOnly`, `TimeOnly`, or `TimeSpan`. The format is ignored. | Remove the attribute, or wrap a date or time type. |
+| <a id="hf1013"></a>`HF1013` | Error | `[SupportedOperations]` is on a primitive that does not wrap a numeric type. The attribute is ignored. | Remove the attribute. |
+| <a id="hf1015"></a>`HF1015` | Warning | A class primitive wraps a value type. | Declare the primitive as a `struct`. |
+| <a id="hf1016"></a>`HF1016` | Warning | A struct primitive wraps a reference type. | Declare the primitive as a `class`. |
 
-`HF1002`, `HF1015`, and `HF1016` are reported on the primitive's type name, so `#pragma warning disable` and `.editorconfig` severity settings apply to them like any compiler diagnostic.
+Every rule is reported on the primitive's type name, or on the offending attribute for `HF1012` and `HF1013`, so `#pragma warning disable` and `.editorconfig` severity settings apply to them like any compiler diagnostic.
+
+`HF1003`, `HF1011`, and `HF1021` are no longer reported. A declared parameterless or value constructor already conflicts with the one the generator emits, and the compiler reports it as `CS0111`. Checking which exception `Validate` throws needs an analyzer over method bodies, which the generator is not.
 
 ### Install
 
@@ -454,6 +453,8 @@ No configuration required.
 ### Runtime behavior
 
 None directly. Utilities for managing service registration.
+
+`Headless.Hosting` declares `IsAotCompatible`. The helpers that construct a type argument (`AddOrReplace*`, `Decorate`, `AddOptions<TOptions, TValidator>`, `Configure<TOption, TOptionValidator>`, `AddSeeder`, `AddStartupValidator`) annotate it with `DynamicallyAccessedMembers`, so trimming keeps the constructor the container calls. The helpers that bind an `IConfiguration` (`GetOptions`, `GetRequired`, and the `Configure*` overloads that take one) or validate with data annotations are marked `[RequiresUnreferencedCode]`, and the binding ones also `[RequiresDynamicCode]`, so a trimmed or native AOT app gets a warning at the call site instead of a failure at startup. In such an app, configure options through the `Action<TOptions>` overloads with FluentValidation.
 ---
 ## Headless.NetTopologySuite
 

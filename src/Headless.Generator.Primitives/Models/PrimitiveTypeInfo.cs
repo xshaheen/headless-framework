@@ -42,10 +42,11 @@ internal readonly record struct PrimitiveTypeInfo(
 );
 
 /// <summary>
-/// What parsing one primitive declaration produced: the data to emit and the diagnostics
+/// What parsing one primitive declaration produced: the data to emit, when the declaration can be generated,
+/// and the diagnostics
 /// found while reading it. Diagnostics travel beside the model so reporting them never forces source to be re-emitted.
 /// </summary>
-internal sealed record PrimitiveParseResult(PrimitiveTypeInfo Info, EquatableArray<DiagnosticInfo> Diagnostics);
+internal sealed record PrimitiveParseResult(PrimitiveTypeInfo? Info, EquatableArray<DiagnosticInfo> Diagnostics);
 
 /// <summary>Info about a parent primitive type in the inheritance chain.</summary>
 [StructLayout(LayoutKind.Auto)]

@@ -8,15 +8,20 @@ public struct NonPartialPrimitive : IPrimitive<int>
 {
 */
  : (5,14)-(5,33),
-      Message: Class must be partial to generate Empty constructor,
+      Message: Primitive 'NonPartialPrimitive' must be declared partial so the generator can add its members,
       Severity: Error,
       Descriptor: {
         Id: HF1002,
-        Title: Class must be partial to generate Empty constructor,
-        MessageFormat: Class must be partial to generate Empty constructor,
+        Title: Primitive must be partial,
+        Description: Primitive '{0}' must be declared partial so the generator can add its members,
+        HelpLink: https://github.com/xshaheen/headless-framework/blob/main/docs/llms/utilities.md#hf1002,
+        MessageFormat: Primitive '{0}' must be declared partial so the generator can add its members,
         Category: Headless.Generator.Primitives,
         DefaultSeverity: Error,
-        IsEnabledByDefault: true
+        IsEnabledByDefault: true,
+        CustomTags: [
+          Telemetry
+        ]
       }
     }
   ]

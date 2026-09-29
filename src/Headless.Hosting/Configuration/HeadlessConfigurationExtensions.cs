@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using FluentValidation;
 using Headless.Checks;
+using Headless.Hosting;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.Configuration;
@@ -17,6 +19,8 @@ public static class HeadlessConfigurationExtensions
         /// <param name="section">The name of the configuration section to bind.</param>
         /// <returns>The bound <typeparamref name="TModel"/> instance.</returns>
         /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
+        [RequiresUnreferencedCode(HostingTrimmingMessages.ConfigurationBinding)]
+        [RequiresDynamicCode(HostingTrimmingMessages.ConfigurationBindingDynamicCode)]
         public TModel GetOptions<TModel>(string section)
             where TModel : new()
         {
@@ -54,6 +58,8 @@ public static class HeadlessConfigurationExtensions
         /// <returns>The bound <typeparamref name="T"/> instance.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="configuration"/> is <see langword="null"/>.</exception>
         /// <exception cref="InvalidOperationException">Thrown when the configuration cannot be bound to <typeparamref name="T"/>.</exception>
+        [RequiresUnreferencedCode(HostingTrimmingMessages.ConfigurationBinding)]
+        [RequiresDynamicCode(HostingTrimmingMessages.ConfigurationBindingDynamicCode)]
         public T GetRequired<T>(Action<BinderOptions>? configureOptions = null)
         {
             Argument.IsNotNull(configuration);
@@ -69,6 +75,8 @@ public static class HeadlessConfigurationExtensions
         /// <returns>The bound <typeparamref name="T"/> instance.</returns>
         /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         /// <exception cref="InvalidOperationException">Thrown when the section cannot be bound to <typeparamref name="T"/>.</exception>
+        [RequiresUnreferencedCode(HostingTrimmingMessages.ConfigurationBinding)]
+        [RequiresDynamicCode(HostingTrimmingMessages.ConfigurationBindingDynamicCode)]
         public T GetRequired<T>(string key, Action<BinderOptions>? configureOptions = null)
         {
             Argument.IsNotNull(configuration);
@@ -90,6 +98,8 @@ public static class HeadlessConfigurationExtensions
         /// <returns>The bound and validated <typeparamref name="TOption"/> instance.</returns>
         /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         /// <exception cref="InvalidOperationException">Thrown when the section is missing or fails validation.</exception>
+        [RequiresUnreferencedCode(HostingTrimmingMessages.ConfigurationBinding)]
+        [RequiresDynamicCode(HostingTrimmingMessages.ConfigurationBindingDynamicCode)]
         public TOption GetRequired<TOption, TValidator>(string key, Action<BinderOptions>? configureOptions = null)
             where TValidator : class, IValidator<TOption>, new()
         {
@@ -118,6 +128,8 @@ public static class HeadlessConfigurationExtensions
         /// <returns>The bound and validated <typeparamref name="TOption"/> instance.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="configuration"/> is <see langword="null"/>.</exception>
         /// <exception cref="InvalidOperationException">Thrown when the configuration cannot be bound or the bound value fails validation.</exception>
+        [RequiresUnreferencedCode(HostingTrimmingMessages.ConfigurationBinding)]
+        [RequiresDynamicCode(HostingTrimmingMessages.ConfigurationBindingDynamicCode)]
         public TOption GetRequired<TOption, TValidator>(Action<BinderOptions>? configureOptions = null)
             where TValidator : class, IValidator<TOption>, new()
         {
