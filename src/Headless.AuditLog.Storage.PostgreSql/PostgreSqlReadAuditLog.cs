@@ -23,23 +23,23 @@ internal sealed class PostgreSqlReadAuditLog<TContext>(
         // One extra row tells whether another page exists without a second count query.
         var parameters = new List<NpgsqlParameter> { _Param("Limit", query.Size + 1) };
 
-        _AddFilter(filters, parameters, @"""Action""=@Action", "Action", query.Action);
-        _AddFilter(filters, parameters, @"""EntityType""=@EntityType", "EntityType", query.EntityType);
-        _AddFilter(filters, parameters, @"""EntityId""=@EntityId", "EntityId", query.EntityId);
-        _AddFilter(filters, parameters, @"""UserId""=@UserId", "UserId", query.UserId);
-        _AddFilter(filters, parameters, @"""AccountId""=@AccountId", "AccountId", query.AccountId);
-        _AddFilter(filters, parameters, @"""TenantId""=@TenantId", "TenantId", query.TenantId);
-        _AddFilter(filters, parameters, @"""CorrelationId""=@CorrelationId", "CorrelationId", query.CorrelationId);
+        _AddFilter(filters, parameters, @"""action""=@Action", "Action", query.Action);
+        _AddFilter(filters, parameters, @"""entity_type""=@EntityType", "EntityType", query.EntityType);
+        _AddFilter(filters, parameters, @"""entity_id""=@EntityId", "EntityId", query.EntityId);
+        _AddFilter(filters, parameters, @"""user_id""=@UserId", "UserId", query.UserId);
+        _AddFilter(filters, parameters, @"""account_id""=@AccountId", "AccountId", query.AccountId);
+        _AddFilter(filters, parameters, @"""tenant_id""=@TenantId", "TenantId", query.TenantId);
+        _AddFilter(filters, parameters, @"""correlation_id""=@CorrelationId", "CorrelationId", query.CorrelationId);
 
         if (query.From is not null)
         {
-            filters.Add(@"""CreatedAt"">=@From");
+            filters.Add(@"""created_at"">=@From");
             parameters.Add(_Param("From", query.From.Value));
         }
 
         if (query.To is not null)
         {
-            filters.Add(@"""CreatedAt""<@To");
+            filters.Add(@"""created_at""<@To");
             parameters.Add(_Param("To", query.To.Value));
         }
 
@@ -47,20 +47,20 @@ internal sealed class PostgreSqlReadAuditLog<TContext>(
 
         if (position is { } after)
         {
-            // A row-value comparison lets PostgreSQL seek the (…, CreatedAt, Id) index to the continuation position.
+            // A row-value comparison lets PostgreSQL seek the (…, created_at, id) index to the continuation position.
             filters.Add(
                 newestFirst
-                    ? @"(""CreatedAt"",""Id"")<(@AfterCreatedAt,@AfterId)"
-                    : @"(""CreatedAt"",""Id"")>(@AfterCreatedAt,@AfterId)"
+                    ? @"(""created_at"",""id"")<(@AfterCreatedAt,@AfterId)"
+                    : @"(""created_at"",""id"")>(@AfterCreatedAt,@AfterId)"
             );
             parameters.Add(_Param("AfterCreatedAt", new DateTimeOffset(after.CreatedAtUtc, TimeSpan.Zero)));
             parameters.Add(_Param("AfterId", after.Id));
         }
 
-        var order = newestFirst ? @"""CreatedAt"" DESC, ""Id"" DESC" : @"""CreatedAt"" ASC, ""Id"" ASC";
+        var order = newestFirst ? @"""created_at"" DESC, ""id"" DESC" : @"""created_at"" ASC, ""id"" ASC";
         var where = filters.Count == 0 ? string.Empty : $" WHERE {string.Join(" AND ", filters)}";
         var sql =
-            $"""SELECT "Id","UserId","AccountId","TenantId","IpAddress","UserAgent","CorrelationId","Action","ChangeType","EntityType","EntityId","OldValues","NewValues","ChangedFields","Success","ErrorCode","CreatedAt" FROM {PostgreSqlAuditLogStorageInitializer.Qualified(storageOptions.Value)}{where} ORDER BY {order} LIMIT @Limit;""";
+            $"""SELECT "id","user_id","account_id","tenant_id","ip_address","user_agent","correlation_id","action","change_type","entity_type","entity_id","old_values","new_values","changed_fields","success","error_code","created_at" FROM {PostgreSqlAuditLogStorageInitializer.Qualified(storageOptions.Value)}{where} ORDER BY {order} LIMIT @Limit;""";
 
         var result = new List<AuditLogEntryData>();
         (DateTime CreatedAtUtc, long Id) last = default;

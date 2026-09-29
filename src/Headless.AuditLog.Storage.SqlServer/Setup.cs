@@ -179,8 +179,10 @@ public static class SetupAuditLogSqlServer
         public SqlServerAuditLogStorageOptionsValidator()
         {
             RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.SqlServer);
-            RuleFor(x => x.TableName).IsValidIdentifierFor(StorageProvider.SqlServer);
-            RuleFor(x => x.TableName).FitsDerivedStorageNames();
+            RuleFor(x => x.TableName)
+                .IsValidIdentifierFor(StorageProvider.SqlServer)
+                .FitsDerivedPostgreSqlNames(AuditLogStorageNames.Indexes)
+                .When(x => x.TableName is not null);
             // SqlServer only supports NvarcharMax; Jsonb/Json are PostgreSQL column types.
             When(
                 x => x.JsonColumnType.HasValue,

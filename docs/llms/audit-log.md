@@ -27,7 +27,7 @@ Code against `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAudit
 - Treat entity policy as tri-state. Explicit inclusion or exclusion wins; an unconfigured entity follows `AuditLogOptions.AuditByDefault`. Owned entries inherit eligibility from their root owner, and derived types inherit the nearest configured base policy unless overridden.
 - Apply property policy in this order: framework default exclusions, explicit `ExcludeFromAudit()`, and `PropertyFilter` veto before sensitive handling. A strategy passed to `IsAuditSensitive(...)` overrides the global `AuditLogOptions.SensitiveDataStrategy`.
 - Register the audit log with exactly one `services.AddHeadlessAuditLog(setup => setup.Use...)` call. Put global audit options in `setup.ConfigureOptions(...)` and storage-table options in `setup.ConfigureStorage(...)`.
-- For EF storage, call `setup.UseEntityFramework<TContext>()`, register the same context with EF Core, register `IDbContextFactory<TContext>` for read-back, and call `modelBuilder.AddHeadlessAuditLog(auditLogStorageOptions)` inside `OnModelCreating`. A startup gate validates this at boot and throws if it is missing.
+- For EF storage, call `setup.UseEntityFramework<TContext>()`, register the same context with EF Core, register `IDbContextFactory<TContext>` for read-back, and call `modelBuilder.AddHeadlessAuditLog(this)` inside `OnModelCreating`, which reads the storage options from the context's services and names every object in the database's convention (snake_case on PostgreSQL, PascalCase elsewhere). A startup gate validates this at boot and throws if it is missing.
 - For raw storage, call `setup.UsePostgreSql(connectionString)` or `setup.UseSqlServer(connectionString)`, or the parameterless `UsePostgreSql()` / `UseSqlServer()` to reuse the connection registered by `AddPostgreSqlSql` / `AddSqlServerSql`; the provider creates the audit table at host startup and writes over its own connection.
 - Raw PostgreSQL and SQL Server packages provide storage only. Automatic change capture and the fluent metadata policy are EF-specific; there is no parallel provider-neutral policy registry.
 - Use `IAuditLog<TContext>` for explicit events (reads, reveals, failures) — do not insert `AuditLogEntry` rows directly. Multi-context applications resolve a distinct logger per owning context via the `TContext` type parameter.
@@ -270,7 +270,7 @@ services.AddHeadlessAuditLog(setup =>
     setup.ConfigureStorage(options =>
     {
         options.Schema = "compliance"; // default: "headless"
-        options.TableName = "audit_log";
+        options.TableName = "compliance_audit"; // default: audit_log_entries on PostgreSQL, AuditLogEntries elsewhere
     });
 
     setup.UseEntityFramework<AppDbContext>();
@@ -286,7 +286,7 @@ Storage options (`AuditLogStorageOptions`):
 | Option | Default | Description |
 |---|---|---|
 | `Schema` | `"headless"` | Database schema name, shared with every Headless feature. See [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features). |
-| `TableName` | `"audit_log"` | Table name, at most 40 characters. The primary key and index names derive from it (`PK_{TableName}`, `ix_{TableName}_tenant_account_time`, and siblings), so two audit tables can share one schema, and the longest derived name must fit PostgreSQL's 63-byte identifier limit. Startup validation rejects a longer name. |
+| `TableName` | `null` (database convention) | Table name. `null` uses `audit_log_entries` on PostgreSQL and `AuditLogEntries` elsewhere; a configured name is used verbatim, at most 40 characters. The primary key and index names derive from it in the database's casing (`pk_{TableName}` and `ix_{TableName}_tenant_account_time` on PostgreSQL, `PK_{TableName}` and `IX_{TableName}_TenantAccountTime` on SQL Server, and siblings), so two audit tables can share one schema. The longest derived PostgreSQL name must fit the 63-byte identifier limit, so startup validation rejects a longer name on every provider. |
 | `JsonColumnType` | `null` (provider default) | Override JSON column type: `Jsonb`, `Json`, or `NvarcharMax`. |
 | `CreatedAtColumnType` | `null` (provider default) | Override the timestamp column DDL type string. |
 | `InitializeOnStartup` | `true` | Set `false` to skip DDL at startup (raw providers only). |
@@ -310,7 +310,8 @@ EF Core storage provider for automatic audit entries and explicit event logging.
 - `EfAuditLogWriter<TContext>` — implements `IAuditLogWriter<TContext>`; saves each entry through a new context from `IDbContextFactory<TContext>`.
 - `EfReadAuditLog<TContext>` — implements `IReadAuditLog<TContext>` using `IDbContextFactory<TContext>` (no-tracking queries).
 - `AuditLogEntry` — EF entity excluded from automatic capture through EF model metadata, preventing recursion when `AuditByDefault` is enabled.
-- `AuditLogModelBuilderExtensions.AddHeadlessAuditLog(modelBuilder, options)` — registers and configures the `AuditLogEntry` entity type; idempotent.
+- `HeadlessAuditLogModelBuilderExtensions.AddHeadlessAuditLog(DbContext)` — registers and configures the `AuditLogEntry` entity type, resolving `AuditLogStorageOptions` from the context's services and the naming style from `Database.ProviderName`; idempotent. The `(AuditLogStorageOptions, StorageNamingStyle)` overload takes both explicitly; pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` so the mapping matches the raw providers.
+- Object names follow the database: on PostgreSQL the table is `audit_log_entries` with snake_case columns (`created_at`, `tenant_id`, …), key `pk_audit_log_entries`, and indexes `ix_audit_log_entries_tenant_time` and siblings; elsewhere the table is `AuditLogEntries` with PascalCase columns, key `PK_AuditLogEntries`, and indexes `IX_AuditLogEntries_TenantTime` and siblings.
 - Composite primary key `(CreatedAt, Id)` for partition-readiness; index set covers tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, tenant+account+time, and correlation ID, each ending in `(CreatedAt, Id)` for keyset paging.
 - A startup validator (`AuditLogEntityStartupValidator`) checks that `AuditLogEntry` was fully configured through `modelBuilder.AddHeadlessAuditLog` and throws with a clear message if the call was omitted, even when the entity was pre-registered.
 
@@ -412,7 +413,7 @@ var page = await readAuditLog.QueryAsync(
 ```csharp
 setup.ConfigureStorage(options =>
 {
-    options.TableName = "audit_entries"; // at most 40 characters
+    options.TableName = "audit_entries"; // optional, used verbatim, at most 40 characters
     options.Schema = "compliance"; // default: "headless"
     options.JsonColumnType = AuditLogJsonColumnType.Jsonb; // optional
     options.CreatedAtColumnType = "timestamp with time zone"; // optional explicit override
@@ -464,7 +465,7 @@ Raw PostgreSQL storage provider for audit rows. No Entity Framework dependency �
 - `jsonb` by default for `OldValues`, `NewValues`, and `ChangedFields`; override via `AuditLogStorageOptions.JsonColumnType` (`Jsonb` or `Json` accepted; `NvarcharMax` rejected at options validation time).
 - `PostgreSqlAuditLogOptions` — `ConnectionString` (required) and `CommandTimeout` (default 30 s).
 - `UsePostgreSql` ships the full provider overload trio: `(string connectionString)`, `(IConfiguration configuration)`, `(Action<PostgreSqlAuditLogOptions>)`, and `(Action<PostgreSqlAuditLogOptions, IServiceProvider>)`, plus a parameterless `UsePostgreSql()` that reads the connection registered by `AddPostgreSqlSql`.
-- Same index set as the EF provider: tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, tenant+account+time, correlation ID, each ending in `(CreatedAt, Id)`.
+- Creates table `audit_log_entries` (unless `TableName` is set) with snake_case columns (`created_at`, `tenant_id`, `old_values`, …), key `pk_{table}`, and the same index set as the EF provider, named `ix_{table}_tenant_time`, `ix_{table}_tenant_action_time`, `ix_{table}_tenant_entity_time`, `ix_{table}_tenant_actor_time`, `ix_{table}_tenant_account_time`, and `ix_{table}_correlation`, each ending in `(created_at, id)`.
 
 ### Design constraints
 
@@ -565,7 +566,7 @@ Raw SQL Server storage provider for audit rows. No Entity Framework dependency �
 - `nvarchar(max)` by default for JSON columns; `NvarcharMax` is the only accepted `AuditLogJsonColumnType` (PostgreSQL-specific types are rejected at options validation time).
 - `SqlServerAuditLogOptions` — `ConnectionString` (required) and `CommandTimeout` (default 30 s).
 - `UseSqlServer` ships the full provider overload trio: `(string connectionString)`, `(IConfiguration configuration)`, `(Action<SqlServerAuditLogOptions>)`, and `(Action<SqlServerAuditLogOptions, IServiceProvider>)`, plus a parameterless `UseSqlServer()` that reads the connection registered by `AddSqlServerSql`.
-- Same index set as the EF provider: tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, tenant+account+time, correlation ID, each ending in `(CreatedAt, Id)`.
+- Creates table `AuditLogEntries` (unless `TableName` is set) with PascalCase columns, key `PK_{table}`, and the same index set as the EF provider, named `IX_{table}_TenantTime`, `IX_{table}_TenantActionTime`, `IX_{table}_TenantEntityTime`, `IX_{table}_TenantActorTime`, `IX_{table}_TenantAccountTime`, and `IX_{table}_Correlation`, each ending in `(CreatedAt, Id)`.
 
 ### Design constraints
 

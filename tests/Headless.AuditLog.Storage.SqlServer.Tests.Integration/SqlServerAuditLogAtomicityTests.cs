@@ -154,8 +154,8 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
         await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             $"""
-            IF EXISTS (SELECT 1 FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = N'{_Schema}' AND t.name = N'audit_log')
-                DROP TABLE [{_Schema}].[audit_log];
+            IF EXISTS (SELECT 1 FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = N'{_Schema}' AND t.name = N'AuditLogEntries')
+                DROP TABLE [{_Schema}].[AuditLogEntries];
             IF EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'{_Schema}')
                 EXEC(N'DROP SCHEMA [{_Schema}]');
             """,
@@ -169,7 +169,7 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
-            $"SELECT COUNT(*) FROM [{_Schema}].[audit_log] WHERE [Action] = @action;",
+            $"SELECT COUNT(*) FROM [{_Schema}].[AuditLogEntries] WHERE [Action] = @action;",
             connection
         );
         command.Parameters.AddWithValue("@action", action);

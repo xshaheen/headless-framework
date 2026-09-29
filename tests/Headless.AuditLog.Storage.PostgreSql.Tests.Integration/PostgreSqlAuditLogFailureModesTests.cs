@@ -79,15 +79,15 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
             var startTasks = hosts.Select(h => h.StartAsync(AbortToken)).ToArray();
             await Task.WhenAll(startTasks);
 
-            // then — all initializers report ready, exactly one audit_log table exists, and the
+            // then — all initializers report ready, exactly one audit_log_entries table exists, and the
             // full 6-index complement is present (regression guard: a swallowed CREATE INDEX
             // failure would otherwise pass the table-count assertion silently).
             hosts
                 .Select(h => h.Services.GetRequiredService<IEnumerable<IInitializer>>().Single().IsInitialized)
                 .Should()
                 .AllSatisfy(initialized => initialized.Should().BeTrue());
-            (await _CountTablesAsync("audit_log_pg_concurrent", "audit_log")).Should().Be(1);
-            (await _CountIndexesAsync("audit_log_pg_concurrent", "audit_log")).Should().Be(6);
+            (await _CountTablesAsync("audit_log_pg_concurrent", "audit_log_entries")).Should().Be(1);
+            (await _CountIndexesAsync("audit_log_pg_concurrent", "audit_log_entries")).Should().Be(6);
         }
         finally
         {
@@ -105,7 +105,7 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
         // both get their indexes when the index names are derived from the table name.
         const string schema = "audit_log_pg_two_tables";
         await _DropSchemaAsync(schema);
-        using var primary = _CreateHost(fixture.ConnectionString, schema, "audit_log");
+        using var primary = _CreateHost(fixture.ConnectionString, schema);
         using var archive = _CreateHost(fixture.ConnectionString, schema, "audit_log_archive");
 
         // when
@@ -113,11 +113,11 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
         await archive.StartAsync(AbortToken);
 
         // then
-        (await _CountTablesAsync(schema, "audit_log"))
+        (await _CountTablesAsync(schema, "audit_log_entries"))
             .Should()
             .Be(1);
         (await _CountTablesAsync(schema, "audit_log_archive")).Should().Be(1);
-        (await _CountIndexesAsync(schema, "audit_log")).Should().Be(6);
+        (await _CountIndexesAsync(schema, "audit_log_entries")).Should().Be(6);
         (await _CountIndexesAsync(schema, "audit_log_archive")).Should().Be(6);
     }
 
@@ -153,7 +153,7 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
     private static IHost _CreateHost(
         string connectionString,
         string schema = "audit_log_pg_failure",
-        string tableName = "audit_log"
+        string? tableName = null
     )
     {
         var builder = Host.CreateApplicationBuilder();
@@ -201,7 +201,7 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         // Matches the 6 `CREATE INDEX IF NOT EXISTS ix_<table>_*` statements in the PG
-        // initializer; the LIKE filter excludes the PK index (named `PK_<table>`).
+        // initializer; the LIKE filter excludes the PK index (named `pk_<table>`).
         await using var command = new NpgsqlCommand(
             """
             SELECT COUNT(*)

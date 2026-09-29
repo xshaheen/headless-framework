@@ -55,7 +55,7 @@ public sealed class PostgreSqlSharedSchemaTests(PostgreSqlSharedSchemaFixture fi
     protected override IReadOnlyDictionary<string, string[]> ExpectedRawTables { get; } =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
-            ["AuditLog"] = ["audit_log"],
+            ["AuditLog"] = ["audit_log_entries"],
             ["Coordination"] = ["coordination_descriptor", "coordination_liveness", "coordination_node_generation"],
             ["DistributedLocks"] = [],
             ["Features"] = ["feature_definitions", "feature_group_definitions", "feature_values"],
@@ -78,7 +78,7 @@ public sealed class PostgreSqlSharedSchemaTests(PostgreSqlSharedSchemaFixture fi
     protected override IReadOnlyDictionary<string, string[]> ExpectedRawSequences { get; } =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
-            ["AuditLog"] = ["audit_log_Id_seq"],
+            ["AuditLog"] = ["audit_log_entries_id_seq"],
             ["DistributedLocks"] = ["headless_distributed_locks_fence"],
             ["Fencing"] = ["fencing_lease_generations"],
             ["Idempotency"] = ["idempotency_record_generations"],

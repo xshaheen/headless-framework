@@ -2,6 +2,7 @@
 
 using FluentValidation;
 using Headless.AuditLog;
+using Headless.Hosting.Initialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -119,15 +120,54 @@ public sealed class AuditLogSetupTests
     }
 
     [Fact]
-    public void should_derive_every_storage_object_name_from_the_table_name()
+    public void should_default_the_table_name_to_each_databases_convention()
     {
-        AuditLogStorageNames.PrimaryKey("audit_log").Should().Be("PK_audit_log");
-        AuditLogStorageNames.TenantTimeIndex("audit_log").Should().Be("ix_audit_log_tenant_time");
-        AuditLogStorageNames.TenantActionTimeIndex("audit_log").Should().Be("ix_audit_log_tenant_action_time");
-        AuditLogStorageNames.TenantEntityTimeIndex("audit_log").Should().Be("ix_audit_log_tenant_entity_time");
-        AuditLogStorageNames.TenantActorTimeIndex("audit_log").Should().Be("ix_audit_log_tenant_actor_time");
-        AuditLogStorageNames.TenantAccountTimeIndex("audit_log").Should().Be("ix_audit_log_tenant_account_time");
-        AuditLogStorageNames.CorrelationIndex("audit_log").Should().Be("ix_audit_log_correlation");
+        // given
+        var options = new AuditLogStorageOptions();
+
+        // when & then
+        options.TableName.Should().BeNull();
+        options.ResolveTableName(StorageNamingStyle.SnakeCase).Should().Be("audit_log_entries");
+        options.ResolveTableName(StorageNamingStyle.PascalCase).Should().Be("AuditLogEntries");
+    }
+
+    [Fact]
+    public void should_use_a_configured_table_name_verbatim_in_every_style()
+    {
+        // given
+        var options = new AuditLogStorageOptions { TableName = "TenantAudit" };
+
+        // when & then
+        options.ResolveTableName(StorageNamingStyle.SnakeCase).Should().Be("TenantAudit");
+        options.ResolveTableName(StorageNamingStyle.PascalCase).Should().Be("TenantAudit");
+    }
+
+    [Fact]
+    public void should_derive_every_storage_object_name_from_the_table_name_in_each_style()
+    {
+        _DerivedNames(StorageNamingStyle.SnakeCase, "audit_log_entries")
+            .Should()
+            .Equal(
+                "pk_audit_log_entries",
+                "ix_audit_log_entries_tenant_time",
+                "ix_audit_log_entries_tenant_action_time",
+                "ix_audit_log_entries_tenant_entity_time",
+                "ix_audit_log_entries_tenant_actor_time",
+                "ix_audit_log_entries_tenant_account_time",
+                "ix_audit_log_entries_correlation"
+            );
+
+        _DerivedNames(StorageNamingStyle.PascalCase, "AuditLogEntries")
+            .Should()
+            .Equal(
+                "PK_AuditLogEntries",
+                "IX_AuditLogEntries_TenantTime",
+                "IX_AuditLogEntries_TenantActionTime",
+                "IX_AuditLogEntries_TenantEntityTime",
+                "IX_AuditLogEntries_TenantActorTime",
+                "IX_AuditLogEntries_TenantAccountTime",
+                "IX_AuditLogEntries_Correlation"
+            );
     }
 
     [Theory]
@@ -144,10 +184,21 @@ public sealed class AuditLogSetupTests
     }
 
     [Fact]
+    public void should_accept_the_default_table_name()
+    {
+        // when
+        var result = new TableNameValidator().Validate(new AuditLogStorageOptions());
+
+        // then
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
     public void should_reject_a_table_name_whose_derived_index_name_exceeds_the_identifier_limit()
     {
         // given — 41 characters push "ix_<table>_tenant_account_time" to 64 bytes.
-        var options = new AuditLogStorageOptions { TableName = new string('a', 41) };
+        var tableName = new string('a', 41);
+        var options = new AuditLogStorageOptions { TableName = tableName };
 
         // when
         var result = new TableNameValidator().Validate(options);
@@ -158,15 +209,29 @@ public sealed class AuditLogSetupTests
             .Errors.Should()
             .ContainSingle()
             .Which.ErrorMessage.Should()
-            .Contain("40 characters")
+            .Contain($"ix_{tableName}_tenant_account_time")
             .And.Contain("63 bytes");
+    }
+
+    private static List<string> _DerivedNames(StorageNamingStyle style, string tableName)
+    {
+        List<string> names = [HeadlessStorageNaming.PrimaryKeyName(style, tableName)];
+
+        foreach (var parts in AuditLogStorageNames.Indexes)
+        {
+            names.Add(HeadlessStorageNaming.IndexName(style, tableName, parts));
+        }
+
+        return names;
     }
 
     private sealed class TableNameValidator : AbstractValidator<AuditLogStorageOptions>
     {
         public TableNameValidator()
         {
-            RuleFor(x => x.TableName).FitsDerivedStorageNames();
+            RuleFor(x => x.TableName)
+                .FitsDerivedPostgreSqlNames(AuditLogStorageNames.Indexes)
+                .When(x => x.TableName is not null);
         }
     }
 
