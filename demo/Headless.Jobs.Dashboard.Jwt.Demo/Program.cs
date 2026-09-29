@@ -44,7 +44,11 @@ builder.Services.AddAuthorizationBuilder().AddPolicy(dashboardPolicy, policy => 
 builder.Services.AddHttpClient();
 
 // Jobs setup — no UseEntityFramework() means in-memory persistence by default
-builder.Services.AddHeadlessJobs(options => options.AddDashboard(d => d.WithHostAuthentication(dashboardPolicy)));
+builder.Services.AddHeadlessJobs(options =>
+    options
+        .AddModule<Headless.Jobs.Dashboard.Jwt.Demo.JobsModule>()
+        .AddDashboard(d => d.WithHostAuthentication(dashboardPolicy))
+);
 
 builder.Services.AddHostedService<DemoJobSeeder>();
 

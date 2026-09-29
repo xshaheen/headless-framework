@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
 using Headless.Security;
 using Headless.Settings;
 using Headless.Settings.Entities;
@@ -100,9 +101,102 @@ public sealed class SettingsStorageOptionsTests
 
         // then
         var resolved = act.Should().NotThrow().Subject;
-        resolved.Schema.Should().Be("settings");
-        resolved.SettingValuesTableName.Should().Be("SettingValues");
-        resolved.SettingDefinitionsTableName.Should().Be("SettingDefinitions");
+        resolved.Schema.Should().Be("headless");
+        resolved.SettingValuesTableName.Should().BeNull();
+        resolved.SettingDefinitionsTableName.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(StorageNamingStyle.PascalCase, "SettingValues", "SettingDefinitions")]
+    [InlineData(StorageNamingStyle.SnakeCase, "setting_values", "setting_definitions")]
+    public void should_resolve_default_table_names_in_the_database_naming_style(
+        StorageNamingStyle style,
+        string valuesTable,
+        string definitionsTable
+    )
+    {
+        // given
+        var options = new SettingsStorageOptions();
+
+        // when / then
+        options.ResolveSettingValuesTableName(style).Should().Be(valuesTable);
+        options.ResolveSettingDefinitionsTableName(style).Should().Be(definitionsTable);
+    }
+
+    [Fact]
+    public void should_resolve_configured_table_names_verbatim_in_every_naming_style()
+    {
+        // given
+        var options = new SettingsStorageOptions
+        {
+            SettingValuesTableName = "MyValues",
+            SettingDefinitionsTableName = "MyDefinitions",
+        };
+
+        // when / then
+        options.ResolveSettingValuesTableName(StorageNamingStyle.SnakeCase).Should().Be("MyValues");
+        options.ResolveSettingDefinitionsTableName(StorageNamingStyle.PascalCase).Should().Be("MyDefinitions");
+    }
+
+    [Fact]
+    public void should_accept_the_snake_case_defaults_when_configured_explicitly()
+    {
+        // given — the conventional names themselves must fit, or the defaults' derived names would be truncated
+        var services = _ServicesWithTableNames("setting_values", "setting_definitions");
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var act = () => provider.GetRequiredService<IOptions<SettingsStorageOptions>>().Value;
+
+        // then
+        act.Should().NotThrow();
+    }
+
+    // The longest derived PostgreSQL names are ix_{values}_name_provider_name_null_provider_key (40 bytes besides the
+    // table) and ix_{definitions}_name (8), so the longest names that fit 63 bytes are 23 and 55 characters.
+    [Theory]
+    [InlineData(23, 1, true)]
+    [InlineData(24, 1, false)]
+    [InlineData(1, 55, true)]
+    [InlineData(1, 56, false)]
+    public void should_refuse_a_table_name_whose_derived_postgresql_names_exceed_63_bytes(
+        int valuesLength,
+        int definitionsLength,
+        bool accepted
+    )
+    {
+        // given
+        var services = _ServicesWithTableNames(new string('v', valuesLength), new string('d', definitionsLength));
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var act = () => provider.GetRequiredService<IOptions<SettingsStorageOptions>>().Value;
+
+        // then
+        if (accepted)
+        {
+            act.Should().NotThrow();
+        }
+        else
+        {
+            act.Should().Throw<OptionsValidationException>().WithMessage("*PostgreSQL truncates identifiers*");
+        }
+    }
+
+    private static ServiceCollection _ServicesWithTableNames(string values, string definitions)
+    {
+        var services = _CreateServicesWithEncryption();
+        services.AddHeadlessSettings(setup =>
+        {
+            setup.ConfigureStorage(options =>
+            {
+                options.SettingValuesTableName = values;
+                options.SettingDefinitionsTableName = definitions;
+            });
+            setup.UseEntityFramework<OptionsTestDbContext>();
+        });
+
+        return services;
     }
 
     [Fact]
@@ -159,7 +253,7 @@ public sealed class SettingsStorageOptionsTests
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessSettings(storageOptions);
+            modelBuilder.AddHeadlessSettings(storageOptions, StorageNamingStyle.PascalCase);
         }
     }
 }

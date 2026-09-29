@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
 using Headless.Security;
 using Headless.Settings;
 using Headless.Settings.Definitions;
@@ -41,7 +42,7 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
         // when
         var valuesTableExists = await _TableExistsAsync(_Schema, _ValuesTableName);
         var definitionsTableExists = await _TableExistsAsync(_Schema, _DefinitionsTableName);
-        var defaultValuesTableExists = await _TableExistsAsync("settings", _ValuesTableName);
+        var defaultValuesTableExists = await _TableExistsAsync("headless", _ValuesTableName);
 
         // then
         valuesTableExists.Should().BeTrue();
@@ -63,11 +64,11 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
 
         // then
         valuesEntity.Should().NotBeNull();
-        valuesEntity!.GetSchema().Should().Be("settings");
-        valuesEntity.GetTableName().Should().Be("SettingValues");
+        valuesEntity!.GetSchema().Should().Be("headless");
+        valuesEntity.GetTableName().Should().Be("setting_values");
         definitionsEntity.Should().NotBeNull();
-        definitionsEntity!.GetSchema().Should().Be("settings");
-        definitionsEntity.GetTableName().Should().Be("SettingDefinitions");
+        definitionsEntity!.GetSchema().Should().Be("headless");
+        definitionsEntity.GetTableName().Should().Be("setting_definitions");
     }
 
     [Fact]
@@ -93,7 +94,7 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
         // then
         storedValue.Should().Be(value);
         (await _TableHasRowsAsync(_Schema, _ValuesTableName)).Should().BeTrue();
-        (await _TableHasRowsAsync("settings", "SettingValues")).Should().BeFalse();
+        (await _TableHasRowsAsync("headless", "setting_values")).Should().BeFalse();
     }
 
     [Fact]
@@ -190,7 +191,7 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
     private DefaultSchemaSettingsContext _CreateDefaultSchemaContext()
     {
         // No ConfigureStorage call → SettingsStorageOptions stays at its defaults
-        // (schema "settings" + default table names).
+        // (schema "headless" + default table names).
         var options = new DbContextOptionsBuilder<DefaultSchemaSettingsContext>()
             .UseNpgsql(Fixture.SqlConnectionString)
             .Options;
@@ -206,7 +207,10 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddHeadlessSettings(storageOptions.Value);
+            modelBuilder.AddHeadlessSettings(
+                storageOptions.Value,
+                HeadlessStorageNaming.ForProvider(Database.ProviderName)
+            );
         }
     }
 
@@ -218,7 +222,10 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddHeadlessSettings(storageOptions.Value);
+            modelBuilder.AddHeadlessSettings(
+                storageOptions.Value,
+                HeadlessStorageNaming.ForProvider(Database.ProviderName)
+            );
         }
     }
 

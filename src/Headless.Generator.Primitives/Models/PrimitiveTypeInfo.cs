@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Immutable;
 using System.Runtime.InteropServices;
+using Headless.SourceGenerators;
 
 namespace Headless.Generator.Primitives.Models;
 
@@ -24,7 +24,7 @@ internal readonly record struct PrimitiveTypeInfo(
     string UnderlyingTypeNamespace,
     bool HasOverriddenHashCode,
     bool HasExplicitToStringMethod,
-    ImmutableArray<ParentPrimitiveInfo> ParentPrimitives,
+    EquatableArray<ParentPrimitiveInfo> ParentPrimitives,
     SupportedOperationsAttributeData? SupportedOperations,
     string? SerializationFormat,
     StringLengthInfo? StringLengthValidation,
@@ -38,10 +38,15 @@ internal readonly record struct PrimitiveTypeInfo(
     bool ImplementsISpanFormattable,
     bool ImplementsIUtf8SpanFormattable,
     bool UnderlyingImplementsIUtf8SpanFormattable,
-    string LocationFilePath,
-    int LocationLineStart,
     string? XmlDocumentation
 );
+
+/// <summary>
+/// What parsing one primitive declaration produced: the data to emit, when the declaration can be generated,
+/// and the diagnostics
+/// found while reading it. Diagnostics travel beside the model so reporting them never forces source to be re-emitted.
+/// </summary>
+internal sealed record PrimitiveParseResult(PrimitiveTypeInfo? Info, EquatableArray<DiagnosticInfo> Diagnostics);
 
 /// <summary>Info about a parent primitive type in the inheritance chain.</summary>
 [StructLayout(LayoutKind.Auto)]

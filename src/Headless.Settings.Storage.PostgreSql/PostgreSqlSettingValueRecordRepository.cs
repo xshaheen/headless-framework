@@ -21,7 +21,7 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
 {
     /// <summary>Comma-separated column list used in SELECT queries for setting value records.</summary>
     private const string _ValueColumns =
-        @"""Id"",""Name"",""Value"",""ProviderName"",""ProviderKey"",""CreatedAt"",""UpdatedAt""";
+        @"""id"",""name"",""value"",""provider_name"",""provider_key"",""created_at"",""updated_at""";
 
     /// <inheritdoc/>
     public async Task<SettingValueRecord?> FindAsync(
@@ -32,7 +32,7 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
     )
     {
         var sql =
-            $"""SELECT {_ValueColumns} FROM {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE "Name"=@Name AND "ProviderName"=@ProviderName AND "ProviderKey" IS NOT DISTINCT FROM @ProviderKey ORDER BY "Id" LIMIT 1;""";
+            $"""SELECT {_ValueColumns} FROM {PostgreSqlSettingsStorageInitializer.ValuesTable(storageOptions.Value)} WHERE "name"=@Name AND "provider_name"=@ProviderName AND "provider_key" IS NOT DISTINCT FROM @ProviderKey ORDER BY "id" LIMIT 1;""";
 
         return
             await _ReadValuesAsync(
@@ -56,23 +56,23 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
         CancellationToken cancellationToken = default
     )
     {
-        var filters = new List<string> { @"""Name""=@Name" };
+        var filters = new List<string> { @"""name""=@Name" };
         var parameters = new List<NpgsqlParameter> { _Param("Name", name) };
 
         if (providerName is not null)
         {
-            filters.Add(@"""ProviderName""=@ProviderName");
+            filters.Add(@"""provider_name""=@ProviderName");
             parameters.Add(_Param("ProviderName", providerName));
         }
 
         if (providerKey is not null)
         {
-            filters.Add(@"""ProviderKey""=@ProviderKey");
+            filters.Add(@"""provider_key""=@ProviderKey");
             parameters.Add(_Param("ProviderKey", providerKey));
         }
 
         var sql =
-            $"SELECT {_ValueColumns} FROM {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE {string.Join(" AND ", filters)};";
+            $"SELECT {_ValueColumns} FROM {PostgreSqlSettingsStorageInitializer.ValuesTable(storageOptions.Value)} WHERE {string.Join(" AND ", filters)};";
 
         return _ReadValuesAsync(sql, cancellationToken, [.. parameters]);
     }
@@ -86,7 +86,7 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
     )
     {
         var sql =
-            $"""SELECT {_ValueColumns} FROM {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE "Name" = ANY(@Names) AND "ProviderName"=@ProviderName AND "ProviderKey" IS NOT DISTINCT FROM @ProviderKey;""";
+            $"""SELECT {_ValueColumns} FROM {PostgreSqlSettingsStorageInitializer.ValuesTable(storageOptions.Value)} WHERE "name" = ANY(@Names) AND "provider_name"=@ProviderName AND "provider_key" IS NOT DISTINCT FROM @ProviderKey;""";
 
         return _ReadValuesAsync(
             sql,
@@ -105,7 +105,7 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
     )
     {
         var sql =
-            $"""SELECT {_ValueColumns} FROM {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE "ProviderName"=@ProviderName AND "ProviderKey" IS NOT DISTINCT FROM @ProviderKey;""";
+            $"""SELECT {_ValueColumns} FROM {PostgreSqlSettingsStorageInitializer.ValuesTable(storageOptions.Value)} WHERE "provider_name"=@ProviderName AND "provider_key" IS NOT DISTINCT FROM @ProviderKey;""";
 
         return _ReadValuesAsync(
             sql,
@@ -200,7 +200,7 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
     private (string Sql, NpgsqlParameter[] Parameters) _InsertStatement(SettingValueRecord setting)
     {
         var sql =
-            $"""INSERT INTO {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} ("Id","Name","Value","ProviderName","ProviderKey","CreatedAt") VALUES (@Id,@Name,@Value,@ProviderName,@ProviderKey,@CreatedAt);""";
+            $"""INSERT INTO {PostgreSqlSettingsStorageInitializer.ValuesTable(storageOptions.Value)} ("id","name","value","provider_name","provider_key","created_at") VALUES (@Id,@Name,@Value,@ProviderName,@ProviderKey,@CreatedAt);""";
 
         // Preserve caller-supplied CreatedAt when present (mirrors the EF path); only stamp from
         // the TimeProvider when the caller left it at default. Tests that pin CreatedAt for
@@ -224,7 +224,7 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
     private (string Sql, NpgsqlParameter[] Parameters) _UpdateStatement(SettingValueRecord setting)
     {
         var sql =
-            $"""UPDATE {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} SET "Value"=@Value,"UpdatedAt"=@UpdatedAt WHERE "Id"=@Id;""";
+            $"""UPDATE {PostgreSqlSettingsStorageInitializer.ValuesTable(storageOptions.Value)} SET "value"=@Value,"updated_at"=@UpdatedAt WHERE "id"=@Id;""";
 
         // Preserve caller-supplied UpdatedAt when present (mirrors the EF path); only stamp from
         // the TimeProvider when the caller left it null/default.
@@ -241,7 +241,7 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
     )
     {
         var sql =
-            $"""DELETE FROM {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE "Id" = ANY(@Ids);""";
+            $"""DELETE FROM {PostgreSqlSettingsStorageInitializer.ValuesTable(storageOptions.Value)} WHERE "id" = ANY(@Ids);""";
 
         return (sql, [_Param("Ids", settings.Select(x => x.Id).ToArray())]);
     }

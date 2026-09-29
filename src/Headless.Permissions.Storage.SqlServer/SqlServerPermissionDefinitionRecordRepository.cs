@@ -20,7 +20,7 @@ internal sealed class SqlServerPermissionDefinitionRecordRepository(
     )
     {
         var sql =
-            $"SELECT [Id],[GroupName],[Name],[ParentName],[DisplayName],[IsEnabled],[Providers],[ExtraProperties] FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionDefinitionsTableName)};";
+            $"SELECT [Id],[GroupName],[Name],[ParentName],[DisplayName],[IsEnabled],[Providers],[ExtraProperties] FROM {SqlServerPermissionsStorageInitializer.DefinitionsTable(storageOptions.Value)};";
 
         var result = new List<PermissionDefinitionRecord>();
         await using var connection = providerOptions.Value.CreateConnection();
@@ -57,7 +57,7 @@ internal sealed class SqlServerPermissionDefinitionRecordRepository(
     )
     {
         var sql =
-            $"SELECT [Id],[Name],[DisplayName],[ExtraProperties] FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGroupDefinitionsTableName)};";
+            $"SELECT [Id],[Name],[DisplayName],[ExtraProperties] FROM {SqlServerPermissionsStorageInitializer.GroupsTable(storageOptions.Value)};";
 
         var result = new List<PermissionGroupDefinitionRecord>();
         await using var connection = providerOptions.Value.CreateConnection();
@@ -233,32 +233,32 @@ internal sealed class SqlServerPermissionDefinitionRecordRepository(
 
     private string _InsertGroupSql()
     {
-        return $"INSERT INTO {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGroupDefinitionsTableName)} ([Id],[Name],[DisplayName],[ExtraProperties]) VALUES (@Id,@Name,@DisplayName,@ExtraProperties);";
+        return $"INSERT INTO {SqlServerPermissionsStorageInitializer.GroupsTable(storageOptions.Value)} ([Id],[Name],[DisplayName],[ExtraProperties]) VALUES (@Id,@Name,@DisplayName,@ExtraProperties);";
     }
 
     private string _UpdateGroupSql()
     {
-        return $"UPDATE {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGroupDefinitionsTableName)} SET [Name]=@Name,[DisplayName]=@DisplayName,[ExtraProperties]=@ExtraProperties WHERE [Id]=@Id;";
+        return $"UPDATE {SqlServerPermissionsStorageInitializer.GroupsTable(storageOptions.Value)} SET [Name]=@Name,[DisplayName]=@DisplayName,[ExtraProperties]=@ExtraProperties WHERE [Id]=@Id;";
     }
 
     private string _DeleteGroupSql()
     {
-        return $"DELETE FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGroupDefinitionsTableName)} WHERE [Id]=@Id;";
+        return $"DELETE FROM {SqlServerPermissionsStorageInitializer.GroupsTable(storageOptions.Value)} WHERE [Id]=@Id;";
     }
 
     private string _InsertPermissionSql()
     {
-        return $"INSERT INTO {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionDefinitionsTableName)} ([Id],[GroupName],[Name],[DisplayName],[IsEnabled],[ParentName],[Providers],[ExtraProperties]) VALUES (@Id,@GroupName,@Name,@DisplayName,@IsEnabled,@ParentName,@Providers,@ExtraProperties);";
+        return $"INSERT INTO {SqlServerPermissionsStorageInitializer.DefinitionsTable(storageOptions.Value)} ([Id],[GroupName],[Name],[DisplayName],[IsEnabled],[ParentName],[Providers],[ExtraProperties]) VALUES (@Id,@GroupName,@Name,@DisplayName,@IsEnabled,@ParentName,@Providers,@ExtraProperties);";
     }
 
     private string _UpdatePermissionSql()
     {
-        return $"UPDATE {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionDefinitionsTableName)} SET [GroupName]=@GroupName,[Name]=@Name,[DisplayName]=@DisplayName,[IsEnabled]=@IsEnabled,[ParentName]=@ParentName,[Providers]=@Providers,[ExtraProperties]=@ExtraProperties WHERE [Id]=@Id;";
+        return $"UPDATE {SqlServerPermissionsStorageInitializer.DefinitionsTable(storageOptions.Value)} SET [GroupName]=@GroupName,[Name]=@Name,[DisplayName]=@DisplayName,[IsEnabled]=@IsEnabled,[ParentName]=@ParentName,[Providers]=@Providers,[ExtraProperties]=@ExtraProperties WHERE [Id]=@Id;";
     }
 
     private string _DeletePermissionSql()
     {
-        return $"DELETE FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionDefinitionsTableName)} WHERE [Id]=@Id;";
+        return $"DELETE FROM {SqlServerPermissionsStorageInitializer.DefinitionsTable(storageOptions.Value)} WHERE [Id]=@Id;";
     }
 
     private ExtraProperties _DeserializeExtraProperties(string json)

@@ -471,8 +471,9 @@ public abstract class JobsOccupiedInstantConformanceTests<TFixture>(TFixture fix
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText =
-            $"SELECT COUNT(*) FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"CronJobId\" = @cronJobId;";
+        command.CommandText = fixture.Sql(
+            $"SELECT COUNT(*) FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"CronJobId\" = @cronJobId;"
+        );
         JobsCoordinationFixtureExtensions.AddParameter(command, "@cronJobId", cronJobId);
 
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Options;
 using Nito.Disposables;
 
@@ -14,7 +15,9 @@ namespace Headless.Hosting.Options;
 /// </remarks>
 /// <typeparam name="TOptions">Options type.</typeparam>
 [PublicAPI]
-public sealed class OptionsMonitorWrapper<TOptions>(TOptions options) : IOptionsMonitor<TOptions>
+public sealed class OptionsMonitorWrapper<
+    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions
+>(TOptions options) : IOptionsMonitor<TOptions>
     where TOptions : class
 {
     /// <summary>Gets the fixed options value. Always returns the value provided at construction.</summary>

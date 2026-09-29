@@ -3,6 +3,7 @@
 using System.Data.Common;
 using System.Globalization;
 using Headless.Coordination;
+using Headless.Hosting.Initialization;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Messaging;
@@ -16,8 +17,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Tests;
 
 /// <summary>
-/// One Testcontainers SQL Server instance shared by every test, backing both the Jobs operational store (schema
-/// <c>jobs</c> in <c>master</c>) and the Coordination SQL Server provider (its own <c>coordination_*</c> tables).
+/// One Testcontainers SQL Server instance shared by every test, backing the Jobs operational store, the Coordination
+/// SQL Server provider, and Messaging storage, all in the shared <c>headless</c> schema in <c>master</c>.
 /// Serialized at the collection level because tests reset the whole database between runs.
 /// </summary>
 [UsedImplicitly]
@@ -27,11 +28,13 @@ public sealed class SqlServerJobsCoordinationFixture
         ICollectionFixture<SqlServerJobsCoordinationFixture>,
         IJobsApplicationConfigurationFixture
 {
-    public string QualifiedTimeJobsTable => "[jobs].[TimeJobs]";
+    public StorageNamingStyle NamingStyle => StorageNamingStyle.PascalCase;
 
-    public string QualifiedCronJobsTable => "[jobs].[CronJobs]";
+    public string QualifiedTimeJobsTable => "[headless].[TimeJobs]";
 
-    public string QualifiedCronJobOccurrencesTable => "[jobs].[CronJobOccurrences]";
+    public string QualifiedCronJobsTable => "[headless].[CronJobs]";
+
+    public string QualifiedCronJobOccurrencesTable => "[headless].[CronJobOccurrences]";
 
     public string QualifyTable(string schema, string table) => $"[{schema}].[{table}]";
 
@@ -45,32 +48,29 @@ public sealed class SqlServerJobsCoordinationFixture
     // PostgreSQL's now() it is evaluated per statement, so it carries no transaction-anchoring hazard.
     public string EfTranslatedDatabaseClockSql => "GETUTCDATE()";
 
-    // SQL Server has no DROP SCHEMA CASCADE. Drop child tables before parents (CronJobOccurrences -> CronJobs),
-    // then the schema, then the Coordination tables. DROP TABLE IF EXISTS is a no-op when the table is absent.
+    // SQL Server has no DROP SCHEMA CASCADE. Drop child tables before parents (CronJobOccurrences -> CronJobs).
+    // The shared headless schema itself stays: the Coordination tables live in it too, and every initializer
+    // creates the schema when missing anyway. DROP TABLE IF EXISTS is a no-op when the table is absent.
     public string ResetSql =>
-        "DROP TABLE IF EXISTS [jobs].[CronJobOccurrences];"
+        "DROP TABLE IF EXISTS [headless].[CronJobOccurrences];"
         + "DROP TABLE IF EXISTS [consumer_jobs].[consumer_time_jobs];"
         + "IF EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'consumer_jobs') DROP SCHEMA [consumer_jobs];"
-        // Stale leftover from a reused container (HeadlessSqlServerFixture.WithReuse(true)) predating a schema no
-        // current Jobs code creates; drop it defensively so a dirty reused container cannot block the schema drop.
-        + "DROP TABLE IF EXISTS [jobs].[TimeJobIdempotencyReservations];"
-        + "DROP TABLE IF EXISTS [jobs].[TimeJobs];"
-        + "DROP TABLE IF EXISTS [jobs].[CronJobs];"
-        + "DROP TABLE IF EXISTS [jobs].[ApplicationProbe];"
-        + "IF EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'jobs') DROP SCHEMA [jobs];"
+        + "DROP TABLE IF EXISTS [headless].[TimeJobIdempotencyReservations];"
+        + "DROP TABLE IF EXISTS [headless].[TimeJobs];"
+        + "DROP TABLE IF EXISTS [headless].[CronJobs];"
+        + "DROP TABLE IF EXISTS [headless].[ApplicationProbe];"
         // The custom-schema conformance scenario maps the whole store into its own schema. SQL Server refuses to drop
         // a schema that still owns objects, so the tables go first, children before parents, exactly as above.
         + _CustomSchemaResetSql
         + _MappedSchemaResetSql
-        + "DROP TABLE IF EXISTS [messaging].[InboxAudit];"
-        + "DROP TABLE IF EXISTS [messaging].[InboxOperationReceipts];"
-        + "DROP TABLE IF EXISTS [messaging].[SchemaState];"
-        + "DROP TABLE IF EXISTS [messaging].[Published];"
-        + "DROP TABLE IF EXISTS [messaging].[Received];"
-        + "IF TYPE_ID(N'messaging.HeadlessMessagingIdList') IS NOT NULL DROP TYPE [messaging].[HeadlessMessagingIdList];"
-        + "IF TYPE_ID(N'messaging.HeadlessMessagingOwnerList') IS NOT NULL DROP TYPE [messaging].[HeadlessMessagingOwnerList];"
-        + "IF TYPE_ID(N'messaging.HeadlessMessagingPoisonMessageList') IS NOT NULL DROP TYPE [messaging].[HeadlessMessagingPoisonMessageList];"
-        + "IF EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'messaging') DROP SCHEMA [messaging];"
+        + "DROP TABLE IF EXISTS [headless].[MessagingInboxAudit];"
+        + "DROP TABLE IF EXISTS [headless].[MessagingInboxOperationReceipts];"
+        + "DROP TABLE IF EXISTS [headless].[MessagingSchemaState];"
+        + "DROP TABLE IF EXISTS [headless].[MessagingPublished];"
+        + "DROP TABLE IF EXISTS [headless].[MessagingReceived];"
+        + "IF TYPE_ID(N'headless.HeadlessMessagingIdList') IS NOT NULL DROP TYPE [headless].[HeadlessMessagingIdList];"
+        + "IF TYPE_ID(N'headless.HeadlessMessagingOwnerList') IS NOT NULL DROP TYPE [headless].[HeadlessMessagingOwnerList];"
+        + "IF TYPE_ID(N'headless.HeadlessMessagingPoisonMessageList') IS NOT NULL DROP TYPE [headless].[HeadlessMessagingPoisonMessageList];"
         + "DROP TABLE IF EXISTS [jobs_probe];"
         + "DROP TABLE IF EXISTS [coordination_liveness];"
         + "DROP TABLE IF EXISTS [coordination_descriptor];"

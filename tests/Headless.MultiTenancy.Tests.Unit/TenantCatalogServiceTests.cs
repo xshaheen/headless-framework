@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.RegularExpressions;
 using Headless.Caching;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
@@ -9,7 +10,7 @@ using NSubstitute.ExceptionExtensions;
 
 namespace Tests;
 
-public sealed class TenantCatalogServiceTests : TestBase
+public sealed partial class TenantCatalogServiceTests : TestBase
 {
     private readonly ITenantStore _store = Substitute.For<ITenantStore>();
     private readonly ICache<TenantIdentifierCacheItem> _identifierCache = Substitute.For<
@@ -443,6 +444,161 @@ public sealed class TenantCatalogServiceTests : TestBase
         storeReads.Should().Be(1);
     }
 
+    [Fact]
+    public async Task should_read_the_store_once_per_caller_when_concurrent_id_lookups_find_the_id_axis_cold()
+    {
+        // given — the id axis keeps read-then-conditional-write (it must never cache an id with no catalog row),
+        // so it has no single-flight: every caller that finds the entry cold reads the store. That fan-out is
+        // intentional; this pins it and proves each caller still gets its own correct instance.
+        const int callerCount = 16;
+        using var backingCache = new InMemoryCache(TimeProvider.System, new InMemoryCacheOptions());
+        var sut = _CreateServiceOver(backingCache);
+        var storeReads = 0;
+        var allCallersInStore = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        async Task<TenantInfo?> readStoreAsync()
+        {
+            if (Interlocked.Increment(ref storeReads) == callerCount)
+            {
+                allCallersInStore.SetResult();
+            }
+
+            await allCallersInStore.Task;
+
+            return new TenantInfo("ten_1", "acme", "Acme", isEnabled: true);
+        }
+
+        _store.FindByIdAsync("ten_1", Arg.Any<CancellationToken>()).Returns(_ => readStoreAsync());
+
+        // when — no caller can leave the store until every caller has entered it, so none can find a warm entry
+        var callers = Enumerable
+            .Range(0, callerCount)
+            .Select(_ => Task.Run(() => sut.FindByIdAsync("ten_1", AbortToken), AbortToken))
+            .ToArray();
+        var tenants = await Task.WhenAll(callers).WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+
+        // then
+        tenants.Should().OnlyContain(tenant => tenant != null && tenant.Id == "ten_1");
+        tenants.Distinct().Should().HaveCount(callerCount);
+        storeReads.Should().Be(callerCount);
+    }
+
+    [Fact]
+    public async Task should_read_the_store_once_per_caller_when_negative_caching_is_disabled_and_the_identifier_is_cold()
+    {
+        // given — UnknownIdentifierCacheExpiration = Zero trades the identifier axis's single-flight away so
+        // unknown identifiers never enter the cache. Concurrent callers on a cold identifier each read the store;
+        // that fan-out is intentional, and this pins it.
+        const int callerCount = 16;
+        _options.UnknownIdentifierCacheExpiration = TimeSpan.Zero;
+        using var backingCache = new InMemoryCache(TimeProvider.System, new InMemoryCacheOptions());
+        var sut = _CreateServiceOver(backingCache);
+        var storeReads = 0;
+        var allCallersInStore = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        async Task<TenantInfo?> readStoreAsync()
+        {
+            if (Interlocked.Increment(ref storeReads) == callerCount)
+            {
+                allCallersInStore.SetResult();
+            }
+
+            await allCallersInStore.Task;
+
+            return new TenantInfo("ten_1", "acme", "Acme", isEnabled: true);
+        }
+
+        _store.FindByIdentifierAsync("acme", Arg.Any<CancellationToken>()).Returns(_ => readStoreAsync());
+
+        // when
+        var callers = Enumerable
+            .Range(0, callerCount)
+            .Select(_ => Task.Run(() => sut.ResolveAsync("acme", AbortToken), AbortToken))
+            .ToArray();
+        var outcomes = await Task.WhenAll(callers).WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+
+        // then
+        outcomes.Should().OnlyContain(outcome => outcome.Kind == TenantResolutionKind.Resolved);
+        storeReads.Should().Be(callerCount);
+    }
+
+    private TenantCatalogService _CreateServiceOver(InMemoryCache backingCache)
+    {
+        return new TenantCatalogService(
+            _store,
+            new Cache<TenantIdentifierCacheItem>(backingCache),
+            new Cache<TenantInfoCacheItem>(backingCache),
+            Options.Create(_options),
+            new TenantCatalogIgnoredIdentifierSet(Options.Create(_options)),
+            NullLogger<TenantCatalogService>.Instance
+        );
+    }
+
+    #endregion
+
+    #region Hostile identifiers under a custom pattern
+
+    // A custom IdentifierPattern can admit characters the default slug rejects, and the identifier is caller
+    // input on the pre-auth path. The cache key is the fixed prefix plus the normalized identifier verbatim.
+
+    [GeneratedRegex(@"^[a-z0-9:*?\[\]._-]+$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
+    private static partial Regex _PermissivePattern { get; }
+
+    [Theory]
+    [InlineData("a:b*[x]")]
+    [InlineData("id:ten_1")]
+    [InlineData("*")]
+    [InlineData("tenancy:catalog:id:ten_1")]
+    public async Task should_key_a_hostile_identifier_as_the_identifier_prefix_plus_the_identifier_verbatim(
+        string identifier
+    )
+    {
+        // given
+        _options.IdentifierPattern = _PermissivePattern;
+        _options.MaxIdentifierLength = TenantCatalogOptions.MaxIdentifierLengthLimit;
+        _store.FindByIdentifierAsync(identifier, AbortToken).Returns((TenantInfo?)null);
+
+        // when
+        await _sut.ResolveAsync(identifier, AbortToken);
+
+        // then — the key never lands in the id-axis keyspace, whatever the identifier looks like
+        var expectedKey = "tenancy:catalog:identifier:" + identifier;
+        await _identifierCache
+            .Received(1)
+            .GetOrAddAsync(expectedKey, _AnyIdentifierFactory(), _ExpectedEntryOptions, Arg.Any<CancellationToken>());
+        expectedKey.Should().NotStartWith("tenancy:catalog:id:");
+    }
+
+    [Fact]
+    public async Task should_key_two_hostile_identifiers_differing_by_one_character_separately()
+    {
+        // given
+        _options.IdentifierPattern = _PermissivePattern;
+        _store.FindByIdentifierAsync(Arg.Any<string>(), AbortToken).Returns((TenantInfo?)null);
+
+        // when
+        await _sut.ResolveAsync("a*b", AbortToken);
+        await _sut.ResolveAsync("a?b", AbortToken);
+
+        // then
+        await _identifierCache
+            .Received(1)
+            .GetOrAddAsync(
+                "tenancy:catalog:identifier:a*b",
+                _AnyIdentifierFactory(),
+                _ExpectedEntryOptions,
+                Arg.Any<CancellationToken>()
+            );
+        await _identifierCache
+            .Received(1)
+            .GetOrAddAsync(
+                "tenancy:catalog:identifier:a?b",
+                _AnyIdentifierFactory(),
+                _ExpectedEntryOptions,
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     #endregion
 
     #region Store fault classification
@@ -461,6 +617,154 @@ public sealed class TenantCatalogServiceTests : TestBase
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("store down");
+    }
+
+    #endregion
+
+    #region Store result verification
+
+    // A store that answers a lookup with a different tenant's row would otherwise have that row cached under the
+    // queried key, routing every later request for that identifier or id to the wrong tenant until expiry. The
+    // service treats the mismatch as a store fault: it propagates, and nothing reaches either cache.
+
+    [Fact]
+    public async Task should_throw_and_cache_nothing_when_the_store_answers_an_identifier_with_another_tenant()
+    {
+        // given
+        _store
+            .FindByIdentifierAsync("acme", AbortToken)
+            .Returns(new TenantInfo("ten_2", "other", "Other", isEnabled: true));
+
+        // when
+        var act = () => _sut.ResolveAsync("acme", AbortToken);
+
+        // then
+        var thrown = await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*identifier*");
+        thrown.Which.Message.Should().NotContain("acme").And.NotContain("other");
+        _writtenIdentifierEntry.Should().BeNull();
+        await _infoCache
+            .DidNotReceive()
+            .UpsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<TenantInfoCacheItem>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_throw_and_cache_nothing_on_an_identifier_mismatch_when_negative_caching_is_disabled()
+    {
+        // given
+        _options.UnknownIdentifierCacheExpiration = TimeSpan.Zero;
+        _store
+            .FindByIdentifierAsync("acme", AbortToken)
+            .Returns(new TenantInfo("ten_2", "other", "Other", isEnabled: true));
+
+        // when
+        var act = () => _sut.ResolveAsync("acme", AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*identifier*");
+        await _identifierCache
+            .DidNotReceive()
+            .UpsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<TenantIdentifierCacheItem>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
+        await _infoCache
+            .DidNotReceive()
+            .UpsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<TenantInfoCacheItem>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_throw_and_cache_nothing_on_an_identifier_mismatch_after_a_cache_read_fault()
+    {
+        // given — the read side faults, so the service falls through to the store outside the factory
+        _identifierCache
+            .GetOrAddAsync(
+                Arg.Any<string>(),
+                _AnyIdentifierFactory(),
+                _ExpectedEntryOptions,
+                Arg.Any<CancellationToken>()
+            )
+            .ThrowsAsync(new InvalidOperationException("cache down"));
+        _store
+            .FindByIdentifierAsync("acme", AbortToken)
+            .Returns(new TenantInfo("ten_2", "other", "Other", isEnabled: true));
+
+        // when
+        var act = () => _sut.ResolveAsync("acme", AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*identifier*");
+        await _identifierCache
+            .DidNotReceive()
+            .UpsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<TenantIdentifierCacheItem>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
+        await _infoCache
+            .DidNotReceive()
+            .UpsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<TenantInfoCacheItem>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_throw_and_cache_nothing_when_the_store_answers_an_id_with_another_tenant()
+    {
+        // given
+        _store.FindByIdAsync("ten_1", AbortToken).Returns(new TenantInfo("ten_2", "other", "Other", isEnabled: true));
+
+        // when
+        var act = () => _sut.FindByIdAsync("ten_1", AbortToken);
+
+        // then
+        var thrown = await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*id*");
+        thrown.Which.Message.Should().NotContain("ten_1").And.NotContain("ten_2");
+        await _infoCache
+            .DidNotReceive()
+            .UpsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<TenantInfoCacheItem>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_throw_when_the_store_answers_a_cached_identifier_mapping_with_another_tenant()
+    {
+        // given — the identifier axis hits and chains into a cold id axis
+        _ArrangeIdentifierCacheHit(new TenantIdentifierCacheItem("ten_1"));
+        _store.FindByIdAsync("ten_1", AbortToken).Returns(new TenantInfo("ten_2", "acme", "Acme", isEnabled: true));
+
+        // when
+        var act = () => _sut.ResolveAsync("acme", AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        await _infoCache
+            .DidNotReceive()
+            .UpsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<TenantInfoCacheItem>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     #endregion

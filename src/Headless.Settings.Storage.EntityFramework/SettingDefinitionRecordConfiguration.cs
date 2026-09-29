@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
 using Headless.Settings.Entities;
+using Headless.Settings.Internal;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -12,14 +14,18 @@ namespace Headless.Settings;
 /// length constraints and a unique index on <c>Name</c>.
 /// </summary>
 /// <param name="options">Storage options that supply the table name and schema.</param>
-internal sealed class SettingDefinitionRecordConfiguration(SettingsStorageOptions options)
+/// <param name="style">The naming style of the database the model targets.</param>
+internal sealed class SettingDefinitionRecordConfiguration(SettingsStorageOptions options, StorageNamingStyle style)
     : IEntityTypeConfiguration<SettingDefinitionRecord>
 {
     /// <inheritdoc/>
     public void Configure(EntityTypeBuilder<SettingDefinitionRecord> b)
     {
-        b.ToTable(options.SettingDefinitionsTableName, options.Schema);
+        var table = options.ResolveSettingDefinitionsTableName(style);
+
+        b.ToTable(table, options.Schema);
         b.TryConfigureExtraProperties();
+        b.HasKey(x => x.Id).HasName(HeadlessStorageNaming.PrimaryKeyName(style, table));
 
         b.Property(x => x.Name).HasMaxLength(SettingDefinitionRecordConstants.NameMaxLength).IsRequired();
         b.Property(x => x.DisplayName).HasMaxLength(SettingDefinitionRecordConstants.DisplayNameMaxLength).IsRequired();
@@ -27,6 +33,9 @@ internal sealed class SettingDefinitionRecordConfiguration(SettingsStorageOption
         b.Property(x => x.DefaultValue).HasMaxLength(SettingDefinitionRecordConstants.DefaultValueMaxLength);
         b.Property(x => x.Providers).HasMaxLength(SettingDefinitionRecordConstants.ProvidersMaxLength);
 
-        b.HasIndex(x => new { x.Name }).IsUnique();
+        b.HasIndex(x => new { x.Name })
+            .IsUnique()
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, SettingsStorageNames.DefinitionsByName));
+        b.ApplyColumnNaming(style);
     }
 }

@@ -1,11 +1,16 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.AuditLog.Internal;
+using Headless.Hosting.Initialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Headless.AuditLog;
 
-internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options)
+/// <summary>Maps <see cref="AuditLogEntry"/> onto the audit-log table in the naming style of the target database.</summary>
+/// <param name="options">Storage options that supply the table name, schema, and column types.</param>
+/// <param name="style">The naming style of the database the model targets.</param>
+internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options, StorageNamingStyle style)
     : IEntityTypeConfiguration<AuditLogEntry>
 {
     private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
@@ -15,12 +20,14 @@ internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options)
         // The storage row must never recursively produce another automatic audit row.
         builder.ExcludeFromAudit();
 
-        builder.ToTable(options.TableName, options.Schema);
+        var table = options.ResolveTableName(style);
+
+        builder.ToTable(table, options.Schema);
 
         // Composite PK for partition-readiness (time-range partitioning by CreatedAt).
         // Note: SQLite does not support autoincrement on composite keys. Consumers
         // targeting SQLite must override the key configuration (e.g. single-column PK on Id).
-        builder.HasKey(e => new { e.CreatedAt, e.Id });
+        builder.HasKey(e => new { e.CreatedAt, e.Id }).HasName(HeadlessStorageNaming.PrimaryKeyName(style, table));
 
         builder.Property(e => e.Id).ValueGeneratedOnAdd();
         builder.Property(e => e.CreatedAt).HasConversion(v => v, v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
@@ -85,7 +92,7 @@ internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options)
                 e.CreatedAt,
                 e.Id,
             })
-            .HasDatabaseName("ix_audit_log_tenant_time");
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, AuditLogStorageNames.TenantTime));
         builder
             .HasIndex(e => new
             {
@@ -94,7 +101,7 @@ internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options)
                 e.CreatedAt,
                 e.Id,
             })
-            .HasDatabaseName("ix_audit_log_tenant_action_time");
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, AuditLogStorageNames.TenantActionTime));
         builder
             .HasIndex(e => new
             {
@@ -104,7 +111,7 @@ internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options)
                 e.CreatedAt,
                 e.Id,
             })
-            .HasDatabaseName("ix_audit_log_tenant_entity_time");
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, AuditLogStorageNames.TenantEntityTime));
         builder
             .HasIndex(e => new
             {
@@ -113,7 +120,7 @@ internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options)
                 e.CreatedAt,
                 e.Id,
             })
-            .HasDatabaseName("ix_audit_log_tenant_actor_time");
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, AuditLogStorageNames.TenantActorTime));
         builder
             .HasIndex(e => new
             {
@@ -122,7 +129,7 @@ internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options)
                 e.CreatedAt,
                 e.Id,
             })
-            .HasDatabaseName("ix_audit_log_tenant_account_time");
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, AuditLogStorageNames.TenantAccountTime));
         builder
             .HasIndex(e => new
             {
@@ -130,6 +137,8 @@ internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options)
                 e.CreatedAt,
                 e.Id,
             })
-            .HasDatabaseName("ix_audit_log_correlation");
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, AuditLogStorageNames.Correlation));
+
+        builder.ApplyColumnNaming(style);
     }
 }

@@ -57,11 +57,11 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
         await connection.ExecuteAsync(
             new CommandDefinition(
                 $"""
-                DROP TABLE IF EXISTS [{_schema}].InboxAudit;
-                DROP TABLE IF EXISTS [{_schema}].InboxOperationReceipts;
-                DROP TABLE IF EXISTS [{_schema}].SchemaState;
-                DROP TABLE IF EXISTS [{_schema}].Published;
-                DROP TABLE IF EXISTS [{_schema}].Received;
+                DROP TABLE IF EXISTS [{_schema}].MessagingInboxAudit;
+                DROP TABLE IF EXISTS [{_schema}].MessagingInboxOperationReceipts;
+                DROP TABLE IF EXISTS [{_schema}].MessagingSchemaState;
+                DROP TABLE IF EXISTS [{_schema}].MessagingPublished;
+                DROP TABLE IF EXISTS [{_schema}].MessagingReceived;
                 DROP TYPE IF EXISTS [{_schema}].HeadlessMessagingIdList;
                 DROP TYPE IF EXISTS [{_schema}].HeadlessMessagingOwnerList;
                 DROP TYPE IF EXISTS [{_schema}].HeadlessMessagingPoisonMessageList;
@@ -81,7 +81,7 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
         await connection.ExecuteAsync(
             new CommandDefinition(
                 $$"""
-                DROP INDEX IF EXISTS [IX_{{_schema}}_Received_InboxRetention] ON {{_table}};
+                DROP INDEX IF EXISTS [IX_MessagingReceived_InboxRetention] ON {{_table}};
                 WITH numbers AS (
                     SELECT TOP (20000) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS i
                     FROM sys.all_objects a CROSS JOIN sys.all_objects b
@@ -137,7 +137,7 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
             .Where(node => string.Equals((string?)node.Attribute("PhysicalOp"), "Index Seek", StringComparison.Ordinal))
             .SelectMany(node => node.Descendants(ns + "Object"))
             .Should()
-            .Contain(node => (string?)node.Attribute("Index") == $"[IX_{_schema}_Received_InboxRetention]");
+            .Contain(node => (string?)node.Attribute("Index") == $"[IX_MessagingReceived_InboxRetention]");
         var baselineRows = _CandidateRowsRead(baseline);
         var indexedRows = _CandidateRowsRead(plan);
         Logger.LogInformation(
@@ -219,8 +219,8 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
         var counts = await connection.QuerySingleAsync<(int Receipts, int Audits)>(
             new CommandDefinition(
                 $"""
-                SELECT (SELECT COUNT(*) FROM [{_schema}].InboxOperationReceipts),
-                    (SELECT COUNT(*) FROM [{_schema}].InboxAudit);
+                SELECT (SELECT COUNT(*) FROM [{_schema}].MessagingInboxOperationReceipts),
+                    (SELECT COUNT(*) FROM [{_schema}].MessagingInboxAudit);
                 """,
                 cancellationToken: AbortToken
             )

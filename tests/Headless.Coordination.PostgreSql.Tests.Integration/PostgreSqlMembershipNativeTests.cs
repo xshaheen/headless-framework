@@ -12,7 +12,7 @@ namespace Tests;
 [Collection<PostgreSqlMembershipFixture>]
 public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture fixture) : TestBase
 {
-    private const string _Schema = CoordinationStorageOptions.DefaultSchema;
+    private const string _Schema = HeadlessStorageDefaults.Schema;
     private const string _GenerationTable = $"\"{_Schema}\".\"coordination_node_generation\"";
     private const string _DescriptorTable = $"\"{_Schema}\".\"coordination_descriptor\"";
     private const string _LivenessTable = $"\"{_Schema}\".\"coordination_liveness\"";

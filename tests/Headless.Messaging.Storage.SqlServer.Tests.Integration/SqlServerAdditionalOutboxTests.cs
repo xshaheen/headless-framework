@@ -23,16 +23,33 @@ public sealed class SqlServerAdditionalOutboxTests(SqlServerTestFixture fixture)
     {
         // Pooled connections of this process still point at the database; drop them before the server drops it.
         SqlConnection.ClearAllPools();
-        await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.ExecuteAsync(
-            $"""
-            IF DB_ID(N'{name}') IS NOT NULL
-            BEGIN
-                ALTER DATABASE [{name}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
-                DROP DATABASE [{name}];
-            END;
-            """
-        );
+
+        // A running relay still polls the database, and forcing it to single-user can deadlock with those
+        // sessions. The drop takes deadlock priority, and a rare victim of it retries.
+        const int deadlockVictim = 1205;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await using var connection = new SqlConnection(fixture.ConnectionString);
+                await connection.ExecuteAsync(
+                    $"""
+                    SET DEADLOCK_PRIORITY HIGH;
+                    IF DB_ID(N'{name}') IS NOT NULL
+                    BEGIN
+                        ALTER DATABASE [{name}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+                        DROP DATABASE [{name}];
+                    END;
+                    """
+                );
+
+                return;
+            }
+            catch (SqlException ex) when (ex.Number == deadlockVictim && attempt < 5)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt));
+            }
+        }
     }
 
     protected override void UseDatabase(DbContextOptionsBuilder options, string connectionString) =>
@@ -51,7 +68,7 @@ public sealed class SqlServerAdditionalOutboxTests(SqlServerTestFixture fixture)
     {
         await using var connection = new SqlConnection(connectionString);
         var rows = await connection.QueryAsync<(string? Content, string StatusName)>(
-            "SELECT [Content], [StatusName] FROM [messaging].[Published];"
+            "SELECT [Content], [StatusName] FROM [headless].[MessagingPublished];"
         );
 
         return rows.Select(row => new PublishedRow(row.Content, row.StatusName)).ToList();
@@ -62,7 +79,7 @@ public sealed class SqlServerAdditionalOutboxTests(SqlServerTestFixture fixture)
         await using var connection = new SqlConnection(connectionString);
 
         return await connection.ExecuteScalarAsync<bool>(
-            "SELECT CAST(CASE WHEN OBJECT_ID(N'messaging.Received', N'U') IS NULL THEN 0 ELSE 1 END AS bit);"
+            "SELECT CAST(CASE WHEN OBJECT_ID(N'headless.MessagingReceived', N'U') IS NULL THEN 0 ELSE 1 END AS bit);"
         );
     }
 }

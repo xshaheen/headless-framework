@@ -8,10 +8,10 @@ namespace Headless.Messaging.Storage.PostgreSql;
 internal sealed partial class PostgreSqlDataStorage : IMessageRevocationStorage
 {
     private const string _ScheduledEligibilityPredicate =
-        $"{_TerminalRowGuardSimple} AND \"InlineAttempts\"=0 AND \"Retries\"=0 AND \"NextRetryAt\" IS NULL";
+        $"{_TerminalRowGuardSimple} AND \"inline_attempts\"=0 AND \"retries\"=0 AND \"next_retry_at\" IS NULL";
 
     private const string _ScheduledPendingPredicate =
-        "\"Version\"=@Version AND \"StatusName\" IN ('Delayed','Queued') AND \"InlineAttempts\"=0 AND \"Retries\"=0 AND \"NextRetryAt\" IS NULL AND \"ExpiresAt\" IS NOT NULL AND \"IntentType\" IN (0, 1)";
+        "\"version\"=@Version AND \"status_name\" IN ('Delayed','Queued') AND \"inline_attempts\"=0 AND \"retries\"=0 AND \"next_retry_at\" IS NULL AND \"expires_at\" IS NOT NULL AND \"intent_type\" IN (0, 1)";
 
     public async ValueTask<MessageRevocationResult> RevokeAsync(
         Guid storageId,
@@ -22,12 +22,12 @@ internal sealed partial class PostgreSqlDataStorage : IMessageRevocationStorage
         var sql = $"""
             WITH revoked AS (
                 DELETE FROM {_publishedTable}
-                WHERE "Id"=@Id AND "Version"=@Version
+                WHERE "id"=@Id AND "version"=@Version
                   AND {_ScheduledEligibilityPredicate}
-                RETURNING "Id"
+                RETURNING "id"
             )
             SELECT CASE WHEN EXISTS (SELECT 1 FROM revoked) THEN 1
-                        WHEN EXISTS (SELECT 1 FROM {_publishedTable} WHERE "Id"=@Id AND "Version"=@Version) THEN 2
+                        WHEN EXISTS (SELECT 1 FROM {_publishedTable} WHERE "id"=@Id AND "version"=@Version) THEN 2
                         ELSE 0 END;
             """;
         await using var connection = postgreSqlOptions.Value.CreateConnection();

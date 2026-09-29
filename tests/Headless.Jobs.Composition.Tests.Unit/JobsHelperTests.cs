@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Json.Serialization;
 using Headless.Jobs;
 
 namespace Tests;
@@ -72,5 +73,45 @@ public sealed class JobsHelperTests
         read.Should().Throw<InvalidOperationException>();
     }
 
-    private sealed record SampleRequest(string Name, int Value);
+    [Fact]
+    public void should_serialize_with_configured_options_that_declare_no_type_info_resolver()
+    {
+        // ConfigureRequestJsonOptions starts from new JsonSerializerOptions(), which has no resolver; metadata lookups
+        // through GetTypeInfo throw on such options unless Jobs fills the resolver in.
+        var options = new JobsRequestSerializationOptions
+        {
+            SerializerOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase },
+        };
+        var request = new SampleRequest("payload", 42);
+
+        var bytes = JobsHelper.CreateJobRequest(request, options);
+
+        JobsHelper.ReadJobRequestAsString(bytes, options).Should().Be("{\"name\":\"payload\",\"value\":42}");
+        JobsHelper.ReadJobRequest<SampleRequest>(bytes, options).Should().Be(request);
+        options.SerializerOptions.IsReadOnly.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_serialize_through_a_source_generated_context_alone()
+    {
+        var sourceGenerated = new JobsRequestSerializationOptions
+        {
+            SerializerOptions = new JsonSerializerOptions { TypeInfoResolver = JobsHelperTestsJsonContext.Default },
+        };
+        var request = new SampleRequest("payload", 42);
+
+        var bytes = JobsHelper.CreateJobRequest(request, sourceGenerated);
+#pragma warning disable CA2263 // The non-generic overload is the one under test: it resolves metadata from a runtime Type.
+        var boxedBytes = JobsHelper.CreateJobRequest(request, typeof(SampleRequest), sourceGenerated);
+#pragma warning restore CA2263
+
+        bytes.Should().Equal(JobsHelper.CreateJobRequest(request, _Options(compressed: false)));
+        boxedBytes.Should().Equal(bytes);
+        JobsHelper.ReadJobRequest<SampleRequest>(bytes, sourceGenerated).Should().Be(request);
+    }
+
+    internal sealed record SampleRequest(string Name, int Value);
 }
+
+[JsonSerializable(typeof(JobsHelperTests.SampleRequest))]
+internal sealed partial class JobsHelperTestsJsonContext : JsonSerializerContext;

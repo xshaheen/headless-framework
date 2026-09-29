@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.SourceGenerators;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Headless.Jobs.SourceGenerator.Validation;
 
@@ -23,36 +23,35 @@ internal static class AttributeValidator
             int? missedRunGraceSeconds,
             int? onOverlap
         ) attributeValues,
-        MethodDeclarationSyntax methodDeclaration,
+        string methodName,
         string className,
         Location attributeLocation,
-        SourceProductionContext context
+        ICollection<DiagnosticInfo> diagnostics
     )
     {
-        // Validate function name
         if (string.IsNullOrWhiteSpace(attributeValues.functionName))
         {
-            context.ReportDiagnostic(
-                Diagnostic.Create(
+            diagnostics.Add(
+                DiagnosticInfo.Create(
                     DiagnosticDescriptors.MissingFunctionName,
                     attributeLocation,
-                    methodDeclaration.Identifier.Text,
+                    methodName,
                     className
                 )
             );
         }
-        // Validate cron expression
+
         JobFunctionValidator.ValidateCronExpression(
             attributeValues.cronExpression,
             className,
             attributeLocation,
-            context
+            diagnostics
         );
 
         if (attributeValues.taskPriority is < 0 or > 3)
         {
-            context.ReportDiagnostic(
-                Diagnostic.Create(
+            diagnostics.Add(
+                DiagnosticInfo.Create(
                     DiagnosticDescriptors.InvalidJobPriority,
                     attributeLocation,
                     attributeValues.taskPriority
@@ -62,8 +61,8 @@ internal static class AttributeValidator
 
         if (attributeValues.maxConcurrency < 0)
         {
-            context.ReportDiagnostic(
-                Diagnostic.Create(
+            diagnostics.Add(
+                DiagnosticInfo.Create(
                     DiagnosticDescriptors.InvalidMaxConcurrency,
                     attributeLocation,
                     attributeValues.maxConcurrency
@@ -73,8 +72,8 @@ internal static class AttributeValidator
 
         if (attributeValues.onMissedRun is not null and not 0 and not 1)
         {
-            context.ReportDiagnostic(
-                Diagnostic.Create(
+            diagnostics.Add(
+                DiagnosticInfo.Create(
                     DiagnosticDescriptors.InvalidMissedRunPolicy,
                     attributeLocation,
                     attributeValues.onMissedRun
@@ -84,8 +83,8 @@ internal static class AttributeValidator
 
         if (attributeValues.missedRunGraceSeconds is <= 0)
         {
-            context.ReportDiagnostic(
-                Diagnostic.Create(
+            diagnostics.Add(
+                DiagnosticInfo.Create(
                     DiagnosticDescriptors.InvalidMissedRunGrace,
                     attributeLocation,
                     attributeValues.missedRunGraceSeconds
@@ -95,8 +94,8 @@ internal static class AttributeValidator
 
         if (attributeValues.onOverlap is not null and not 0 and not 1)
         {
-            context.ReportDiagnostic(
-                Diagnostic.Create(
+            diagnostics.Add(
+                DiagnosticInfo.Create(
                     DiagnosticDescriptors.InvalidOverlapPolicy,
                     attributeLocation,
                     attributeValues.onOverlap

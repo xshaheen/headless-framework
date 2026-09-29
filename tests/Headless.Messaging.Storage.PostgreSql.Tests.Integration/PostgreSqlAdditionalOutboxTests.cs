@@ -41,7 +41,7 @@ public sealed class PostgreSqlAdditionalOutboxTests(PostgreSqlTestFixture fixtur
     {
         await using var connection = new NpgsqlConnection(connectionString);
         var rows = await connection.QueryAsync<(string? Content, string StatusName)>(
-            "SELECT \"Content\", \"StatusName\" FROM messaging.\"published\";"
+            "SELECT \"content\" AS \"Content\", \"status_name\" AS \"StatusName\" FROM headless.\"messaging_published\";"
         );
 
         return rows.Select(row => new PublishedRow(row.Content, row.StatusName)).ToList();
@@ -51,6 +51,8 @@ public sealed class PostgreSqlAdditionalOutboxTests(PostgreSqlTestFixture fixtur
     {
         await using var connection = new NpgsqlConnection(connectionString);
 
-        return await connection.ExecuteScalarAsync<bool>("SELECT to_regclass('messaging.\"received\"') IS NOT NULL;");
+        return await connection.ExecuteScalarAsync<bool>(
+            "SELECT to_regclass('headless.\"messaging_received\"') IS NOT NULL;"
+        );
     }
 }

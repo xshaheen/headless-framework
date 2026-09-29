@@ -47,6 +47,18 @@ public abstract class MetadataTenantConformanceTests<TFixture>(TFixture fixture)
     }
 
     [Fact]
+    public async Task should_return_no_required_tenant_rows_without_tenant_when_read_guard_is_off()
+    {
+        await _SeedAsync("tenant-a");
+        fixture.CurrentTenant.Id = null;
+        await using var scope = fixture.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<MetadataTenantContext>();
+
+        (await db.Set<TenantRow>().ToListAsync(AbortToken)).Should().BeEmpty();
+        (await db.Set<ShadowTenantRow>().ToListAsync(AbortToken)).Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task should_disable_only_tenant_filter_and_keep_sibling_filter_and_guard()
     {
         await _SeedAsync("tenant-a");
@@ -228,7 +240,7 @@ public abstract class MetadataTenantConformanceTests<TFixture>(TFixture fixture)
         await db.Database.OpenConnectionAsync(AbortToken);
         await using var command = db.Database.GetDbConnection().CreateCommand();
         command.CommandText =
-            $"SELECT {sql.DelimitIdentifier("tenant_key")} FROM {sql.DelimitIdentifier("Rows", "tenancy")}";
+            $"SELECT {sql.DelimitIdentifier("tenant_key")} FROM {sql.DelimitIdentifier("Rows", fixture.Placement.Schema)}";
         (await command.ExecuteScalarAsync(AbortToken)).Should().Be("stored:" + tenant);
     }
 
@@ -262,7 +274,11 @@ public abstract class MetadataTenantConformanceTests<TFixture>(TFixture fixture)
         var options = new DbContextOptionsBuilder<MetadataTenantContext>();
         fixture.ConfigureOptions(options);
         options.LogTo(sql.Add, [RelationalEventId.CommandExecuted]);
-        return new MetadataTenantContext(services.GetRequiredService<HeadlessDbContextServices>(), options.Options);
+        return new MetadataTenantContext(
+            services.GetRequiredService<HeadlessDbContextServices>(),
+            options.Options,
+            fixture.Placement
+        );
     }
 
     private async Task<Guid> _SeedAsync(string tenant, bool hidden = false, string? code = null)

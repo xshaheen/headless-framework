@@ -45,7 +45,7 @@ internal sealed class SqlServerSequencesStorageInitializer(IOptions<SqlServerSeq
         // IF NOT EXISTS and the CREATE after it are not atomic, so a foreign process running the same DDL can still
         // win the race; each block absorbs "already exists" (2714, 1913, 2759) because the object exists either way.
         //
-        // The clustered primary key over exactly (tenant_id, name, partition) is load-bearing, not an index choice:
+        // The clustered primary key over exactly (TenantId, Name, Partition) is load-bearing, not an index choice:
         // the increment's HOLDLOCK takes its key-range lock on this index, which is what serializes concurrent first
         // calls on a new key. 128 + 128 + 64 nvarchar characters stay under the 900-byte clustered key limit.
         return $"""

@@ -29,20 +29,20 @@ internal sealed class SqlServerStorageInitializer(
 
     /// <summary>
     /// Returns the fully-qualified SQL Server table name for published outbox messages,
-    /// in the form <c>schema.Published</c>.
+    /// in the form <c>schema.MessagingPublished</c>.
     /// </summary>
     public string GetPublishedTableName()
     {
-        return $"{storageOptions.Value.Schema}.Published";
+        return $"{storageOptions.Value.Schema}.MessagingPublished";
     }
 
     /// <summary>
     /// Returns the fully-qualified SQL Server table name for received outbox messages,
-    /// in the form <c>schema.Received</c>.
+    /// in the form <c>schema.MessagingReceived</c>.
     /// </summary>
     public string GetReceivedTableName()
     {
-        return $"{storageOptions.Value.Schema}.Received";
+        return $"{storageOptions.Value.Schema}.MessagingReceived";
     }
 
     /// <summary>
@@ -185,17 +185,22 @@ internal sealed class SqlServerStorageInitializer(
         [
             _CreateHistoryIndexScript(
                 schema,
-                "InboxOperationReceipts",
-                $"IX_{schema}_InboxReceipts_Type_CreatedAt",
+                "MessagingInboxOperationReceipts",
+                "IX_MessagingInboxOperationReceipts_Type_CreatedAt",
                 "[OperationType],[CreatedAt]"
             ),
             _CreateHistoryIndexScript(
                 schema,
-                "InboxAudit",
-                $"IX_{schema}_InboxAudit_Type_CreatedAt",
+                "MessagingInboxAudit",
+                "IX_MessagingInboxAudit_Type_CreatedAt",
                 "[OperationType],[CreatedAt]"
             ),
-            _CreateHistoryIndexScript(schema, "InboxAudit", $"IX_{schema}_InboxAudit_Operation", "[OperationId]"),
+            _CreateHistoryIndexScript(
+                schema,
+                "MessagingInboxAudit",
+                "IX_MessagingInboxAudit_Operation",
+                "[OperationId]"
+            ),
         ];
     }
 
@@ -215,20 +220,20 @@ internal sealed class SqlServerStorageInitializer(
 
     private string _CreateInboxReadinessScript(string schema)
     {
-        var receivedPrefix = $"{schema}_Received";
+        var receivedPrefix = "MessagingReceived";
 
         return $"""
-            IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxIdentity')
+            IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxIdentity' AND parent_object_id=OBJECT_ID(N'{GetReceivedTableName()}'))
                OR COL_LENGTH(N'{GetReceivedTableName()}',N'LifecycleId') IS NULL
                OR NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxLifecycle' AND parent_object_id=OBJECT_ID(N'{GetReceivedTableName()}'))
-               OR COL_LENGTH(N'{schema}.InboxOperationReceipts',N'ExpectedStatus') IS NULL
-               OR COL_LENGTH(N'{schema}.InboxOperationReceipts',N'Outcome') IS NULL
-               OR COL_LENGTH(N'{schema}.InboxOperationReceipts',N'TargetKind') IS NULL
-               OR COL_LENGTH(N'{schema}.InboxOperationReceipts',N'ExpectedDueAt') IS NULL
-               OR COL_LENGTH(N'{schema}.InboxAudit',N'TargetKind') IS NULL
+               OR COL_LENGTH(N'{schema}.MessagingInboxOperationReceipts',N'ExpectedStatus') IS NULL
+               OR COL_LENGTH(N'{schema}.MessagingInboxOperationReceipts',N'Outcome') IS NULL
+               OR COL_LENGTH(N'{schema}.MessagingInboxOperationReceipts',N'TargetKind') IS NULL
+               OR COL_LENGTH(N'{schema}.MessagingInboxOperationReceipts',N'ExpectedDueAt') IS NULL
+               OR COL_LENGTH(N'{schema}.MessagingInboxAudit',N'TargetKind') IS NULL
                 THROW 50004, N'Headless.Messaging inbox schema is incomplete: the lifecycle, retention or operation receipt contract is missing.', 1;
 
-            MERGE [{schema}].[SchemaState] WITH (HOLDLOCK) AS target
+            MERGE [{schema}].[MessagingSchemaState] WITH (HOLDLOCK) AS target
             USING (SELECT N'inbox' AS [Component], 1 AS [SchemaVersion], SYSDATETIMEOFFSET() AS [ReadyAt]) AS source
             ON target.[Component]=source.[Component]
             WHEN MATCHED THEN UPDATE SET [SchemaVersion]=source.[SchemaVersion],[ReadyAt]=source.[ReadyAt]
@@ -243,15 +248,16 @@ internal sealed class SqlServerStorageInitializer(
         // duplicate-object/duplicate-key errors that fire only under a TOCTOU race between concurrent
         // initializers (e.g., simultaneous pod startup). Any other error is rethrown.
         //   2714 — "There is already an object named '...' in the database." (schema/table races)
+        //   2759 — "CREATE SCHEMA failed due to previous errors." (how CREATE SCHEMA reports the 2714)
         //   1913 — index already exists (index creation races)
         //   2627 — "Violation of PRIMARY KEY constraint." (lock-row INSERT races)
         // An additional outbox gets the schema, the table types, and its published table only; see OutboxOnly.
         // The caller holds the session init lock for this script, the history-index builds, and readiness.
         return OutboxOnly
-            ? _CreateSchemaScript(schema) + _CreatePublishedTableScript(schema)
+            ? _CreateSchemaScript(schema) + _CreatePublishedTableScript()
             : _CreateSchemaScript(schema)
                 + _CreateReceivedTableScript(schema)
-                + _CreatePublishedTableScript(schema)
+                + _CreatePublishedTableScript()
                 + _CreateInboxHistoryTablesScript(schema);
     }
 
@@ -268,7 +274,7 @@ internal sealed class SqlServerStorageInitializer(
                 END;
             END TRY
             BEGIN CATCH
-                IF ERROR_NUMBER() <> 2714 THROW;
+                IF ERROR_NUMBER() NOT IN (2714, 2759) THROW;
             END CATCH;
 
             BEGIN TRY
@@ -302,19 +308,19 @@ internal sealed class SqlServerStorageInitializer(
         );
     }
 
-    // The inbox version guard and the received table. Use underscore instead of period in constraint/index names for Azure SQL Edge compatibility.
+    // The inbox version guard and the received table. Constraint names are unique per schema, so the table name alone keeps them distinct.
     private string _CreateReceivedTableScript(string schema)
     {
-        var receivedPrefix = $"{schema}_Received";
+        const string receivedPrefix = "MessagingReceived";
 
         return string.Create(
             CultureInfo.InvariantCulture,
             $"""
-            IF OBJECT_ID(N'{schema}.SchemaState',N'U') IS NOT NULL
+            IF OBJECT_ID(N'{schema}.MessagingSchemaState',N'U') IS NOT NULL
                 EXEC(N'
-                    IF EXISTS (SELECT 1 FROM [{schema}].[SchemaState] WHERE [Component]=N''inbox'' AND [SchemaVersion] > 1)
+                    IF EXISTS (SELECT 1 FROM [{schema}].[MessagingSchemaState] WHERE [Component]=N''inbox'' AND [SchemaVersion] > 1)
                         THROW 50003, N''Headless.Messaging inbox schema is newer than supported version 1. Upgrade the application before starting this binary.'', 1;
-                    DELETE FROM [{schema}].[SchemaState] WHERE [Component]=N''inbox'';
+                    DELETE FROM [{schema}].[MessagingSchemaState] WHERE [Component]=N''inbox'';
                 ');
 
             BEGIN TRY
@@ -378,7 +384,8 @@ internal sealed class SqlServerStorageInitializer(
                 IF ERROR_NUMBER() <> 2714 THROW;
             END CATCH;
 
-            IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_{receivedPrefix}_InboxIdentity')
+            IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_{receivedPrefix}_InboxIdentity'
+                AND parent_object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
                 EXEC(N'ALTER TABLE {GetReceivedTableName()} ADD CONSTRAINT [CK_{receivedPrefix}_InboxIdentity] CHECK (
                     [IsInboxRecord]=0 OR (
                         [Generation]>=0 AND [InboxRetentionSeconds] BETWEEN 1 AND 2147483647 AND [GenerationIncarnationId] IS NOT NULL AND [InboxKeyHash] IS NOT NULL
@@ -485,9 +492,9 @@ internal sealed class SqlServerStorageInitializer(
     }
 
     // The published (outbox) table and its indexes.
-    private string _CreatePublishedTableScript(string schema)
+    private string _CreatePublishedTableScript()
     {
-        var publishedPrefix = $"{schema}_Published";
+        const string publishedPrefix = "MessagingPublished";
 
         return string.Create(
             CultureInfo.InvariantCulture,
@@ -568,11 +575,11 @@ internal sealed class SqlServerStorageInitializer(
     private static string _CreateInboxHistoryTablesScript(string schema)
     {
         return $"""
-            IF OBJECT_ID(N'{schema}.InboxOperationReceipts',N'U') IS NULL
+            IF OBJECT_ID(N'{schema}.MessagingInboxOperationReceipts',N'U') IS NULL
             BEGIN
-                CREATE TABLE [{schema}].[InboxOperationReceipts](
+                CREATE TABLE [{schema}].[MessagingInboxOperationReceipts](
                     [OperationId] [uniqueidentifier] NOT NULL,
-                    [TargetKind] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{schema}_InboxOperationReceipts_TargetKind] DEFAULT N'Inbox',
+                    [TargetKind] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_MessagingInboxOperationReceipts_TargetKind] DEFAULT N'Inbox',
                     [GenerationIncarnationId] [uniqueidentifier] NULL,
                     [OperationType] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
                     [ExpectedStatus] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NULL,
@@ -588,39 +595,39 @@ internal sealed class SqlServerStorageInitializer(
                     [ChildGeneration] [bigint] NULL,
                     [ChildIncarnationId] [uniqueidentifier] NULL,
                     [CreatedAt] [datetimeoffset](7) NOT NULL,
-                    CONSTRAINT [PK_{schema}_InboxOperationReceipts] PRIMARY KEY CLUSTERED ([OperationId])
+                    CONSTRAINT [PK_MessagingInboxOperationReceipts] PRIMARY KEY CLUSTERED ([OperationId])
                 );
             END;
 
-            IF OBJECT_ID(N'{schema}.InboxAudit',N'U') IS NULL
+            IF OBJECT_ID(N'{schema}.MessagingInboxAudit',N'U') IS NULL
             BEGIN
-                CREATE TABLE [{schema}].[InboxAudit](
+                CREATE TABLE [{schema}].[MessagingInboxAudit](
                     [AuditId] [uniqueidentifier] NOT NULL,
                     [OperationId] [uniqueidentifier] NOT NULL,
-                    [TargetKind] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{schema}_InboxAudit_TargetKind] DEFAULT N'Inbox',
+                    [TargetKind] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_MessagingInboxAudit_TargetKind] DEFAULT N'Inbox',
                     [GenerationIncarnationId] [uniqueidentifier] NULL,
                     [OperationType] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
                     [Actor] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL,
                     [Reason] [nvarchar](1000) NOT NULL,
                     [Outcome] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
                     [CreatedAt] [datetimeoffset](7) NOT NULL,
-                    CONSTRAINT [PK_{schema}_InboxAudit] PRIMARY KEY CLUSTERED ([AuditId]),
-                    CONSTRAINT [FK_{schema}_InboxAudit_Operation] FOREIGN KEY ([OperationId])
-                        REFERENCES [{schema}].[InboxOperationReceipts]([OperationId]) ON DELETE NO ACTION
+                    CONSTRAINT [PK_MessagingInboxAudit] PRIMARY KEY CLUSTERED ([AuditId]),
+                    CONSTRAINT [FK_MessagingInboxAudit_Operation] FOREIGN KEY ([OperationId])
+                        REFERENCES [{schema}].[MessagingInboxOperationReceipts]([OperationId]) ON DELETE NO ACTION
                 );
             END;
 
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_{schema}_InboxAudit_Incarnation_CreatedAt' AND object_id=OBJECT_ID(N'{schema}.InboxAudit'))
-                CREATE NONCLUSTERED INDEX [IX_{schema}_InboxAudit_Incarnation_CreatedAt]
-                    ON [{schema}].[InboxAudit] ([GenerationIncarnationId],[CreatedAt]);
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=N'IX_MessagingInboxAudit_Incarnation_CreatedAt' AND object_id=OBJECT_ID(N'{schema}.MessagingInboxAudit'))
+                CREATE NONCLUSTERED INDEX [IX_MessagingInboxAudit_Incarnation_CreatedAt]
+                    ON [{schema}].[MessagingInboxAudit] ([GenerationIncarnationId],[CreatedAt]);
 
-            IF OBJECT_ID(N'{schema}.SchemaState',N'U') IS NULL
+            IF OBJECT_ID(N'{schema}.MessagingSchemaState',N'U') IS NULL
             BEGIN
-                CREATE TABLE [{schema}].[SchemaState](
+                CREATE TABLE [{schema}].[MessagingSchemaState](
                     [Component] [nvarchar](50) COLLATE Latin1_General_100_BIN2 NOT NULL,
                     [SchemaVersion] [int] NOT NULL,
                     [ReadyAt] [datetimeoffset](7) NOT NULL,
-                    CONSTRAINT [PK_{schema}_SchemaState] PRIMARY KEY CLUSTERED ([Component])
+                    CONSTRAINT [PK_MessagingSchemaState] PRIMARY KEY CLUSTERED ([Component])
                 );
             END;
 
