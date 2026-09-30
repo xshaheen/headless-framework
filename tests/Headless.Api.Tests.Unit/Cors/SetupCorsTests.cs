@@ -38,7 +38,7 @@ public sealed class SetupCorsTests : TestBase
         policy.AllowAnyOrigin.Should().BeFalse();
         policy.Headers.Should().Equal("Content-Type");
         policy.Methods.Should().Equal("GET");
-        policy.ExposedHeaders.Should().Equal("ETag");
+        policy.ExposedHeaders.Should().BeEquivalentTo(HeadlessCorsOptions.FrameworkExposedHeaders);
         policy.PreflightMaxAge.Should().Be(TimeSpan.FromMinutes(10));
 
         policy.IsOriginAllowed("https://app.example.com").Should().BeTrue();
@@ -62,6 +62,24 @@ public sealed class SetupCorsTests : TestBase
         policy.AllowAnyHeader.Should().BeTrue();
         policy.AllowAnyMethod.Should().BeTrue();
         policy.PreflightMaxAge.Should().BeNull();
+        policy.ExposedHeaders.Should().BeEquivalentTo(HeadlessCorsOptions.FrameworkExposedHeaders);
+    }
+
+    [Fact]
+    public async Task should_expose_only_the_listed_headers_when_framework_headers_are_turned_off()
+    {
+        var policy = await _GetPolicyAsync(
+            HeadlessCorsConstants.RestrictedCors,
+            services =>
+                services.AddHeadlessCors(options =>
+                {
+                    options.AllowedOrigins = ["https://app.example.com"];
+                    options.ExposeFrameworkHeaders = false;
+                    options.ExposedHeaders = ["Link"];
+                })
+        );
+
+        policy.ExposedHeaders.Should().Equal("Link");
     }
 
     [Fact]
@@ -70,18 +88,21 @@ public sealed class SetupCorsTests : TestBase
         var policy = await _GetPolicyAsync(
             HeadlessCorsConstants.AllowAnyCors,
             services =>
+            {
+                _AddEnvironment(services, Environments.Development);
                 services.AddHeadlessAllowAnyCors(options =>
                 {
                     options.ExposedHeaders = ["ETag", "Link"];
                     options.MaxAge = TimeSpan.FromMinutes(10);
-                })
+                });
+            }
         );
 
         policy.AllowAnyOrigin.Should().BeTrue();
         policy.SupportsCredentials.Should().BeFalse();
         policy.AllowAnyHeader.Should().BeTrue();
         policy.AllowAnyMethod.Should().BeTrue();
-        policy.ExposedHeaders.Should().Equal("ETag", "Link");
+        policy.ExposedHeaders.Should().BeEquivalentTo([.. HeadlessCorsOptions.FrameworkExposedHeaders, "Link"]);
         policy.PreflightMaxAge.Should().Be(TimeSpan.FromMinutes(10));
     }
 
@@ -102,6 +123,7 @@ public sealed class SetupCorsTests : TestBase
                 options =>
                 {
                     options.AllowAnyOrigin = true;
+                    options.AllowAnyOriginOutsideDevelopment = true;
                     options.AllowedMethods = ["GET"];
                 }
             )
@@ -125,11 +147,20 @@ public sealed class SetupCorsTests : TestBase
     }
 
     [Fact]
-    public async Task should_merge_repeated_registrations_of_one_policy_and_report_each_failure_once()
+    public void should_reject_a_second_registration_of_one_policy()
+    {
+        var services = new ServiceCollection().AddHeadlessCors(options => options.AllowCredentials = true);
+
+        var act = () => services.AddHeadlessCors(options => options.MaxAge = TimeSpan.FromMinutes(1));
+
+        act.Should().Throw<InvalidOperationException>().WithMessage($"*'{HeadlessCorsConstants.RestrictedCors}'*");
+    }
+
+    [Fact]
+    public async Task should_report_each_failure_of_an_invalid_policy_once()
     {
         await using var provider = new ServiceCollection()
             .AddHeadlessCors(options => options.AllowCredentials = true)
-            .AddHeadlessCors(options => options.MaxAge = TimeSpan.FromMinutes(1))
             .BuildServiceProvider();
 
         var act = () => provider.GetRequiredService<IOptions<CorsOptions>>().Value;
@@ -161,6 +192,7 @@ public sealed class SetupCorsTests : TestBase
                     ["AllowedOriginTemplates:0"] = "https://*.example.com",
                     ["AllowCredentials"] = "true",
                     ["MaxAge"] = "00:05:00",
+                    ["ExposeFrameworkHeaders"] = "false",
                     ["HasOriginSource"] = "true",
                 }
             )
@@ -175,6 +207,7 @@ public sealed class SetupCorsTests : TestBase
         options.AllowedOriginTemplates.Should().Equal("https://*.example.com");
         options.AllowCredentials.Should().BeTrue();
         options.MaxAge.Should().Be(TimeSpan.FromMinutes(5));
+        options.ExposeFrameworkHeaders.Should().BeFalse();
         options
             .HasOriginSource.Should()
             .BeFalse("configuration must not claim an origin source that is not registered");
@@ -185,23 +218,43 @@ public sealed class SetupCorsTests : TestBase
     {
         var policy = await _GetPolicyAsync(
             HeadlessCorsConstants.RestrictedCors,
-            services => services.AddHeadlessCorsOriginSource<ApproveNothingSource>()
+            services => services.AddHeadlessCors(_ => { }).AddHeadlessCorsOriginSource<ApproveNothingSource>()
         );
 
         policy.Origins.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task should_fail_an_any_origin_policy_in_production_without_confirmation()
+    public async Task should_decorate_the_policy_provider_once_for_several_sources()
+    {
+        await using var provider = new ServiceCollection()
+            .AddHeadlessCorsOriginSource<ApproveNothingSource>()
+            .AddHeadlessCorsOriginSource<ApproveNothingSource>("admin")
+            .BuildServiceProvider();
+
+        provider.GetRequiredService<ICorsPolicyProvider>().Should().BeOfType<HeadlessCorsPolicyProvider>();
+    }
+
+    [Theory]
+    [InlineData("Production")]
+    [InlineData("Staging")]
+    [InlineData("prod-eu")]
+    [InlineData(null)]
+    public async Task should_fail_an_unconfirmed_any_origin_policy_outside_development(string? environment)
     {
         var services = new ServiceCollection();
-        services.AddSingleton<IHostEnvironment>(new HostingEnvironment { EnvironmentName = Environments.Production });
+
+        if (environment is not null)
+        {
+            _AddEnvironment(services, environment);
+        }
+
         services.AddHeadlessAllowAnyCors();
         await using var provider = services.BuildServiceProvider();
 
         var act = () => provider.GetRequiredService<IOptions<CorsOptions>>().Value;
 
-        act.Should().Throw<OptionsValidationException>().WithMessage("*AllowAnyOriginInProduction*");
+        act.Should().Throw<OptionsValidationException>().WithMessage("*AllowAnyOriginOutsideDevelopment*");
     }
 
     [Fact]
@@ -211,10 +264,8 @@ public sealed class SetupCorsTests : TestBase
             HeadlessCorsConstants.AllowAnyCors,
             services =>
             {
-                services.AddSingleton<IHostEnvironment>(
-                    new HostingEnvironment { EnvironmentName = Environments.Production }
-                );
-                services.AddHeadlessAllowAnyCors(options => options.AllowAnyOriginInProduction = true);
+                _AddEnvironment(services, Environments.Production);
+                services.AddHeadlessAllowAnyCors(options => options.AllowAnyOriginOutsideDevelopment = true);
             }
         );
 
@@ -227,6 +278,11 @@ public sealed class SetupCorsTests : TestBase
         var act = () => new ServiceCollection().AddHeadlessCors(" ", _ => { });
 
         act.Should().Throw<ArgumentException>();
+    }
+
+    private static void _AddEnvironment(IServiceCollection services, string environment)
+    {
+        services.AddSingleton<IHostEnvironment>(new HostingEnvironment { EnvironmentName = environment });
     }
 
     private static async Task<CorsPolicy> _GetPolicyAsync(string name, Action<IServiceCollection> register)

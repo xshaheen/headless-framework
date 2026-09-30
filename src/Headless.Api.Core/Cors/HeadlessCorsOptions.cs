@@ -1,12 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Headless.Constants;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Net.Http.Headers;
 
 namespace Headless.Api.Cors;
 
 /// <summary>
-/// Configures one named CORS policy registered by <c>AddHeadlessCors</c> or <c>AddHeadlessAllowAnyCors</c>.
+/// Configures one named CORS policy registered from options by <c>AddHeadlessCors</c> or
+/// <c>AddHeadlessAllowAnyCors</c>. A policy written in code with ASP.NET Core's <c>AddCors</c> needs none of this.
 /// </summary>
 /// <remarks>
 /// A policy either names the origins it allows (<see cref="AllowedOrigins"/>, <see cref="AllowedOriginTemplates"/>,
@@ -17,6 +20,21 @@ namespace Headless.Api.Cors;
 [PublicAPI]
 public sealed class HeadlessCorsOptions
 {
+    /// <summary>
+    /// The response headers the framework itself sends that browser scripts cannot read cross-origin unless exposed:
+    /// <c>ETag</c> for optimistic concurrency, <c>Location</c> for created resources, <c>Retry-After</c> on rate
+    /// limiting, <c>Content-Disposition</c> on file downloads, and <c>Idempotent-Replayed</c> on replayed requests.
+    /// Pass them to <c>CorsPolicyBuilder.WithExposedHeaders</c> when writing a policy with <c>AddCors</c>.
+    /// </summary>
+    public static IReadOnlyList<string> FrameworkExposedHeaders { get; } =
+    [
+        HeaderNames.ETag,
+        HeaderNames.Location,
+        HeaderNames.RetryAfter,
+        HeaderNames.ContentDisposition,
+        HttpHeaderNames.IdempotentReplayed,
+    ];
+
     /// <summary>
     /// Exact origins allowed to call the API, such as <c>https://app.example.com</c>, <c>http://localhost:8081</c>
     /// (an Expo web dev server), or a hybrid mobile webview origin such as <c>capacitor://localhost</c>. Each is a
@@ -37,16 +55,18 @@ public sealed class HeadlessCorsOptions
     /// <summary>
     /// Allows every origin. Credentials are then never allowed, and <see cref="AllowedOrigins"/>,
     /// <see cref="AllowedOriginTemplates"/>, and an <see cref="ICorsOriginSource"/> must not be configured. Startup
-    /// fails in the Production environment unless <see cref="AllowAnyOriginInProduction"/> is also true.
+    /// fails in every environment other than Development unless <see cref="AllowAnyOriginOutsideDevelopment"/> is
+    /// also true.
     /// </summary>
     public bool AllowAnyOrigin { get; set; }
 
     /// <summary>
-    /// Confirms that an <see cref="AllowAnyOrigin"/> policy is meant to run in Production, such as a public API that
-    /// any site may call without credentials. Default <see langword="false"/>, so a development policy left in a
-    /// production pipeline fails at startup instead of silently opening the API to every site.
+    /// Confirms that an <see cref="AllowAnyOrigin"/> policy is meant to run outside Development, such as a public API
+    /// that any site may call without credentials. Default <see langword="false"/>, so a development policy that
+    /// reaches Staging, Production, or an environment with a custom name fails at startup instead of silently
+    /// opening the API to every site.
     /// </summary>
-    public bool AllowAnyOriginInProduction { get; set; }
+    public bool AllowAnyOriginOutsideDevelopment { get; set; }
 
     /// <summary>
     /// Whether browsers may send cookies and HTTP authentication on cross-origin requests and read the response.
@@ -64,8 +84,18 @@ public sealed class HeadlessCorsOptions
     /// </summary>
     public List<string> AllowedMethods { get; set; } = [];
 
-    /// <summary>Response headers, beyond the CORS-safelisted ones, that browser scripts may read.</summary>
+    /// <summary>
+    /// Response headers, beyond the CORS-safelisted ones and <see cref="FrameworkExposedHeaders"/>, that browser
+    /// scripts may read.
+    /// </summary>
     public List<string> ExposedHeaders { get; set; } = [];
+
+    /// <summary>
+    /// Whether the policy also exposes <see cref="FrameworkExposedHeaders"/>. Default <see langword="true"/>. This is
+    /// a switch rather than a pre-filled <see cref="ExposedHeaders"/> list because configuration binding appends to a
+    /// list and could never remove a default entry.
+    /// </summary>
+    public bool ExposeFrameworkHeaders { get; set; } = true;
 
     /// <summary>
     /// How long a browser may cache a preflight response, sent as <c>Access-Control-Max-Age</c>.
@@ -83,6 +113,10 @@ internal sealed class HeadlessCorsOptionsValidator : AbstractValidator<HeadlessC
     public HeadlessCorsOptionsValidator()
         : this(environment: null) { }
 
+    /// <summary>Creates the validator for the host's environment.</summary>
+    /// <param name="environment">
+    /// The host environment. When it is unknown, an any-origin policy is held to the rules outside Development.
+    /// </param>
     public HeadlessCorsOptionsValidator(IHostEnvironment? environment)
     {
         RuleFor(x => x)
@@ -130,14 +164,17 @@ internal sealed class HeadlessCorsOptionsValidator : AbstractValidator<HeadlessC
                     + $" {nameof(HeadlessCorsOptions.AllowCredentials)}; list the trusted origins instead."
             );
 
-        if (environment?.IsProduction() == true)
+        // Fail closed: only an environment known to be Development skips the confirmation, so a production
+        // environment with a custom name ('Prod', 'prod-eu') cannot slip past a check keyed on 'Production'.
+        if (environment?.IsDevelopment() != true)
         {
-            RuleFor(x => x.AllowAnyOriginInProduction)
+            RuleFor(x => x.AllowAnyOriginOutsideDevelopment)
                 .Equal(toCompare: true)
                 .WithMessage(
-                    $"An {nameof(HeadlessCorsOptions.AllowAnyOrigin)} policy is registered in Production. Turn on"
-                        + $" {nameof(HeadlessCorsOptions.AllowAnyOriginInProduction)} for a public API that any site"
-                        + " may call, or register the policy only in development."
+                    $"An {nameof(HeadlessCorsOptions.AllowAnyOrigin)} policy is registered outside Development"
+                        + $" ('{environment?.EnvironmentName ?? "unknown"}'). Turn on"
+                        + $" {nameof(HeadlessCorsOptions.AllowAnyOriginOutsideDevelopment)} for a public API that any"
+                        + " site may call, or register the policy only in development."
                 );
         }
     }
@@ -255,6 +292,16 @@ internal sealed class HeadlessCorsOptionsValidator : AbstractValidator<HeadlessC
         if (origin.IndexOf('/', authorityStart) >= 0)
         {
             return "must not contain a path or trailing slash.";
+        }
+
+        // Browsers drop a default port from the Origin header, and ASP.NET compares configured origins as lowercased
+        // strings without dropping it, so 'https://a.com:443' would never match. The bracket check keeps an IPv6
+        // literal's colons from reading as a port.
+        var authority = origin.AsSpan(authorityStart);
+
+        if (uri.IsDefaultPort && authority.LastIndexOf(':') > authority.LastIndexOf(']'))
+        {
+            return $"must not spell out the default port; write it as '{uri.Scheme}://{uri.Authority}'.";
         }
 
         return null;

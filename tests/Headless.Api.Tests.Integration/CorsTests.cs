@@ -50,7 +50,10 @@ public sealed class CorsTests : TestBase
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         _Header(response, "Access-Control-Allow-Origin").Should().Be(origin);
         _Header(response, "Access-Control-Allow-Credentials").Should().Be("true");
-        _Header(response, "Access-Control-Expose-Headers").Should().Be("ETag");
+        _Header(response, "Access-Control-Expose-Headers")!
+            .Split(',')
+            .Should()
+            .BeEquivalentTo(HeadlessCorsOptions.FrameworkExposedHeaders);
     }
 
     [Fact]
@@ -128,6 +131,34 @@ public sealed class CorsTests : TestBase
     }
 
     [Fact]
+    public async Task should_vary_a_static_origin_response_when_the_policy_has_a_source()
+    {
+        var source = new TenantDomainRecorder(_TenantDomain);
+        await using var app = await _CreateAppAsync(source);
+        using var client = _CreateClient(app);
+
+        using var response = await _SendAsync(client, HttpMethod.Get, "/native", _App);
+
+        _Header(response, "Access-Control-Allow-Origin").Should().Be(_App);
+        response.Headers.Vary.Should().Contain("Origin");
+        source.Calls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_approve_an_origin_for_a_policy_written_with_add_cors()
+    {
+        var source = new TenantDomainRecorder(_TenantDomain);
+        await using var app = await _CreateAppAsync(source);
+        using var client = _CreateClient(app);
+
+        using var response = await _SendAsync(client, HttpMethod.Get, "/native", _TenantDomain);
+
+        _Header(response, "Access-Control-Allow-Origin").Should().Be(_TenantDomain);
+        response.Headers.Contains("Access-Control-Allow-Credentials").Should().BeFalse();
+        source.Calls.Should().Equal(_TenantDomain);
+    }
+
+    [Fact]
     public async Task should_refuse_an_origin_the_source_declines()
     {
         var source = new TenantDomainRecorder(_TenantDomain);
@@ -184,12 +215,21 @@ public sealed class CorsTests : TestBase
             options.MaxAge = TimeSpan.FromMinutes(10);
         });
         builder.Services.AddHeadlessCors("admin", options => options.AllowedOrigins = ["https://admin.example.com"]);
-        builder.Services.AddHeadlessCors("public", options => options.AllowAnyOrigin = true);
+        builder.Services.AddHeadlessCors(
+            "public",
+            options =>
+            {
+                options.AllowAnyOrigin = true;
+                options.AllowAnyOriginOutsideDevelopment = true;
+            }
+        );
+        builder.Services.AddCors(options => options.AddPolicy("native", policy => policy.WithOrigins(_App)));
 
         if (source is not null)
         {
             builder.Services.AddSingleton(source);
             builder.Services.AddHeadlessCorsOriginSource<TenantDomainSource>();
+            builder.Services.AddHeadlessCorsOriginSource<TenantDomainSource>("native");
         }
 
         var app = builder.Build();
@@ -201,6 +241,7 @@ public sealed class CorsTests : TestBase
             .RequireCors(HeadlessCorsConstants.RestrictedCors);
         app.MapGet("/admin", () => "admin").RequireCors("admin");
         app.MapGet("/public", () => "public").RequireCors("public");
+        app.MapGet("/native", () => "native").RequireCors("native");
 
         await app.StartAsync(AbortToken);
 

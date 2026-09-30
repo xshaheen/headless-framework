@@ -20,8 +20,8 @@ public static class HeadlessCorsConstants
 
     /// <summary>
     /// Name of the development CORS policy that allows any origin and never allows credentials.
-    /// <c>AddHeadlessAllowAnyCors</c> in <c>Headless.Api.Core</c> registers it; startup fails in Production unless
-    /// the policy confirms <c>AllowAnyOriginInProduction</c>.
+    /// <c>AddHeadlessAllowAnyCors</c> in <c>Headless.Api.Core</c> registers it; startup fails outside Development
+    /// unless the policy confirms <c>AllowAnyOriginOutsideDevelopment</c>.
     /// </summary>
     public const string AllowAnyCors = "_any_origins";
 }

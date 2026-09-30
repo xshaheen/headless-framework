@@ -57,6 +57,8 @@ public sealed class HeadlessCorsOptionsValidatorTests : TestBase
     [InlineData("app.example.com", "absolute origin")]
     [InlineData("null", "absolute origin")]
     [InlineData(" https://app.example.com", "whitespace")]
+    [InlineData("https://app.example.com:443", "default port")]
+    [InlineData("http://localhost:80", "default port")]
     [InlineData("", "empty")]
     public void should_reject_an_origin_that_is_not_a_bare_serialized_origin(string origin, string reason)
     {
@@ -79,6 +81,7 @@ public sealed class HeadlessCorsOptionsValidatorTests : TestBase
     [InlineData("https://*.*.example.com", "one leading wildcard")]
     [InlineData("https://*.example.com/", "trailing slash")]
     [InlineData("https://*.user@example.com", "user info")]
+    [InlineData("https://*.example.com:443", "default port")]
     public void should_reject_a_template_without_a_safe_literal_suffix(string template, string reason)
     {
         var options = new HeadlessCorsOptions { AllowedOriginTemplates = [template] };
@@ -93,6 +96,9 @@ public sealed class HeadlessCorsOptionsValidatorTests : TestBase
     [InlineData("capacitor://localhost")]
     [InlineData("ionic://localhost")]
     [InlineData("http://127.0.0.1:8080")]
+    [InlineData("http://[::1]:5173")]
+    [InlineData("http://[::1]")]
+    [InlineData("https://App.Example.com")]
     public void should_accept_a_non_http_or_loopback_origin(string origin)
     {
         var options = new HeadlessCorsOptions { AllowedOrigins = [origin] };
@@ -138,28 +144,38 @@ public sealed class HeadlessCorsOptionsValidatorTests : TestBase
         result.ShouldHaveValidationErrorFor(x => x.MaxAge);
     }
 
-    [Theory]
-    [InlineData("Development")]
-    [InlineData("Staging")]
-    public void should_accept_an_any_origin_policy_outside_production(string environment)
+    [Fact]
+    public void should_accept_an_any_origin_policy_in_development()
     {
-        var sut = new HeadlessCorsOptionsValidator(new HostingEnvironment { EnvironmentName = environment });
+        var sut = new HeadlessCorsOptionsValidator(
+            new HostingEnvironment { EnvironmentName = Environments.Development }
+        );
 
         var result = sut.TestValidate(new HeadlessCorsOptions { AllowAnyOrigin = true });
 
         result.ShouldNotHaveAnyValidationErrors();
     }
 
-    [Fact]
-    public void should_reject_an_unconfirmed_any_origin_policy_in_production()
+    [Theory]
+    [InlineData("Production")]
+    [InlineData("Staging")]
+    [InlineData("Prod")]
+    [InlineData("prod-eu")]
+    public void should_reject_an_unconfirmed_any_origin_policy_outside_development(string environment)
     {
-        var sut = new HeadlessCorsOptionsValidator(
-            new HostingEnvironment { EnvironmentName = Environments.Production }
-        );
+        var sut = new HeadlessCorsOptionsValidator(new HostingEnvironment { EnvironmentName = environment });
 
         var result = sut.TestValidate(new HeadlessCorsOptions { AllowAnyOrigin = true });
 
-        result.ShouldHaveValidationErrorFor(x => x.AllowAnyOriginInProduction);
+        result.ShouldHaveValidationErrorFor(x => x.AllowAnyOriginOutsideDevelopment);
+    }
+
+    [Fact]
+    public void should_reject_an_unconfirmed_any_origin_policy_when_the_environment_is_unknown()
+    {
+        var result = _sut.TestValidate(new HeadlessCorsOptions { AllowAnyOrigin = true });
+
+        result.ShouldHaveValidationErrorFor(x => x.AllowAnyOriginOutsideDevelopment);
     }
 
     [Fact]
@@ -170,7 +186,7 @@ public sealed class HeadlessCorsOptionsValidatorTests : TestBase
         );
 
         var result = sut.TestValidate(
-            new HeadlessCorsOptions { AllowAnyOrigin = true, AllowAnyOriginInProduction = true }
+            new HeadlessCorsOptions { AllowAnyOrigin = true, AllowAnyOriginOutsideDevelopment = true }
         );
 
         result.ShouldNotHaveAnyValidationErrors();
@@ -188,7 +204,12 @@ public sealed class HeadlessCorsOptionsValidatorTests : TestBase
     public void should_reject_listed_origins_on_an_any_origin_policy()
     {
         var result = _sut.TestValidate(
-            new HeadlessCorsOptions { AllowAnyOrigin = true, AllowedOrigins = ["https://app.example.com"] }
+            new HeadlessCorsOptions
+            {
+                AllowAnyOrigin = true,
+                AllowAnyOriginOutsideDevelopment = true,
+                AllowedOrigins = ["https://app.example.com"],
+            }
         );
 
         var failure = result.Errors.Should().ContainSingle().Subject;

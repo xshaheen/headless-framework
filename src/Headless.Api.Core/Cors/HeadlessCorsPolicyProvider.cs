@@ -8,7 +8,8 @@ using Microsoft.Extensions.Options;
 namespace Headless.Api.Cors;
 
 /// <summary>
-/// Consults the <see cref="ICorsOriginSource"/> registered for a policy when the policy's static origins miss.
+/// Consults the <see cref="ICorsOriginSource"/> registered for a policy when the policy's static origins miss. Works
+/// over any policy the inner provider returns, whether <c>AddCors</c> or <c>AddHeadlessCors</c> registered it.
 /// </summary>
 internal sealed class HeadlessCorsPolicyProvider(ICorsPolicyProvider inner, IOptions<CorsOptions> corsOptions)
     : ICorsPolicyProvider
@@ -33,11 +34,7 @@ internal sealed class HeadlessCorsPolicyProvider(ICorsPolicyProvider inner, IOpt
 
         var origin = origins[0];
 
-        if (
-            string.IsNullOrEmpty(origin)
-            || string.Equals(origin, "null", StringComparison.OrdinalIgnoreCase)
-            || policy.IsOriginAllowed(origin)
-        )
+        if (string.IsNullOrEmpty(origin) || string.Equals(origin, "null", StringComparison.OrdinalIgnoreCase))
         {
             return policy;
         }
@@ -46,10 +43,20 @@ internal sealed class HeadlessCorsPolicyProvider(ICorsPolicyProvider inner, IOpt
             policyName ?? corsOptions.Value.DefaultPolicyName
         );
 
-        if (
-            source is null
-            || !await source.IsOriginAllowedAsync(origin, context, context.RequestAborted).ConfigureAwait(false)
-        )
+        if (source is null)
+        {
+            return policy;
+        }
+
+        if (policy.IsOriginAllowed(origin))
+        {
+            // A single static origin sends no 'Vary: Origin', so a shared cache could replay this response to an
+            // origin only the source approves. A copied policy carries a custom origin delegate, which makes the CORS
+            // service add it.
+            return new CorsPolicyBuilder(policy).Build();
+        }
+
+        if (!await source.IsOriginAllowedAsync(origin, context, context.RequestAborted).ConfigureAwait(false))
         {
             return policy;
         }
