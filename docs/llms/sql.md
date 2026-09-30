@@ -118,6 +118,8 @@ Choose the startup mode with `services.AddHeadlessSchemaRunner(options => option
 | `SchemaRunnerMode.Apply` (default) | Yes, missing steps only | A recorded step's checksum no longer matches the code |
 | `SchemaRunnerMode.Verify` | Never | A step is missing, or a recorded checksum no longer matches |
 
+The same options set `CommandTimeout` (default 10 minutes), which applies to every runner statement, DDL included, instead of each feature's OLTP `CommandTimeout`. They also set `LockTimeout` (default 2 minutes), how long a replica waits while another replica applies steps.
+
 Use `Verify` when DDL may not run from the application. Generate the reviewable script from the same registrations the application uses, and apply it with `psql` or `sqlcmd` in the deployment:
 
 ```csharp

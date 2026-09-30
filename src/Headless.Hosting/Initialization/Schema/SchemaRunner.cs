@@ -40,9 +40,16 @@ public sealed partial class SchemaRunner
     /// <summary>The default bound on how long a runner waits for another runner's lock.</summary>
     public static readonly TimeSpan DefaultLockTimeout = TimeSpan.FromMinutes(2);
 
+    /// <summary>
+    /// The default timeout of every statement the runner sends. Sized for DDL, not OLTP: an index build on a table
+    /// that already holds rows can run for minutes, and a timeout mid-build fails startup.
+    /// </summary>
+    public static readonly TimeSpan DefaultCommandTimeout = TimeSpan.FromMinutes(10);
+
     private static readonly TimeSpan _LockPollInterval = TimeSpan.FromMilliseconds(100);
 
     private readonly TimeSpan _lockTimeout;
+    private readonly int _commandTimeoutSeconds;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
 
@@ -51,18 +58,21 @@ public sealed partial class SchemaRunner
     /// <param name="logger">Logs applied steps, absorbed races, and lock release failures.</param>
     /// <param name="timeProvider">Clock for the lock-wait bound and poll delay. Defaults to the system clock.</param>
     /// <param name="lockTimeout">How long to wait for another runner's lock. Defaults to <see cref="DefaultLockTimeout"/>.</param>
+    /// <param name="commandTimeout">Timeout of every statement the runner sends. Defaults to <see cref="DefaultCommandTimeout"/>.</param>
     /// <exception cref="ArgumentNullException"><paramref name="contributions"/> is null.</exception>
     public SchemaRunner(
         IEnumerable<SchemaContribution> contributions,
         ILogger<SchemaRunner>? logger = null,
         TimeProvider? timeProvider = null,
-        TimeSpan? lockTimeout = null
+        TimeSpan? lockTimeout = null,
+        TimeSpan? commandTimeout = null
     )
     {
         Contributions = [.. Argument.IsNotNull(contributions)];
         _logger = logger ?? (ILogger)NullLogger.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _lockTimeout = lockTimeout ?? DefaultLockTimeout;
+        _commandTimeoutSeconds = (int)Math.Ceiling((commandTimeout ?? DefaultCommandTimeout).TotalSeconds);
     }
 
     /// <summary>Every registered contribution, in registration order.</summary>
@@ -301,7 +311,7 @@ public sealed partial class SchemaRunner
 
         while (true)
         {
-            await using var command = connection.CreateCommand();
+            await using var command = _CreateCommand(connection);
             command.CommandText = dialect.TryAcquireLockSql;
             command.Parameters.Add(dialect.CreateStringParameter("LockResource", lockResource));
 
@@ -331,7 +341,7 @@ public sealed partial class SchemaRunner
     {
         try
         {
-            await using var command = connection.CreateCommand();
+            await using var command = _CreateCommand(connection);
             command.CommandText = dialect.ReleaseLockSql;
             command.Parameters.Add(dialect.CreateStringParameter("LockResource", lockResource));
             await command.ExecuteNonQueryAsync(CancellationToken.None).ConfigureAwait(false);
@@ -360,7 +370,7 @@ public sealed partial class SchemaRunner
 
             try
             {
-                await using var command = connection.CreateCommand();
+                await using var command = _CreateCommand(connection);
                 command.Transaction = transaction;
                 command.CommandText = sql;
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -385,7 +395,7 @@ public sealed partial class SchemaRunner
         }
     }
 
-    private static async Task _RecordAsync(
+    private async Task _RecordAsync(
         DbConnection connection,
         ISchemaDialect dialect,
         string schema,
@@ -396,7 +406,7 @@ public sealed partial class SchemaRunner
     {
         try
         {
-            await using var command = connection.CreateCommand();
+            await using var command = _CreateCommand(connection);
             command.CommandText = dialect.InsertHistorySql(schema);
             command.Parameters.Add(dialect.CreateStringParameter("Feature", feature));
             command.Parameters.Add(dialect.CreateStringParameter("StepVersion", step.Version));
@@ -425,7 +435,7 @@ public sealed partial class SchemaRunner
 
         try
         {
-            await using var command = connection.CreateCommand();
+            await using var command = _CreateCommand(connection);
             command.CommandText = dialect.ReadHistorySql(schema);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
@@ -577,6 +587,14 @@ public sealed partial class SchemaRunner
         {
             script.AppendLine(separator);
         }
+    }
+
+    private DbCommand _CreateCommand(DbConnection connection)
+    {
+        var command = connection.CreateCommand();
+        command.CommandTimeout = _commandTimeoutSeconds;
+
+        return command;
     }
 
     private sealed record HistoryRow(string Feature, string Version, string Checksum);

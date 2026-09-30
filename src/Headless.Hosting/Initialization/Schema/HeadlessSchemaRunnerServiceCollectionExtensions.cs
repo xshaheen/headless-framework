@@ -4,6 +4,7 @@ using Headless.Checks;
 using Headless.Hosting.Initialization.Schema;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
@@ -60,7 +61,9 @@ public static class HeadlessSchemaRunnerServiceCollectionExtensions
         services.TryAddSingleton(static sp => new SchemaRunner(
             sp.GetServices<SchemaContribution>(),
             sp.GetService<ILogger<SchemaRunner>>(),
-            sp.GetService<TimeProvider>()
+            sp.GetService<TimeProvider>(),
+            sp.GetRequiredService<IOptions<SchemaRunnerOptions>>().Value.LockTimeout,
+            sp.GetRequiredService<IOptions<SchemaRunnerOptions>>().Value.CommandTimeout
         ));
         services.AddInitializerHostedService<SchemaRunnerInitializer>();
 
