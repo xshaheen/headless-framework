@@ -105,14 +105,12 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
     private static (IJobScheduler Facade, JobChain Chain) _ChainFacade(Sut sut, string? requiredNode)
     {
         var registry = JobFunctionProvider.CreateHostRegistry(configuration: null);
-        var descriptor = registry.Descriptors[_FunctionName];
-        var builder = JobChain.Start(
-            descriptor,
+        var builder = JobChain.Start<RoutingJob>(
             DateTimeOffset.UtcNow.AddHours(1),
             new JobOptions { Enlistment = _Enlistment(requiredNode, "root") }
         );
-        builder.Root.Then(descriptor, new JobOptions { Enlistment = _Enlistment(requiredNode, "success") });
-        builder.Root.Catch(descriptor, new JobOptions { Enlistment = _Enlistment(requiredNode, "failure") });
+        builder.Root.Then<RoutingJob>(new JobOptions { Enlistment = _Enlistment(requiredNode, "success") });
+        builder.Root.Catch<RoutingJob>(new JobOptions { Enlistment = _Enlistment(requiredNode, "failure") });
         var facade = new JobScheduler<TimeJobEntity, CronJobEntity>(
             sut.Time,
             sut.Cron,
@@ -130,4 +128,10 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         string.Equals(requiredNode, candidate, StringComparison.Ordinal)
             ? TransactionEnlistment.Required
             : TransactionEnlistment.Optional;
+
+    private sealed class RoutingJob : Headless.Jobs.Base.IJob
+    {
+        public ValueTask ExecuteAsync(Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+    }
 }

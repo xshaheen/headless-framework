@@ -227,7 +227,12 @@ public sealed class JobFunctionProviderTests : TestBase
             .WithMessage(
                 $"*'{typeof(MiddlewareFixture.JobsModule).FullName}'*after the process-wide job catalog closed*"
             );
-        JobFunctionProvider.JobFunctions.Keys.Should().Equal(GeneratedFixture.DiscoveryJobs.FunctionName);
+        JobFunctionProvider
+            .JobFunctions.Keys.Should()
+            .BeEquivalentTo(
+                GeneratedFixture.DiscoveryJobs.FunctionName,
+                GeneratedFixture.DiscoveryCloseDay.FunctionName
+            );
     }
 
     [Fact]

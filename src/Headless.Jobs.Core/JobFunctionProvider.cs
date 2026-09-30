@@ -42,6 +42,7 @@ public static class JobFunctionProvider
         FrozenDictionary<string, (string, Type)>.Empty,
         FrozenDictionary<string, JobFunctionDescriptor>.Empty,
         FrozenDictionary<string, JobFunctionDescriptor>.Empty,
+        FrozenDictionary<Type, JobFunctionDescriptor>.Empty,
         FrozenDictionary<Type, JobFunctionDescriptor>.Empty
     );
     private static JobFunctionRegistry _canonicalRegistry = _EmptyRegistry;
@@ -343,6 +344,7 @@ public static class JobFunctionProvider
             canonicalRegistry.Descriptors,
             canonicalRegistry.CanonicalDescriptors,
             canonicalRegistry.DescriptorsByRequestType,
+            canonicalRegistry.DescriptorsByJobType,
             configuration
         );
     }
@@ -456,12 +458,20 @@ internal static class JobFunctionRegistryBuilder
         FrozenDictionary<string, JobFunctionDescriptor> descriptors,
         FrozenDictionary<string, JobFunctionDescriptor> canonicalDescriptors,
         FrozenDictionary<Type, JobFunctionDescriptor> descriptorsByRequestType,
+        FrozenDictionary<Type, JobFunctionDescriptor> descriptorsByJobType,
         IConfiguration? configuration
     )
     {
         if (configuration is null)
         {
-            return new(functions, requestTypes, descriptors, canonicalDescriptors, descriptorsByRequestType);
+            return new(
+                functions,
+                requestTypes,
+                descriptors,
+                canonicalDescriptors,
+                descriptorsByRequestType,
+                descriptorsByJobType
+            );
         }
 
         var projectedFunctions = functions.Values.Any(registration =>
@@ -498,7 +508,10 @@ internal static class JobFunctionRegistryBuilder
             canonicalDescriptors,
             ReferenceEquals(projectedDescriptors, descriptors)
                 ? descriptorsByRequestType
-                : _IndexDescriptorsByRequestType(projectedDescriptors)
+                : _IndexDescriptorsByRequestType(projectedDescriptors),
+            ReferenceEquals(projectedDescriptors, descriptors)
+                ? descriptorsByJobType
+                : _IndexDescriptorsByJobType(functions, projectedDescriptors)
         );
     }
 
@@ -576,7 +589,15 @@ internal static class JobFunctionRegistryBuilder
             .OrderBy(_TypeDisplayName, StringComparer.Ordinal)
             .ToArray();
 
-        if (duplicateFunctionNames.Length > 0 || duplicateRequestTypes.Length > 0)
+        var duplicateJobTypes = functions
+            .Where(entry => entry.Value.JobType != null)
+            .GroupBy(entry => entry.Value.JobType!)
+            .Where(group => group.Skip(1).Any())
+            .Select(group => group.Key)
+            .OrderBy(_TypeDisplayName, StringComparer.Ordinal)
+            .ToArray();
+
+        if (duplicateFunctionNames.Length > 0 || duplicateRequestTypes.Length > 0 || duplicateJobTypes.Length > 0)
         {
             var conflicts = duplicateFunctionNames
                 .Select(name => $"Function name '{name}' is registered more than once.")
@@ -584,6 +605,9 @@ internal static class JobFunctionRegistryBuilder
                     duplicateRequestTypes.Select(type =>
                         $"Request type '{_TypeDisplayName(type)}' is mapped more than once."
                     )
+                )
+                .Concat(
+                    duplicateJobTypes.Select(type => $"Job type '{_TypeDisplayName(type)}' is mapped more than once.")
                 );
             throw new InvalidOperationException(
                 $"Job function registration conflicts were found:{Environment.NewLine}{string.Join(Environment.NewLine, conflicts)}"
@@ -609,12 +633,14 @@ internal static class JobFunctionRegistryBuilder
         var frozenRequestTypes = requestTypeDictionary.ToFrozenDictionary(StringComparer.Ordinal);
         var frozenDescriptors = descriptorDictionary.ToFrozenDictionary(StringComparer.Ordinal);
         var descriptorsByRequestType = _IndexDescriptorsByRequestType(descriptorDictionary);
+        var descriptorsByJobType = _IndexDescriptorsByJobType(frozenFunctions, frozenDescriptors);
         var canonicalRegistry = new JobFunctionRegistry(
             frozenFunctions,
             frozenRequestTypes,
             frozenDescriptors,
             frozenDescriptors,
-            descriptorsByRequestType
+            descriptorsByRequestType,
+            descriptorsByJobType
         );
 
         return configuration is null
@@ -625,6 +651,7 @@ internal static class JobFunctionRegistryBuilder
                 frozenDescriptors,
                 frozenDescriptors,
                 descriptorsByRequestType,
+                descriptorsByJobType,
                 configuration
             );
     }
@@ -635,6 +662,14 @@ internal static class JobFunctionRegistryBuilder
         descriptors
             .Values.Where(descriptor => descriptor.RequestType != null)
             .ToFrozenDictionary(descriptor => descriptor.RequestType!, descriptor => descriptor);
+
+    private static FrozenDictionary<Type, JobFunctionDescriptor> _IndexDescriptorsByJobType(
+        IReadOnlyDictionary<string, JobFunctionRegistration> functions,
+        IReadOnlyDictionary<string, JobFunctionDescriptor> descriptors
+    ) =>
+        functions
+            .Where(entry => entry.Value.JobType != null && descriptors.ContainsKey(entry.Key))
+            .ToFrozenDictionary(entry => entry.Value.JobType!, entry => descriptors[entry.Key]);
 
     private static JobFunctionDescriptor _ResolveCronExpression(
         JobFunctionDescriptor descriptor,
@@ -685,11 +720,12 @@ internal sealed record JobFunctionRegistry(
     FrozenDictionary<string, (string, Type)> RequestTypes,
     FrozenDictionary<string, JobFunctionDescriptor> Descriptors,
     FrozenDictionary<string, JobFunctionDescriptor> CanonicalDescriptors,
-    FrozenDictionary<Type, JobFunctionDescriptor> DescriptorsByRequestType
+    FrozenDictionary<Type, JobFunctionDescriptor> DescriptorsByRequestType,
+    FrozenDictionary<Type, JobFunctionDescriptor> DescriptorsByJobType
 );
 
 /// <summary>
-/// Helper for deserializing a typed request payload from within a job function body.
+/// Helper for deserializing a typed argument payload for a job run.
 /// </summary>
 public static class JobsRequestProvider
 {
@@ -709,7 +745,7 @@ public static class JobsRequestProvider
     /// was never processed.
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
-    public static async Task<T?> GetRequestAsync<T>(JobFunctionContext context, CancellationToken cancellationToken)
+    public static async Task<T?> GetRequestAsync<T>(JobContext context, CancellationToken cancellationToken)
     {
         var internalJobsManager = context.ServiceScope.ServiceProvider.GetRequiredService<IInternalJobManager>();
 

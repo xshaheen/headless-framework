@@ -461,7 +461,7 @@ public sealed class SchedulerOptionsBuilder
     public TimeSpan IdleWorkerTimeOut { get; set; } = TimeSpan.FromMinutes(1);
 
     /// <summary>
-    /// Recovery policy seeded onto cron definitions created without one on their <c>[JobFunction]</c> attribute.
+    /// Recovery policy seeded onto cron definitions created without one on their <c>[Job]</c> attribute.
     /// Defaults to <see cref="MissedRunPolicy.Coalesce"/>.
     /// </summary>
     /// <remarks>
@@ -490,7 +490,7 @@ public sealed class SchedulerOptionsBuilder
     public int FingerprintSweepBatchSize { get; set; } = 100;
 
     /// <summary>
-    /// Misfire grace, in seconds, seeded onto cron definitions created without one on their <c>[JobFunction]</c>
+    /// Misfire grace, in seconds, seeded onto cron definitions created without one on their <c>[Job]</c>
     /// attribute. Defaults to <see cref="JobsRecoveryDefaults.MissedRunGraceSeconds"/>.
     /// </summary>
     /// <remarks>
@@ -501,7 +501,7 @@ public sealed class SchedulerOptionsBuilder
     public int DefaultMissedRunGraceSeconds { get; set; } = JobsRecoveryDefaults.MissedRunGraceSeconds;
 
     /// <summary>
-    /// Overlap policy seeded onto cron definitions created without one on their <c>[JobFunction]</c> attribute.
+    /// Overlap policy seeded onto cron definitions created without one on their <c>[Job]</c> attribute.
     /// Defaults to <see cref="CronOverlapPolicy.Allow"/>.
     /// </summary>
     /// <remarks>

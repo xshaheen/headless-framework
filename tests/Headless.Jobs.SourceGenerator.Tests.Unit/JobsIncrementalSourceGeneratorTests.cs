@@ -2,6 +2,7 @@
 
 using System.Reflection;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 
 namespace Tests;
 
@@ -10,12 +11,16 @@ public sealed class JobsIncrementalSourceGeneratorTests
     [Fact]
     public void explicit_contract_metadata_is_stable_across_source_reference_order_and_clr_rename()
     {
+        const string usings = "using System.Threading; using System.Threading.Tasks; using Headless.Jobs.Base; ";
         const string first =
-            "using Headless.Jobs.Base; public sealed class OldName { [JobFunction(\"stable.contract\", ContractVersion = \"schema-v2\")] public void OldMethod() { } }";
+            usings
+            + "[Job(\"stable.contract\", ContractVersion = \"schema-v2\")] public sealed class OldName : IJob { public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default; }";
         const string renamed =
-            "using Headless.Jobs.Base; public sealed class NewName { [JobFunction(\"stable.contract\", ContractVersion = \"schema-v2\")] public void NewMethod() { } }";
+            usings
+            + "[Job(\"stable.contract\", ContractVersion = \"schema-v2\")] public sealed class NewName : IJob { public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default; }";
         const string other =
-            "using Headless.Jobs.Base; public sealed class Other { [JobFunction(\"other.contract\", ContractVersion = \"v3\")] public void Run() { } }";
+            usings
+            + "[Job(\"other.contract\", ContractVersion = \"v3\")] public sealed class Other : IJob { public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default; }";
         var referenceA = GeneratorTestHelper.EmitReference(
             "ContractReferenceA",
             "public sealed class ReferenceA { }",
@@ -80,11 +85,19 @@ public sealed class JobsIncrementalSourceGeneratorTests
             .OfType<DiagnosticDescriptor>()
             .Select(descriptor => descriptor.Id);
 
-        diagnosticIds.Should().BeEquivalentTo(Enumerable.Range(1, 22).Select(number => $"HF{number:000}"));
+        // HF002, HF006, and HF010 governed job methods and constructor selection, which no longer exist.
+        diagnosticIds
+            .Should()
+            .BeEquivalentTo(
+                Enumerable
+                    .Range(1, 23)
+                    .Where(number => number is not (2 or 6 or 10))
+                    .Select(number => $"HF{number:000}")
+            );
     }
 
     [Fact]
-    public Task should_generate_descriptors_for_typed_and_requestless_functions()
+    public Task should_generate_descriptors_for_jobs_with_and_without_arguments()
     {
         var driver = GeneratorTestHelper.Run(
             """
@@ -97,14 +110,23 @@ public sealed class JobsIncrementalSourceGeneratorTests
 
             public sealed record CreateInvoice(string Number);
 
-            public sealed class InvoiceJobs
+            [Job(
+                "invoice.create",
+                Cron = "0 */5 * * * *",
+                Priority = JobPriority.High,
+                MaxConcurrency = 3,
+                ContractVersion = "schema-v2"
+            )]
+            public sealed class CreateInvoiceJob : IJob<CreateInvoice>
             {
-                [JobFunction("invoice.create", "0 */5 * * * *", JobPriority.High, 3, ContractVersion = "schema-v2")]
-                public Task CreateAsync(JobFunctionContext<CreateInvoice> context, CancellationToken cancellationToken)
-                    => Task.CompletedTask;
+                public ValueTask ExecuteAsync(JobContext<CreateInvoice> context, CancellationToken cancellationToken) =>
+                    default;
+            }
 
-                [JobFunction("invoice.cleanup")]
-                public void Cleanup() { }
+            [Job("invoice.cleanup")]
+            public sealed class CleanupJob : IJob
+            {
+                public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
             }
             """,
             out var compilationDiagnostics
@@ -115,115 +137,292 @@ public sealed class JobsIncrementalSourceGeneratorTests
     }
 
     [Fact]
-    public void should_report_duplicate_function_names()
+    public void should_generate_a_module_entry_and_an_invoker_for_a_job()
     {
-        var diagnostics = GeneratorTestHelper
-            .Run(
-                """
-                using Headless.Jobs.Base;
-
-                public sealed class Jobs
+        var driver = GeneratorTestHelper.Run(
+            _Usings
+                + """
+                [Job("billing.close-day")]
+                public sealed class CloseDay : IJob
                 {
-                    [JobFunction("duplicate")]
-                    public void First() { }
-
-                    [JobFunction("duplicate")]
-                    public void Second() { }
+                    public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
                 }
-                """
-            )
-            .GetRunResult()
-            .Diagnostics;
+                """,
+            out var diagnostics
+        );
 
-        diagnostics.Should().Contain(diagnostic => string.Equals(diagnostic.Id, "HF005", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void should_report_duplicate_request_types()
-    {
-        var diagnostics = GeneratorTestHelper
-            .Run(
-                """
-                using Headless.Jobs.Base;
-
-                public sealed record Request(string Value);
-
-                public sealed class Jobs
-                {
-                    [JobFunction("first")]
-                    public void First(JobFunctionContext<Request> context) { }
-
-                    [JobFunction("second")]
-                    public void Second(JobFunctionContext<Request> context) { }
-                }
-                """
-            )
-            .GetRunResult()
-            .Diagnostics;
-
-        diagnostics
+        diagnostics.Should().NotContain(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var generated = _GeneratedSource(driver);
+        generated.Should().Contain("functions.Add(\"billing.close-day\", new JobFunctionRegistration {");
+        generated.Should().Contain("Delegate = Invoke_Jobs_SourceGenerator_Tests_CloseDay");
+        generated.Should().Contain("JobType = typeof(global::Jobs.SourceGenerator.Tests.CloseDay)");
+        generated
             .Should()
-            .Contain(diagnostic =>
-                string.Equals(diagnostic.Id, "HF011", StringComparison.Ordinal)
-                && diagnostic.Severity == DiagnosticSeverity.Error
-            );
+            .Contain("ActivatorUtilities.CreateInstance<global::Jobs.SourceGenerator.Tests.CloseDay>(serviceProvider)");
     }
 
     [Fact]
-    public void should_allow_multiple_requestless_functions()
+    public void should_report_a_job_class_that_implements_no_job_interface_at_the_attribute()
     {
-        var diagnostics = GeneratorTestHelper
-            .Run(
-                """
-                using Headless.Jobs.Base;
+        const string source = """
+            [Job("billing.close-day")]
+            public sealed class CloseDay
+            {
+            }
+            """;
+        var driver = GeneratorTestHelper.Run(_Usings + source, out _);
 
-                public sealed class Jobs
+        var diagnostic = driver.GetRunResult().Diagnostics.Should().ContainSingle().Subject;
+        diagnostic.Id.Should().Be("HF009");
+        diagnostic
+            .Location.SourceTree!.ToString()[diagnostic.Location.SourceSpan.Start..diagnostic.Location.SourceSpan.End]
+            .Should()
+            .Be("Job(\"billing.close-day\")");
+        _GeneratedSource(driver).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_report_a_job_class_that_implements_more_than_one_job_interface()
+    {
+        var diagnostics = _Diagnostics(
+            """
+            public sealed record First;
+            public sealed record Second;
+
+            [Job("billing.ambiguous")]
+            public sealed class Ambiguous : IJob, IJob<First>, IJob<Second>
+            {
+                public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
+                public ValueTask ExecuteAsync(JobContext<First> context, CancellationToken cancellationToken) => default;
+                public ValueTask ExecuteAsync(JobContext<Second> context, CancellationToken cancellationToken) => default;
+            }
+            """
+        );
+
+        diagnostics.Select(diagnostic => diagnostic.Id).Should().Equal("HF009");
+    }
+
+    [Fact]
+    public void should_report_duplicate_job_identities()
+    {
+        var diagnostics = _Diagnostics(_Job("billing.duplicate", "First") + "\n" + _Job("billing.duplicate", "Second"));
+
+        diagnostics.Select(diagnostic => diagnostic.Id).Should().Equal("HF005");
+    }
+
+    [Fact]
+    public void should_report_two_jobs_that_take_the_same_argument_type()
+    {
+        var driver = GeneratorTestHelper.Run(
+            _Usings
+                + """
+                public sealed record InvoiceArgs(int Id);
+
+                [Job("billing.send-invoice")]
+                public sealed class SendInvoice : IJob<InvoiceArgs>
                 {
-                    [JobFunction("first")]
-                    public void First() { }
-
-                    [JobFunction("second")]
-                    public void Second() { }
+                    public ValueTask ExecuteAsync(JobContext<InvoiceArgs> context, CancellationToken cancellationToken) =>
+                        default;
                 }
-                """
-            )
-            .GetRunResult()
-            .Diagnostics;
 
-        diagnostics.Should().NotContain(diagnostic => string.Equals(diagnostic.Id, "HF011", StringComparison.Ordinal));
+                [Job("billing.resend-invoice")]
+                public sealed class ResendInvoice : IJob<InvoiceArgs>
+                {
+                    public ValueTask ExecuteAsync(JobContext<InvoiceArgs> context, CancellationToken cancellationToken) =>
+                        default;
+                }
+                """,
+            out _
+        );
+
+        var diagnostic = driver.GetRunResult().Diagnostics.Should().ContainSingle().Subject;
+        diagnostic.Id.Should().Be("HF011");
+        diagnostic.Severity.Should().Be(DiagnosticSeverity.Error);
+        diagnostic.GetMessage(CultureInfo.InvariantCulture).Should().Contain("InvoiceArgs");
+        _GeneratedSource(driver).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_allow_several_jobs_without_arguments()
+    {
+        var diagnostics = _Diagnostics(_Job("billing.first", "First") + "\n" + _Job("billing.second", "Second"));
+
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("closeDay")]
+    [InlineData("")]
+    [InlineData(" billing.close-day")]
+    [InlineData("billing.close-day ")]
+    [InlineData(".close-day")]
+    [InlineData("billing.")]
+    [InlineData("billing..close-day")]
+    [InlineData("billing.close\u0001day")]
+    public void should_report_an_identity_that_is_not_in_owner_name_form(string identity)
+    {
+        var diagnostics = _Diagnostics(_Job(identity, "CloseDay"));
+
+        diagnostics.Select(diagnostic => diagnostic.Id).Should().Equal("HF004");
+    }
+
+    [Fact]
+    public void should_report_an_identity_longer_than_the_storage_limit()
+    {
+        var diagnostics = _Diagnostics(_Job("billing." + new string('x', 193), "CloseDay"));
+
+        diagnostics.Select(diagnostic => diagnostic.Id).Should().Equal("HF004");
+    }
+
+    [Theory]
+    [InlineData("billing.close-day")]
+    [InlineData("billing.reports.close-day")]
+    [InlineData("b.c")]
+    public void should_accept_an_identity_in_owner_name_form(string identity)
+    {
+        _Diagnostics(_Job(identity, "CloseDay")).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_accept_an_identity_at_the_storage_limit()
+    {
+        _Diagnostics(_Job("billing." + new string('x', 192), "CloseDay")).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_report_a_null_identity()
+    {
+        var diagnostics = _Diagnostics(
+            """
+            [Job(null!)]
+            public sealed class CloseDay : IJob
+            {
+                public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
+            }
+            """
+        );
+
+        diagnostics.Select(diagnostic => diagnostic.Id).Should().Equal("HF004");
+    }
+
+    [Fact]
+    public void should_report_an_invalid_literal_cron_expression()
+    {
+        var diagnostics = _Diagnostics(_Job("billing.close-day", "CloseDay", ", Cron = \"not a cron\""));
+
+        diagnostics.Select(diagnostic => diagnostic.Id).Should().Equal("HF003");
+    }
+
+    [Theory]
+    [InlineData("%Jobs:Daily")]
+    [InlineData("%Jobs:Daily%")]
+    public void should_defer_a_configuration_cron_to_startup(string cron)
+    {
+        var driver = GeneratorTestHelper.Run(
+            _Usings + _Job("billing.close-day", "CloseDay", $", Cron = \"{cron}\""),
+            out var diagnostics
+        );
+
+        diagnostics.Should().NotContain(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        _GeneratedSource(driver).Should().Contain($"CronExpression = \"{cron}\"");
+    }
+
+    [Fact]
+    public void should_report_a_policy_type_that_does_not_implement_the_failure_policy_contract()
+    {
+        var diagnostics = _Diagnostics(
+            "public sealed class NotAPolicy;\n" + _Job("billing.close-day", "CloseDay", ", Policy = typeof(NotAPolicy)")
+        );
+
+        var diagnostic = diagnostics.Should().ContainSingle().Subject;
+        diagnostic.Id.Should().Be("HF023");
+        diagnostic.GetMessage(CultureInfo.InvariantCulture).Should().Contain("NotAPolicy");
+    }
+
+    [Theory]
+    [InlineData("typeof(Headless.Reliability.IFailurePolicy)")]
+    [InlineData("typeof(AbstractPolicy)")]
+    [InlineData("typeof(GenericPolicy<>)")]
+    public void should_report_a_policy_type_that_names_no_concrete_policy(string policy)
+    {
+        var diagnostics = _Diagnostics(
+            """
+            public abstract class AbstractPolicy : Headless.Reliability.IFailurePolicy;
+            public sealed class GenericPolicy<T> : Headless.Reliability.IFailurePolicy;
+
+            """ + _Job("billing.close-day", "CloseDay", $", Policy = {policy}")
+        );
+
+        diagnostics.Select(diagnostic => diagnostic.Id).Should().Equal("HF023");
+    }
+
+    [Fact]
+    public void should_record_a_valid_policy_and_time_zone_on_the_registration()
+    {
+        var driver = GeneratorTestHelper.Run(
+            _Usings
+                + "public sealed class PaymentsPolicy : Headless.Reliability.IFailurePolicy;\n"
+                + _Job(
+                    "billing.close-day",
+                    "CloseDay",
+                    ", Cron = \"0 0 0 * * *\", TimeZone = \"Africa/Cairo\", Policy = typeof(PaymentsPolicy)"
+                ),
+            out var diagnostics
+        );
+
+        diagnostics.Should().NotContain(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var generated = _GeneratedSource(driver);
+        generated.Should().Contain("TimeZoneId = \"Africa/Cairo\"");
+        generated.Should().Contain("FailurePolicy = typeof(global::Jobs.SourceGenerator.Tests.PaymentsPolicy)");
+    }
+
+    [Theory]
+    [InlineData("public abstract class CloseDay : IJob", "HF007")]
+    [InlineData("public sealed class CloseDay<T> : IJob", "HF007")]
+    [InlineData("file sealed class CloseDay : IJob", "HF001")]
+    public void should_report_a_job_class_that_generated_code_cannot_construct(string declaration, string id)
+    {
+        var diagnostics = _Diagnostics(
+            $$"""
+            [Job("billing.close-day")]
+            {{declaration}}
+            {
+                public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
+            }
+            """
+        );
+
+        diagnostics.Select(diagnostic => diagnostic.Id).Should().Equal(id);
+    }
+
+    [Fact]
+    public void should_report_a_nested_job_class()
+    {
+        var diagnostics = _Diagnostics(
+            """
+            public static class Outer
+            {
+                [Job("billing.close-day")]
+                public sealed class CloseDay : IJob
+                {
+                    public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
+                }
+            }
+            """
+        );
+
+        diagnostics.Select(diagnostic => diagnostic.Id).Should().Equal("HF008");
     }
 
     [Fact]
     public void should_report_invalid_descriptor_metadata_before_emission()
     {
-        var diagnostics = GeneratorTestHelper
-            .Run(
-                """
-                using Headless.Jobs.Base;
-                using Headless.Jobs.Enums;
+        var diagnostics = _Diagnostics(
+            _Job("billing.broken", "Broken", ", Priority = (Headless.Jobs.Enums.JobPriority)999, MaxConcurrency = -1")
+        );
 
-                public sealed class Jobs
-                {
-                    [JobFunction("broken", (JobPriority)999, -1)]
-                    public void Broken() { }
-                }
-                """
-            )
-            .GetRunResult()
-            .Diagnostics;
-
-        diagnostics
-            .Should()
-            .Contain(diagnostic =>
-                string.Equals(diagnostic.Id, "HF012", StringComparison.Ordinal)
-                && diagnostic.Severity == DiagnosticSeverity.Error
-            );
-        diagnostics
-            .Should()
-            .Contain(diagnostic =>
-                string.Equals(diagnostic.Id, "HF013", StringComparison.Ordinal)
-                && diagnostic.Severity == DiagnosticSeverity.Error
-            );
+        diagnostics.Select(diagnostic => diagnostic.Id).Should().BeEquivalentTo("HF012", "HF013");
+        diagnostics.Should().OnlyContain(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
     }
 
     [Fact]
@@ -245,7 +444,7 @@ public sealed class JobsIncrementalSourceGeneratorTests
                 public Task InvokeAsync(JobScheduleContext context, JobScheduleNext next, CancellationToken cancellationToken) => next(cancellationToken);
             }
 
-            public sealed class Jobs { [JobFunction("known")] public void Run() { } }
+            [Job("test.known")] public sealed class KnownJob : IJob { public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default; }
             """,
             out _
         );
@@ -413,7 +612,7 @@ public sealed class JobsIncrementalSourceGeneratorTests
     }
 
     [Fact]
-    public void should_derive_method_target_and_reject_invalid_method_placement()
+    public void should_derive_class_target_and_reject_invalid_class_placement()
     {
         var driver = GeneratorTestHelper.Run(
             """
@@ -432,19 +631,22 @@ public sealed class JobsIncrementalSourceGeneratorTests
                 public Task InvokeAsync(JobScheduleContext context, JobScheduleNext next, CancellationToken cancellationToken) => next(cancellationToken);
             }
 
-            public sealed class Handlers
+            [Job("invoice.create")]
+            [JobScheduleMiddleware<ScheduleMiddleware>]
+            [JobExecuteMiddleware<ExecuteMiddleware>]
+            public sealed class Create : IJob
             {
-                [JobFunction("invoice.create")]
-                [JobScheduleMiddleware<ScheduleMiddleware>]
-                [JobExecuteMiddleware<ExecuteMiddleware>]
-                public void Create() { }
+                public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
+            }
 
-                [JobExecuteMiddleware<ExecuteMiddleware>]
-                public void MissingFunction() { }
+            [JobExecuteMiddleware<ExecuteMiddleware>]
+            public sealed class MissingJob;
 
-                [JobFunction("invoice.other")]
-                [JobExecuteMiddleware<ExecuteMiddleware>(Function = "invoice.create")]
-                public void ExplicitLocalTarget() { }
+            [Job("invoice.other")]
+            [JobExecuteMiddleware<ExecuteMiddleware>(Function = "invoice.create")]
+            public sealed class ExplicitLocalTarget : IJob
+            {
+                public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
             }
             """,
             out var compilationDiagnostics
@@ -490,12 +692,14 @@ public sealed class JobsIncrementalSourceGeneratorTests
         var producer = GeneratorTestHelper.EmitReference(
             "Producer.Jobs",
             """
+            using System.Threading;
+            using System.Threading.Tasks;
             using Headless.Jobs.Base;
 
-            public sealed class ProducerJobs
+            [Job("producer.run")]
+            public sealed class ProducerJob : IJob
             {
-                [JobFunction("producer.run")]
-                public void Run() { }
+                public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
             }
             """,
             out var producerDiagnostics
@@ -532,7 +736,7 @@ public sealed class JobsIncrementalSourceGeneratorTests
     }
 
     [Fact]
-    public void should_reject_assembly_fallback_to_a_local_function()
+    public void should_reject_assembly_fallback_to_a_local_job()
     {
         var driver = GeneratorTestHelper.Run(
             """
@@ -548,10 +752,10 @@ public sealed class JobsIncrementalSourceGeneratorTests
                 public Task InvokeAsync(JobExecuteContext context, JobExecuteNext next, CancellationToken cancellationToken) => next(cancellationToken);
             }
 
-            public sealed class Handlers
+            [Job("local.run")]
+            public sealed class LocalJob : IJob
             {
-                [JobFunction("local.run")]
-                public void Run() { }
+                public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
             }
             """,
             out _
@@ -566,7 +770,7 @@ public sealed class JobsIncrementalSourceGeneratorTests
     }
 
     [Fact]
-    public void should_reject_inaccessible_method_local_middleware_without_emitting_broken_code()
+    public void should_reject_inaccessible_class_local_middleware_without_emitting_broken_code()
     {
         var driver = GeneratorTestHelper.Run(
             """
@@ -575,11 +779,11 @@ public sealed class JobsIncrementalSourceGeneratorTests
             using Headless.Jobs;
             using Headless.Jobs.Base;
 
-            public sealed class Handlers
+            [Job("private.run")]
+            [JobExecuteMiddleware<PrivateJob.PrivateMiddleware>]
+            public sealed class PrivateJob : IJob
             {
-                [JobFunction("private.run")]
-                [JobExecuteMiddleware<PrivateMiddleware>]
-                public void Run() { }
+                public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
 
                 private sealed class PrivateMiddleware : IJobExecuteMiddleware
                 {
@@ -678,6 +882,27 @@ public sealed class JobsIncrementalSourceGeneratorTests
             .ContainSingle();
         _RegistrationLines(driver).Should().BeEmpty();
     }
+
+    private const string _Usings = """
+        using System.Threading;
+        using System.Threading.Tasks;
+        using Headless.Jobs.Base;
+
+        namespace Jobs.SourceGenerator.Tests;
+
+        """;
+
+    private static string _Job(string identity, string className, string extra = "") =>
+        $$"""
+            [Job({{SymbolDisplay.FormatLiteral(identity, quote: true)}}{{extra}})]
+            public sealed class {{className}} : IJob
+            {
+                public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
+            }
+            """;
+
+    private static ImmutableArray<Diagnostic> _Diagnostics(string source) =>
+        GeneratorTestHelper.Run(_Usings + source).GetRunResult().Diagnostics;
 
     private static string _GeneratedSource(GeneratorDriver driver) =>
         driver.GetRunResult().Results.Single().GeneratedSources.SingleOrDefault().SourceText?.ToString()

@@ -6,7 +6,7 @@ using Headless.Jobs.Enums;
 namespace Headless.Jobs;
 
 /// <summary>
-/// Named registration for a single <c>[JobFunction]</c>. Carries the per-function scheduling knobs the source
+/// Named registration for a single <c>[Job]</c> class. Carries the per-job scheduling knobs the source
 /// generator emits at build time and the scheduler reads at dispatch time. This type is the ABI between the
 /// generated per-assembly <c>JobsModule</c> in every consuming assembly and the
 /// <c>JobFunctionProvider</c> registry in <c>Headless.Jobs.Core</c>.
@@ -37,8 +37,8 @@ public readonly record struct JobFunctionRegistration
     public required JobPriority Priority { get; init; }
 
     /// <summary>
-    /// The generated execution delegate that resolves the job class from DI and invokes its
-    /// <c>[JobFunction]</c>-annotated method.
+    /// The generated execution delegate that constructs the job class from the run's scope and invokes its
+    /// <c>ExecuteAsync</c>.
     /// </summary>
     public required JobFunctionDelegate Delegate { get; init; }
 
@@ -72,4 +72,23 @@ public readonly record struct JobFunctionRegistration
     /// </summary>
     /// <remarks>Same optionality and creation-only seeding rule as <see cref="OnMissedRun"/>.</remarks>
     public CronOverlapPolicy? OnOverlap { get; init; }
+
+    /// <summary>
+    /// The <c>[Job]</c> class this registration runs, or <see langword="null"/> for a hand-written registration. The
+    /// scheduler resolves <c>EnqueueAsync&lt;TJob&gt;()</c> and its siblings through it.
+    /// </summary>
+    public Type? JobType { get; init; }
+
+    /// <summary>
+    /// IANA time zone the cron expression is evaluated in when the definition is seeded, or <see langword="null"/>
+    /// for the scheduler's default zone. Ignored for time jobs.
+    /// </summary>
+    public string? TimeZoneId { get; init; }
+
+    /// <summary>
+    /// The failure policy type the job declares, or <see langword="null"/> when it declares none. The declaration is
+    /// recorded for policy resolution; until a policy model is registered for the type, the host's retry behavior
+    /// applies.
+    /// </summary>
+    public Type? FailurePolicy { get; init; }
 }

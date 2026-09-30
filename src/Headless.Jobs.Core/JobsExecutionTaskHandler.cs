@@ -260,7 +260,7 @@ internal sealed class JobsExecutionTaskHandler
             _cancellationRegistry.TrySignalHostShutdown(cancellationRegistration)
         );
 
-        var jobFunctionContext = new JobFunctionContext
+        var jobFunctionContext = new JobContext
         {
             FunctionName = context.FunctionName,
             ContractVersion = context.ContractVersion,

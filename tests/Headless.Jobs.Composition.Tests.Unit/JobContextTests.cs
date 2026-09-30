@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-public sealed class JobFunctionContextTests : Headless.Testing.Tests.TestBase
+public sealed class JobContextTests : Headless.Testing.Tests.TestBase
 {
     [Fact]
     public void generic_context_preserves_scheduled_for_from_base_context()
@@ -13,7 +13,7 @@ public sealed class JobFunctionContextTests : Headless.Testing.Tests.TestBase
         // given
         var scheduledFor = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
 
-        var baseContext = new JobFunctionContext
+        var baseContext = new JobContext
         {
             Id = Guid.NewGuid(),
             Type = JobType.TimeJob,
@@ -30,7 +30,7 @@ public sealed class JobFunctionContextTests : Headless.Testing.Tests.TestBase
         var request = new TestRequest { Value = 42 };
 
         // when — no object initializer: the [SetsRequiredMembers] copy constructor must clone every base member.
-        var genericContext = new JobFunctionContext<TestRequest>(baseContext, request);
+        var genericContext = new JobContext<TestRequest>(baseContext, request);
 
         // then
         genericContext.Id.Should().Be(baseContext.Id);
@@ -54,7 +54,7 @@ public sealed class JobFunctionContextTests : Headless.Testing.Tests.TestBase
         scheduler.CancelAsync(id, AbortToken).Returns(true);
         var services = new ServiceCollection().AddSingleton(scheduler).BuildServiceProvider();
         await using var scope = services.CreateAsyncScope();
-        var context = new JobFunctionContext
+        var context = new JobContext
         {
             Id = id,
             Type = JobType.TimeJob,

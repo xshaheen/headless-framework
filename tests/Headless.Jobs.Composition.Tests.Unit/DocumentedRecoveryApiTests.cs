@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reflection;
 using Headless.Jobs;
 using Headless.Jobs.Base;
 using Headless.Jobs.Enums;
@@ -16,26 +15,24 @@ namespace Tests;
 public sealed class DocumentedRecoveryApiTests : TestBase
 {
 #pragma warning disable IDE0060 // These are the documented examples verbatim; trimming a parameter stops pinning them.
-    private sealed class DocumentedJob
+    // The attribute example from "Configuring it".
+    [Job("reports.nightly", Cron = "0 0 2 * * *", OnMissedRun = MissedRunPolicy.Skip, MissedRunGraceSeconds = 300)]
+    private sealed class DocumentedJob : IJob
     {
-        // The attribute example from "Configuring it".
-        [JobFunction("reports.nightly", "0 0 2 * * *", OnMissedRun = MissedRunPolicy.Skip, MissedRunGraceSeconds = 300)]
-        public Task RunAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
         // The job-visible context example from "What an executing job sees".
-        public Task ExecuteAsync(JobFunctionContext context, CancellationToken cancellationToken)
+        public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken)
         {
             if (context.IsRecoveryRun)
             {
                 _ = context.RecoveredFromUtc!.Value;
                 _ = context.Lateness;
 
-                return Task.CompletedTask;
+                return ValueTask.CompletedTask;
             }
 
             _ = context.ScheduledFor;
 
-            return Task.CompletedTask;
+            return ValueTask.CompletedTask;
         }
     }
 #pragma warning restore IDE0060
@@ -44,15 +41,8 @@ public sealed class DocumentedRecoveryApiTests : TestBase
     public void the_documented_attribute_shape_compiles_and_round_trips()
     {
         var attribute = typeof(DocumentedJob)
-            .GetMethod(
-                nameof(DocumentedJob.RunAsync),
-                BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-                binder: null,
-                [typeof(CancellationToken)],
-                modifiers: null
-            )!
-            .GetCustomAttributes(typeof(JobFunctionAttribute), inherit: false)
-            .Cast<JobFunctionAttribute>()
+            .GetCustomAttributes(typeof(JobAttribute), inherit: false)
+            .Cast<JobAttribute>()
             .Single();
 
         attribute.OnMissedRun.Should().Be(MissedRunPolicy.Skip);

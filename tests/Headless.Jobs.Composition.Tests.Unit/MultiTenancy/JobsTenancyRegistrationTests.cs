@@ -117,7 +117,7 @@ public sealed class JobsTenancyRegistrationTests : TestBase
             new JobExecuteContext(
                 _Descriptor,
                 new JobExecutionState { FunctionName = _Descriptor.FunctionName },
-                new JobFunctionContext { FunctionName = _Descriptor.FunctionName },
+                new JobContext { FunctionName = _Descriptor.FunctionName },
                 attempt: 0,
                 provider
             ),

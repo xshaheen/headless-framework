@@ -1228,6 +1228,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     x.OnOverlap,
                     x.EvaluationFingerprint,
                     x.ContractVersion,
+                    x.TimeZoneId,
                     Id: existingByFunction.TryGetValue(x.Function, out var existingDefinition)
                         ? existingDefinition.Id
                         : JobsSeedId.ForCronSeed(x.Function)
@@ -1248,6 +1249,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 onOverlap,
                 evaluationFingerprint,
                 contractVersion,
+                timeZoneId,
                 _
             ) in orderedCronJobs
         )
@@ -1256,8 +1258,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             {
                 // Reseeding cannot upgrade the schema label of bytes already stored by an older writer.
                 // Existing function/version/request tuples change only through an explicit definition edit.
-                // Update expression if it changed
-                if (!string.Equals(cron.Expression, expression, StringComparison.Ordinal))
+                // Update the schedule if its expression or zone changed
+                if (
+                    !string.Equals(cron.Expression, expression, StringComparison.Ordinal)
+                    || !string.Equals(cron.TimeZoneId, timeZoneId, StringComparison.Ordinal)
+                )
                 {
                     await cronSet
                         .Where(x => x.Id == cron.Id)
@@ -1268,9 +1273,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .ConfigureAwait(false);
                     await dbContext.Entry(cron).ReloadAsync(cancellationToken).ConfigureAwait(false);
 
-                    if (!string.Equals(cron.Expression, expression, StringComparison.Ordinal))
+                    if (
+                        !string.Equals(cron.Expression, expression, StringComparison.Ordinal)
+                        || !string.Equals(cron.TimeZoneId, timeZoneId, StringComparison.Ordinal)
+                    )
                     {
                         cron.Expression = expression;
+                        cron.TimeZoneId = timeZoneId;
                         cron.ScheduleRevision++;
                         cron.UpdatedAt = now;
 
@@ -1300,6 +1309,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     Function = function,
                     ContractVersion = contractVersion,
                     Expression = expression,
+                    TimeZoneId = timeZoneId,
                     InitIdentifier = $"MemoryTicker_Seeded_{function}",
                     CreatedAt = now,
                     UpdatedAt = now,

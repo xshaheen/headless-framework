@@ -42,7 +42,7 @@ public interface IJobExceptionHandler
     );
 
     /// <summary>
-    /// Called when a job is cancelled — either cooperatively via <c>JobFunctionContext.RequestCancellation</c>
+    /// Called when a job is cancelled — either cooperatively via <c>JobContext.RequestCancellation</c>
     /// or by an external cancellation signal.
     /// </summary>
     /// <param name="exception">The <c>OperationCanceledException</c> or derived exception.</param>

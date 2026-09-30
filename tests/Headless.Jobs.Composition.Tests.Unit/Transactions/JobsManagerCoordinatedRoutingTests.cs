@@ -1620,6 +1620,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
                     Priority = JobPriority.LongRunning,
                     Delegate = (_, _, _) => Task.CompletedTask,
                     MaxConcurrency = 1,
+                    JobType = typeof(RoutingJob),
                 },
             }
         );

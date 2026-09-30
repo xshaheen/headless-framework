@@ -1429,7 +1429,8 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 missedRunGraceSeconds,
                 onOverlap,
                 evaluationFingerprint,
-                contractVersion
+                contractVersion,
+                timeZoneId
             ) in cronJobs
         )
         {
@@ -1442,7 +1443,10 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             {
                 // Reseeding cannot upgrade the schema label of bytes already stored by an older writer.
                 // Existing function/version/request tuples change only through an explicit definition edit.
-                if (!string.Equals(existing.Expression, expression, StringComparison.Ordinal))
+                if (
+                    !string.Equals(existing.Expression, expression, StringComparison.Ordinal)
+                    || !string.Equals(existing.TimeZoneId, timeZoneId, StringComparison.Ordinal)
+                )
                 {
                     lock (_GetCronDefinitionLock(id))
                     {
@@ -1453,6 +1457,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
                         var updated = _CloneCronJob(current);
                         updated.Expression = expression;
+                        updated.TimeZoneId = timeZoneId;
                         updated.ScheduleRevision++;
                         updated.UpdatedAt = now;
 
@@ -1501,6 +1506,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 Function = function,
                 ContractVersion = contractVersion,
                 Expression = expression,
+                TimeZoneId = timeZoneId,
                 InitIdentifier = $"MemoryTicker_Seeded_{function}",
                 CreatedAt = now,
                 UpdatedAt = now,

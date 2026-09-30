@@ -10,10 +10,10 @@ public sealed class DemoJobSeeder(IServiceScopeFactory scopeFactory, ILogger<Dem
 {
     private static readonly string[] _TimeJobFunctions =
     [
-        "Demo_OrderProcessing",
-        "Demo_DataSync",
-        "Demo_ReportGeneration",
-        "Demo_PaymentReconciliation",
+        DemoJobIdentities.OrderProcessing,
+        DemoJobIdentities.DataSync,
+        DemoJobIdentities.ReportGeneration,
+        DemoJobIdentities.PaymentReconciliation,
     ];
 
     private int _counter;
@@ -62,13 +62,13 @@ public sealed class DemoJobSeeder(IServiceScopeFactory scopeFactory, ILogger<Dem
             await cronManager.AddAsync(
                 new CronJobEntity
                 {
-                    Function = "Demo_CleanupExpiredSessions",
+                    Function = DemoJobIdentities.CleanupExpiredSessions,
                     Description = "Purge expired user sessions every 2 minutes",
                     Expression = "0 */2 * * * *",
                 },
                 ct
             );
-            logger.LogInformation("Seeded cron job: Demo_CleanupExpiredSessions");
+            logger.LogInformation("Seeded cron job: " + DemoJobIdentities.CleanupExpiredSessions);
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
@@ -80,13 +80,13 @@ public sealed class DemoJobSeeder(IServiceScopeFactory scopeFactory, ILogger<Dem
             await cronManager.AddAsync(
                 new CronJobEntity
                 {
-                    Function = "Demo_HealthCheck",
+                    Function = DemoJobIdentities.HealthCheck,
                     Description = "Run infrastructure health check every minute",
                     Expression = "0 * * * * *",
                 },
                 ct
             );
-            logger.LogInformation("Seeded cron job: Demo_HealthCheck");
+            logger.LogInformation("Seeded cron job: " + DemoJobIdentities.HealthCheck);
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
@@ -116,7 +116,7 @@ public sealed class DemoJobSeeder(IServiceScopeFactory scopeFactory, ILogger<Dem
                     Function = function,
                     Description = string.Create(
                         CultureInfo.InvariantCulture,
-                        $"{function.Replace("Demo_", "", StringComparison.Ordinal)} job #{_counter}"
+                        $"{function["demo.".Length..]} job #{_counter}"
                     ),
                     ExecutionTime = DateTime.UtcNow.Add(delay),
                 },

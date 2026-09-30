@@ -7,7 +7,7 @@ using Headless.Jobs.Enums;
 namespace Headless.Jobs;
 
 /// <summary>
-/// Describes a generated <c>[JobFunction]</c> without exposing its execution delegate.
+/// Describes a generated <c>[Job]</c> without exposing its execution delegate.
 /// </summary>
 /// <remarks>
 /// A <see langword="null"/> <see cref="RequestType"/> identifies a requestless function. The function name remains
@@ -23,7 +23,7 @@ public sealed record JobFunctionDescriptor
     /// The six-field cron expression, an <c>IConfiguration</c> key prefixed with <c>%</c>, or
     /// <see cref="string.Empty"/> for a time job.
     /// </param>
-    /// <param name="priority">The scheduling priority generated from <c>[JobFunction]</c>.</param>
+    /// <param name="priority">The scheduling priority generated from <c>[Job]</c>.</param>
     /// <param name="maxConcurrency">
     /// The maximum concurrent executions on one node; <c>0</c> means the global scheduler limit applies.
     /// </param>
@@ -86,7 +86,7 @@ public sealed record JobFunctionDescriptor
     /// </summary>
     public string CronExpression { get; }
 
-    /// <summary>The immutable scheduling priority generated from <c>[JobFunction]</c>.</summary>
+    /// <summary>The immutable scheduling priority generated from <c>[Job]</c>.</summary>
     public JobPriority Priority { get; }
 
     /// <summary>The maximum concurrent executions on one node; <c>0</c> means the global limit applies.</summary>

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Jobs.Base;
 using Headless.Jobs.Interfaces;
 
 namespace Headless.Jobs;
@@ -37,12 +38,12 @@ public static class JobSchedulerExtensions
             error: true
         )]
         [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-        public Task<Guid> ScheduleAsync(
-            JobFunctionDescriptor descriptor,
+        public Task<Guid> ScheduleAsync<TJob>(
             DateTime executionTime,
             Action<JobOptionsBuilder> configure,
             CancellationToken cancellationToken = default
-        ) =>
+        )
+            where TJob : IJob =>
             throw new NotSupportedException(
                 "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset."
             );
@@ -62,19 +63,19 @@ public static class JobSchedulerExtensions
             return scheduler.EnqueueAsync(request, builder.Build(), cancellationToken);
         }
 
-        /// <summary>Enqueues a requestless job with a freshly built options snapshot.</summary>
+        /// <summary>Enqueues a job that takes no arguments with a freshly built options snapshot.</summary>
         /// <exception cref="ArgumentNullException">The scheduler or configuration callback is null.</exception>
-        public Task<Guid> EnqueueAsync(
-            JobFunctionDescriptor descriptor,
+        public Task<Guid> EnqueueAsync<TJob>(
             Action<JobOptionsBuilder> configure,
             CancellationToken cancellationToken = default
         )
+            where TJob : IJob
         {
             Argument.IsNotNull(scheduler);
             Argument.IsNotNull(configure);
             var builder = new JobOptionsBuilder();
             configure(builder);
-            return scheduler.EnqueueAsync(descriptor, builder.Build(), cancellationToken);
+            return scheduler.EnqueueAsync<TJob>(builder.Build(), cancellationToken);
         }
 
         /// <summary>Schedules a typed job at the supplied instant with a freshly built options snapshot.</summary>
@@ -93,20 +94,20 @@ public static class JobSchedulerExtensions
             return scheduler.ScheduleAsync(request, executionTime, builder.Build(), cancellationToken);
         }
 
-        /// <summary>Schedules a requestless job at the supplied instant with a freshly built options snapshot.</summary>
+        /// <summary>Schedules a job that takes no arguments at the supplied instant with a freshly built options snapshot.</summary>
         /// <exception cref="ArgumentNullException">The scheduler or configuration callback is null.</exception>
-        public Task<Guid> ScheduleAsync(
-            JobFunctionDescriptor descriptor,
+        public Task<Guid> ScheduleAsync<TJob>(
             DateTimeOffset executionTime,
             Action<JobOptionsBuilder> configure,
             CancellationToken cancellationToken = default
         )
+            where TJob : IJob
         {
             Argument.IsNotNull(scheduler);
             Argument.IsNotNull(configure);
             var builder = new JobOptionsBuilder();
             configure(builder);
-            return scheduler.ScheduleAsync(descriptor, executionTime, builder.Build(), cancellationToken);
+            return scheduler.ScheduleAsync<TJob>(executionTime, builder.Build(), cancellationToken);
         }
 
         /// <summary>Schedules a typed job relative to the scheduler's clock with a freshly built options snapshot.</summary>
@@ -126,21 +127,21 @@ public static class JobSchedulerExtensions
             return scheduler.ScheduleAfterAsync(request, delay, builder.Build(), cancellationToken);
         }
 
-        /// <summary>Schedules a requestless job relative to the scheduler's clock with a freshly built options snapshot.</summary>
+        /// <summary>Schedules a job that takes no arguments relative to the scheduler's clock with a freshly built options snapshot.</summary>
         /// <exception cref="ArgumentNullException">The scheduler or configuration callback is null.</exception>
         /// <exception cref="ArgumentOutOfRangeException">The scheduler rejects a negative or overflowing delay.</exception>
-        public Task<Guid> ScheduleAfterAsync(
-            JobFunctionDescriptor descriptor,
+        public Task<Guid> ScheduleAfterAsync<TJob>(
             TimeSpan delay,
             Action<JobOptionsBuilder> configure,
             CancellationToken cancellationToken = default
         )
+            where TJob : IJob
         {
             Argument.IsNotNull(scheduler);
             Argument.IsNotNull(configure);
             var builder = new JobOptionsBuilder();
             configure(builder);
-            return scheduler.ScheduleAfterAsync(descriptor, delay, builder.Build(), cancellationToken);
+            return scheduler.ScheduleAfterAsync<TJob>(delay, builder.Build(), cancellationToken);
         }
     }
 }

@@ -37,18 +37,6 @@ internal static class DiagnosticDescriptors
         customTags: _CustomTags
     );
 
-    public static readonly DiagnosticDescriptor MethodAccessibility = new(
-        "HF002",
-        _Resource("MethodAccessibilityTitle"),
-        _Resource("MethodAccessibilityMessage"),
-        _Category,
-        DiagnosticSeverity.Error,
-        isEnabledByDefault: true,
-        description: _Resource("MethodAccessibilityMessage"),
-        helpLinkUri: _HelpLinkBase + "hf002",
-        customTags: _CustomTags
-    );
-
     public static readonly DiagnosticDescriptor InvalidCronExpression = new(
         "HF003",
         _Resource("InvalidCronExpressionTitle"),
@@ -61,39 +49,27 @@ internal static class DiagnosticDescriptors
         customTags: _CustomTags
     );
 
-    public static readonly DiagnosticDescriptor MissingFunctionName = new(
+    public static readonly DiagnosticDescriptor InvalidJobIdentity = new(
         "HF004",
-        _Resource("MissingFunctionNameTitle"),
-        _Resource("MissingFunctionNameMessage"),
+        _Resource("InvalidJobIdentityTitle"),
+        _Resource("InvalidJobIdentityMessage"),
         _Category,
         DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: _Resource("MissingFunctionNameMessage"),
+        description: _Resource("InvalidJobIdentityMessage"),
         helpLinkUri: _HelpLinkBase + "hf004",
         customTags: _CustomTags
     );
 
-    public static readonly DiagnosticDescriptor DuplicateFunctionName = new(
+    public static readonly DiagnosticDescriptor DuplicateJobIdentity = new(
         "HF005",
-        _Resource("DuplicateFunctionNameTitle"),
-        _Resource("DuplicateFunctionNameMessage"),
+        _Resource("DuplicateJobIdentityTitle"),
+        _Resource("DuplicateJobIdentityMessage"),
         _Category,
         DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: _Resource("DuplicateFunctionNameMessage"),
+        description: _Resource("DuplicateJobIdentityMessage"),
         helpLinkUri: _HelpLinkBase + "hf005",
-        customTags: _CustomTags
-    );
-
-    public static readonly DiagnosticDescriptor MultipleConstructors = new(
-        "HF006",
-        _Resource("MultipleConstructorsTitle"),
-        _Resource("MultipleConstructorsMessage"),
-        _Category,
-        DiagnosticSeverity.Warning,
-        isEnabledByDefault: true,
-        description: _Resource("MultipleConstructorsMessage"),
-        helpLinkUri: _HelpLinkBase + "hf006",
         customTags: _CustomTags
     );
 
@@ -121,38 +97,26 @@ internal static class DiagnosticDescriptors
         customTags: _CustomTags
     );
 
-    public static readonly DiagnosticDescriptor InvalidMethodParameter = new(
+    public static readonly DiagnosticDescriptor MissingJobInterface = new(
         "HF009",
-        _Resource("InvalidMethodParameterTitle"),
-        _Resource("InvalidMethodParameterMessage"),
+        _Resource("MissingJobInterfaceTitle"),
+        _Resource("MissingJobInterfaceMessage"),
         _Category,
         DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: _Resource("InvalidMethodParameterMessage"),
+        description: _Resource("MissingJobInterfaceMessage"),
         helpLinkUri: _HelpLinkBase + "hf009",
         customTags: _CustomTags
     );
 
-    public static readonly DiagnosticDescriptor MultipleJobsConstructorAttributes = new(
-        "HF010",
-        _Resource("MultipleJobsConstructorAttributesTitle"),
-        _Resource("MultipleJobsConstructorAttributesMessage"),
-        _Category,
-        DiagnosticSeverity.Error,
-        isEnabledByDefault: true,
-        description: _Resource("MultipleJobsConstructorAttributesMessage"),
-        helpLinkUri: _HelpLinkBase + "hf010",
-        customTags: _CustomTags
-    );
-
-    public static readonly DiagnosticDescriptor DuplicateRequestType = new(
+    public static readonly DiagnosticDescriptor DuplicateArgumentType = new(
         "HF011",
-        _Resource("DuplicateRequestTypeTitle"),
-        _Resource("DuplicateRequestTypeMessage"),
+        _Resource("DuplicateArgumentTypeTitle"),
+        _Resource("DuplicateArgumentTypeMessage"),
         _Category,
         DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: _Resource("DuplicateRequestTypeMessage"),
+        description: _Resource("DuplicateArgumentTypeMessage"),
         helpLinkUri: _HelpLinkBase + "hf011",
         customTags: _CustomTags
     );
@@ -205,26 +169,26 @@ internal static class DiagnosticDescriptors
         customTags: _CustomTags
     );
 
-    public static readonly DiagnosticDescriptor MethodMiddlewareRequiresJobFunction = new(
+    public static readonly DiagnosticDescriptor ClassMiddlewareRequiresJob = new(
         "HF016",
-        _Resource("MethodMiddlewareRequiresJobFunctionTitle"),
-        _Resource("MethodMiddlewareRequiresJobFunctionMessage"),
+        _Resource("ClassMiddlewareRequiresJobTitle"),
+        _Resource("ClassMiddlewareRequiresJobMessage"),
         _Category,
         DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: _Resource("MethodMiddlewareRequiresJobFunctionMessage"),
+        description: _Resource("ClassMiddlewareRequiresJobMessage"),
         helpLinkUri: _HelpLinkBase + "hf016",
         customTags: _CustomTags
     );
 
-    public static readonly DiagnosticDescriptor MethodMiddlewareFunctionTarget = new(
+    public static readonly DiagnosticDescriptor ClassMiddlewareFunctionTarget = new(
         "HF017",
-        _Resource("MethodMiddlewareFunctionTargetTitle"),
-        _Resource("MethodMiddlewareFunctionTargetMessage"),
+        _Resource("ClassMiddlewareFunctionTargetTitle"),
+        _Resource("ClassMiddlewareFunctionTargetMessage"),
         _Category,
         DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: _Resource("MethodMiddlewareFunctionTargetMessage"),
+        description: _Resource("ClassMiddlewareFunctionTargetMessage"),
         helpLinkUri: _HelpLinkBase + "hf017",
         customTags: _CustomTags
     );
@@ -286,6 +250,18 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true,
         description: _Resource("InvalidOverlapPolicyMessage"),
         helpLinkUri: _HelpLinkBase + "hf022",
+        customTags: _CustomTags
+    );
+
+    public static readonly DiagnosticDescriptor InvalidFailurePolicy = new(
+        "HF023",
+        _Resource("InvalidFailurePolicyTitle"),
+        _Resource("InvalidFailurePolicyMessage"),
+        _Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: _Resource("InvalidFailurePolicyMessage"),
+        helpLinkUri: _HelpLinkBase + "hf023",
         customTags: _CustomTags
     );
 

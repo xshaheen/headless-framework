@@ -1125,36 +1125,34 @@ Roslyn incremental source generator that eliminates reflection and manual job re
 - **DI constructor injection**: generates one factory per job class. It calls the primary constructor when the class has one, otherwise the constructor marked `[JobsConstructor]`, otherwise the first public constructor; constructors in every part of a partial class count. Parameters resolve through `GetService<T>()`, or `GetKeyedService<T>(key)` for `[FromKeyedServices]`, and a parameter named `serviceProvider` receives the provider itself.
 - **Incremental**: declarations are reduced to value models when discovered, so an edit that does not change a `[JobFunction]` or middleware declaration reuses every generator step and re-emits nothing.
 - **Collision safety**: HF005 rejects duplicate function names and HF011 rejects duplicate typed request mappings within a compilation. Provider construction reports cross-assembly conflicts deterministically.
-- **Diagnostics**: HF001–HF022, listed with their causes and fixes under [Diagnostics](#diagnostics).
+- **Diagnostics**: HF001–HF023 (HF002, HF006, and HF010 are retired), listed with their causes and fixes under [Diagnostics](#diagnostics).
 
 ### Diagnostics
 
-Every rule is reported at compile time in category `Headless.Jobs.SourceGenerator`. Only HF006 is a warning; the rest are errors. The table below is each rule's help link target.
+Every rule is reported at compile time in category `Headless.Jobs.SourceGenerator`, and every rule is an error. The table below is each rule's help link target.
 
 | Rule | Reported when | Fix |
 | --- | --- | --- |
-| <a id="hf001"></a>HF001 | The class declaring a `[JobFunction]` is neither public nor internal, or is `file`-local. | Make the class `public` or `internal` (no modifier on a top-level class is internal). |
-| <a id="hf002"></a>HF002 | The `[JobFunction]` method is neither public nor internal. | Declare the method `public` or `internal`. |
-| <a id="hf003"></a>HF003 | The cron expression is not a valid six-field (seconds-first) expression. A `%Key%` configuration placeholder is not checked. | Use six fields, for example `"0 */5 * * * *"`, or a `%Section:Key%` placeholder. |
-| <a id="hf004"></a>HF004 | The function name is empty or white space. | Pass a non-empty durable name as the first argument. |
-| <a id="hf005"></a>HF005 | Two `[JobFunction]` methods in one compilation use the same function name. Nothing is generated. | Give each function a unique name; use `ContractVersion` to version one function, not a second name. |
-| <a id="hf006"></a>HF006 | A job class declares more than one constructor and none is marked `[JobsConstructor]`. Warning. | Mark the constructor the factory must call with `[JobsConstructor]`. |
-| <a id="hf007"></a>HF007 | The class declaring a `[JobFunction]` is abstract. | Move the method to a concrete class. |
-| <a id="hf008"></a>HF008 | The class declaring a `[JobFunction]` is nested in another type. | Move the method to a top-level class. |
-| <a id="hf009"></a>HF009 | A parameter is not `JobFunctionContext`, `JobFunctionContext<T>`, or `CancellationToken`. | Remove the parameter and inject the service through the declaring class's constructor. |
-| <a id="hf010"></a>HF010 | More than one constructor is marked `[JobsConstructor]`. | Keep the attribute on one constructor. |
-| <a id="hf011"></a>HF011 | Two functions in one compilation take `JobFunctionContext<T>` with the same `T`. Nothing is generated. | Give each typed function its own request type. |
-| <a id="hf012"></a>HF012 | The priority argument is not a defined `JobPriority` value. | Pass a `JobPriority` member. |
-| <a id="hf013"></a>HF013 | The maximum concurrency is negative. | Pass `0` for unlimited or a positive limit. |
-| <a id="hf014"></a>HF014 | An assembly-level middleware `Function` names no descriptor published by a referenced assembly. | Correct the name, or reference the assembly that declares the function. |
+| <a id="hf001"></a>HF001 | The `[Job]` class is neither public nor internal, or is `file`-local. | Make the class `public` or `internal` (no modifier on a top-level class is internal). |
+| <a id="hf003"></a>HF003 | The `Cron` value is not a valid six-field (seconds-first) expression. A value starting with `%` names a configuration key and is checked at startup instead. | Use six fields, for example `"0 */5 * * * *"`, or a `%Section:Key` configuration key. |
+| <a id="hf004"></a>HF004 | The identity is not in `owner.name` form: it is empty, longer than 200 characters, has no `.` separator or an empty segment, has surrounding white space, or contains a control character. | Pass an identity such as `"billing.close-day"`, whose first segment names the owning module. |
+| <a id="hf005"></a>HF005 | Two `[Job]` classes in one compilation use the same identity. Nothing is generated. | Give each job a unique identity; use `ContractVersion` to version one job, not a second identity. |
+| <a id="hf007"></a>HF007 | The `[Job]` class is abstract or generic, so a run cannot construct it. | Put `[Job]` on a concrete, non-generic class. |
+| <a id="hf008"></a>HF008 | The `[Job]` class is nested in another type. | Move the class to the top level. |
+| <a id="hf009"></a>HF009 | The `[Job]` class implements neither `IJob` nor `IJob<TArgs>`, or implements more than one of them. | Implement exactly one: `IJob` for a job without arguments, `IJob<TArgs>` for a job with arguments. |
+| <a id="hf011"></a>HF011 | Two `[Job]` classes in one compilation implement `IJob<TArgs>` with the same `TArgs`. Nothing is generated. | Give each job its own argument type; scheduling finds a job by its argument type. |
+| <a id="hf012"></a>HF012 | `Priority` is not a defined `JobPriority` value. | Pass a `JobPriority` member. |
+| <a id="hf013"></a>HF013 | `MaxConcurrency` is negative. | Pass `0` for unlimited or a positive limit. |
+| <a id="hf014"></a>HF014 | An assembly-level middleware `Function` names no job identity published by a referenced assembly. | Correct the identity, or reference the assembly that declares the job. |
 | <a id="hf015"></a>HF015 | The same middleware type is declared twice for the same stage, target, and priority. | Remove the duplicate declaration. |
-| <a id="hf016"></a>HF016 | Method-level middleware is declared on a method without `[JobFunction]`. | Put the middleware attribute beside a `[JobFunction]` attribute, or move it to the assembly. |
-| <a id="hf017"></a>HF017 | Method-level middleware sets `Function`. | Remove `Function`; the neighboring `[JobFunction]` is the target. |
-| <a id="hf018"></a>HF018 | Assembly-level middleware `Function` names a function declared in the same assembly. | Declare the middleware on that `[JobFunction]` method instead. |
+| <a id="hf016"></a>HF016 | Class-level middleware is declared on a class without `[Job]`. | Put the middleware attribute on a `[Job]` class, or move it to the assembly. |
+| <a id="hf017"></a>HF017 | Class-level middleware sets `Function`. | Remove `Function`; the decorated `[Job]` class is the target. |
+| <a id="hf018"></a>HF018 | Assembly-level middleware `Function` names a job declared in the same assembly. | Declare the middleware on that `[Job]` class instead. |
 | <a id="hf019"></a>HF019 | The middleware type, or a type containing it, is private, protected, or `file`-local, so generated code cannot resolve it. | Make the type `public` or `internal`. |
 | <a id="hf020"></a>HF020 | `OnMissedRun` is not a defined `MissedRunPolicy` value. | Pass a `MissedRunPolicy` member. |
 | <a id="hf021"></a>HF021 | `MissedRunGraceSeconds` is zero or negative. | Pass a positive number of seconds, or leave it unset to inherit the scheduler default. |
 | <a id="hf022"></a>HF022 | `OnOverlap` is not a defined `CronOverlapPolicy` value. | Pass a `CronOverlapPolicy` member. |
+| <a id="hf023"></a>HF023 | `Policy` names a type that does not implement `Headless.Reliability.IFailurePolicy`, or names the interface itself, an abstract type, or an open generic type. | Pass a concrete policy type that implements `IFailurePolicy`. |
 
 ### Install
 

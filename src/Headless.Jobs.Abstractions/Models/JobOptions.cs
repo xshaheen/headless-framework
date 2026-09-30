@@ -7,7 +7,7 @@ namespace Headless.Jobs.Models;
 
 /// <summary>Persistence-backed options for immediate and delayed one-shot jobs.</summary>
 /// <remarks>
-/// Priority is generated from <c>[JobFunction]</c> metadata and is intentionally not a per-enqueue option.
+/// Priority is generated from <c>[Job]</c> metadata and is intentionally not a per-enqueue option.
 /// Keyed scheduling captures resolved retries, intervals, and node-death policy when a generation is created.
 /// These fields, including explicit overrides, do not change keyed intent or update a matching existing generation.
 /// Generation-fenced replacement captures the replacement call's resolved policy. Options validation and the

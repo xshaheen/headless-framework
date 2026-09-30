@@ -14,20 +14,16 @@ using Jobs.SourceGenerator.Tests;
 [assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute("middleware.local", "1")]
 namespace Jobs.SourceGenerator.Tests
 {
-    /// <summary>Generated Jobs registration for this assembly. Add it with <c>AddModule&lt;JobsModule&gt;()</c> inside <c>AddHeadlessJobs</c>.</summary>
+    /// <summary>Generated Jobs registration for this assembly. Add it with <c>AddModule&lt;JobsModule&gt;()</c>.</summary>
     public sealed class JobsModule : global::Headless.Jobs.IJobsModule
     {
         private JobsModule() { }
 
         static void global::Headless.Jobs.IJobsModule.Register()
         {
-            var jobFunctionDelegateDict = new Dictionary<string, JobFunctionRegistration>(1);
-            jobFunctionDelegateDict.Add("middleware.local", new JobFunctionRegistration { CronExpression = string.Empty, Priority = (JobPriority)0, Delegate = new JobFunctionDelegate((serviceProvider, context, cancellationToken) =>
-            {
-                CreateDemoMiddlewareMiddlewareJobs(serviceProvider).Run();
-                return Task.CompletedTask;
-            }), MaxConcurrency = 0 });
-            JobFunctionProvider.RegisterFunctions(jobFunctionDelegateDict, 1);
+            var functions = new Dictionary<string, JobFunctionRegistration>(1);
+            functions.Add("middleware.local", new JobFunctionRegistration { CronExpression = "", Priority = (JobPriority)0, Delegate = Invoke_Demo_Middleware_MiddlewareJob, MaxConcurrency = 0, JobType = typeof(global::Demo.Middleware.MiddlewareJob) });
+            JobFunctionProvider.RegisterFunctions(functions, 1);
             RegisterRequestTypes();
             RegisterDescriptors();
             JobMiddlewareRegistry.RegisterSchedule("Jobs.SourceGenerator.Tests:Demo.Middleware.GlobalSchedule", null, 5, static (context, next, cancellationToken) => context.Services.GetRequiredService<global::Demo.Middleware.GlobalSchedule>().InvokeAsync(context, next, cancellationToken));
@@ -39,27 +35,18 @@ namespace Jobs.SourceGenerator.Tests
         private static void RegisterDescriptors()
         {
             var descriptors = new Dictionary<string, JobFunctionDescriptor>(1);
-            descriptors.Add("middleware.local", AppJobs.middleware_u002E_local);
+            descriptors.Add("middleware.local", new JobFunctionDescriptor("middleware.local", null, "", (JobPriority)0, 0, "1"));
             JobFunctionProvider.RegisterDescriptors(descriptors, 1);
-        }
-
-        private static global::Demo.Middleware.MiddlewareJobs CreateDemoMiddlewareMiddlewareJobs(IServiceProvider serviceProvider)
-        {
-            return new global::Demo.Middleware.MiddlewareJobs();
         }
 
         private static void RegisterRequestTypes()
         {
         }
-    }
-}
 
-namespace Jobs.SourceGenerator.Tests
-{
-    /// <summary>Canonical generated handles for this assembly's requestless jobs.</summary>
-    public static class AppJobs
-    {
-        /// <summary>A canonical requestless job descriptor.</summary>
-        public static JobFunctionDescriptor middleware_u002E_local { get; } = new JobFunctionDescriptor("middleware.local", null, "", (JobPriority)0, 0, "1");
+        private static async Task Invoke_Demo_Middleware_MiddlewareJob(IServiceProvider serviceProvider, global::Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken)
+        {
+            var job = ActivatorUtilities.CreateInstance<global::Demo.Middleware.MiddlewareJob>(serviceProvider);
+            await ((global::Headless.Jobs.Base.IJob)job).ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
+        }
     }
 }

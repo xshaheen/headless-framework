@@ -24,7 +24,7 @@ public sealed class JobsRequestProviderTests : TestBase
     private readonly IJobsInstrumentation _instrumentation = Substitute.For<IJobsInstrumentation>();
     private readonly ServiceProvider _services;
     private readonly AsyncServiceScope _scope;
-    private readonly JobFunctionContext _context;
+    private readonly JobContext _context;
 
     public JobsRequestProviderTests()
     {
@@ -34,7 +34,7 @@ public sealed class JobsRequestProviderTests : TestBase
             .BuildServiceProvider();
         _scope = _services.CreateAsyncScope();
 
-        _context = new JobFunctionContext
+        _context = new JobContext
         {
             Id = Guid.NewGuid(),
             Type = JobType.TimeJob,

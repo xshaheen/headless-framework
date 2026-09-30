@@ -215,7 +215,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
             if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
             {
-                throw new JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
+                throw new JobValidatorException($"Cannot find a registered job with identity {entity.Function}");
             }
 
             _EnsureValidRetries(entity);
@@ -373,7 +373,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
         {
-            throw new JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
+            throw new JobValidatorException($"Cannot find a registered job with identity {entity.Function}");
         }
 
         _EnsureValidRecoverySettings(entity);
@@ -537,7 +537,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, cronJob.Function, StringComparison.Ordinal)))
         {
             return new JobResult<TCronJob>(
-                new JobValidatorException($"Cannot find JobFunction with name {cronJob.Function}")
+                new JobValidatorException($"Cannot find a registered job with identity {cronJob.Function}")
             );
         }
 
@@ -680,7 +680,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     {
         if (!_functionRegistry.Descriptors.TryGetValue(entity.Function, out var descriptor))
         {
-            throw new JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
+            throw new JobValidatorException($"Cannot find a registered job with identity {entity.Function}");
         }
 
         var completed = false;
@@ -953,7 +953,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 {
                     // Aggregate every invalid entity and throw once after the loop so the caller sees them all; the
                     // batch is all-or-nothing, so a single invalid entity writes nothing.
-                    (errors ??= []).Add($"Cannot find JobFunction with name {entity.Function}");
+                    (errors ??= []).Add($"Cannot find a registered job with identity {entity.Function}");
                     continue;
                 }
 
@@ -1109,7 +1109,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
             if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
             {
-                (errors ??= []).Add($"Cannot find JobFunction with name {entity.Function}");
+                (errors ??= []).Add($"Cannot find a registered job with identity {entity.Function}");
                 continue;
             }
 
@@ -1481,7 +1481,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
             if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, cronJob.Function, StringComparison.Ordinal)))
             {
-                errors.Add(new JobValidatorException($"Cannot find JobFunction with name {cronJob.Function}"));
+                errors.Add(new JobValidatorException($"Cannot find a registered job with identity {cronJob.Function}"));
                 continue;
             }
 

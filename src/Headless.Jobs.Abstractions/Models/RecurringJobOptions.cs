@@ -7,7 +7,7 @@ namespace Headless.Jobs.Models;
 
 /// <summary>Persistence-backed options for recurring job definitions and their occurrences.</summary>
 /// <remarks>
-/// Priority is generated from <c>[JobFunction]</c> metadata and is intentionally not a per-definition option.
+/// Priority is generated from <c>[Job]</c> metadata and is intentionally not a per-definition option.
 /// </remarks>
 [PublicAPI]
 public sealed record RecurringJobOptions

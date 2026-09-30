@@ -88,6 +88,7 @@ public sealed class CronFingerprintActivationTests : TestBase
                 FrozenDictionary<string, (string, Type)>.Empty,
                 FrozenDictionary<string, JobFunctionDescriptor>.Empty,
                 FrozenDictionary<string, JobFunctionDescriptor>.Empty,
+                FrozenDictionary<Type, JobFunctionDescriptor>.Empty,
                 FrozenDictionary<Type, JobFunctionDescriptor>.Empty
             ),
             new JobsActivationBarrier(),

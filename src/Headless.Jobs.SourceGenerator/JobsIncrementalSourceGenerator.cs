@@ -13,8 +13,8 @@ using Microsoft.CodeAnalysis.Text;
 namespace Headless.Jobs.SourceGenerator;
 
 /// <summary>
-/// Roslyn incremental source generator that discovers methods annotated with <c>[JobFunction]</c> and Jobs middleware
-/// attributes, and emits one registration source file per assembly.
+/// Roslyn incremental source generator that discovers <c>[Job]</c> classes and Jobs middleware attributes, and emits
+/// one registration source file per assembly.
 /// </summary>
 /// <remarks>
 /// Declarations are found with <c>ForAttributeWithMetadataName</c> and reduced to value-equal models in their
@@ -28,7 +28,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
     /// <summary>Tracking names of the pipeline steps; tests assert these stay cached on unrelated edits.</summary>
     internal static class TrackingNames
     {
-        public const string JobFunctions = nameof(JobFunctions);
+        public const string Jobs = nameof(Jobs);
         public const string ScheduleMiddleware = nameof(ScheduleMiddleware);
         public const string ExecuteMiddleware = nameof(ExecuteMiddleware);
         public const string AssemblyName = nameof(AssemblyName);
@@ -41,15 +41,15 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
     /// <summary>Registers the incremental pipeline.</summary>
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        var functions = context
+        var jobs = context
             .SyntaxProvider.ForAttributeWithMetadataName(
-                SourceGeneratorConstants.JobFunctionAttributeMetadataName,
-                JobFunctionParser.IsCandidate,
-                JobFunctionParser.Parse
+                SourceGeneratorConstants.JobAttributeMetadataName,
+                JobParser.IsCandidate,
+                JobParser.Parse
             )
             .Where(static result => result is not null)
             .Select(static (result, _) => result!)
-            .WithTrackingName(TrackingNames.JobFunctions);
+            .WithTrackingName(TrackingNames.Jobs);
 
         var scheduleMiddleware = context
             .SyntaxProvider.ForAttributeWithMetadataName(
@@ -76,7 +76,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             .CompilationProvider.Select(static (compilation, _) => compilation.AssemblyName ?? string.Empty)
             .WithTrackingName(TrackingNames.AssemblyName);
 
-        // Referenced descriptor metadata is read only when some assembly middleware targets a function by name, so an
+        // Referenced descriptor metadata is read only when some assembly middleware targets a job by identity, so an
         // edit in a project without such middleware never walks its references.
         var referencedFunctions = middleware
             .Select(
@@ -96,8 +96,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             )
             .WithTrackingName(TrackingNames.ReferencedFunctions);
 
-        var generation = functions
-            .Collect()
+        var generation = jobs.Collect()
             .Combine(middleware)
             .Combine(referencedFunctions)
             .Combine(assemblyName)

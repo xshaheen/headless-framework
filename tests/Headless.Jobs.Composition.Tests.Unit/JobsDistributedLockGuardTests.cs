@@ -126,6 +126,46 @@ public sealed class JobsDistributedLockGuardTests : TestBase
             );
     }
 
+    [Fact]
+    public async Task seed_carries_the_declared_time_zone_onto_the_definition()
+    {
+        var manager = Substitute.For<IInternalJobManager>();
+        var registry = JobFunctionRegistryBuilder.Build(
+            [
+                new KeyValuePair<string, JobFunctionRegistration>(
+                    "billing.close-day",
+                    new()
+                    {
+                        CronExpression = "0 0 0 * * *",
+                        Priority = JobPriority.Normal,
+                        Delegate = static (_, _, _) => Task.CompletedTask,
+                        MaxConcurrency = 0,
+                        TimeZoneId = "Africa/Cairo",
+                    }
+                ),
+            ],
+            [],
+            []
+        );
+
+        await _InvokeSeedAsync(
+            manager,
+            new SchedulerOptionsBuilder { UseStorageLock = false },
+            Substitute.For<IDistributedLock>(),
+            AbortToken,
+            registry
+        );
+
+        await manager
+            .Received(1)
+            .MigrateDefinedCronJobs(
+                Arg.Is<CronSeedDefinition[]>(functions =>
+                    functions.Length == 1 && functions[0].TimeZoneId == "Africa/Cairo"
+                ),
+                AbortToken
+            );
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]

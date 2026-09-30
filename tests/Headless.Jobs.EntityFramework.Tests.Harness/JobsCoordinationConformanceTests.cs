@@ -1877,6 +1877,46 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         }
     }
 
+    public virtual async Task should_seed_the_declared_time_zone_and_reposition_when_it_changes()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("cron-zone-node");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            static CronSeedDefinition seed(string timeZoneId) =>
+                new(
+                    "billing.close-day",
+                    "0 0 0 * * *",
+                    MissedRunPolicy.Coalesce,
+                    JobsRecoveryDefaults.MissedRunGraceSeconds,
+                    CronOverlapPolicy.Allow,
+                    TimeZoneId: timeZoneId
+                );
+
+            await persistence.MigrateDefinedCronJobsAsync([seed("Africa/Cairo")], ct);
+            var created = (await persistence.GetAllCronJobExpressionsAsync(ct)).Single();
+            await persistence.MigrateDefinedCronJobsAsync([seed("Africa/Cairo")], ct);
+            var unchanged = (await persistence.GetAllCronJobExpressionsAsync(ct)).Single();
+            await persistence.MigrateDefinedCronJobsAsync([seed("Europe/London")], ct);
+            var moved = (await persistence.GetAllCronJobExpressionsAsync(ct)).Single();
+
+            created.TimeZoneId.Should().Be("Africa/Cairo");
+            unchanged.ScheduleRevision.Should().Be(created.ScheduleRevision);
+            moved.TimeZoneId.Should().Be("Europe/London");
+            moved.ScheduleRevision.Should().Be(created.ScheduleRevision + 1);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
     public virtual async Task should_retire_pending_seed_work_when_code_defined_expression_changes()
     {
         var ct = AbortToken;

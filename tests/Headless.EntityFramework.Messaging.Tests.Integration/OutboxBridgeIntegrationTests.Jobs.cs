@@ -65,9 +65,8 @@ public sealed partial class OutboxBridgeIntegrationTests
         var schedule = async () =>
             await scope
                 .ServiceProvider.GetRequiredService<IJobScheduler>()
-                .ScheduleKeyedAsync(
+                .ScheduleKeyedAsync<DeadlineJob>(
                     new JobKey(marker),
-                    DeadlineRegistration.Descriptor,
                     provider.GetRequiredService<DeadlineEvidence>().Due,
                     new JobOptions { Enlistment = TransactionEnlistment.Required },
                     AbortToken
@@ -294,9 +293,8 @@ public sealed partial class OutboxBridgeIntegrationTests
                         await db.SaveChangesAsync(token);
                     }
                     evidence.Results.Add(
-                        await unitOfWork.Jobs.ScheduleKeyedAsync(
+                        await unitOfWork.Jobs.ScheduleKeyedAsync<DeadlineJob>(
                             new JobKey(context.MessageId),
-                            DeadlineRegistration.Descriptor,
                             evidence.Due,
                             new JobOptions
                             {
@@ -316,6 +314,12 @@ public sealed partial class OutboxBridgeIntegrationTests
                 cancellationToken: cancellationToken
             );
         }
+    }
+
+    private sealed class DeadlineJob : Headless.Jobs.Base.IJob
+    {
+        public ValueTask ExecuteAsync(Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
     }
 
     private static class DeadlineRegistration
@@ -340,6 +344,7 @@ public sealed partial class OutboxBridgeIntegrationTests
                         Priority = JobPriority.Normal,
                         MaxConcurrency = 1,
                         Delegate = static (_, _, _) => Task.CompletedTask,
+                        JobType = typeof(DeadlineJob),
                     },
                 }
             );

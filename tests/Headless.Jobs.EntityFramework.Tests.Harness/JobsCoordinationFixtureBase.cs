@@ -1092,15 +1092,22 @@ public sealed class CustomSchemaJobsDbContext(DbContextOptions<CustomSchemaJobsD
 /// <summary>Typed payload registered as a generated-equivalent job-function request by the relational harness.</summary>
 public sealed record CoordinatedFacadeRequest(Guid Id, string Value);
 
+/// <summary>
+/// The class the plain coordinated registration names, so scheduling code can address that job without arguments by
+/// its type.
+/// </summary>
+internal sealed class CoordinatedJob : IJob
+{
+    public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+}
+
 internal static class CoordinatedEnqueueJobs
 {
 #pragma warning disable IDE0060 // These methods are registered as job-function delegates, whose context and token are part of the required signature.
-    public static Task RunAsync(JobFunctionContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+    public static Task RunAsync(JobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
 
-    public static Task RunAsync(
-        JobFunctionContext<CoordinatedFacadeRequest> context,
-        CancellationToken cancellationToken
-    ) => Task.CompletedTask;
+    public static Task RunAsync(JobContext<CoordinatedFacadeRequest> context, CancellationToken cancellationToken) =>
+        Task.CompletedTask;
 #pragma warning restore IDE0060
 }
 
@@ -1135,6 +1142,7 @@ internal static class CoordinatedEnqueueJobsRegistration
                     Delegate = (_, context, cancellationToken) =>
                         CoordinatedEnqueueJobs.RunAsync(context, cancellationToken),
                     MaxConcurrency = 1,
+                    JobType = typeof(CoordinatedJob),
                 },
                 [JobsCoordinationFixtureExtensions.CoordinatedFacadeFunctionName] = new JobFunctionRegistration
                 {
@@ -1146,10 +1154,7 @@ internal static class CoordinatedEnqueueJobsRegistration
                             .GetRequestAsync<CoordinatedFacadeRequest>(context, cancellationToken)
                             .ConfigureAwait(false);
                         await CoordinatedEnqueueJobs
-                            .RunAsync(
-                                new JobFunctionContext<CoordinatedFacadeRequest>(context, request),
-                                cancellationToken
-                            )
+                            .RunAsync(new JobContext<CoordinatedFacadeRequest>(context, request), cancellationToken)
                             .ConfigureAwait(false);
                     },
                     MaxConcurrency = 1,

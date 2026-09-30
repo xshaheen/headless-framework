@@ -83,7 +83,12 @@ public sealed class JobsContributionTests : TestBase
 
         // then
         add.Should().NotThrow();
-        JobFunctionProvider.JobFunctions.Keys.Should().Equal(GeneratedFixture.DiscoveryJobs.FunctionName);
+        JobFunctionProvider
+            .JobFunctions.Keys.Should()
+            .BeEquivalentTo(
+                GeneratedFixture.DiscoveryJobs.FunctionName,
+                GeneratedFixture.DiscoveryCloseDay.FunctionName
+            );
     }
 
     [Fact]

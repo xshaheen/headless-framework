@@ -7,13 +7,13 @@ namespace Headless.Jobs.SourceGenerator.Utilities;
 /// </summary>
 internal static class SourceGeneratorConstants
 {
-    public const string JobFunctionAttributeMetadataName = "Headless.Jobs.Base.JobFunctionAttribute";
+    public const string JobAttributeMetadataName = "Headless.Jobs.Base.JobAttribute";
+    public const string JobInterfaceMetadataName = "Headless.Jobs.Base.IJob";
+    public const string GenericJobInterfaceMetadataName = "Headless.Jobs.Base.IJob`1";
+    public const string FailurePolicyMetadataName = "Headless.Reliability.IFailurePolicy";
     public const string ScheduleMiddlewareAttributeMetadataName = "Headless.Jobs.JobScheduleMiddlewareAttribute`1";
     public const string ExecuteMiddlewareAttributeMetadataName = "Headless.Jobs.JobExecuteMiddlewareAttribute`1";
     public const string DescriptorMetadataAttributeName = "Headless.Jobs.JobFunctionDescriptorMetadataAttribute";
-    public const string CancellationTokenTypeName = "System.Threading.CancellationToken";
-    public const string BaseJobFunctionContextTypeName = "Headless.Jobs.Base.JobFunctionContext";
-    public const string FromKeyedServicesAttributeName = "FromKeyedServicesAttribute";
 
     /// <summary>
     /// Assembly name for which nothing is generated. No assembly in this repository has this name; the exclusion
@@ -22,7 +22,10 @@ internal static class SourceGeneratorConstants
     public const string ExcludedAssemblyName = "Jobs";
 
     public const string GeneratedFileName = "JobsModule.g.cs";
+
+    /// <summary>
+    /// A cron value starting with this prefix names an <c>IConfiguration</c> key. The runtime resolves it at startup,
+    /// so the generator leaves it unvalidated.
+    /// </summary>
     public const string ConfigExpressionPrefix = "%";
-    public const string ConfigExpressionSuffix = "%";
-    public const int MinConfigExpressionLength = 2;
 }

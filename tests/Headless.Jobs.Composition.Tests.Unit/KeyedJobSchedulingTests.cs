@@ -220,6 +220,7 @@ public sealed class KeyedJobSchedulingTests : TestBase
                             Priority = JobPriority.Normal,
                             MaxConcurrency = 0,
                             Delegate = (_, _, _) => Task.CompletedTask,
+                            JobType = typeof(DeadlineJob),
                         }
                     ),
                 ],
@@ -231,20 +232,18 @@ public sealed class KeyedJobSchedulingTests : TestBase
         var scheduler = provider.GetRequiredService<IJobScheduler>();
         var key = new JobKey("facade");
         var due = new DateTimeOffset(2030, 1, 1, 5, 30, 0, TimeSpan.FromMinutes(330)).AddTicks(9);
-        var created = await scheduler.ScheduleKeyedAsync(key, descriptor, due, cancellationToken: AbortToken);
-        var observed = await scheduler.ScheduleKeyedAsync(
+        var created = await scheduler.ScheduleKeyedAsync<DeadlineJob>(key, due, cancellationToken: AbortToken);
+        var observed = await scheduler.ScheduleKeyedAsync<DeadlineJob>(
             key,
-            descriptor,
             due.ToUniversalTime(),
             new JobOptions { Description = "new description" },
             AbortToken
         );
         observed.Disposition.Should().Be(JobScheduleDisposition.Existing);
         observed.RunId.Should().Be(created.RunId);
-        var replaced = await scheduler.ReplaceKeyedAsync(
+        var replaced = await scheduler.ReplaceKeyedAsync<DeadlineJob>(
             key,
             1,
-            descriptor,
             due.AddMinutes(1),
             cancellationToken: AbortToken
         );
@@ -319,6 +318,7 @@ public sealed class KeyedJobSchedulingTests : TestBase
                                 Priority = JobPriority.Normal,
                                 MaxConcurrency = 0,
                                 Delegate = (_, _, _) => Task.CompletedTask,
+                                JobType = typeof(DeadlineJob),
                             }
                         ),
                     ],
@@ -330,16 +330,16 @@ public sealed class KeyedJobSchedulingTests : TestBase
             var scheduler = provider.GetRequiredService<IJobScheduler>();
             var key = new JobKey("policy");
             var due = new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero).AddTicks(9);
-            var created = await scheduler.ScheduleKeyedAsync(key, descriptor, due, cancellationToken: AbortToken);
+            var created = await scheduler.ScheduleKeyedAsync<DeadlineJob>(key, due, cancellationToken: AbortToken);
             var store = provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
             var persisted = await store.GetTimeJobByIdAsync(created.RunId!.Value, AbortToken);
             persisted!.Retries.Should().Be(2);
             persisted.ExecutionTime.Should().Be(due.AddMinutes(1).AddTicks(1).UtcDateTime);
-            (await scheduler.ScheduleKeyedAsync(key, descriptor, due, cancellationToken: AbortToken))
+            (await scheduler.ScheduleKeyedAsync<DeadlineJob>(key, due, cancellationToken: AbortToken))
                 .Disposition.Should()
                 .Be(JobScheduleDisposition.Existing);
             retryPolicy = 3;
-            (await scheduler.ScheduleKeyedAsync(key, descriptor, due, cancellationToken: AbortToken))
+            (await scheduler.ScheduleKeyedAsync<DeadlineJob>(key, due, cancellationToken: AbortToken))
                 .Disposition.Should()
                 .Be(JobScheduleDisposition.Existing);
             var observed = await store.GetTimeJobByIdAsync(created.RunId.Value, AbortToken);
@@ -421,5 +421,11 @@ public sealed class KeyedJobSchedulingTests : TestBase
         results.Count(result => result.Disposition == JobScheduleDisposition.Existing).Should().Be(7);
         results.Select(result => result.RunId).Distinct().Should().ContainSingle();
         results.Should().OnlyContain(result => result.Generation == 1);
+    }
+
+    private sealed class DeadlineJob : Headless.Jobs.Base.IJob
+    {
+        public ValueTask ExecuteAsync(Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
     }
 }

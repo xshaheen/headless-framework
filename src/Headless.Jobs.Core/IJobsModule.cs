@@ -3,7 +3,7 @@
 namespace Headless.Jobs;
 
 /// <summary>
-/// One assembly's generated Jobs registration: its <c>[JobFunction]</c> delegates, request types, descriptors, and
+/// One assembly's generated Jobs registration: its <c>[Job]</c> invokers, argument types, descriptors, and
 /// middleware. <c>Headless.Jobs.SourceGenerator</c> emits one implementation per assembly as
 /// <c>&lt;AssemblyName&gt;.JobsModule</c>.
 /// </summary>

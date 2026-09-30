@@ -69,29 +69,35 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
             _ => "QueueOptions",
         };
         var prefix = _Arguments(receiver, verb, requestless);
-        var call = $"{receiver}.{verb}";
+        var call = $"{receiver}.{verb}{_TypeArguments(receiver, requestless)}";
         var namedPrefix = _Arguments(receiver, verb, requestless, named: true);
-        var forms = new (string Arguments, string Parameter)[]
+        var forms = new List<(string Arguments, string Parameter)>
         {
             (prefix, "cancellationToken"),
-            ($"{prefix}, ct", "cancellationToken"),
-            ($"{prefix}, new {options}(), ct", "options"),
-            ($"{prefix}, options: null", "options"),
-            ($"{prefix}, options: new {options}(), cancellationToken: ct", "options"),
-            ($"{prefix}, p => p.WithCorrelationId(\"order\"), ct", "configure"),
-            ($"{prefix}, p => {{ p.WithCorrelationId(\"order\"); }}", "configure"),
-            ($"{prefix}, configure", "configure"),
-            ($"{prefix}, configure, ct", "configure"),
-            ($"{namedPrefix}, configure: p => p.WithCorrelationId(\"order\"), cancellationToken: ct", "configure"),
-            ($"{prefix}, null", "options"),
-            ($"{prefix}, null, ct", "options"),
-            ($"{prefix}, default, ct", "options"),
-            ($"{prefix}, default(CancellationToken)", "cancellationToken"),
-            ($"{prefix}, cancellationToken: default", "cancellationToken"),
-            ($"{prefix}, configure: null!", "configure"),
-            ($"{prefix}, (Action<{options}Builder>)null!", "configure"),
-            ($"{prefix}, ({options}?)null", "options"),
+            (_Join(prefix, "ct"), "cancellationToken"),
+            (_Join(prefix, $"new {options}(), ct"), "options"),
+            (_Join(prefix, "options: null"), "options"),
+            (_Join(prefix, $"options: new {options}(), cancellationToken: ct"), "options"),
+            (_Join(prefix, "p => p.WithCorrelationId(\"order\"), ct"), "configure"),
+            (_Join(prefix, "p => { p.WithCorrelationId(\"order\"); }"), "configure"),
+            (_Join(prefix, "configure"), "configure"),
+            (_Join(prefix, "configure, ct"), "configure"),
+            (_Join(namedPrefix, "configure: p => p.WithCorrelationId(\"order\"), cancellationToken: ct"), "configure"),
+            (_Join(prefix, "default(CancellationToken)"), "cancellationToken"),
+            (_Join(prefix, "cancellationToken: default"), "cancellationToken"),
+            (_Join(prefix, "configure: null!"), "configure"),
+            (_Join(prefix, $"(Action<{options}Builder>)null!"), "configure"),
+            (_Join(prefix, $"({options}?)null"), "options"),
         };
+        // An untyped null or default in the first position of EnqueueAsync<TJob>(...) also converts to the
+        // argument-typed overload's TArgs, so those forms are ambiguous there by design and are left out.
+        if (prefix.Length > 0)
+        {
+            forms.Add((_Join(prefix, "null"), "options"));
+            forms.Add((_Join(prefix, "null, ct"), "options"));
+            forms.Add((_Join(prefix, "default, ct"), "options"));
+        }
+
         var statements = string.Join(Environment.NewLine, forms.Select(form => $"_ = {call}({form.Arguments});"));
         var compilation = _Compile(_RuntimeSource(statements, options));
         _Errors(compilation).Should().BeEmpty();
@@ -104,8 +110,8 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
 
         var model = compilation.GetSemanticModel(compilation.SyntaxTrees.Single());
         var invocations = _AssignedInvocations(compilation);
-        invocations.Should().HaveCount(forms.Length);
-        for (var index = 0; index < forms.Length; index++)
+        invocations.Should().HaveCount(forms.Count);
+        for (var index = 0; index < forms.Count; index++)
         {
             var method = _BoundMethod(model, invocations[index]);
             var callback = forms[index].Parameter is "configure";
@@ -115,7 +121,8 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
                 "queue" => callback ? "QueueExtensions" : "IQueue",
                 _ => callback ? "JobSchedulerExtensions" : "IJobScheduler",
             };
-            _AssertMember(method, holder, _Assembly(receiver), verb, generic: !requestless);
+            _AssertMember(method, holder, _Assembly(receiver), verb, generic: receiver is "scheduler" || !requestless);
+            _AssertJobTyped(method, receiver is "scheduler" && requestless);
             method.Parameters.Select(parameter => parameter.Name).Should().Contain(forms[index].Parameter);
             method
                 .Parameters.Any(parameter => parameter.Name is "options")
@@ -141,7 +148,10 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
     )
     {
         var compilation = _Compile(
-            _RuntimeSource($"_ = {receiver}.{verb}({_Arguments(receiver, verb, requestless)}, default);", "JobOptions")
+            _RuntimeSource(
+                $"_ = {receiver}.{verb}{_TypeArguments(receiver, requestless)}({_Join(_Arguments(receiver, verb, requestless), "default")});",
+                "JobOptions"
+            )
         );
         _Errors(compilation).Should().BeEmpty();
         var model = compilation.GetSemanticModel(compilation.SyntaxTrees.Single());
@@ -152,7 +162,8 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
             "queue" => "IQueue",
             _ => "IJobScheduler",
         };
-        _AssertMember(method, holder, _Assembly(receiver), verb, generic: !requestless);
+        _AssertMember(method, holder, _Assembly(receiver), verb, generic: receiver is "scheduler" || !requestless);
+        _AssertJobTyped(method, receiver is "scheduler" && requestless);
         method.Parameters[^1].Type.ToDisplayString().Should().Be("System.Threading.CancellationToken");
         method
             .Parameters.Should()
@@ -329,13 +340,13 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
             public sealed record Request;
             public static class InstantConsumer
             {
-                public static void Run(IJobScheduler scheduler, Request request, JobFunctionDescriptor descriptor,
+                public static void Run(IJobScheduler scheduler, Request request,
                     {{timeType}} executionTime, CancellationToken ct, Action<JobOptionsBuilder> configure)
                 {
                     var node = JobChain.Start(request).Root;
-                    _ = JobChain.Start(descriptor, options: null);
+                    _ = JobChain.Start<CleanupJob>(options: null);
                     _ = node.Then(request, options: null);
-                    _ = node.Catch(descriptor);
+                    _ = node.Catch<CleanupJob>();
                     _ = scheduler.ScheduleAsync(request, executionTime, ct);
                     _ = scheduler.ScheduleAsync(request, executionTime, new JobOptions(), ct);
                     _ = scheduler.ScheduleKeyedAsync(new JobKey("key"), request, executionTime, ct);
@@ -349,34 +360,69 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
                     _ = node.Then(request, executionTime: executionTime, options: new JobOptions());
                     _ = node.Catch(request, executionTime);
                     _ = node.Catch(request, executionTime: executionTime, options: new JobOptions());
-                    _ = scheduler.ScheduleAsync(descriptor, executionTime, ct);
-                    _ = scheduler.ScheduleAsync(descriptor, executionTime, new JobOptions(), ct);
-                    _ = scheduler.ScheduleKeyedAsync(new JobKey("key"), descriptor, executionTime, ct);
-                    _ = scheduler.ScheduleKeyedAsync(new JobKey("key"), descriptor, executionTime, new JobOptions(), ct);
-                    _ = scheduler.ReplaceKeyedAsync(new JobKey("key"), 1, descriptor, executionTime, ct);
-                    _ = scheduler.ReplaceKeyedAsync(new JobKey("key"), 1, descriptor, executionTime, new JobOptions(), ct);
-                    _ = scheduler.ScheduleAsync(descriptor, executionTime, configure, ct);
-                    _ = JobChain.Start(descriptor, executionTime);
-                    _ = JobChain.Start(descriptor, executionTime: executionTime, options: new JobOptions());
-                    _ = node.Then(descriptor, executionTime);
-                    _ = node.Then(descriptor, executionTime: executionTime, options: new JobOptions());
-                    _ = node.Catch(descriptor, executionTime);
-                    _ = node.Catch(descriptor, executionTime: executionTime, options: new JobOptions());
+                    _ = scheduler.ScheduleAsync<CleanupJob>(executionTime, ct);
+                    _ = scheduler.ScheduleAsync<CleanupJob>(executionTime, new JobOptions(), ct);
+                    _ = scheduler.ScheduleKeyedAsync<CleanupJob>(new JobKey("key"), executionTime, ct);
+                    _ = scheduler.ScheduleKeyedAsync<CleanupJob>(new JobKey("key"), executionTime, new JobOptions(), ct);
+                    _ = scheduler.ReplaceKeyedAsync<CleanupJob>(new JobKey("key"), 1, executionTime, ct);
+                    _ = scheduler.ReplaceKeyedAsync<CleanupJob>(new JobKey("key"), 1, executionTime, new JobOptions(), ct);
+                    _ = scheduler.ScheduleAsync<CleanupJob>(executionTime, configure, ct);
+                    _ = JobChain.Start<CleanupJob>(executionTime);
+                    _ = JobChain.Start<CleanupJob>(executionTime: executionTime, options: new JobOptions());
+                    _ = node.Then<CleanupJob>(executionTime);
+                    _ = node.Then<CleanupJob>(executionTime: executionTime, options: new JobOptions());
+                    _ = node.Catch<CleanupJob>(executionTime);
+                    _ = node.Catch<CleanupJob>(executionTime: executionTime, options: new JobOptions());
                 }
+            }
+
+            public sealed class CleanupJob : Headless.Jobs.Base.IJob
+            {
+                public ValueTask ExecuteAsync(Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken) =>
+                    ValueTask.CompletedTask;
             }
             """;
 
+    /// <summary>
+    /// The arguments before the options or callback. A job without arguments is named only by its type argument, so
+    /// its prefix holds just the instant or delay, and is empty for <c>EnqueueAsync</c>.
+    /// </summary>
     private static string _Arguments(string receiver, string verb, bool requestless, bool named = false)
     {
-        var payload = requestless ? "descriptor" : "request";
-        var name = receiver is "scheduler" ? payload : "contentObj";
-        var arguments = named ? $"{name}: {payload}" : payload;
+        var name = receiver is "scheduler" ? "request" : "contentObj";
+        var arguments =
+            requestless ? ""
+            : named ? $"{name}: request"
+            : "request";
         return verb switch
         {
-            "ScheduleAsync" => arguments + (named ? ", executionTime: executionTime" : ", executionTime"),
-            "ScheduleAfterAsync" => arguments + (named ? ", delay: delay" : ", delay"),
+            "ScheduleAsync" => _Join(arguments, named ? "executionTime: executionTime" : "executionTime"),
+            "ScheduleAfterAsync" => _Join(arguments, named ? "delay: delay" : "delay"),
             _ => arguments,
         };
+    }
+
+    private static string _TypeArguments(string receiver, bool requestless) =>
+        receiver is "scheduler" && requestless ? "<CleanupJob>" : "";
+
+    private static string _Join(string first, string second) =>
+        first.Length == 0 ? second
+        : second.Length == 0 ? first
+        : $"{first}, {second}";
+
+    private static void _AssertJobTyped(IMethodSymbol method, bool jobTyped)
+    {
+        if (!jobTyped)
+        {
+            return;
+        }
+
+        method.TypeArguments.Should().ContainSingle().Which.Name.Should().Be("CleanupJob");
+        method
+            .OriginalDefinition.TypeParameters.Single()
+            .ConstraintTypes.Select(type => type.ToDisplayString())
+            .Should()
+            .Equal("Headless.Jobs.Base.IJob");
     }
 
     private static string _Assembly(string receiver) =>
@@ -394,11 +440,17 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
             public static class Consumer
             {
                 public static void Run(IBus bus, IQueue queue, IJobScheduler scheduler, Request request,
-                    JobFunctionDescriptor descriptor, DateTimeOffset executionTime, TimeSpan delay,
+                    DateTimeOffset executionTime, TimeSpan delay,
                     CancellationToken ct, Action<{{options}}Builder> configure)
                 {
                     {{statements}}
                 }
+            }
+
+            public sealed class CleanupJob : Headless.Jobs.Base.IJob
+            {
+                public ValueTask ExecuteAsync(Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken) =>
+                    ValueTask.CompletedTask;
             }
             """;
 

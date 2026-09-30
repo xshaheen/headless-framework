@@ -240,7 +240,7 @@ internal sealed class JobsInitializationHostedService(
                     schedulerOptions,
                     scopedProvider
                         .GetRequiredService<CronScheduleCache>()
-                        .ComputeEvaluationFingerprint(timeZoneId: null),
+                        .ComputeEvaluationFingerprint(x.Value.TimeZoneId),
                     functionRegistry.Descriptors[x.Key].ContractVersion
                 )
             )
@@ -349,7 +349,8 @@ internal sealed class JobsInitializationHostedService(
             graceSeconds,
             onOverlap,
             evaluationFingerprint,
-            contractVersion
+            contractVersion,
+            registration.TimeZoneId
         );
     }
 }

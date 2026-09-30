@@ -13,8 +13,9 @@ internal static class GeneratorTestHelper
 {
     private static readonly Lazy<ImmutableArray<MetadataReference>> _References = new(() =>
         GeneratorCompilation.LoadedAssemblyReferences(
-            typeof(JobFunctionAttribute).Assembly,
+            typeof(JobAttribute).Assembly,
             typeof(JobFunctionProvider).Assembly,
+            typeof(Headless.Reliability.IFailurePolicy).Assembly,
             typeof(IServiceCollection).Assembly
         )
     );

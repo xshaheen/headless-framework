@@ -27,15 +27,15 @@ public static class JobMiddlewarePriority
     public const int Late = 1000;
 }
 
-/// <summary>Declares schedule middleware globally or beside a local <c>[JobFunction]</c> method.</summary>
+/// <summary>Declares schedule middleware globally or on a <c>[Job]</c> class in the same assembly.</summary>
 [PublicAPI]
-[AttributeUsage(AttributeTargets.Assembly | AttributeTargets.Method, AllowMultiple = true)]
+[AttributeUsage(AttributeTargets.Assembly | AttributeTargets.Class, AllowMultiple = true)]
 public sealed class JobScheduleMiddlewareAttribute<TMiddleware> : Attribute
     where TMiddleware : IJobScheduleMiddleware
 {
     /// <summary>
     /// Targets a function declared in another assembly. Omit for global assembly middleware or
-    /// method-local middleware, whose target is derived from its neighboring <c>[JobFunction]</c>.
+    /// class-level middleware, whose target is the <c>[Job]</c> class it decorates.
     /// </summary>
     public string? Function { get; init; }
 
@@ -43,15 +43,15 @@ public sealed class JobScheduleMiddlewareAttribute<TMiddleware> : Attribute
     public int Priority { get; init; }
 }
 
-/// <summary>Declares execute middleware globally or beside a local <c>[JobFunction]</c> method.</summary>
+/// <summary>Declares execute middleware globally or on a <c>[Job]</c> class in the same assembly.</summary>
 [PublicAPI]
-[AttributeUsage(AttributeTargets.Assembly | AttributeTargets.Method, AllowMultiple = true)]
+[AttributeUsage(AttributeTargets.Assembly | AttributeTargets.Class, AllowMultiple = true)]
 public sealed class JobExecuteMiddlewareAttribute<TMiddleware> : Attribute
     where TMiddleware : IJobExecuteMiddleware
 {
     /// <summary>
     /// Targets a function declared in another assembly. Omit for global assembly middleware or
-    /// method-local middleware, whose target is derived from its neighboring <c>[JobFunction]</c>.
+    /// class-level middleware, whose target is the <c>[Job]</c> class it decorates.
     /// </summary>
     public string? Function { get; init; }
 
@@ -127,7 +127,7 @@ public sealed class JobScheduleContext(JobFunctionDescriptor descriptor, BaseJob
 public sealed class JobExecuteContext(
     JobFunctionDescriptor descriptor,
     JobExecutionState execution,
-    JobFunctionContext functionContext,
+    JobContext functionContext,
     int attempt,
     IServiceProvider services
 )
@@ -139,7 +139,7 @@ public sealed class JobExecuteContext(
     public JobExecutionState Execution { get; } = execution;
 
     /// <summary>The existing handler context for this attempt.</summary>
-    public JobFunctionContext FunctionContext { get; } = functionContext;
+    public JobContext FunctionContext { get; } = functionContext;
 
     /// <summary>Zero-based retry attempt number.</summary>
     public int Attempt { get; } = attempt;

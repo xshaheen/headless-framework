@@ -10,41 +10,40 @@ namespace Headless.Jobs.Base;
 /// Typed job execution context that carries a strongly-typed deserialized request payload alongside the
 /// base scheduling metadata.
 /// </summary>
-/// <typeparam name="TRequest">The deserialized request type stored in the job row.</typeparam>
+/// <typeparam name="TArgs">The deserialized argument type stored in the job row.</typeparam>
 /// <remarks>
-/// Initializes a typed context by copying every base member from <paramref name="jobFunctionContext"/>
-/// through the base copy constructor — so a member added to <see cref="JobFunctionContext"/> is never
+/// Initializes a typed context by copying every base member from <paramref name="jobContext"/>
+/// through the base copy constructor — so a member added to <see cref="JobContext"/> is never
 /// silently dropped here — and attaching the deserialized <paramref name="request"/>.
 /// </remarks>
-/// <param name="jobFunctionContext">The base context supplied by the scheduler.</param>
+/// <param name="jobContext">The base context supplied by the scheduler.</param>
 /// <param name="request">The deserialized request payload for this execution.</param>
 [PublicAPI]
 [method: SetsRequiredMembers]
-public class JobFunctionContext<TRequest>(JobFunctionContext jobFunctionContext, TRequest request)
-    : JobFunctionContext(jobFunctionContext)
+public class JobContext<TArgs>(JobContext jobContext, TArgs request) : JobContext(jobContext)
 {
     /// <summary>The deserialized request payload for this job execution.</summary>
-    public TRequest Request { get; set; } = request;
+    public TArgs Request { get; set; } = request;
 }
 
 /// <summary>
-/// Runtime context passed to a job function method by the scheduler. Exposes scheduling metadata and
+/// Runtime context passed to a job by the scheduler. Exposes scheduling metadata and
 /// provides hooks for cooperative cancellation and cron-skip control.
 /// </summary>
 [PublicAPI]
-public class JobFunctionContext
+public class JobContext
 {
     /// <summary>Initializes a new context; the scheduler populates its members via an object initializer.</summary>
-    public JobFunctionContext() { }
+    public JobContext() { }
 
     /// <summary>
-    /// Copy constructor used by the typed <see cref="JobFunctionContext{TRequest}"/> to clone an existing
+    /// Copy constructor used by the typed <see cref="JobContext{TArgs}"/> to clone an existing
     /// context. Every base member is copied here in one place, so a member added to this base is never silently
     /// dropped when a typed context wraps a base one.
     /// </summary>
     /// <param name="other">The context to copy from.</param>
     [SetsRequiredMembers]
-    protected JobFunctionContext(JobFunctionContext other)
+    protected JobContext(JobContext other)
     {
         ServiceScope = other.ServiceScope;
         Id = other.Id;
