@@ -29,7 +29,7 @@ internal sealed class UnitOfWorkLeasesFeature(
     {
         Argument.IsNotNull(unitOfWork);
         var key = resolver.Resolve(kind, resource);
-        resolver.ValidateDuration(duration);
+        duration = resolver.ValidateDuration(duration);
 
         _Enlist(unitOfWork, isWrite: true);
 
@@ -49,7 +49,7 @@ internal sealed class UnitOfWorkLeasesFeature(
     {
         Argument.IsNotNull(unitOfWork);
         var key = LeaseRequestResolver.ResolveLease(lease);
-        resolver.ValidateDuration(duration);
+        duration = resolver.ValidateDuration(duration);
         LeaseRequestResolver.ValidateProgress(progress);
 
         _Enlist(unitOfWork, isWrite: true);
