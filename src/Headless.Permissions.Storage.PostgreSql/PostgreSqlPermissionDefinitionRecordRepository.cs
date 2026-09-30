@@ -20,7 +20,7 @@ internal sealed class PostgreSqlPermissionDefinitionRecordRepository(
     )
     {
         var sql =
-            $"""SELECT "id","group_name","name","parent_name","display_name","is_enabled","providers","extra_properties" FROM {PostgreSqlPermissionsStorageInitializer.DefinitionsTable(storageOptions.Value)};""";
+            $"""SELECT "id","group_name","name","parent_name","display_name","is_enabled","providers","extra_properties" FROM {PostgreSqlPermissionsSchema.DefinitionsTable(storageOptions.Value)};""";
 
         var result = new List<PermissionDefinitionRecord>();
         await using var connection = providerOptions.Value.CreateConnection();
@@ -57,7 +57,7 @@ internal sealed class PostgreSqlPermissionDefinitionRecordRepository(
     )
     {
         var sql =
-            $"""SELECT "id","name","display_name","extra_properties" FROM {PostgreSqlPermissionsStorageInitializer.GroupsTable(storageOptions.Value)};""";
+            $"""SELECT "id","name","display_name","extra_properties" FROM {PostgreSqlPermissionsSchema.GroupsTable(storageOptions.Value)};""";
 
         var result = new List<PermissionGroupDefinitionRecord>();
         await using var connection = providerOptions.Value.CreateConnection();
@@ -203,32 +203,32 @@ internal sealed class PostgreSqlPermissionDefinitionRecordRepository(
 
     private string _InsertGroupSql()
     {
-        return $"""INSERT INTO {PostgreSqlPermissionsStorageInitializer.GroupsTable(storageOptions.Value)} ("id","name","display_name","extra_properties") VALUES (@Id,@Name,@DisplayName,@ExtraProperties);""";
+        return $"""INSERT INTO {PostgreSqlPermissionsSchema.GroupsTable(storageOptions.Value)} ("id","name","display_name","extra_properties") VALUES (@Id,@Name,@DisplayName,@ExtraProperties);""";
     }
 
     private string _UpdateGroupSql()
     {
-        return $"""UPDATE {PostgreSqlPermissionsStorageInitializer.GroupsTable(storageOptions.Value)} SET "name"=@Name,"display_name"=@DisplayName,"extra_properties"=@ExtraProperties WHERE "id"=@Id;""";
+        return $"""UPDATE {PostgreSqlPermissionsSchema.GroupsTable(storageOptions.Value)} SET "name"=@Name,"display_name"=@DisplayName,"extra_properties"=@ExtraProperties WHERE "id"=@Id;""";
     }
 
     private string _DeleteGroupSql()
     {
-        return $"""DELETE FROM {PostgreSqlPermissionsStorageInitializer.GroupsTable(storageOptions.Value)} WHERE "id"=@Id;""";
+        return $"""DELETE FROM {PostgreSqlPermissionsSchema.GroupsTable(storageOptions.Value)} WHERE "id"=@Id;""";
     }
 
     private string _InsertPermissionSql()
     {
-        return $"""INSERT INTO {PostgreSqlPermissionsStorageInitializer.DefinitionsTable(storageOptions.Value)} ("id","group_name","name","display_name","is_enabled","parent_name","providers","extra_properties") VALUES (@Id,@GroupName,@Name,@DisplayName,@IsEnabled,@ParentName,@Providers,@ExtraProperties);""";
+        return $"""INSERT INTO {PostgreSqlPermissionsSchema.DefinitionsTable(storageOptions.Value)} ("id","group_name","name","display_name","is_enabled","parent_name","providers","extra_properties") VALUES (@Id,@GroupName,@Name,@DisplayName,@IsEnabled,@ParentName,@Providers,@ExtraProperties);""";
     }
 
     private string _UpdatePermissionSql()
     {
-        return $"""UPDATE {PostgreSqlPermissionsStorageInitializer.DefinitionsTable(storageOptions.Value)} SET "group_name"=@GroupName,"name"=@Name,"display_name"=@DisplayName,"is_enabled"=@IsEnabled,"parent_name"=@ParentName,"providers"=@Providers,"extra_properties"=@ExtraProperties WHERE "id"=@Id;""";
+        return $"""UPDATE {PostgreSqlPermissionsSchema.DefinitionsTable(storageOptions.Value)} SET "group_name"=@GroupName,"name"=@Name,"display_name"=@DisplayName,"is_enabled"=@IsEnabled,"parent_name"=@ParentName,"providers"=@Providers,"extra_properties"=@ExtraProperties WHERE "id"=@Id;""";
     }
 
     private string _DeletePermissionSql()
     {
-        return $"""DELETE FROM {PostgreSqlPermissionsStorageInitializer.DefinitionsTable(storageOptions.Value)} WHERE "id"=@Id;""";
+        return $"""DELETE FROM {PostgreSqlPermissionsSchema.DefinitionsTable(storageOptions.Value)} WHERE "id"=@Id;""";
     }
 
     private ExtraProperties _DeserializeExtraProperties(string json)

@@ -10,6 +10,7 @@ using Headless.Features.Entities;
 using Headless.Features.Repositories;
 using Headless.Features.Values;
 using Headless.Hosting.Initialization;
+using Headless.Hosting.Initialization.Schema;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -32,7 +33,7 @@ public abstract class FeaturesStorageConformanceTests<TFixture>(TFixture fixture
     [Fact]
     public async Task should_create_the_same_tables_columns_and_indexes_the_ef_model_maps()
     {
-        // given — the raw initializer and the EF mapping must agree name for name, or an application that
+        // given — the raw schema contribution and the EF mapping must agree name for name, or an application that
         // provisions with one and reads with the other fails at its first query
         await fixture.DropSchemaAsync(_Schema, AbortToken);
         using var host = fixture.CreateHost(_Schema);
@@ -49,9 +50,14 @@ public abstract class FeaturesStorageConformanceTests<TFixture>(TFixture fixture
         var created = await fixture.ReadStoreObjectsAsync(_Schema, AbortToken);
         var mapped = _MappedObjects(context.Model);
 
-        // then
-        created.Columns.Should().BeEquivalentTo(mapped.Columns);
-        created.Indexes.Should().BeEquivalentTo(mapped.Indexes);
+        // then — the schema runner's history table sits beside the feature's tables but is no part of the EF model
+        _WithoutHistory(created.Columns).Should().BeEquivalentTo(mapped.Columns);
+        _WithoutHistory(created.Indexes).Should().BeEquivalentTo(mapped.Indexes);
+    }
+
+    private static IEnumerable<string> _WithoutHistory(IEnumerable<string> objects)
+    {
+        return objects.Where(x => !x.StartsWith(SchemaRunner.HistoryTableName + ".", StringComparison.Ordinal));
     }
 
     private static FeaturesStoreObjects _MappedObjects(IModel model)

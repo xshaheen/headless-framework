@@ -35,7 +35,7 @@ internal sealed class SqlServerPermissionGrantRepository(
     )
     {
         var sql =
-            $"SELECT TOP(1) {_GrantColumns} FROM {SqlServerPermissionsStorageInitializer.GrantsTable(storageOptions.Value)} WHERE [Name]=@Name AND [ProviderName]=@ProviderName AND [ProviderKey]=@ProviderKey AND {_TenantFilter} ORDER BY [Id];";
+            $"SELECT TOP(1) {_GrantColumns} FROM {SqlServerPermissionsSchema.GrantsTable(storageOptions.Value)} WHERE [Name]=@Name AND [ProviderName]=@ProviderName AND [ProviderKey]=@ProviderKey AND {_TenantFilter} ORDER BY [Id];";
 
         return
             await _ReadAsync(
@@ -59,7 +59,7 @@ internal sealed class SqlServerPermissionGrantRepository(
     )
     {
         var sql =
-            $"SELECT {_GrantColumns} FROM {SqlServerPermissionsStorageInitializer.GrantsTable(storageOptions.Value)} WHERE [ProviderName]=@ProviderName AND [ProviderKey]=@ProviderKey AND {_TenantFilter};";
+            $"SELECT {_GrantColumns} FROM {SqlServerPermissionsSchema.GrantsTable(storageOptions.Value)} WHERE [ProviderName]=@ProviderName AND [ProviderKey]=@ProviderKey AND {_TenantFilter};";
 
         return _ReadAsync(
             sql,
@@ -85,7 +85,7 @@ internal sealed class SqlServerPermissionGrantRepository(
         // Pass the names through the HeadlessPermissionsNameList TVP: one cached plan regardless of count
         // and no 2100-parameter ceiling, portable to older engines (no OPENJSON / compatibility level 130).
         var sql =
-            $"SELECT {_GrantColumns} FROM {SqlServerPermissionsStorageInitializer.GrantsTable(storageOptions.Value)} WHERE [Name] IN (SELECT [Name] FROM @Names) AND [ProviderName]=@ProviderName AND [ProviderKey]=@ProviderKey AND {_TenantFilter};";
+            $"SELECT {_GrantColumns} FROM {SqlServerPermissionsSchema.GrantsTable(storageOptions.Value)} WHERE [Name] IN (SELECT [Name] FROM @Names) AND [ProviderName]=@ProviderName AND [ProviderKey]=@ProviderKey AND {_TenantFilter};";
 
         return _ReadAsync(
             sql,
@@ -100,7 +100,7 @@ internal sealed class SqlServerPermissionGrantRepository(
     public Task InsertAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken = default)
     {
         var sql =
-            $"INSERT INTO {SqlServerPermissionsStorageInitializer.GrantsTable(storageOptions.Value)} ([Id],[Name],[ProviderName],[ProviderKey],[TenantId],[IsGranted],[CreatedAt]) VALUES (@Id,@Name,@ProviderName,@ProviderKey,@TenantId,@IsGranted,@CreatedAt);";
+            $"INSERT INTO {SqlServerPermissionsSchema.GrantsTable(storageOptions.Value)} ([Id],[Name],[ProviderName],[ProviderKey],[TenantId],[IsGranted],[CreatedAt]) VALUES (@Id,@Name,@ProviderName,@ProviderKey,@TenantId,@IsGranted,@CreatedAt);";
 
         return _ExecuteAsync(sql, cancellationToken, _Parameters(permissionGrant));
     }
@@ -142,7 +142,7 @@ internal sealed class SqlServerPermissionGrantRepository(
     public async Task DeleteAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken)
     {
         var sql =
-            $"DELETE FROM {SqlServerPermissionsStorageInitializer.GrantsTable(storageOptions.Value)} WHERE [Id]=@Id AND {_TenantFilter};";
+            $"DELETE FROM {SqlServerPermissionsSchema.GrantsTable(storageOptions.Value)} WHERE [Id]=@Id AND {_TenantFilter};";
 
         await _ExecuteAsync(sql, cancellationToken, _Param("Id", permissionGrant.Id), _TenantParam())
             .ConfigureAwait(false);
@@ -161,7 +161,7 @@ internal sealed class SqlServerPermissionGrantRepository(
         // Pass ids through the HeadlessPermissionsIdList TVP: one cached plan regardless of count, no
         // 2100-parameter ceiling, portable to older engines (no OPENJSON / compatibility level 130).
         var sql =
-            $"DELETE FROM {SqlServerPermissionsStorageInitializer.GrantsTable(storageOptions.Value)} WHERE [Id] IN (SELECT [Id] FROM @Ids) AND {_TenantFilter};";
+            $"DELETE FROM {SqlServerPermissionsSchema.GrantsTable(storageOptions.Value)} WHERE [Id] IN (SELECT [Id] FROM @Ids) AND {_TenantFilter};";
 
         await _ExecuteAsync(
                 sql,
@@ -292,7 +292,7 @@ internal sealed class SqlServerPermissionGrantRepository(
     {
         var builder = new StringBuilder(192 + (rowCount * 144));
         builder.Append("INSERT INTO ");
-        builder.Append(SqlServerPermissionsStorageInitializer.GrantsTable(storageOptions.Value));
+        builder.Append(SqlServerPermissionsSchema.GrantsTable(storageOptions.Value));
         builder.Append(" ([Id],[Name],[ProviderName],[ProviderKey],[TenantId],[IsGranted],[CreatedAt]) VALUES ");
 
         for (var rowIndex = 0; rowIndex < rowCount; rowIndex++)

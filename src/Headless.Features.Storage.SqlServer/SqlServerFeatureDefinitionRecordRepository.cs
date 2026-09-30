@@ -44,7 +44,7 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
     public async Task<List<FeatureDefinitionRecord>> GetFeaturesListAsync(CancellationToken cancellationToken = default)
     {
         var sql = _selectFeaturesSql ??=
-            $"SELECT [Id],[GroupName],[Name],[ParentName],[DisplayName],[Description],[DefaultValue],[IsVisibleToClients],[IsAvailableToHost],[Providers],[ExtraProperties] FROM {SqlServerFeaturesStorageInitializer.DefinitionsTable(storageOptions.Value)};";
+            $"SELECT [Id],[GroupName],[Name],[ParentName],[DisplayName],[Description],[DefaultValue],[IsVisibleToClients],[IsAvailableToHost],[Providers],[ExtraProperties] FROM {SqlServerFeaturesSchema.DefinitionsTable(storageOptions.Value)};";
 
         var result = new List<FeatureDefinitionRecord>();
         await using var connection = providerOptions.Value.CreateConnection();
@@ -86,7 +86,7 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
     )
     {
         var sql = _selectGroupsSql ??=
-            $"SELECT [Id],[Name],[DisplayName],[ExtraProperties] FROM {SqlServerFeaturesStorageInitializer.GroupsTable(storageOptions.Value)};";
+            $"SELECT [Id],[Name],[DisplayName],[ExtraProperties] FROM {SqlServerFeaturesSchema.GroupsTable(storageOptions.Value)};";
 
         var result = new List<FeatureGroupDefinitionRecord>();
         await using var connection = providerOptions.Value.CreateConnection();
@@ -347,7 +347,7 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
 
     private string _BuildInsertGroupSql(int rowCount)
     {
-        var table = SqlServerFeaturesStorageInitializer.GroupsTable(storageOptions.Value);
+        var table = SqlServerFeaturesSchema.GroupsTable(storageOptions.Value);
         var builder = new StringBuilder(128 + (rowCount * 80));
         builder.Append("INSERT INTO ").Append(table).Append(" ([Id],[Name],[DisplayName],[ExtraProperties]) VALUES ");
 
@@ -376,7 +376,7 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
 
     private string _BuildInsertFeatureSql(int rowCount)
     {
-        var table = SqlServerFeaturesStorageInitializer.DefinitionsTable(storageOptions.Value);
+        var table = SqlServerFeaturesSchema.DefinitionsTable(storageOptions.Value);
         var builder = new StringBuilder(192 + (rowCount * 200));
         builder.Append("INSERT INTO ").Append(table);
         builder.Append(
@@ -423,25 +423,25 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
     private string _UpdateGroupSql()
     {
         return _updateGroupSql ??=
-            $"UPDATE {SqlServerFeaturesStorageInitializer.GroupsTable(storageOptions.Value)} SET [Name]=@Name,[DisplayName]=@DisplayName,[ExtraProperties]=@ExtraProperties WHERE [Id]=@Id;";
+            $"UPDATE {SqlServerFeaturesSchema.GroupsTable(storageOptions.Value)} SET [Name]=@Name,[DisplayName]=@DisplayName,[ExtraProperties]=@ExtraProperties WHERE [Id]=@Id;";
     }
 
     private string _DeleteGroupSql()
     {
         return _deleteGroupSql ??=
-            $"DELETE FROM {SqlServerFeaturesStorageInitializer.GroupsTable(storageOptions.Value)} WHERE [Id]=@Id;";
+            $"DELETE FROM {SqlServerFeaturesSchema.GroupsTable(storageOptions.Value)} WHERE [Id]=@Id;";
     }
 
     private string _UpdateFeatureSql()
     {
         return _updateFeatureSql ??=
-            $"UPDATE {SqlServerFeaturesStorageInitializer.DefinitionsTable(storageOptions.Value)} SET [GroupName]=@GroupName,[Name]=@Name,[DisplayName]=@DisplayName,[ParentName]=@ParentName,[Description]=@Description,[DefaultValue]=@DefaultValue,[IsVisibleToClients]=@IsVisibleToClients,[IsAvailableToHost]=@IsAvailableToHost,[Providers]=@Providers,[ExtraProperties]=@ExtraProperties WHERE [Id]=@Id;";
+            $"UPDATE {SqlServerFeaturesSchema.DefinitionsTable(storageOptions.Value)} SET [GroupName]=@GroupName,[Name]=@Name,[DisplayName]=@DisplayName,[ParentName]=@ParentName,[Description]=@Description,[DefaultValue]=@DefaultValue,[IsVisibleToClients]=@IsVisibleToClients,[IsAvailableToHost]=@IsAvailableToHost,[Providers]=@Providers,[ExtraProperties]=@ExtraProperties WHERE [Id]=@Id;";
     }
 
     private string _DeleteFeatureSql()
     {
         return _deleteFeatureSql ??=
-            $"DELETE FROM {SqlServerFeaturesStorageInitializer.DefinitionsTable(storageOptions.Value)} WHERE [Id]=@Id;";
+            $"DELETE FROM {SqlServerFeaturesSchema.DefinitionsTable(storageOptions.Value)} WHERE [Id]=@Id;";
     }
 
     private int _CommandTimeout()

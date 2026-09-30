@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting.Initialization;
+using Headless.Hosting.Initialization.Schema;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -32,10 +33,12 @@ public sealed class PostgreSqlFeaturesFailureModesTests(PostgreSqlFeaturesFixtur
             .Single(x => x is IHostedLifecycleService);
         initializer.IsInitialized.Should().BeFalse();
 
+        // The schema runner names the features whose connection failed and keeps the driver error as the cause.
         await FluentActions
             .Awaiting(() => initializer.WaitForInitializationAsync(AbortToken))
             .Should()
-            .ThrowAsync<NpgsqlException>();
+            .ThrowAsync<SchemaRunnerException>()
+            .WithInnerException(typeof(NpgsqlException));
     }
 
     [Fact]
@@ -100,7 +103,7 @@ public sealed class PostgreSqlFeaturesFailureModesTests(PostgreSqlFeaturesFixtur
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
-        // Matches the 6 `CREATE [UNIQUE] INDEX IF NOT EXISTS ix_*` statements in the PG initializer;
+        // Matches the 6 `CREATE [UNIQUE] INDEX IF NOT EXISTS ix_*` statements in the PG schema contribution;
         // the LIKE filter excludes the PK indexes (named `pk_<table>`).
         await using var command = new NpgsqlCommand(
             """

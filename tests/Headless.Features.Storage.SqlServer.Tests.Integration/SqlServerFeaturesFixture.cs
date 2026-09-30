@@ -26,12 +26,15 @@ public sealed class SqlServerFeaturesFixture
     {
         await using var connection = new SqlConnection(ConnectionString);
         await connection.OpenAsync(cancellationToken);
-        // The table types go before the schema: SQL Server refuses to drop a schema that still owns objects.
+        // The table types go before the schema: SQL Server refuses to drop a schema that still owns objects. The schema
+        // runner's history goes too: the runner trusts it, so a history that outlived the tables would stop them being
+        // recreated.
         await using var command = new SqlCommand(
             $"""
             IF OBJECT_ID(N'{schema}.FeatureValues', N'U') IS NOT NULL DROP TABLE [{schema}].[FeatureValues];
             IF OBJECT_ID(N'{schema}.FeatureDefinitions', N'U') IS NOT NULL DROP TABLE [{schema}].[FeatureDefinitions];
             IF OBJECT_ID(N'{schema}.FeatureGroupDefinitions', N'U') IS NOT NULL DROP TABLE [{schema}].[FeatureGroupDefinitions];
+            IF OBJECT_ID(N'{schema}.headless_schema_history', N'U') IS NOT NULL DROP TABLE [{schema}].[headless_schema_history];
             IF TYPE_ID(N'{schema}.HeadlessFeaturesIdList') IS NOT NULL DROP TYPE [{schema}].[HeadlessFeaturesIdList];
             IF TYPE_ID(N'{schema}.HeadlessFeaturesNameList') IS NOT NULL DROP TYPE [{schema}].[HeadlessFeaturesNameList];
             IF EXISTS (SELECT * FROM sys.schemas WHERE name = N'{schema}') EXEC(N'DROP SCHEMA [{schema}]');

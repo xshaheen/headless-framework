@@ -32,7 +32,7 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
     )
     {
         var sql =
-            $"""SELECT {_ValueColumns} FROM {PostgreSqlFeaturesStorageInitializer.ValuesTable(storageOptions.Value)} WHERE "name"=@Name AND "provider_name" IS NOT DISTINCT FROM @ProviderName AND "provider_key" IS NOT DISTINCT FROM @ProviderKey ORDER BY "id" LIMIT 1;""";
+            $"""SELECT {_ValueColumns} FROM {PostgreSqlFeaturesSchema.ValuesTable(storageOptions.Value)} WHERE "name"=@Name AND "provider_name" IS NOT DISTINCT FROM @ProviderName AND "provider_key" IS NOT DISTINCT FROM @ProviderKey ORDER BY "id" LIMIT 1;""";
 
         return
             await _ReadValuesAsync(
@@ -77,7 +77,7 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
         }
 
         var sql =
-            $"SELECT {_ValueColumns} FROM {PostgreSqlFeaturesStorageInitializer.ValuesTable(storageOptions.Value)} WHERE {string.Join(" AND ", filters)};";
+            $"SELECT {_ValueColumns} FROM {PostgreSqlFeaturesSchema.ValuesTable(storageOptions.Value)} WHERE {string.Join(" AND ", filters)};";
 
         return _ReadValuesAsync(sql, cancellationToken, [.. parameters]);
     }
@@ -91,7 +91,7 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
     )
     {
         var sql =
-            $"""SELECT {_ValueColumns} FROM {PostgreSqlFeaturesStorageInitializer.ValuesTable(storageOptions.Value)} WHERE "name" = ANY(@Names) AND "provider_name"=@ProviderName AND "provider_key" IS NOT DISTINCT FROM @ProviderKey;""";
+            $"""SELECT {_ValueColumns} FROM {PostgreSqlFeaturesSchema.ValuesTable(storageOptions.Value)} WHERE "name" = ANY(@Names) AND "provider_name"=@ProviderName AND "provider_key" IS NOT DISTINCT FROM @ProviderKey;""";
 
         return _ReadValuesAsync(
             sql,
@@ -110,7 +110,7 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
     )
     {
         var sql =
-            $"""SELECT {_ValueColumns} FROM {PostgreSqlFeaturesStorageInitializer.ValuesTable(storageOptions.Value)} WHERE "provider_name"=@ProviderName AND "provider_key" IS NOT DISTINCT FROM @ProviderKey;""";
+            $"""SELECT {_ValueColumns} FROM {PostgreSqlFeaturesSchema.ValuesTable(storageOptions.Value)} WHERE "provider_name"=@ProviderName AND "provider_key" IS NOT DISTINCT FROM @ProviderKey;""";
 
         return _ReadValuesAsync(
             sql,
@@ -205,7 +205,7 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
     private (string Sql, NpgsqlParameter[] Parameters) _InsertStatement(FeatureValueRecord feature)
     {
         var sql =
-            $"""INSERT INTO {PostgreSqlFeaturesStorageInitializer.ValuesTable(storageOptions.Value)} ("id","name","value","provider_name","provider_key","created_at") VALUES (@Id,@Name,@Value,@ProviderName,@ProviderKey,@CreatedAt);""";
+            $"""INSERT INTO {PostgreSqlFeaturesSchema.ValuesTable(storageOptions.Value)} ("id","name","value","provider_name","provider_key","created_at") VALUES (@Id,@Name,@Value,@ProviderName,@ProviderKey,@CreatedAt);""";
 
         // Preserve caller-supplied CreatedAt when present (mirrors the EF path); only stamp from
         // the TimeProvider when the caller left it at default. Tests that pin CreatedAt for
@@ -229,7 +229,7 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
     private (string Sql, NpgsqlParameter[] Parameters) _UpdateStatement(FeatureValueRecord feature)
     {
         var sql =
-            $"""UPDATE {PostgreSqlFeaturesStorageInitializer.ValuesTable(storageOptions.Value)} SET "value"=@Value,"updated_at"=@UpdatedAt WHERE "id"=@Id;""";
+            $"""UPDATE {PostgreSqlFeaturesSchema.ValuesTable(storageOptions.Value)} SET "value"=@Value,"updated_at"=@UpdatedAt WHERE "id"=@Id;""";
 
         // Preserve caller-supplied UpdatedAt when present (mirrors the EF path); only stamp from
         // the TimeProvider when the caller left it null/default.
@@ -246,7 +246,7 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
     )
     {
         var sql =
-            $"""DELETE FROM {PostgreSqlFeaturesStorageInitializer.ValuesTable(storageOptions.Value)} WHERE "id" = ANY(@Ids);""";
+            $"""DELETE FROM {PostgreSqlFeaturesSchema.ValuesTable(storageOptions.Value)} WHERE "id" = ANY(@Ids);""";
 
         return (sql, [_Param("Ids", features.Select(x => x.Id).ToArray())]);
     }

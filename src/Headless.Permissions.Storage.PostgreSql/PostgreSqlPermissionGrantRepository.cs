@@ -35,7 +35,7 @@ internal sealed class PostgreSqlPermissionGrantRepository(
     )
     {
         var sql =
-            $"""SELECT {_GrantColumns} FROM {PostgreSqlPermissionsStorageInitializer.GrantsTable(storageOptions.Value)} WHERE "name"=@Name AND "provider_name"=@ProviderName AND "provider_key"=@ProviderKey AND {_TenantFilter} ORDER BY "id" LIMIT 1;""";
+            $"""SELECT {_GrantColumns} FROM {PostgreSqlPermissionsSchema.GrantsTable(storageOptions.Value)} WHERE "name"=@Name AND "provider_name"=@ProviderName AND "provider_key"=@ProviderKey AND {_TenantFilter} ORDER BY "id" LIMIT 1;""";
 
         return
             await _ReadAsync(
@@ -59,7 +59,7 @@ internal sealed class PostgreSqlPermissionGrantRepository(
     )
     {
         var sql =
-            $"""SELECT {_GrantColumns} FROM {PostgreSqlPermissionsStorageInitializer.GrantsTable(storageOptions.Value)} WHERE "provider_name"=@ProviderName AND "provider_key"=@ProviderKey AND {_TenantFilter};""";
+            $"""SELECT {_GrantColumns} FROM {PostgreSqlPermissionsSchema.GrantsTable(storageOptions.Value)} WHERE "provider_name"=@ProviderName AND "provider_key"=@ProviderKey AND {_TenantFilter};""";
 
         return _ReadAsync(
             sql,
@@ -83,7 +83,7 @@ internal sealed class PostgreSqlPermissionGrantRepository(
         }
 
         var sql =
-            $"""SELECT {_GrantColumns} FROM {PostgreSqlPermissionsStorageInitializer.GrantsTable(storageOptions.Value)} WHERE "name" = ANY(@Names) AND "provider_name"=@ProviderName AND "provider_key"=@ProviderKey AND {_TenantFilter};""";
+            $"""SELECT {_GrantColumns} FROM {PostgreSqlPermissionsSchema.GrantsTable(storageOptions.Value)} WHERE "name" = ANY(@Names) AND "provider_name"=@ProviderName AND "provider_key"=@ProviderKey AND {_TenantFilter};""";
 
         return _ReadAsync(
             sql,
@@ -98,7 +98,7 @@ internal sealed class PostgreSqlPermissionGrantRepository(
     public Task InsertAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken = default)
     {
         var sql =
-            $"""INSERT INTO {PostgreSqlPermissionsStorageInitializer.GrantsTable(storageOptions.Value)} ("id","name","provider_name","provider_key","tenant_id","is_granted","created_at") VALUES (@Id,@Name,@ProviderName,@ProviderKey,@TenantId,@IsGranted,@CreatedAt);""";
+            $"""INSERT INTO {PostgreSqlPermissionsSchema.GrantsTable(storageOptions.Value)} ("id","name","provider_name","provider_key","tenant_id","is_granted","created_at") VALUES (@Id,@Name,@ProviderName,@ProviderKey,@TenantId,@IsGranted,@CreatedAt);""";
 
         return _ExecuteAsync(sql, cancellationToken, _Parameters(permissionGrant));
     }
@@ -140,7 +140,7 @@ internal sealed class PostgreSqlPermissionGrantRepository(
     public async Task DeleteAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken)
     {
         var sql =
-            $"""DELETE FROM {PostgreSqlPermissionsStorageInitializer.GrantsTable(storageOptions.Value)} WHERE "id"=@Id AND {_TenantFilter};""";
+            $"""DELETE FROM {PostgreSqlPermissionsSchema.GrantsTable(storageOptions.Value)} WHERE "id"=@Id AND {_TenantFilter};""";
 
         await _ExecuteAsync(sql, cancellationToken, _Param("Id", permissionGrant.Id), _TenantParam())
             .ConfigureAwait(false);
@@ -157,7 +157,7 @@ internal sealed class PostgreSqlPermissionGrantRepository(
         }
 
         var sql =
-            $"""DELETE FROM {PostgreSqlPermissionsStorageInitializer.GrantsTable(storageOptions.Value)} WHERE "id" = ANY(@Ids) AND {_TenantFilter};""";
+            $"""DELETE FROM {PostgreSqlPermissionsSchema.GrantsTable(storageOptions.Value)} WHERE "id" = ANY(@Ids) AND {_TenantFilter};""";
 
         await _ExecuteAsync(
                 sql,
@@ -260,7 +260,7 @@ internal sealed class PostgreSqlPermissionGrantRepository(
     {
         var builder = new StringBuilder(192 + (rowCount * 144));
         builder.Append("INSERT INTO ");
-        builder.Append(PostgreSqlPermissionsStorageInitializer.GrantsTable(storageOptions.Value));
+        builder.Append(PostgreSqlPermissionsSchema.GrantsTable(storageOptions.Value));
         builder.Append(
             " (\"id\",\"name\",\"provider_name\",\"provider_key\",\"tenant_id\",\"is_granted\",\"created_at\") VALUES "
         );

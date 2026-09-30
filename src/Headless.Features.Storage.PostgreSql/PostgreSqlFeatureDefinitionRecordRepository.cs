@@ -41,7 +41,7 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
     public async Task<List<FeatureDefinitionRecord>> GetFeaturesListAsync(CancellationToken cancellationToken = default)
     {
         var sql = _selectFeaturesSql ??=
-            $"""SELECT "id","group_name","name","parent_name","display_name","description","default_value","is_visible_to_clients","is_available_to_host","providers","extra_properties" FROM {PostgreSqlFeaturesStorageInitializer.DefinitionsTable(storageOptions.Value)};""";
+            $"""SELECT "id","group_name","name","parent_name","display_name","description","default_value","is_visible_to_clients","is_available_to_host","providers","extra_properties" FROM {PostgreSqlFeaturesSchema.DefinitionsTable(storageOptions.Value)};""";
 
         var result = new List<FeatureDefinitionRecord>();
         await using var connection = providerOptions.Value.CreateConnection();
@@ -82,7 +82,7 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
     )
     {
         var sql = _selectGroupsSql ??=
-            $"""SELECT "id","name","display_name","extra_properties" FROM {PostgreSqlFeaturesStorageInitializer.GroupsTable(storageOptions.Value)};""";
+            $"""SELECT "id","name","display_name","extra_properties" FROM {PostgreSqlFeaturesSchema.GroupsTable(storageOptions.Value)};""";
 
         var result = new List<FeatureGroupDefinitionRecord>();
         await using var connection = providerOptions.Value.CreateConnection();
@@ -342,7 +342,7 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
 
     private string _BuildInsertGroupSql(int rowCount)
     {
-        var table = PostgreSqlFeaturesStorageInitializer.GroupsTable(storageOptions.Value);
+        var table = PostgreSqlFeaturesSchema.GroupsTable(storageOptions.Value);
         var builder = new StringBuilder(128 + (rowCount * 80));
         builder
             .Append("INSERT INTO ")
@@ -374,7 +374,7 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
 
     private string _BuildInsertFeatureSql(int rowCount)
     {
-        var table = PostgreSqlFeaturesStorageInitializer.DefinitionsTable(storageOptions.Value);
+        var table = PostgreSqlFeaturesSchema.DefinitionsTable(storageOptions.Value);
         var builder = new StringBuilder(192 + (rowCount * 200));
         builder.Append("INSERT INTO ").Append(table);
         builder.Append(
@@ -421,25 +421,25 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
     private string _UpdateGroupSql()
     {
         return _updateGroupSql ??=
-            $"""UPDATE {PostgreSqlFeaturesStorageInitializer.GroupsTable(storageOptions.Value)} SET "name"=@Name,"display_name"=@DisplayName,"extra_properties"=@ExtraProperties WHERE "id"=@Id;""";
+            $"""UPDATE {PostgreSqlFeaturesSchema.GroupsTable(storageOptions.Value)} SET "name"=@Name,"display_name"=@DisplayName,"extra_properties"=@ExtraProperties WHERE "id"=@Id;""";
     }
 
     private string _DeleteGroupSql()
     {
         return _deleteGroupSql ??=
-            $"""DELETE FROM {PostgreSqlFeaturesStorageInitializer.GroupsTable(storageOptions.Value)} WHERE "id"=@Id;""";
+            $"""DELETE FROM {PostgreSqlFeaturesSchema.GroupsTable(storageOptions.Value)} WHERE "id"=@Id;""";
     }
 
     private string _UpdateFeatureSql()
     {
         return _updateFeatureSql ??=
-            $"""UPDATE {PostgreSqlFeaturesStorageInitializer.DefinitionsTable(storageOptions.Value)} SET "group_name"=@GroupName,"name"=@Name,"display_name"=@DisplayName,"parent_name"=@ParentName,"description"=@Description,"default_value"=@DefaultValue,"is_visible_to_clients"=@IsVisibleToClients,"is_available_to_host"=@IsAvailableToHost,"providers"=@Providers,"extra_properties"=@ExtraProperties WHERE "id"=@Id;""";
+            $"""UPDATE {PostgreSqlFeaturesSchema.DefinitionsTable(storageOptions.Value)} SET "group_name"=@GroupName,"name"=@Name,"display_name"=@DisplayName,"parent_name"=@ParentName,"description"=@Description,"default_value"=@DefaultValue,"is_visible_to_clients"=@IsVisibleToClients,"is_available_to_host"=@IsAvailableToHost,"providers"=@Providers,"extra_properties"=@ExtraProperties WHERE "id"=@Id;""";
     }
 
     private string _DeleteFeatureSql()
     {
         return _deleteFeatureSql ??=
-            $"""DELETE FROM {PostgreSqlFeaturesStorageInitializer.DefinitionsTable(storageOptions.Value)} WHERE "id"=@Id;""";
+            $"""DELETE FROM {PostgreSqlFeaturesSchema.DefinitionsTable(storageOptions.Value)} WHERE "id"=@Id;""";
     }
 
     private int _CommandTimeout()

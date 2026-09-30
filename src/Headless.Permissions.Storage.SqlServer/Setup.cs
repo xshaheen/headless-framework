@@ -10,6 +10,7 @@ using Headless.Sql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Permissions;
@@ -139,7 +140,15 @@ public static class SetupPermissionsSqlServer
             }
 
             services.AddOptions<PermissionsStorageOptions, SqlServerPermissionsStorageOptionsValidator>();
-            services.AddInitializerHostedService<SqlServerPermissionsStorageInitializer>();
+            // The contribution factory reads options at first resolution, so InitializeOnStartup keeps its
+            // contract: false means the runner never creates the tables (a migration tool owns them), while the
+            // initializer promise still completes for dependents.
+            services.AddHeadlessSchemaContribution(sp =>
+                SqlServerPermissionsSchemaContribution.Create(
+                    sp.GetRequiredService<IOptions<SqlServerPermissionsOptions>>().Value,
+                    sp.GetRequiredService<IOptions<PermissionsStorageOptions>>().Value
+                )
+            );
             services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
             services.TryAddSingleton<IPermissionGrantRepository, SqlServerPermissionGrantRepository>();
             services.TryAddSingleton<
