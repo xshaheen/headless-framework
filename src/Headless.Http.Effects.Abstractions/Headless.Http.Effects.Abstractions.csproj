@@ -1,0 +1,12 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Declared side-effect classes for outbound HTTP calls, from which the resilience pipeline (retry, idempotency keys) is derived.</Description>
+    <PackageTags>headless;http;resilience;retry;idempotency;dotnet</PackageTags>
+    <RootNamespace>Headless.Http.Effects</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+  </ItemGroup>
+</Project>

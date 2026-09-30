@@ -302,6 +302,7 @@
     <Folder Name="/Kernel/">
         <Project Path="src\Headless.Extensions\Headless.Extensions.csproj" />
         <Project Path="src\Headless.Urls\Headless.Urls.csproj" />
+        <Project Path="src\Headless.Http.Effects.Abstractions\Headless.Http.Effects.Abstractions.csproj" />
         <Project Path="src\Headless.Primitives\Headless.Primitives.csproj" />
         <Project Path="src\Headless.Core\Headless.Core.csproj" />
         <Project Path="src/Headless.FluentValidation/Headless.FluentValidation.csproj" />
@@ -319,6 +320,7 @@
     </Folder>
     <Folder Name="/Kernel/Tests/">
         <Project Path="tests/Headless.FluentValidation.Tests.Unit/Headless.FluentValidation.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Http.Effects.Tests.Unit\Headless.Http.Effects.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Checks.Tests.Unit\Headless.Checks.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Core.Tests.Unit\Headless.Core.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Domain.LocalEventBus.Tests.Unit\Headless.Domain.LocalEventBus.Tests.Unit.csproj" />
