@@ -30,7 +30,7 @@ public sealed class GeneratedModuleRegistrationTests : TestBase
         var consumers = _Consumers(provider);
 
         // then
-        consumers.Should().HaveCount(2);
+        consumers.Should().HaveCount(4);
         var projection = consumers.Single(x => x.ConsumerType == typeof(Fixture.InvoiceProjection));
         projection.MessageType.Should().Be<Fixture.InvoiceIssued>();
         projection.Lane.Should().Be(MessageLane.Bus);
@@ -45,6 +45,15 @@ public sealed class GeneratedModuleRegistrationTests : TestBase
         issue.ConsumerIdentity.Should().Be(Fixture.IssueInvoice.Identity);
         issue.EveryInstance.Should().BeFalse();
         issue.FailurePolicy.Should().BeNull();
+
+        consumers
+            .Where(x => x.ConsumerType == typeof(Fixture.LedgerProjection))
+            .Select(x => (x.MessageType, x.ConsumerIdentity))
+            .Should()
+            .BeEquivalentTo([
+                (typeof(Fixture.LedgerEntryPosted), Fixture.LedgerProjection.Identity),
+                (typeof(Fixture.LedgerEntryReversed), Fixture.LedgerProjection.Identity),
+            ]);
     }
 
     [Fact]
@@ -67,7 +76,12 @@ public sealed class GeneratedModuleRegistrationTests : TestBase
         consumers
             .Select(x => x.ConsumerIdentity)
             .Should()
-            .BeEquivalentTo(Fixture.InvoiceProjection.Identity, Fixture.IssueInvoice.Identity);
+            .BeEquivalentTo(
+                Fixture.InvoiceProjection.Identity,
+                Fixture.IssueInvoice.Identity,
+                Fixture.LedgerProjection.Identity,
+                Fixture.LedgerProjection.Identity
+            );
     }
 
     [Fact]

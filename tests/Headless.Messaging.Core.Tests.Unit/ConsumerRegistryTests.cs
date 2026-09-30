@@ -990,16 +990,117 @@ public sealed class ConsumerRegistryTests : TestBase
     }
 
     [Fact]
-    public void same_lane_durable_identity_and_contract_version_collide_independent_of_topology()
+    public void same_lane_identity_message_and_contract_version_collide_independent_of_group()
     {
         var registry = new ConsumerRegistry();
         registry.Register(_DurableMetadata(MessageLane.Bus, "orders.created", "group-a"));
 
-        var act = () => registry.Register(_DurableMetadata(MessageLane.Bus, "orders.renamed", "group-b"));
+        var act = () => registry.Register(_DurableMetadata(MessageLane.Bus, "Orders.Created", "group-b"));
 
         act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*durable consumer identity*orders-projection*Bus*v1*");
+            .WithMessage("*durable consumer identity*orders-projection*Bus*Orders.Created*v1*");
+    }
+
+    [Fact]
+    public void one_identity_may_cover_several_messages_of_one_consumer_class()
+    {
+        var registry = new ConsumerRegistry();
+        registry.Register(_DurableMetadata(MessageLane.Bus, "orders.created", "group-a"));
+
+        var act = () => registry.Register(_DurableMetadata(MessageLane.Bus, "orders.renamed", "group-a"));
+
+        act.Should().NotThrow();
+        registry.GetAll().Select(static x => x.MessageName).Should().Equal("orders.created", "orders.renamed");
+    }
+
+    [Fact]
+    public void one_identity_on_two_consumer_classes_fails_naming_both_classes_and_modules()
+    {
+        var registry = new ConsumerRegistry();
+        registry.Register(
+            _DurableMetadata(MessageLane.Bus, "orders.created", "group-a") with
+            {
+                DeclaringModule = "Orders.MessagingModule",
+            }
+        );
+
+        var act = () =>
+            registry.Register(
+                _DurableMetadata(MessageLane.Bus, "orders.shipped", "group-a") with
+                {
+                    ConsumerType = typeof(OtherMessageConsumer),
+                    DeclaringModule = "Billing.MessagingModule",
+                }
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*'orders-projection'*declared by two consumer classes*TestConsumer in Orders.MessagingModule*"
+                    + "OtherMessageConsumer in Billing.MessagingModule*"
+            );
+    }
+
+    [Fact]
+    public void one_identity_on_two_consumer_classes_is_independent_across_lanes()
+    {
+        var registry = new ConsumerRegistry();
+        registry.Register(_DurableMetadata(MessageLane.Bus, "orders.created", "group-a"));
+
+        var act = () =>
+            registry.Register(
+                _DurableMetadata(MessageLane.Queue, "orders.shipped", "group-a") with
+                {
+                    ConsumerType = typeof(OtherMessageConsumer),
+                }
+            );
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void second_declared_queue_consumer_for_one_message_fails_naming_both()
+    {
+        var registry = new ConsumerRegistry();
+        registry.Register(
+            _DeclaredQueueMetadata("orders.issue-invoice", typeof(TestConsumer), "Orders.MessagingModule")
+        );
+
+        var act = () =>
+            registry.Register(
+                _DeclaredQueueMetadata("billing.issue-invoice", typeof(OtherMessageConsumer), "Billing.MessagingModule")
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Queue message 'orders.issue-invoice-command' has two consumers: 'orders.issue-invoice'*"
+                    + "Orders.MessagingModule*'billing.issue-invoice'*Billing.MessagingModule*at most one Queue consumer*"
+            );
+    }
+
+    [Fact]
+    public void declared_queue_consumers_for_different_messages_coexist()
+    {
+        var registry = new ConsumerRegistry();
+        registry.Register(
+            _DeclaredQueueMetadata("orders.issue-invoice", typeof(TestConsumer), "Orders.MessagingModule")
+        );
+
+        var act = () =>
+            registry.Register(
+                _DeclaredQueueMetadata(
+                    "billing.issue-invoice",
+                    typeof(OtherMessageConsumer),
+                    "Billing.MessagingModule"
+                ) with
+                {
+                    MessageName = "billing.close-invoice-command",
+                }
+            );
+
+        act.Should().NotThrow();
     }
 
     [Fact]
@@ -1088,6 +1189,24 @@ public sealed class ConsumerRegistryTests : TestBase
             ConsumerIdentity: "orders-projection",
             MessageContractVersion: contractVersion
         );
+    }
+
+    private static ConsumerMetadata _DeclaredQueueMetadata(string identity, Type consumerType, string module)
+    {
+        return new ConsumerMetadata(
+            typeof(TestMessage),
+            consumerType,
+            "orders.issue-invoice-command",
+            identity,
+            1,
+            MessageLane.Queue,
+            identity,
+            MessageContractVersion: "v1"
+        )
+        {
+            DeclaringModule = module,
+            Dispatch = static (_, _, _) => ValueTask.CompletedTask,
+        };
     }
 
     private sealed class OtherMessage;

@@ -73,4 +73,10 @@ public sealed record ConsumerMetadata(
 
     /// <summary>The generated module that declared the consumer, or <see langword="null"/> outside modules.</summary>
     internal string? DeclaringModule { get; init; }
+
+    /// <summary>
+    /// Consume middleware types that <c>Tune</c> attached to this consumer alone, in the order they run inside the global
+    /// and per-message middleware.
+    /// </summary>
+    internal IReadOnlyList<Type> Middleware { get; init; } = [];
 }

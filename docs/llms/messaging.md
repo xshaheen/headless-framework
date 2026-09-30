@@ -1710,6 +1710,14 @@ Roslyn incremental source generator that registers `[BusConsumer]` and `[QueueCo
 - **Incremental**: declarations are reduced to value models when discovered, so an edit that does not change a consumer declaration reuses every generator step and re-emits nothing.
 - **Build-time checks**: HM001 to HM009, listed under [Diagnostics](#messaging-source-generator-diagnostics). `EveryInstance` exists only on `[BusConsumer]`, so writing it on `[QueueConsumer]` is a compiler error rather than a generator rule.
 
+### Startup checks and host controls
+
+- **Keys**: a consumer is keyed by its lane, identity, message name, and contract version, so one identity can cover several messages. On the Bus lane one identity is one subscription: the host starts one consumer client for it that binds all its messages. On the Queue lane the host starts one client per message.
+- **Cross-module conflicts fail startup and name both sources**: one identity on two consumer classes in the same lane, and a second Queue consumer for one message. An identical declaration contributed twice registers once.
+- **`Tune(identity, c => ...)`** on the `AddHeadlessMessaging` setup or on `services.ConfigureMessaging(...)` changes a registered consumer's deployment settings on this host: `Concurrency(n)`, `FailurePolicy<TPolicy>()`, and `UseMiddleware<TMiddleware>()`. Tuned middleware implements `IConsumeMiddleware<ConsumeContext>`, runs only for that consumer, runs inside the global and per-message middleware, and is resolved from the delivery scope (registered as scoped when it is not already registered). A consumer that handles several messages takes the settings for each of them. An identity that no registered consumer declares fails startup.
+- **Configuration**: `Headless:Messaging:Consumers:{identity}:Concurrency` (1 to 255) applies after every `Tune` call. An unknown identity, an unknown setting, or an invalid value fails startup.
+- **`ConsumeOnly("orders.*", "billing.invoice-projection")`** on the `AddHeadlessMessaging` setup limits which consumers this host starts clients for. An entry is an exact identity or an `owner.*` pattern that matches the first identity segment. Consumers outside the filter stay registered, so the host still publishes their messages; another host consumes them. An entry that matches no registered consumer fails startup.
+
 ### Diagnostics
 
 <a id="messaging-source-generator-diagnostics"></a>Every rule is reported at compile time in category `Headless.Messaging.SourceGenerator`. HM006 is a warning; every other rule is an error. The table below is each rule's help link target.

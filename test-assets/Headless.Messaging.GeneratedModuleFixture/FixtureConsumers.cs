@@ -8,17 +8,38 @@ public sealed record InvoiceIssued(string Number);
 
 public sealed record IssueInvoiceCommand(string OrderId);
 
+public sealed record LedgerEntryPosted(string Entry);
+
+public sealed record LedgerEntryReversed(string Entry);
+
 /// <summary>A failure policy type for the Bus consumer to name.</summary>
 public sealed class FixtureFailurePolicy : IFailurePolicy;
 
 /// <summary>Records what the generated dispatchers did, so a test can see each consumer ran with its dependencies.</summary>
 public sealed class FixtureProbe
 {
+    private readonly Lock _lock = new();
     private readonly List<string> _calls = [];
 
-    public IReadOnlyList<string> Calls => _calls;
+    // Deliveries through a transport record from consumer threads, so reads take a snapshot.
+    public IReadOnlyList<string> Calls
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return [.. _calls];
+            }
+        }
+    }
 
-    public void Record(string call) => _calls.Add(call);
+    public void Record(string call)
+    {
+        lock (_lock)
+        {
+            _calls.Add(call);
+        }
+    }
 }
 
 [BusConsumer(Identity, EveryInstance = true, Policy = typeof(FixtureFailurePolicy))]
@@ -60,6 +81,25 @@ public sealed class IssueInvoice(FixtureProbe probe) : IConsume<IssueInvoiceComm
     public ValueTask OnStoppingAsync(CancellationToken cancellationToken)
     {
         probe.Record("issue stopping");
+        return ValueTask.CompletedTask;
+    }
+}
+
+/// <summary>One identity covering two messages, so the host binds both to one subscription.</summary>
+[BusConsumer(Identity)]
+public sealed class LedgerProjection(FixtureProbe probe) : IConsume<LedgerEntryPosted>, IConsume<LedgerEntryReversed>
+{
+    public const string Identity = "fixture.ledger-projection";
+
+    public ValueTask ConsumeAsync(ConsumeContext<LedgerEntryPosted> context, CancellationToken cancellationToken)
+    {
+        probe.Record($"posted {context.Message.Entry}");
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask ConsumeAsync(ConsumeContext<LedgerEntryReversed> context, CancellationToken cancellationToken)
+    {
+        probe.Record($"reversed {context.Message.Entry}");
         return ValueTask.CompletedTask;
     }
 }

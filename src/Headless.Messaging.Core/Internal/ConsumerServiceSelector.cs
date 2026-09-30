@@ -101,6 +101,13 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
 
         foreach (var consumer in metadata)
         {
+            // ConsumeOnly narrows what this host consumes, not what it registers: a filtered-out consumer gets no
+            // client here, while its messages stay publishable.
+            if (!registry.ConsumeFilter.Allows(consumer.ConsumerIdentity))
+            {
+                continue;
+            }
+
             // Build ConsumerExecutorDescriptor from metadata
             var consumeMethod = _ConsumeMethodCache.GetOrAdd(
                 consumer.MessageType,
@@ -124,6 +131,7 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
                 InboxRetention = consumer.InboxRetention,
                 Lane = consumer.Lane,
                 Dispatch = consumer.Dispatch,
+                Middleware = consumer.Middleware,
             };
 
             results.Add(descriptor);

@@ -59,6 +59,9 @@ public sealed class ConsumerExecutorDescriptor
     /// </summary>
     internal MessageConsumerDispatch? Dispatch { get; init; }
 
+    /// <summary>Consume middleware types that run for this consumer alone, resolved from the delivery's scope.</summary>
+    internal IReadOnlyList<Type> Middleware { get; init; } = [];
+
     /// <summary>
     /// The message payload type used for deserialization: <c>T</c> when the first non-framework parameter is
     /// <see cref="ConsumeContext{T}"/>, otherwise that parameter's type. Cached — descriptors are immutable

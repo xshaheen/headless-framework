@@ -17,6 +17,7 @@ using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
 using Headless.MultiTenancy;
 using Headless.UnitOfWork;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -268,6 +269,12 @@ public static class SetupMessaging
             options.RetryProcessor.CopyTo(rp)
         );
 
+        var consumeOnly = setup.FreezeConsumeOnly();
+        if (consumeOnly.Length != 0)
+        {
+            services.AddSingleton(new MessagingConsumeOnlyContribution(consumeOnly));
+        }
+
         //Startup and Hosted
         services.TryAddSingleton<Bootstrapper>();
         services.TryAddSingleton<IBootstrapper>(sp => sp.GetRequiredService<Bootstrapper>());
@@ -316,17 +323,18 @@ public static class SetupMessaging
             CreateModuleRegistrations(provider.GetServices<MessagingModuleContribution>(), registrations)
         );
 
-        // Nothing was captured — mark drained without touching the circuit-breaker
-        // registry, which is only registered once AddHeadlessMessaging's core wiring has run.
-        if (registrations.Count == 0)
-        {
-            registry.MarkMessageRegistrationDrainCompleted();
-            return;
-        }
+        var controls = new MessagingHostControls(
+            [.. provider.GetServices<MessagingTuningContribution>().Select(static x => x.Tuning)],
+            [.. provider.GetServices<MessagingConsumeOnlyContribution>().SelectMany(static x => x.Entries)],
+            provider.GetService<IConfiguration>()
+        );
 
-        var circuitBreakerRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
+        // The circuit-breaker registry is only registered once AddHeadlessMessaging's core wiring has run, so it is
+        // resolved only when something was captured that may carry a circuit-breaker override.
+        var circuitBreakerRegistry =
+            registrations.Count == 0 ? null : provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
 
-        DiscoverMessageRegistrations(registrations, options, registry, circuitBreakerRegistry);
+        DiscoverMessageRegistrations(registrations, options, registry, circuitBreakerRegistry, controls);
     }
 
     /// <summary>
@@ -398,21 +406,21 @@ public static class SetupMessaging
         ));
     }
 
+    /// <summary>
+    /// Builds the host's consumers from the drained registrations, then, in order: detects identity, Queue, and route
+    /// conflicts; applies <c>Tune</c> calls and <c>Headless:Messaging:Consumers:{identity}</c> configuration; and
+    /// resolves the <c>ConsumeOnly</c> filter.
+    /// </summary>
     internal static void DiscoverMessageRegistrations(
         IReadOnlyCollection<MessageRegistration> registrations,
         MessagingOptions options,
         ConsumerRegistry registry,
-        ConsumerCircuitBreakerRegistry circuitBreakerRegistry
+        ConsumerCircuitBreakerRegistry? circuitBreakerRegistry,
+        MessagingHostControls controls
     )
     {
         if (registry.HasCompletedMessageRegistrationDrain)
         {
-            return;
-        }
-
-        if (registrations.Count == 0)
-        {
-            registry.MarkMessageRegistrationDrainCompleted();
             return;
         }
 
@@ -425,6 +433,7 @@ public static class SetupMessaging
             .ToHashSet();
 
         var registeredKeys = new Dictionary<ConsumerRegistrationKey, ConsumerRegistrationSettings>();
+        var consumers = new List<(ConsumerMetadata Metadata, ConsumerCircuitBreakerOptions? CircuitBreakerOverride)>();
 
         // Names are registered eagerly at lane-owned registration time, so the drain only builds consumer
         // metadata (which needs MessagingOptions). Iterate registrations directly — no per-type grouping.
@@ -467,6 +476,20 @@ public static class SetupMessaging
                     DeclaringModule = consumer.DeclaringModule,
                 };
 
+                // An attribute-declared consumer subscribes under its identity on the Bus lane, so one client binds every
+                // message the identity covers, and under its message name on the Queue lane, which has one consumer per
+                // message. Consumers registered through ForMessage keep their group.
+                if (consumer.Dispatch is not null)
+                {
+                    resolved = resolved with
+                    {
+                        Group = options.ResolveGroupName(
+                            resolved.ResolvedHandlerId,
+                            resolved.Lane == MessageLane.Bus ? resolved.ConsumerIdentity : resolved.MessageName
+                        ),
+                    };
+                }
+
                 var key = new ConsumerRegistrationKey(
                     resolved.MessageName,
                     resolved.Group,
@@ -507,26 +530,52 @@ public static class SetupMessaging
                 }
 
                 registeredKeys.Add(key, settings);
-                registry.Register(resolved);
-                _ApplyCircuitBreakerOverride(circuitBreakerRegistry, resolved, consumer);
+                consumers.Add((resolved, consumer.CircuitBreakerOverride));
             }
         }
 
-        registry.MarkMessageRegistrationDrainCompleted();
+        // Tuning never changes the identity, lane, or message a conflict check reads, so its errors are reported only
+        // after registration: a conflicting declaration surfaces first.
+        var errors = new List<string>();
+        var tuned = ConsumerTuningApplier.Apply([.. consumers.Select(static x => x.Metadata)], controls, errors);
+        for (var index = 0; index < consumers.Count; index++)
+        {
+            registry.Register(tuned[index]);
+            _ApplyCircuitBreakerOverride(circuitBreakerRegistry, tuned[index], consumers[index].CircuitBreakerOverride);
+        }
+
+        if (errors.Count != 0)
+        {
+            throw new InvalidOperationException(
+                $"Messaging tuning is invalid:{Environment.NewLine}{string.Join(Environment.NewLine, errors)}"
+            );
+        }
+
+        // Resolved against every registered identity, so a filter never makes a message unpublishable.
+        var consumeFilter = MessagingConsumeFilter.Create(
+            controls.ConsumeOnly,
+            tuned.Select(static x => x.ConsumerIdentity)
+        );
+
+        registry.MarkMessageRegistrationDrainCompleted(consumeFilter);
     }
 
     private static void _ApplyCircuitBreakerOverride(
-        ConsumerCircuitBreakerRegistry circuitBreakerRegistry,
+        ConsumerCircuitBreakerRegistry? circuitBreakerRegistry,
         ConsumerMetadata resolved,
-        MessageConsumerRegistration consumer
+        ConsumerCircuitBreakerOptions? circuitBreakerOverride
     )
     {
-        if (consumer.CircuitBreakerOverride is null || string.IsNullOrWhiteSpace(resolved.Group))
+        if (
+            circuitBreakerRegistry is null
+            || circuitBreakerOverride is null
+            || string.IsNullOrWhiteSpace(resolved.Group)
+        )
         {
             return;
         }
 
-        circuitBreakerRegistry.Register(CircuitBreakerGroupKeys.For(resolved), consumer.CircuitBreakerOverride);
+        circuitBreakerRegistry.Register(CircuitBreakerGroupKeys.For(resolved), circuitBreakerOverride);
     }
 
     private readonly record struct ConsumerRegistrationKey(

@@ -82,6 +82,25 @@ public sealed class MessagingContributionBuilder
         return this;
     }
 
+    /// <summary>
+    /// Tunes the deployment settings of one declared consumer, for example
+    /// <c>Tune("billing.invoice-projection", consumer =&gt; consumer.Concurrency(16))</c>.
+    /// </summary>
+    /// <remarks>
+    /// The identity is checked when messaging starts: an identity no registered consumer declares fails startup.
+    /// <paramref name="configure"/> runs once, synchronously, during this call.
+    /// </remarks>
+    /// <param name="identity">The consumer's identity.</param>
+    /// <param name="configure">Changes the consumer's deployment settings.</param>
+    /// <returns>This builder, for chaining.</returns>
+    /// <exception cref="ArgumentException"><paramref name="identity"/> is empty or whitespace.</exception>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    public MessagingContributionBuilder Tune(string identity, [InstantHandle] Action<ConsumerTuningBuilder> configure)
+    {
+        _sink.Services.AddConsumerTuning(identity, configure);
+        return this;
+    }
+
     /// <summary>Records every contract this contribution declared, in declaration order.</summary>
     internal void Complete()
     {

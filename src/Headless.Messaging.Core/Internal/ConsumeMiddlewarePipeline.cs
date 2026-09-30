@@ -122,7 +122,7 @@ internal sealed class ConsumeMiddlewarePipeline(
         {
             consumeContextAccessor?.Current = consumeContext;
 
-            var middleware = _ResolveMiddleware(provider, consumeContext, descriptor.GroupName);
+            var middleware = _ResolveMiddleware(provider, consumeContext, descriptor);
 
             if (middleware.Length == 0)
             {
@@ -274,7 +274,23 @@ internal sealed class ConsumeMiddlewarePipeline(
         return invoker(middleware, context, next);
     }
 
-    private object[] _ResolveMiddleware(IServiceProvider provider, ConsumeContext context, string? groupName)
+    private object[] _ResolveMiddleware(
+        IServiceProvider provider,
+        ConsumeContext context,
+        ConsumerExecutorDescriptor consumer
+    )
+    {
+        var shared = _ResolveSharedMiddleware(provider, context, consumer.GroupName);
+        if (consumer.Middleware.Count == 0)
+        {
+            return shared;
+        }
+
+        // Middleware tuned onto one consumer runs innermost, after the global and per-message middleware.
+        return [.. shared, .. consumer.Middleware.Select(provider.GetRequiredService)];
+    }
+
+    private object[] _ResolveSharedMiddleware(IServiceProvider provider, ConsumeContext context, string? groupName)
     {
         // _ResolveDirectMiddleware already materializes a fresh array; reuse it directly instead of copying again.
         var directMiddleware = _ResolveDirectMiddleware(provider, context);

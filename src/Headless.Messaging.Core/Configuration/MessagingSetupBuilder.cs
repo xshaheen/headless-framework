@@ -24,6 +24,8 @@ namespace Headless.Messaging.Configuration;
 [PublicAPI]
 public sealed class MessagingSetupBuilder : IMessagingBuilder
 {
+    private readonly List<string> _consumeOnly = [];
+
     internal MessagingSetupBuilder(IServiceCollection services, MessagingOptions options, ConsumerRegistry registry)
     {
         Argument.IsNotNull(services);
@@ -107,6 +109,54 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
         Services.AddMessagingModuleContribution<TModule>();
         return this;
     }
+
+    /// <summary>
+    /// Tunes the deployment settings of one declared consumer on this host, for example
+    /// <c>Tune("billing.invoice-projection", consumer =&gt; consumer.Concurrency(16))</c>. Equivalent to the same call on
+    /// <c>services.ConfigureMessaging(...)</c>.
+    /// </summary>
+    /// <remarks>
+    /// The identity is checked when messaging starts: an identity no registered consumer declares fails startup.
+    /// <c>Headless:Messaging:Consumers:{identity}</c> configuration (<c>Concurrency</c>) applies after every
+    /// <c>Tune</c> call. <paramref name="configure"/> runs once, synchronously, during this call.
+    /// </remarks>
+    /// <param name="identity">The consumer's identity.</param>
+    /// <param name="configure">Changes the consumer's deployment settings.</param>
+    /// <returns>This builder, for chaining.</returns>
+    /// <exception cref="ArgumentException"><paramref name="identity"/> is empty or whitespace.</exception>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    public MessagingSetupBuilder Tune(string identity, [InstantHandle] Action<ConsumerTuningBuilder> configure)
+    {
+        Services.AddConsumerTuning(identity, configure);
+        return this;
+    }
+
+    /// <summary>
+    /// Limits which registered consumers this host consumes with. Each entry is an exact consumer identity, such as
+    /// <c>billing.invoice-projection</c>, or an <c>owner.*</c> pattern, such as <c>orders.*</c>, that matches every
+    /// consumer whose identity starts with that owner segment. Calls accumulate.
+    /// </summary>
+    /// <remarks>
+    /// Consumers outside the filter stay registered: this host still publishes their messages and describes them, and
+    /// another host without the filter consumes them. Without any <c>ConsumeOnly</c> call the host consumes with every
+    /// consumer. An entry that matches no registered consumer fails startup.
+    /// </remarks>
+    /// <param name="identities">Exact consumer identities or <c>owner.*</c> patterns.</param>
+    /// <returns>This builder, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="identities"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="identities"/> is empty, or an entry is blank or misplaces <c>*</c>.
+    /// </exception>
+    public MessagingSetupBuilder ConsumeOnly(params string[] identities)
+    {
+        Argument.IsNotNullOrEmpty(identities);
+        var validated = identities.Select(MessagingConsumeFilter.ValidateEntry).ToArray();
+        _consumeOnly.AddRange(validated);
+        return this;
+    }
+
+    /// <summary>The <c>ConsumeOnly</c> entries authored so far, snapshotted when <c>AddHeadlessMessaging</c> returns.</summary>
+    internal string[] FreezeConsumeOnly() => [.. _consumeOnly];
 
     /// <summary>Gets the structural registration root for Bus consumers.</summary>
     public IBusRegistrationBuilder Bus { get; }

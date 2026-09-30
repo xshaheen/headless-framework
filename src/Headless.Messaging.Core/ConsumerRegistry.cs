@@ -55,11 +55,7 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
                 );
             }
 
-            var existingIdentityConflict = _FindDuplicateDurableIdentityConflict(_consumers!, metadata);
-            if (existingIdentityConflict != null)
-            {
-                throw _CreateDurableIdentityCollision(metadata, existingIdentityConflict);
-            }
+            _ThrowOnOwnershipConflict(_consumers!, metadata);
 
             var existingConflict = _FindDuplicateTopicGroupConflict(_consumers!, metadata);
 
@@ -161,11 +157,7 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
             var index = _consumers!.FindIndex(m => predicate(m));
             if (index >= 0)
             {
-                var existingIdentityConflict = _FindDuplicateDurableIdentityConflict(_consumers!, newMetadata, index);
-                if (existingIdentityConflict != null)
-                {
-                    throw _CreateDurableIdentityCollision(newMetadata, existingIdentityConflict);
-                }
+                _ThrowOnOwnershipConflict(_consumers!, newMetadata, index);
 
                 var existingConflict = _FindDuplicateTopicGroupConflict(_consumers!, newMetadata, index);
                 if (existingConflict != null)
@@ -361,7 +353,13 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
         }
     }
 
-    internal void MarkMessageRegistrationDrainCompleted()
+    /// <summary>
+    /// The consumers this host starts clients for, resolved from <c>ConsumeOnly</c> when the registrations drain.
+    /// Filtered-out consumers stay registered, so the host can still publish their messages.
+    /// </summary>
+    internal MessagingConsumeFilter ConsumeFilter { get; private set; } = MessagingConsumeFilter.All;
+
+    internal void MarkMessageRegistrationDrainCompleted(MessagingConsumeFilter? consumeFilter = null)
     {
         lock (_lock)
         {
@@ -372,6 +370,7 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
                 );
             }
 
+            ConsumeFilter = consumeFilter ?? MessagingConsumeFilter.All;
             MessageRegistrationsDrained = true;
         }
     }
@@ -407,23 +406,115 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
         return null;
     }
 
-    private static ConsumerMetadata? _FindDuplicateDurableIdentityConflict(
-        IEnumerable<ConsumerMetadata> consumers,
+    /// <summary>
+    /// Rejects a consumer that would share an identity, a Queue message, or a durable route with a different
+    /// registration. The checks run in this order so the error names the most specific rule that was broken.
+    /// </summary>
+    private static void _ThrowOnOwnershipConflict(
+        List<ConsumerMetadata> consumers,
         ConsumerMetadata candidate,
         int? skipIndex = null
     )
     {
-        return consumers
-            .Where((_, index) => index != skipIndex)
-            .FirstOrDefault(existing =>
+        for (var index = 0; index < consumers.Count; index++)
+        {
+            if (index == skipIndex)
+            {
+                continue;
+            }
+
+            var existing = consumers[index];
+            if (existing.Lane != candidate.Lane)
+            {
+                continue;
+            }
+
+            var sameIdentity = string.Equals(
+                existing.ConsumerIdentity,
+                candidate.ConsumerIdentity,
+                StringComparison.Ordinal
+            );
+
+            // The route key alone would let two classes that share an identity but consume different messages share
+            // one subscription, so an identity must belong to exactly one consumer class.
+            if (sameIdentity && existing.ConsumerType != candidate.ConsumerType)
+            {
+                throw new InvalidOperationException(
+                    $"Consumer identity '{candidate.ConsumerIdentity}' on lane {candidate.Lane} is declared by two "
+                        + $"consumer classes: {_Describe(existing)} and {_Describe(candidate)}. An identity belongs to "
+                        + "exactly one consumer class; give one of them a different identity."
+                );
+            }
+        }
+
+        for (var index = 0; index < consumers.Count; index++)
+        {
+            if (index == skipIndex)
+            {
+                continue;
+            }
+
+            var existing = consumers[index];
+
+            // Queue destinations are keyed by the message name, so a second consumer would compete for the same queue.
+            // Consumers registered through ForMessage predate the rule and may still share a Queue message between
+            // groups, so it binds only when an attribute-declared consumer takes part.
+            if (
+                candidate.Lane == MessageLane.Queue
+                && existing.Lane == MessageLane.Queue
+                && (candidate.Dispatch is not null || existing.Dispatch is not null)
+                && string.Equals(existing.MessageName, candidate.MessageName, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(existing.ConsumerIdentity, candidate.ConsumerIdentity, StringComparison.Ordinal)
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Queue message '{candidate.MessageName}' has two consumers: {_Describe(existing)} and "
+                        + $"{_Describe(candidate)}. A message has at most one Queue consumer; remove one of them or "
+                        + "consume the message on the Bus lane."
+                );
+            }
+        }
+
+        for (var index = 0; index < consumers.Count; index++)
+        {
+            if (index == skipIndex)
+            {
+                continue;
+            }
+
+            var existing = consumers[index];
+
+            // One identity may cover several messages, and the inbox keys rows by message name, so the durable route
+            // is the identity plus the message name and its contract version on one lane.
+            if (
                 existing.Lane == candidate.Lane
                 && string.Equals(existing.ConsumerIdentity, candidate.ConsumerIdentity, StringComparison.Ordinal)
+                && string.Equals(existing.MessageName, candidate.MessageName, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(
                     existing.MessageContractVersion,
                     candidate.MessageContractVersion,
                     StringComparison.Ordinal
                 )
-            );
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Duplicate durable consumer identity '{candidate.ConsumerIdentity}' for lane {candidate.Lane}, "
+                        + $"message '{candidate.MessageName}', and message contract version "
+                        + $"'{candidate.MessageContractVersion}'. Existing consumer {_Describe(existing)} conflicts "
+                        + $"with {_Describe(candidate)}."
+                );
+            }
+        }
+    }
+
+    // Names the class and, for a generated consumer, the module that declared it, so a cross-module conflict points at
+    // both sources.
+    private static string _Describe(ConsumerMetadata metadata)
+    {
+        var type = metadata.ConsumerType.FullName ?? metadata.ConsumerType.Name;
+        return metadata.DeclaringModule is { } module
+            ? $"'{metadata.ConsumerIdentity}' ({type} in {module})"
+            : $"'{metadata.ConsumerIdentity}' ({type})";
     }
 
     private static void _ValidateDurableContract(ConsumerMetadata metadata)
@@ -448,18 +539,5 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
                 nameof(metadata)
             );
         }
-    }
-
-    private static InvalidOperationException _CreateDurableIdentityCollision(
-        ConsumerMetadata candidate,
-        ConsumerMetadata existing
-    )
-    {
-        return new InvalidOperationException(
-            $"Duplicate durable consumer identity '{candidate.ConsumerIdentity}' for lane {candidate.Lane} and "
-                + $"message contract version '{candidate.MessageContractVersion}'. Existing consumer "
-                + $"'{existing.ConsumerType.FullName ?? existing.ConsumerType.Name}' conflicts with "
-                + $"'{candidate.ConsumerType.FullName ?? candidate.ConsumerType.Name}'."
-        );
     }
 }
