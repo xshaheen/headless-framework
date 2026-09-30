@@ -145,6 +145,29 @@ Rules that change how you operate a database:
 - **`InitializeOnStartup = false`** on a feature keeps its steps out of `Apply` mode. `Verify` mode and `ExportScript` still include them.
 - History rows of features a host does not register are ignored, so hosts with different feature sets can share one schema. A row for a registered feature whose step this host does not know, such as a newer replica's step during a rolling deploy, is logged, not fatal.
 
+### Store statement kit (for provider authors)
+
+A relational store is written once against `ISqlDialect` (`Headless.Sql`), with `PostgreSqlDialect.Instance` and `SqlServerDialect.Instance` as the two engines. Application code does not call it; a feature's store does. The dialect renders a small set of statement shapes, and each shape keeps the same locking and clock rules on both engines:
+
+| Shape | Does | Result |
+| --- | --- | --- |
+| `SqlLockedRead` | Reads one row by key under an update-intent lock (a key-range lock when absent) | The row, or none |
+| `SqlFencedTransition` | One conditional `UPDATE` whose `WHERE` is the fence; run it after a locked read of the same key | Applied flag, then the written columns |
+| `SqlInsertIfAbsent` | Inserts the keyed row only when no row has the key, never raising a duplicate-key error | Inserted flag, then the columns |
+| `SqlUpsert` | Inserts the keyed row, or updates it when an optional guard allows | `SqlUpsertOutcome` (`Refused`, `Inserted`, `Updated`), then the columns |
+| `SqlClaimNext` | Claims the first row, or the first `@BatchSizeParameter` rows, matching a filter, skipping locked rows | One row per claimed row |
+| `SqlDeleteBatch` | Deletes up to `@BatchSizeParameter` matching rows, skipping locked rows | Row count |
+| `SqlClockedStatement` | Any one statement that reads the database clock without waiting on a lock first | The statement's own |
+
+- **Tokens.** Fragments use `SqlDialectTokens.Now` (`{now}`) for the database clock, never the application clock, and `SqlDialectTokens.Stored` (`{stored}`) for the stored row in an upsert's `Set` and `Guard`. SQL Server reads the clock after the statement's lock wait; PostgreSQL reads `clock_timestamp()` once per statement, never `now()`.
+- **Results.** `SqlFencedCommand.ExecuteAsync` and `SqlUpsertCommand.ExecuteAsync` (`Headless.Sql.Core`) return `SqlFenced<TRow, TAccepted>` and `SqlUpserted<T>`, whose written values are reachable only through `Match`, so a store cannot use a result without handling the refusal.
+- **Lists.** `InList(expression, parameter, elementType)` with `AddListParameter` binds a whole list as one parameter: `= ANY(@p)` over an array on PostgreSQL, `OPENJSON` with a typed `WITH` clause on SQL Server. No table type has to exist, and an empty list matches nothing. Binary lists are refused.
+- **Parameters.** `AddParameter` types each value by `SqlColumnType` (`KeyText`, `Text`, `Int16`, `Int32`, `Int64`, `Timestamp`, `Binary`, `Guid`, `Boolean`); text is sized to its column so the comparison keeps the column's collation. `AddDuration` and `ShiftByDuration` add a `TimeSpan` to an instant without the SQL Server `DATEADD` int overflow.
+- **Errors.** `Classify` maps a driver exception to `SqlErrorKind`: `UniqueViolation`, `Deadlock`, `SerializationConflict`, `DuplicateObject`, `LockTimeout`, and `TransactionAborted` for a statement that ran on a transaction an earlier error ended or doomed (PostgreSQL `25P02`, SQL Server `3930`). That transaction is lost; roll the unit back rather than retrying inside it.
+- **Autonomous calls.** `SqlAutonomousTransaction.RunAsync` runs one store call on its own READ COMMITTED transaction and retries only `Deadlock` and `SerializationConflict`, at most 3 attempts, on a fresh connection. It never retries inside a caller's transaction.
+- **Portable values.** `SqlPortable.Truncate` truncates a duration to the microsecond every engine keeps. Key text is checked with `Argument.IsPortableKey` (`Headless.Checks`).
+- **Enlistment.** `RelationalEnlistment.RequireLive` and `RequireSameDatabase` (`Headless.UnitOfWork`) are the checks a store runs before writing inside a caller's unit of work.
+
 ## Choosing a Provider
 
 | Provider | Package | ADO.NET driver | Use when | Avoid when |
