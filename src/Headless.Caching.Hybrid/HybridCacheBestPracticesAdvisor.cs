@@ -55,7 +55,8 @@ internal sealed class HybridCacheBestPracticesAdvisor(
         }
 
         // (Check 5 — "backplane wired but no invalidation consumer" — was removed: UseHybrid now registers the
-        // consumer unconditionally through the order-independent ForMessage seam, so the condition is unreachable.)
+        // consumer unconditionally through its order-independent generated messaging module, so the condition is
+        // unreachable.)
 
         var entry = o.DefaultEntryOptions;
 

@@ -106,6 +106,73 @@ public sealed class HybridCacheInvalidationConsumerTests : TestBase
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    [Fact]
+    public async Task should_flush_the_l1_of_the_default_and_every_named_hybrid_on_a_reconnect()
+    {
+        // given - two hybrids, each holding an L1 entry that an invalidation during the gap may have made stale
+        using var defaultL1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        using var namedL1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        await using var defaultCache = _CreateHybrid(defaultL1, l2);
+        await using var namedCache = _CreateHybrid(namedL1, l2);
+        await defaultL1.UpsertAsync("key", "value", TimeSpan.FromMinutes(5), AbortToken);
+        await namedL1.UpsertAsync("key", "value", TimeSpan.FromMinutes(5), AbortToken);
+        await l2.UpsertAsync("key", "value", TimeSpan.FromMinutes(5), AbortToken);
+        var provider = Substitute.For<ICacheProvider>();
+        provider.GetCacheOrNull(CacheConstants.HybridCacheProvider).Returns(defaultCache);
+        provider.RegisteredNames.Returns(new HashSet<string>(StringComparer.Ordinal) { "tenant", "plain" });
+        provider.GetCacheOrNull("tenant").Returns(namedCache);
+        provider.GetCacheOrNull("plain").Returns(Substitute.For<ICache>());
+
+        // when
+        await _CreateConsumer(provider).OnSubscriptionEstablishedAsync(_Established(isReconnect: true), AbortToken);
+
+        // then - both L1s are empty, while L2 keeps the entry as the source of truth
+        (await defaultL1.ExistsAsync("key", AbortToken))
+            .Should()
+            .BeFalse();
+        (await namedL1.ExistsAsync("key", AbortToken)).Should().BeFalse();
+        (await l2.ExistsAsync("key", AbortToken)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_keep_the_l1_on_the_first_establishment()
+    {
+        // given
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        await using var cache = _CreateHybrid(l1, l2);
+        await l1.UpsertAsync("key", "value", TimeSpan.FromMinutes(5), AbortToken);
+        var provider = Substitute.For<ICacheProvider>();
+        provider.GetCacheOrNull(CacheConstants.HybridCacheProvider).Returns(cache);
+
+        // when
+        await _CreateConsumer(provider).OnSubscriptionEstablishedAsync(_Established(isReconnect: false), AbortToken);
+
+        // then - nothing was missed before the first subscription, so nothing is flushed
+        (await l1.ExistsAsync("key", AbortToken))
+            .Should()
+            .BeTrue();
+        provider.DidNotReceive().GetCacheOrNull(Arg.Any<string>());
+    }
+
+    private HybridCache _CreateHybrid(InMemoryCache l1, InMemoryCache l2) =>
+        new(
+            l1,
+            new InMemoryRemoteCacheAdapter(l2),
+            Substitute.For<IBus>(),
+            new HybridCacheOptions { InstanceId = Faker.Random.AlphaNumeric(8) },
+            timeProvider: _timeProvider
+        );
+
+    private static SubscriptionEstablishedContext _Established(bool isReconnect) =>
+        new(
+            HybridCacheInvalidationConsumer.Identity,
+            [nameof(CacheInvalidationMessage)],
+            isReconnect,
+            Generation: isReconnect ? 2 : 1
+        );
+
     private static HybridCacheInvalidationConsumer _CreateConsumer(ICacheProvider provider)
     {
         return new(provider, NullLogger<HybridCacheInvalidationConsumer>.Instance);

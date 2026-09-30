@@ -2,7 +2,6 @@
 
 using Headless.Caching;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Runtime;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,30 +10,139 @@ using Microsoft.Extensions.Time.Testing;
 namespace Tests;
 
 /// <summary>
-/// Covers the auto-registration of <see cref="HybridCacheInvalidationConsumer"/> (#511): a hybrid cache wires the
-/// backplane consumer unconditionally (registration order of caching vs messaging must not matter), the emitted
-/// descriptors stay inert until messaging bootstrap drains them, and the registration never doubles when the
-/// application already wired the consumer itself.
+/// Covers the auto-registration of <see cref="HybridCacheInvalidationConsumer"/> (#511, #936): every hybrid contributes
+/// the assembly's generated messaging module, registration order of caching and messaging does not matter, the
+/// contribution stays inert without messaging, and the consumer registers once as an every-instance Bus consumer.
 /// </summary>
 public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
 
-    private ServiceCollection _CreateServices(bool withBus)
+    [Fact]
+    public void should_contribute_only_an_inert_module_when_messaging_is_absent()
+    {
+        // given
+        var services = _CreateServices();
+        using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+
+        // when
+        _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2));
+
+        // then - the consumer is declared by the generated module, not placed in the container, so a bus-less host pays
+        // nothing while a bus added later still gets the consumer
+        services
+            .Should()
+            .Contain(static d =>
+                string.Equals(d.ServiceType.Name, "MessagingModuleContribution", StringComparison.Ordinal)
+            );
+        services.Should().NotContain(d => d.ServiceType == typeof(IConsume<CacheInvalidationMessage>));
+        services.Should().NotContain(d => d.ServiceType == typeof(HybridCacheInvalidationConsumer));
+    }
+
+    [Fact]
+    public void should_register_an_every_instance_bus_consumer_when_the_hybrid_precedes_messaging()
+    {
+        // given - caching first, messaging after: the reversed order once left the backplane publish-only
+        var services = _CreateServices();
+        using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2));
+        services.AddHeadlessMessaging(_ => { });
+
+        // when
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+
+        // then
+        _AssertSingleInvalidationConsumer(provider);
+    }
+
+    [Fact]
+    public void should_register_an_every_instance_bus_consumer_when_the_hybrid_follows_messaging()
+    {
+        // given
+        var services = _CreateServices();
+        services.AddHeadlessMessaging(_ => { });
+        using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+
+        // when
+        _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2));
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+
+        // then
+        _AssertSingleInvalidationConsumer(provider);
+    }
+
+    [Fact]
+    public void should_register_one_consumer_for_the_default_and_a_named_hybrid()
+    {
+        // given - one consumer routes to every hybrid by CacheName, however many hybrids contribute it
+        var services = _CreateServices();
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        using var namedL2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        services.AddKeyedSingleton<ICache>("tenant-l1", l1);
+        services.AddKeyedSingleton<ICache>("tenant-l2", new InMemoryRemoteCacheAdapter(namedL2));
+
+        // when
+        services.AddHeadlessCaching(setup =>
+        {
+            setup.AddMemoryTier();
+            setup.RegisterTierProvider(
+                CacheConstants.RemoteCacheProvider,
+                svc =>
+                {
+                    var remote = new InMemoryRemoteCacheAdapter(l2);
+                    svc.AddSingleton<IRemoteCache>(remote);
+                    svc.AddKeyedSingleton<ICache>(CacheConstants.RemoteCacheProvider, remote);
+                }
+            );
+            setup.UseHybrid();
+            setup.AddNamed(
+                "tenant",
+                instance =>
+                    instance.UseHybrid(options =>
+                    {
+                        options.LocalCacheName = "tenant-l1";
+                        options.RemoteCacheName = "tenant-l2";
+                    })
+            );
+        });
+        services.AddHeadlessMessaging(_ => { });
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+
+        // then
+        _AssertSingleInvalidationConsumer(provider);
+    }
+
+    [Fact]
+    public void should_let_the_host_tune_the_consumer_by_its_identity()
+    {
+        // given
+        var services = _CreateServices();
+        using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2));
+        services.AddHeadlessMessaging(_ => { });
+
+        // when
+        services.ConfigureMessaging(messaging =>
+            messaging.Tune(HybridCacheInvalidationConsumer.Identity, consumer => consumer.Concurrency(4))
+        );
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+
+        // then
+        _AssertSingleInvalidationConsumer(provider).Concurrency.Should().Be(4);
+    }
+
+    private ServiceCollection _CreateServices()
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<TimeProvider>(_timeProvider);
-
-        if (withBus)
-        {
-            services.AddSingleton(Substitute.For<IBus>());
-        }
+        services.AddSingleton(Substitute.For<IBus>());
 
         return services;
     }
 
-    private void _AddDefaultHybrid(ServiceCollection services, InMemoryRemoteCacheAdapter remote)
+    private static void _AddDefaultHybrid(ServiceCollection services, InMemoryRemoteCacheAdapter remote)
     {
         services.AddHeadlessCaching(setup =>
         {
@@ -51,232 +159,23 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
         });
     }
 
-    [Fact]
-    public void default_hybrid_with_bus_present_auto_registers_invalidation_consumer()
+    // Selecting candidates applies the recorded contributions to the registry, as the bootstrapper does at startup.
+    private static ConsumerMetadata _AssertSingleInvalidationConsumer(IServiceProvider provider)
     {
-        // given - a bus is present in the container before the hybrid is registered
-        var services = _CreateServices(withBus: true);
-        using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
-
-        // when
-        _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2));
-
-        // then - UseHybrid auto-wires the backplane consumer, so cross-node L1 invalidation works by default
-        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IConsume<CacheInvalidationMessage>));
-    }
-
-    [Fact]
-    public void default_hybrid_without_bus_still_registers_inert_consumer_descriptor()
-    {
-        // given - no messaging bus is registered yet (it may be added later, or never)
-        var services = _CreateServices(withBus: false);
-        using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
-
-        // when
-        _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2));
-
-        // then - the consumer is registered unconditionally: the ForMessage descriptors are inert until messaging
-        // bootstrap drains them, so a bus-less host pays nothing while a bus added later still gets the consumer.
-        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IConsume<CacheInvalidationMessage>));
-        _AssertInternalBusContribution(services, typeof(CacheInvalidationMessage));
-    }
-
-    [Fact]
-    public void hybrid_registered_before_messaging_still_drains_the_consumer_into_the_registry()
-    {
-        // given - caching is registered FIRST, the bus and messaging AFTER (the reversed order used to silently
-        // skip the consumer, leaving the backplane publish-only with stale peer L1s)
-        var services = _CreateServices(withBus: false);
-        using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
-        _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2));
-        _AssertInternalBusContribution(services, typeof(CacheInvalidationMessage));
-
-        services.AddSingleton(Substitute.For<IBus>());
-        services.AddHeadlessMessaging(_ => { });
-
-        // when - the captured registration is drained into the consumer registry at bootstrap
-        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
-
-        // then - exactly one hybrid invalidation consumer is wired despite the reversed registration order
-        services
-            .Count(descriptor => descriptor.ServiceType == typeof(IConsume<CacheInvalidationMessage>))
-            .Should()
-            .Be(1);
-        provider
-            .GetRequiredService<IConsumerRegistry>()
-            .GetAll()
-            .Should()
-            .ContainSingle(m => m.ConsumerType == typeof(HybridCacheInvalidationConsumer));
-    }
-
-    [Fact]
-    public void hybrid_registered_after_messaging_still_drains_its_internal_bus_contribution()
-    {
-        // given
-        var services = _CreateServices(withBus: true);
-        services.AddHeadlessMessaging(_ => { });
-        using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
-
-        // when
-        _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2));
-        _AssertInternalBusContribution(services, typeof(CacheInvalidationMessage));
-        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
-        provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
-
-        // then
-        provider
-            .GetRequiredService<IConsumerRegistry>()
-            .GetAll()
-            .Should()
-            .ContainSingle(metadata =>
-                metadata.ConsumerType == typeof(HybridCacheInvalidationConsumer) && metadata.Lane == MessageLane.Bus
-            );
-    }
-
-    [Fact]
-    public void named_hybrid_with_bus_present_auto_registers_invalidation_consumer()
-    {
-        // given - a hybrid registered only as a named instance (the default provider is a plain memory cache)
-        var services = _CreateServices(withBus: true);
-        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
-        using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
-        services.AddKeyedSingleton<ICache>("tenant-l1", l1);
-        services.AddKeyedSingleton<ICache>("tenant-l2", new InMemoryRemoteCacheAdapter(l2));
-
-        // when
-        services.AddHeadlessCaching(setup =>
-        {
-            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, static _ => { });
-            setup.AddNamed(
-                "tenant",
-                instance =>
-                    instance.UseHybrid(options =>
-                    {
-                        options.LocalCacheName = "tenant-l1";
-                        options.RemoteCacheName = "tenant-l2";
-                    })
-            );
-        });
-
-        // then - the named-hybrid path wires the shared consumer too
-        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IConsume<CacheInvalidationMessage>));
-    }
-
-    [Fact]
-    public void hybrid_with_bus_drains_a_single_bus_consumer_into_the_registry()
-    {
-        // given - a hybrid with a bus, then messaging
-        var services = _CreateServices(withBus: true);
-        using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
-        _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2));
-        services.AddHeadlessMessaging(_ => { });
-
-        // when - the captured registration is drained into the consumer registry at bootstrap
-        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
-        provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
-
-        // then - exactly one hybrid invalidation consumer is wired, as a broadcast (bus) consumer
-        services
-            .Count(descriptor => descriptor.ServiceType == typeof(IConsume<CacheInvalidationMessage>))
-            .Should()
-            .Be(1);
         var metadata = provider
             .GetRequiredService<IConsumerRegistry>()
             .GetAll()
             .Should()
             .ContainSingle(m => m.ConsumerType == typeof(HybridCacheInvalidationConsumer))
             .Subject;
+
         metadata.Lane.Should().Be(MessageLane.Bus);
-    }
+        metadata.ConsumerIdentity.Should().Be("headless.caching.hybrid.invalidation");
+        metadata.EveryInstance.Should().BeTrue();
+        metadata.MessageType.Should().Be<CacheInvalidationMessage>();
+        metadata.MessageContractVersion.Should().Be("1");
 
-    [Fact]
-    public void app_registration_after_caching_with_matching_shape_merges_to_exactly_one_consumer()
-    {
-        // given - caching first (auto-registration fires), then the app copies the documented snippet AFTER it;
-        // the bootstrap drain must merge the identical registrations instead of double-subscribing
-        var services = _CreateServices(withBus: true);
-        using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
-        _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2));
-        services.AddHeadlessMessaging(setup =>
-            setup.Bus.ForMessage<CacheInvalidationMessage>(message =>
-                message.Consumer<HybridCacheInvalidationConsumer>(consumer =>
-                    consumer.ConsumerIdentity("headless.caching.hybrid.invalidation")
-                )
-            )
-        );
-
-        // when
-        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
-        provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
-
-        // then - exactly one consumer in the registry (identical shapes merge idempotently at drain)
-        provider
-            .GetRequiredService<IConsumerRegistry>()
-            .GetAll()
-            .Should()
-            .ContainSingle(m => m.ConsumerType == typeof(HybridCacheInvalidationConsumer));
-    }
-
-    [Fact]
-    public void hybrid_with_bus_and_app_registered_consumer_registers_exactly_one()
-    {
-        // given - the application wires the consumer itself, following the advisor's recommended snippet
-        var services = _CreateServices(withBus: true);
-        using var l2 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
-
-        // when - the hybrid setup runs; its idempotency guard sees the existing consumer and does not re-register
-        _AddDefaultHybrid(services, new InMemoryRemoteCacheAdapter(l2));
-        services.AddHeadlessMessaging(setup =>
-            setup.Bus.ForMessage<CacheInvalidationMessage>(message =>
-                message.Consumer<HybridCacheInvalidationConsumer>(consumer =>
-                    consumer.ConsumerIdentity("headless.caching.hybrid.invalidation")
-                )
-            )
-        );
-        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
-        provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
-
-        // then - still exactly one consumer, no duplicate
-        services
-            .Count(descriptor => descriptor.ServiceType == typeof(IConsume<CacheInvalidationMessage>))
-            .Should()
-            .Be(1);
-        provider
-            .GetRequiredService<IConsumerRegistry>()
-            .GetAll()
-            .Should()
-            .ContainSingle(m => m.ConsumerType == typeof(HybridCacheInvalidationConsumer));
-    }
-
-    private static void _AssertInternalBusContribution(IServiceCollection services, Type messageType)
-    {
-        var contribution = services
-            .Single(descriptor =>
-                string.Equals(descriptor.ServiceType.Name, "MessageRegistration", StringComparison.Ordinal)
-            )
-            .ImplementationInstance;
-        contribution.Should().NotBeNull();
-        var contributionType = contribution!.GetType();
-
-        contributionType.IsPublic.Should().BeFalse();
-#pragma warning disable REFL009, REFL017 // The contribution type is intentionally internal; these names come from equivalent public contracts and are verified against the runtime type.
-        contributionType.GetProperty(nameof(PublishContext.Lane))!.GetValue(contribution).Should().Be(MessageLane.Bus);
-        contributionType
-            .GetProperty(nameof(ConsumerMetadata.MessageType))!
-            .GetValue(contribution)
-            .Should()
-            .Be(messageType);
-#pragma warning restore REFL009, REFL017
-        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(MessagingSetupBuilder));
-        services
-            .Should()
-            .NotContain(descriptor =>
-                string.Equals(
-                    descriptor.ServiceType.Name,
-                    "IMessagingRegistrationContributor",
-                    StringComparison.Ordinal
-                )
-            );
+        return metadata;
     }
 }

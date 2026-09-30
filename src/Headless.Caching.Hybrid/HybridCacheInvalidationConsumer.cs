@@ -6,18 +6,26 @@ using Microsoft.Extensions.Logging;
 namespace Headless.Caching;
 
 /// <summary>
-/// Message consumer that handles cache invalidation messages from other instances. Not registered by
-/// <see cref="SetupHybridCache"/>: the application must register it with Headless messaging (for example via
-/// <c>ForMessage&lt;CacheInvalidationMessage&gt;()</c> consumer registration or assembly scanning). Routes to the
-/// default hybrid cache when <see cref="CacheInvalidationMessage.CacheName"/> is <see langword="null"/>, or to
-/// the matching named hybrid cache through <see cref="ICacheProvider"/> when set.
+/// Message consumer that applies cache invalidation messages from other instances to this process's L1. Every hybrid
+/// registration adds it (see <see cref="SetupHybridCache"/>). Routes to the default hybrid cache when
+/// <see cref="CacheInvalidationMessage.CacheName"/> is <see langword="null"/>, or to the matching named hybrid cache
+/// through <see cref="ICacheProvider"/> when set.
 /// </summary>
+/// <remarks>
+/// The consumer is every-instance: each L1 lives in one process, so every process must see every invalidation rather than
+/// share one copy with its replicas. Delivery is at most once, so after a gap in the subscription the consumer flushes
+/// every hybrid's L1 instead of trusting entries whose invalidation may never have arrived.
+/// </remarks>
 [PublicAPI]
+[BusConsumer(Identity, EveryInstance = true)]
 public sealed class HybridCacheInvalidationConsumer(
     ICacheProvider cacheProvider,
     ILogger<HybridCacheInvalidationConsumer> logger
-) : IConsume<CacheInvalidationMessage>
+) : IConsume<CacheInvalidationMessage>, IOnSubscriptionEstablished
 {
+    /// <summary>The consumer identity that <c>Tune</c> and <c>ConsumeOnly</c> refer to.</summary>
+    public const string Identity = "headless.caching.hybrid.invalidation";
+
     /// <inheritdoc />
     public async ValueTask ConsumeAsync(
         ConsumeContext<CacheInvalidationMessage> context,
@@ -50,6 +58,41 @@ public sealed class HybridCacheInvalidationConsumer(
                 msg.Prefix is not null,
                 msg.FlushAll
             );
+        }
+    }
+
+    /// <summary>
+    /// Flushes the L1 of the default and every named hybrid cache when the subscription was re-established, because
+    /// invalidations published during the gap were never delivered to this process.
+    /// </summary>
+    /// <param name="context">The establishment; only a reconnect flushes.</param>
+    /// <param name="cancellationToken">Cancelled when the subscription stops.</param>
+    /// <returns>A <see cref="ValueTask"/> that completes when every L1 is flushed.</returns>
+    public async ValueTask OnSubscriptionEstablishedAsync(
+        SubscriptionEstablishedContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!context.IsReconnect)
+        {
+            return;
+        }
+
+        if (cacheProvider.GetCacheOrNull(CacheConstants.HybridCacheProvider) is HybridCache defaultCache)
+        {
+            await defaultCache
+                .FlushLocalAfterSubscriptionGapAsync(context.Generation, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        foreach (var name in cacheProvider.RegisteredNames)
+        {
+            if (cacheProvider.GetCacheOrNull(name) is HybridCache namedCache)
+            {
+                await namedCache
+                    .FlushLocalAfterSubscriptionGapAsync(context.Generation, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
     }
 
