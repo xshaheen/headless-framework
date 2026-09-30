@@ -58,4 +58,19 @@ public sealed record ConsumerMetadata(
 
     /// <summary>Terminal retention captured into each newly admitted inbox generation.</summary>
     public TimeSpan InboxRetention { get; init; } = TimeSpan.FromDays(30);
+
+    /// <summary>
+    /// Whether this consumer receives every Bus message in every process, as its <see cref="BusConsumerAttribute"/>
+    /// declares. Always <see langword="false"/> on the Queue lane and for consumers registered without the attribute.
+    /// </summary>
+    public bool EveryInstance { get; init; }
+
+    /// <summary>The failure policy type the consumer's attribute names, or <see langword="null"/>.</summary>
+    public Type? FailurePolicy { get; init; }
+
+    /// <summary>The generated dispatch of an attribute-declared consumer; null for every other consumer.</summary>
+    internal MessageConsumerDispatch? Dispatch { get; init; }
+
+    /// <summary>The generated module that declared the consumer, or <see langword="null"/> outside modules.</summary>
+    internal string? DeclaringModule { get; init; }
 }

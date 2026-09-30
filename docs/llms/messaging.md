@@ -1,6 +1,6 @@
 ---
 domain: Messaging
-packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.Aws, Messaging.AzureServiceBus, Messaging.InMemory, Messaging.Storage.InMemory, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.Redis, Messaging.Storage.PostgreSql, Messaging.Storage.PostgreSql.EntityFramework, Messaging.Storage.SqlServer, Messaging.Storage.SqlServer.EntityFramework, Messaging.Testing
+packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.Aws, Messaging.AzureServiceBus, Messaging.InMemory, Messaging.Storage.InMemory, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.Redis, Messaging.SourceGenerator, Messaging.Storage.PostgreSql, Messaging.Storage.PostgreSql.EntityFramework, Messaging.Storage.SqlServer, Messaging.Storage.SqlServer.EntityFramework, Messaging.Testing
 ---
 
 # Messaging
@@ -1697,6 +1697,40 @@ Configure Redis connection and Stream behavior through `RedisMessagingOptions`.
 ### Runtime behavior
 
 Registers Redis transports, consumers, and Redis connection services.
+
+## Headless.Messaging.SourceGenerator
+
+Roslyn incremental source generator that registers `[BusConsumer]` and `[QueueConsumer]` classes at compile time. `Headless.Messaging.Core` carries it as an analyzer, so a project that references Core gets it without a separate package reference.
+
+### API and behavior
+
+- **Explicit registration**: the generated file (`MessagingModule.g.cs`) declares `<AssemblyName>.MessagingModule`, and nothing is registered until the module adds it with `AddModule<…MessagingModule>()` on `services.ConfigureMessaging(...)` or on the `AddHeadlessMessaging` setup. There is no module initializer and no runtime assembly scanning. Adding one module more than once registers it once. An assembly that declares no consumer gets no module.
+- **One entry per message**: a consumer class registers one entry for every `IConsume<T>` it implements, all with the attribute's identity, lane, `EveryInstance` flag, and `Policy` type.
+- **Typed dispatch**: each consumer class gets one generated dispatcher. It builds the class with `ActivatorUtilities.CreateInstance` from the delivery's scope, runs `IConsumerLifecycle` hooks when the class implements them, calls the `ConsumeAsync` that matches the context's message type (explicit interface implementations included), and disposes the instance it created. Dispatch uses no reflection and no compiled expressions.
+- **Incremental**: declarations are reduced to value models when discovered, so an edit that does not change a consumer declaration reuses every generator step and re-emits nothing.
+- **Build-time checks**: HM001 to HM009, listed under [Diagnostics](#messaging-source-generator-diagnostics). `EveryInstance` exists only on `[BusConsumer]`, so writing it on `[QueueConsumer]` is a compiler error rather than a generator rule.
+
+### Diagnostics
+
+<a id="messaging-source-generator-diagnostics"></a>Every rule is reported at compile time in category `Headless.Messaging.SourceGenerator`. HM006 is a warning; every other rule is an error. The table below is each rule's help link target.
+
+| Rule | Reported when | Fix |
+| --- | --- | --- |
+| <a id="hm001"></a>HM001 | The identity is not a compile-time constant, or is not in `owner.name` form: it is empty, longer than 200 characters, has no `.` separator or an empty segment, has surrounding white space, or contains a control character. | Pass a literal or `const` identity such as `"billing.invoice-projection"`, whose first segment names the owning module. |
+| <a id="hm002"></a>HM002 | Two consumer classes in one compilation use the same identity on the same lane. Nothing is generated. | Give each consumer class its own identity; one class covers several messages by implementing several `IConsume<T>`. |
+| <a id="hm003"></a>HM003 | The class carries a consumer attribute but implements no `IConsume<T>`. | Implement `IConsume<T>` for every message the consumer handles. |
+| <a id="hm004"></a>HM004 | A second `[QueueConsumer]` class in one compilation consumes a message that already has one. Nothing is generated. | Keep one Queue consumer per message; use `[BusConsumer]` for fan-out. |
+| <a id="hm005"></a>HM005 | `Policy` names a type that does not implement `Headless.Reliability.IFailurePolicy`, or names the interface itself, an abstract type, or an open generic type. | Pass a concrete policy type that implements `IFailurePolicy`. |
+| <a id="hm006"></a>HM006 | A consumer that is not an every-instance `[BusConsumer]` implements `IOnSubscriptionEstablished`, whose hook never runs for it. | Set `EveryInstance = true` on a `[BusConsumer]`, or remove the interface. |
+| <a id="hm007"></a>HM007 | The consumer class, a type containing it, or a consumed message type is private, protected, or `file`-local, so generated code cannot name it. | Make the type and every type containing it `public` or `internal`. |
+| <a id="hm008"></a>HM008 | The consumer class is abstract or generic, or nested in a generic type, so a delivery cannot construct it. | Put the attribute on a concrete, non-generic class. |
+| <a id="hm009"></a>HM009 | One class carries both `[BusConsumer]` and `[QueueConsumer]`. Nothing is generated. | Keep one lane attribute; split the class when it must consume on both lanes. |
+
+### Install
+
+```bash
+dotnet add package Headless.Messaging.SourceGenerator
+```
 
 ## Headless.Messaging.Storage.PostgreSql
 

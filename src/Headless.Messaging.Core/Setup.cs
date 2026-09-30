@@ -309,8 +309,12 @@ public static class SetupMessaging
         }
 
         // Every source records MessageRegistration descriptors: the AddHeadlessMessaging callback, ConfigureMessaging
-        // contributions, and framework consumers. The container returns them in registration order.
+        // contributions, and framework consumers. The container returns them in registration order. Generated modules
+        // register last, so their consumers read the contract versions those registrations declare.
         var registrations = provider.GetServices<MessageRegistration>().ToList();
+        registrations.AddRange(
+            CreateModuleRegistrations(provider.GetServices<MessagingModuleContribution>(), registrations)
+        );
 
         // Nothing was captured — mark drained without touching the circuit-breaker
         // registry, which is only registered once AddHeadlessMessaging's core wiring has run.
@@ -323,6 +327,75 @@ public static class SetupMessaging
         var circuitBreakerRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
 
         DiscoverMessageRegistrations(registrations, options, registry, circuitBreakerRegistry);
+    }
+
+    /// <summary>
+    /// Runs every added generated module once, however many times it was added, and turns each consumer it declares into
+    /// a consumer-only registration of its message on its lane.
+    /// </summary>
+    /// <remarks>
+    /// A generated consumer carries no message-level settings, so it takes its message's contract version from the
+    /// registration that declares the message on that lane, such as a <c>Message&lt;T&gt;(name, version)</c> contract,
+    /// and the initial version when nothing declares it.
+    /// </remarks>
+    internal static IEnumerable<MessageRegistration> CreateModuleRegistrations(
+        IEnumerable<MessagingModuleContribution> modules,
+        IReadOnlyCollection<MessageRegistration> declared
+    )
+    {
+        var catalog = new MessagingCatalogBuilder();
+        var added = new HashSet<Type>();
+        foreach (var module in modules)
+        {
+            if (added.Add(module.ModuleType))
+            {
+                catalog.AddModule(module.ModuleType, module.Register);
+            }
+        }
+
+        if (catalog.Consumers.Count == 0)
+        {
+            return [];
+        }
+
+        var contractVersions = new Dictionary<(Type MessageType, MessageLane Lane), string>();
+        foreach (var registration in declared.Where(static registration => registration.DeclaresMessage))
+        {
+            contractVersions.TryAdd((registration.MessageType, registration.Lane), registration.ContractVersion);
+        }
+
+        return catalog.Consumers.Select(consumer => new MessageRegistration(
+            consumer.MessageType,
+            consumer.Lane,
+            MessageName: null,
+            CorrelationSelector: null,
+            ProviderConfigs: new Dictionary<Type, object>(),
+            Consumers:
+            [
+                new MessageConsumerRegistration(
+                    consumer.ConsumerType,
+                    consumer.Lane,
+                    IsAssemblyScan: false,
+                    Group: null,
+                    Concurrency: 1,
+                    HandlerId: null,
+                    consumer.Identity,
+                    CircuitBreakerOverride: null,
+                    ProviderConfigs: new Dictionary<Type, object>()
+                )
+                {
+                    Dispatch = consumer.Dispatch,
+                    EveryInstance = consumer.EveryInstance,
+                    FailurePolicy = consumer.Policy,
+                    DeclaringModule = consumer.Source,
+                },
+            ],
+            ContractVersion: contractVersions.GetValueOrDefault(
+                (consumer.MessageType, consumer.Lane),
+                MessageOptions.InitialContractVersion
+            ),
+            DeclaresMessage: false
+        ));
     }
 
     internal static void DiscoverMessageRegistrations(
@@ -388,6 +461,10 @@ public static class SetupMessaging
                 {
                     ProviderConfigs = consumer.ProviderConfigs,
                     InboxRetention = consumer.InboxRetention ?? TimeSpan.FromDays(30),
+                    EveryInstance = consumer.EveryInstance,
+                    FailurePolicy = consumer.FailurePolicy,
+                    Dispatch = consumer.Dispatch,
+                    DeclaringModule = consumer.DeclaringModule,
                 };
 
                 var key = new ConsumerRegistrationKey(
@@ -404,7 +481,9 @@ public static class SetupMessaging
                     resolved.MessageContractVersion,
                     resolved.InboxRetention,
                     ConsumerCircuitBreakerSettings.From(consumer.CircuitBreakerOverride),
-                    resolved.ProviderConfigs
+                    resolved.ProviderConfigs,
+                    resolved.EveryInstance,
+                    resolved.FailurePolicy
                 );
 
                 if (registeredKeys.TryGetValue(key, out var existing))
@@ -485,9 +564,13 @@ public static class SetupMessaging
         string messageContractVersion,
         TimeSpan inboxRetention,
         ConsumerCircuitBreakerSettings circuitBreaker,
-        IReadOnlyDictionary<Type, object> providerConfigs
+        IReadOnlyDictionary<Type, object> providerConfigs,
+        bool everyInstance,
+        Type? failurePolicy
     ) : IEquatable<ConsumerRegistrationSettings>
     {
+        private readonly bool _everyInstance = everyInstance;
+        private readonly Type? _failurePolicy = failurePolicy;
         private readonly byte _concurrency = concurrency;
         private readonly string _resolvedHandlerId = resolvedHandlerId;
         private readonly string _consumerIdentity = consumerIdentity;
@@ -504,6 +587,8 @@ public static class SetupMessaging
                 && string.Equals(_messageContractVersion, other._messageContractVersion, StringComparison.Ordinal)
                 && _inboxRetention == other._inboxRetention
                 && _circuitBreaker == other._circuitBreaker
+                && _everyInstance == other._everyInstance
+                && _failurePolicy == other._failurePolicy
                 && _ProviderConfigsEqual(_providerConfigs, other._providerConfigs);
         }
 
@@ -525,6 +610,7 @@ public static class SetupMessaging
                 $"concurrency {_concurrency}, consumer identity '{_consumerIdentity}', handler id '{_resolvedHandlerId}', "
                     + $"contract version '{_messageContractVersion}', inbox retention {_inboxRetention}, "
                     + $"circuit-breaker override {(_circuitBreaker.HasOverride ? "set" : "none")}, "
+                    + $"every instance {_everyInstance}, failure policy {_failurePolicy?.Name ?? "none"}, "
                     + $"provider settings [{providerSettings}]"
             );
         }
@@ -538,6 +624,8 @@ public static class SetupMessaging
             hash.Add(_messageContractVersion, StringComparer.Ordinal);
             hash.Add(_inboxRetention);
             hash.Add(_circuitBreaker);
+            hash.Add(_everyInstance);
+            hash.Add(_failurePolicy);
 
             foreach (var pair in _providerConfigs.OrderBy(static pair => pair.Key.FullName, StringComparer.Ordinal))
             {

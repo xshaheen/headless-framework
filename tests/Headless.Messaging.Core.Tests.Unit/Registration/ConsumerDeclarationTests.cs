@@ -67,7 +67,8 @@ public sealed class ConsumerDeclarationTests : TestBase
                     MessageLane.Bus,
                     "billing.price-cache",
                     EveryInstance: true,
-                    typeof(TestFailurePolicy)
+                    typeof(TestFailurePolicy),
+                    _NoDispatch
                 ),
                 new MessagingConsumerDeclaration(
                     typeof(TestMessagingModule).FullName!,
@@ -76,7 +77,8 @@ public sealed class ConsumerDeclarationTests : TestBase
                     MessageLane.Queue,
                     "billing.issue-invoice",
                     EveryInstance: false,
-                    Policy: null
+                    Policy: null,
+                    _NoDispatch
                 ),
             ]);
     }
@@ -87,7 +89,11 @@ public sealed class ConsumerDeclarationTests : TestBase
         var catalog = new MessagingCatalogBuilder();
 
         var add = () =>
-            catalog.AddQueueConsumer<IssueInvoiceConsumer, IssueInvoice>("billing.issue-invoice", typeof(string));
+            catalog.AddQueueConsumer<IssueInvoiceConsumer, IssueInvoice>(
+                "billing.issue-invoice",
+                typeof(string),
+                _NoDispatch
+            );
 
         add.Should().Throw<ArgumentException>().WithMessage("*String*billing.issue-invoice*IFailurePolicy*");
     }
@@ -99,7 +105,8 @@ public sealed class ConsumerDeclarationTests : TestBase
     {
         var catalog = new MessagingCatalogBuilder();
 
-        var add = () => catalog.AddBusConsumer<PriceCacheConsumer, PriceChanged>(identity);
+        var add = () =>
+            catalog.AddBusConsumer<PriceCacheConsumer, PriceChanged>(identity, everyInstance: false, null, _NoDispatch);
 
         add.Should().Throw<ArgumentException>();
     }
@@ -110,10 +117,25 @@ public sealed class ConsumerDeclarationTests : TestBase
         var catalog = new MessagingCatalogBuilder();
         var identity = "billing." + new string('x', ConsumerMetadata.ConsumerIdentityMaxLength);
 
-        var add = () => catalog.AddBusConsumer<PriceCacheConsumer, PriceChanged>(identity);
+        var add = () =>
+            catalog.AddBusConsumer<PriceCacheConsumer, PriceChanged>(identity, everyInstance: false, null, _NoDispatch);
 
         add.Should().Throw<ArgumentException>();
     }
+
+    [Fact]
+    public void should_reject_a_missing_dispatch()
+    {
+        var catalog = new MessagingCatalogBuilder();
+
+        var add = () =>
+            catalog.AddQueueConsumer<IssueInvoiceConsumer, IssueInvoice>("billing.issue-invoice", null, null!);
+
+        add.Should().Throw<ArgumentNullException>();
+    }
+
+    // Stands in for a generated dispatcher; these tests only read the declarations.
+    private static readonly MessageConsumerDispatch _NoDispatch = static (_, _, _) => ValueTask.CompletedTask;
 
     public sealed record PriceChanged(string Sku);
 
@@ -145,9 +167,10 @@ public sealed class ConsumerDeclarationTests : TestBase
             catalog.AddBusConsumer<PriceCacheConsumer, PriceChanged>(
                 "billing.price-cache",
                 everyInstance: true,
-                typeof(TestFailurePolicy)
+                typeof(TestFailurePolicy),
+                _NoDispatch
             );
-            catalog.AddQueueConsumer<IssueInvoiceConsumer, IssueInvoice>("billing.issue-invoice");
+            catalog.AddQueueConsumer<IssueInvoiceConsumer, IssueInvoice>("billing.issue-invoice", null, _NoDispatch);
         }
     }
 }

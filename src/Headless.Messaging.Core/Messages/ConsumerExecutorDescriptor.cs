@@ -54,6 +54,12 @@ public sealed class ConsumerExecutorDescriptor
     public required MessageLane Lane { get; init; }
 
     /// <summary>
+    /// The generated dispatch of an attribute-declared consumer. When set, a delivery runs it instead of resolving the
+    /// consumer from the container.
+    /// </summary>
+    internal MessageConsumerDispatch? Dispatch { get; init; }
+
+    /// <summary>
     /// The message payload type used for deserialization: <c>T</c> when the first non-framework parameter is
     /// <see cref="ConsumeContext{T}"/>, otherwise that parameter's type. Cached — descriptors are immutable
     /// after registration, so recomputing this per received message is pure reflection overhead. The benign

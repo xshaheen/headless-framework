@@ -123,6 +123,7 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
                 MessageContractVersion = consumer.MessageContractVersion,
                 InboxRetention = consumer.InboxRetention,
                 Lane = consumer.Lane,
+                Dispatch = consumer.Dispatch,
             };
 
             results.Add(descriptor);

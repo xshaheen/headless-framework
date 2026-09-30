@@ -90,6 +90,24 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
         return this;
     }
 
+    /// <summary>
+    /// Adds one assembly's generated consumers, for example <c>AddModule&lt;Billing.MessagingModule&gt;()</c>. Equivalent
+    /// to the same call on <c>services.ConfigureMessaging(...)</c>; adding a module more than once is harmless.
+    /// </summary>
+    /// <remarks>
+    /// The Messaging source generator emits one <see cref="IMessagingModule"/> per assembly that declares
+    /// <see cref="BusConsumerAttribute"/> or <see cref="QueueConsumerAttribute"/> consumers. Its consumers register when
+    /// messaging starts.
+    /// </remarks>
+    /// <typeparam name="TModule">The generated <see cref="IMessagingModule"/> of the assembly.</typeparam>
+    /// <returns>This builder, for chaining.</returns>
+    public MessagingSetupBuilder AddModule<TModule>()
+        where TModule : IMessagingModule
+    {
+        Services.AddMessagingModuleContribution<TModule>();
+        return this;
+    }
+
     /// <summary>Gets the structural registration root for Bus consumers.</summary>
     public IBusRegistrationBuilder Bus { get; }
 

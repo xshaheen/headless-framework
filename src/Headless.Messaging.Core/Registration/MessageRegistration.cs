@@ -32,4 +32,17 @@ internal sealed record MessageConsumerRegistration(
     ConsumerCircuitBreakerOptions? CircuitBreakerOverride,
     IReadOnlyDictionary<Type, object> ProviderConfigs,
     TimeSpan? InboxRetention = null
-);
+)
+{
+    /// <summary>The generated dispatch of an attribute-declared consumer; null for every other registration.</summary>
+    public MessageConsumerDispatch? Dispatch { get; init; }
+
+    /// <summary>Whether every process receives every message; only an attribute-declared Bus consumer sets it.</summary>
+    public bool EveryInstance { get; init; }
+
+    /// <summary>The failure policy type an attribute-declared consumer names, if any.</summary>
+    public Type? FailurePolicy { get; init; }
+
+    /// <summary>The generated module that declared the consumer, for conflict messages; null outside modules.</summary>
+    public string? DeclaringModule { get; init; }
+}

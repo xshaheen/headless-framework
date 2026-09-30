@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="InvalidConsumerIdentityTitle" xml:space="preserve">
+    <value>Invalid consumer identity</value>
+  </data>
+  <data name="InvalidConsumerIdentityMessage" xml:space="preserve">
+    <value>The identity '{0}' on consumer class '{1}' must be a compile-time constant in owner.name form: at most 200 characters, a non-empty owner segment and name separated by '.', no empty segments, no surrounding whitespace, and no control characters</value>
+  </data>
+  <data name="DuplicateConsumerIdentityTitle" xml:space="preserve">
+    <value>Duplicate consumer identity</value>
+  </data>
+  <data name="DuplicateConsumerIdentityMessage" xml:space="preserve">
+    <value>The {0} consumer identity '{1}' is already used by another consumer class in this assembly</value>
+  </data>
+  <data name="MissingConsumeInterfaceTitle" xml:space="preserve">
+    <value>Consumer class does not implement IConsume&lt;T&gt;</value>
+  </data>
+  <data name="MissingConsumeInterfaceMessage" xml:space="preserve">
+    <value>The consumer class '{0}' must implement at least one IConsume&lt;T&gt;; the messages a consumer handles are the IConsume&lt;T&gt; interfaces it implements</value>
+  </data>
+  <data name="DuplicateQueueConsumerTitle" xml:space="preserve">
+    <value>Second Queue consumer for one message</value>
+  </data>
+  <data name="DuplicateQueueConsumerMessage" xml:space="preserve">
+    <value>The message '{0}' already has a [QueueConsumer] in this assembly; a Queue message has exactly one consumer</value>
+  </data>
+  <data name="InvalidFailurePolicyTitle" xml:space="preserve">
+    <value>Failure policy type does not implement IFailurePolicy</value>
+  </data>
+  <data name="InvalidFailurePolicyMessage" xml:space="preserve">
+    <value>The failure policy type '{0}' on consumer class '{1}' must be a concrete, closed type that implements Headless.Reliability.IFailurePolicy</value>
+  </data>
+  <data name="SubscriptionHookWithoutEveryInstanceTitle" xml:space="preserve">
+    <value>IOnSubscriptionEstablished on a consumer that is not every-instance</value>
+  </data>
+  <data name="SubscriptionHookWithoutEveryInstanceMessage" xml:space="preserve">
+    <value>The consumer class '{0}' implements IOnSubscriptionEstablished, which only runs for a [BusConsumer] with EveryInstance = true; a competing consumer keeps its backlog and never needs it</value>
+  </data>
+  <data name="InaccessibleConsumerTitle" xml:space="preserve">
+    <value>Consumer class or message type is inaccessible to generated code</value>
+  </data>
+  <data name="InaccessibleConsumerMessage" xml:space="preserve">
+    <value>The type '{0}' used by consumer class '{1}' must be public or internal, like every type that contains it, and must not be file-local</value>
+  </data>
+  <data name="AbstractOrGenericConsumerTitle" xml:space="preserve">
+    <value>Abstract or generic consumer class</value>
+  </data>
+  <data name="AbstractOrGenericConsumerMessage" xml:space="preserve">
+    <value>The consumer class '{0}' must not be abstract, generic, or nested in a generic type, so the generated dispatcher can construct it</value>
+  </data>
+  <data name="MultipleLaneAttributesTitle" xml:space="preserve">
+    <value>Consumer class declares both lane attributes</value>
+  </data>
+  <data name="MultipleLaneAttributesMessage" xml:space="preserve">
+    <value>The consumer class '{0}' carries both [BusConsumer] and [QueueConsumer]; a consumer names exactly one lane</value>
+  </data>
+</root>

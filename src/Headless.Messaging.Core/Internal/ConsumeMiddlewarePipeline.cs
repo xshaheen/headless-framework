@@ -191,6 +191,15 @@ internal sealed class ConsumeMiddlewarePipeline(
         Type messageType
     )
     {
+        // An attribute-declared consumer runs its generated dispatch, which builds the class and calls the typed
+        // ConsumeAsync without the container registration or compiled invoker the dispatcher path needs.
+        if (descriptor.Dispatch is { } dispatch)
+        {
+            await dispatch(provider, consumeContext, consumeContext.CancellationToken).ConfigureAwait(false);
+
+            return;
+        }
+
         if (
             descriptor.HandlerId is { Length: > 0 } handlerId
             && runtimeRegistry.TryGetInvoker(

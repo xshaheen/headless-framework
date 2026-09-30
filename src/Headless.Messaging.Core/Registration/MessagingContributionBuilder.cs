@@ -63,6 +63,25 @@ public sealed class MessagingContributionBuilder
         return contract;
     }
 
+    /// <summary>
+    /// Contributes one assembly's generated consumers, for example <c>AddModule&lt;Billing.MessagingModule&gt;()</c>.
+    /// Contributing a module more than once, from here or from the <c>AddHeadlessMessaging</c> setup, is harmless: the
+    /// host registers it once.
+    /// </summary>
+    /// <remarks>
+    /// The Messaging source generator emits one <see cref="IMessagingModule"/> per assembly that declares
+    /// <see cref="BusConsumerAttribute"/> or <see cref="QueueConsumerAttribute"/> consumers. Its consumers register when
+    /// messaging starts, so the call may come before or after <c>AddHeadlessMessaging</c>.
+    /// </remarks>
+    /// <typeparam name="TModule">The generated <see cref="IMessagingModule"/> of the assembly.</typeparam>
+    /// <returns>This builder, for chaining.</returns>
+    public MessagingContributionBuilder AddModule<TModule>()
+        where TModule : IMessagingModule
+    {
+        _sink.Services.AddMessagingModuleContribution<TModule>();
+        return this;
+    }
+
     /// <summary>Records every contract this contribution declared, in declaration order.</summary>
     internal void Complete()
     {
@@ -122,5 +141,21 @@ public sealed class MessagingContributionBuilder
         );
 
         return this;
+    }
+}
+
+/// <summary>One generated module that a contribution or the host asked messaging to register.</summary>
+/// <param name="ModuleType">The generated module type, which identifies the module across contributions.</param>
+/// <param name="Register">Runs the module's generated registration against a catalog.</param>
+internal sealed record MessagingModuleContribution(Type ModuleType, Action<MessagingCatalogBuilder> Register);
+
+internal static class MessagingModuleContributionRecording
+{
+    public static void AddMessagingModuleContribution<TModule>(this IServiceCollection services)
+        where TModule : IMessagingModule
+    {
+        services.AddSingleton(
+            new MessagingModuleContribution(typeof(TModule), static catalog => TModule.Register(catalog))
+        );
     }
 }
