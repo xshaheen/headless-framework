@@ -1,0 +1,96 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace Headless.Idempotency;
+
+/// <summary>
+/// Deletes idempotency records past their retention, and whose lease is no longer live, on a fixed interval. Idle, on a fixed re-check cadence, while <see cref="IdempotentOperationsOptions.PurgeInterval" /> is
+/// <see langword="null" />, so a reload back to a value resumes purging without restarting the host.
+/// </summary>
+/// <remarks>
+/// A record carries its own lease, so deleting the record row is the whole purge. A failed run is logged and retried
+/// at the next interval rather than stopping the host.
+/// </remarks>
+internal sealed partial class IdempotencyRetentionService(
+    IIdempotencyRecordStore store,
+    IOptionsMonitor<IdempotentOperationsOptions> options,
+    TimeProvider timeProvider,
+    ILogger<IdempotencyRetentionService> logger
+) : BackgroundService
+{
+    // How often a disabled purge re-checks IdempotentOperationsOptions.PurgeInterval for a reload back to a value.
+    // Fixed rather than configurable: it only bounds how long a reload takes to resume purging, not a purge itself.
+    private static readonly TimeSpan _DisabledRecheckInterval = TimeSpan.FromMinutes(1);
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            // Read on every round, so an interval changed through options reload applies to the next one.
+            var interval = options.CurrentValue.PurgeInterval;
+
+            try
+            {
+                if (interval is null)
+                {
+                    // Disabled for now, not forever: re-checking on a fixed cadence lets a reload back to a value
+                    // resume purging without restarting the host, rather than ending this hosted service for good.
+                    await Task.Delay(_DisabledRecheckInterval, timeProvider, stoppingToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                // Waits first: at startup the provider's storage initializer may not have created the table yet.
+                await Task.Delay(interval.Value, timeProvider, stoppingToken).ConfigureAwait(false);
+                await _PurgeAsync(stoppingToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+#pragma warning disable CA1031 // A hosted-service loop boundary: a failed purge is logged and retried next interval instead of stopping the host.
+            catch (Exception e)
+#pragma warning restore CA1031
+            {
+                LogPurgeFailed(logger, e);
+            }
+        }
+    }
+
+    private async Task _PurgeAsync(CancellationToken cancellationToken)
+    {
+        var current = options.CurrentValue;
+        var records = 0;
+        int deleted;
+
+        // Bounded batches keep each delete statement's locks short; a short batch means nothing past retention is left.
+        do
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            deleted = await store
+                .PurgeAsync(TimeSpan.Zero, current.PurgeBatchSize, cancellationToken)
+                .ConfigureAwait(false);
+            records += deleted;
+        } while (deleted >= current.PurgeBatchSize);
+
+        LogPurged(logger, records);
+    }
+
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "IdempotencyPurged",
+        Level = LogLevel.Debug,
+        Message = "Idempotency retention purge deleted {RecordCount} records"
+    )]
+    private static partial void LogPurged(ILogger logger, int recordCount);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "IdempotencyPurgeFailed",
+        Level = LogLevel.Error,
+        Message = "Idempotency retention purge failed; retrying at the next interval"
+    )]
+    private static partial void LogPurgeFailed(ILogger logger, Exception exception);
+}

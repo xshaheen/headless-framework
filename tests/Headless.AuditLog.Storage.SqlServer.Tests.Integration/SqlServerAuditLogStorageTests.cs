@@ -56,7 +56,7 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
 
         // then
         initializer.IsInitialized.Should().BeTrue();
-        (await _TableExistsAsync("audit_log")).Should().BeTrue();
+        (await _TableExistsAsync("AuditLogEntries")).Should().BeTrue();
         (await _JsonColumnTypeAsync("NewValues")).Should().Be("nvarchar");
         entries.Should().ContainSingle();
         entries[0].EntityId.Should().Be("ORD-1");
@@ -302,7 +302,7 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
         await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             $"""
-            IF OBJECT_ID(N'{_Schema}.audit_log', N'U') IS NOT NULL DROP TABLE [{_Schema}].[audit_log];
+            IF OBJECT_ID(N'{_Schema}.AuditLogEntries', N'U') IS NOT NULL DROP TABLE [{_Schema}].[AuditLogEntries];
             IF EXISTS (SELECT * FROM sys.schemas WHERE name = N'{_Schema}') EXEC(N'DROP SCHEMA [{_Schema}]');
             """,
             connection
@@ -338,7 +338,7 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
             """
             SELECT DATA_TYPE
             FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA = @schema AND TABLE_NAME = 'audit_log' AND COLUMN_NAME = @column
+            WHERE TABLE_SCHEMA = @schema AND TABLE_NAME = 'AuditLogEntries' AND COLUMN_NAME = @column
             """,
             connection
         );

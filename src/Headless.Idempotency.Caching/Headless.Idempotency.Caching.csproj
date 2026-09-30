@@ -1,0 +1,20 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>ICache-backed provider for Headless durable idempotency: one compare-and-swap cache entry per key with application-clock leases, cache-counter generations, and TTL-driven retention, for autonomous calls across replicas that share a Redis cache. No enlisted (unit-of-work) calls.</Description>
+    <PackageTags>headless;idempotency;idempotency-key;cache;redis;dotnet</PackageTags>
+    <RootNamespace>Headless.Idempotency.Caching</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Idempotency.Caching.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Idempotency.Caching.Tests.Integration" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.Idempotency.Core\Headless.Idempotency.Core.csproj" />
+    <ProjectReference Include="..\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />
+  </ItemGroup>
+</Project>

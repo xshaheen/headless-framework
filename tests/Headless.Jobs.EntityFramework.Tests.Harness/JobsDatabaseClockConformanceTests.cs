@@ -572,7 +572,7 @@ public sealed record LeaseSqlFragment(string Fragment, IReadOnlyList<string> Tem
 
 /// <summary>
 /// Pulls the <c>LockedUntil</c> clauses out of a captured statement. Deliberately dialect-agnostic: it keys on the
-/// quoted column identifier (<c>"LockedUntil"</c> on Postgres, <c>[LockedUntil]</c> on SQL Server) and on which
+/// column identifier (<c>locked_until</c> on Postgres, which leaves snake_case identifiers unquoted, and <c>[LockedUntil]</c> or <c>"LockedUntil"</c> on SQL Server) and on which
 /// parameters the clause references, never on how a provider happens to spell its clock.
 /// </summary>
 public static partial class LeaseSqlAnalysis
@@ -809,11 +809,19 @@ public static partial class LeaseSqlAnalysis
     )]
     private static partial Regex ParameterReference { get; }
 
-    // Column reference in either dialect's quoting. A bare occurrence in a SELECT list or INSERT column list is
+    // Column reference as each dialect spells it: quoted PascalCase on SQL Server, bare snake_case on Postgres. A bare occurrence in a SELECT list or INSERT column list is
     // matched too, but carries no operator, so it falls out below.
-    [GeneratedRegex("""["\[]LockedUntil["\]]""", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1000)]
+    [GeneratedRegex(
+        """["\[]LockedUntil["\]]|\blocked_until\b""",
+        RegexOptions.CultureInvariant,
+        matchTimeoutMilliseconds: 1000
+    )]
     private static partial Regex LeaseColumn { get; }
 
-    [GeneratedRegex("""["\[]NextDueUtc["\]]""", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1000)]
+    [GeneratedRegex(
+        """["\[]NextDueUtc["\]]|\bnext_due_utc\b""",
+        RegexOptions.CultureInvariant,
+        matchTimeoutMilliseconds: 1000
+    )]
     private static partial Regex ProjectionColumn { get; }
 }

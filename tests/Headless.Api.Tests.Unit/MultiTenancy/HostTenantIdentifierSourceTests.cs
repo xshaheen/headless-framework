@@ -169,10 +169,10 @@ public sealed class HostTenantIdentifierSourceTests : TestBase
         second.Kind.Should().Be(TenantIdentifierSourceResultKind.Invalid);
 
         logger.Entries.Should().ContainSingle();
-        var entry = logger.Entries[0];
-        entry.EventName.Should().Be(TimeoutEventName);
-        entry.Message.Should().Contain("*.{tenant}.example.com");
-        entry.Message.Should().NotContain("b.b"); // never the host
+        var (eventName, message) = logger.Entries[0];
+        eventName.Should().Be(TimeoutEventName);
+        message.Should().Contain("*.{tenant}.example.com");
+        message.Should().NotContain("b.b"); // never the host
     }
 
     [Fact]

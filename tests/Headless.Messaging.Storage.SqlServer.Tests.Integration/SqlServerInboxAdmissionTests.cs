@@ -59,7 +59,7 @@ public sealed class SqlServerInboxAdmissionTests(SqlServerTestFixture fixture, I
 
             await connection.ExecuteAsync(
                 new CommandDefinition(
-                    $"UPDATE STATISTICS [{schema}].[Received] WITH FULLSCAN;",
+                    $"UPDATE STATISTICS [{schema}].[MessagingReceived] WITH FULLSCAN;",
                     cancellationToken: AbortToken
                 )
             );
@@ -89,7 +89,10 @@ public sealed class SqlServerInboxAdmissionTests(SqlServerTestFixture fixture, I
 
             (
                 await connection.ExecuteScalarAsync<int>(
-                    new CommandDefinition($"SELECT COUNT(*) FROM [{schema}].[Received];", cancellationToken: AbortToken)
+                    new CommandDefinition(
+                        $"SELECT COUNT(*) FROM [{schema}].[MessagingReceived];",
+                        cancellationToken: AbortToken
+                    )
                 )
             )
                 .Should()
@@ -135,7 +138,7 @@ public sealed class SqlServerInboxAdmissionTests(SqlServerTestFixture fixture, I
                     .Where(scan =>
                         string.Equals(
                             (string?)scan.Element(showplan + "Object")?.Attribute("Index"),
-                            $"[UX_{schema}_Received_InboxRootKey]",
+                            "[UX_MessagingReceived_InboxRootKey]",
                             StringComparison.Ordinal
                         )
                     )
@@ -158,11 +161,11 @@ public sealed class SqlServerInboxAdmissionTests(SqlServerTestFixture fixture, I
             await connection.ExecuteAsync(
                 new CommandDefinition(
                     $"""
-                    DROP TABLE IF EXISTS [{schema}].InboxAudit;
-                    DROP TABLE IF EXISTS [{schema}].InboxOperationReceipts;
-                    DROP TABLE IF EXISTS [{schema}].SchemaState;
-                    DROP TABLE IF EXISTS [{schema}].Published;
-                    DROP TABLE IF EXISTS [{schema}].Received;
+                    DROP TABLE IF EXISTS [{schema}].MessagingInboxAudit;
+                    DROP TABLE IF EXISTS [{schema}].MessagingInboxOperationReceipts;
+                    DROP TABLE IF EXISTS [{schema}].MessagingSchemaState;
+                    DROP TABLE IF EXISTS [{schema}].MessagingPublished;
+                    DROP TABLE IF EXISTS [{schema}].MessagingReceived;
                     DROP TABLE IF EXISTS [{schema}].Lock;
                     DROP TYPE [{schema}].[HeadlessMessagingIdList];
                     DROP TYPE [{schema}].[HeadlessMessagingOwnerList];

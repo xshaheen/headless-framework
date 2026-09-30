@@ -235,8 +235,6 @@ public sealed class UnitOfWorkFactoryTests : TestBase
         }
             .Should()
             .Equal(0, 1, 2, 3);
-
-        new[] { (int)TransactionEnlistment.Optional, (int)TransactionEnlistment.Required }.Should().Equal(0, 1);
     }
 
     [Fact]

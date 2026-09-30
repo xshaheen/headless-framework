@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.AuditLog;
+using Headless.Hosting.Initialization;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,7 +16,7 @@ public sealed class AuditStoreDbContext(DbContextOptions<AuditStoreDbContext> op
 {
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.AddHeadlessAuditLog(new AuditLogStorageOptions());
+        modelBuilder.AddHeadlessAuditLog(new AuditLogStorageOptions(), StorageNamingStyle.PascalCase);
         modelBuilder.Entity<AuditLogEntry>().HasKey(e => e.Id);
     }
 

@@ -26,6 +26,25 @@ public sealed class NoopPushNotificationServiceTests : TestBase
     }
 
     [Fact]
+    public async Task should_report_success_for_a_data_only_request()
+    {
+        // given
+        var request = new PushNotificationRequest
+        {
+            Data = new Dictionary<string, string>(StringComparer.Ordinal) { ["sync"] = "1" },
+        };
+
+        // when
+        var single = await _service.SendToDeviceAsync("client-id", request, AbortToken);
+        var multicast = await _service.SendMulticastAsync(["a", "b"], request, AbortToken);
+
+        // then
+        single.IsSucceeded().Should().BeTrue();
+        multicast.SuccessCount.Should().Be(2);
+        multicast.FailureCount.Should().Be(0);
+    }
+
+    [Fact]
     public async Task should_report_success_for_every_multicast_client_identifier()
     {
         // given

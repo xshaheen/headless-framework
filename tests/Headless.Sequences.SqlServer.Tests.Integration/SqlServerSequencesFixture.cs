@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.Hosting.Initialization;
 using Headless.Sequences;
 using Headless.Sequences.SqlServer;
 using Headless.Testing.Testcontainers;
@@ -55,7 +56,7 @@ public sealed class SqlServerSequencesFixture
 
         // The container is reused across runs, so start from no counter table and let the initializer create it.
         await ExecuteAsync(
-            DropSchemaSql(SqlServerSequencesOptions.DefaultSchema, SqlServerSequencesOptions.DefaultTableName),
+            DropSchemaSql(HeadlessStorageDefaults.Schema, SqlServerSequencesOptions.DefaultTableName),
             CancellationToken.None
         );
     }
@@ -98,7 +99,7 @@ public sealed class SqlServerSequencesFixture
     {
         return ReadValueAsync(
             key,
-            SqlServerSequencesOptions.DefaultSchema,
+            HeadlessStorageDefaults.Schema,
             SqlServerSequencesOptions.DefaultTableName,
             cancellationToken
         );
@@ -115,8 +116,8 @@ public sealed class SqlServerSequencesFixture
         await connection.OpenAsync(cancellationToken);
         await using var command = new SqlCommand(
             $"""
-            SELECT [value] FROM [{schema}].[{table}]
-            WHERE [tenant_id] = @tenant AND [name] = @name AND [partition] = @partition
+            SELECT [Value] FROM [{schema}].[{table}]
+            WHERE [TenantId] = @tenant AND [Name] = @name AND [Partition] = @partition
             """,
             connection
         );

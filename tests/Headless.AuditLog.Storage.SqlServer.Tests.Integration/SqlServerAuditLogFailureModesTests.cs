@@ -76,15 +76,15 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
             var startTasks = hosts.Select(h => h.StartAsync(AbortToken)).ToArray();
             await Task.WhenAll(startTasks);
 
-            // then — all initializers report ready, exactly one audit_log table exists, and the
+            // then — all initializers report ready, exactly one AuditLogEntries table exists, and the
             // full 6-index complement is present (regression guard: a CATCH that swallows a real
             // CREATE INDEX failure would otherwise pass the table-count assertion silently).
             hosts
                 .Select(h => h.Services.GetRequiredService<IEnumerable<IInitializer>>().Single().IsInitialized)
                 .Should()
                 .AllSatisfy(initialized => initialized.Should().BeTrue());
-            (await _CountTablesAsync("audit_log_sql_concurrent", "audit_log")).Should().Be(1);
-            (await _CountIndexesAsync("audit_log_sql_concurrent", "audit_log")).Should().Be(6);
+            (await _CountTablesAsync("audit_log_sql_concurrent", "AuditLogEntries")).Should().Be(1);
+            (await _CountIndexesAsync("audit_log_sql_concurrent", "AuditLogEntries")).Should().Be(6);
         }
         finally
         {
@@ -113,7 +113,7 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
         await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             $"""
-            IF OBJECT_ID(N'{schema}.audit_log', N'U') IS NOT NULL DROP TABLE [{schema}].[audit_log];
+            IF OBJECT_ID(N'{schema}.AuditLogEntries', N'U') IS NOT NULL DROP TABLE [{schema}].[AuditLogEntries];
             IF EXISTS (SELECT * FROM sys.schemas WHERE name = N'{schema}') EXEC(N'DROP SCHEMA [{schema}]');
             """,
             connection

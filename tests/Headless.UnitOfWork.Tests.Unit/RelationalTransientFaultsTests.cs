@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Headless.UnitOfWork.Internal;
 
 namespace Tests;
@@ -121,6 +122,14 @@ public sealed class RelationalTransientFaultsTests : TestBase
             .IsTransient(new IOException("connection reset"), CancellationToken.None)
             .Should()
             .BeFalse();
+    }
+
+    [Fact]
+    public void should_reject_a_null_exception()
+    {
+        var act = () => RelationalTransientFaults.IsTransient(null!, CancellationToken.None);
+
+        act.Should().Throw<ArgumentNullException>();
     }
 
     [Fact]

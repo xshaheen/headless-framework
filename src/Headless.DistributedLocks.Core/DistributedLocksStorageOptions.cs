@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
+
 namespace Headless.DistributedLocks;
 
 /// <summary>
@@ -10,13 +12,11 @@ namespace Headless.DistributedLocks;
 [PublicAPI]
 public sealed class DistributedLocksStorageOptions
 {
-    /// <summary>The schema the fencing sequence is created in when none is configured.</summary>
-    public const string DefaultSchema = "locks";
-
     /// <summary>
     /// Gets or sets the database schema that holds the fencing sequence the relational providers use to stamp
     /// each exclusive acquisition with a strictly-increasing token. Must be a valid identifier for the selected
-    /// provider; validated on startup. Default: <see cref="DefaultSchema"/> (<c>"locks"</c>).
+    /// provider; validated on startup. Default: <see cref="HeadlessStorageDefaults.Schema"/> (<c>"headless"</c>),
+    /// the schema every Headless feature shares.
     /// </summary>
-    public string Schema { get; set; } = DefaultSchema;
+    public string Schema { get; set; } = HeadlessStorageDefaults.Schema;
 }

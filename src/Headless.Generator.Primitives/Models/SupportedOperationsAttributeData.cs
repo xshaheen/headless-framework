@@ -2,20 +2,20 @@
 
 namespace Headless.Generator.Primitives.Models;
 
-internal sealed class SupportedOperationsAttributeData
+internal sealed record SupportedOperationsAttributeData
 {
     /// <summary>Indicates whether addition operators should be generated.</summary>
-    public bool Addition { get; set; }
+    public bool Addition { get; init; }
 
     /// <summary>Indicates whether subtraction operators should be generated.</summary>
-    public bool Subtraction { get; set; }
+    public bool Subtraction { get; init; }
 
     /// <summary>Indicates whether multiplication operators should be generated.</summary>
-    public bool Multiplication { get; set; }
+    public bool Multiplication { get; init; }
 
     /// <summary>Indicates whether division operators should be generated.</summary>
-    public bool Division { get; set; }
+    public bool Division { get; init; }
 
     /// <summary>Indicates whether modulus operators should be generated.</summary>
-    public bool Modulus { get; set; }
+    public bool Modulus { get; init; }
 }

@@ -12,7 +12,7 @@ namespace Tests.Fakes;
 internal sealed class CompositeTestLease(
     string resource,
     List<string>? events = null,
-    long? fencingToken = null,
+    LockFencingToken? fencingToken = null,
     bool canObserveLoss = false,
     bool renewResult = true,
     Exception? renewalException = null,
@@ -27,7 +27,7 @@ internal sealed class CompositeTestLease(
 
     public string LeaseId { get; } = $"lease-{resource}";
 
-    public long? FencingToken { get; } = fencingToken;
+    public LockFencingToken? FencingToken { get; } = fencingToken;
 
     public string Resource { get; } = resource;
 

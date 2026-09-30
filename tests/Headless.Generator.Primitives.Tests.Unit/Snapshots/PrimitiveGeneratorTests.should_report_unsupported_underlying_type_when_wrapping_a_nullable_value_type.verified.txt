@@ -1,0 +1,28 @@
+﻿{
+  Diagnostics: [
+    {
+      Location: /*
+
+public readonly partial struct NullableIntPrimitive : IPrimitive<int?>
+                               ^^^^^^^^^^^^^^^^^^^^
+{
+*/
+ : (5,31)-(5,51),
+      Message: Primitive 'NullableIntPrimitive' wraps 'int?', which the primitive generator does not support; wrap a string, Guid, bool, char, numeric, or date and time type, or another primitive,
+      Severity: Error,
+      Descriptor: {
+        Id: HF1001,
+        Title: Unsupported primitive underlying type,
+        Description: Primitive '{0}' wraps '{1}', which the primitive generator does not support; wrap a string, Guid, bool, char, numeric, or date and time type, or another primitive,
+        HelpLink: https://github.com/xshaheen/headless-framework/blob/main/docs/llms/utilities.md#hf1001,
+        MessageFormat: Primitive '{0}' wraps '{1}', which the primitive generator does not support; wrap a string, Guid, bool, char, numeric, or date and time type, or another primitive,
+        Category: Headless.Generator.Primitives,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true,
+        CustomTags: [
+          Telemetry
+        ]
+      }
+    }
+  ]
+}

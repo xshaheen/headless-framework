@@ -21,7 +21,6 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     )
     {
         Argument.IsNotNull(job);
-        JobAtomicity.RejectDirect([job]);
         Argument.IsNotNull(key);
         cancellationToken.ThrowIfCancellationRequested();
         Argument.IsPositive(expectedGeneration);

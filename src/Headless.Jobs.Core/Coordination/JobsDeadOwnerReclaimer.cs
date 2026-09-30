@@ -76,7 +76,7 @@ internal sealed class JobsDeadOwnerReclaimer(
 internal static partial class JobsDeadOwnerReclaimerLog
 {
     [LoggerMessage(
-        EventId = 3230,
+        EventId = 3250,
         Level = LogLevel.Warning,
         Message = "DeadNodeReconcileInterval {Configured} exceeds half the coordination Dead-visibility window "
             + "(DeadRetentionWindow {DeadRetentionWindow}); clamped to {Effective} so a dead owner whose NodeLeft "

@@ -3,6 +3,7 @@
 using Headless.Constants;
 using Headless.Hosting.Initialization;
 using Headless.Settings.Entities;
+using Headless.Sql.PostgreSql;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -36,82 +37,75 @@ internal sealed partial class PostgreSqlSettingsStorageInitializer(
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        // Split table-creation DDL from index-creation DDL into separate transactions. If a racing
-        // initializer trips 42P07/42710 on the table side, the rollback that follows must not also
-        // wipe the index DDL — those indexes would be skipped on the IsInitialized=true path and the
-        // tables would live without their unique covering indexes until a manual repair.
+        // Split table-creation DDL from index-creation DDL into separate transactions, so a race absorbed on
+        // one side rolls back and reruns only that side's batch.
         await _RunSchemaAndTablesAsync(connection, options, cancellationToken).ConfigureAwait(false);
         await _RunIndexesAsync(connection, options, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Runs the DDL transaction that creates the schema and both tables.
-    /// A <c>42P06</c>, <c>42P07</c>, <c>42710</c>, or <c>23505</c> error from a concurrent initializer
-    /// is swallowed and logged; any other error propagates.
-    /// </summary>
-    private async Task _RunSchemaAndTablesAsync(
+    /// <summary>Runs the DDL transaction that creates the schema and both tables.</summary>
+    private Task _RunSchemaAndTablesAsync(
         NpgsqlConnection connection,
         SettingsStorageOptions options,
         CancellationToken cancellationToken
     )
     {
-        var sql = _CreateSchemaAndTablesScript(options);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-
-        try
-        {
-            await using var command = new NpgsqlCommand(sql, connection, transaction);
-            command.CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds;
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (PostgresException ex)
-            when (ex.SqlState
-                    is SqlErrorCodes.PostgreSql.DuplicateSchema
-                        or SqlErrorCodes.PostgreSql.DuplicateTable
-                        or SqlErrorCodes.PostgreSql.DuplicateObject
-                        or SqlErrorCodes.PostgreSql.UniqueViolation
-            )
-        {
-            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            LogSchemaRaceObserved(_logger, ex.SqlState, ex.MessageText);
-        }
+        return _RunDdlAsync(connection, _CreateSchemaAndTablesScript(options), cancellationToken);
     }
 
-    /// <summary>
-    /// Runs the DDL transaction that creates the unique indexes on the settings tables.
-    /// A <c>42P07</c> or <c>42710</c> error from a concurrent initializer is swallowed and logged;
-    /// any other error propagates.
-    /// </summary>
-    private async Task _RunIndexesAsync(
+    /// <summary>Runs the DDL transaction that creates the unique indexes on the settings tables.</summary>
+    private Task _RunIndexesAsync(
         NpgsqlConnection connection,
         SettingsStorageOptions options,
         CancellationToken cancellationToken
     )
     {
-        var sql = _CreateIndexesScript(options);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        return _RunDdlAsync(connection, _CreateIndexesScript(options), cancellationToken);
+    }
 
-        try
+    // The advisory locks serialize our initializers, but a schema or object creator outside them (a consumer's EF
+    // migration, other application code) can still commit the same CREATE first. That fails our transaction with
+    // 42P06/42P07/42710, or 23505 on the catalog unique index when the two inserts race, and the rollback takes every
+    // object of this batch with it. The conflicting creator has committed by the time we see the error, so one rerun
+    // in a fresh transaction passes its IF NOT EXISTS guards and creates what the rollback discarded. A second failure
+    // is not a race and propagates, so the initializer never reports success with its tables missing.
+    private async Task _RunDdlAsync(NpgsqlConnection connection, string sql, CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; ; attempt++)
         {
-            await using var command = new NpgsqlCommand(sql, connection, transaction);
-            command.CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds;
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (PostgresException ex)
-            when (ex.SqlState is SqlErrorCodes.PostgreSql.DuplicateTable or SqlErrorCodes.PostgreSql.DuplicateObject)
-        {
-            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            LogSchemaRaceObserved(_logger, ex.SqlState, ex.MessageText);
+            await using var transaction = await connection
+                .BeginTransactionAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            try
+            {
+                await using var command = new NpgsqlCommand(sql, connection, transaction);
+                command.CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds;
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+                return;
+            }
+            catch (PostgresException ex)
+                when (attempt == 1
+                    && ex.SqlState
+                        is SqlErrorCodes.PostgreSql.DuplicateSchema
+                            or SqlErrorCodes.PostgreSql.DuplicateTable
+                            or SqlErrorCodes.PostgreSql.DuplicateObject
+                            or SqlErrorCodes.PostgreSql.UniqueViolation
+                )
+            {
+                await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                LogSchemaRaceObserved(_logger, ex.SqlState, ex.MessageText);
+            }
         }
     }
 
     /// <summary>Builds the SQL script that creates the schema and both settings tables using <c>IF NOT EXISTS</c> guards and an advisory lock.</summary>
     private static string _CreateSchemaAndTablesScript(SettingsStorageOptions options)
     {
-        var valuesTable = _Qualified(options.Schema, options.SettingValuesTableName);
-        var definitionsTable = _Qualified(options.Schema, options.SettingDefinitionsTableName);
+        var valuesName = _ValuesName(options);
+        var definitionsName = _DefinitionsName(options);
 
         // Serialize concurrent-startup DDL across replicas with a transaction-scoped advisory
         // lock keyed on the schema (two tables share the schema, so a per-table key would still
@@ -122,63 +116,43 @@ internal sealed partial class PostgreSqlSettingsStorageInitializer(
         return $"""
             {acquireLock}
 
+            {PostgreSqlSchemaInitLock.AcquireStatement(options.Schema)}
             CREATE SCHEMA IF NOT EXISTS "{options.Schema}";
 
-            CREATE TABLE IF NOT EXISTS {definitionsTable} (
-                "Id" uuid NOT NULL,
-                "Name" character varying({SettingDefinitionRecordConstants.NameMaxLength}) NOT NULL,
-                "DisplayName" character varying({SettingDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
-                "Description" character varying({SettingDefinitionRecordConstants.DescriptionMaxLength}),
-                "DefaultValue" character varying({SettingDefinitionRecordConstants.DefaultValueMaxLength}),
-                "IsVisibleToClients" boolean NOT NULL,
-                "IsInherited" boolean NOT NULL,
-                "IsEncrypted" boolean NOT NULL,
-                "Providers" character varying({SettingDefinitionRecordConstants.ProvidersMaxLength}),
-                "ExtraProperties" text NOT NULL,
-                CONSTRAINT "PK_{options.SettingDefinitionsTableName}" PRIMARY KEY ("Id")
+            CREATE TABLE IF NOT EXISTS {_Qualified(options.Schema, definitionsName)} (
+                "id" uuid NOT NULL,
+                "name" character varying({SettingDefinitionRecordConstants.NameMaxLength}) NOT NULL,
+                "display_name" character varying({SettingDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
+                "description" character varying({SettingDefinitionRecordConstants.DescriptionMaxLength}),
+                "default_value" character varying({SettingDefinitionRecordConstants.DefaultValueMaxLength}),
+                "is_visible_to_clients" boolean NOT NULL,
+                "is_inherited" boolean NOT NULL,
+                "is_encrypted" boolean NOT NULL,
+                "providers" character varying({SettingDefinitionRecordConstants.ProvidersMaxLength}),
+                "extra_properties" text NOT NULL,
+                CONSTRAINT "pk_{definitionsName}" PRIMARY KEY ("id")
             );
 
-            CREATE TABLE IF NOT EXISTS {valuesTable} (
-                "Id" uuid NOT NULL,
-                "Name" character varying({SettingValueRecordConstants.NameMaxLength}) NOT NULL,
-                "Value" character varying({SettingValueRecordConstants.ValueMaxLength}) NOT NULL,
-                "ProviderName" character varying({SettingValueRecordConstants.ProviderNameMaxLength}) NOT NULL,
-                "ProviderKey" character varying({SettingValueRecordConstants.ProviderKeyMaxLength}),
-                "CreatedAt" timestamp with time zone NOT NULL,
-                "UpdatedAt" timestamp with time zone,
-                CONSTRAINT "PK_{options.SettingValuesTableName}" PRIMARY KEY ("Id")
+            CREATE TABLE IF NOT EXISTS {_Qualified(options.Schema, valuesName)} (
+                "id" uuid NOT NULL,
+                "name" character varying({SettingValueRecordConstants.NameMaxLength}) NOT NULL,
+                "value" character varying({SettingValueRecordConstants.ValueMaxLength}) NOT NULL,
+                "provider_name" character varying({SettingValueRecordConstants.ProviderNameMaxLength}) NOT NULL,
+                "provider_key" character varying({SettingValueRecordConstants.ProviderKeyMaxLength}),
+                "created_at" timestamp with time zone NOT NULL,
+                "updated_at" timestamp with time zone,
+                CONSTRAINT "pk_{valuesName}" PRIMARY KEY ("id")
             );
-
-            DO $migration$
-            BEGIN
-                IF EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = '{options.Schema}' AND table_name = '{options.SettingValuesTableName}' AND column_name = 'DateCreated'
-                ) AND NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = '{options.Schema}' AND table_name = '{options.SettingValuesTableName}' AND column_name = 'CreatedAt'
-                ) THEN
-                    ALTER TABLE {valuesTable} RENAME COLUMN "DateCreated" TO "CreatedAt";
-                END IF;
-
-                IF EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = '{options.Schema}' AND table_name = '{options.SettingValuesTableName}' AND column_name = 'DateUpdated'
-                ) AND NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = '{options.Schema}' AND table_name = '{options.SettingValuesTableName}' AND column_name = 'UpdatedAt'
-                ) THEN
-                    ALTER TABLE {valuesTable} RENAME COLUMN "DateUpdated" TO "UpdatedAt";
-                END IF;
-            END $migration$;
             """;
     }
 
     /// <summary>Builds the SQL script that creates the unique indexes on both settings tables using <c>IF NOT EXISTS</c> guards and an advisory lock.</summary>
     private static string _CreateIndexesScript(SettingsStorageOptions options)
     {
-        var valuesTable = _Qualified(options.Schema, options.SettingValuesTableName);
-        var definitionsTable = _Qualified(options.Schema, options.SettingDefinitionsTableName);
+        var valuesName = _ValuesName(options);
+        var definitionsName = _DefinitionsName(options);
+        var valuesTable = _Qualified(options.Schema, valuesName);
+        var definitionsTable = _Qualified(options.Schema, definitionsName);
 
         var lockResource = $"headless_settings_init:{options.Schema}";
         var acquireLock = $"SELECT pg_advisory_xact_lock(hashtextextended('{lockResource}', 0));";
@@ -186,22 +160,35 @@ internal sealed partial class PostgreSqlSettingsStorageInitializer(
         return $"""
             {acquireLock}
 
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_{options.SettingDefinitionsTableName}_Name" ON {definitionsTable} ("Name");
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_{options.SettingValuesTableName}_Name_ProviderName_ProviderKey" ON {valuesTable} ("Name", "ProviderName", "ProviderKey") WHERE "ProviderKey" IS NOT NULL;
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_{options.SettingValuesTableName}_Name_ProviderName_NullProviderKey" ON {valuesTable} ("Name", "ProviderName") WHERE "ProviderKey" IS NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS "ix_{definitionsName}_name" ON {definitionsTable} ("name");
+            CREATE UNIQUE INDEX IF NOT EXISTS "ix_{valuesName}_name_provider_name_provider_key" ON {valuesTable} ("name", "provider_name", "provider_key") WHERE "provider_key" IS NOT NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS "ix_{valuesName}_name_provider_name_null_provider_key" ON {valuesTable} ("name", "provider_name") WHERE "provider_key" IS NULL;
             """;
     }
 
-    /// <summary>Returns the fully-qualified, double-quoted <c>"schema"."table"</c> identifier for <paramref name="tableName"/>.</summary>
-    /// <param name="options">Storage options that supply the schema name.</param>
-    /// <param name="tableName">Unqualified table name.</param>
-    /// <returns>A double-quoted, schema-qualified table reference safe for interpolation into SQL.</returns>
-    internal static string Qualified(SettingsStorageOptions options, string tableName)
+    /// <summary>Returns the qualified setting values table.</summary>
+    internal static string ValuesTable(SettingsStorageOptions options)
     {
-        return _Qualified(options.Schema, tableName);
+        return _Qualified(options.Schema, _ValuesName(options));
     }
 
-    /// <summary>Returns <c>"<paramref name="schema"/>"."<paramref name="tableName"/>"</c>.</summary>
+    /// <summary>Returns the qualified setting definitions table.</summary>
+    internal static string DefinitionsTable(SettingsStorageOptions options)
+    {
+        return _Qualified(options.Schema, _DefinitionsName(options));
+    }
+
+    private static string _ValuesName(SettingsStorageOptions options)
+    {
+        return options.ResolveSettingValuesTableName(StorageNamingStyle.SnakeCase);
+    }
+
+    private static string _DefinitionsName(SettingsStorageOptions options)
+    {
+        return options.ResolveSettingDefinitionsTableName(StorageNamingStyle.SnakeCase);
+    }
+
+    // Quoted so a configured table name keeps its exact case; the default snake_case names read the same unquoted.
     private static string _Qualified(string schema, string tableName)
     {
         return $"""
@@ -213,7 +200,7 @@ internal sealed partial class PostgreSqlSettingsStorageInitializer(
         EventId = 1,
         EventName = "PostgreSqlSettingsSchemaRaceObserved",
         Level = LogLevel.Information,
-        Message = "PostgreSql settings initializer absorbed a concurrent-DDL race (SqlState={SqlState}): {Detail}. Treating schema as initialized."
+        Message = "PostgreSql settings initializer absorbed a concurrent-DDL race (SqlState={SqlState}): {Detail}. Retrying the DDL once in a fresh transaction."
     )]
     // ReSharper disable once InconsistentNaming
     private static partial void LogSchemaRaceObserved(ILogger logger, string sqlState, string detail);

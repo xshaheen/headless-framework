@@ -3,6 +3,7 @@
 using System.Data.Common;
 using System.Globalization;
 using Headless.Coordination;
+using Headless.Hosting.Initialization;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Messaging;
@@ -30,11 +31,13 @@ public sealed class PostgreSqlJobsCoordinationFixture
 {
     public string ConnectionString => Container.GetConnectionString();
 
-    public string QualifiedTimeJobsTable => "jobs.\"TimeJobs\"";
+    public StorageNamingStyle NamingStyle => StorageNamingStyle.SnakeCase;
 
-    public string QualifiedCronJobsTable => "jobs.\"CronJobs\"";
+    public string QualifiedTimeJobsTable => "headless.time_jobs";
 
-    public string QualifiedCronJobOccurrencesTable => "jobs.\"CronJobOccurrences\"";
+    public string QualifiedCronJobsTable => "headless.cron_jobs";
+
+    public string QualifiedCronJobOccurrencesTable => "headless.cron_job_occurrences";
 
     public string QualifyTable(string schema, string table) => $"{schema}.\"{table}\"";
 
@@ -47,11 +50,11 @@ public sealed class PostgreSqlJobsCoordinationFixture
     public string EfTranslatedDatabaseClockSql => "now()";
 
     public string ResetSql =>
-        "DROP SCHEMA IF EXISTS jobs CASCADE;"
+        // Jobs, Messaging, and Coordination share this schema, so one drop resets all three.
+        "DROP SCHEMA IF EXISTS headless CASCADE;"
         // The custom-schema conformance scenario maps the whole store here, so it must be dropped like any other.
         + $"DROP SCHEMA IF EXISTS {JobsCoordinationFixtureExtensions.CustomSchemaName} CASCADE;"
         + "DROP SCHEMA IF EXISTS consumer_jobs CASCADE;"
-        + "DROP SCHEMA IF EXISTS messaging CASCADE;"
         + "DROP TABLE IF EXISTS jobs_probe;"
         + "DROP TABLE IF EXISTS coordination_liveness, coordination_descriptor, coordination_node_generation CASCADE;";
 

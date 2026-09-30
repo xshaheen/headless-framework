@@ -72,6 +72,7 @@ Install `Headless.Caching.Abstractions` plus one provider. All registration flow
 - Redis scalar entries use a versioned binary envelope. Do not parse Redis string bytes as the application payload directly; strip the envelope first unless the key is a raw counter.
 - Redis key TTL follows physical expiration, not logical expiration, when fail-safe is enabled, and follows the sliding idle deadline when sliding expiration is enabled.
 - Use `options.KeyPrefix` to namespace cache keys per application or module.
+- For values owned by a tenant, register the type with `services.AddTenantScopedCache<T>()` (from `Headless.MultiTenancy`) instead of adding the tenant to keys by hand. It registers `ICache<T>` as a `ScopedCache<T>` whose keys carry `t:{tenantId}:`, refuses an operation with no ambient tenant, and evicts one tenant's entries with `RemoveByPrefixAsync("")` under that tenant. See [Tenant-Scoped Blobs and Caches](multi-tenancy.md#tenant-scoped-blobs-and-caches).
 - InMemory cache supports `CloneValues = true` for value isolation between callers.
 - Hybrid cache `DefaultLocalExpiration` controls L1 TTL independently of L2. Set it shorter than L2 for freshness; sliding factory entries still use the L2 physical cap as the absolute duration authority.
 
@@ -302,6 +303,7 @@ Defines the unified caching interface for in-memory, distributed, and hybrid cac
 - `IRemoteCache` - remote (L2) tier contract; adds `GetAllWithExpirationAsync<T>` / `GetWithExpirationAsync<T>` for single-round-trip value-plus-TTL reads (a remote store doesn't expose its TTL locally the way an in-memory tier does).
 - `ICache<T>` - strongly typed convenience facade over the default `ICache`, exposing the full `ICache` surface (scalar reads/writes, bulk, prefix, atomic numeric ops `IncrementAsync`/`SetIfHigherAsync`/`SetIfLowerAsync`, `GetAllKeysByPrefixAsync`, `GetCountAsync`, `ExistsAsync`, `GetExpirationAsync`, `RemoveAllAsync`, `FlushAsync`) bound to a fixed type parameter. For a specific tier use the untyped `IRemoteCache`/`IInMemoryCache` (method-level generics) or `ICacheProvider.GetCache(name)`. Typed tier wrappers (`IRemoteCache<T>`, `IInMemoryCache<T>`) do not exist.
 - `ICacheProvider` - resolves named cache instances and the reserved role keys (`CacheConstants.{Memory,Remote,Hybrid}CacheProvider` — `Headless.Caching:{Memory,Remote,Hybrid}`) via `GetCache(name)` / `GetCacheOrNull(name)`, plus `RegisteredNames` (`IReadOnlySet<string>`) for validating an externally supplied name before resolving. `RegisteredNames` lists only the named instances added through `setup.AddNamed(...)`; the default (unnamed) cache and the tier role keys are excluded even though `GetCache` resolves them.
+- `ScopedCache<T>` - `ICache<T>` decorator over an `ICache` that prefixes every key with `{scope}:`, reading the scope from a delegate on each operation so a singleton can follow per-request state such as the ambient tenant. Key, prefix, and count operations stay inside the scope; `RemoveByTagAsync`, `ClearAsync`, and `FlushAsync` act on the whole underlying cache, and `Events` is a no-op hub. `AddTenantScopedCache<T>()` in `Headless.MultiTenancy` registers one keyed by tenant.
 - `ICacheEvents` - the typed event surface returned by `ICache.Events` (`cache.Events.Hit.AddHandler(…)`): an `IAsyncEvent<TArgs>` per cache signal (`Hit`/`Miss`/`Set`/`Remove`/`Eviction`/factory/fail-safe/refresh, the bulk `RemoveAll`/`RemoveByPrefix`/`RemoveByTag`/`Clear`/`Flush`, and hybrid `Invalidation`) taking async or sync handlers, plus nullable `Memory`/`Distributed` per-tier sub-hubs on the hybrid. Args (`CacheEventArgs` → keyed `CacheKeyEventArgs` and the operation-level variants) carry `CacheName`, `Tier`, and the caller-facing `Key`, with typed enums (`CacheTier`, `CacheEvictionReason`, `CacheFailSafeTrigger`, `CacheFactoryOutcome`, `CacheRefreshKind`, `CacheInvalidationKind`, `CacheInvalidationDirection`). `Events` has a default interface implementation returning the shared no-op `CacheEvents.NoOp`, so existing `ICache` implementers are unaffected. See [Events](#events) for execution semantics and the no-allocation guarantee.
 - `CacheValue<T>` - cache result with `HasValue` semantics and an `IsStale` flag when fail-safe serves a stale value.
 - `CacheEntryOptions` - factory-backed entry options: `Duration`, `SlidingExpiration`, `EagerRefreshThreshold`, `IsFailSafeEnabled`, `FailSafeMaxDuration`, `FailSafeThrottleDuration`, `FactorySoftTimeout`, `FactoryHardTimeout`, `BackgroundFactoryCeiling`, `LockTimeout`, `UseDistributedFactoryLock`, and `Tags`.
@@ -695,7 +697,14 @@ dotnet add package Headless.Caching.Hybrid
 var redis = ConnectionMultiplexer.Connect("localhost:6379");
 
 services.AddSingleton<IConnectionMultiplexer>(redis);
-services.AddHeadlessMessaging(builder => builder.UseRedis("localhost:6379"));
+services.AddHeadlessMessaging(messaging =>
+{
+    messaging.UseRedis("localhost:6379");
+    // Messaging needs one storage, and the hybrid's invalidation consumer is a durable consumer: raw
+    // PostgreSQL storage declares only the DurableDedupeOnly inbox tier, so opt down to it explicitly.
+    messaging.UsePostgreSql(configuration.GetConnectionString("Messaging")!);
+    messaging.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+});
 services.AddHeadlessCaching(setup =>
 {
     setup.AddMemoryTier();
@@ -824,10 +833,12 @@ dotnet add package Headless.Caching.InMemory
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Pick one shape — AddHeadlessCaching may be called only once per service collection.
-
 builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+```
 
+Pick one shape — `AddHeadlessCaching` may be called only once per service collection. With options:
+
+```csharp
 builder.Services.AddHeadlessCaching(setup =>
     setup.UseInMemory(options =>
     {
@@ -836,8 +847,11 @@ builder.Services.AddHeadlessCaching(setup =>
         options.DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) };
     })
 );
+```
 
-// As the memory tier of a default hybrid instead of the default ICache (see Headless.Caching.Hybrid):
+As the memory tier of a default hybrid instead of the default `ICache` (see Headless.Caching.Hybrid):
+
+```csharp
 builder.Services.AddHeadlessCaching(setup =>
 {
     setup.AddMemoryTier();

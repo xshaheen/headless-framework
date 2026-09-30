@@ -146,9 +146,14 @@ internal static class BlobSignedUrlEndpoint
 
     private static IBlobStorage? _ResolveStorage(IServiceProvider services, string? store)
     {
-        return store is null
+        var storage = store is null
             ? services.GetService<IBlobStorage>()
             : services.GetService<IBlobStorageProvider>()?.GetStorageOrNull(store);
+
+        // A grant carries the physical location the store resolved when the URL was minted, already rewritten by a
+        // scoped store such as tenant scoping, and its signature is the authorization. Scoping it again under whatever
+        // tenant the request carries would prefix the tenant twice, or refuse an anonymous request outright.
+        return storage is IScopedBlobStorage scoped ? scoped.Unscoped : storage;
     }
 
     private static bool _IsSameMediaType(string? actual, string expected)

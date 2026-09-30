@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Sequences.PostgreSql;
+using Headless.Sql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -15,6 +16,22 @@ public static class SetupSequencesPostgreSql
 {
     extension(HeadlessSequencesSetupBuilder setup)
     {
+        /// <summary>
+        /// Configures PostgreSQL storage with the connection registered by <c>AddPostgreSqlSql</c>, so one
+        /// connection string serves every feature that shares the database.
+        /// </summary>
+        /// <returns>The setup builder for chaining.</returns>
+        /// <remarks>
+        /// Options resolution throws <see cref="InvalidOperationException"/> when <c>AddPostgreSqlSql</c> was not
+        /// called or registered another provider's connection.
+        /// </remarks>
+        public HeadlessSequencesSetupBuilder UsePostgreSql()
+        {
+            return setup.UsePostgreSql(
+                (options, services) => options.ConnectionString = services.GetPostgreSqlConnectionString()
+            );
+        }
+
         /// <summary>Stores counters in PostgreSQL, in the database named by <paramref name="connectionString" />.</summary>
         /// <param name="connectionString">The Npgsql connection string.</param>
         /// <returns>The builder, to allow chaining.</returns>
@@ -133,6 +150,8 @@ public static class SetupSequencesPostgreSql
             }
 
             services.AddInitializerHostedService<PostgreSqlSequencesStorageInitializer>();
+            // The store waits between deadlock retries on this clock.
+            services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<ISequenceStore, PostgreSqlSequenceStore>();
         }
     }

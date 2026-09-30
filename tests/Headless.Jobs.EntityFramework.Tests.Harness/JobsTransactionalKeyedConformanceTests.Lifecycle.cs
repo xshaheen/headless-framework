@@ -70,7 +70,6 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
                             {
                                 Function = JobsCoordinationFixtureExtensions.CoordinatedFunctionName,
                                 ExecutionTime = _Due.UtcDateTime,
-                                Enlistment = TransactionEnlistment.Required,
                             };
                             var write = () => manager.AddAsync(candidate, ct);
                             await write
@@ -147,7 +146,6 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
                                     {
                                         Function = JobsCoordinationFixtureExtensions.CoordinatedFunctionName,
                                         ExecutionTime = _Due.UtcDateTime,
-                                        Enlistment = TransactionEnlistment.Required,
                                     },
                                     ct
                                 );

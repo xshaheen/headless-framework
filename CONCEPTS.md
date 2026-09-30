@@ -19,6 +19,12 @@ A coordination participant identified as `nodeId@incarnation` — the node id pl
 distinguishes one run of that node from a later restart. Two runs of the same `nodeId` are *distinct*
 identities, so a restarted node never inherits its dead predecessor's standing.
 
+### Membership
+The set of Node identities the store currently classifies as live, read through `INodeMembership`.
+Membership reports liveness only and never records ownership: a consumer stamps a Node identity on its
+own rows and reclaims the rows whose owner is no longer live. Distinct from a Distributed lock and a
+Fenced lease, which grant ownership. See [docs/llms/coordination.md](docs/llms/coordination.md).
+
 ### Incarnation
 The monotonic generation number that qualifies a Node identity. Allocated by an atomic increment in
 the store at registration; a heartbeat or leave carrying a prior incarnation is rejected at the
@@ -165,7 +171,10 @@ or defaulted Reject outcome.
 
 - "Generation" had been used loosely for both a node's Incarnation and the durable counter that
   issues incarnations — these are distinct: Incarnation is the per-node value, the generation
-  table/counter is the authority.
+  table/counter is the authority. Fencing's Lease generation is a third, unrelated value: the
+  per-attempt number a fenced lease's grant issues, scoped to one leased resource, not one node.
+  An Idempotent admission's generation is a fourth: the per-attempt number drawn from the
+  idempotency store's own sequence and kept on the key's record row.
 
 ## Unit of Work
 
@@ -211,27 +220,27 @@ job rows share the transaction's fate, and the relay delivers them if it committ
 
 ### Transaction enlistment
 
-The guard a **Jobs** write (a one-shot deadline, a keyed job, a chain node, a recurring definition)
-uses to refuse the autonomous receiver: `TransactionEnlistment { Optional, Required }`, surfaced as
-`JobOptions.Enlistment` and `RecurringJobOptions.Enlistment`. Precedence is per call, then per
-function, then the host default; composition across those tiers is strictest-wins. Enlistment itself
-is chosen by the receiver — `unit.Jobs` always enlists, an injected scheduler never does — and the
-knob only says whether the autonomous receiver is acceptable. The guarantee matrix:
+Whether a write joins the caller's transaction. The receiver the caller invokes is the only thing
+that decides it, in every domain: `unit.Outbox`, `unit.Jobs`, `unit.TimeJobs<T>()`, and
+`unit.CronJobs<T>()` always enlist, and the injected `IBus`/`IQueue`/`IJobScheduler`/managers never
+do. No option, per-function policy, or host default selects enlistment. For a **Jobs** write (a
+one-shot deadline, a keyed job, a chain, a recurring definition):
 
-| Receiver | `Optional` (default) | `Required` |
-|---|---|---|
-| `unit.Jobs` over a unit with a live, same-database relational resource | enlist in the transaction, dispatch/signal after commit | same |
-| `unit.Jobs` over a resource-less, dead, or other-database unit | throw | throw |
-| Injected `IJobScheduler` / managers | autonomous durable write, poller recovers it | throw |
+| Receiver | Write |
+|---|---|
+| `unit.Jobs` over a unit with a live, same-database relational resource | enlist in the transaction, dispatch/signal after commit |
+| `unit.Jobs` over a resource-less, dead, or other-database unit | throw |
+| Injected `IJobScheduler` / managers | autonomous durable write in the store's own transaction, poller recovers it |
 
 Every refusal happens at the call itself, before any effect — there is no separate startup gate,
 because the factory always exists (`AddUnitOfWork()` is idempotent and called by every consumer
 package's setup).
 
-The enum is Jobs-only. Messaging once shared it, with the same matrix and the same precedence; it
-now expresses the same intent structurally, by which publisher is called — see [Enlisted
-outbox](#enlisted-outbox) — so no Messaging option, per-type policy, or host default selects
-enlistment any more.
+Both domains once carried a `TransactionEnlistment { Optional, Required }` guard that made the
+autonomous receiver refuse a function. It was removed from each for the same reason: one function or
+message type is written from sites with different needs (a business transaction, an admin resend, a
+backfill, startup seeding), and a function-level flag refuses the legitimate autonomous ones. See
+[Enlisted outbox](#enlisted-outbox).
 
 ### Unit-of-work resource
 
@@ -277,6 +286,65 @@ the unit ends, so a rolled-back unit's number is re-issued to the next caller an
 is never skipped. The cost is that every writer of that counter waits for the previous writer's unit.
 Its counterpart, the fast mode through the injected `ISequenceGenerator`, commits the number in its
 own transaction and may leave a gap when the caller rolls back. A name has exactly one mode.
+
+## Distributed locks
+
+### Distributed lock
+Mutual exclusion on a named resource for a live in-process handle (`IDistributedLock`, returning an
+`IDistributedLease`). The handle cannot move to another process. Redis locks expire by TTL; PostgreSQL
+and SQL Server locks are session-scoped with no TTL and live as long as the holding connection. The
+optional `FencingToken` protects data only when the protected resource rejects a token not greater than
+the last one it accepted, or when the lock is transaction-coupled. See
+[docs/llms/distributed-locks.md](docs/llms/distributed-locks.md).
+
+## Fencing
+
+### Fenced lease
+
+A durable database row identified by `(tenant, kind, resource)` that a caller holds by its
+`(resource, Generation)` pair rather than by a live connection or handle. Granting, renewing,
+settling, releasing, and fencing are separate database calls the store answers, so a lease can be
+held by any process — including one with no connection to this framework — and outlives any single
+connection. Distinct from a distributed lock (`Headless.DistributedLocks`), which grants exclusive
+execution to a live in-process handle. *Avoid:* lease (bare) when a distributed lock's TTL lease is
+meant — name the package (`IDistributedLock`) or say "fenced lease" for `IFencedLeases`. See
+[docs/llms/fencing.md](docs/llms/fencing.md).
+
+### Lease generation
+
+The monotonic number a fenced lease's grant issues, drawn from one store-wide sequence per lease
+identity so it survives a purge of the row. A caller names its generation on every renew, settle,
+release, or fence call; the store refuses the call once a newer grant replaced it. Distinct from
+Incarnation (Coordination's per-node generation) and from the generation table/counter that issues
+incarnations: a lease generation identifies one attempt at one leased resource, not one run of a node.
+*Avoid:* generation (bare) for any of the three — name which: Incarnation, the incarnation-issuing
+counter, or a lease generation.
+
+## Idempotency
+
+### Idempotent admission
+
+The outcome of admitting a tenant-scoped idempotency key for a versioned request fingerprint:
+`Admitted` (the caller owns the operation), `InFlight` (a live attempt owns it), `Replay` (a
+completed result is returned), or `Conflict` (the key is stored under a different fingerprint or
+result contract). An admitted operation holds its own lease on the key's record row: a generation
+drawn from the idempotency store's sequence plus a lease expiry decided by the database clock. Its
+renewal, fence, recovery point, completion, and release name that generation, and the store refuses
+them once a later admission drew a newer one. Idempotency does not use Fencing's fenced leases. See
+[docs/llms/idempotency.md](docs/llms/idempotency.md).
+
+### Recovery point
+
+The last step an admitted attempt recorded as done on its idempotency record: a short name, opaque
+resume state, and a contract tag. It is written under the attempt's generation, fenced like a
+completion, and usually in the same unit of work as the step's own writes, so it commits exactly when
+the step does. The next admission of the key after that attempt crashed, stalled, or released
+receives it and resumes after the named step instead of repeating it. Completion clears it, a
+release keeps it, and a record reset after its retention drops it. A final "done" point that carries
+the result lets a retry answer without re-running work whose completion was lost after it committed.
+Distinct from a Jobs recovery run, which is an occurrence materialized for a missed schedule
+window. *Avoid:* checkpoint for this, since it suggests the store captures state on its own; the
+handler records every point explicitly. See [docs/llms/idempotency.md](docs/llms/idempotency.md#recovery-points).
 
 ## Startup validation
 
@@ -388,14 +456,12 @@ keyed rows remain indefinitely; ordinary edits, resets, retries, and hard deleti
 
 ### Transactional deadline capability
 
-`TransactionEnlistment.Required` requires a Jobs write — a one-shot deadline or a recurring definition — to use
-the exact live relational transaction that owns the application update. The requirement is transient;
-it is not job payload, definition payload, or persisted intent. A keyed result returned inside that
-transaction is provisional until the caller commits, and rollback removes the write. Scheduler wake-up
-is post-commit acceleration; polling recovers a missed wake-up. Recurring definitions take the
-requirement from the call or the function policy, never the host default, and startup seeding of
-attribute-defined definitions is exempt because it runs before any application transaction exists.
-Messaging delivery delay, distributed locks, and membership do not provide this capability.
+A Jobs write made through `unit.Jobs` — a one-shot deadline, a keyed job, a chain, or a recurring
+definition — uses the exact live relational transaction that owns the application update. A keyed result
+returned inside that transaction is provisional until the caller commits, and rollback removes the write.
+Scheduler wake-up is post-commit acceleration; polling recovers a missed wake-up. The same write through
+the injected scheduler is its own commit. Messaging delivery delay, distributed locks, and membership do
+not provide this capability.
 
 ### Catch step
 
@@ -442,6 +508,18 @@ The stable id that keys everything tenant-owned: ambient `ICurrentTenant.Id`, EF
 guards, Jobs/Messaging propagation, and per-tenant Settings/Features/Permissions state. The JWT
 tenant claim carries it directly; identifier-based resolution must map to it before ambient context
 is set.
+
+### Tenant storage scope
+
+The physical namespace a tenant's blobs and cache entries occupy, derived from the canonical tenant
+id because files and cache entries carry no tenant column: a leading path segment (`acme/1.png`) or a
+per-tenant container (`{ContainerPrefix}acme`) for blobs, and the key scope `t:acme:` for caches.
+Tenant-scoped stores refuse to work without an ambient tenant. Shared data lives outside the scope
+(an unscoped named blob store, the plain `ICache`), and infrastructure that holds physical blob
+locations unwraps a scoped store through `IScopedBlobStorage.Unscoped`. Distinct from the tenant
+write guard, which protects rows. *Avoid:* "tenant prefix" for the
+container-per-tenant layout, where the tenant is the container rather than a prefix. See
+[docs/llms/multi-tenancy.md](docs/llms/multi-tenancy.md#tenant-scoped-blobs-and-caches).
 
 ### Tenant catalog
 

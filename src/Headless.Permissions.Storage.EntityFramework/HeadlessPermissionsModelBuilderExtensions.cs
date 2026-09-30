@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Hosting.Initialization;
 using Headless.Permissions;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Options;
@@ -15,17 +16,22 @@ public static class HeadlessPermissionsModelBuilderExtensions
     {
         /// <summary>
         /// Applies the Headless permissions entity configurations, resolving <see cref="PermissionsStorageOptions"/>
-        /// from the <paramref name="context"/>'s service provider. Call from <c>OnModelCreating</c> with
+        /// from the <paramref name="context"/>'s service provider and the naming style from its database provider
+        /// (snake_case on PostgreSQL, PascalCase elsewhere). Call from <c>OnModelCreating</c> with
         /// <c>modelBuilder.AddHeadlessPermissions(this)</c> to avoid injecting the options into the context.
         /// </summary>
+        /// <param name="context">The <see cref="DbContext"/> whose service provider supplies <see cref="PermissionsStorageOptions"/>.</param>
+        /// <returns>The same <see cref="ModelBuilder"/> instance for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="context"/> is <see langword="null"/>.</exception>
         public ModelBuilder AddHeadlessPermissions(DbContext context)
         {
             Argument.IsNotNull(modelBuilder);
             Argument.IsNotNull(context);
 
             var options = context.GetService<IOptions<PermissionsStorageOptions>>().Value;
+            var style = HeadlessStorageNaming.ForProvider(context.Database.ProviderName);
 
-            return modelBuilder.AddHeadlessPermissions(options);
+            return modelBuilder.AddHeadlessPermissions(options, style);
         }
 
         /// <summary>
@@ -36,14 +42,22 @@ public static class HeadlessPermissionsModelBuilderExtensions
         /// context's service provider.
         /// </summary>
         /// <param name="options">Storage options that drive the schema, table names, and column constraints applied to each entity.</param>
-        public ModelBuilder AddHeadlessPermissions(PermissionsStorageOptions options)
+        /// <param name="style">
+        /// The naming style of the database the model targets. It must match the database: the raw providers and
+        /// <c>AddHeadlessPermissions(DbContext)</c> use <see cref="StorageNamingStyle.SnakeCase"/> on
+        /// PostgreSQL and <see cref="StorageNamingStyle.PascalCase"/> elsewhere; pass
+        /// <c>HeadlessStorageNaming.ForProvider(Database.ProviderName)</c> to derive it.
+        /// </param>
+        /// <returns>The same <see cref="ModelBuilder"/> instance for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
+        public ModelBuilder AddHeadlessPermissions(PermissionsStorageOptions options, StorageNamingStyle style)
         {
             Argument.IsNotNull(modelBuilder);
             Argument.IsNotNull(options);
 
-            modelBuilder.ApplyConfiguration(new PermissionGrantRecordConfiguration(options));
-            modelBuilder.ApplyConfiguration(new PermissionGroupDefinitionRecordConfiguration(options));
-            modelBuilder.ApplyConfiguration(new PermissionDefinitionRecordConfiguration(options));
+            modelBuilder.ApplyConfiguration(new PermissionGrantRecordConfiguration(options, style));
+            modelBuilder.ApplyConfiguration(new PermissionGroupDefinitionRecordConfiguration(options, style));
+            modelBuilder.ApplyConfiguration(new PermissionDefinitionRecordConfiguration(options, style));
 
             return modelBuilder;
         }

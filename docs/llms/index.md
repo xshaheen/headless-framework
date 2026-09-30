@@ -18,6 +18,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 - Keep provider types at the composition root. Application and domain code depend on framework abstractions such as `ICache`, `IBlobStorage`, `IBus`, or `IEmailSender`.
 - Install only the packages the host uses: normally an abstractions package, the domain runtime/core package, and one provider. Some domains have a different shape; the domain guide owns that exception.
 - Register each feature through its `AddHeadless*` setup builder and select providers there. Do not create a second registration path around the framework.
+- Relational storage features share one connection and one schema by default: register the database once with `AddPostgreSqlSql` or `AddSqlServerSql`, call each feature's parameterless `UsePostgreSql()` or `UseSqlServer()`, and every feature creates its tables in the `headless` schema. [SQL](sql.md#shared-connection-and-schema-for-storage-features) owns the override rules.
 - Preserve explicit durability boundaries. In-memory and `*.Dev` providers are for tests, development, or intentionally ephemeral workloads; they are not production substitutes for durable providers.
 - Keep cancellation tokens end-to-end and use the injected `TimeProvider` for application time. Store-backed leases, locks, and coordination use the store's clock where their guide says so.
 - Treat tenancy, authorization, transactions, retries, ordering, and external side effects as domain contracts. Read every affected guide when a change crosses those boundaries.
@@ -43,7 +44,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | --- | --- |
 | Use EF Core conventions, save pipelines, Couchbase, or the messaging outbox bridge | [ORM](orm.md) |
 | Open and enlist an explicit transaction across EF, messaging, or jobs | [Unit of Work](unit-of-work.md) |
-| Use provider-neutral SQL connections | [SQL](sql.md) |
+| Use provider-neutral SQL connections, or share one connection and schema across storage features | [SQL](sql.md) |
 | Cache data in memory, Redis, or hybrid L1/L2; use output cache or factory locks | [Caching](caching.md) |
 | Store blobs in S3, MinIO or another S3-compatible server, Azure, R2, filesystem, Redis, or SFTP | [Blob Storage](blobs.md) |
 | Persist dynamic settings | [Settings](settings.md) |
@@ -51,6 +52,8 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | React when a setting, feature, or permission grant changes instead of polling | [Settings](settings.md), [Features](features.md), [Permissions](permissions.md) — each has a "Reacting to a change" section |
 | Record entity changes or explicit audit events | [Audit Log](audit-log.md) |
 | Issue per-tenant consecutive numbers (receipts, invoices, case numbers), gap-free when audited | [Sequences](sequences.md) |
+| Grant a durable, cross-process lease that fences a stale or zombie attempt's writes; hand work to an external executor | [Fencing](fencing.md) |
+| Admit a keyed operation once across retries, processes, or executors, and replay its stored result | [Idempotency](idempotency.md) |
 
 ### Distributed runtime
 
@@ -58,7 +61,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | --- | --- |
 | Publish or consume messages; configure transports, outbox/inbox, retries, or ordering | [Messaging](messaging.md) |
 | Schedule or execute background jobs and recurring work | [Jobs](jobs.md) |
-| Acquire distributed locks, reader/writer locks, or semaphores | [Distributed Locks](distributed-locks.md) |
+| Acquire distributed locks, reader/writer locks, or semaphores, or fence stale writes with fencing tokens | [Distributed Locks](distributed-locks.md) |
 | Cap attempts per phone, email, IP, or card across replicas (OTP delivery, password reset, PIN verification) | [Rate Limiting](rate-limiting.md) |
 | Track node identity, liveness, and membership | [Coordination](coordination.md) |
 | Dispatch in-process requests and notifications | [Mediator](mediator.md) |
@@ -86,6 +89,20 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | Configure Serilog defaults | [Logging](logging.md) |
 | Use hosting helpers, validators, source-generated primitives, Redis scripts, geospatial helpers, sitemaps, or slugs | [Utilities](utilities.md) |
 | Write unit/integration tests or use Testcontainers and the messaging harness | [Testing](testing.md) |
+
+## Choosing a coordination primitive
+
+Choose by the question, not by the words "lock" or "lease". [Fencing § Choosing a coordination primitive](fencing.md#choosing-a-coordination-primitive) owns the full comparison: what each primitive holds, what refuses a stale holder, and how a fence differs from a token and a lease.
+
+| Question | Use | Guide |
+| --- | --- | --- |
+| May this process run now? | Distributed lock (`IDistributedLock`) | [Distributed Locks](distributed-locks.md) |
+| Who owns this work, at which generation, until when? | Fenced lease (`IFencedLeases`, `unit.Leases`) | [Fencing](fencing.md) |
+| Has this operation already happened, and what was its result? | Idempotent admission (`IIdempotentOperations`, `unit.Idempotency`; `Headless.Api.Idempotency` for HTTP) | [Idempotency](idempotency.md) |
+| Which node incarnations are alive? | Membership (`INodeMembership`) | [Coordination](coordination.md) |
+| Does the work already have a row you own? | A lease in that row's own columns, claimed and renewed by guarded updates, as Jobs and Messaging do | [Fencing § Work that already has a row](fencing.md#work-that-already-has-a-row) |
+
+**A lock alone never protects data.** A holder can pause, lose its lock or lease, and resume writing without knowing. Protect a correctness invariant with a fence at the write: a transaction-coupled lock, a fenced lease, an admission generation, or a guarded row update. No fence recalls a side effect already made outside the database; make it idempotent at its own boundary, or trigger it from the committed row.
 
 ## Cross-domain changes
 

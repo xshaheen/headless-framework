@@ -12,11 +12,11 @@ namespace Headless.Jobs;
 
 /// <summary>
 /// Global registry of job function delegates and their associated request types. Populated at application
-/// startup by the source-generated <c>ModuleInitializer</c> and frozen into read-optimized dictionaries
-/// via <see cref="Build"/> before the first job is dispatched.
+/// startup by the generated <see cref="IJobsModule"/> of each assembly a host adds, and frozen into read-optimized
+/// dictionaries via <see cref="Build"/> before the first job is dispatched.
 /// </summary>
 /// <remarks>
-/// The registration flow is callback-based: each source-generated assembly calls
+/// The registration flow is callback-based: each generated module calls
 /// <c>RegisterFunctions</c>, <c>RegisterRequestType</c>, and <c>RegisterDescriptors</c> to enqueue its entries, then
 /// Jobs discovery marks collection complete before <see cref="Build"/> executes all callbacks in order and freezes
 /// the results. Registrations attempted after discovery completes fail deterministically.
@@ -33,6 +33,7 @@ public static class JobFunctionProvider
     private static Action<List<KeyValuePair<string, JobFunctionDescriptor>>>? _descriptorRegistrations;
     private static TaskCompletionSource<object?> _discoveryCompletion = _CreateDiscoveryCompletion();
     private static int _activeDiscoveries;
+    private static readonly HashSet<Type> _RegisteredModules = [];
 
     [ThreadStatic]
     private static int _discoveryDepth;
@@ -262,6 +263,50 @@ public static class JobFunctionProvider
         abandonedDiscovery?.TrySetException(exception);
     }
 
+    /// <summary>
+    /// Runs a generated module's registration once per process. The catalog is process-wide while hosts are not, so a
+    /// module every host adds registers on the first host and is a no-op on the rest. A module no earlier host added
+    /// cannot join a catalog that already closed.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// The module was not registered before Jobs discovery completed.
+    /// </exception>
+    internal static void RegisterModule(Type moduleType, Action register)
+    {
+        lock (_Sync)
+        {
+            if (_RegisteredModules.Contains(moduleType))
+            {
+                return;
+            }
+
+            if (_state != RegistryState.Collecting)
+            {
+                throw new InvalidOperationException(
+                    $"Jobs module '{moduleType.FullName}' was added after the process-wide job catalog closed. Add it "
+                        + "inside the AddHeadlessJobs callback of the first host built in this process."
+                );
+            }
+
+            _RegisteredModules.Add(moduleType);
+        }
+
+        try
+        {
+            register();
+        }
+        catch
+        {
+            // Let a retried AddHeadlessJobs register the module again instead of silently skipping it.
+            lock (_Sync)
+            {
+                _RegisteredModules.Remove(moduleType);
+            }
+
+            throw;
+        }
+    }
+
     internal static void RegisterMiddleware(Action registration)
     {
         lock (_Sync)
@@ -340,6 +385,7 @@ public static class JobFunctionProvider
             _functionRegistrations = null;
             _descriptorRegistrations = null;
             _activeDiscoveries = 0;
+            _RegisteredModules.Clear();
             _discoveryCompletion = _CreateDiscoveryCompletion();
             _state = discoveryComplete ? RegistryState.DiscoveryComplete : RegistryState.Collecting;
             _canonicalRegistry = _EmptyRegistry;

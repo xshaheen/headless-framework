@@ -58,7 +58,7 @@ public sealed class PostgresCustomSchemaTests(PostgreSqlDistributedLockFixture f
         await connection.OpenAsync(AbortToken);
         await using var command = connection.CreateCommand();
         command.CommandText = "SELECT sequencename FROM pg_sequences WHERE schemaname = @schema;";
-        command.Parameters.AddWithValue("schema", schema);
+        command.Parameters.AddWithValue(nameof(schema), schema);
 
         var sequences = new List<string>();
         await using var reader = await command.ExecuteReaderAsync(AbortToken);

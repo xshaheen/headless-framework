@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.102.8",
+    "@tanstack/react-query": "^5.103.2",
     "@uppy/core": "^6.0.0",
     "@uppy/dashboard": "^6.0.0",
     "@uppy/react": "^6.0.0",

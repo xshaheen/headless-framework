@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Data.Common;
+using Headless.Hosting.Initialization;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
@@ -496,8 +497,9 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             await using var connection = fixture.CreateConnection();
             await connection.OpenAsync(ct);
             await using var command = connection.CreateCommand();
-            command.CommandText =
-                $"UPDATE {fixture.QualifiedCronJobsTable} SET \"Request\" = @request WHERE \"Id\" = @id";
+            command.CommandText = fixture.Sql(
+                $"UPDATE {fixture.QualifiedCronJobsTable} SET \"Request\" = @request WHERE \"Id\" = @id"
+            );
             var payload = command.CreateParameter();
             payload.ParameterName = "request";
             payload.Value = request;
@@ -924,7 +926,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        using var host = fixture.BuildMappedHost<FilteredJobsDbContext>("cas-filter-a", "jobs");
+        using var host = fixture.BuildMappedHost<FilteredJobsDbContext>("cas-filter-a", HeadlessStorageDefaults.Schema);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync<FilteredJobsDbContext>(host, ct);
         await host.StartAsync(ct);
 
@@ -961,7 +963,10 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        using var host = fixture.BuildMappedHost<FilteredJobsDbContext>("cas-bounded-a", "jobs");
+        using var host = fixture.BuildMappedHost<FilteredJobsDbContext>(
+            "cas-bounded-a",
+            HeadlessStorageDefaults.Schema
+        );
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync<FilteredJobsDbContext>(host, ct);
         await host.StartAsync(ct);
 
@@ -1111,7 +1116,9 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
             // The host's background services may issue unrelated Jobs maintenance queries after Clear(); scope the
             // assertion to the dashboard projection's CronJobOccurrences commands.
             var statements = capture
-                .Statements.Where(sql => sql.Contains("CronJobOccurrences", StringComparison.Ordinal))
+                .Statements.Where(sql =>
+                    sql.Contains(fixture.JobsTable("CronJobOccurrences"), StringComparison.Ordinal)
+                )
                 .ToArray();
             statements.Should().HaveCount(2);
             statements.Should().Contain(sql => sql.Contains("DISTINCT", StringComparison.OrdinalIgnoreCase));

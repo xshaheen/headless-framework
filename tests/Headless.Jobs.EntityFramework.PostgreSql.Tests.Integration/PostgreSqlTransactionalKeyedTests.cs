@@ -62,16 +62,12 @@ public sealed class PostgreSqlTransactionalKeyedTests(PostgreSqlJobsCoordination
         base.keyed_due_eligibility_and_claim_lease_use_store_time_under_node_skew();
 
     [Fact]
-    public override Task required_recurring_definition_rejects_scheduling_outside_a_transaction() =>
-        base.required_recurring_definition_rejects_scheduling_outside_a_transaction();
+    public override Task recurring_definition_through_the_injected_scheduler_survives_the_outer_rollback() =>
+        base.recurring_definition_through_the_injected_scheduler_survives_the_outer_rollback();
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public override Task required_recurring_definition_shares_the_outer_commit_or_rollback(bool commit) =>
-        base.required_recurring_definition_shares_the_outer_commit_or_rollback(commit);
-
-    [Fact]
-    public override Task recurring_atomic_flag_is_not_mapped_to_a_column() =>
-        base.recurring_atomic_flag_is_not_mapped_to_a_column();
+    public override Task enlisted_recurring_definition_shares_the_outer_commit_or_rollback(bool commit) =>
+        base.enlisted_recurring_definition_shares_the_outer_commit_or_rollback(commit);
 }

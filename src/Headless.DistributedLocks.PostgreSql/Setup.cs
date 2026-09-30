@@ -5,6 +5,7 @@ using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Constants;
 using Headless.DistributedLocks.PostgreSql;
+using Headless.Sql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -23,6 +24,22 @@ public static class SetupPostgreSqlDistributedLocks
 {
     extension(HeadlessDistributedLocksSetupBuilder setup)
     {
+        /// <summary>
+        /// Configures PostgreSQL storage with the connection registered by <c>AddPostgreSqlSql</c>, so one
+        /// connection string serves every feature that shares the database.
+        /// </summary>
+        /// <returns>The setup builder for chaining.</returns>
+        /// <remarks>
+        /// Options resolution throws <see cref="InvalidOperationException"/> when <c>AddPostgreSqlSql</c> was not
+        /// called or registered another provider's connection.
+        /// </remarks>
+        public HeadlessDistributedLocksSetupBuilder UsePostgreSql()
+        {
+            return setup.UsePostgreSql(
+                (options, services) => options.ConnectionString = services.GetPostgreSqlConnectionString()
+            );
+        }
+
         /// <summary>
         /// Configures the distributed-lock provider to use PostgreSQL advisory locks with the supplied
         /// raw connection string.

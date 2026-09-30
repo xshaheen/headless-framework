@@ -3,6 +3,7 @@
 using System.Data.Common;
 using Headless.Abstractions;
 using Headless.Coordination;
+using Headless.Hosting.Initialization;
 using Headless.Jobs;
 using Headless.Jobs.Configurations;
 using Headless.Jobs.Customizer;
@@ -99,7 +100,10 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
     public virtual async Task keyed_constraints_follow_custom_column_mappings()
     {
         await fixture.ResetDatabaseAsync(AbortToken);
-        using var host = fixture.BuildMappedHost<RenamedKeyedJobsDbContext>("keyed-mapped", "jobs");
+        using var host = fixture.BuildMappedHost<RenamedKeyedJobsDbContext>(
+            "keyed-mapped",
+            HeadlessStorageDefaults.Schema
+        );
         await using var context = await host
             .Services.GetRequiredService<IDbContextFactory<RenamedKeyedJobsDbContext>>()
             .CreateDbContextAsync(AbortToken);
@@ -264,7 +268,6 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
                 var scopedManager = unitOfWork.TimeJobs<TimeJobEntity>();
                 var keyed = JobsKeyedSchedulingScenarios.Candidate();
                 keyed.Function = ordinary.Function;
-                keyed.Enlistment = TransactionEnlistment.Required;
                 var key = new JobKey("nonordinal-preflight");
                 var schedule = () => scopedManager.ScheduleKeyedAsync(key, keyed, cancellationToken: ct);
                 await schedule.Should().ThrowAsync<InvalidOperationException>().WithMessage("*collation*");
@@ -277,13 +280,7 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
                 await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, ct);
 
                 var cancel = () =>
-                    scopedManager.CancelKeyedAsync(
-                        new JobKeyScope(ordinary.Function),
-                        key,
-                        1,
-                        enlistment: TransactionEnlistment.Required,
-                        cancellationToken: ct
-                    );
+                    scopedManager.CancelKeyedAsync(new JobKeyScope(ordinary.Function), key, 1, cancellationToken: ct);
                 await cancel.Should().ThrowAsync<InvalidOperationException>().WithMessage("*collation*");
                 probe.Calls.Should().Be(1);
                 connection.State.Should().Be(System.Data.ConnectionState.Open);
@@ -417,9 +414,27 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
             )
                 ? "Latin1_General_100_BIN2"
                 : "C";
-            modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TimeJobEntity>("jobs", collation));
-            modelBuilder.ApplyConfiguration(new CronJobConfigurations<CronJobEntity>("jobs", collation));
-            modelBuilder.ApplyConfiguration(new CronJobOccurrenceConfigurations<CronJobEntity>("jobs", collation));
+            modelBuilder.ApplyConfiguration(
+                new TimeJobConfigurations<TimeJobEntity>(
+                    HeadlessStorageDefaults.Schema,
+                    HeadlessStorageNaming.ForProvider(Database.ProviderName),
+                    collation
+                )
+            );
+            modelBuilder.ApplyConfiguration(
+                new CronJobConfigurations<CronJobEntity>(
+                    HeadlessStorageDefaults.Schema,
+                    HeadlessStorageNaming.ForProvider(Database.ProviderName),
+                    collation
+                )
+            );
+            modelBuilder.ApplyConfiguration(
+                new CronJobOccurrenceConfigurations<CronJobEntity>(
+                    HeadlessStorageDefaults.Schema,
+                    HeadlessStorageNaming.ForProvider(Database.ProviderName),
+                    collation
+                )
+            );
             var row = modelBuilder.Entity<TimeJobEntity>();
             row.ToTable("consumer_time_jobs", "consumer_jobs");
             row.Property(job => job.BusinessKey).HasColumnName("business_key");
@@ -449,9 +464,24 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
                     ? "Latin1_General_100_BIN2"
                     : "C"
             );
-            modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TimeJobEntity>("jobs"));
-            modelBuilder.ApplyConfiguration(new CronJobConfigurations<CronJobEntity>("jobs"));
-            modelBuilder.ApplyConfiguration(new CronJobOccurrenceConfigurations<CronJobEntity>("jobs"));
+            modelBuilder.ApplyConfiguration(
+                new TimeJobConfigurations<TimeJobEntity>(
+                    HeadlessStorageDefaults.Schema,
+                    HeadlessStorageNaming.ForProvider(Database.ProviderName)
+                )
+            );
+            modelBuilder.ApplyConfiguration(
+                new CronJobConfigurations<CronJobEntity>(
+                    HeadlessStorageDefaults.Schema,
+                    HeadlessStorageNaming.ForProvider(Database.ProviderName)
+                )
+            );
+            modelBuilder.ApplyConfiguration(
+                new CronJobOccurrenceConfigurations<CronJobEntity>(
+                    HeadlessStorageDefaults.Schema,
+                    HeadlessStorageNaming.ForProvider(Database.ProviderName)
+                )
+            );
         }
     }
 
@@ -459,9 +489,24 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TimeJobEntity>("jobs"));
-            modelBuilder.ApplyConfiguration(new CronJobConfigurations<CronJobEntity>("jobs"));
-            modelBuilder.ApplyConfiguration(new CronJobOccurrenceConfigurations<CronJobEntity>("jobs"));
+            modelBuilder.ApplyConfiguration(
+                new TimeJobConfigurations<TimeJobEntity>(
+                    HeadlessStorageDefaults.Schema,
+                    HeadlessStorageNaming.ForProvider(Database.ProviderName)
+                )
+            );
+            modelBuilder.ApplyConfiguration(
+                new CronJobConfigurations<CronJobEntity>(
+                    HeadlessStorageDefaults.Schema,
+                    HeadlessStorageNaming.ForProvider(Database.ProviderName)
+                )
+            );
+            modelBuilder.ApplyConfiguration(
+                new CronJobOccurrenceConfigurations<CronJobEntity>(
+                    HeadlessStorageDefaults.Schema,
+                    HeadlessStorageNaming.ForProvider(Database.ProviderName)
+                )
+            );
             modelBuilder.FinalizeJobsModel<TimeJobEntity>(this);
         }
     }

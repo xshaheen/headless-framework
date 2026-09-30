@@ -35,6 +35,7 @@ Inject `ISqlConnectionFactory` and call `CreateNewConnectionAsync()` to get an a
 - `ISqlCurrentConnection` defines an ambient, lazy-open connection for unit-of-work patterns. `Headless.Sql.Core` provides `DefaultSqlCurrentConnection`; the provider `Add{Provider}Sql` extensions register it as scoped for you.
 - `IConnectionStringChecker` is for health checks and startup validation; `Add{Provider}Sql` registers the provider implementation, or register it yourself and inject `IConnectionStringChecker`. Note: `SqliteConnectionStringChecker` always returns `DatabaseExists = true` when connected (SQLite creates the file on open).
 - For in-process integration tests, call `AddSqliteSql("Data Source=:memory:")` — it needs no external server.
+- To give every Headless storage feature the same database, register the connection once with `AddPostgreSqlSql` or `AddSqlServerSql` and call the feature's parameterless `UsePostgreSql()` or `UseSqlServer()`. Do not repeat the connection string per feature. See [Shared connection and schema for storage features](#shared-connection-and-schema-for-storage-features).
 - Each provider package ships `Add{Provider}Sql(string connectionString)` and `Add{Provider}Sql(Func<IServiceProvider, string>)` on `IServiceCollection` (e.g. `AddPostgreSqlSql`, `AddSqlServerSql`, `AddSqliteSql`). Each registers `ISqlConnectionFactory` (singleton), `IConnectionStringChecker` (singleton), and `ISqlCurrentConnection` → `DefaultSqlCurrentConnection` (scoped). The factory and checker use the same connection string.
 
 ## Core Concepts
@@ -74,6 +75,33 @@ public interface ISqlCurrentConnection : IAsyncDisposable
 - **SQL Server**: connects to `master`, then calls `ChangeDatabaseAsync` to verify the target database.
 - **SQLite**: `Connected` and `DatabaseExists` are always set together — SQLite creates the file on `OpenAsync`, so there is no distinction.
 
+### Shared connection and schema for storage features
+
+The raw PostgreSQL and SQL Server providers of Messaging storage, Coordination, DistributedLocks, AuditLog, Sequences, Features, Permissions, Settings, Fencing, and Idempotency each have a parameterless `UsePostgreSql()` and `UseSqlServer()`. These overloads read the connection string that `AddPostgreSqlSql` or `AddSqlServerSql` registered, so one registration serves every feature:
+
+```csharp
+builder.Services.AddPostgreSqlSql(builder.Configuration.GetConnectionString("Default")!);
+
+builder.Services.AddHeadlessFencing(setup => setup.UsePostgreSql());
+builder.Services.AddHeadlessIdempotency(setup => setup.UsePostgreSql());
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UsePostgreSql());
+```
+
+Every relational feature creates its tables in the `headless` schema (`HeadlessStorageDefaults.Schema` in `Headless.Hosting.Initialization`) unless you configure another one. Each feature prefixes its object names with the feature, for example `fencing_leases` and `idempotency_records` on PostgreSQL or `FencingLeases` and `IdempotencyRecords` on SQL Server, so all features coexist in the one schema.
+
+Names follow the database's convention: snake_case on PostgreSQL, PascalCase on SQL Server. A feature whose EF Core mapping takes a `StorageNamingStyle` expects the style of the database it targets; `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (same namespace) returns it, so the mapping produces the same objects as the raw provider.
+
+Precedence, per feature:
+
+- **Connection.** An explicit overload (`UsePostgreSql(connectionString)`, `UsePostgreSql(IConfiguration)`, or an options callback that sets `ConnectionString`) wins for that feature. It does not read the shared registration. The parameterless overload uses the shared connection and nothing else.
+- **Schema.** `ConfigureStorage(storage => storage.Schema = "…")` on the feature's setup builder moves that feature's objects only. Sequences has no `ConfigureStorage`; set `Schema` on the provider options (`PostgreSqlSequencesOptions`, `SqlServerSequencesOptions`) instead.
+
+The parameterless overloads resolve the connection string when the feature's options are first resolved, not at registration, so `AddPostgreSqlSql` can come before or after the feature. Resolution throws `InvalidOperationException` when no `ISqlConnectionFactory` is registered, or when the registered factory belongs to the other provider, for example `UsePostgreSql()` with `AddSqlServerSql`.
+
+Custom provider code reads the same connection through `IServiceProvider.GetPostgreSqlConnectionString()` or `IServiceProvider.GetSqlServerConnectionString()` (namespace `Headless.Sql`), which throw the same `InvalidOperationException`.
+
+The EF Core storage variants and Jobs take their connection from the `DbContext` and do not have these overloads.
+
 ## Choosing a Provider
 
 | Provider | Package | ADO.NET driver | Use when | Avoid when |
@@ -102,6 +130,8 @@ dotnet add package Headless.Sql.Abstractions
 ### Setup and use
 
 ```csharp
+using Dapper;
+
 // Register a concrete factory (provider package required):
 builder.Services.AddSingleton<ISqlConnectionFactory>(new NpgsqlConnectionFactory(connectionString));
 
@@ -173,6 +203,7 @@ PostgreSQL connection factory backed by Npgsql.
 - `NpgsqlConnectionFactory` — `ISqlConnectionFactory` implementation; `CreateNewConnectionAsync()` returns a strongly-typed `NpgsqlConnection` (already open); `GetConnectionString()` retrieves the configured string
 - `NpgsqlConnectionStringChecker` — `IConnectionStringChecker` that verifies server reachability and database existence by connecting to `postgres` first, then calling `ChangeDatabaseAsync` to the target
 - `SetupPostgreSqlSql.AddPostgreSqlSql(string connectionString)` / `AddPostgreSqlSql(Func<IServiceProvider, string>)` — one-call registration of the factory, checker, and scoped ambient connection
+- `IServiceProvider.GetPostgreSqlConnectionString()` (`HeadlessPostgreSqlSharedConnectionExtensions`) — returns the registered `NpgsqlConnectionFactory` connection string; the storage features' parameterless `UsePostgreSql()` calls it
 
 ### Design constraints
 
@@ -200,6 +231,8 @@ builder.Services.AddPostgreSqlSql(connectionString);
 Use in a repository (always inject `ISqlConnectionFactory`, not the concrete type):
 
 ```csharp
+using Dapper;
+
 public sealed class ReportRepository(ISqlConnectionFactory connectionFactory)
 {
     public async Task<IEnumerable<Report>> GetRecentAsync(CancellationToken ct)
@@ -240,6 +273,7 @@ SQL Server connection factory backed by `Microsoft.Data.SqlClient`.
 - `SqlServerConnectionFactory` — `ISqlConnectionFactory` implementation; `CreateNewConnectionAsync()` returns a strongly-typed `SqlConnection` (already open); `GetConnectionString()` retrieves the configured string
 - `SqlServerConnectionStringChecker` — `IConnectionStringChecker` that verifies server reachability and database existence by connecting to `master` first, then calling `ChangeDatabaseAsync` to the target
 - `SetupSqlServerSql.AddSqlServerSql(string connectionString)` / `AddSqlServerSql(Func<IServiceProvider, string>)` — one-call registration of the factory, checker, and scoped ambient connection
+- `IServiceProvider.GetSqlServerConnectionString()` (`HeadlessSqlServerSharedConnectionExtensions`) — returns the registered `SqlServerConnectionFactory` connection string; the storage features' parameterless `UseSqlServer()` calls it
 
 ### Install
 
@@ -261,6 +295,8 @@ builder.Services.AddSqlServerSql(connectionString);
 Use in a repository:
 
 ```csharp
+using Dapper;
+
 public sealed class ReportRepository(ISqlConnectionFactory connectionFactory)
 {
     public async Task<IEnumerable<Report>> GetRecentAsync(CancellationToken ct)
@@ -327,6 +363,8 @@ services.AddSqliteSql("Data Source=app.db");
 Use in a repository:
 
 ```csharp
+using Dapper;
+
 public sealed class CacheRepository(ISqlConnectionFactory connectionFactory)
 {
     public async Task<string?> GetAsync(string key, CancellationToken ct)
