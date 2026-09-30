@@ -164,14 +164,14 @@ public sealed class NatsConsumerClientTests : TestBase
     {
         NatsConsumerClient
             .BuildEveryInstanceSubjects(
-                ["orders.created", "orders"],
+                ["payments.captured", "orders"],
                 names => new HashSet<string>(
                     names.Where(x => string.Equals(x, "orders", StringComparison.Ordinal)),
                     StringComparer.Ordinal
                 )
             )
             .Should()
-            .Equal("headless.bus.orders.created", "headless.bus.orders", "headless.bus.orders.>");
+            .Equal("headless.bus.payments.captured", "headless.bus.orders", "headless.bus.orders.>");
     }
 
     [Fact]
