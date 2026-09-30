@@ -17,8 +17,10 @@ namespace Headless.Settings.Values;
 /// </summary>
 /// <remarks>
 /// Every member throws <see cref="ArgumentException"/> before touching storage when a setting name, provider name, or
-/// provider key starts or ends with white space. SQL Server ignores trailing spaces when it compares keys while
-/// PostgreSQL keeps them, so <c>"acme"</c> and <c>"acme "</c> would address one row on one provider and two on the other.
+/// provider key is text some provider would not keep unchanged: surrounding white space (SQL Server ignores trailing spaces when
+/// it compares keys, so <c>"acme"</c> and <c>"acme "</c> would address one row there and two on PostgreSQL), a NUL
+/// character (PostgreSQL cannot store it), or an unpaired UTF-16 surrogate (SqlClient rewrites it to U+FFFD, merging
+/// distinct keys). See <c>Argument.IsPortableKey</c>.
 /// </remarks>
 public interface ISettingValueStore
 {
@@ -127,16 +129,16 @@ public sealed class SettingValueStore(
 
     private static void _EnsureKey(string? providerName, string? providerKey, string? name = null)
     {
-        Argument.HasNoSurroundingWhiteSpace(providerName);
-        Argument.HasNoSurroundingWhiteSpace(providerKey);
-        Argument.HasNoSurroundingWhiteSpace(name);
+        Argument.IsPortableKey(providerName);
+        Argument.IsPortableKey(providerKey);
+        Argument.IsPortableKey(name);
     }
 
     private static void _EnsureNames(IEnumerable<string> names)
     {
         foreach (var name in names)
         {
-            Argument.HasNoSurroundingWhiteSpace(name);
+            Argument.IsPortableKey(name);
         }
     }
 
