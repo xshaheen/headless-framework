@@ -14,8 +14,8 @@ namespace Headless.Caching;
 /// </summary>
 /// <remarks>
 /// The consumer is every-instance: each L1 lives in one process, so every process must see every invalidation rather than
-/// share one copy with its replicas. Delivery is at most once, so each time the subscription is established the consumer flushes
-/// every hybrid's L1 instead of trusting entries whose invalidation may never have arrived.
+/// share one copy with its replicas. Delivery is at most once, so each time the subscription is established the consumer
+/// flushes every hybrid's L1 instead of trusting entries whose invalidation may never have arrived.
 /// </remarks>
 [PublicAPI]
 [BusConsumer(Identity, EveryInstance = true)]
