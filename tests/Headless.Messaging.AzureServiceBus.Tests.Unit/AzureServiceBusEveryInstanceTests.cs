@@ -12,6 +12,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -304,6 +305,84 @@ public sealed class AzureServiceBusEveryInstanceTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_report_a_gap_when_the_subscription_still_exists_after_a_missing_entity_error()
+    {
+        // given
+        await using var factory = _CreateFactory();
+        await using var client = await factory.CreateAsync(_Request(_instanceId), AbortToken);
+        var reestablished = 0;
+        client.AttachCallbacks(onMessage: null, onLog: _ => { });
+        client.AttachReestablishedCallback(_ =>
+        {
+            Interlocked.Increment(ref reestablished);
+            return Task.CompletedTask;
+        });
+        await client.SubscribeAsync(["PriceChanged"], AbortToken);
+
+        // when: the processor reports a missing entity, but the subscription is still there
+        await _RaiseProcessorErrorAsync(
+            client,
+            new ServiceBusException("transient", ServiceBusFailureReason.MessagingEntityNotFound)
+        );
+
+        // then: nothing was recreated, so nothing was lost and the consumer keeps its state
+        await _admin
+            .Received(1)
+            .CreateSubscriptionAsync(
+                Arg.Any<CreateSubscriptionOptions>(),
+                Arg.Any<CreateRuleOptions>(),
+                Arg.Any<CancellationToken>()
+            );
+        reestablished.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_give_each_subscription_delete_its_own_timeout_when_the_factory_is_disposed()
+    {
+        // given: two every-instance subscriptions, the first of which hangs until its delete times out
+        var time = new FakeTimeProvider();
+        var factory = _CreateFactory(timeProvider: time);
+        await using (var first = await factory.CreateAsync(_Request(_instanceId), AbortToken))
+        {
+            await first.SubscribeAsync(["PriceChanged"], AbortToken);
+        }
+
+        await using (var second = await factory.CreateAsync(_Request(Guid.NewGuid()), AbortToken))
+        {
+            await second.SubscribeAsync(["PriceChanged"], AbortToken);
+        }
+
+        var firstDeleteStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var tokenCancelledAtCall = new List<bool>();
+        _admin
+            .DeleteSubscriptionAsync(_TopicPath, Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                var token = call.Arg<CancellationToken>();
+                lock (tokenCancelledAtCall)
+                {
+                    tokenCancelledAtCall.Add(token.IsCancellationRequested);
+                }
+
+                if (firstDeleteStarted.TrySetResult())
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                }
+
+                return Substitute.For<Response>();
+            });
+
+        // when
+        var disposing = factory.DisposeAsync().AsTask();
+        await firstDeleteStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        time.Advance(AzureServiceBusConsumerClientFactory.CleanupTimeoutPerSubscription);
+        await disposing.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then: the slow first delete did not spend the second delete's budget
+        tokenCancelledAtCall.Should().Equal(false, false);
+    }
+
+    [Fact]
     public async Task should_leave_a_competing_subscription_to_its_operator_when_it_is_missing()
     {
         // given
@@ -390,7 +469,10 @@ public sealed class AzureServiceBusEveryInstanceTests : TestBase
     private static ConsumerClientRequest _Request(Guid instanceId) =>
         new(_Identity, 1, MessageLane.Bus, ConsumerSubscriptionKind.EveryInstance, instanceId);
 
-    private AzureServiceBusConsumerClientFactory _CreateFactory(bool autoProvision = true) =>
+    private AzureServiceBusConsumerClientFactory _CreateFactory(
+        bool autoProvision = true,
+        TimeProvider? timeProvider = null
+    ) =>
         new(
             NullLoggerFactory.Instance,
             Options.Create(
@@ -402,9 +484,21 @@ public sealed class AzureServiceBusEveryInstanceTests : TestBase
                     AutoProvision = autoProvision,
                 }
             ),
-            new ServiceCollection().BuildServiceProvider(),
+            _Services(timeProvider),
             _pool
         );
+
+    private static ServiceProvider _Services(TimeProvider? timeProvider)
+    {
+        var services = new ServiceCollection();
+
+        if (timeProvider is not null)
+        {
+            services.AddSingleton(timeProvider);
+        }
+
+        return services.BuildServiceProvider();
+    }
 
     private static Task _RaiseProcessorErrorAsync(IConsumerClient client, Exception exception)
     {
