@@ -1074,6 +1074,7 @@
         "dependencies": {
           "Headless.Caching.Abstractions": "[1.0.0, )",
           "Headless.Checks": "[1.0.0, )",
+          "Headless.Core": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
