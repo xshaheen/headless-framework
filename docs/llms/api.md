@@ -360,7 +360,7 @@ ASP.NET Core's `AddCors` remains the way to write a policy in code. Headless add
 | `AllowedMethods` | `[]` = any | A `*` entry also means any. |
 | `ExposedHeaders` | `[]` | Response headers scripts may read, beyond the framework's own. |
 | `ExposeFrameworkHeaders` | `true` | Also exposes `FrameworkExposedHeaders`: `ETag`, `Location`, `Retry-After`, `Content-Disposition`, `Idempotent-Replayed`. A switch, not a pre-filled list, because configuration binding appends to lists. |
-| `MaxAge` | `null` (no header) | Preflight cache lifetime; browsers cap it (Chromium at two hours). |
+| `MaxAge` | 10 minutes | Preflight cache lifetime. Without the header Chromium caches a preflight for five seconds; `00:00:00` sends `0` and turns caching off. Browsers cap it (Chromium at two hours). |
 
 ```csharp
 builder.Services.AddHeadlessCors(builder.Configuration.GetSection("Cors"));    // RestrictedCors
@@ -398,6 +398,8 @@ app.MapGroup("/public").RequireCors("public");
 
 **Native and mobile clients.** CORS is enforced by browsers, so it neither blocks nor protects non-browser callers. React Native on iOS and Android sends no `Origin`, and the CORS middleware passes such requests through unchanged. What does need an origin is anything running in a browser engine: Expo and React Native Web (`http://localhost:8081` for the Metro dev server, `http://localhost:19006` for older Expo web, then the deployed web origin), and Capacitor or Ionic webviews. A `react-native-webview` page loaded from a local file has the opaque origin `null`, which no policy can safely admit; serve that content from an `http(s)` origin instead. WebSocket upgrades bypass CORS entirely; restrict them with `WebSocketOptions.AllowedOrigins`.
 
+**Origins per environment.** Configuration merges arrays by index, not by replacement: an environment variable `Cors__AllowedOrigins__0` replaces only the first entry, and every later entry in `appsettings.json` still reaches production. Keep development origins such as `http://localhost:5173` in `appsettings.Development.json` and leave the base file with only the origins every environment needs, or set each index explicitly for a deployment. The validator cannot catch this, because a loopback origin is legitimate for some production clients, such as a Capacitor webview on `http://localhost`.
+
 Startup fails with `OptionsValidationException` when:
 
 - A policy has no `AllowedOrigins`, no `AllowedOriginTemplates`, no origin source, and no `AllowAnyOrigin`, with or without credentials.
@@ -405,7 +407,7 @@ Startup fails with `OptionsValidationException` when:
 - An origin contains `*`. Wildcards belong in `AllowedOriginTemplates`; any-origin access belongs to `AllowAnyOrigin`.
 - An origin or template is not a bare `scheme://host[:port]` origin: it carries a path or trailing slash, user info, a query, a fragment, surrounding whitespace, or an explicit default port (`https://app.example.com:443`), has no host, is a `file:` URL, or is not absolute (including the literal `null`). The browser's `Origin` header never carries these parts, so such an entry would silently match nothing.
 - A template does not start with `<scheme>://*.`, has a second `*`, or has a literal suffix of fewer than two labels (`https://*`, `https://*.`, `https://*.com`). A two-label public suffix such as `https://*.co.uk` passes and admits every site under it; never configure one.
-- A header, method, or exposed-header entry is blank, or `MaxAge` is zero or negative.
+- A header, method, or exposed-header entry is blank, or `MaxAge` is negative.
 
 #### API surfaces
 

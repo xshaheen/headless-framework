@@ -208,11 +208,7 @@ public static class SetupCors
             : settings.ExposedHeaders;
 
         policy.WithExposedHeaders([.. exposed]);
-
-        if (settings.MaxAge is { } maxAge)
-        {
-            policy.SetPreflightMaxAge(maxAge);
-        }
+        policy.SetPreflightMaxAge(settings.MaxAge);
 
         // The validator already refuses credentials on an any-origin policy; the guard keeps the builder from ever
         // producing the combination ASP.NET rejects at request time.

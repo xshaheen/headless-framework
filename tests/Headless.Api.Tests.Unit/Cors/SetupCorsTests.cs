@@ -61,7 +61,7 @@ public sealed class SetupCorsTests : TestBase
         policy.SupportsCredentials.Should().BeFalse();
         policy.AllowAnyHeader.Should().BeTrue();
         policy.AllowAnyMethod.Should().BeTrue();
-        policy.PreflightMaxAge.Should().BeNull();
+        policy.PreflightMaxAge.Should().Be(TimeSpan.FromMinutes(10));
         policy.ExposedHeaders.Should().BeEquivalentTo(HeadlessCorsOptions.FrameworkExposedHeaders);
     }
 

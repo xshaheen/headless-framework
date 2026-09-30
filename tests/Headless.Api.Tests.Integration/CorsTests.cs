@@ -212,7 +212,6 @@ public sealed class CorsTests : TestBase
             options.AllowedOrigins = [_App, _ExpoWeb];
             options.AllowCredentials = true;
             options.ExposedHeaders = ["ETag"];
-            options.MaxAge = TimeSpan.FromMinutes(10);
         });
         builder.Services.AddHeadlessCors("admin", options => options.AllowedOrigins = ["https://admin.example.com"]);
         builder.Services.AddHeadlessCors(
