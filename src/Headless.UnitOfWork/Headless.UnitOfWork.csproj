@@ -6,6 +6,7 @@
     <RootNamespace>Headless.UnitOfWork</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Jobs.EntityFramework" />
     <InternalsVisibleTo Include="Headless.UnitOfWork.EntityFramework" />
     <InternalsVisibleTo Include="Headless.UnitOfWork.PostgreSql" />
     <InternalsVisibleTo Include="Headless.UnitOfWork.SqlServer" />

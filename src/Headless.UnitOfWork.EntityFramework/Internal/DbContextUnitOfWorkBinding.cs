@@ -60,7 +60,34 @@ internal static class DbContextUnitOfWorkBinding
     /// </exception>
     public static bool TryGet(DbContext db, out IUnitOfWork unit)
     {
-        return _Binding.TryGet(db, out unit) || _TryJoinConnectionUnit(db, out unit);
+        if (_Binding.TryGet(db, out unit))
+        {
+            return true;
+        }
+
+        return DbConnectionUnitOfWorkBinding.TryGet(db.Database.GetDbConnection(), out var connectionUnit)
+            && _TryJoinConnectionUnit(db, connectionUnit, out unit);
+    }
+
+    /// <summary>
+    /// <see cref="TryGet" /> for a caller about to begin on <paramref name="db" />: a stale unit either binding
+    /// evicts is abandoned before this returns, so its transaction is gone when the begin runs.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// The connection carries an EF unit but the context already uses a different transaction.
+    /// </exception>
+    public static async ValueTask<IUnitOfWork?> TryGetAsync(DbContext db)
+    {
+        if (await _Binding.TryGetAsync(db).ConfigureAwait(false) is { } own)
+        {
+            return own;
+        }
+
+        var connectionUnit = await DbConnectionUnitOfWorkBinding
+            .TryGetAsync(db.Database.GetDbConnection())
+            .ConfigureAwait(false);
+
+        return connectionUnit is not null && _TryJoinConnectionUnit(db, connectionUnit, out var joined) ? joined : null;
     }
 
     /// <summary>
@@ -91,9 +118,24 @@ internal static class DbContextUnitOfWorkBinding
 
         if (DbConnectionUnitOfWorkBinding.TryGet(db.Database.GetDbConnection(), out var connectionUnit))
         {
-            throw new InvalidOperationException(
-                connectionUnit.Resource is EfUnitOfWorkResource ? SharedConnectionBoundMessage : ConnectionBoundMessage
-            );
+            throw new InvalidOperationException(_BoundConnectionMessage(connectionUnit));
+        }
+    }
+
+    /// <summary><see cref="ThrowIfBound" /> for a begin: a stale unit is abandoned, not left to the background, first.</summary>
+    public static async ValueTask ThrowIfBoundAsync(DbContext db)
+    {
+        if (await _Binding.TryGetAsync(db).ConfigureAwait(false) is not null)
+        {
+            throw new InvalidOperationException(AlreadyBoundMessage);
+        }
+
+        if (
+            await DbConnectionUnitOfWorkBinding.TryGetAsync(db.Database.GetDbConnection()).ConfigureAwait(false) is
+            { } connectionUnit
+        )
+        {
+            throw new InvalidOperationException(_BoundConnectionMessage(connectionUnit));
         }
     }
 
@@ -101,23 +143,28 @@ internal static class DbContextUnitOfWorkBinding
     /// Throws the EF-specific refusal when the connection beneath <paramref name="db" /> is bound by a unit the
     /// context cannot join: one begun through a raw-ADO provider.
     /// </summary>
-    public static void ThrowIfConnectionBound(DbContext db)
+    public static async ValueTask ThrowIfConnectionBoundAsync(DbContext db)
     {
-        if (DbConnectionUnitOfWorkBinding.TryGet(db.Database.GetDbConnection(), out _))
+        if (
+            await DbConnectionUnitOfWorkBinding.TryGetAsync(db.Database.GetDbConnection()).ConfigureAwait(false)
+            is not null
+        )
         {
             throw new InvalidOperationException(ConnectionBoundMessage);
         }
     }
 
-    private static bool _TryJoinConnectionUnit(DbContext db, out IUnitOfWork unit)
+    private static string _BoundConnectionMessage(IUnitOfWork connectionUnit)
+    {
+        return connectionUnit.Resource is EfUnitOfWorkResource ? SharedConnectionBoundMessage : ConnectionBoundMessage;
+    }
+
+    private static bool _TryJoinConnectionUnit(DbContext db, IUnitOfWork connectionUnit, out IUnitOfWork unit)
     {
         unit = null!;
 
         // Only an EF unit is joinable from here: a raw-ADO unit is refused by the callers with its own remedy.
-        if (
-            !DbConnectionUnitOfWorkBinding.TryGet(db.Database.GetDbConnection(), out var connectionUnit)
-            || connectionUnit.Resource is not EfUnitOfWorkResource { IsTransactionCompleted: false } resource
-        )
+        if (connectionUnit.Resource is not EfUnitOfWorkResource { IsTransactionCompleted: false } resource)
         {
             return false;
         }

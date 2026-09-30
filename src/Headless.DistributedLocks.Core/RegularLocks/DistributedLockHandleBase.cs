@@ -72,7 +72,7 @@ internal abstract class DistributedLockHandleBase : IDistributedLease, LeaseMoni
     protected DistributedLockHandleBase(
         string resource,
         string leaseId,
-        long? fencingToken,
+        LockFencingToken? fencingToken,
         TimeSpan leaseDuration,
         TimeSpan timeWaitedForLock,
         bool releaseOnDispose,
@@ -112,7 +112,7 @@ internal abstract class DistributedLockHandleBase : IDistributedLease, LeaseMoni
     /// The monotonically-increasing fencing token assigned by the backend at acquire time, or
     /// <see langword="null"/> when the backend does not support fencing tokens.
     /// </summary>
-    public long? FencingToken { get; }
+    public LockFencingToken? FencingToken { get; }
 
     /// <summary>The resource name for which this lease was acquired.</summary>
     public string Resource { get; }

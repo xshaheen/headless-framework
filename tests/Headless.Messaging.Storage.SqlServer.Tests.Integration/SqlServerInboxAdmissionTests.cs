@@ -133,7 +133,7 @@ public sealed class SqlServerInboxAdmissionTests(SqlServerTestFixture fixture, I
                     .Where(scan =>
                         string.Equals(
                             (string?)scan.Element(showplan + "Object")?.Attribute("Index"),
-                            $"[UX_MessagingReceived_InboxRootKey]",
+                            "[UX_MessagingReceived_InboxRootKey]",
                             StringComparison.Ordinal
                         )
                     )

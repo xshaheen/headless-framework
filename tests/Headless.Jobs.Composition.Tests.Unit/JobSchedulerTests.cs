@@ -528,8 +528,16 @@ public sealed class JobSchedulerTests : TestBase
             .Where(method => !Attribute.IsDefined(method, typeof(ObsoleteAttribute)))
             .ToArray();
 
-        methods.Should().HaveCount(30);
-        methods.Count(method => method.ReturnType == typeof(Task<JobScheduleResult>)).Should().Be(10);
+        methods.Should().HaveCount(29);
+        methods.Count(method => method.ReturnType == typeof(Task<JobScheduleResult>)).Should().Be(9);
+        methods
+            .Single(method =>
+                string.Equals(method.Name, nameof(IJobScheduler.CancelKeyedAsync), StringComparison.Ordinal)
+            )
+            .GetParameters()
+            .Select(parameter => parameter.ParameterType)
+            .Should()
+            .Equal(typeof(JobKeyScope), typeof(JobKey), typeof(long), typeof(CancellationToken));
         var keyedSchedules = methods.Where(method =>
             method.Name is nameof(IJobScheduler.ScheduleKeyedAsync) or nameof(IJobScheduler.ReplaceKeyedAsync)
         );
@@ -610,7 +618,6 @@ public sealed class JobSchedulerTests : TestBase
                 nameof(JobOptions.OnNodeDeath),
                 nameof(JobOptions.TenantId),
                 nameof(JobOptions.IsSystemJob),
-                nameof(JobOptions.Enlistment),
                 nameof(JobOptions.IdempotencyKey),
                 nameof(JobOptions.IdempotencyTtl)
             );
@@ -625,8 +632,7 @@ public sealed class JobSchedulerTests : TestBase
                 nameof(RecurringJobOptions.Description),
                 nameof(RecurringJobOptions.Retries),
                 nameof(RecurringJobOptions.RetryIntervals),
-                nameof(RecurringJobOptions.OnNodeDeath),
-                nameof(RecurringJobOptions.Enlistment)
+                nameof(RecurringJobOptions.OnNodeDeath)
             );
     }
 

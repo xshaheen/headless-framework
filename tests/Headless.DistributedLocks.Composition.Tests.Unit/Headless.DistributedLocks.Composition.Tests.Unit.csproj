@@ -5,6 +5,7 @@
     <OutputType>Exe</OutputType>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
@@ -13,6 +14,7 @@
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.Core\Headless.DistributedLocks.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.InMemory\Headless.DistributedLocks.InMemory.csproj" />
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.Core.Database\Headless.DistributedLocks.Core.Database.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Fencing.Abstractions\Headless.Fencing.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>

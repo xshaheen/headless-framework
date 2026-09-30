@@ -53,7 +53,7 @@ public sealed class PostgreSqlMembershipCustomSchemaTests(PostgreSqlMembershipFi
         await connection.OpenAsync(AbortToken);
         await using var command = connection.CreateCommand();
         command.CommandText = "SELECT tablename FROM pg_tables WHERE schemaname = @schema;";
-        command.Parameters.AddWithValue("schema", schema);
+        command.Parameters.AddWithValue(nameof(schema), schema);
 
         var tables = new List<string>();
         await using var reader = await command.ExecuteReaderAsync(AbortToken);

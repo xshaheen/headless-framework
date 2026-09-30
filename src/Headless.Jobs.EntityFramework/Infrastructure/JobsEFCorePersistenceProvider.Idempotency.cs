@@ -26,7 +26,6 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
     {
         Argument.IsNotNull(job);
         Argument.IsNotEmpty(idempotencyKey);
-        JobAtomicity.RejectDirect([job]);
         JobIntentFingerprint.RejectOrdinaryMutation(job);
         JobContract.ValidateName(idempotencyKey);
         JobContract.ValidateIdempotencyTtl(idempotencyTtl);

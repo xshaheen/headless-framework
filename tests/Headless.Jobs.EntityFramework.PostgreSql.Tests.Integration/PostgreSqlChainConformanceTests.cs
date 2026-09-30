@@ -62,6 +62,18 @@ public sealed class PostgreSqlChainConformanceTests(PostgreSqlJobsCoordinationFi
     }
 
     [Fact]
+    public override Task chain_enqueue_through_the_unit_commits_every_node_with_the_unit()
+    {
+        return base.chain_enqueue_through_the_unit_commits_every_node_with_the_unit();
+    }
+
+    [Fact]
+    public override Task chain_enqueue_through_the_injected_scheduler_leaves_no_rows_when_the_write_fails()
+    {
+        return base.chain_enqueue_through_the_injected_scheduler_leaves_no_rows_when_the_write_fails();
+    }
+
+    [Fact]
     public override Task timed_child_is_not_claimable_while_parent_is_non_terminal()
     {
         return base.timed_child_is_not_claimable_while_parent_is_non_terminal();

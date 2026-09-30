@@ -2,7 +2,6 @@
 
 using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
-using Headless.UnitOfWork;
 
 namespace Headless.Jobs;
 
@@ -17,7 +16,6 @@ public sealed class JobOptionsBuilder
     private int? _retries;
     private int[]? _retryIntervals;
     private NodeDeathPolicy? _onNodeDeath;
-    private TransactionEnlistment _enlistment;
     private string? _correlationId;
     private string? _causationId;
     private string? _description;
@@ -47,13 +45,6 @@ public sealed class JobOptionsBuilder
     public JobOptionsBuilder WithNodeDeathPolicy(NodeDeathPolicy? policy)
     {
         _onNodeDeath = policy;
-        return this;
-    }
-
-    /// <summary>Sets how eagerly this job enlists in the active unit of work; this assertion remains set across builder reuse.</summary>
-    public JobOptionsBuilder WithEnlistment(TransactionEnlistment enlistment)
-    {
-        _enlistment = enlistment;
         return this;
     }
 
@@ -119,7 +110,6 @@ public sealed class JobOptionsBuilder
             Retries = _retries,
             RetryIntervals = _retryIntervals?.ToArray(),
             OnNodeDeath = _onNodeDeath,
-            Enlistment = _enlistment,
             CorrelationId = _correlationId,
             CausationId = _causationId,
             Description = _description,

@@ -14,7 +14,7 @@
 
 [اللغة: العربية](README.ar.md)
 
-185 packages &bull; One setup grammar &bull; Swap any provider in one line
+186 packages &bull; One setup grammar &bull; Swap any provider in one line
 
 [Why Headless](#why-headless) &bull; [60-second start](#60-second-start) &bull; [One grammar, every domain](#one-grammar-every-domain) &bull; [What is in the box](#what-is-in-the-box) &bull; [Package catalog](#package-catalog)
 
@@ -44,7 +44,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 Every service, repository, and handler that injects `ICache` is untouched by that edit. The same holds for `IBlobStorage` across S3, Azure, Cloudflare R2, the file system, Redis, and SFTP; for `IEmailSender` across SES, Azure Communication Services, and SMTP; and for messaging across eight transports.
 
-**You install three packages, not 185.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching.Core`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in one thing: `Headless.Extensions`.
+**You install three packages, not 186.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching.Core`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in one thing: `Headless.Extensions`.
 
 **Tests do not need Docker to be fast.** Caching, distributed locks, and messaging ship in-memory providers; email, SMS, and push notifications ship dev providers that send nothing; blob storage runs against the local file system. Unit tests exercise the real contract with no containers. When you want the real backend, `Headless.Testing.Testcontainers` supplies the fixtures. The repository itself runs 122 unit-test projects and 63 integration-test projects on that split.
 
@@ -252,7 +252,7 @@ Provider packages are ordinary NuGet packages. To add a custom backend, implemen
 ## Package catalog
 
 <details>
-<summary><strong>All 185 packages, grouped by domain</strong> — expand to browse</summary>
+<summary><strong>All 186 packages, grouped by domain</strong> — expand to browse</summary>
 
 ### API & Web
 
@@ -313,6 +313,7 @@ One blob storage interface with providers for every major cloud and protocol.
 | [Headless.Blobs.Azure](src/Headless.Blobs.Azure/README.md) | Azure Blob storage |
 | [Headless.Blobs.CloudflareR2](src/Headless.Blobs.CloudflareR2/README.md) | Cloudflare R2 (S3-compatible) blob storage |
 | [Headless.Blobs.FileSystem](src/Headless.Blobs.FileSystem/README.md) | Local filesystem storage |
+| [Headless.Blobs.MultiTenancy](src/Headless.Blobs.MultiTenancy/README.md) | Tenant scoping for blob stores |
 | [Headless.Blobs.Redis](src/Headless.Blobs.Redis/README.md) | Redis blob storage |
 | [Headless.Blobs.SignedUrlEndpoint](src/Headless.Blobs.SignedUrlEndpoint/README.md) | Signed download and upload URLs for blob stores without native presign |
 | [Headless.Blobs.SshNet](src/Headless.Blobs.SshNet/README.md) | SFTP blob storage |
@@ -587,7 +588,7 @@ Explicit unit of work: begin it on the line you choose from a singleton factory,
 
 | Package | Description |
 |---------|-------------|
-| [Headless.UnitOfWork.Abstractions](src/Headless.UnitOfWork.Abstractions/README.md) | Unit-of-work contracts: `IUnitOfWorkFactory`, `IUnitOfWork`, `IUnitOfWorkResource`, `IUnitOfWorkFeature`, `TransactionEnlistment` (zero dependencies) |
+| [Headless.UnitOfWork.Abstractions](src/Headless.UnitOfWork.Abstractions/README.md) | Unit-of-work contracts: `IUnitOfWorkFactory`, `IUnitOfWork`, `IUnitOfWorkResource`, `IUnitOfWorkFeature` (zero dependencies) |
 | [Headless.UnitOfWork](src/Headless.UnitOfWork/README.md) | The singleton factory, engine, and `AddUnitOfWork()` registration |
 | [Headless.UnitOfWork.EntityFramework](src/Headless.UnitOfWork.EntityFramework/README.md) | EF Core provider: `BeginAsync(db)` / `Enlist(db, tx)` / `RunAsync(db, ...)` |
 | [Headless.UnitOfWork.PostgreSql](src/Headless.UnitOfWork.PostgreSql/README.md) | Raw-ADO `NpgsqlConnection` provider with the same shape |
@@ -676,6 +677,7 @@ Cross-cutting utilities that belong to no single domain.
 | [Headless.Generator.Primitives](src/Headless.Generator.Primitives/README.md) | Primitive types source generator |
 | [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | Generator abstractions |
 | [Headless.Hosting](src/Headless.Hosting/README.md) | .NET hosting utilities |
+| [Headless.Http.Resilience](src/Headless.Http.Resilience/README.md) | Declared side-effect classes for outbound HTTP calls |
 | [Headless.NetTopologySuite](src/Headless.NetTopologySuite/README.md) | Geospatial utilities |
 | [Headless.Primitives](src/Headless.Primitives/README.md) | Value objects, result pattern, paging models, and domain primitives |
 | [Headless.Redis](src/Headless.Redis/README.md) | Redis utilities |

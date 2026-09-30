@@ -52,6 +52,7 @@ Core testing utilities and base classes for xUnit tests.
 - `TestCurrentUser` / `TestCurrentTenant` - Fake context implementations
 - `TenantIsolationHttpAssertions.ShouldAnswerNotFoundAcrossTenantsAsync(...)` - Asserts a cross-tenant request answers exactly like a missing id, over any `HttpClient`; see [Tenant isolation](#tenant-isolation)
 - `TenantWorld` - Tenants A and B over one `ICurrentTenant`, with `AsTenantA()`, `AsTenantB()`, `AsTenant(id)`, and `AsHost()` scopes and a static `CreatePrincipal(tenantId)`; see [Tenant isolation](#tenant-isolation)
+- `RecordedTestActivity.Start()` - Starts a fully recorded `Activity` on a private source and makes it `Activity.Current`, so a test can assert span tags without an OpenTelemetry pipeline; the listener samples only that source
 - `AddTestTimeProvider()` - Replaces the container's `TimeProvider` with a `FakeTimeProvider` and returns it
 - Assertion extensions for async operations
 - `AllBeSecretHashes(algorithmId)` - Asserts a string collection (for example a queried hash column) holds only PHC-encoded secret hashes of one algorithm; failures name the offending index and reason, never the value (see [security.md](security.md))
@@ -390,7 +391,7 @@ Floating tags such as `:latest` force Docker to hit the registry on every pull t
 
 The fixtures create their containers with Testcontainers reuse enabled, except `HeadlessRabbitMqFixture`, `HeadlessKafkaFixture`, and `HeadlessPulsarFixture`. These broker fixtures need clean restart semantics, so they always create fresh containers. When the host opts in with `testcontainers.reuse.enable=true` in `~/.testcontainers.properties` or the `TESTCONTAINERS_REUSE_ENABLE=true` environment variable, repeated local runs reattach to an already-warm reusable container instead of paying the cold-start cost. CI leaves reuse disabled, so reuse becomes a no-op and Ryuk reaps containers as usual.
 
-Because a reused container keeps state between runs, tests must be idempotent across runs: use drop-before-create (`DROP TABLE IF EXISTS` / `IF OBJECT_ID(...) IS NOT NULL DROP ...`) or guarded create (`CREATE ... IF NOT EXISTS`) rather than assuming a clean database. Each integration project reuses its own container, keyed by the test assembly name, so projects never share state.
+Because a reused container keeps state between runs, tests must be idempotent across runs: use drop-before-create (`DROP TABLE IF EXISTS` / `IF OBJECT_ID(...) IS NOT NULL DROP ...`) or guarded create (`CREATE ... IF NOT EXISTS`) rather than assuming a clean database. Each integration project reuses its own container in each checkout of the repository, keyed by the test assembly name (`headless.fixture` label) and the checkout's root directory (`headless.checkout` label), so neither two projects nor two worktrees running the same project share state. A removed worktree leaves its stopped containers behind; find them with `docker ps -a --filter label=headless.checkout=<path>`.
 
 ### Install
 

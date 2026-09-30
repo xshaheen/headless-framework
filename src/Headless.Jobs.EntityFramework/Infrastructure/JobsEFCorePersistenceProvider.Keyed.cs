@@ -23,7 +23,6 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
     )
     {
         Argument.IsNotNull(job);
-        JobAtomicity.RejectDirect([job]);
         var intent = job.Clone();
         var (result, persisted) = await _ExecuteKeyedTransactionAsync(
                 async (context, ct) =>

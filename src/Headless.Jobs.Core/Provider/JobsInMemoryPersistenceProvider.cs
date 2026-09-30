@@ -1021,7 +1021,6 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
     public Task<int> AddTimeJobsAsync(TTimeJob[] jobs, CancellationToken cancellationToken = default)
     {
-        JobAtomicity.RejectDirect(jobs);
         lock (_keyedOperations)
         {
             // Cross-root all-or-nothing (IJobPersistenceProvider.AddTimeJobsAsync contract): the WHOLE call — every
@@ -1176,7 +1175,6 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
     public Task<int> UpdateTimeJobsAsync(TTimeJob[] jobs, CancellationToken cancellationToken = default)
     {
-        JobAtomicity.RejectDirect(jobs);
         lock (_keyedOperations)
         {
             _RejectKeyedTreeUpdates(jobs);

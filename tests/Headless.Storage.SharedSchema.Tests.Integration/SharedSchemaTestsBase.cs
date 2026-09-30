@@ -165,8 +165,14 @@ public abstract class SharedSchemaTestsBase : TestBase
             .Should()
             .OnlyContain(o => o.Schema == HeadlessStorageDefaults.Schema, "every feature defaults to one schema");
 
-        var tables = objects.Where(o => o.Type == TableType).Select(o => o.Name).ToList();
-        var sequences = objects.Where(o => o.Type == SequenceType).Select(o => o.Name).ToList();
+        var tables = objects
+            .Where(o => string.Equals(o.Type, TableType, StringComparison.Ordinal))
+            .Select(o => o.Name)
+            .ToList();
+        var sequences = objects
+            .Where(o => string.Equals(o.Type, SequenceType, StringComparison.Ordinal))
+            .Select(o => o.Name)
+            .ToList();
 
         var expectedTables = ExpectedRawTables.SelectMany(f => f.Value).ToList();
 

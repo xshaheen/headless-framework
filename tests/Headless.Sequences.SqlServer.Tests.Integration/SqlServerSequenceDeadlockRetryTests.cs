@@ -40,9 +40,19 @@ public sealed class SqlServerSequenceDeadlockRetryTests(SqlServerSequencesFixtur
         // and: the test's session holds the gate row
         await using var holder = new SqlConnection(fixture.CountersConnectionString);
         await holder.OpenAsync(AbortToken);
-        var holderSession = await _ScalarAsync<short>(holder, null, "SET DEADLOCK_PRIORITY HIGH; SELECT @@SPID;");
+        var holderSession = await _ScalarAsync<short>(
+            holder,
+            null,
+            "SET DEADLOCK_PRIORITY HIGH; SELECT @@SPID;",
+            AbortToken
+        );
         await using var holderTransaction = (SqlTransaction)await holder.BeginTransactionAsync(AbortToken);
-        await _ScalarAsync<int>(holder, holderTransaction, $"UPDATE {_Gate} SET held = 1 WHERE id = 1; SELECT 1;");
+        await _ScalarAsync<int>(
+            holder,
+            holderTransaction,
+            $"UPDATE {_Gate} SET held = 1 WHERE id = 1; SELECT 1;",
+            AbortToken
+        );
 
         // when: the store's update takes the counter row and its trigger waits on the gate
         var increment = store.IncrementAsync(key, 1, 1, AbortToken).AsTask();

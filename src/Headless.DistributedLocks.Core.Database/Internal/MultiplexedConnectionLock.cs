@@ -369,7 +369,7 @@ internal sealed class MultiplexedConnectionLock(DatabaseConnection connection) :
         public string LeaseId =>
             LazyInitializer.EnsureInitialized(ref _leaseId, static () => Guid.NewGuid().ToString("N"));
 
-        public long? FencingToken => null;
+        public LockFencingToken? FencingToken => null;
 
         public string Resource { get; } = name;
 

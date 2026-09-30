@@ -91,8 +91,16 @@ public sealed class ApnsSetupTests : TestBase
         // then
         provider.GetService<IPushNotificationService>().Should().BeNull();
         provider.GetRequiredService<IPushNotificationServiceProvider>().GetService("a").Should().BeSameAs(a);
-        _server.Requests.Single(r => r.DeviceToken == "device-a").Headers["apns-topic"].Should().Be("com.example.a");
-        _server.Requests.Single(r => r.DeviceToken == "device-b").Headers["apns-topic"].Should().Be("com.example.b");
+        _server
+            .Requests.Single(r => string.Equals(r.DeviceToken, "device-a", StringComparison.Ordinal))
+            .Headers["apns-topic"]
+            .Should()
+            .Be("com.example.a");
+        _server
+            .Requests.Single(r => string.Equals(r.DeviceToken, "device-b", StringComparison.Ordinal))
+            .Headers["apns-topic"]
+            .Should()
+            .Be("com.example.b");
     }
 
     [Fact]
