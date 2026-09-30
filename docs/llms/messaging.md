@@ -265,16 +265,17 @@ Options are validated on start through their FluentValidation validators. Each p
 
 ### Storage Providers
 
-| Provider          | Outbox + persisted retry storage | Schema initializer            |
-|-------------------|----------------------------------|-------------------------------|
-| `PostgreSql`      | yes (`IDataStorage`)             | yes (`IStorageInitializer`)   |
-| `SqlServer`       | yes (`IDataStorage`)             | yes (`IStorageInitializer`)   |
-| `InMemoryStorage` | yes (`IDataStorage`, in-memory)  | yes (`IStorageInitializer`)   |
+| Provider          | Outbox + persisted retry storage | Table names               | Schema                         |
+|-------------------|----------------------------------|---------------------------|--------------------------------|
+| `PostgreSql`      | yes (`IDataStorage`)             | `IStorageTableNames`      | schema runner steps            |
+| `SqlServer`       | yes (`IDataStorage`)             | `IStorageTableNames`      | schema runner steps            |
+| `InMemoryStorage` | yes (`IDataStorage`, in-memory)  | `IStorageTableNames`      | none (process memory)          |
 
 How to read each column:
 
 - **Outbox + persisted retry storage** — the framework's combined storage contract. There is no separate `IRetryStorage` or `ISubscriptionStorage` abstraction; outbox writes and persisted-retry pickups go through the same `IDataStorage` implementation. The brainstorm proposed a "Subscriptions" column; the live code does not expose a subscription-tracking storage seam, so the column was dropped during planning rather than padded with "n/a" values.
-- **Schema initializer** — `IStorageInitializer` is the seam each storage uses to create or migrate its tables (PostgreSql/SqlServer) or initialize in-process state (InMemoryStorage). All three storages implement it.
+- **Table names** — `IStorageTableNames` resolves the physical published and received table names. It does not create anything.
+- **Schema** — the relational providers contribute their DDL to the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), which applies it in `StartingAsync`, before the messaging bootstrapper starts. A host that never starts (a test, a console tool that calls `IBootstrapper.BootstrapAsync` by hand) must apply the runner itself: `await provider.GetRequiredService<SchemaRunner>().ApplyAsync()`.
 - **Storage row IDs** — `MediumMessage.StorageId`, monitoring APIs, dashboard routes, and bulk storage actions use `Guid`. Storage providers generate row IDs through provider-keyed `IGuidGenerator` strategies, not database defaults. PostgreSQL creates `UUID` `Id` columns and resolves the `Version7` strategy; SQL Server creates `uniqueidentifier` `Id` columns, resolves the `SqlServer` comb strategy, and creates a `uniqueidentifier` table-valued ID-list type.
 - **Retry row owners** — persisted published and received rows include nullable `Owner` (`node@incarnation`). It is stamped only when a Coordination membership identity is active and is cleared when `LockedUntil` is cleared.
 
@@ -317,7 +318,6 @@ Table names are not configurable; each provider creates its own fixed set inside
 | `messaging_received` | `MessagingReceived` | Inbox rows |
 | `messaging_inbox_operation_receipts` | `MessagingInboxOperationReceipts` | Operator and cleanup receipts |
 | `messaging_inbox_audit` | `MessagingInboxAudit` | Operator and cleanup audit |
-| `messaging_schema_state` | `MessagingSchemaState` | Schema readiness versions |
 
 Columns, indexes, and constraints follow the same split: snake_case on PostgreSQL (`status_name`, `next_retry_at`, `idx_messaging_received_status_name_added`) and PascalCase on SQL Server (`StatusName`, `NextRetryAt`). Raw SQL against the PostgreSQL tables needs no identifier quoting except for the `"group"` column, whose name is a reserved word.
 
@@ -1732,16 +1732,15 @@ Configure the connection string and provider-specific storage options through `P
 
 Known orphans use a separate bounded probe batch and recover only when the exact consumer identity, logical contract name/version, and lane return. They do not expire automatically. Unclaimed orphans permit Hold/ReleaseHold and unheld Purge; live claims block those actions, and ForceReprocess remains terminal-only. A hold protects retention and purge but does not stop recovery.
 
-History retention uses the shared `MessagingOptions` defaults: cleanup receipts/audits 7 days each, operator receipts 30 days, and operator audits 90 days. All four are positive configurable minimum residence durations. Audit references can extend receipt lifetime; deleting history does not release holds. PostgreSQL database time controls history age. Initialization adds the history-selection and audit-reference indexes idempotently. This history also covers scheduled-delivery operator actions (revoke, dispatch-now) under the shared `TargetKind` ledger; the schema is created fresh with the generalized ledger columns (greenfield — no prior schema versions exist), and the `inbox` schema-state version pins the readiness contract. See [Core configuration](#configuration-3) for probe settings, replay limits, rollout effects, and collector pacing.
+History retention uses the shared `MessagingOptions` defaults: cleanup receipts/audits 7 days each, operator receipts 30 days, and operator audits 90 days. All four are positive configurable minimum residence durations. Audit references can extend receipt lifetime; deleting history does not release holds. PostgreSQL database time controls history age. The schema steps create the history-selection and audit-reference indexes. This history also covers scheduled-delivery operator actions (revoke, dispatch-now) under the shared `TargetKind` ledger; the schema is created fresh with the generalized ledger columns (greenfield — no prior schema versions exist), and the runner's `headless_schema_history` rows for `Messaging` pin the schema contract. See [Core configuration](#configuration-3) for probe settings, replay limits, rollout effects, and collector pacing.
 
-- **`DdlCommandTimeout`** (`TimeSpan?`, default `null`): timeout budget for schema-init DDL — the `CREATE INDEX CONCURRENTLY` / `DROP INDEX CONCURRENTLY` builds, the `CREATE EXTENSION` probe, and the advisory-lock waits that gate them. Decoupled from the OLTP `MessagingOptions.CommandTimeout` (~30s) because these can run for minutes-to-hours on a large table; a premature kill leaves a `CONCURRENTLY` index `INVALID` for the next boot to repair. Default `null` (and `TimeSpan.Zero`) mean **no timeout** (wait indefinitely). A negative value is rejected at validation time.
-- **Initializer lock**: concurrent replicas serialize on the session advisory lock `headless_messaging_init:{schema}`. The initializer polls `pg_try_advisory_lock` instead of blocking in `pg_advisory_lock`, because a blocked statement holds a snapshot that the lock holder's `CREATE INDEX CONCURRENTLY` waits on, which deadlocks two booting replicas. The schema transaction also takes `headless_schema_init:{schema}` before `CREATE SCHEMA`, so another feature creating the same schema cannot roll back the messaging DDL.
-- **`pg_trgm` on managed PostgreSQL**: dashboard content (ILIKE) search uses GIN trigram indexes that need the `pg_trgm` extension. The initializer runs `CREATE EXTENSION IF NOT EXISTS pg_trgm` best-effort **outside** the schema transaction. On managed PostgreSQL (AWS RDS, Azure, Neon, Supabase) the app role usually lacks `CREATE EXTENSION`; it logs a warning, **skips the trigram content indexes**, and continues — write/retry paths are unaffected, only dashboard content search is disabled until a DBA pre-installs `pg_trgm`. (Previously `CREATE EXTENSION` ran as the first statement of the schema transaction, so a permission error rolled back the entire schema batch and left messaging dead at startup.)
-- **Bootstrap indexes**: fresh schemas directly create `(status_name, added)` indexes for dashboard timelines/statistics and a partial `(version, expires_at) WHERE status_name = 'Queued'` index for delayed-message scheduling. The initializer is schema bootstrap, not a migration runner, so it does not alter legacy columns or drop superseded indexes.
+- **Schema steps**: `Messaging/1` creates the tables, constraints, and key indexes and asserts that a pre-existing table has the expected shape; `Messaging/2` creates the retry-pickup, owner, and history indexes; `Messaging/3` installs `pg_trgm` and the trigram indexes. The [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies them under its one lock per database. Indexes are built with plain `CREATE INDEX`, not `CONCURRENTLY`, so a build on a large existing table blocks writes to it until it finishes; `SchemaRunnerOptions.CommandTimeout` (default 10 minutes) bounds each statement.
+- **`pg_trgm` on managed PostgreSQL**: dashboard content (ILIKE) search uses GIN trigram indexes that need the `pg_trgm` extension. Step `Messaging/3` tries `CREATE EXTENSION IF NOT EXISTS pg_trgm` inside a guarded block. On managed PostgreSQL (AWS RDS, Azure, Neon, Supabase) the app role usually lacks `CREATE EXTENSION`; the step raises a warning, **skips the trigram content indexes**, and still records itself — write/retry paths are unaffected, only dashboard content search is disabled. Because the step is recorded, installing `pg_trgm` later does not add the indexes on the next start: have the DBA install the extension **before** the first start, or create the two trigram indexes by hand afterwards.
+- **Bootstrap indexes**: fresh schemas directly create `(status_name, added)` indexes for dashboard timelines/statistics and a partial `(version, expires_at) WHERE status_name = 'Queued'` index for delayed-message scheduling. The steps create the final schema shape; a future shape change is a new step.
 
 ### Runtime behavior
 
-Registers PostgreSQL storage, monitoring API, and storage initializer. It does not register EF Core or `Headless.UnitOfWork`.
+Registers PostgreSQL storage, the monitoring API, table-name resolution, and the messaging schema contribution. It does not register EF Core or `Headless.UnitOfWork`.
 
 ## Headless.Messaging.Storage.PostgreSql.EntityFramework
 
@@ -1786,15 +1785,15 @@ Configure the connection string and provider-specific storage options through `S
 
 Known orphans use a separate bounded probe batch and recover only when the exact consumer identity, logical contract name/version, and lane return. They do not expire automatically. Unclaimed orphans permit Hold/ReleaseHold and unheld Purge; live claims block those actions, and ForceReprocess remains terminal-only. A hold protects retention and purge but does not stop recovery.
 
-History retention uses the shared `MessagingOptions` defaults: cleanup receipts/audits 7 days each, operator receipts 30 days, and operator audits 90 days. All four are positive configurable minimum residence durations. Audit references can extend receipt lifetime; deleting history does not release holds. SQL Server database time controls history age. Initialization adds the history-selection and audit-reference indexes idempotently. This history also covers scheduled-delivery operator actions (revoke, dispatch-now) under the shared `TargetKind` ledger; the schema is created fresh with the generalized ledger columns (greenfield — no prior schema versions exist), and the `inbox` schema-state version pins the readiness contract. See [Core configuration](#configuration-3) for probe settings, replay limits, rollout effects, and collector pacing.
+History retention uses the shared `MessagingOptions` defaults: cleanup receipts/audits 7 days each, operator receipts 30 days, and operator audits 90 days. All four are positive configurable minimum residence durations. Audit references can extend receipt lifetime; deleting history does not release holds. SQL Server database time controls history age. The schema steps create the history-selection and audit-reference indexes. This history also covers scheduled-delivery operator actions (revoke, dispatch-now) under the shared `TargetKind` ledger; the schema is created fresh with the generalized ledger columns (greenfield — no prior schema versions exist), and the runner's `headless_schema_history` rows for `Messaging` pin the schema contract. See [Core configuration](#configuration-3) for probe settings, replay limits, rollout effects, and collector pacing.
 
-Fresh schemas directly create `([StatusName],[Added])` indexes for dashboard timelines/statistics. The initializer creates the final schema shape and does not carry legacy migration DDL.
+Fresh schemas directly create `([StatusName],[Added])` indexes for dashboard timelines/statistics. The [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies two steps: `Messaging/1` (table types, tables, constraints, indexes, and a shape assertion) and `Messaging/2` (history indexes).
 
-- **`DdlCommandTimeout`** (`TimeSpan?`, default `null`): timeout for schema-init DDL that grows with table size. That covers the history-table index builds on `MessagingInboxOperationReceipts` and `MessagingInboxAudit`, plus the `sp_getapplock` wait that serializes initializers. It is separate from the OLTP `MessagingOptions.CommandTimeout` (~30s) because upgraded schemas already hold an unbounded history backlog. The builds run offline, since `ONLINE = ON` depends on the edition, and block writes to that history table until they finish. Each index is its own command, run while the initializer lock is held. Inbox readiness is published only after the builds finish, so peer replicas wait instead of failing. `null` and `TimeSpan.Zero` mean **no timeout**. A negative value is rejected at validation time.
+- **DDL timeout**: the history-index builds are bounded by `SchemaRunnerOptions.CommandTimeout` (default 10 minutes), not the OLTP `MessagingOptions.CommandTimeout`. The builds run offline, since `ONLINE = ON` depends on the edition, and block writes to that history table until they finish. Peer replicas wait on the runner's lock instead of failing.
 
 ### Runtime behavior
 
-Registers SQL Server storage, monitoring API, and storage initializer. It does not register EF Core or `Headless.UnitOfWork`.
+Registers SQL Server storage, the monitoring API, table-name resolution, and the messaging schema contribution. It does not register EF Core or `Headless.UnitOfWork`.
 
 ## Headless.Messaging.Storage.SqlServer.EntityFramework
 
