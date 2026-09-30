@@ -251,6 +251,47 @@ public sealed class MessageContractTests : TestBase
         declare.Should().Throw<ArgumentException>();
     }
 
+    [Fact]
+    public void should_resolve_the_contract_name_for_a_publish_before_the_consumer_drain()
+    {
+        // given — a publish that runs before startup drains the consumers, such as one from a hosted service's
+        // StartAsync, must already see the declared name rather than cache the convention name.
+        var services = new ServiceCollection();
+        services.ConfigureMessaging(messaging => messaging.Message<OrderPlaced>(_OrderPlacedName));
+        _AddMessagingHost(services);
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var prepared = provider.GetRequiredService<IMessagePublishRequestFactory>().Create(new OrderPlaced("order-1"));
+
+        // then
+        prepared.MessageName.Should().Be(_OrderPlacedName);
+        provider.GetRequiredService<ConsumerRegistry>().HasCompletedMessageRegistrationDrain.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("orders.same")]
+    [InlineData("Orders.Same")]
+    public async Task should_reject_two_message_types_declaring_one_contract_name_at_startup(string otherName)
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.ConfigureMessaging(messaging =>
+        {
+            messaging.Message<OrderPlaced>("orders.same");
+            messaging.Message<OtherOrderPlaced>(otherName);
+        });
+        _AddMessagingHost(services);
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var act = () => provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*OrderPlaced*OtherOrderPlaced*");
+    }
+
     // A contracts package exposes one declaration method that every module calls, so each call passes the same cached
     // selector delegate and the declarations are identical.
     private static void _DeclareOrderContracts(MessagingContributionBuilder messaging)
@@ -286,6 +327,8 @@ public sealed class MessageContractTests : TestBase
     }
 
     public sealed record OrderPlaced(string OrderId);
+
+    public sealed record OtherOrderPlaced(string OrderId);
 
     public sealed class OrderPlacedBusHandler : IConsume<OrderPlaced>
     {

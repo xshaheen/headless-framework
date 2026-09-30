@@ -21,20 +21,16 @@ public sealed class ContributionOrderTests : TestBase
 
         // when
         services.ConfigureMessaging(messaging =>
-            messaging.Bus.ForMessage<ContributedBusMessage>(message =>
-                message
-                    .Contract("tests.contributions.bus")
-                    .Consumer<ContributedBusHandler>(consumer => consumer.ConsumerIdentity(_BeforeIdentity))
-            )
-        );
+        {
+            messaging.Message<ContributedBusMessage>("tests.contributions.bus");
+            messaging.AddConsumer<ContributedBusHandler>();
+        });
         _AddMessagingHost(services);
         services.ConfigureMessaging(messaging =>
-            messaging.Queue.ForMessage<ContributedQueueMessage>(message =>
-                message
-                    .Contract("tests.contributions.queue")
-                    .Consumer<ContributedQueueHandler>(consumer => consumer.ConsumerIdentity(_AfterIdentity))
-            )
-        );
+        {
+            messaging.Message<ContributedQueueMessage>("tests.contributions.queue");
+            messaging.AddConsumer<ContributedQueueHandler>();
+        });
         using var provider = services.BuildServiceProvider();
 
         // then
@@ -46,8 +42,6 @@ public sealed class ContributionOrderTests : TestBase
                 (typeof(ContributedBusHandler), MessageLane.Bus, "tests.contributions.bus", _BeforeIdentity),
                 (typeof(ContributedQueueHandler), MessageLane.Queue, "tests.contributions.queue", _AfterIdentity),
             ]);
-        provider.GetRequiredService<IConsume<ContributedBusMessage>>().Should().BeOfType<ContributedBusHandler>();
-        provider.GetRequiredService<IConsume<ContributedQueueMessage>>().Should().BeOfType<ContributedQueueHandler>();
     }
 
     [Fact]
@@ -56,20 +50,16 @@ public sealed class ContributionOrderTests : TestBase
         // given
         var services = new ServiceCollection();
         services.ConfigureMessaging(messaging =>
-            messaging.Queue.ForMessage<ContributedQueueMessage>(message =>
-                message
-                    .Contract("tests.contributions.queue")
-                    .Consumer<ContributedQueueHandler>(consumer => consumer.ConsumerIdentity(_AfterIdentity))
-            )
-        );
+        {
+            messaging.Message<ContributedQueueMessage>("tests.contributions.queue");
+            messaging.AddConsumer<ContributedQueueHandler>();
+        });
         _AddMessagingHost(services);
         services.ConfigureMessaging(messaging =>
-            messaging.Bus.ForMessage<ContributedBusMessage>(message =>
-                message
-                    .Contract("tests.contributions.bus")
-                    .Consumer<ContributedBusHandler>(consumer => consumer.ConsumerIdentity(_BeforeIdentity))
-            )
-        );
+        {
+            messaging.Message<ContributedBusMessage>("tests.contributions.bus");
+            messaging.AddConsumer<ContributedBusHandler>();
+        });
         using var provider = services.BuildServiceProvider();
 
         // when
@@ -248,6 +238,7 @@ public sealed class ContributionOrderTests : TestBase
 
     public sealed record ContributedQueueMessage(string Id);
 
+    [BusConsumer(_BeforeIdentity)]
     public sealed class ContributedBusHandler : IConsume<ContributedBusMessage>
     {
         public ValueTask ConsumeAsync(
@@ -264,6 +255,7 @@ public sealed class ContributionOrderTests : TestBase
         ) => ValueTask.CompletedTask;
     }
 
+    [QueueConsumer(_AfterIdentity)]
     public sealed class ContributedQueueHandler : IConsume<ContributedQueueMessage>
     {
         public ValueTask ConsumeAsync(

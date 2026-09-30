@@ -399,19 +399,11 @@ public sealed class ConsumerRegisterTests : TestBase
         await using var provider = _CreateProvider(
             configureMessaging: setup =>
             {
-                setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
-                    message
-                        .Contract("ready-messageName")
-                        .Consumer<BootstrapReadyConsumer>(consumer =>
-                            consumer
-                                .StableContract("tests.consumer-register.bootstrap-ready")
-                                .Group("ready-group")
-                                .Concurrency(1)
-                        )
-                );
+                setup.AddConsumer<BootstrapReadyConsumer>();
             },
             configureServices: services =>
             {
+                services.ConfigureMessaging(messaging => messaging.Message<BootstrapReadyMessage>("ready-messageName"));
                 services.AddSingleton<IConsumerClientFactory>(factory);
                 services.AddSingleton<BootstrapReadyConsumer>();
             }
@@ -451,16 +443,11 @@ public sealed class ConsumerRegisterTests : TestBase
         await using var provider = _CreateProvider(
             configureMessaging: setup =>
             {
-                setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
-                    message
-                        .Contract("ready-messageName")
-                        .Consumer<BootstrapReadyConsumer>(consumer =>
-                            consumer.StableContract("tests.consumer-register.inbox").Group("ready-group").Concurrency(1)
-                        )
-                );
+                setup.AddConsumer<BootstrapReadyConsumer>();
             },
             configureServices: services =>
             {
+                services.ConfigureMessaging(messaging => messaging.Message<BootstrapReadyMessage>("ready-messageName"));
                 services.AddSingleton(dispatcher);
                 services.AddSingleton<BootstrapReadyConsumer>();
             }
@@ -517,16 +504,13 @@ public sealed class ConsumerRegisterTests : TestBase
         await using var provider = _CreateProvider(
             configureMessaging: setup =>
             {
-                setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
-                    message
-                        .Contract("ready-messageName", "2")
-                        .Consumer<BootstrapReadyConsumer>(consumer =>
-                            consumer.StableContract("tests.consumer-register.contract-v2").Group("ready-group")
-                        )
-                );
+                setup.AddConsumer<BootstrapReadyConsumer>();
             },
             configureServices: services =>
             {
+                services.ConfigureMessaging(messaging =>
+                    messaging.Message<BootstrapReadyMessage>("ready-messageName", "2")
+                );
                 services.AddSingleton(dispatcher);
                 services.AddSingleton<BootstrapReadyConsumer>();
             }
@@ -589,19 +573,11 @@ public sealed class ConsumerRegisterTests : TestBase
         await using var provider = _CreateProvider(
             configureMessaging: setup =>
             {
-                setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
-                    message
-                        .Contract("ready-messageName")
-                        .Consumer<BootstrapReadyConsumer>(consumer =>
-                            consumer
-                                .StableContract("tests.consumer-register.bootstrap-ready")
-                                .Group("ready-group")
-                                .Concurrency(1)
-                        )
-                );
+                setup.AddConsumer<BootstrapReadyConsumer>();
             },
             configureServices: services =>
             {
+                services.ConfigureMessaging(messaging => messaging.Message<BootstrapReadyMessage>("ready-messageName"));
                 services.AddSingleton<IConsumerClientFactory>(factory);
                 services.AddSingleton<BootstrapReadyConsumer>();
             }
@@ -858,9 +834,9 @@ public sealed class ConsumerRegisterTests : TestBase
     {
         var logs = new List<(LogLevel Level, EventId EventId)>();
         var mockCircuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
-        mockCircuitBreaker.TryAcquireHalfOpenProbe("0:tests.consumer-register.open-admission").Returns(4L);
+        mockCircuitBreaker.TryAcquireHalfOpenProbe($"0:{BootstrapReadyConsumer.Identity}").Returns(4L);
         mockCircuitBreaker
-            .TryGetOpenEpoch("0:tests.consumer-register.open-admission", out Arg.Any<long>())
+            .TryGetOpenEpoch($"0:{BootstrapReadyConsumer.Identity}", out Arg.Any<long>())
             .Returns(callInfo =>
             {
                 callInfo[1] = 7L;
@@ -869,15 +845,11 @@ public sealed class ConsumerRegisterTests : TestBase
 
         await using var provider = _CreateProvider(
             mockCircuitBreaker,
-            configureMessaging: setup =>
-                setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
-                    message
-                        .Contract("ready-messageName")
-                        .Consumer<BootstrapReadyConsumer>(consumer =>
-                            consumer.StableContract("tests.consumer-register.open-admission").Group("ready-group")
-                        )
-                ),
-            configureServices: services => services.AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(logs))
+            configureMessaging: setup => setup.AddConsumer<BootstrapReadyConsumer>(),
+            configureServices: services =>
+                services
+                    .ConfigureMessaging(messaging => messaging.Message<BootstrapReadyMessage>("ready-messageName"))
+                    .AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(logs))
         );
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
         typeof(ConsumerRegister)
@@ -916,9 +888,9 @@ public sealed class ConsumerRegisterTests : TestBase
     {
         var logs = new List<(LogLevel Level, EventId EventId)>();
         var mockCircuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
-        mockCircuitBreaker.TryAcquireHalfOpenProbe("0:tests.consumer-register.open-admission").Returns(4L);
+        mockCircuitBreaker.TryAcquireHalfOpenProbe($"0:{BootstrapReadyConsumer.Identity}").Returns(4L);
         mockCircuitBreaker
-            .TryGetOpenEpoch("0:tests.consumer-register.open-admission", out Arg.Any<long>())
+            .TryGetOpenEpoch($"0:{BootstrapReadyConsumer.Identity}", out Arg.Any<long>())
             .Returns(callInfo =>
             {
                 callInfo[1] = 7L;
@@ -927,15 +899,11 @@ public sealed class ConsumerRegisterTests : TestBase
 
         await using var provider = _CreateProvider(
             mockCircuitBreaker,
-            configureMessaging: setup =>
-                setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
-                    message
-                        .Contract("ready-messageName")
-                        .Consumer<BootstrapReadyConsumer>(consumer =>
-                            consumer.StableContract("tests.consumer-register.open-admission").Group("ready-group")
-                        )
-                ),
-            configureServices: services => services.AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(logs))
+            configureMessaging: setup => setup.AddConsumer<BootstrapReadyConsumer>(),
+            configureServices: services =>
+                services
+                    .ConfigureMessaging(messaging => messaging.Message<BootstrapReadyMessage>("ready-messageName"))
+                    .AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(logs))
         );
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
         var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
@@ -946,7 +914,7 @@ public sealed class ConsumerRegisterTests : TestBase
             )!
             .SetValue(register, mockCircuitBreaker);
         var handle = _CreateHandle(handleType);
-        handleType.GetProperty("GroupName")!.SetValue(handle, "ready-group");
+        handleType.GetProperty("GroupName")!.SetValue(handle, BootstrapReadyConsumer.Identity);
         await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [Substitute.For<IConsumerClient>()])!;
         await _InvokePauseAsync(register, handle, 7);
 
@@ -954,7 +922,7 @@ public sealed class ConsumerRegisterTests : TestBase
             typeof(ConsumerRegister)
                 .GetField("_groupHandles", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
                 .GetValue(register)!;
-        groupHandles["0:ready-group"] = handle;
+        groupHandles[$"0:{BootstrapReadyConsumer.Identity}"] = handle;
         await using var client = new InboxConsumerClient();
         var serializer = provider.GetRequiredService<Headless.Messaging.Serialization.ISerializer>();
         var dispatcher = provider.GetRequiredService<IDispatcher>();
@@ -1160,22 +1128,16 @@ public sealed class ConsumerRegisterTests : TestBase
             builder.SetMinimumLevel(LogLevel.Debug);
         });
 
+        services.ConfigureMessaging(messaging => messaging.Message<BootstrapReadyMessage>("ready-messageName"));
         var messagingBuilder = services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
             setup.UseConventions(c =>
             {
-                c.UseApplicationId("messaging-tests");
                 c.UseVersion("v1");
             });
-            setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
-                message
-                    .Contract("ready-messageName")
-                    .Consumer<BootstrapReadyConsumer>(consumer =>
-                        consumer.StableContract("tests.consumer-register.receive-ring").Group("ready-group")
-                    )
-            );
+            setup.AddConsumer<BootstrapReadyConsumer>();
             configureOptions?.Invoke(setup.Options);
             if (onExhausted is not null)
             {
@@ -1185,10 +1147,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
         if (middleware is not null)
         {
-            messagingBuilder.AddReceiveMiddlewareFor<RecordingReceiveMiddleware, BootstrapReadyMessage>(
-                "ready-group",
-                MessageLane.Bus
-            );
+            messagingBuilder.AddReceiveMiddleware<RecordingReceiveMiddleware>();
 
             // The builder's TryAddEnumerable registers a fresh RecordingReceiveMiddleware instance;
             // replace every IReceiveMiddleware registration with the test's instance so the ring
@@ -1275,17 +1234,13 @@ public sealed class ConsumerRegisterTests : TestBase
     [Fact]
     public async Task startup_keys_circuits_by_consumer_identity_and_pauses_its_clients_on_open()
     {
-        // given — a consumer whose subscription name differs from its identity
+        // given
         await using var provider = _CreateProvider(
-            configureMessaging: setup =>
-                setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
-                    message
-                        .Contract("ready-messageName")
-                        .Consumer<BootstrapReadyConsumer>(consumer =>
-                            consumer.StableContract("tests.consumer-register.circuit-identity").Group("ready-group")
-                        )
-                ),
-            configureServices: services => services.AddSingleton<BootstrapReadyConsumer>()
+            configureMessaging: setup => setup.AddConsumer<BootstrapReadyConsumer>(),
+            configureServices: services =>
+                services
+                    .ConfigureMessaging(messaging => messaging.Message<BootstrapReadyMessage>("ready-messageName"))
+                    .AddSingleton<BootstrapReadyConsumer>()
         );
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
         var monitor = provider.GetRequiredService<ICircuitBreakerMonitor>();
@@ -1295,16 +1250,12 @@ public sealed class ConsumerRegisterTests : TestBase
 
         try
         {
-            // then — the circuit is registered under the identity, and the subscription name has none
-            monitor
-                .GetState(MessageLane.Bus, "tests.consumer-register.circuit-identity")
-                .Should()
-                .Be(CircuitBreakerState.Closed);
-            monitor.GetState(MessageLane.Bus, "ready-group").Should().BeNull();
-            monitor.KnownConsumers.Should().Equal($"{MessageLane.Bus:D}:tests.consumer-register.circuit-identity");
+            // then — the circuit is registered under the identity
+            monitor.GetState(MessageLane.Bus, BootstrapReadyConsumer.Identity).Should().Be(CircuitBreakerState.Closed);
+            monitor.KnownConsumers.Should().Equal($"{MessageLane.Bus:D}:{BootstrapReadyConsumer.Identity}");
 
             // when — the identity's circuit opens
-            (await monitor.ForceOpenAsync(MessageLane.Bus, "tests.consumer-register.circuit-identity", AbortToken))
+            (await monitor.ForceOpenAsync(MessageLane.Bus, BootstrapReadyConsumer.Identity, AbortToken))
                 .Should()
                 .BeTrue();
 
@@ -1323,10 +1274,7 @@ public sealed class ConsumerRegisterTests : TestBase
                 .ContainSingle()
                 .Which.Should()
                 .Match(handle => _GetIsPaused(handleType, handle));
-            monitor
-                .GetState(MessageLane.Bus, "tests.consumer-register.circuit-identity")
-                .Should()
-                .Be(CircuitBreakerState.Open);
+            monitor.GetState(MessageLane.Bus, BootstrapReadyConsumer.Identity).Should().Be(CircuitBreakerState.Open);
         }
         finally
         {
@@ -1350,8 +1298,8 @@ public sealed class ConsumerRegisterTests : TestBase
 
         // then — storage keys the row by the routed consumer's identity, not the client's subscription name
         var admission = run.Storage.Admissions.Should().ContainSingle().Subject;
-        admission.ConsumerIdentity.Should().Be("tests.consumer-register.receive-ring");
-        admission.Message.Origin.GetConsumerIdentity().Should().Be("tests.consumer-register.receive-ring");
+        admission.ConsumerIdentity.Should().Be(BootstrapReadyConsumer.Identity);
+        admission.Message.Origin.GetConsumerIdentity().Should().Be(BootstrapReadyConsumer.Identity);
     }
 
     [Fact]
@@ -1370,10 +1318,7 @@ public sealed class ConsumerRegisterTests : TestBase
         );
 
         // then
-        circuitBreaker
-            .Received(1)
-            .TryAcquireHalfOpenProbe($"{MessageLane.Bus:D}:tests.consumer-register.receive-ring");
-        circuitBreaker.DidNotReceive().TryAcquireHalfOpenProbe($"{MessageLane.Bus:D}:ready-group");
+        circuitBreaker.Received(1).TryAcquireHalfOpenProbe($"{MessageLane.Bus:D}:{BootstrapReadyConsumer.Identity}");
     }
 
     [Fact]
@@ -1756,7 +1701,6 @@ public sealed class ConsumerRegisterTests : TestBase
             setup.UseProcessLocalInMemoryStorage();
             setup.UseConventions(c =>
             {
-                c.UseApplicationId("messaging-tests");
                 c.UseVersion("v1");
             });
 
@@ -1765,7 +1709,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
         // Run service overrides AFTER AddHeadlessMessaging so test-supplied registrations (e.g. a fake
         // IConsumerClientFactory) win last-writer-wins over the InMemory transport's defaults. Consumer
-        // registration belongs in configureMessaging via setup.Bus/Queue.ForMessage, which runs inside the callback.
+        // registration belongs in configureMessaging via setup.AddConsumer, which runs inside the callback.
         configureServices?.Invoke(services);
 
         if (circuitBreakerStateManager is not null)
@@ -1800,7 +1744,7 @@ public sealed class ConsumerRegisterTests : TestBase
                 register,
                 [
                     client,
-                    groupKey ?? new ConsumerGroupKey("ready-group", MessageLane.Bus),
+                    groupKey ?? new ConsumerGroupKey(BootstrapReadyConsumer.Identity, MessageLane.Bus),
                     clientHandle ?? _CreateHandle(handleType),
                     CancellationToken.None,
                 ]
@@ -1823,8 +1767,11 @@ public sealed class ConsumerRegisterTests : TestBase
         }
     }
 
+    [BusConsumer(Identity)]
     private sealed class BootstrapReadyConsumer : IConsume<BootstrapReadyMessage>
     {
+        public const string Identity = "tests.consumer-register.ready";
+
         public ValueTask ConsumeAsync(
             ConsumeContext<BootstrapReadyMessage> context,
             CancellationToken cancellationToken
@@ -1860,19 +1807,11 @@ public sealed class ConsumerRegisterTests : TestBase
         await using var provider = _CreateProvider(
             configureMessaging: setup =>
             {
-                setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
-                    message
-                        .Contract("ready-messageName")
-                        .Consumer<BootstrapReadyConsumer>(consumer =>
-                            consumer
-                                .StableContract("tests.consumer-register.bootstrap-ready")
-                                .Group("ready-group")
-                                .Concurrency(1)
-                        )
-                );
+                setup.AddConsumer<BootstrapReadyConsumer>();
             },
             configureServices: services =>
             {
+                services.ConfigureMessaging(messaging => messaging.Message<BootstrapReadyMessage>("ready-messageName"));
                 services.AddSingleton<IConsumerClientFactory>(factory);
                 services.AddSingleton<BootstrapReadyConsumer>();
             }

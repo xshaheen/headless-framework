@@ -258,7 +258,6 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
                 options.UseProcessLocalInMemoryStorage();
                 options.UseConventions(c =>
                 {
-                    c.UseApplicationId("runtime-tests");
                     c.UseVersion("v1");
                 });
             })

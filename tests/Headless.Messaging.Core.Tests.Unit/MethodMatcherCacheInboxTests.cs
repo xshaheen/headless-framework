@@ -10,6 +10,8 @@ namespace Tests;
 
 public sealed class MethodMatcherCacheInboxTests : TestBase
 {
+    private const string _ConsumerIdentity = "consumer";
+
     [Theory]
     [InlineData("orders.created", "consumer", "1", MessageLane.Bus)]
     [InlineData("preorders", "consumer", "1", MessageLane.Bus)]
@@ -42,7 +44,8 @@ public sealed class MethodMatcherCacheInboxTests : TestBase
 
         cache.TryGetInboxExecutor("consumer", "orders", "1", lane, out var descriptor).Should().BeTrue();
         descriptor.Should().NotBeNull();
-        descriptor.GroupName.Should().Be("current-group");
+        // A declared Bus consumer subscribes under its identity; a Queue consumer under its message name.
+        descriptor.GroupName.Should().Be(lane is MessageLane.Bus ? _ConsumerIdentity : "orders");
         descriptor.Lane.Should().Be(lane);
     }
 
@@ -51,25 +54,21 @@ public sealed class MethodMatcherCacheInboxTests : TestBase
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<SelectorTestMessage>("orders"));
         services.AddHeadlessMessaging(setup =>
         {
+            // Shares the declared consumer's subscription, which is named after its identity.
             setup.RegisterConsumer(
                 typeof(AnotherSelectorConsumer),
                 typeof(AnotherSelectorTestMessage),
                 "orders.*",
-                "current-group",
+                _ConsumerIdentity,
                 1,
                 MessageLane.Bus,
                 "other-consumer",
                 "1"
             );
-            setup.Bus.ForMessage<SelectorTestMessage>(message =>
-                message
-                    .Contract("orders")
-                    .Consumer<SelectorTestConsumer>(consumer =>
-                        consumer.ConsumerIdentity("consumer").Group("current-group")
-                    )
-            );
+            setup.AddConsumer<BusInboxConsumer>();
         });
         using var provider = services.BuildServiceProvider();
         var cache = provider.GetRequiredService<MethodMatcherCache>();
@@ -77,7 +76,7 @@ public sealed class MethodMatcherCacheInboxTests : TestBase
         cache
             .TryGetMessageNameExecutor(
                 "orders.created",
-                new ConsumerGroupKey("current-group", MessageLane.Bus),
+                new ConsumerGroupKey(_ConsumerIdentity, MessageLane.Bus),
                 out var subscription
             )
             .Should()
@@ -117,29 +116,36 @@ public sealed class MethodMatcherCacheInboxTests : TestBase
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<SelectorTestMessage>(contract));
         services.AddHeadlessMessaging(setup =>
         {
             if (lane is MessageLane.Bus)
             {
-                setup.Bus.ForMessage<SelectorTestMessage>(message =>
-                    message
-                        .Contract(contract)
-                        .Consumer<SelectorTestConsumer>(consumer =>
-                            consumer.ConsumerIdentity("consumer").Group("current-group")
-                        )
-                );
+                setup.AddConsumer<BusInboxConsumer>();
             }
             else
             {
-                setup.Queue.ForMessage<SelectorTestMessage>(message =>
-                    message
-                        .Contract(contract)
-                        .Consumer<SelectorTestConsumer>(consumer =>
-                            consumer.ConsumerIdentity("consumer").Group("current-group")
-                        )
-                );
+                setup.AddConsumer<QueueInboxConsumer>();
             }
         });
         return services.BuildServiceProvider();
+    }
+
+    [BusConsumer(_ConsumerIdentity)]
+    private sealed class BusInboxConsumer : IConsume<SelectorTestMessage>
+    {
+        public ValueTask ConsumeAsync(
+            ConsumeContext<SelectorTestMessage> context,
+            CancellationToken cancellationToken
+        ) => ValueTask.CompletedTask;
+    }
+
+    [QueueConsumer(_ConsumerIdentity)]
+    private sealed class QueueInboxConsumer : IConsume<SelectorTestMessage>
+    {
+        public ValueTask ConsumeAsync(
+            ConsumeContext<SelectorTestMessage> context,
+            CancellationToken cancellationToken
+        ) => ValueTask.CompletedTask;
     }
 }

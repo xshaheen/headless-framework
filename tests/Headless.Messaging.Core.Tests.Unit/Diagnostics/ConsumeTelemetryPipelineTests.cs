@@ -58,13 +58,10 @@ public sealed class ConsumeTelemetryPipelineTests : TestBase
 
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<PipelineTestMessage>("test.pipeline.messageName"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<PipelineTestMessage>(message =>
-                message
-                    .Contract("test.pipeline.messageName")
-                    .Consumer<PipelineTestConsumer>(consumer => consumer.StableContract("tests.telemetry-pipeline"))
-            );
+            setup.AddConsumer<PipelineTestConsumer>();
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
         });
@@ -207,6 +204,7 @@ public sealed class ConsumeTelemetryPipelineTests : TestBase
 
 public sealed record PipelineTestMessage(string Id);
 
+[BusConsumer("tests.telemetry-pipeline")]
 public sealed class PipelineTestConsumer : IConsume<PipelineTestMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<PipelineTestMessage> context, CancellationToken cancellationToken)

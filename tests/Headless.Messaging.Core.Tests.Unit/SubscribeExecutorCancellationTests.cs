@@ -13,6 +13,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Tests.Helpers;
 
 namespace Tests;
 
@@ -109,15 +110,12 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
 
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging =>
+            messaging.Message<CancellationExecutorTestMessage>("test.messageName")
+        );
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<CancellationExecutorTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<CancellationExecutorTestConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-cancellation")
-                    )
-            );
+            setup.AddConsumer<CancellationExecutorTestConsumer>();
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
         });
@@ -320,8 +318,11 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
 
 public sealed record CancellationExecutorTestMessage(string Id);
 
+[BusConsumer(Identity)]
 public sealed class CancellationExecutorTestConsumer : IConsume<CancellationExecutorTestMessage>
 {
+    public const string Identity = "tests.subscribe-executor";
+
     public ValueTask ConsumeAsync(
         ConsumeContext<CancellationExecutorTestMessage> context,
         CancellationToken cancellationToken

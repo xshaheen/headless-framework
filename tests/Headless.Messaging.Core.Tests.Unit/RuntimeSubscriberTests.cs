@@ -17,10 +17,9 @@ public sealed class RuntimeSubscriberTests : TestBase
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<RuntimeMessage>("runtime.message"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<RuntimeMessage>(message => message.Contract("runtime.bus"));
-            setup.Queue.ForMessage<RuntimeMessage>(message => message.Contract("runtime.queue"));
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
         });
@@ -32,7 +31,7 @@ public sealed class RuntimeSubscriberTests : TestBase
         var result = registry.Register<RuntimeMessage>(handler.HandleAsync);
 
         result.Lane.Should().Be(MessageLane.Bus);
-        result.MessageName.Should().Be("runtime.bus");
+        result.MessageName.Should().Be("runtime.message");
         registry.GetDescriptors().Should().ContainSingle().Which.Lane.Should().Be(MessageLane.Bus);
         registry
             .TryGetInvoker(result.MessageName, result.Group, result.HandlerId, MessageLane.Bus, out _)
@@ -50,7 +49,6 @@ public sealed class RuntimeSubscriberTests : TestBase
         await using var provider = _CreateProvider();
         var runtimeSubscriber = provider.GetRequiredService<IRuntimeSubscriber>();
         var conventions = provider.GetRequiredService<IOptions<MessagingOptions>>().Value.Conventions;
-        conventions.UseApplicationId("messaging-tests");
         conventions.UseVersion("v1");
 
         var handler = provider.GetRequiredService<NamedRuntimeHandler>();
@@ -236,7 +234,6 @@ public sealed class RuntimeSubscriberTests : TestBase
             options.UseProcessLocalInMemoryStorage();
             options.UseConventions(c =>
             {
-                c.UseApplicationId("messaging-tests");
                 c.UseVersion("v1");
             });
         });

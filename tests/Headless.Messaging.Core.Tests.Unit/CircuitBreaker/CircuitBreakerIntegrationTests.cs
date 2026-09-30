@@ -766,7 +766,6 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             setup.UseProcessLocalInMemoryStorage();
             setup.UseConventions(conventions =>
             {
-                conventions.UseApplicationId("circuit-breaker-integration-tests");
                 conventions.UseVersion("v1");
             });
         });

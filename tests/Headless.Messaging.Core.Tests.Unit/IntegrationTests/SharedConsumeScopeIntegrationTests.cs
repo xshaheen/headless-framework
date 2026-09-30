@@ -75,21 +75,15 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
 
         services.AddSingleton<ScopedExecutionRecorder>();
         services.AddScoped<ScopedExecutionDependency>();
+        services.ConfigureMessaging(messaging => messaging.Message<ScopedMessage>("scope.class"));
         services
             .AddHeadlessMessaging(options =>
             {
-                options.Bus.ForMessage<ScopedMessage>(message =>
-                    message
-                        .Contract("scope.class")
-                        .Consumer<ScopedClassConsumer>(consumer =>
-                            consumer.StableContract("tests.shared-scope.class").Group("scope.class")
-                        )
-                );
+                options.AddConsumer<ScopedClassConsumer>();
                 options.UseInMemory();
                 options.UseProcessLocalInMemoryStorage();
                 options.UseConventions(c =>
                 {
-                    c.UseApplicationId("shared-scope-tests");
                     c.UseVersion("v1");
                 });
             })
@@ -156,6 +150,7 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
         }
     }
 
+    [BusConsumer("tests.shared-scope.class")]
     private sealed class ScopedClassConsumer(ScopedExecutionRecorder recorder, ScopedExecutionDependency dependency)
         : IConsume<ScopedMessage>
     {

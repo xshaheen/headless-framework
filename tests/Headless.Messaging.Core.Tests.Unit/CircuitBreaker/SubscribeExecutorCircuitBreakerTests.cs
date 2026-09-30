@@ -117,13 +117,10 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
 
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<CbTestMessage>(_MessageName));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<CbTestMessage>(message =>
-                message
-                    .Contract(_MessageName)
-                    .Consumer<CbTestConsumer>(consumer => consumer.StableContract("tests.circuit-breaker"))
-            );
+            setup.AddConsumer<CbTestConsumer>();
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
         });
@@ -394,6 +391,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
 
 public sealed record CbTestMessage(string Id);
 
+[BusConsumer("tests.circuit-breaker")]
 public sealed class CbTestConsumer : IConsume<CbTestMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<CbTestMessage> context, CancellationToken cancellationToken)
