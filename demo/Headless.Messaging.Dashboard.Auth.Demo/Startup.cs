@@ -67,7 +67,7 @@ public class Startup
 
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForConsumersFromAssembly(typeof(Startup).Assembly, _ConfigureConsumerContract);
+            setup.AddModule<Headless.Messaging.Dashboard.Auth.Demo.MessagingModule>();
             setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
             setup.UseInMemoryStorage();
             setup.UseInMemory();
@@ -101,7 +101,7 @@ public class Startup
 
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForConsumersFromAssembly(typeof(Startup).Assembly, _ConfigureConsumerContract);
+            setup.AddModule<Headless.Messaging.Dashboard.Auth.Demo.MessagingModule>();
             setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
             setup.UseInMemoryStorage();
             setup.UseInMemory();
@@ -152,7 +152,7 @@ public class Startup
 
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForConsumersFromAssembly(typeof(Startup).Assembly, _ConfigureConsumerContract);
+            setup.AddModule<Headless.Messaging.Dashboard.Auth.Demo.MessagingModule>();
             setup.UseDashboard(d => d.WithHostAuthentication(dashboardAuthorizationPolicy));
             setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
             setup.UseInMemoryStorage();
@@ -166,7 +166,7 @@ public class Startup
     {
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForConsumersFromAssembly(typeof(Startup).Assembly, _ConfigureConsumerContract);
+            setup.AddModule<Headless.Messaging.Dashboard.Auth.Demo.MessagingModule>();
             setup.UseDashboard(d => d.WithNoAuth());
             setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
             setup.UseInMemoryStorage();
@@ -174,18 +174,5 @@ public class Startup
         });
 
         return services;
-    }
-
-    private static void _ConfigureConsumerContract(
-        Headless.Messaging.Registration.ScannedConsumerContext context,
-        Headless.Messaging.Registration.IScannedConsumerBuilder consumer
-    )
-    {
-        if (!string.Equals(context.ConsumerType.Name, "PersonConsumer", StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException($"Missing durable identity for {context.ConsumerType}.");
-        }
-
-        consumer.ConsumerIdentity("dashboard-auth.person");
     }
 }

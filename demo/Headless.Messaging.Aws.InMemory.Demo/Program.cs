@@ -7,10 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.Bus.ForConsumersFromAssembly(
-        typeof(Program).Assembly,
-        static (_, consumer) => consumer.ConsumerIdentity("aws-demo.sqs-message")
-    );
+    setup.AddModule<Headless.Messaging.Aws.InMemory.Demo.MessagingModule>();
     setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
     setup.UseInMemoryStorage();
     setup.UseAws(RegionEndpoint.CNNorthWest1);
