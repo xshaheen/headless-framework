@@ -319,7 +319,9 @@ public sealed class RabbitMqConsumerClientTests : TestBase
             await client.WaitUntilReadyAsync(AbortToken).AsTask().WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             var consumer = _channel
                 .ReceivedCalls()
-                .First(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync))
+                .First(c =>
+                    string.Equals(c.GetMethodInfo().Name, nameof(IChannel.BasicConsumeAsync), StringComparison.Ordinal)
+                )
                 .GetArguments()
                 .OfType<IAsyncBasicConsumer>()
                 .Single();
