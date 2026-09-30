@@ -37,6 +37,22 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
     /// <summary>Gets the RabbitMQ password.</summary>
     public string Password => RabbitMqBuilder.DefaultPassword;
 
+    /// <summary>
+    /// Deletes <paramref name="queueName"/> the way an operator does, from the broker node rather than an AMQP
+    /// connection, which an exclusive queue would refuse.
+    /// </summary>
+    public async Task DeleteQueueAsOperatorAsync(string queueName, CancellationToken cancellationToken)
+    {
+        var result = await Container.ExecAsync(["rabbitmqctl", "delete_queue", queueName], cancellationToken);
+
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"rabbitmqctl delete_queue {queueName} failed ({result.ExitCode}): {result.Stderr}"
+            );
+        }
+    }
+
     /// <summary>Gets or creates a shared connection to RabbitMQ.</summary>
     public async Task<IConnection> GetConnectionAsync()
     {

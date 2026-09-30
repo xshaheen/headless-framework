@@ -180,7 +180,8 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             OnMessageCallback!,
             OnLogCallback!,
             _rabbitMqOptions.CustomHeadersBuilder,
-            _serviceProvider
+            _serviceProvider,
+            _kind is ConsumerSubscriptionKind.EveryInstance ? _OnEveryInstanceConsumerCancelledByBroker : null
         );
 
         try
@@ -556,7 +557,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
                     durable: false,
                     exclusive: true,
                     autoDelete: false,
-                    arguments: BuildEveryInstanceQueueArguments(_rabbitMqOptions),
+                    arguments: BuildEveryInstanceQueueArguments(),
                     cancellationToken: cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -572,20 +573,26 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         }
     }
 
+    /// <summary>
+    /// How long an every-instance queue keeps a message nobody has taken. A fixed minute, not the competing queues'
+    /// <see cref="RabbitMqMessagingOptions.QueueArgumentsOptions.MessageTTL"/>: a queue that stalls or stays paused
+    /// would otherwise hand the process days-old per-process state when it resumes.
+    /// </summary>
+    internal static readonly TimeSpan EveryInstanceMessageTtl = TimeSpan.FromSeconds(60);
+
     /// <summary>The arguments of an every-instance client's server-named queue.</summary>
     /// <remarks>
     /// The queue is exclusive to the client's own connection, so the broker deletes it when the connection closes or
     /// the process dies. It is deliberately not auto-delete: pausing cancels the queue's only consumer, and an
-    /// auto-delete queue would disappear then and fail the resume. Only the message TTL carries over from
-    /// <see cref="RabbitMqMessagingOptions.QueueArguments"/>: quorum and stream queue types cannot be exclusive.
+    /// auto-delete queue would disappear then and fail the resume. Nothing carries over from
+    /// <see cref="RabbitMqMessagingOptions.QueueArguments"/>: quorum and stream queue types cannot be exclusive, and the
+    /// message TTL is <see cref="EveryInstanceMessageTtl"/>.
     /// </remarks>
-    internal static Dictionary<string, object?> BuildEveryInstanceQueueArguments(RabbitMqMessagingOptions options)
+    internal static Dictionary<string, object?> BuildEveryInstanceQueueArguments()
     {
-        Argument.IsNotNull(options);
-
         return new Dictionary<string, object?>(StringComparer.Ordinal)
         {
-            { "x-message-ttl", options.QueueArguments.MessageTTL },
+            { "x-message-ttl", (int)EveryInstanceMessageTtl.TotalMilliseconds },
         };
     }
 
@@ -603,15 +610,27 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
         // The connection does not recover on its own, so the listener fails and the core rebuilds the client.
         throw new BrokerConnectionException(
-            new InvalidOperationException($"The every-instance RabbitMQ consumer channel shut down: {reason}")
+            new InvalidOperationException($"The every-instance RabbitMQ consumer stopped receiving: {reason}")
         );
+    }
+
+    // The channel stays open when the broker cancels the consumer, so without this the listener would wait forever on a
+    // queue that no longer exists instead of failing for the core to rebuild it with a new one.
+    private void _OnEveryInstanceConsumerCancelledByBroker(string consumerTag)
+    {
+        if (Volatile.Read(ref _disposed) == 0)
+        {
+            _channelLost.TrySetResult(
+                $"the broker cancelled consumer '{consumerTag}', as it does when its queue is deleted"
+            );
+        }
     }
 
     private Task _OnEveryInstanceChannelShutdownAsync(object sender, ShutdownEventArgs reason)
     {
         if (Volatile.Read(ref _disposed) == 0)
         {
-            _channelLost.TrySetResult(reason.ReplyText);
+            _channelLost.TrySetResult($"the channel shut down: {reason.ReplyText}");
         }
 
         return Task.CompletedTask;
