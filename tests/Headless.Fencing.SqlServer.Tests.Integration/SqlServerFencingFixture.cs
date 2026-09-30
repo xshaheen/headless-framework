@@ -273,13 +273,19 @@ public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IA
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    /// <summary>Drops the lease table, the generation sequence, and then their schema, when they exist.</summary>
+    /// <summary>
+    /// Drops the lease table and the generation sequence, then their schema once nothing else is in it. The schema is
+    /// shared by every Headless feature, and the reused container is shared by every checkout of this repository, so
+    /// another suite's objects may sit beside the leases; dropping the schema outright would fail on them.
+    /// </summary>
     public static string DropStorageSql(string schema)
     {
         return $"""
             IF OBJECT_ID(N'{schema}.FencingLeases', N'U') IS NOT NULL DROP TABLE [{schema}].[FencingLeases];
             IF OBJECT_ID(N'{schema}.FencingLeaseGenerations', N'SO') IS NOT NULL DROP SEQUENCE [{schema}].[FencingLeaseGenerations];
-            IF SCHEMA_ID(N'{schema}') IS NOT NULL EXEC(N'DROP SCHEMA [{schema}]');
+            IF SCHEMA_ID(N'{schema}') IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM sys.objects WHERE schema_id = SCHEMA_ID(N'{schema}'))
+                EXEC(N'DROP SCHEMA [{schema}]');
             """;
     }
 
