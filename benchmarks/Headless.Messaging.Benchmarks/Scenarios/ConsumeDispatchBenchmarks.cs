@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reflection;
 using BenchmarkDotNet.Attributes;
 using Headless.Messaging.Benchmarks.Support;
 using Headless.Messaging.Internal;
@@ -21,6 +20,10 @@ namespace Headless.Messaging.Benchmarks.Scenarios;
 [MemoryDiagnoser]
 public class ConsumeDispatchBenchmarks
 {
+    // The dispatch the Messaging source generator emitted for NoOpBenchmarkConsumer, read from the generated module the
+    // way a host's catalog receives it, so the measured path runs the same dispatch a real delivery does.
+    private static readonly MessageConsumerDispatch _GeneratedDispatch = _ReadGeneratedDispatch<MessagingModule>();
+
     private ServiceProvider _provider = null!;
     private ConsumeMiddlewarePipeline _pipeline = null!;
     private ConsumerContext _context = null!;
@@ -33,8 +36,6 @@ public class ConsumeDispatchBenchmarks
     public void Setup()
     {
         var services = new ServiceCollection();
-        services.AddSingleton<IMessageDispatcher>(new NoOpMessageDispatcher());
-
         for (var i = 0; i < MiddlewareCount; i++)
         {
             services.AddScoped<IConsumeMiddleware<ConsumeContext>, NoOpConsumeMiddleware>();
@@ -65,21 +66,26 @@ public class ConsumeDispatchBenchmarks
         return _pipeline.ExecuteAsync(_context, _payload, typeof(BenchmarkPayload), CancellationToken.None);
     }
 
+    private static MessageConsumerDispatch _ReadGeneratedDispatch<TModule>()
+        where TModule : IMessagingModule
+    {
+        var catalog = new MessagingCatalogBuilder();
+        catalog.AddModule(typeof(TModule), TModule.Register);
+
+        return catalog.Consumers.Single().Dispatch;
+    }
+
     private static ConsumerContext _BuildConsumerContext(BenchmarkPayload payload)
     {
         var descriptor = new ConsumerExecutorDescriptor
         {
+            ConsumerType = typeof(NoOpBenchmarkConsumer),
+            MessageType = typeof(BenchmarkPayload),
             Lane = MessageLane.Bus,
-            MethodInfo = typeof(ConsumeDispatchBenchmarks).GetMethod(
-                nameof(ExecuteDispatch),
-                BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-                binder: null,
-                types: Type.EmptyTypes,
-                modifiers: null
-            )!,
-            ImplTypeInfo = typeof(ConsumeDispatchBenchmarks).GetTypeInfo(),
             MessageName = "benchmark.payload",
-            SubscriptionName = "benchmark-group",
+            SubscriptionName = NoOpBenchmarkConsumer.Identity,
+            ConsumerIdentity = NoOpBenchmarkConsumer.Identity,
+            Dispatch = _GeneratedDispatch,
         };
 
         var origin = new Message(

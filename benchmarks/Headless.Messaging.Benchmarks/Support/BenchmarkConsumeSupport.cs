@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
 
 namespace Headless.Messaging.Benchmarks.Support;
 
@@ -9,36 +8,17 @@ namespace Headless.Messaging.Benchmarks.Support;
 public sealed record BenchmarkPayload(string Value);
 
 /// <summary>
-/// A no-op <see cref="IMessageDispatcher"/>. Registered in the benchmark service provider so the consume
-/// pipeline resolves a target that does no handler work, isolating the per-dispatch plumbing cost.
+/// A consumer that does no handler work, so a dispatch through its generated <see cref="MessageConsumerDispatch"/>
+/// isolates the per-dispatch plumbing cost.
 /// </summary>
-internal sealed class NoOpMessageDispatcher : IMessageDispatcher
+[BusConsumer(Identity)]
+internal sealed class NoOpBenchmarkConsumer : IConsume<BenchmarkPayload>
 {
-    public Task DispatchAsync<TMessage>(ConsumeContext<TMessage> context, CancellationToken cancellationToken)
-        where TMessage : class
-    {
-        return Task.CompletedTask;
-    }
+    public const string Identity = "benchmarks.no-op";
 
-    public Task DispatchInScopeAsync<TMessage>(
-        IServiceProvider serviceProvider,
-        ConsumeContext<TMessage> context,
-        CancellationToken cancellationToken
-    )
-        where TMessage : class
+    public ValueTask ConsumeAsync(ConsumeContext<BenchmarkPayload> context, CancellationToken cancellationToken)
     {
-        return Task.CompletedTask;
-    }
-
-    public Task DispatchInScopeAsync<TMessage>(
-        IServiceProvider serviceProvider,
-        ConsumerExecutorDescriptor descriptor,
-        ConsumeContext<TMessage> context,
-        CancellationToken cancellationToken
-    )
-        where TMessage : class
-    {
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 }
 
