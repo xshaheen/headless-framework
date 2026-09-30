@@ -191,6 +191,7 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 - HTTP tenant authorization: `TenantRequirement`, `[AllowMissingTenant]`, `.AllowMissingTenant()`, `[RequireTenant]`, `.RequireTenant()`
 - `AddHeadlessAuthorizationDenialAudit<TContext>()` — opt-in; wraps `IAuthorizationMiddlewareResultHandler` and writes an `authorization.challenged` or `authorization.forbidden` audit entry (method, route template, policy names; never the body or path) through `IAuditLogWriter<TContext>`. Requires an audit log storage provider; see [Authorization denial entries](audit-log.md#authorization-denial-entries)
 - `AddHeadlessCors([policyName,] IConfiguration | Action<HeadlessCorsOptions>)` — registers a named CORS policy from validated `HeadlessCorsOptions`, once per name; without a name it registers `HeadlessCorsConstants.RestrictedCors`. `AddHeadlessAllowAnyCors(Action<HeadlessCorsOptions>?)` registers `HeadlessCorsConstants.AllowAnyCors` (any origin, never credentials). `AddHeadlessCorsOriginSource<TSource>(policyName, lifetime)` attaches an `ICorsOriginSource` that approves origins at request time for any policy, including one written with `AddCors`. `HeadlessCorsOptions.FrameworkExposedHeaders` lists the framework's non-safelisted response headers for an `AddCors` policy's `WithExposedHeaders`. Opt-in; `AddHeadless()` calls none of them
+- Single-claim authorization: `RequireSingleClaimValue(claimType, value)`, `RequireSingleClaim(claimType, predicate)`, and `SingleClaimRequirement`
 - Diagnostic listeners: `AddHeadlessApiDiagnosticListeners()`, `BadRequestDiagnosticAdapter`, `MiddlewareAnalysisDiagnosticAdapter`
 
 ### Design constraints
@@ -259,6 +260,23 @@ app.UseAuthorization();
 
 // Opt out of tenant claim extraction for a single endpoint
 app.MapGet("/webhook", handler).SkipTenantResolution().AllowMissingTenant();
+```
+
+Single-claim authorization policies enforce that a principal carries exactly one claim of a given type and validates its value, contrasting with ASP.NET Core's default `RequireClaim`, which succeeds if *any* claim of the type matches:
+
+```csharp
+builder.Services.AddAuthorization(options =>
+{
+    // Passes only when the principal has exactly one 'tier' claim whose value equals 'bronze' (ordinal)
+    options.AddPolicy("BronzeOnly", policy =>
+        policy.RequireSingleClaimValue("tier", "bronze")
+    );
+
+    // Passes only when the principal has exactly one 'age' claim satisfying the predicate
+    options.AddPolicy("Adult", policy =>
+        policy.RequireSingleClaim("age", value => int.TryParse(value, CultureInfo.InvariantCulture, out var age) && age >= 18)
+    );
+});
 ```
 
 Identifier-based (pre-authentication) tenant resolution through the tenant catalog — host, route, header, and delegate sources, consulted in registration order:
