@@ -42,6 +42,7 @@ See [Choosing a Provider](#choosing-a-provider) for the package-selection table.
 - Use `OnFailed` only to release a non-transactional resource reserved in anticipation of commit (a lock, a reservation) — not as a substitute for a proper rollback-safe design. Its faults are logged, never propagated.
 - The factory is the only receiver that opens a unit of work. `BeginAsync`, `Enlist`, and `RunAsync` are extension members on `IUnitOfWorkFactory`; no context, connection, or helper type carries a second spelling, and none of them take a `services:` parameter.
 - Under a retrying EF execution strategy, `BeginAsync(db)` throws by design — a user-initiated transaction cannot survive a strategy replay. Use `factory.RunAsync(db, ...)`, which runs begin → operation → complete *inside* the strategy and only lets a failure replay before the commit has started.
+- Raw-ADO replay is opt-in and belongs to one spelling per provider: `RunAsync(NpgsqlDataSource, …)` and `RunAsync(Func<CancellationToken, ValueTask<SqlConnection>>, …)` open a connection per attempt and replay under `UnitOfWorkRetryOptions.RetryStrategy` (host default) or the call's `retry:` argument. `RunAsync(connection, …)` never replays, and neither overload replays when both are `null`. Set `ShouldHandle = UnitOfWorkRetryOptions.DefaultShouldHandle` (or compose with it); Polly's own default replays every non-cancellation exception. Issue the block's commands on the connection it receives, never on one held from outside.
 - Replay re-runs the block that owns the unit, so an enlisted publish or Jobs write issued directly inside your own `RunAsync(db, …)` block leaves it replayable: a transient failure anywhere in the block replays it with a fresh unit, the first attempt's rows roll back, and the replayed block writes them again. An enlisted write ends replay where a replay would not re-run it. One place is an *observed-mode* unit — the `HeadlessDbContext` save pipeline's own save, from a domain-event handler, which the pipeline replays without re-running the handler; there both the publish and the Jobs write call `IUnitOfWork.PreventRetry()` before writing, and so does a save through a sibling context that joined that unit over the shared connection and wrote rows, because the pipeline's replay restores only its own context's tracker. Another is a `SaveChangesAsync` inside your own block that dispatched domain or integration events: the successful save clears the aggregate's events, so a replayed block would re-insert the aggregate with nothing left to dispatch and commit it without the handlers' rows; the save calls `PreventRetry()` before clearing them. After any mark the fault is surfaced outside the strategy, so reconcile an ambiguous post-commit fault with a durable idempotency key instead of retrying blind. The EF integration-event dispatcher is exempt in the pipeline-owned save: it marks the occurrences the save pipeline re-publishes on a replayed attempt.
 - `GetFeature<TFeature>()` is a bridge-package seam, not an application API. Use the typed accessors a bridge ships (`unit.Outbox`, `unit.Jobs`, `unit.TransactionLocks`, `unit.Sequences`, `unit.Leases`, `unit.Idempotency`); register a feature (a singleton implementing `IUnitOfWorkFeature`) only when writing such a bridge.
 
@@ -92,6 +93,19 @@ A binding also watches for an **owned** unit whose transaction ended without goi
 These bindings are how code that was handed only the resource reaches the unit that owns its transaction: the Headless save pipeline reads `db.UnitOfWork()` to decide whether a caller-owned transaction has a unit; a domain-event handler resolved during that save reads it to enlist an outbox publish (`db.UnitOfWork()?.Outbox.PublishAsync(…)`); a repository given a context or connection reads it the same way. A context created through `IDbContextFactory<T>` needs no special treatment — the binding is on the object, not on any scope.
 
 A **sibling context** — a second context, of the same or another type, built over the connection of a context that carries an EF unit — is not recorded in the context binding. Its lookup derives the join from the connection binding every time: it adopts the unit's `DbTransaction` with `UseTransaction` and returns the owner's handle. The unit releases the adoption (`UseTransaction(null)`) when it reaches a terminal state, after the owner's commit or rollback. Deriving the join instead of recording it means a pooled or reused context never carries a unit it no longer shares a connection with. This is how a modular monolith with one context per module over one database commits several modules and their outbox rows in one transaction.
+
+### Replay per `RunAsync` overload
+
+Every `RunAsync` applies one replay policy, whatever the provider: a fault before the commit starts may replay the whole block on a fresh unit and transaction; a fault once the commit has started (it may already be durable) or after `IUnitOfWork.PreventRetry()` never replays and surfaces to the caller; a drain fault after a durable commit is logged and the block's result is returned. A block that joins a live unit never replays on its own — it runs again only when its owner replays. What differs per overload is *whether* a replay can happen and who classifies the fault:
+
+| Overload | Replays | Classified by |
+|---|---|---|
+| `RunAsync(DbContext, …)` | Yes, when the context's execution strategy retries | EF Core's strategy (`EnableRetryOnFailure` or a custom one); `UnitOfWorkRetryOptions` does not apply |
+| `RunAsync(NpgsqlDataSource, …)` | Yes, when a strategy is configured; each attempt opens its own connection | The call's `retry:`, else `UnitOfWorkRetryOptions.RetryStrategy`; off when both are `null` |
+| `RunAsync(Func<CancellationToken, ValueTask<SqlConnection>>, …)` | Same as the data-source overload; the factory returns a new connection per attempt | Same |
+| `RunAsync(NpgsqlConnection, …)` / `RunAsync(SqlConnection, …)` | Never — the caller owns the connection, and a replay on the connection that just failed is pointless | — |
+
+Replay is off by default because turning it on changes failure semantics for existing blocks and repeats any non-transactional effect inside them (an HTTP call, a file write) on every attempt. `UnitOfWorkRetryOptions.DefaultShouldHandle` replays what a whole-transaction replay can cure: a failure the driver reports as transient (a dropped connection), a serialization failure (SQLSTATE `40001`, SQL Server `3960`), a deadlock (`40P01`, SQL Server `1205`), and on SQL Server, where SqlClient reports nothing as transient itself, the same error-number set EF Core's `SqlServerTransientExceptionDetector` replays under `EnableRetryOnFailure` (connection drops, Azure throttling, pool limits), read across every error the exception carries. So an EF block and a raw-ADO block on the same database replay the same faults. It never replays a cancellation, a constraint violation, the client-side command timeout (`-2`, which may have completed on the server), or anything that is not a database fault. Serializable workloads — CockroachDB, or PostgreSQL at `Serializable` — raise `40001` as normal operation and expect exactly this replay.
 
 ### The failure hook and rollback
 
@@ -167,8 +181,8 @@ Every illegal transition throws with a message naming the remedy — never a bar
 | Provider | Use when | Avoid when | Trade-off |
 |---|---|---|---|
 | `Headless.UnitOfWork.EntityFramework` | EF Core owns the transaction (`DbContext`). | The unit of work is raw ADO. | `BeginAsync(db)` cannot run under a retrying execution strategy — use `RunAsync(db, …)` there. Never references `Headless.EntityFramework` (the dependency flows the other way), so it stays usable by any EF consumer. |
-| `Headless.UnitOfWork.PostgreSql` | Raw `NpgsqlConnection` transactions. | EF owns the transaction (use the EF provider). | No commit edge to observe: observed mode is fully explicit — the caller must call `CompleteAsync`/`RollbackAsync` itself, or a forgotten completion is logged. No execution-strategy retry (a raw-ADO concept has none). |
-| `Headless.UnitOfWork.SqlServer` | Raw `SqlConnection` transactions. | EF owns the transaction (use the EF provider). | Same explicit-completion contract as PostgreSQL. |
+| `Headless.UnitOfWork.PostgreSql` | Raw `NpgsqlConnection` transactions. | EF owns the transaction (use the EF provider). | No commit edge to observe: observed mode is fully explicit — the caller must call `CompleteAsync`/`RollbackAsync` itself, or a forgotten completion is logged. Replay only through `RunAsync(NpgsqlDataSource, …)`, which opens a connection per attempt; the connection overloads never replay. |
+| `Headless.UnitOfWork.SqlServer` | Raw `SqlConnection` transactions. | EF owns the transaction (use the EF provider). | Same explicit-completion contract as PostgreSQL. Replay only through `RunAsync(connectionFactory, …)`, because SqlClient ships no `DbDataSource`. |
 | The resource-less core (`Headless.UnitOfWork`, no provider) | A coordination window with no transaction of its own — a test harness, or a script whose post-commit work should drain once at the end. | Any case that needs a joinable relational resource — a relational write cannot enlist in a resource-less unit, and a resource-bearing begin underneath it is an independent unit, not a participant. | No relational write enlists on it; each resource-bearing operation underneath opens and commits its own transaction. Messaging's in-memory storage is the one participant that can join it, through its buffer — which is what the test harness relies on. |
 
 ---
@@ -236,6 +250,7 @@ Implements the singleton `UnitOfWorkFactory`, the in-process unit engine with th
 ### API and behavior
 
 - `AddUnitOfWork()`: idempotent `TryAddSingleton<IUnitOfWorkFactory>` (the factory captures the collection so `GetFeature` can check feature lifetimes); every consumer setup (`AddHeadlessMessaging`, `AddHeadlessJobs`, `AddHeadlessDbContextServices`, the three UnitOfWork provider setups) calls it, so exactly one registration exists regardless of which setup a host invokes first.
+- `UnitOfWorkRetryOptions` — the host's default replay policy for the per-attempt-connection `RunAsync` overloads: `RetryStrategy` (a Polly `RetryStrategyOptions`, `null` by default, meaning no replay) and the static `DefaultShouldHandle` predicate. See [Replay per `RunAsync` overload](#replay-per-runasync-overload).
 - `RelationalDatabaseIdentity.IsSameDatabase(configured, candidate)` (hidden from IntelliSense): the participant-side check of whether a unit's connection reaches the database a storage is configured for. See [Database identity](#database-identity-and-several-databases).
 - `connection.UnitOfWork()` (`HeadlessDbConnectionUnitOfWorkExtensions`, an extension on `DbConnection` declared in `System.Data.Common`, so it is in scope wherever the connection type is): the unit bound to a connection by any provider's `BeginAsync`/`Enlist`/`RunAsync` — including the connection beneath an EF context — while it is `Active`, or `null`.
 - Independent units: every `BeginAsync` returns a new unit; the factory holds no slot, so consecutive and concurrent begins never interact and a faulted resource begin propagates as-is with nothing to release.
@@ -268,11 +283,32 @@ await uow.CompleteAsync(ct);
 
 ### Configuration
 
-None.
+`UnitOfWorkRetryOptions`, through the options pattern. It applies only to `RunAsync(NpgsqlDataSource, …)` and `RunAsync(Func<CancellationToken, ValueTask<SqlConnection>>, …)`; a call's own `retry:` argument overrides it.
+
+```csharp
+using Polly;
+using Polly.Retry;
+
+services.Configure<UnitOfWorkRetryOptions>(options =>
+    options.RetryStrategy = new RetryStrategyOptions
+    {
+        MaxRetryAttempts = 3,
+        Delay = TimeSpan.FromMilliseconds(50),
+        BackoffType = DelayBackoffType.Exponential,
+        UseJitter = true,
+        ShouldHandle = UnitOfWorkRetryOptions.DefaultShouldHandle,
+    }
+);
+```
+
+| Option | Default | Effect |
+|---|---|---|
+| `RetryStrategy` | `null` | No replay. When set, Polly decides how often and after what delay a faulted attempt replays, and validates the options on the first replaying call. |
+| `DefaultShouldHandle` (static) | — | The framework's transient classification; compose it into a custom `ShouldHandle` instead of replacing it. |
 
 ### Runtime behavior
 
-Registers the singleton `IUnitOfWorkFactory`; the factory, engine, and handle types are internal. Repeated calls are idempotent. The factory resolves from the root and from any scope alike.
+Registers the singleton `IUnitOfWorkFactory`; the factory, engine, and handle types are internal. Repeated calls are idempotent. `AddUnitOfWork()` also registers the options infrastructure, so `services.Configure<UnitOfWorkRetryOptions>(…)` works before or after it. The factory resolves from the root and from any scope alike.
 
 ---
 
@@ -375,12 +411,13 @@ Runs raw-ADO `NpgsqlConnection` work as a unit of work, so outbox rows and job r
 
 - `IUnitOfWorkFactory.BeginAsync(connection, isolation, ct)` — owned mode: begins the transaction on that line (opening the connection when it is closed) and binds the unit to the connection (`connection.UnitOfWork()`); `CompleteAsync` commits and drains, `RollbackAsync` or a dispose without completing rolls back. Refused on a connection that already carries a live unit.
 - `IUnitOfWorkFactory.Enlist(connection, transaction)` — observed mode for a transaction you commit yourself; call `CompleteAsync` after your commit or `RollbackAsync` after your rollback. Binds and refuses like `BeginAsync`.
-- `IUnitOfWorkFactory.RunAsync(connection, operation, isolation, ct)` — on a connection that already carries a live unit (begun by this provider or by EF over the same connection), **joins** it: the operation receives the owner's handle at the owner's isolation level (`isolation` is ignored), commit stays with the owner, and an operation that ends the unit itself is refused once it returns. Otherwise begin → operation → complete in one call; a throwing operation rolls back and rethrows its own exception.
+- `IUnitOfWorkFactory.RunAsync(connection, operation, isolation, ct)` — on a connection that already carries a live unit (begun by this provider or by EF over the same connection), **joins** it: the operation receives the owner's handle at the owner's isolation level (`isolation` is ignored), commit stays with the owner, and an operation that ends the unit itself is refused once it returns. Otherwise begin → operation → complete in one call; a throwing operation rolls back and rethrows its own exception. Never replays.
+- `IUnitOfWorkFactory.RunAsync(dataSource, operation, isolation, retry, ct)` (and the `TResult` overload) — each attempt opens a connection from the `NpgsqlDataSource`, begins an owned unit on it, and hands the block both: `(unit, connection, ct)`. A fault before the commit that the replay policy classifies as transient replays the block on a fresh connection, transaction, and unit; the attempt's connection is disposed once its unit is committed or rolled back. The policy is `retry`, else the host's `UnitOfWorkRetryOptions.RetryStrategy`; with neither, the block runs once. See [Replay per `RunAsync` overload](#replay-per-runasync-overload).
 - `AddPostgreSqlUnitOfWork()` — registers the singleton factory (idempotent; there are no provider options).
 
 ### Design constraints
 
-Npgsql exposes no commit edge, so observed mode is explicit: nothing completes the unit for you. A unit enlisted with `Enlist` and disposed without `CompleteAsync` or `RollbackAsync` after its transaction completed is logged as a forgotten completion — the durable rows are relay-recovered, but the fast-path dispatch was lost. A dispose while the transaction is still open is the normal failure path and logs nothing. There is no execution-strategy retry for raw ADO; that is an EF Core concept (`Headless.UnitOfWork.EntityFramework`).
+Npgsql exposes no commit edge, so observed mode is explicit: nothing completes the unit for you. A unit enlisted with `Enlist` and disposed without `CompleteAsync` or `RollbackAsync` after its transaction completed is logged as a forgotten completion — the durable rows are relay-recovered, but the fast-path dispatch was lost. A dispose while the transaction is still open is the normal failure path and logs nothing. Only the data-source `RunAsync` replays: a caller-owned connection cannot be replaced after it fails, so `RunAsync(connection, …)` never replays.
 
 ### Install
 
@@ -406,6 +443,24 @@ await using (var command = new NpgsqlCommand("INSERT INTO orders (id) VALUES (@i
 }
 await unit.Outbox.PublishAsync(new OrderPlaced(orderId), ct); // enlisted; an injected IBus would not be
 await unit.CompleteAsync(ct);
+```
+
+A replayable block, for a `Serializable` workload that expects `40001`. Each attempt gets its own connection; issue every command on it:
+
+```csharp
+await factory.RunAsync(
+    dataSource,
+    async (unit, connection, ct) =>
+    {
+        var tx = (NpgsqlTransaction)((IRelationalUnitOfWorkResource)unit.Resource!).Transaction;
+        await using var command = new NpgsqlCommand("UPDATE accounts SET balance = balance - 10 WHERE id = @id", connection, tx);
+        command.Parameters.AddWithValue("id", accountId);
+        await command.ExecuteNonQueryAsync(ct);
+        await unit.Outbox.PublishAsync(new AccountDebited(accountId), ct); // rolled back and written again on a replay
+    },
+    IsolationLevel.Serializable,
+    cancellationToken: ct // retry: omitted, so the host's UnitOfWorkRetryOptions applies
+);
 ```
 
 Observed mode, for a transaction you own:
@@ -436,12 +491,13 @@ Runs raw-ADO `SqlConnection` work as a unit of work, so outbox rows and job rows
 
 - `IUnitOfWorkFactory.BeginAsync(connection, isolation, ct)` — owned mode: begins the transaction on that line (opening the connection when it is closed) and binds the unit to the connection (`connection.UnitOfWork()`); `CompleteAsync` commits and drains, `RollbackAsync` or a dispose without completing rolls back. Refused on a connection that already carries a live unit.
 - `IUnitOfWorkFactory.Enlist(connection, transaction)` — observed mode for a transaction you commit yourself; call `CompleteAsync` after your commit or `RollbackAsync` after your rollback. Binds and refuses like `BeginAsync`.
-- `IUnitOfWorkFactory.RunAsync(connection, operation, isolation, ct)` — on a connection that already carries a live unit (begun by this provider or by EF over the same connection), **joins** it: the operation receives the owner's handle at the owner's isolation level (`isolation` is ignored), commit stays with the owner, and an operation that ends the unit itself is refused once it returns. Otherwise begin → operation → complete in one call; a throwing operation rolls back and rethrows its own exception.
+- `IUnitOfWorkFactory.RunAsync(connection, operation, isolation, ct)` — on a connection that already carries a live unit (begun by this provider or by EF over the same connection), **joins** it: the operation receives the owner's handle at the owner's isolation level (`isolation` is ignored), commit stays with the owner, and an operation that ends the unit itself is refused once it returns. Otherwise begin → operation → complete in one call; a throwing operation rolls back and rethrows its own exception. Never replays.
+- `IUnitOfWorkFactory.RunAsync(connectionFactory, operation, isolation, retry, ct)` (and the `TResult` overload) — `connectionFactory` is a `Func<CancellationToken, ValueTask<SqlConnection>>` that returns a NEW connection per attempt (a closed one is opened); each attempt begins an owned unit on it and hands the block `(unit, connection, ct)`. Replay, policy, and disposal behave as in the PostgreSQL data-source overload. SqlClient ships no `DbDataSource`, hence the delegate.
 - `AddSqlServerUnitOfWork()` — registers the singleton factory (idempotent; there are no provider options).
 
 ### Design constraints
 
-SqlClient exposes no commit edge, so observed mode is explicit: nothing completes the unit for you. A unit enlisted with `Enlist` and disposed without `CompleteAsync` or `RollbackAsync` after its transaction completed is logged as a forgotten completion — the durable rows are relay-recovered, but the fast-path dispatch was lost. A dispose while the transaction is still open is the normal failure path and logs nothing. There is no execution-strategy retry for raw ADO; that is an EF Core concept (`Headless.UnitOfWork.EntityFramework`).
+SqlClient exposes no commit edge, so observed mode is explicit: nothing completes the unit for you. A unit enlisted with `Enlist` and disposed without `CompleteAsync` or `RollbackAsync` after its transaction completed is logged as a forgotten completion — the durable rows are relay-recovered, but the fast-path dispatch was lost. A dispose while the transaction is still open is the normal failure path and logs nothing. Only the connection-factory `RunAsync` replays: a caller-owned connection cannot be replaced after it fails, so `RunAsync(connection, …)` never replays.
 
 ### Install
 
@@ -468,6 +524,24 @@ await using (var command = new SqlCommand("INSERT INTO orders (id) VALUES (@id)"
 }
 await unit.Outbox.PublishAsync(new OrderPlaced(orderId), ct); // enlisted; an injected IBus would not be
 await unit.CompleteAsync(ct);
+```
+
+A replayable block with a per-call policy (overriding any host default):
+
+```csharp
+await factory.RunAsync(
+    ct => ValueTask.FromResult(new SqlConnection(connectionString)),
+    async (unit, connection, ct) =>
+    {
+        var tx = (SqlTransaction)((IRelationalUnitOfWorkResource)unit.Resource!).Transaction;
+        await using var command = new SqlCommand("UPDATE accounts SET balance = balance - 10 WHERE id = @id", connection, tx);
+        command.Parameters.AddWithValue("@id", accountId);
+        await command.ExecuteNonQueryAsync(ct);
+    },
+    IsolationLevel.Snapshot,
+    retry: new RetryStrategyOptions { MaxRetryAttempts = 3, ShouldHandle = UnitOfWorkRetryOptions.DefaultShouldHandle },
+    cancellationToken: ct
+);
 ```
 
 Observed mode, for a transaction you own:

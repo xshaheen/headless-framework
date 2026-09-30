@@ -23,14 +23,30 @@ namespace Headless.UnitOfWork;
 /// The registration lifetimes <c>AddUnitOfWork()</c> captured, which refuse a non-singleton feature before it
 /// resolves; <see langword="null" /> for a factory constructed by hand, which then trusts the provider.
 /// </param>
+/// <param name="retryOptions">
+/// The host's default replay policy for the per-attempt-connection <c>RunAsync</c> overloads;
+/// <see langword="null" /> disables replay unless a call passes its own.
+/// </param>
 internal sealed partial class UnitOfWorkFactory(
     ILogger<UnitOfWorkFactory>? logger = null,
     IServiceProvider? services = null,
-    UnitOfWorkFeatureLifetimes? featureLifetimes = null
+    UnitOfWorkFeatureLifetimes? featureLifetimes = null,
+    UnitOfWorkRetryOptions? retryOptions = null
 ) : IUnitOfWorkFactory
 {
+    // Built on first use rather than in the constructor, so an invalid strategy fails the first replaying
+    // RunAsync with Polly's validation message instead of failing every resolve of the factory.
+    private readonly Lazy<IUnitOfWorkExecutionStrategy> _defaultReplayStrategy = new(() =>
+        retryOptions?.RetryStrategy is { } retryStrategy
+            ? ResiliencePipelineUnitOfWorkExecutionStrategy.Create(retryStrategy)
+            : NoReplayUnitOfWorkExecutionStrategy.Instance
+    );
+
     /// <summary>The factory's logger, shared with the provider runners so post-commit drain faults land in one category.</summary>
     internal ILogger Logger { get; } = logger ?? NullLogger<UnitOfWorkFactory>.Instance;
+
+    /// <summary>The host's replay strategy for a per-attempt-connection <c>RunAsync</c> that passes none of its own.</summary>
+    internal IUnitOfWorkExecutionStrategy DefaultReplayStrategy => _defaultReplayStrategy.Value;
 
     /// <inheritdoc />
     public ValueTask<IUnitOfWork> BeginAsync(

@@ -4,6 +4,7 @@ using Headless.UnitOfWork;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Polly.Retry;
 
 namespace Tests;
 
@@ -80,6 +81,88 @@ public sealed class SqlServerEntityFrameworkReplayConformanceTests(SqlServerUnit
     public override Task should_replay_a_joined_block_only_with_its_owner()
     {
         return base.should_replay_a_joined_block_only_with_its_owner();
+    }
+}
+
+/// <summary>
+/// Runs the replay conformance suite against <c>RunAsync(Func&lt;CancellationToken, ValueTask&lt;SqlConnection&gt;&gt;, …)</c>
+/// with the replay policy passed per call.
+/// </summary>
+[Collection<SqlServerUnitOfWorkFixture>]
+public sealed class SqlServerConnectionFactoryReplayConformanceTests(SqlServerUnitOfWorkFixture fixture)
+    : UnitOfWorkReplayConformanceTests(new SqlServerConnectionFactoryReplayFixture(fixture))
+{
+    [Fact]
+    public override Task should_replay_a_fault_before_the_commit_only_when_the_spelling_replays()
+    {
+        return base.should_replay_a_fault_before_the_commit_only_when_the_spelling_replays();
+    }
+
+    [Fact]
+    public override Task should_not_replay_when_the_commit_faults()
+    {
+        return base.should_not_replay_when_the_commit_faults();
+    }
+
+    [Fact]
+    public override Task should_not_replay_after_the_block_prevents_retry()
+    {
+        return base.should_not_replay_after_the_block_prevents_retry();
+    }
+
+    [Fact]
+    public override Task should_return_the_result_when_the_drain_faults_after_a_durable_commit()
+    {
+        return base.should_return_the_result_when_the_drain_faults_after_a_durable_commit();
+    }
+
+    [Fact]
+    public override Task should_replay_a_joined_block_only_with_its_owner()
+    {
+        return base.should_replay_a_joined_block_only_with_its_owner();
+    }
+}
+
+/// <summary>
+/// <c>RunAsync(Func&lt;CancellationToken, ValueTask&lt;SqlConnection&gt;&gt;, …)</c>, with the replay policy passed on
+/// the call and no host default: replay every fault once with no delay, so a scenario proves that a refusal comes
+/// from the runner's policy and not from the classification. The factory hands out closed connections, which the
+/// runner opens.
+/// </summary>
+public sealed class SqlServerConnectionFactoryReplayFixture(SqlServerUnitOfWorkFixture container)
+    : IUnitOfWorkReplayFixture
+{
+    public bool ReplaysBeforeCommit => true;
+
+    public async Task<TResult> RunAsync<TResult>(
+        Func<IUnitOfWorkReplayContext, CancellationToken, Task<TResult>> operation,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var provider = SqlServerUnitOfWorkFixture.BuildProvider();
+        var factory = provider.GetRequiredService<IUnitOfWorkFactory>();
+
+        return await factory.RunAsync(
+            _ => ValueTask.FromResult(new SqlConnection(container.ConnectionString)),
+            (unitOfWork, connection, ct) => operation(new SqlServerReplayContext(factory, connection, unitOfWork), ct),
+            retry: new RetryStrategyOptions
+            {
+                MaxRetryAttempts = 1,
+                Delay = TimeSpan.Zero,
+                ShouldHandle = static args => ValueTask.FromResult(args.Outcome.Exception is not null),
+            },
+            cancellationToken: cancellationToken
+        );
+    }
+
+    public Task<int> CountProbeRowsAsync(CancellationToken cancellationToken)
+    {
+        return container.CountProbeRowsAsync(cancellationToken);
+    }
+
+    public Task ResetAsync(CancellationToken cancellationToken)
+    {
+        return container.ResetAsync(cancellationToken);
     }
 }
 
