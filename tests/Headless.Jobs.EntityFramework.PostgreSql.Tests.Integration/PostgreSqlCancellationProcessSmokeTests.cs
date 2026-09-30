@@ -100,8 +100,7 @@ public sealed class PostgreSqlCancellationProcessSmokeTests(PostgreSqlJobsCoordi
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText =
-            $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"ExecutionTime\" = now() WHERE \"Id\" = @id";
+        command.CommandText = $"UPDATE {fixture.QualifiedTimeJobsTable} SET execution_time = now() WHERE id = @id";
         var parameter = command.CreateParameter();
         parameter.ParameterName = "@id";
         parameter.Value = jobId;
@@ -114,8 +113,7 @@ public sealed class PostgreSqlCancellationProcessSmokeTests(PostgreSqlJobsCoordi
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText =
-            $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"CancelRequested\" = TRUE WHERE \"Id\" = @id";
+        command.CommandText = $"UPDATE {fixture.QualifiedTimeJobsTable} SET cancel_requested = TRUE WHERE id = @id";
         var parameter = command.CreateParameter();
         parameter.ParameterName = "@id";
         parameter.Value = jobId;

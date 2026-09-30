@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Sequences.SqlServer;
+using Headless.Sql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -15,6 +16,22 @@ public static class SetupSequencesSqlServer
 {
     extension(HeadlessSequencesSetupBuilder setup)
     {
+        /// <summary>
+        /// Configures SQL Server storage with the connection registered by <c>AddSqlServerSql</c>, so one
+        /// connection string serves every feature that shares the database.
+        /// </summary>
+        /// <returns>The setup builder for chaining.</returns>
+        /// <remarks>
+        /// Options resolution throws <see cref="InvalidOperationException"/> when <c>AddSqlServerSql</c> was not
+        /// called or registered another provider's connection.
+        /// </remarks>
+        public HeadlessSequencesSetupBuilder UseSqlServer()
+        {
+            return setup.UseSqlServer(
+                (options, services) => options.ConnectionString = services.GetSqlServerConnectionString()
+            );
+        }
+
         /// <summary>Stores counters in SQL Server, in the database named by <paramref name="connectionString" />.</summary>
         /// <param name="connectionString">The SqlClient connection string.</param>
         /// <returns>The builder, to allow chaining.</returns>
@@ -131,6 +148,8 @@ public static class SetupSequencesSqlServer
             }
 
             services.AddInitializerHostedService<SqlServerSequencesStorageInitializer>();
+            // The store waits between deadlock retries on this clock.
+            services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<ISequenceStore, SqlServerSequenceStore>();
         }
     }

@@ -29,7 +29,7 @@ public sealed class IdempotencyMetadata
 
     /// <summary>
     /// Delegate invoked once per metadata instance (cached by reference) against a fresh clone of
-    /// the application-level options. All scalar properties (<see cref="IdempotencyOptions.IdempotencyKeyExpiration"/>,
+    /// the application-level options. All scalar properties (<see cref="IdempotencyOptions.Retention"/>,
     /// <see cref="IdempotencyOptions.InFlightStrategy"/>, <see cref="IdempotencyOptions.MismatchStatusCode"/>,
     /// etc.) and collection/delegate properties (<see cref="IdempotencyOptions.Methods"/>,
     /// <see cref="IdempotencyOptions.ReplayHeaderAllowlist"/>, <see cref="IdempotencyOptions.KeyDeriver"/>,

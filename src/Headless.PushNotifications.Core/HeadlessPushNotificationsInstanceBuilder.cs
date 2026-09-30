@@ -9,7 +9,7 @@ namespace Headless.PushNotifications;
 /// <summary>
 /// Builder for a single named push-notification service inside <c>AddHeadlessPushNotifications</c>. Provider
 /// packages contribute exactly one provider per instance through <see cref="RegisterProvider"/> (called by each
-/// instance-scoped <c>Use*</c> extension, for example <c>UseFirebase</c> or <c>UseNoop</c>).
+/// instance-scoped <c>Use*</c> extension, for example <c>UseApns</c>, <c>UseFirebase</c>, or <c>UseNoop</c>).
 /// </summary>
 [PublicAPI]
 public sealed class HeadlessPushNotificationsInstanceBuilder

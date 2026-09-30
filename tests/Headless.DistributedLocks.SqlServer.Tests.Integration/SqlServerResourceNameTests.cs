@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.DistributedLocks;
 using Headless.DistributedLocks.SqlServer;
 using Headless.Testing.Tests;
 
@@ -96,7 +97,11 @@ public sealed class SqlServerResourceNameTests : TestBase
     public void should_generate_safe_fence_sequence_names()
     {
         // Under maximum identifier length
-        SqlServerIdentifier.FenceSequenceName("my-prefix").Should().Be("headless_distlocks_fence_my_prefix");
+        SqlServerIdentifier.FenceSequenceName("my-prefix").Should().Be("DistributedLocksFence_my_prefix");
+        SqlServerIdentifier
+            .FenceSequenceName(DistributedLockOptions.DefaultKeyPrefix)
+            .Should()
+            .Be("DistributedLocksFence_distributed_lock");
 
         // Long prefix exceeding limits should be truncated safely
         var longPrefix = new string('a', 200);

@@ -55,7 +55,7 @@ public sealed class JobsStorageOptionsRegistrationTests
     {
         using var provider = _BuildProvider(_ => { });
 
-        provider.GetRequiredService<JobsStorageOptions>().Schema.Should().Be(JobsStorageOptions.DefaultSchema);
+        provider.GetRequiredService<JobsStorageOptions>().Schema.Should().Be("headless");
     }
 
     [Fact]

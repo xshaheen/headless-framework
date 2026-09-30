@@ -36,6 +36,15 @@ builder.AddHeadlessTenancy(tenancy =>
         .EntityFramework(ef => ef.GuardTenantWrites())
 );
 
+// RequireTenant() fails startup unless DefaultPolicy or FallbackPolicy carries TenantRequirement.
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .AddRequirements(new TenantRequirement())
+        .Build();
+});
+
 var app = builder.Build();
 
 app.UseHeadless();
@@ -72,11 +81,11 @@ app.UseAuthorization();
 - For message consumers, use the Messaging seam. When not using a seam on either path, set tenant explicitly with `using (currentTenant.Change(tenantId)) { ... }`.
 - Do not assume HTTP middleware covers SignalR hubs, background jobs, or messaging consumers. Those execution paths need their own tenant resolution.
 - The tenant catalog is opt-in and off by default: without `.Catalog(...)`, `ICurrentTenantInfo` is a no-op that always returns `null`, and claim-based resolution behaves exactly as it did before the catalog existed.
-- Never reassign an existing tenant identifier to a different tenant within the cache-lifetime window (`TenantCatalogOptions.CacheExpiration`, default 5 minutes) — the store SPI is read-only from the framework's perspective, so there is no cache-invalidation path, and a still-cached identifier→id mapping would silently route requests to the wrong tenant. Wait at least `CacheExpiration` after retiring an identifier before reusing it. See [Tenant Catalog](#tenant-catalog).
+- After changing a tenant in the store, evict what changed through `ITenantCatalogCacheInvalidator`: `InvalidateIdentifierAsync` for a re-pointed, renamed, or newly created identifier, `InvalidateTenantAsync` for a disabled or edited tenant. The store SPI is read-only, so the catalog never sees the write, and a still-cached identifier→id mapping silently routes requests to the wrong tenant. Still wait at least `TenantCatalogOptions.CacheExpiration` (default 5 minutes) before re-pointing a retired identifier at a different tenant: an in-flight lookup can write the old mapping back after the eviction. See [Tenant Catalog](#tenant-catalog).
 - Do not treat `ICurrentTenantInfo` reads as an authorization check. Reads never reject — a disabled tenant's metadata still returns with `IsEnabled = false`. Rejection on disablement happens only at identifier-resolution time (`TenantCatalogResolutionMiddleware` / `ITenantCatalogService.ResolveAsync`), never on an accessor read.
 - Never treat `TenantResolutionKind.None` as a resolution result. It is the enum's reserved zero value — the state of an uninitialized `default(TenantResolutionOutcome)`, an auto-valued test double, or a misbehaving custom `ITenantCatalogService` — not a sixth outcome. The catalog itself never produces it; a store or catalog-service override that returns it has a bug, not a legitimate "unresolved" case. Use `Unknown` for that.
 - Register `UseHeadlessTenantCatalogResolution()` after `UseRouting()` and before `UseAuthentication()` — a different slot from `UseHeadlessTenancy()` (after `UseAuthentication()`, before `UseAuthorization()`). The two middlewares serve different resolution paths (identifier vs. claim) and both can be active in the same pipeline.
-- Register `UseStatusCodesRewriter()` so it wraps `UseAuthorization()` on any catalog-resolution host. It writes the mismatch rejection the authorization tier only marks; omitting it fails startup (`CATALOG_RESOLUTION_WITHOUT_REWRITER`), and placing it after `UseAuthorization()` passes startup but still leaks the mismatch as a distinguishable bare 403.
+- Register `UseStatusCodesRewriter()` so it wraps `UseAuthorization()` on any catalog-resolution host. It writes the mismatch rejection the authorization tier only marks; omitting it fails startup (`CATALOG_RESOLUTION_WITHOUT_REWRITER`), and so does any call placed after `UseAuthorization()` (`CATALOG_RESOLUTION_REWRITER_AFTER_AUTHORIZATION`), since that rewriter never sees the failed evaluation and the mismatch would leak as a distinguishable bare 403.
 - Do not add per-tenant application configuration to `TenantInfo.ExtraProperties` or a queryable column just because it is convenient. If a value needs to be queried or indexed, it belongs in Settings/Features/Permissions keyed by the canonical tenant id, or in a typed column of your own `ITenantStore` implementation — never in the catalog's read-along bag.
 - Register a caching provider in any host that configures `.Catalog(...)`. `Headless.MultiTenancy` references only `Headless.Caching.Abstractions`, and the open-generic `ICache<>` implementation ships with a provider package, so `AddHeadlessCaching(caching => caching.UseInMemory())` (or `UseRedis` / `UseHybrid`) is a hard prerequisite rather than an optimization. The requirement is declared with `RequireRegisteredService` and fails host startup when unmet, in every environment. It applies to accessor-only hosts too, because `ICurrentTenantInfo` reads go through the same caches as identifier resolution.
 - Rate-limit the pre-authentication identifier path in the application or at the edge. Every unauthenticated request can reach `ITenantCatalogService.ResolveAsync`, and negative caching only blunts repeated probes of the *same* unknown identifier: rotating through distinct identifiers costs one store read each. The framework enforces no bound on that traffic class by design. See [DoS and rate limiting](#dos-and-rate-limiting).
@@ -96,8 +105,8 @@ app.UseAuthorization();
     2. **Subclass `TenantInfo`** (non-sealed) from an app-owned `ITenantStore` implementation, adding real typed, queryable columns. This is the "queryable-by ⇒ first-class" rule: an attribute that needs an index is either a tenant identifier or a column in your own store, never a value stuffed into `ExtraProperties`.
     3. **Opt-in typed leaf accessor** — `ICurrentTenantInfo<T>`, registered via `services.AddTypedCurrentTenantInfo<T>(projection)`. Only this accessor is generic; the store SPI, cache, catalog service, and outcome types stay non-generic. The projection delegate builds `T` from the base `TenantInfo` shape, with a downcast fast path when the store already returned the subtype directly.
 - **Store SPI is read-only and minimal.** `ITenantStore` has exactly two members (`FindByIdentifierAsync`, `FindByIdAsync`); an optional `ITenantDirectory.GetAllAsync()` capability adds enumeration. Normalization, shape validation, and caching are owned once by the catalog service — stores never see raw caller input and never re-normalize. Implementing `ITenantStore` directly over an app-owned tenant aggregate is a documented first-class path, not a fallback; the shipped in-memory, configuration, and EF Core stores are convenience defaults, not a canonical schema every app must adopt.
-- **Staleness bounds.** `TenantCatalogOptions.CacheExpiration` (default 5 minutes) bounds how long a resolved identifier→id mapping and an id→`TenantInfo` entry stay cached before the catalog service re-reads the store — a disable or metadata change propagates within this window. `UnknownIdentifierCacheExpiration` (default 30 seconds) is a separate, shorter negative-cache window: a newly created tenant becomes resolvable within it once its identifier stops returning a cached "unknown" result. The store SPI is read-only, so there is no framework write path to invalidate either cache early. The combined disabled-tenant exposure window — the longest time a disabled tenant can still be treated as active by some code path — is `max(claim lifetime, CacheExpiration)`: a claim-resolved request bypasses the catalog entirely, so a disabled tenant's still-valid JWT keeps passing `TenantRequirementHandler` for the rest of the token's lifetime regardless of the catalog; an identifier-resolved request is bounded by `CacheExpiration` instead.
-- **Identifier no-reuse rule.** Because there is no cache-invalidation path, reassigning an identifier to a different tenant while a stale mapping could still be cached is unsafe. Retire an identifier for at least `CacheExpiration` before re-pointing it at a different tenant.
+- **Staleness bounds.** `TenantCatalogOptions.CacheExpiration` (default 5 minutes) bounds how long a resolved identifier→id mapping and an id→`TenantInfo` entry stay cached before the catalog service re-reads the store — a disable or metadata change propagates within this window. `UnknownIdentifierCacheExpiration` (default 30 seconds) is a separate, shorter negative-cache window: a newly created tenant becomes resolvable within it once its identifier stops returning a cached "unknown" result. The store SPI is read-only, so the catalog never sees a store write; the application evicts changed entries early through `ITenantCatalogCacheInvalidator` (see [Cache invalidation](#cache-invalidation)). The combined disabled-tenant exposure window — the longest time a disabled tenant can still be treated as active by some code path — is `max(claim lifetime, CacheExpiration)`: a claim-resolved request bypasses the catalog entirely, so a disabled tenant's still-valid JWT keeps passing `TenantRequirementHandler` for the rest of the token's lifetime regardless of the catalog; an identifier-resolved request is bounded by `CacheExpiration` instead.
+- **Identifier no-reuse rule.** Invalidating the identifier after a re-point closes the window on every node that answers from the shared cache, but not completely: a lookup that read the store before the write can write the old mapping back after the eviction, and a hybrid peer whose shared copy had already expired keeps its local copy until that expires. Retire an identifier for at least `CacheExpiration` before re-pointing it at a different tenant; the invalidator shortens every other change, not this one.
 - **Secure-by-default rejection.** Unknown, disabled, and identifier/claim-mismatch outcomes all collapse to one generic response (`g:tenant_resolution_failed`, 404). The guarantee this buys is narrower than full tenant-enumeration resistance: a rejected caller cannot tell whether the identifier is unknown, belongs to a disabled tenant, or conflicts with its own tenant claim — the three rejection outcomes become mutually indistinguishable. It does not hide the existence of an *enabled* tenant — that request is never rejected by this collapse; it proceeds to the endpoint and returns the application's own status, so existence stays observable in one request either way. `TenantCatalogOptions.DetailedResolutionErrors = true` gives up only the rejection-indistinguishability guarantee, restoring granular codes and statuses (`g:tenant_unknown` 404, `g:tenant_disabled` 403, `g:tenant_identifier_mismatch` 403) for development and trusted environments only. Invalid-shape identifiers always keep their own code (`g:tenant_identifier_invalid`, 400) regardless of the option, since shape validation reveals nothing tenant-specific. Store faults are never mapped to these codes — they propagate as ordinary server errors; a cache fault degrades to a miss and falls through to the store.
 - **Accessor semantics.** `ICurrentTenantInfo.GetAsync()` reads the ambient `ICurrentTenant.Id` fresh on every call — there is no per-scope memoization — so nested `ICurrentTenant.Change(...)` scopes (Jobs retry, Messaging consume, admin flows) always observe the inner tenant's info while the scope is active and the outer tenant's info again once it disposes. Reads never throw for an absent tenant: `null` covers "no ambient tenant", "no catalog store configured", and "id has no catalog row" alike. A disabled tenant's metadata still reads normally (`IsEnabled = false`) — rejecting a disabled tenant is a resolution-time concern only. When the ambient display name and the catalog name differ (for example after a Jobs/Messaging-restored scope carries a stale name), the accessor's catalog value is authoritative.
 
@@ -183,7 +192,7 @@ publicGroup.MapGet("/status", () => Results.Ok());
 // MVC — controller (applies to all actions)
 [SkipTenantResolution]
 [Route("admin")]
-public sealed class AdminController : ControllerBase { ... }
+public sealed class AdminController : ControllerBase;
 
 // MVC — individual action
 [Route("users")]
@@ -364,13 +373,17 @@ No HTTP pipeline change is required for this — `TenantResolutionMiddleware` (t
 using Headless.MultiTenancy; // TenantInfo, Catalog(...)
 using Headless.Api;          // ResolveFromCatalog(...), AddHostSource(...), UseHeadlessTenantCatalogResolution()
 
+builder.Services.AddHeadlessCaching(caching => caching.UseInMemory()); // the catalog's hard prerequisite
+
 builder.AddHeadlessTenancy(tenancy =>
 {
     tenancy
         .Catalog(catalog =>
             catalog
                 .Configure(options => options.IgnoredIdentifiers.Add("www")) // www.example.com -> host context
-                .UseInMemory(options => options.Tenants.Add(/* ... */))
+                .UseInMemory(options =>
+                    options.Tenants.Add(new TenantInfo(id: "ten_123", identifier: "acme", name: "Acme Inc", isEnabled: true))
+                )
         )
         .Http(http =>
             http.ResolveFromCatalog(sources =>
@@ -382,6 +395,8 @@ builder.AddHeadlessTenancy(tenancy =>
             )
         );
 });
+
+builder.Services.AddAuthorization(); // UseAuthorization() below requires it
 
 var app = builder.Build();
 
@@ -476,6 +491,7 @@ These settings are catalog-wide: mixing a subdomain source with a custom-domain 
 - Every rejection written by the catalog path (unknown, disabled, invalid, or mismatch) carries `Cache-Control: no-store`, so a shared cache never serves a 404 rejection to the next caller.
 - Behind a proxy, `UseForwardedHeaders()` with `KnownProxies` or `KnownNetworks` configured must run before the catalog middleware, and host filtering (`AllowedHosts`) should be scoped to the tenant suffix. The host source reads the post-forwarding `Request.Host` and never `X-Forwarded-Host` directly, so an unconfigured proxy cannot smuggle a host and a forged `X-Forwarded-Host` is ignored.
 - `UseCors()` must run before the catalog middleware so preflight requests short-circuit instead of being tenant-resolved or rejected.
+- Unknown, disabled, and mismatch rejections are byte-identical by default, but not timing-identical. A disabled tenant that someone resolved recently answers from the cache, while an unknown identifier outside its negative-cache window costs a store round trip, so response latency can reveal that a disabled tenant exists. The framework does not equalize timing; rate limiting (see [DoS and rate limiting](#dos-and-rate-limiting)) caps how many samples a caller can collect.
 - No tenancy log event carries a raw host, route value, header value, or identifier; the misorder and timeout events name the source type and, for timeouts, the operator-supplied template only, and each fires once per process so it cannot be used to flood logs.
 - CDN caveats: host and route tenancy rely on the URL — including the host — being the cache key, so a CDN cache key that omits the host serves one tenant's response to another; and many CDNs refuse to cache responses that vary on unknown headers, so a header source's `Vary: X-Tenant` may disable caching at the edge.
 
@@ -502,7 +518,7 @@ The claim middleware also carries a fast-path check comparing against the preser
 
 A mismatch that is visible only to a non-default scheme is rejected by the authorization tier, whose forbid result is collapsed to the generic 404 by `StatusCodesRewriterMiddleware`. That tier writes no response of its own — it only fails the evaluation and marks the request — so the rewriter is load-bearing, not cosmetic, and its absence leaves a distinguishable 403 next to the unknown identifier's 404: a tenant-enumeration oracle. Startup therefore fails with `CATALOG_RESOLUTION_WITHOUT_REWRITER` when `catalog-resolution` is configured and `UseStatusCodesRewriter()` was never called.
 
-The residual the diagnostic cannot cover is **placement**: the posture manifest records that the rewriter was registered, not where. `UseStatusCodesRewriter()` must be added to the pipeline before `UseAuthorization()` so that it wraps it — a rewriter placed after authorization is never reached, because a failed evaluation short-circuits, and the mismatch stays a bare 403 on a host that passes startup validation.
+Placement is checked too. `UseStatusCodesRewriter()` must be added to the pipeline before `UseAuthorization()` so that it wraps it — a rewriter placed after authorization is never reached, because a failed evaluation short-circuits, and the mismatch stays a bare 403. The rewriter records whether `UseAuthorization()` had already been called on the same builder, and startup fails with `CATALOG_RESOLUTION_REWRITER_AFTER_AUTHORIZATION` for any call placed after it, even when another call is correctly placed. Two placements stay invisible to that check: authorization that `WebApplication` adds implicitly because the host never called `UseAuthorization()`, which runs ahead of all user middleware, and authorization added inside a rejoining `UseWhen` branch. Call `UseAuthentication()` and `UseAuthorization()` explicitly on the main pipeline.
 
 ### Failure mapping
 
@@ -530,9 +546,52 @@ Apps that start with claim-direct resolution (`.Http(http => http.ResolveFromCla
 4. **Mismatch enforcement activates automatically** with `ResolveFromCatalog(...)` — it also registers `IHttpContextAccessor` — and applies to any request that carries both a resolved identifier and a tenant claim, including on catalog-only hosts that never call `ResolveFromClaims()`. No extra wiring is needed, and there is no behavior change for hosts that resolve tenants only from claims.
 5. **Choose a store per [Choosing a Tenant Catalog Store](#choosing-a-tenant-catalog-store)** — starting with in-memory or configuration and moving to EF Core later is a same-shape swap (`UseInMemory` → `UseEntityFramework<TContext>()`); the catalog service, caching, and HTTP wiring do not change.
 
+### Cache invalidation
+
+`ITenantCatalogCacheInvalidator` (registered by `Catalog(...)` as a singleton) evicts catalog cache entries after the application changes a tenant in its store. Each method removes one exact key through `ICache<T>.RemoveAsync`, so a glob character that a custom `IdentifierPattern` admits cannot widen an eviction. Neither method reads the cache to find related entries, because the local node may not hold an entry a peer still serves, so name every key the change touched:
+
+| Store change | Calls |
+|---|---|
+| Identifier re-pointed to a different tenant | `InvalidateIdentifierAsync(identifier)` |
+| Tenant disabled, enabled, or metadata changed | `InvalidateTenantAsync(id)` |
+| Identifier renamed | `InvalidateTenantAsync(id)`, `InvalidateIdentifierAsync(oldIdentifier)`, `InvalidateIdentifierAsync(newIdentifier)` |
+| Tenant created under an identifier probed while unknown | `InvalidateIdentifierAsync(identifier)` |
+
+```csharp
+await db.SaveChangesAsync(cancellationToken); // commit the store change first
+
+await invalidator.InvalidateTenantAsync(tenant.Id, cancellationToken);
+await invalidator.InvalidateIdentifierAsync(oldIdentifier, cancellationToken);
+await invalidator.InvalidateIdentifierAsync(tenant.Identifier, cancellationToken);
+```
+
+`InvalidateIdentifierAsync` trims and lowercases its argument the same way resolution does. Invalidate after the store write commits. A fault removing the entry from the cache propagates, so a failed eviction there is visible to the caller rather than silently leaving the entry cached.
+
+Eviction is not a hard cut-over. A lookup that read the store before the write can still write the old answer back after the eviction, whether the change was a re-point, a disable, or a metadata edit. On a hybrid cache, `RemoveAsync` tells peers to drop their local copy only when the shared (L2) cache actually held the key, and a failed broadcast is logged (or queued for replay under auto-recovery) rather than thrown, so a peer can keep serving its local copy until that copy expires. Every one of these windows stays within the configured expirations, which is why the [identifier no-reuse rule](#core-concepts) still applies to re-pointing an identifier at a different tenant.
+
 ### DoS and rate limiting
 
 The pre-auth identifier-resolution path is reachable by unauthenticated callers by construction (it runs before `UseAuthentication()`). DoS and rate-limiting protection for this path is a consumer responsibility, mirroring the framework's existing input-validation delegation (cache key length, message payload size) — the framework validates identifier *shape* (length and character-set bounds, rejected before any cache or store lookup) but does not rate-limit callers. Use ASP.NET Core's built-in rate limiting middleware or an edge control (reverse proxy, WAF, CDN) in front of hosts that expose identifier-based resolution to the public internet. `UnknownIdentifierCacheExpiration` bounds repeated-probe cost against the *store* for a fixed identifier, but rotating through many distinct unknown identifiers still costs one store read each — that traffic class is what rate limiting is for, not caching.
+
+The same rotation also fills the shared `ICache` with one negative entry per distinct identifier, each living for `UnknownIdentifierCacheExpiration`, and can crowd useful entries out of a bounded cache. The framework adds no entry-count cap: `ICache` implementations deliberately enforce no size limits of their own. Bound the traffic instead. `Headless.RateLimiting`'s `IAttemptLimiter` gives every replica one shared budget per client when it runs on a shared (`UseRedis` or `UseHybrid`) cache:
+
+```csharp
+var tenantResolutionQuota = new AttemptQuota(limit: 300, window: TimeSpan.FromMinutes(1));
+
+// After UseForwardedHeaders() (so RemoteIpAddress is the client) and UseCors(), before resolution.
+app.Use(async (context, next) =>
+{
+    var limiter = context.RequestServices.GetRequiredService<IAttemptLimiter>();
+    var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    var attempt = await limiter.AcquireAsync("tenant-resolution", clientIp, tenantResolutionQuota, context.RequestAborted);
+    attempt.ThrowIfRejected(); // 429 with Retry-After through the Headless exception handler
+
+    await next(context);
+});
+app.UseHeadlessTenantCatalogResolution();
+```
+
+This charges every request that reaches resolution, so size the quota for legitimate per-client traffic. See [Rate Limiting](rate-limiting.md) for quota semantics and key privacy. ASP.NET Core's built-in rate limiter works too, but its limits apply per replica.
 
 ## EF Core Integration
 
@@ -768,7 +827,9 @@ When no tenant is active, the cache scope is `t:`. This is expected host-level b
 using Headless.Jobs;
 
 builder.AddHeadlessTenancy(tenancy =>
-    tenancy.Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue())
+    tenancy
+        .Http(http => http.ResolveFromClaims()) // the ambient tenant that propagation captures
+        .Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue())
 );
 
 builder.Services.AddHeadlessJobs(options =>
@@ -776,7 +837,7 @@ builder.Services.AddHeadlessJobs(options =>
 });
 ```
 
-Register a real `ICurrentTenant` source (HTTP claim resolution, `AddHeadlessDbContextServices()`, or a custom implementation) before `AddHeadlessJobs` so propagation resolves a live tenant rather than the framework's `NullCurrentTenant` fallback. See [docs/llms/jobs.md](jobs.md#tenant-propagation) for the full resolution and chain-propagation semantics.
+Register a real `ICurrentTenant` source (HTTP claim resolution or a custom implementation) before `AddHeadlessJobs` so propagation resolves a live tenant rather than the framework's `NullCurrentTenant` fallback. See [docs/llms/jobs.md](jobs.md#tenant-propagation) for the full resolution and chain-propagation semantics.
 
 #### Automatic Propagation (`PropagateTenant`)
 
@@ -826,41 +887,40 @@ using Headless.MultiTenancy; // ITenantDirectory — only when a tenant catalog 
 // permission cache) observe the right tenant automatically.
 public sealed record TenantReportRequest(string ReportKind);
 
-[JobFunction("GenerateTenantReport")]
 public sealed class GenerateTenantReport(IReportService reports)
 {
+    [JobFunction("GenerateTenantReport")]
     public Task ExecuteAsync(JobFunctionContext<TenantReportRequest> context, CancellationToken ct) =>
         reports.BuildAsync(context.Request.ReportKind, ct);
 }
 
 // A system-scope cron that fans out one tenant-scoped time job per tenant.
-[JobFunction("NightlyReportFanOut", cronExpression: "0 2 * * *")]
-public static async Task FanOutAsync(IServiceProvider sp, CancellationToken ct)
+// ITenantDirectory is the framework's optional catalog enumeration capability (see
+// [Tenant Catalog](#tenant-catalog)) — available only when a tenant catalog store is
+// configured via `.Catalog(...)`. An app that has not configured a catalog enumerates
+// tenants through its own means instead (a direct query against its own tenant table, an
+// app-owned directory service, etc.) — the loop below is identical either way.
+public sealed class NightlyReportFanOut(IJobScheduler scheduler, ITenantDirectory tenants)
 {
-    var scheduler = sp.GetRequiredService<IJobScheduler>();
-
-    // ITenantDirectory is the framework's optional catalog enumeration capability (see
-    // [Tenant Catalog](#tenant-catalog)) — available only when a tenant catalog store is
-    // configured via `.Catalog(...)`. An app that has not configured a catalog enumerates
-    // tenants through its own means instead (a direct query against its own tenant table, an
-    // app-owned directory service, etc.) — the loop below is identical either way.
-    var tenants = sp.GetRequiredService<ITenantDirectory>();
-
-    foreach (var tenant in await tenants.GetAllAsync(ct))
+    [JobFunction("NightlyReportFanOut", cronExpression: "0 0 2 * * *")]
+    public async Task ExecuteAsync(CancellationToken ct)
     {
-        if (!tenant.IsEnabled)
+        foreach (var tenant in await tenants.GetAllAsync(ct))
         {
-            continue;
-        }
+            if (!tenant.IsEnabled)
+            {
+                continue;
+            }
 
-        // Explicit TenantId is REQUIRED: the cron handler runs system-scope, so there is no
-        // ambient tenant for PropagateTenant() to capture here. Relying on ambient capture
-        // inside a cron handler would silently persist tenantless jobs.
-        await scheduler.EnqueueAsync(
-            new TenantReportRequest("nightly"),
-            new JobOptions { TenantId = tenant.Id, Description = $"nightly-report-{tenant.Id}" },
-            ct
-        );
+            // Explicit TenantId is REQUIRED: the cron handler runs system-scope, so there is no
+            // ambient tenant for PropagateTenant() to capture here. Relying on ambient capture
+            // inside a cron handler would silently persist tenantless jobs.
+            await scheduler.EnqueueAsync(
+                new TenantReportRequest("nightly"),
+                new JobOptions { TenantId = tenant.Id, Description = $"nightly-report-{tenant.Id}" },
+                ct
+            );
+        }
     }
 }
 ```
@@ -890,7 +950,9 @@ For end-to-end propagation, opt in to the built-in middleware pair:
 using Headless.Messaging.MultiTenancy;
 
 builder.AddHeadlessTenancy(tenancy =>
-    tenancy.Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
+    tenancy
+        .Http(http => http.ResolveFromClaims()) // the ambient tenant that propagation captures
+        .Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
 );
 
 builder.Services.AddHeadlessMessaging(options =>
@@ -993,7 +1055,7 @@ public sealed class OrderService(ICurrentTenant currentTenant)
 {
     public Order CreateOrder(CreateOrderRequest request)
     {
-        return new Order { Id = Guid.NewGuid(), TenantId = currentTenant.Id, ... };
+        return new Order { Id = Guid.NewGuid(), TenantId = currentTenant.Id };
     }
 
     // Scope a temporary tenant override — for example inside a background job or an admin tool.
@@ -1035,8 +1097,9 @@ None.
     - `HeadlessTenancyBuilder.Catalog(Action<HeadlessTenancyCatalogSetupBuilder> configure)` — configures `TenantCatalogOptions`, registers exactly one storage provider (`UseInMemory`/`UseConfiguration`/`UseEntityFramework`, guarded — a second registration fails startup), and wires the catalog service and the `ICurrentTenantInfo` accessor.
     - `InMemoryTenantStore` / `UseInMemory(...)` — seeded, immutable snapshot store for tests and small apps; rejects duplicate normalized identifiers or ids at startup. Three overloads: `Action<InMemoryTenantStoreOptions>`, `Action<InMemoryTenantStoreOptions, IServiceProvider>`, and a raw `InMemoryTenantStoreOptions` instance — deliberately no `UseInMemory(IConfiguration)` overload, because `TenantInfo` has no parameterless constructor for the options binder to construct from. Bind an operator-managed tenant list from configuration with `UseConfiguration(...)` instead.
     - `ConfigurationTenantStore` / `UseConfiguration(...)` — options-bound, read-only snapshot store (three overloads: `IConfiguration`, `Action<T>`, `Action<T, IServiceProvider>`); reload requires a process restart. The Entity Framework Core store ships separately in `Headless.MultiTenancy.Storage.EntityFramework`.
-    - `ITenantCatalogService` (default `TenantCatalogService`) — HTTP-agnostic resolution: normalize → shape-validate → ignored-check → cache/store lookup, returning a `TenantResolutionOutcome`; also serves `TenantInfo` lookups by canonical id for the accessor. Store exceptions propagate unwrapped; a cache read or write fault degrades to a miss/no-op rather than failing the resolution.
-    - `TenantCatalogOptions` — `CacheExpiration` (default 5 min), `UnknownIdentifierCacheExpiration` (negative-cache window, default 30 s, `TimeSpan.Zero` disables it — and with it the identifier namespace's read-through single-flight), `IgnoredIdentifiers` (the only ignore list — `Headless.Api.Core`'s identifier sources have none), `MaxIdentifierLength` (default 63), `IdentifierPattern` (default DNS-label slug), `DetailedResolutionErrors` (default `false`). `MaxIdentifierLength` and `IdentifierPattern` are catalog-wide: a whole-host (custom-domain) host template needs `MaxIdentifierLength = 253` and a hostname-shaped pattern with a match timeout, and that relaxes the accepted shape for every other source too.
+    - `ITenantCatalogService` (default `TenantCatalogService`) — HTTP-agnostic resolution: normalize → shape-validate → ignored-check → cache/store lookup, returning a `TenantResolutionOutcome`; also serves `TenantInfo` lookups by canonical id for the accessor. Store exceptions propagate unwrapped; a cache read or write fault degrades to a miss/no-op rather than failing the resolution. A store answer whose `Identifier` differs from the queried normalized identifier, or whose `Id` differs from the queried id, is treated as a store fault: the service throws `InvalidOperationException` and caches nothing, so a faulty store cannot route one tenant's identifier to another.
+    - `ITenantCatalogCacheInvalidator` — singleton that evicts the identifier→id entry (`InvalidateIdentifierAsync`) or the id→`TenantInfo` entry (`InvalidateTenantAsync`) after the application changes a tenant in its store. See [Cache invalidation](#cache-invalidation).
+    - `TenantCatalogOptions` — `CacheExpiration` (default 5 min), `UnknownIdentifierCacheExpiration` (negative-cache window, default 30 s, `TimeSpan.Zero` disables it — and with it the identifier namespace's read-through single-flight), `IgnoredIdentifiers` (the only ignore list — `Headless.Api.Core`'s identifier sources have none), `MaxIdentifierLength` (default 63, startup rejects values outside 1..`TenantCatalogOptions.MaxIdentifierLengthLimit` = 253), `IdentifierPattern` (default DNS-label slug), `DetailedResolutionErrors` (default `false`). `MaxIdentifierLength` and `IdentifierPattern` are catalog-wide: a whole-host (custom-domain) host template needs `MaxIdentifierLength = 253` and a hostname-shaped pattern with a match timeout, and that relaxes the accepted shape for every other source too.
     - `ICurrentTenantInfo` — registered by default as a no-op (`GetAsync()` always returns `null`) until `Catalog(...)` replaces it with the catalog-backed implementation. `AddTypedCurrentTenantInfo<T>(projection)` registers the opt-in `ICurrentTenantInfo<T>` typed leaf accessor.
     - `TenancyErrorCodes` / `TenancyMessageDescriber` — the `g:tenant_resolution_failed` / `g:tenant_unknown` / `g:tenant_disabled` / `g:tenant_identifier_mismatch` / `g:tenant_identifier_invalid` ProblemDetails codes consumed by `Headless.Api.Core`'s rejection mapping.
     - `TenantCatalogPosture` — shared, non-PII seam/capability constants (`Catalog` seam, `catalog-accessor`/`catalog-resolution` capabilities) that this package and `Headless.Api.Core` both write to and that `TenantCatalogPostureValidator` cross-checks at startup.
@@ -1053,7 +1116,7 @@ None.
 - **Identifier resolution reads through `GetOrAddAsync`; two paths deliberately do not.** The identifier namespace uses the cache's factory-backed read, so an expiry rollover under concurrent load for one identifier costs a single store read rather than one per caller (in-process single-flight; cross-node deduplication would additionally require an `ICacheFactoryLockProvider`). The factory writes the id namespace as a side effect of the same store hit, so one store read still populates both. A factory-backed read always persists whatever the factory returns, which two paths cannot accept: the id namespace must never cache an id that has no catalog row (`FindByIdAsync` would then keep answering `null` for a tenant that has since appeared), and a host that sets `UnknownIdentifierCacheExpiration = TimeSpan.Zero` must not write unknown identifiers at all — a zero duration is a write followed by an immediate eviction, not a skipped write. Both keep the plain read-then-conditional-write shape and trade single-flight away for their write rule.
 - **Accessor-only is a first-class, non-failing posture.** A host can call `Catalog(catalog => catalog.UseInMemory(...))` without ever calling `Headless.Api.Core`'s `.Http(http => http.ResolveFromCatalog(...))`. That combination records only the `catalog-accessor` capability — `ICurrentTenantInfo` metadata reads work, but no HTTP identifier resolution runs. `TenantCatalogPostureValidator` treats this as valid and never fails startup for it; it only fails when `catalog-resolution` is recorded without a configured store, without an actually-wired resolution pipeline, or without the status-codes rewriter that writes the mismatch rejection.
 - **A caching provider is a hard prerequisite of `Catalog(...)`.** This package references `Headless.Caching.Abstractions` only; the open-generic `ICache<>` implementation ships with a caching *provider* (`Headless.Caching.InMemory`, `.Redis`, `.Hybrid`). Since `TenantCatalogService` takes both cache item types as constructor dependencies, a host that configures a store but never calls `AddHeadlessCaching(...)` would start clean and then fail every tenant lookup — including plain `ICurrentTenantInfo` reads on accessor-only hosts. `Catalog(...)` therefore declares both closed `ICache<T>` types through `Headless.Hosting`'s shared `IServiceCollection.RequireRegisteredService<T>(requiredBy, remedy)`, which fails the host in `StartingAsync` with a `MissingRequiredServiceException` naming the remedy. The requirement is attached wherever a store is configured — the `catalog-accessor` capability — so accessor-only hosts are covered too. The check probes the registration (`IServiceProviderIsService`) rather than resolving the cache, so startup never builds the backing cache singleton early. Every other cache-consuming Headless feature (`Settings`, `Permissions`, `Features`, `Api.Idempotency`) declares the same way, so a host that installed no provider at all gets one exception listing every affected feature instead of one failure per restart.
-- **`UseStatusCodesRewriter()` is a hard prerequisite of catalog *resolution*.** Mismatch enforcement's second tier (`TenantIdentifierIntegrityHandler`) only fails the authorization evaluation and marks the request; the generic tenant rejection that keeps a mismatch byte-identical to an unknown identifier is written afterwards by `StatusCodesRewriterMiddleware`. A resolution host that never registers it answers a mismatch with a bare authorization failure while an unknown identifier still gets the 404 rejection — a tenant-enumeration oracle — so `TenantCatalogPostureValidator` fails startup with `CATALOG_RESOLUTION_WITHOUT_REWRITER` whenever `catalog-resolution` is recorded without the rewriter's runtime marker. This gate is resolution-scoped, not accessor-scoped like the caching one: an accessor-only host has no tier-2 path to collapse. The marker records presence, not position — the rewriter must also be added to the pipeline *before* `UseAuthorization()` so it wraps it, since a rewriter placed downstream never observes an evaluation that short-circuits.
+- **`UseStatusCodesRewriter()` is a hard prerequisite of catalog *resolution*.** Mismatch enforcement's second tier (`TenantIdentifierIntegrityHandler`) only fails the authorization evaluation and marks the request; the generic tenant rejection that keeps a mismatch byte-identical to an unknown identifier is written afterwards by `StatusCodesRewriterMiddleware`. A resolution host that never registers it answers a mismatch with a bare authorization failure while an unknown identifier still gets the 404 rejection — a tenant-enumeration oracle — so `TenantCatalogPostureValidator` fails startup with `CATALOG_RESOLUTION_WITHOUT_REWRITER` whenever `catalog-resolution` is recorded without the rewriter's runtime marker. This gate is resolution-scoped, not accessor-scoped like the caching one: an accessor-only host has no tier-2 path to collapse. The rewriter must also be added to the pipeline *before* `UseAuthorization()` so it wraps it, since a rewriter placed downstream never observes an evaluation that short-circuits; a call after `UseAuthorization()` fails startup with `CATALOG_RESOLUTION_REWRITER_AFTER_AUTHORIZATION`, except for authorization `WebApplication` adds implicitly or that runs inside a `UseWhen` branch, which the check cannot see.
 - **Exactly-one-storage-provider guard.** `Catalog(...)` reuses the same `GuardSingleStorageProvider` mechanism as `Headless.Settings.Core` — registering zero or more than one of `UseInMemory`/`UseConfiguration`/`UseEntityFramework` in the same `Catalog(...)` callback fails startup immediately rather than silently picking one.
 
 ### Install
@@ -1079,6 +1142,15 @@ builder.AddHeadlessTenancy(tenancy =>
         .Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue())
         .EntityFramework(ef => ef.GuardTenantWrites())
 );
+
+// RequireTenant() fails startup unless DefaultPolicy or FallbackPolicy carries TenantRequirement.
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .AddRequirements(new TenantRequirement())
+        .Build();
+});
 
 var app = builder.Build();
 
@@ -1118,15 +1190,18 @@ Custom validators implement `IHeadlessTenancyValidator` and register themselves 
 - `setup.UseEntityFramework<TContext>()` — registers the EF storage provider via `HeadlessTenancyCatalogSetupBuilder`. It also registers a startup gate (`IHostedLifecycleService`) that validates `TContext`'s model was configured through `modelBuilder.AddHeadlessTenancyCatalog(this)`; a `DbContext` missing that call fails host startup with an actionable message instead of failing lazily the first time the catalog resolves a tenant.
 - `modelBuilder.AddHeadlessTenancyCatalog(DbContext context)` — applies the `TenantRecord` entity configuration, reading the active EF Core provider so the unique identifier index can be pinned to a deterministic collation
 - `TenantRecord` — the single-table entity: `Id`, `Identifier`, `NormalizedIdentifier`, `Name`, `IsEnabled`, `ExtraProperties`
-- Unique index on `NormalizedIdentifier`, pinned to a case- and accent-sensitive collation (`Latin1_General_100_BIN2` on SQL Server, `C` on PostgreSQL) so a lookup never matches a row differing only by case — SQL Server's default collation is case-insensitive and would otherwise break the catalog service's ordinal lookup contract
+- Unique index on `NormalizedIdentifier`, pinned to a case- and accent-sensitive collation (`Latin1_General_100_BIN2` on SQL Server, `C` on PostgreSQL, `BINARY` on SQLite) so a lookup never matches a row differing only by case — SQL Server's default collation is case-insensitive and would otherwise break the catalog service's ordinal lookup contract
+- Other relational providers (MySQL, Oracle, and any third-party provider) get no collation pin and keep their default, which is often case-insensitive. Pin a binary collation yourself after the catalog configuration: `modelBuilder.AddHeadlessTenancyCatalog(this); modelBuilder.Entity<TenantRecord>().Property(x => x.NormalizedIdentifier).UseCollation("utf8mb4_bin");` (`utf8mb4_bin` on MySQL, `BINARY` on Oracle)
 
 ### Design constraints
 
 `TenantRecord` derives `NormalizedIdentifier` from `Identifier` itself through `SetIdentifier(...)` — there is no public setter for `NormalizedIdentifier`, so app-seeded rows and identifier rebrands can never carry a stale or hand-written normalized value. The entity deliberately does not implement `IMultiTenant`: the catalog sits outside the EF tenant query filter by construction.
 
-This package ships no framework write path — read-only `FindByIdentifierAsync`/`FindByIdAsync`/`GetAllAsync` only, matching `ITenantStore`/`ITenantDirectory`. Apps insert, update, and migrate `TenantRecord` directly against their own `DbContext`.
+This package ships no framework write path — read-only `FindByIdentifierAsync`/`FindByIdAsync`/`GetAllAsync` only, matching `ITenantStore`/`ITenantDirectory`. Apps insert, update, and migrate `TenantRecord` directly against their own `DbContext`. After such a write, evict the changed catalog entries through `ITenantCatalogCacheInvalidator` (see [Cache invalidation](#cache-invalidation)).
 
-Read paths use `IDbContextFactory<TContext>` and `AsNoTracking()`, matching `Headless.Settings.Storage.EntityFramework`.
+`Identifier` and `NormalizedIdentifier` are `TenantRecordConstants.IdentifierMaxLength` (253) characters wide, the same ceiling `TenantCatalogOptions.MaxIdentifierLength` accepts, so a whole-host custom-domain identifier fits.
+
+Read paths use `IDbContextFactory<TContext>` and `AsNoTracking()`, matching `Headless.Settings.Storage.EntityFramework`. The store is a singleton, so the factory must be one too: `AddDbContextFactory<TContext>()` and `AddPooledDbContextFactory<TContext>()` default to singleton. A scoped or transient factory would be captured by the store for the life of the host, so `UseEntityFramework<TContext>()` declares it through `RequireSingletonService` and host startup fails with `InvalidServiceLifetimeException` in every environment; a missing factory fails with `MissingRequiredServiceException`.
 
 ### Install
 
@@ -1149,6 +1224,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 builder.Services.AddDbContextFactory<AppDbContext>(options =>
     options.UseNpgsql(connectionString)
 );
+
+builder.Services.AddHeadlessCaching(caching => caching.UseInMemory()); // the catalog's hard prerequisite
 
 builder.AddHeadlessTenancy(tenancy =>
 {

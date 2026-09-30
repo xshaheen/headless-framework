@@ -212,7 +212,7 @@ public sealed class UserAgentParserTests : TestBase
         // The contract says UserAgent is the value after capping, so a caller persisting it cannot be handed
         // an unbounded string it never asked for.
         info.Should().NotBeNull();
-        info!.UserAgent.Length.Should().Be(64);
+        info!.UserAgent.Should().HaveLength(64);
     }
 
     [Fact]

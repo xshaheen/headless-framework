@@ -47,13 +47,12 @@ public sealed class SetupConfigurationTenantCatalogStoreTests : TestBase
     }
 
     [Fact]
-    public void should_throw_at_store_resolution_when_configuration_seeds_have_duplicate_normalized_identifiers()
+    public async Task should_fail_host_startup_when_configuration_seeds_have_duplicate_normalized_identifiers()
     {
-        // given — the configuration arm, exercised through the full DI wiring. The registered
-        // ConfigurationTenantStoreOptionsValidator (Configure<T,TValidator>, per the Options Pattern
-        // convention) fires on first IOptions<T>.Value access — inside the store's own constructor — so
-        // the surfaced exception is OptionsValidationException; the plain InvalidOperationException
-        // constructor guard (ConfigurationTenantStoreTests) covers direct construction that bypasses DI.
+        // given — the configuration arm through the full DI wiring. The seed options are validated on start,
+        // so a duplicate stops IHost.StartAsync before any request could reach the store; the plain
+        // InvalidOperationException constructor guard (ConfigurationTenantStoreTests) covers direct
+        // construction that bypasses DI.
         var builder = Host.CreateApplicationBuilder();
         builder.AddHeadlessTenancy(tenancy =>
             tenancy.Catalog(catalog =>
@@ -64,18 +63,19 @@ public sealed class SetupConfigurationTenantCatalogStoreTests : TestBase
                 })
             )
         );
+        builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
 
-        using var provider = builder.Services.BuildServiceProvider();
+        using var host = builder.Build();
 
         // when
-        var act = () => provider.GetRequiredService<ITenantStore>();
+        var act = () => host.StartAsync(AbortToken);
 
         // then
-        act.Should().Throw<OptionsValidationException>().WithMessage("*normalize to the same identifier*");
+        await act.Should().ThrowAsync<OptionsValidationException>().WithMessage("*normalize to the same identifier*");
     }
 
     [Fact]
-    public void should_throw_at_startup_when_a_seed_has_an_invalid_identifier_shape()
+    public async Task should_fail_host_startup_when_a_seed_has_an_invalid_identifier_shape()
     {
         // given — bad chars/length: the seed identifier can never be reached by resolution,
         // so the configuration store rejects it eagerly instead of shipping dead configuration.
@@ -87,14 +87,15 @@ public sealed class SetupConfigurationTenantCatalogStoreTests : TestBase
                 )
             )
         );
+        builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
 
-        using var provider = builder.Services.BuildServiceProvider();
+        using var host = builder.Build();
 
         // when
-        var act = () => provider.GetRequiredService<ITenantStore>();
+        var act = () => host.StartAsync(AbortToken);
 
         // then
-        act.Should().Throw<OptionsValidationException>().WithMessage("*does not match*identifier shape*");
+        await act.Should().ThrowAsync<OptionsValidationException>().WithMessage("*does not match*identifier shape*");
     }
 
     [Fact]

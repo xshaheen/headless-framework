@@ -29,6 +29,12 @@ public interface IStatusCodesRewriterCalledNotifier
 [PublicAPI]
 public static class SetupMiddlewares
 {
+    // UseAuthorization() sets this builder property before adding its middleware
+    // (Microsoft.AspNetCore.Builder.AuthorizationAppBuilderExtensions); ASP.NET Core keeps the constant
+    // internal, so its value is mirrored here. Its presence when the rewriter is added means authorization
+    // already sits ahead of it in the pipeline.
+    private const string _AuthorizationMiddlewareSetKey = "__AuthorizationMiddlewareSet";
+
     /// <summary>
     /// Registers <c>ServerTimingMiddleware</c> as a singleton in the DI container.
     /// Call <see cref="UseServerTiming"/> after this to add it to the pipeline.
@@ -81,20 +87,27 @@ public static class SetupMiddlewares
     /// Adds the status-codes rewriter middleware to the ASP.NET Core request pipeline.
     /// It intercepts bare 401, 403, and 404 responses (without an existing body) and rewrites them
     /// as structured <c>application/problem+json</c> responses via <see cref="IProblemDetailsCreator"/>.
-    /// For 403 responses that carry a <c>TenantContextRequiredFeature</c> marker, it substitutes the
-    /// <c>g:tenant_required</c> ProblemDetails body regardless of any upstream
-    /// <c>Content-Type</c> already set.
+    /// A request carrying an <see cref="IStatusCodeRejectionFeature"/> is offered to that feature first,
+    /// so the handler that failed the request (for example the tenant requirement's
+    /// <c>g:tenant_required</c> rejection) writes its own response.
     /// </summary>
     /// <param name="app">The application builder.</param>
     /// <remarks>
+    /// <para>
+    /// Call this before <c>UseAuthorization()</c> so it wraps authorization: a failed evaluation
+    /// short-circuits, so a rewriter added after authorization never sees the rejection it should write.
+    /// </para>
+    /// <para>
     /// Notifies any registered <see cref="IStatusCodesRewriterCalledNotifier"/> (e.g.,
     /// <c>HeadlessServiceDefaultsStartupValidator</c>) synchronously before adding the middleware,
-    /// and records <see cref="TenantCatalogPosture.StatusCodesRewriterRuntimeMarker"/> on an already-configured
-    /// tenant catalog seam so <c>TenantCatalogPostureValidator</c> can fail a catalog-resolution host that
-    /// never wired the rewriter (its mismatch rejection would otherwise stay distinguishable from the
-    /// unknown-tenant rejection). The marker records presence only — it cannot observe whether this call
-    /// precedes <c>UseAuthorization()</c>, which it must, since a rewriter registered after authorization
-    /// never sees the failed evaluation.
+    /// and records the placement on an already-configured tenant catalog seam —
+    /// <see cref="TenantCatalogPosture.StatusCodesRewriterRuntimeMarker"/> when authorization has not been
+    /// added yet, <see cref="TenantCatalogPosture.StatusCodesRewriterAfterAuthorizationRuntimeMarker"/> when
+    /// it has — so <c>TenantCatalogPostureValidator</c> can fail a catalog-resolution host whose mismatch
+    /// rejection would otherwise stay distinguishable from the unknown-tenant rejection. Authorization that
+    /// <c>WebApplication</c> adds implicitly, or that runs inside a <c>UseWhen</c> branch, is not visible
+    /// here.
+    /// </para>
     /// </remarks>
     /// <returns>The same application builder.</returns>
     public static IApplicationBuilder UseStatusCodesRewriter(this IApplicationBuilder app)
@@ -121,7 +134,9 @@ public static class SetupMiddlewares
         {
             manifest.MarkRuntimeApplied(
                 TenantCatalogPosture.Seam,
-                TenantCatalogPosture.StatusCodesRewriterRuntimeMarker
+                app.Properties.ContainsKey(_AuthorizationMiddlewareSetKey)
+                    ? TenantCatalogPosture.StatusCodesRewriterAfterAuthorizationRuntimeMarker
+                    : TenantCatalogPosture.StatusCodesRewriterRuntimeMarker
             );
         }
 

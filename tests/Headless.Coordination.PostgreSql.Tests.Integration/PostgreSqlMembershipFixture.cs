@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Coordination;
+using Headless.Hosting.Initialization;
 using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -30,7 +31,7 @@ public sealed class PostgreSqlMembershipFixture
         // The membership tables now live in the feature-owned schema, so drop the schema itself rather than
         // three names that would resolve through search_path to whatever the old default was.
         await using var command = new NpgsqlCommand(
-            $"""DROP SCHEMA IF EXISTS "{CoordinationStorageOptions.DefaultSchema}" CASCADE;""",
+            $"""DROP SCHEMA IF EXISTS "{HeadlessStorageDefaults.Schema}" CASCADE;""",
             connection
         );
 

@@ -134,6 +134,13 @@ internal static class ServiceBuilder
         // installing the package standalone (no ServiceDefaults, no sibling that happens to register it) throws
         // 'No service for type TimeProvider' at resolve time.
         services.TryAddSingleton(TimeProvider.System);
+        // The persistence provider and claim strategies are singletons over IDbContextFactory<TContext>. Jobs registers
+        // a pooled singleton factory with TryAdd, so an application factory registered first wins and must be a singleton
+        // too, or those singletons keep one scoped or transient factory for the life of the host.
+        services.RequireSingletonService<IDbContextFactory<TContext>>(
+            requiredBy: "Headless Jobs EF persistence",
+            remedy: "Remove the application's IDbContextFactory<TContext> registration so Jobs registers its pooled singleton factory, or register it with AddDbContextFactory<TContext>() or AddPooledDbContextFactory<TContext>() at the default singleton lifetime."
+        );
         services.AddHeadlessGuidGenerator();
         // Fail loud at DI-build time when the context cannot back coordinated writes, rather than at first
         // coordinated write where the provider's static factory would surface it as a TypeInitializationException.

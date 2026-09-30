@@ -7,6 +7,7 @@ using Headless.Checks;
 using Headless.Constants;
 using Headless.MultiTenancy;
 using Headless.Serializer;
+using Headless.Sql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -19,6 +20,22 @@ public static class SetupAuditLogSqlServer
 {
     extension(HeadlessAuditLogSetupBuilder setup)
     {
+        /// <summary>
+        /// Configures SQL Server storage with the connection registered by <c>AddSqlServerSql</c>, so one
+        /// connection string serves every feature that shares the database.
+        /// </summary>
+        /// <returns>The setup builder for chaining.</returns>
+        /// <remarks>
+        /// Options resolution throws <see cref="InvalidOperationException"/> when <c>AddSqlServerSql</c> was not
+        /// called or registered another provider's connection.
+        /// </remarks>
+        public HeadlessAuditLogSetupBuilder UseSqlServer()
+        {
+            return setup.UseSqlServer(
+                (options, services) => options.ConnectionString = services.GetSqlServerConnectionString()
+            );
+        }
+
         /// <summary>
         /// Configures the audit log to persist entries to SQL Server using the provided
         /// connection string.
@@ -162,7 +179,10 @@ public static class SetupAuditLogSqlServer
         public SqlServerAuditLogStorageOptionsValidator()
         {
             RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.SqlServer);
-            RuleFor(x => x.TableName).IsValidIdentifierFor(StorageProvider.SqlServer);
+            RuleFor(x => x.TableName)
+                .IsValidIdentifierFor(StorageProvider.SqlServer)
+                .FitsDerivedPostgreSqlNames(AuditLogStorageNames.Indexes)
+                .When(x => x.TableName is not null);
             // SqlServer only supports NvarcharMax; Jsonb/Json are PostgreSQL column types.
             When(
                 x => x.JsonColumnType.HasValue,

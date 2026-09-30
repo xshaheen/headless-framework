@@ -72,14 +72,32 @@ public sealed class HeadlessMultiTenancyModelBuilderExtensionsTests
     }
 
     [Fact]
-    public void should_apply_no_collation_on_a_provider_without_a_known_mapping()
+    public void should_apply_binary_collation_on_sqlite()
     {
-        // given & when - SQLite has no known collation mapping; only SQL Server/PostgreSQL are defined
+        // given & when - pinned so a consumer convention such as NOCASE cannot make lookups case-insensitive
         using var db = _CreateSqliteContext();
         var entity = _TenantEntity(db);
 
         // then
-        entity.FindProperty(nameof(TenantRecord.NormalizedIdentifier))!.GetCollation().Should().BeNull();
+        entity.FindProperty(nameof(TenantRecord.NormalizedIdentifier))!.GetCollation().Should().Be("BINARY");
+    }
+
+    [Fact]
+    public void should_apply_no_collation_on_a_provider_without_a_known_mapping()
+    {
+        // given - a relational provider the framework ships no mapping for keeps its default collation
+        var modelBuilder = new ModelBuilder();
+
+        // when
+        modelBuilder.ApplyConfiguration(new TenantRecordConfiguration("Pomelo.EntityFrameworkCore.MySql"));
+
+        // then
+        modelBuilder
+            .Model.FindEntityType(typeof(TenantRecord))!
+            .FindProperty(nameof(TenantRecord.NormalizedIdentifier))!
+            .GetCollation()
+            .Should()
+            .BeNull();
     }
 
     [Fact]

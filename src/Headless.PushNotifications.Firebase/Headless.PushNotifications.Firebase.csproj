@@ -11,8 +11,6 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="FirebaseAdmin" />
-    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
-    <PackageReference Include="Polly.Core" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />

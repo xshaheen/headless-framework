@@ -268,6 +268,25 @@ internal sealed class SqlServerConnectionScopedLockStorage(
 
     /// <inheritdoc/>
     /// <remarks>
+    /// Local-only: looks the lease up in the in-process registry and checks the held connection's lost token, which
+    /// the connection's <c>StateChange</c> cancels on every held lock and the active probe cancels on monitored ones.
+    /// A silently half-open connection on an unmonitored lock still reads as held until its next command fails.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is already cancelled.</exception>
+    public ValueTask<bool> IsHeldAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var isHeld =
+            _heldByLeaseId.TryGetValue(leaseId, out var held)
+            && string.Equals(held.Resource, resource, StringComparison.Ordinal)
+            && !held.ConnectionLostToken.IsCancellationRequested;
+
+        return ValueTask.FromResult(isHeld);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
     /// Returns only locks held by this process. Remote holders are not enumerable because the SQL Server
     /// backend does not expose a reversible mapping from <c>sp_getapplock</c> resources to logical names.
     /// <see cref="DistributedLockInfo.TimeToLive"/> and <see cref="DistributedLockInfo.FencingToken"/> are
@@ -463,6 +482,7 @@ internal sealed class SqlServerConnectionScopedLockStorage(
             LeaseId = leaseId;
             IsShared = isShared;
             Connection = connection;
+            ConnectionLostToken = _lostTokenSource.Token;
             _timeProvider = timeProvider;
             _probeGateAcquiredAsync = probeGateAcquiredAsync;
             _probeCommandTimeoutSeconds = SqlServerApplicationLock.GetCommandTimeoutSeconds(commandTimeout);
@@ -476,7 +496,10 @@ internal sealed class SqlServerConnectionScopedLockStorage(
         public string LeaseId { get; }
         public bool IsShared { get; }
         public SqlConnection Connection { get; }
-        public CancellationToken ConnectionLostToken => _lostTokenSource.Token;
+
+        // Captured once so a renewal that races release can still read it: CancellationTokenSource.Token throws after
+        // Dispose, while IsCancellationRequested on an already-captured token does not.
+        public CancellationToken ConnectionLostToken { get; }
 
         public void StartMonitoring()
         {

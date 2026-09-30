@@ -1,0 +1,23 @@
+<Project Sdk="Headless.NET.Sdk.Test">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Tests</RootNamespace>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.PushNotifications.Tests.Harness\Headless.PushNotifications.Tests.Harness.csproj" />
+    <ProjectReference Include="..\..\src\Headless.PushNotifications.Apns\Headless.PushNotifications.Apns.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+  </ItemGroup>
+  <!-- The cross-library conformance test reads the oracle fixtures, the shared scenarios, and the test-only provider
+       key from the output directory, so it does not depend on the working directory or the repository layout. -->
+  <ItemGroup>
+    <None Update="CrossLibrary\Fixtures\*.json;CrossLibrary\divergences.json;CrossLibrary\scenarios.json;CrossLibrary\AuthKey_TESTKEY123.TEST-ONLY.p8">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+</Project>

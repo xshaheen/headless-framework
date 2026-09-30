@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
+
 namespace Headless.AuditLog;
 
 /// <summary>
@@ -16,14 +18,17 @@ namespace Headless.AuditLog;
 public sealed class AuditLogStorageOptions
 {
     /// <summary>
-    /// Database schema that contains the audit log table. Default: <c>"audit"</c>.
+    /// Database schema that contains the audit log table. Default: <see cref="HeadlessStorageDefaults.Schema"/>
+    /// (<c>"headless"</c>), the schema every Headless feature shares.
     /// </summary>
-    public string Schema { get; set; } = "audit";
+    public string Schema { get; set; } = HeadlessStorageDefaults.Schema;
 
     /// <summary>
-    /// Name of the audit log table within <see cref="Schema"/>. Default: <c>"audit_log"</c>.
+    /// Name of the audit log table within <see cref="Schema"/>. Default: <see langword="null"/>, which uses the
+    /// database's conventional name: <c>audit_log_entries</c> on PostgreSQL, <c>AuditLogEntries</c> elsewhere. A
+    /// configured name is used verbatim, and the table's key and index names derive from it.
     /// </summary>
-    public string TableName { get; set; } = "audit_log";
+    public string? TableName { get; set; }
 
     /// <summary>
     /// Override the column type used for JSON columns (<c>OldValues</c>, <c>NewValues</c>,
@@ -53,6 +58,14 @@ public sealed class AuditLogStorageOptions
     /// EF Core migrations and is not affected by this flag. Default: <see langword="true"/>.
     /// </summary>
     public bool InitializeOnStartup { get; set; } = true;
+
+    /// <summary>Returns the audit log table name to use on a database with <paramref name="style"/>.</summary>
+    /// <param name="style">The naming style of the target database.</param>
+    /// <returns>The configured name, or the conventional default for <paramref name="style"/>.</returns>
+    public string ResolveTableName(StorageNamingStyle style)
+    {
+        return HeadlessStorageNaming.Resolve(TableName, style, AuditLogStorageNames.DefaultTableName);
+    }
 
     /// <summary>
     /// Copies every property to <paramref name="target"/>. Centralizes the property list so

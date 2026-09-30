@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
+using Headless.Abstractions;
 using Headless.Api.MultiTenancy;
 using Headless.Testing.Helpers;
 using Microsoft.AspNetCore.Authorization;
@@ -46,7 +47,7 @@ public sealed class TenantRequirementHandlerTests
 
         // then
         context.HasSucceeded.Should().BeTrue();
-        httpContext.Features.Get<TenantContextRequiredFeature>().Should().BeNull();
+        httpContext.Features.Get<IStatusCodeRejectionFeature>().Should().BeNull();
     }
 
     [Fact]
@@ -94,7 +95,7 @@ public sealed class TenantRequirementHandlerTests
 
         // then
         context.HasSucceeded.Should().BeTrue();
-        httpContext.Features.Get<TenantContextRequiredFeature>().Should().BeNull();
+        httpContext.Features.Get<IStatusCodeRejectionFeature>().Should().BeNull();
     }
 
     [Theory]
@@ -120,10 +121,10 @@ public sealed class TenantRequirementHandlerTests
     [Fact]
     public async Task should_set_typed_feature_on_http_context_when_failing()
     {
-        // given - StatusCodesRewriterMiddleware reads this typed feature to enrich the bare 403
-        // with the g:tenant_required discriminator; without it, the response degrades to the
-        // generic 403 ProblemDetails body. Asserting the feature here guards the contract between
-        // the handler and the rewriter middleware.
+        // given - StatusCodesRewriterMiddleware invokes this rejection to enrich the bare 403 with the
+        // g:tenant_required discriminator; without it, the response degrades to the generic 403
+        // ProblemDetails body. Asserting the feature here guards the contract between the handler and
+        // the rewriter middleware.
         var requirement = new TenantRequirement();
         var httpContext = new DefaultHttpContext();
         var context = _CreateContext(requirement, httpContext);
@@ -134,7 +135,29 @@ public sealed class TenantRequirementHandlerTests
 
         // then
         context.HasFailed.Should().BeTrue();
-        httpContext.Features.Get<TenantContextRequiredFeature>().Should().NotBeNull();
+        httpContext
+            .Features.Get<IStatusCodeRejectionFeature>()
+            .Should()
+            .BeSameAs(TenantContextRequiredFeature.Instance);
+    }
+
+    [Fact]
+    public async Task should_keep_a_rejection_another_handler_already_set_when_failing()
+    {
+        // given - the identifier mismatch rejection must win when both handlers fail the same request
+        var requirement = new TenantRequirement();
+        var httpContext = new DefaultHttpContext();
+        var earlier = Substitute.For<IStatusCodeRejectionFeature>();
+        httpContext.Features.Set(earlier);
+        var context = _CreateContext(requirement, httpContext);
+        var handler = new TenantRequirementHandler(new TestCurrentTenant());
+
+        // when
+        await handler.HandleAsync(context);
+
+        // then
+        context.HasFailed.Should().BeTrue();
+        httpContext.Features.Get<IStatusCodeRejectionFeature>().Should().BeSameAs(earlier);
     }
 
     [Fact]
@@ -151,7 +174,7 @@ public sealed class TenantRequirementHandlerTests
 
         // then
         context.HasSucceeded.Should().BeTrue();
-        httpContext.Features.Get<TenantContextRequiredFeature>().Should().BeNull();
+        httpContext.Features.Get<IStatusCodeRejectionFeature>().Should().BeNull();
     }
 
     [Fact]

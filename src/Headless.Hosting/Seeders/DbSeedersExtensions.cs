@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using Headless.Checks;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,7 +19,9 @@ public static class DbSeedersExtensions
         /// <typeparam name="T">The seeder type to register.</typeparam>
         /// <returns>The same service collection.</returns>
         /// <exception cref="ArgumentNullException">Thrown when the service collection is <see langword="null"/>.</exception>
-        public IServiceCollection AddSeeder<T>()
+        public IServiceCollection AddSeeder<
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T
+        >()
             where T : class, ISeeder
         {
             Argument.IsNotNull(services);
