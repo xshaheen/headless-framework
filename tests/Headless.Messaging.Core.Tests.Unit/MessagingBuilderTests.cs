@@ -24,13 +24,7 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddHeadlessMessaging(static setup =>
-            setup.Bus.ForMessage<TestOrderMessage>(message =>
-                message.Consumer<TestOrderConsumer>(consumer =>
-                    consumer.StableContract("tests.messaging-builder.orders")
-                )
-            )
-        );
+        services.AddHeadlessMessaging(static setup => setup.AddConsumer<TestOrderConsumer>());
 
         using var provider = services.BuildServiceProvider();
         var registry = provider.GetDrainedConsumerRegistry();
@@ -262,6 +256,7 @@ public sealed record TestOrderMessage(string OrderId, decimal Amount);
 
 public sealed record TestPaymentMessage(string PaymentId, decimal Amount);
 
+[BusConsumer("tests.messaging-builder.orders")]
 public sealed class TestOrderConsumer : IConsume<TestOrderMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<TestOrderMessage> context, CancellationToken cancellationToken)

@@ -98,15 +98,10 @@ public sealed class DefaultDeliveryModeTests : TestBase
     {
         await using var provider = _CreateProvider(
             globalMode,
-            setup =>
-            {
-                setup.Bus.ForMessage<TestMessage>(message =>
-                    message.Contract("test.default-mode").WithDeliveryMode(typeMode)
-                );
-                setup.Queue.ForMessage<TestMessage>(message =>
-                    message.Contract("test.default-mode").WithDeliveryMode(typeMode)
-                );
-            }
+            contract =>
+                contract
+                    .OnBus(route => route.WithDeliveryMode(typeMode))
+                    .OnQueue(route => route.WithDeliveryMode(typeMode))
         );
 
         await _PublishAsync(provider, lane, new TestMessage("type-policy"), explicitMode: null);
@@ -128,15 +123,10 @@ public sealed class DefaultDeliveryModeTests : TestBase
         // The host default agrees with the type policy so only the per-call override can produce the outcome.
         await using var provider = _CreateProvider(
             typeMode,
-            setup =>
-            {
-                setup.Bus.ForMessage<TestMessage>(message =>
-                    message.Contract("test.default-mode").WithDeliveryMode(typeMode)
-                );
-                setup.Queue.ForMessage<TestMessage>(message =>
-                    message.Contract("test.default-mode").WithDeliveryMode(typeMode)
-                );
-            }
+            contract =>
+                contract
+                    .OnBus(route => route.WithDeliveryMode(typeMode))
+                    .OnQueue(route => route.WithDeliveryMode(typeMode))
         );
 
         await _PublishAsync(provider, lane, new TestMessage("explicit"), explicitMode);
@@ -149,15 +139,10 @@ public sealed class DefaultDeliveryModeTests : TestBase
     {
         await using var provider = _CreateProvider(
             DeliveryMode.Durable,
-            setup =>
-            {
-                setup.Bus.ForMessage<TestMessage>(message =>
-                    message.Contract("test.default-mode").WithDeliveryMode(DeliveryMode.Direct)
-                );
-                setup.Queue.ForMessage<TestMessage>(message =>
-                    message.Contract("test.default-mode").WithDeliveryMode(DeliveryMode.Durable)
-                );
-            }
+            contract =>
+                contract
+                    .OnBus(route => route.WithDeliveryMode(DeliveryMode.Direct))
+                    .OnQueue(route => route.WithDeliveryMode(DeliveryMode.Durable))
         );
 
         await _PublishAsync(provider, MessageLane.Bus, new TestMessage("bus"), explicitMode: null);
@@ -174,15 +159,10 @@ public sealed class DefaultDeliveryModeTests : TestBase
     {
         await using var provider = _CreateProvider(
             DeliveryMode.Durable,
-            setup =>
-            {
-                setup.Bus.ForMessage<TestMessage>(message =>
-                    message.Contract("test.default-mode").WithDeliveryMode(DeliveryMode.Direct)
-                );
-                setup.Queue.ForMessage<TestMessage>(message =>
-                    message.Contract("test.default-mode").WithDeliveryMode(DeliveryMode.Direct)
-                );
-            }
+            contract =>
+                contract
+                    .OnBus(route => route.WithDeliveryMode(DeliveryMode.Direct))
+                    .OnQueue(route => route.WithDeliveryMode(DeliveryMode.Direct))
         );
         var message = new TestMessage("delayed");
         var delay = TimeSpan.FromMinutes(1);
@@ -243,8 +223,10 @@ public sealed class DefaultDeliveryModeTests : TestBase
     public void should_reject_an_undefined_type_policy_at_registration(int mode)
     {
         var act = () =>
-            new ServiceCollection().AddHeadlessMessaging(setup =>
-                setup.Bus.ForMessage<TestMessage>(message => message.WithDeliveryMode((DeliveryMode)mode))
+            new ServiceCollection().ConfigureMessaging(messaging =>
+                messaging
+                    .Message<TestMessage>("test.default-mode")
+                    .OnBus(route => route.WithDeliveryMode((DeliveryMode)mode))
             );
 
         act.Should().Throw<ArgumentException>().WithMessage("*mode*");
@@ -286,10 +268,28 @@ public sealed class DefaultDeliveryModeTests : TestBase
 
     private static ServiceProvider _CreateProvider(
         DeliveryMode mode,
-        Action<MessagingSetupBuilder>? registrations = null
+        Action<IMessageContractBuilder<TestMessage>>? contract = null
     )
     {
         var services = new ServiceCollection();
+        services.ConfigureMessaging(messaging =>
+        {
+            var declared = messaging.Message<TestMessage>("test.default-mode");
+            contract?.Invoke(declared);
+        });
+
+        return _CreateProvider(services, mode, registrations: null);
+    }
+
+    private static ServiceProvider _CreateProvider(DeliveryMode mode, Action<MessagingSetupBuilder> registrations) =>
+        _CreateProvider(new ServiceCollection(), mode, registrations);
+
+    private static ServiceProvider _CreateProvider(
+        ServiceCollection services,
+        DeliveryMode mode,
+        Action<MessagingSetupBuilder>? registrations
+    )
+    {
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
@@ -297,15 +297,7 @@ public sealed class DefaultDeliveryModeTests : TestBase
             setup.UseInMemoryStorage();
             setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
             setup.Options.DefaultDeliveryMode = mode;
-            if (registrations is null)
-            {
-                setup.Bus.ForMessage<TestMessage>(message => message.Contract("test.default-mode"));
-                setup.Queue.ForMessage<TestMessage>(message => message.Contract("test.default-mode"));
-            }
-            else
-            {
-                registrations(setup);
-            }
+            registrations?.Invoke(setup);
         });
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
     }
