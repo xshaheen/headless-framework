@@ -123,14 +123,17 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
     }
 
     public async ValueTask<TransportConsumerConformanceSession> CreateConformanceSessionAsync(
-        MessageLane lane,
-        string destination,
-        string group,
+        TransportConformanceEndpoint endpoint,
         string topicName,
         bool ownsEntity,
         CancellationToken cancellationToken
     )
     {
+        var lane = endpoint.Lane;
+        var destination = endpoint.LogicalName;
+        var group = endpoint.SubscriptionName;
+        var request = endpoint.ToRequest(concurrency: 2);
+
         if (lane == MessageLane.Queue)
         {
             if (ownsEntity)
@@ -150,7 +153,21 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
 
         if (lane != MessageLane.Bus)
         {
-            throw new ArgumentOutOfRangeException(nameof(lane), lane, null);
+            throw new ArgumentOutOfRangeException(nameof(endpoint), lane, null);
+        }
+
+        // An every-instance session creates, and on dispose deletes, a subscription of its own.
+        if (request.Kind is ConsumerSubscriptionKind.EveryInstance)
+        {
+            return await _CreateSessionAsync(
+                lane,
+                destination,
+                group,
+                topicName,
+                disposeEntity: null,
+                cancellationToken,
+                request: request
+            );
         }
 
         if (ownsEntity)
@@ -170,6 +187,23 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
         }
 
         return await _CreateSessionAsync(lane, destination, group, topicName, disposeEntity: null, cancellationToken);
+    }
+
+    /// <summary>Returns the subscription on <paramref name="topicName"/>, or <see langword="null"/> when none exists.</summary>
+    public async ValueTask<SubscriptionProperties?> GetSubscriptionOrDefaultAsync(
+        string topicName,
+        string subscriptionName,
+        CancellationToken cancellationToken
+    )
+    {
+        var administrationClient = _RequireAdministrationClient();
+
+        if (!await administrationClient.SubscriptionExistsAsync(topicName, subscriptionName, cancellationToken))
+        {
+            return null;
+        }
+
+        return await administrationClient.GetSubscriptionAsync(topicName, subscriptionName, cancellationToken);
     }
 
     public async ValueTask DisposeAsync()
@@ -202,10 +236,15 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
         Func<ValueTask>? disposeEntity,
         CancellationToken cancellationToken,
         Func<CancellationToken, ValueTask<TransportConsumerConformanceSession>>? createReplacementSession = null,
-        bool enableSessions = false
+        bool enableSessions = false,
+        ConsumerClientRequest? request = null
     )
     {
         var connectionString = _RequireConnectionString();
+        request ??= new ConsumerClientRequest(group, 2, lane);
+
+        // Every-instance subscriptions are created by the consumer itself, which takes AutoProvision.
+        var autoProvision = request.Kind is ConsumerSubscriptionKind.EveryInstance;
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
@@ -213,7 +252,7 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
             {
                 options.ConnectionString = connectionString;
                 options.TopicPath = topicPath;
-                options.AutoProvision = false;
+                options.AutoProvision = autoProvision;
                 options.EnableSessions = enableSessions;
                 if (enableSessions)
                 {
@@ -233,7 +272,7 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
                     ? (ITransport)serviceProvider.GetRequiredService<IQueueTransport>()
                     : serviceProvider.GetRequiredService<IBusTransport>();
             var factory = serviceProvider.GetRequiredService<IConsumerClientFactory>();
-            var consumer = await factory.CreateAsync(new ConsumerClientRequest(group, 2, lane), cancellationToken);
+            var consumer = await factory.CreateAsync(request, cancellationToken);
             consumer.AttachCallbacks(onMessage: null, onLog: _ => { });
 
             try
