@@ -482,7 +482,7 @@
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.12, )"
         }
       },
-      "headless.http.effects.abstractions": {
+      "headless.http.resilience": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",

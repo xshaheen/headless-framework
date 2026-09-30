@@ -2,7 +2,7 @@
 
 using System.ComponentModel;
 using Headless.Checks;
-using Headless.Http.Effects;
+using Headless.Http.Resilience;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
 

@@ -292,7 +292,7 @@
       "headless.checks": {
         "type": "Project"
       },
-      "headless.http.effects.abstractions": {
+      "headless.http.resilience": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",

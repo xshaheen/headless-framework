@@ -4,7 +4,7 @@ using Headless.Checks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
 
-namespace Headless.Http.Effects;
+namespace Headless.Http.Resilience;
 
 /// <summary>
 /// Derives an HTTP resilience pipeline from a declared <see cref="OutboundEffect"/>: the single

@@ -676,7 +676,7 @@ Cross-cutting utilities that belong to no single domain.
 | [Headless.Generator.Primitives](src/Headless.Generator.Primitives/README.md) | Primitive types source generator |
 | [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | Generator abstractions |
 | [Headless.Hosting](src/Headless.Hosting/README.md) | .NET hosting utilities |
-| [Headless.Http.Effects.Abstractions](src/Headless.Http.Effects.Abstractions/README.md) | Declared side-effect classes for outbound HTTP calls |
+| [Headless.Http.Resilience](src/Headless.Http.Resilience/README.md) | Declared side-effect classes for outbound HTTP calls |
 | [Headless.NetTopologySuite](src/Headless.NetTopologySuite/README.md) | Geospatial utilities |
 | [Headless.Primitives](src/Headless.Primitives/README.md) | Value objects, result pattern, paging models, and domain primitives |
 | [Headless.Redis](src/Headless.Redis/README.md) | Redis utilities |

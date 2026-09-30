@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Http.Effects;
+namespace Headless.Http.Resilience;
 
 /// <summary>
 /// The side-effect class of one outbound provider's HTTP operations, from which the resilience

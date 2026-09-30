@@ -10,7 +10,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Api.ServiceDefaults\Headless.Api.ServiceDefaults.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Http.Effects.Abstractions\Headless.Http.Effects.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Http.Resilience\Headless.Http.Resilience.csproj" />
     <ProjectReference Include="..\..\src\Headless.Payments.Paymob.CashOut\Headless.Payments.Paymob.CashOut.csproj" />
     <ProjectReference Include="..\..\src\Headless.Sms.Connekio\Headless.Sms.Connekio.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />

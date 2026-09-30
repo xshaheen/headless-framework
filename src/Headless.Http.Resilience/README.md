@@ -1,4 +1,4 @@
-# Headless.Http.Effects.Abstractions
+# Headless.Http.Resilience
 
 Declared side-effect classes for outbound HTTP calls, from which the HttpClient resilience pipeline is derived.
 
@@ -9,10 +9,10 @@ Retry safety is a property of the remote API, not of the HttpClient: retrying a 
 ## Install
 
 ```bash
-dotnet add package Headless.Http.Effects.Abstractions
+dotnet add package Headless.Http.Resilience
 ```
 
 ## Documentation
 
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
-- [Utilities guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/utilities.md#headlesshttpeffectsabstractions)
+- [Utilities guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/utilities.md#headlesshttpresilience)
