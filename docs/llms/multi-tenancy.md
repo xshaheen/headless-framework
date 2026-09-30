@@ -927,11 +927,11 @@ The log scope is removed when the work ends. A request, message, or job with no 
 - `tenant.id` (span and metric attribute): OpenTelemetry semantic conventions (checked at v1.44.0) register no general tenant attribute. Their only `tenant.id` is a field on Azure resource-log events, and the proposal for a tenant attribute ([semantic-conventions#162](https://github.com/open-telemetry/semantic-conventions/issues/162)) is still open. `tenant.id` follows the conventions' `namespace.attribute` shape and the `tenant.*` namespace that proposal discusses, so a registered attribute is likely to match it.
 - `TenantId` (log scope property): the same name as the `{TenantId}` placeholder in the framework's own log message templates, so one query finds both.
 
-The domain spans keep their existing attributes alongside `tenant.id`: `headless.messaging.tenant_id` on messaging spans (`MessagingInstrumentationOptions.SuppressTenantIdTag` turns it off) and `headless.job.tenant_id` on job spans.
+The framework's own messaging and job spans use the same attribute. Every messaging span (persist, publish, consume, subscriber invoke) whose message carries a tenant gets `tenant.id`, including publish spans, which no entry point reaches. Every job span for a tenant-scoped job gets it when the span starts. There is no separate `headless.messaging.tenant_id` or `headless.job.tenant_id`, and `EnrichTraces` is the one switch for all spans.
 
 ### Metrics
 
-The framework adds no tenant tag to its own meters. Tenancy and API packages own no meters, and the messaging inbox metrics keep their separate, off-by-default `MessagingInstrumentationOptions.IncludeTenantIdInMetricTags`. To tag an application meter with the ambient tenant, call `TenantTelemetry.TryGetMetricTag`:
+The framework adds no tenant tag to its own meters. Tenancy and API packages own no meters, and the messaging inbox metrics keep their separate, off-by-default `MessagingInstrumentationOptions.IncludeTenantIdInMetricTags`, which names the dimension with `AttributeName` when enabled. To tag an application meter with the ambient tenant, call `TenantTelemetry.TryGetMetricTag`:
 
 ```csharp
 public sealed class OrderMetrics(ICurrentTenant currentTenant, IOptions<TenantTelemetryOptions> telemetry)
@@ -976,9 +976,9 @@ builder.AddHeadlessTenancy(tenancy =>
 |---|---|---|
 | `EnrichLogs` | `true` | Opens the logging scope at each entry point |
 | `LogScopePropertyName` | `TenantId` | The scope property name |
-| `EnrichTraces` | `true` | Tags `Activity.Current` at each entry point |
+| `EnrichTraces` | `true` | Tags `Activity.Current` at each entry point, and the framework's messaging and job spans |
 | `EnrichMetrics` | `true` | Lets `TryGetMetricTag` return a tag |
-| `AttributeName` | `tenant.id` | The span and metric attribute name |
+| `AttributeName` | `tenant.id` | The span and metric attribute name, including the messaging inbox metric dimension |
 
 A blank name for an enabled channel fails options validation. Code that opens its own tenant scope outside these entry points can call `TenantTelemetry.Enrich(logger, options, tenantId)` right after `ICurrentTenant.Change(...)` and dispose the result with it.
 
