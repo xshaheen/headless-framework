@@ -21,9 +21,10 @@ public sealed class MessagingCapabilityModelTests : TestBase
         var sideEffects = 0;
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(setup =>
-            setup.Bus.ForMessage<SharedContract>(message => message.Contract("orders").RequireRoutingAffinity())
+        services.ConfigureMessaging(messaging =>
+            messaging.Message<SharedContract>("orders").OnBus(route => route.RequireRoutingAffinity())
         );
+        services.AddHeadlessMessaging(_ => { });
         services.AddMessagingProviderCapabilities(_Transport("Unsupported", [MessageLane.Bus], true));
         services.AddMessagingProviderCapabilities(_Storage("InMemory"));
         services.AddSingleton<IStorageInitializer>(_ =>
@@ -57,9 +58,8 @@ public sealed class MessagingCapabilityModelTests : TestBase
         var sideEffects = 0;
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(setup =>
-            setup.Bus.ForMessage<SharedContract>(message => message.Contract("orders"))
-        );
+        services.ConfigureMessaging(messaging => messaging.Message<SharedContract>("orders"));
+        services.AddHeadlessMessaging(_ => { });
         services.AddMessagingProviderCapabilities(
             MessagingProviderCapabilities.Transport(
                 "Mapped",
@@ -284,9 +284,7 @@ public sealed class MessagingCapabilityModelTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
-            setup.Bus.ForMessage<SharedContract>(message =>
-                message.Consumer<SharedConsumer>(consumer => consumer.ConsumerIdentity("orders-projection"))
-            );
+            setup.AddConsumer<SharedConsumer>();
         });
         services.AddMessagingProviderCapabilities(
             _Transport("Transport", [MessageLane.Bus], independentLaneTopology: true)
@@ -375,11 +373,8 @@ public sealed class MessagingCapabilityModelTests : TestBase
         var storageInitializerCalls = 0;
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(setup =>
-        {
-            setup.Bus.ForMessage<SharedContract>(message => message.Contract("orders.changed"));
-            setup.Queue.ForMessage<SharedContract>(message => message.Contract("orders.changed"));
-        });
+        services.ConfigureMessaging(messaging => messaging.Message<SharedContract>("orders.changed"));
+        services.AddHeadlessMessaging(_ => { });
         services.AddMessagingProviderCapabilities(
             _Transport("SharedTopology", [MessageLane.Bus, MessageLane.Queue], independentLaneTopology: false)
         );
@@ -683,6 +678,7 @@ public sealed class MessagingCapabilityModelTests : TestBase
 
     private sealed record OtherContract;
 
+    [BusConsumer("orders-projection")]
     private sealed class SharedConsumer : IConsume<SharedContract>
     {
         public ValueTask ConsumeAsync(ConsumeContext<SharedContract> context, CancellationToken cancellationToken)
