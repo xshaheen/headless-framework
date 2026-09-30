@@ -115,14 +115,14 @@ internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOption
     {
         Argument.IsNotNullOrWhiteSpace(kind, paramName: paramName);
         Argument.HasMaxLength(kind, FencingFieldLimits.KindMaxLength, paramName: paramName);
-        _EnsurePortable(kind, "A lease kind", paramName);
+        Argument.IsPortableKey(kind, paramName: paramName);
     }
 
     private static void _ValidateResource(string resource, string paramName)
     {
         Argument.IsNotNullOrWhiteSpace(resource, paramName: paramName);
         Argument.HasMaxLength(resource, FencingFieldLimits.ResourceMaxLength, paramName: paramName);
-        _EnsurePortable(resource, "A lease resource", paramName);
+        Argument.IsPortableKey(resource, paramName: paramName);
     }
 
     private static string _NormalizeTenantId(string? tenantId, string what, string paramName)
@@ -151,19 +151,8 @@ internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOption
             );
         }
 
-        _EnsurePortable(tenantId, "A lease tenant id", paramName);
+        Argument.IsPortableKey(tenantId, paramName: paramName);
 
         return tenantId;
-    }
-
-    private static void _EnsurePortable(string value, string what, string paramName)
-    {
-        if (SqlPortable.FindUnportableKeyText(value) is { } reason)
-        {
-            throw new ArgumentException(
-                $"{what} {reason}, so providers would disagree about which lease it names.",
-                paramName
-            );
-        }
     }
 }

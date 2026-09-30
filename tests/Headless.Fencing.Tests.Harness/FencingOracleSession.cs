@@ -2,8 +2,8 @@
 
 using System.Globalization;
 using System.Text;
+using Headless.Checks;
 using Headless.Fencing;
-using Headless.Sql;
 using Headless.UnitOfWork;
 
 namespace Tests;
@@ -412,9 +412,21 @@ public sealed class FencingOracleSession : IAsyncDisposable
 
     private static bool _IsUnportable(LeaseKey key)
     {
-        return SqlPortable.FindUnportableKeyText(key.TenantId) is not null
-            || SqlPortable.FindUnportableKeyText(key.Kind) is not null
-            || SqlPortable.FindUnportableKeyText(key.Resource) is not null;
+        return !_IsPortable(key.TenantId) || !_IsPortable(key.Kind) || !_IsPortable(key.Resource);
+
+        static bool _IsPortable(string value)
+        {
+            try
+            {
+                Argument.IsPortableKey(value);
+
+                return true;
+            }
+            catch (ArgumentException)
+            {
+                return false;
+            }
+        }
     }
 
     private FencedLease _Lease(int key, int slot)
