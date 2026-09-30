@@ -323,7 +323,7 @@ The lease row stores progress as `progress bytea` plus `progress_contract varcha
 - Every other verb — renew, settle, release, the fence read, sweep's claim — is one statement on one clock snapshot.
 - Sweep claims with `SKIP LOCKED`, so a lease another sweeper is already claiming is simply skipped, not waited on.
 - The autonomous path opens its own connection at READ COMMITTED and retries a deadlock or serialization failure (`40P01`, `40001`) up to 3 attempts with a jittered delay between them; the enlisted path runs on the unit's own connection and transaction with no retry.
-- The initializer serializes concurrent hosts with an advisory lock and creates the schema, table, and sequence idempotently.
+- The table and sequence are one schema step (`Fencing/1`) the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup, under one advisory lock per database shared with every other Headless feature.
 
 ---
 
@@ -361,4 +361,4 @@ The lease row stores progress as `progress varbinary(max)` plus `progress_contra
 - Every verb is one T-SQL batch on one `SYSUTCDATETIME()` snapshot captured into a variable. Grant draws its generation with `SET @g = NEXT VALUE FOR …` after the locking read (`WITH (UPDLOCK, HOLDLOCK, ROWLOCK)`) — `NEXT VALUE FOR` cannot appear inside `CASE`, `OUTPUT`, `WHERE`, a subquery, or `MERGE`, which is why grant reads first and computes the generation in a separate statement within the same batch.
 - Sweep claims with `UPDLOCK, READPAST, ROWLOCK`, plus `READCOMMITTEDLOCK` when the database has read-committed snapshot isolation on — plain `READPAST` is rejected under RCSI at READ COMMITTED.
 - The autonomous path opens its own connection at READ COMMITTED and retries a deadlock or snapshot update conflict (1205, 3960) up to 3 attempts with a jittered delay between them; the enlisted path runs on the unit's own connection and transaction with no retry.
-- The initializer serializes concurrent hosts with `sp_getapplock` and creates the schema, table, and sequence idempotently.
+- The table and sequence are one schema step (`Fencing/1`) the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup, under one `sp_getapplock` per database shared with every other Headless feature.

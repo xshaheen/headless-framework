@@ -51,7 +51,7 @@ builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbCont
 - `SetAsync` with `forceToSet: false` (default) skips the write when the supplied value equals the fallback value of the next lower-priority provider. Set `forceToSet: true` when you must persist the value explicitly (e.g., `GrantAsync`/`RevokeAsync` always use `forceToSet: true`).
 - To write several features at once, call `SetAsync(values, providerName, providerKey)` with an `IReadOnlyDictionary<string, string?>` keyed by feature name; a `null` value clears that feature. It checks every name, the provider, and its writability before writing anything, so an undefined name or a read-only provider rejects the whole batch with `ConflictException` and changes nothing. The built-in stores (EF, PostgreSQL, SQL Server) then write the batch in one transaction, so a failed write leaves every value as it was, and a successful one publishes a single `FeatureChangedMessage` listing every name. `forceToSet` applies to each value as it does for the single-name call. An empty dictionary writes and announces nothing. The single-name `SetAsync` is the one-entry case of this call. Clearing a value removes only the row stored under the exact provider key the provider resolves, not that feature under every key of the provider. Atomicity holds per provider: when several registered providers share `providerName`, each writes the batch in its own transaction. The store-backed providers open their own connection and transaction, so the write does not join a unit of work the caller has open, and rolling that unit back does not undo it. When a concurrent writer inserts or deletes one of the batch's rows between the store's read and its save, the store reads again and retries (up to three attempts); the last writer's value wins.
 - `DeleteAsync` removes all feature values for a given provider and key (e.g., all tenant overrides for a deleted tenant). It silently skips read-only providers.
-- Set `InitializeOnStartup = false` on `FeaturesStorageOptions` only when the schema is provisioned out-of-band (migrations job, DBA). The initializer becomes a no-op but still reports `IsInitialized = true` so nothing blocks. This flag affects only the raw-DDL providers (PostgreSQL / SqlServer); EF storage uses migrations and ignores it.
+- Set `InitializeOnStartup = false` on `FeaturesStorageOptions` only when the schema is provisioned out-of-band (migrations job, DBA). The runner then skips the feature's steps in `Apply` mode, still includes them in `Verify` mode and `SchemaRunner.ExportScript`, and startup does not block. This flag affects only the raw-DDL providers (PostgreSQL / SqlServer); EF storage uses migrations and ignores it.
 
 ## Core Concepts
 
@@ -423,7 +423,7 @@ PostgreSQL raw-DDL storage for feature management.
 - `setup.UsePostgreSql(Action<PostgreSqlFeaturesOptions> configure)` — overload for full option control
 - `setup.UsePostgreSql(Action<PostgreSqlFeaturesOptions, IServiceProvider> configure)` — overload with service-provider access for late-bound configuration
 - `setup.UsePostgreSql()` — reads the connection registered by `AddPostgreSqlSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
-- Idempotent schema, table, and index creation at host startup via `PostgreSqlFeaturesStorageInitializer`, with snake_case tables, columns, keys, and indexes (`feature_values`, `provider_key`, `ix_feature_values_provider_name_provider_key`)
+- Table and index creation at host startup as schema steps (`Features/1` tables, `Features/2` indexes) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with snake_case tables, columns, keys, and indexes (`feature_values`, `provider_key`, `ix_feature_values_provider_name_provider_key`)
 - Raw ADO.NET repositories for feature values, feature definitions, and feature group definitions
 - `PostgreSqlFeaturesOptions` — connection string and command timeout (`CommandTimeout`, default 30 seconds)
 - Shares `FeaturesStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
@@ -474,11 +474,11 @@ builder.Services.AddHeadlessFeatures(setup =>
 | `ConnectionString` | `""` | PostgreSQL connection string (required). |
 | `CommandTimeout` | 30 seconds | Timeout for DDL/DML commands. |
 
-Configure schema and table names through `FeaturesStorageOptions` via `setup.ConfigureStorage(...)`. Set `InitializeOnStartup = false` when the schema is provisioned out-of-band (a migrations job or DBA). The initializer becomes a no-op but still reports `IsInitialized = true` so dependents awaiting `WaitForInitializationAsync` do not block.
+Configure schema and table names through `FeaturesStorageOptions` via `setup.ConfigureStorage(...)`. Set `InitializeOnStartup = false` when the schema is provisioned out-of-band (a migrations job or DBA). The runner then skips the feature's steps in `Apply` mode, still includes them in `Verify` mode and `SchemaRunner.ExportScript`, and startup does not block.
 
 ### Runtime behavior
 
-- Registers `PostgreSqlFeaturesStorageInitializer` as `IHostedService` and `IInitializer`
+- Registers the features schema contribution; the one schema runner applies it at startup
 - Registers `PostgreSqlFeatureValueRecordRepository` as `IFeatureValueRecordRepository` (singleton)
 - Registers `PostgreSqlFeatureDefinitionRecordRepository` as `IFeatureDefinitionRecordRepository` (singleton)
 
@@ -495,7 +495,7 @@ SQL Server raw-DDL storage for feature management.
 - `setup.UseSqlServer(Action<SqlServerFeaturesOptions> configure)` — overload for full option control
 - `setup.UseSqlServer(Action<SqlServerFeaturesOptions, IServiceProvider> configure)` — overload with service-provider access for late-bound configuration
 - `setup.UseSqlServer()` — reads the connection registered by `AddSqlServerSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
-- Idempotent schema, table, and index creation at host startup via `SqlServerFeaturesStorageInitializer`
+- Table, index, and table-type creation at host startup as one schema step (`Features/1`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts)
 - Raw ADO.NET repositories for feature values, feature definitions, and feature group definitions
 - `SqlServerFeaturesOptions` — connection string and command timeout (`CommandTimeout`, default 30 seconds)
 - Shares `FeaturesStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
@@ -546,10 +546,10 @@ builder.Services.AddHeadlessFeatures(setup =>
 | `ConnectionString` | `""` | SQL Server connection string (required). |
 | `CommandTimeout` | 30 seconds | Timeout for DDL/DML commands. |
 
-Configure schema and table names through `FeaturesStorageOptions` via `setup.ConfigureStorage(...)`. Set `InitializeOnStartup = false` when the schema is provisioned out-of-band (a migrations job or DBA). The initializer becomes a no-op but still reports `IsInitialized = true` so dependents awaiting `WaitForInitializationAsync` do not block.
+Configure schema and table names through `FeaturesStorageOptions` via `setup.ConfigureStorage(...)`. Set `InitializeOnStartup = false` when the schema is provisioned out-of-band (a migrations job or DBA). The runner then skips the feature's steps in `Apply` mode, still includes them in `Verify` mode and `SchemaRunner.ExportScript`, and startup does not block.
 
 ### Runtime behavior
 
-- Registers `SqlServerFeaturesStorageInitializer` as `IHostedService` and `IInitializer`
+- Registers the features schema contribution; the one schema runner applies it at startup
 - Registers `SqlServerFeatureValueRecordRepository` as `IFeatureValueRecordRepository` (singleton)
 - Registers `SqlServerFeatureDefinitionRecordRepository` as `IFeatureDefinitionRecordRepository` (singleton)

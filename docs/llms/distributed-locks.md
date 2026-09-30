@@ -17,6 +17,7 @@ Use `IDistributedReadWriteLock` when concurrent readers are safe and writers nee
 
 - Code against `IDistributedLock` from `Headless.DistributedLocks.Abstractions`; do not inject Redis storage types into application services.
 - Use `Headless.DistributedLocks.InMemory` only for tests, local development, or deliberately single-instance apps. It is not a cross-process lock.
+- The PostgreSQL and SQL Server fence sequences are created at host startup by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), never on first acquire. Code that builds a service provider without starting a host (a console tool, a test) must call `await provider.GetRequiredService<SchemaRunner>().ApplyAsync()` before its first fenced acquire.
 - Use `TryAcquireAsync(...)` when timeout is an expected branch; use `AcquireAsync(...)` when timeout should fail the workflow.
 - Use `TryAcquireAllAsync(...)` or `AcquireAllAsync(...)` when one operation must hold several resources. All three primitives have them: `IDistributedLock` takes `IEnumerable<string>`, `IDistributedReadWriteLock` takes `IEnumerable<DistributedReadWriteLockRequest>`, `IDistributedSemaphoreProvider` takes `IEnumerable<DistributedSemaphoreRequest>`. Pass the complete set in one call so the framework can sort it ordinally, deduplicate it, enforce one timeout budget, and compensate partial acquisition in reverse order.
 - When a caller needs both read and write locks, pass one mixed `DistributedReadWriteLockRequest` set through a single `AcquireAllAsync(...)`. Never nest `AcquireAllReadAsync(...)` inside `AcquireAllWriteAsync(...)` (or vice versa): neither call sees the complete set, so neither can order it, and two such callers can deadlock. Use the read-only / write-only sugar overloads only when the whole set is genuinely one mode. The same rule bans nesting a composite inside another composite, or acquiring one while already holding an unrelated lock.
@@ -792,7 +793,7 @@ services.AddHeadlessDistributedLocks(setup =>
 });
 ```
 
-The default is `"headless"`. The provider creates the `headless_distributed_locks_fence` sequence inside the configured schema, creating the schema when absent, and reads it as `"schema"."headless_distributed_locks_fence"`, so it never depends on `search_path`. The provider validates the schema against PostgreSQL's unquoted-identifier rules at startup.
+The default is `"headless"`. The provider contributes the `headless_distributed_locks_fence` sequence (step `DistributedLocks/1`) to the schema runner, which creates it inside the configured schema at startup, creating the schema when absent. The provider reads it as `"schema"."headless_distributed_locks_fence"`, so it never depends on `search_path`. The provider validates the schema against PostgreSQL's unquoted-identifier rules at startup.
 
 ### Runtime behavior
 
@@ -943,11 +944,11 @@ services.AddHeadlessDistributedLocks(setup =>
 });
 ```
 
-The default is `"headless"`, not `dbo`; the initializer creates the schema when absent. The provider validates it against SQL Server's regular-identifier rules at startup. The sequence inside it is named `DistributedLocksFence_{KeyPrefix}`, with every run of characters outside `A-Za-z0-9_` in the prefix collapsed to `_` and the name truncated to 128 characters, so the default prefix `distributed-lock:` gives `DistributedLocksFence_distributed_lock`. Each key prefix gets its own sequence, so replicas that share a prefix share a fence.
+The default is `"headless"`, not `dbo`; the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) creates the schema when absent. The provider validates it against SQL Server's regular-identifier rules at startup. The sequence inside it is named `DistributedLocksFence_{KeyPrefix}`, with every run of characters outside `A-Za-z0-9_` in the prefix collapsed to `_` and the name truncated to 128 characters, so the default prefix `distributed-lock:` gives `DistributedLocksFence_distributed_lock`. Each key prefix gets its own sequence, so replicas that share a prefix share a fence.
 
 ### Runtime behavior
 
 - Registers `IDistributedLock` as singleton.
 - Registers `IDistributedReadWriteLock` as singleton.
-- Registers SQL Server storage, fencing-token source, storage initializer, `TimeProvider.System`, and `IGuidGenerator` when absent. The provider is wired with the in-process polling release signal, which paces its contended-acquire retry loop and wakes same-process waiters on release.
+- Registers SQL Server storage, fencing-token source, the fence-sequence schema contribution (step `DistributedLocks:DistributedLocksFence_<prefix>/1` for a non-default key prefix, applied only when `EnableFencing` is on), `TimeProvider.System`, and `IGuidGenerator` when absent. The provider is wired with the in-process polling release signal, which paces its contended-acquire retry loop and wakes same-process waiters on release.
 - Creates a sanitized SQL `SEQUENCE` for durable fencing when `EnableFencing` is `true`.

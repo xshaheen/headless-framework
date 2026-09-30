@@ -492,7 +492,7 @@ PostgreSQL raw-DDL storage for settings management.
 - `setup.UsePostgreSql(Action<PostgreSqlSettingsOptions> configure)` — overload for full option control
 - `setup.UsePostgreSql(Action<PostgreSqlSettingsOptions, IServiceProvider> configure)` — overload for late-bound configuration
 - `setup.UsePostgreSql()` — reads the connection registered by `AddPostgreSqlSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
-- Idempotent schema, table, and index creation at host startup via `PostgreSqlSettingsStorageInitializer`, with snake_case tables, columns, keys, and indexes (`setting_values`, `provider_key`, `ix_setting_values_name_provider_name_provider_key`)
+- Table and index creation at host startup as schema steps (`Settings/1` tables, `Settings/2` indexes) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with snake_case tables, columns, keys, and indexes (`setting_values`, `provider_key`, `ix_setting_values_name_provider_name_provider_key`)
 - Raw ADO.NET repositories for setting values and definitions
 - `PostgreSqlSettingsOptions` — connection string and command timeout
 - Shares `SettingsStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
@@ -552,7 +552,7 @@ Configure schema and table names through `SettingsStorageOptions` via `setup.Con
 
 ### Runtime behavior
 
-- Registers `PostgreSqlSettingsStorageInitializer` as `IHostedService` and `IInitializer`
+- Registers the settings schema contribution; the one schema runner applies it at startup
 - Registers `PostgreSqlSettingValueRecordRepository` as `ISettingValueRecordRepository` (singleton)
 - Registers `PostgreSqlSettingDefinitionRecordRepository` as `ISettingDefinitionRecordRepository` (singleton)
 
@@ -569,7 +569,7 @@ SQL Server raw-DDL storage for settings management.
 - `setup.UseSqlServer(Action<SqlServerSettingsOptions> configure)` — overload for full option control
 - `setup.UseSqlServer(Action<SqlServerSettingsOptions, IServiceProvider> configure)` — overload for late-bound configuration
 - `setup.UseSqlServer()` — reads the connection registered by `AddSqlServerSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
-- Idempotent schema, table, and index creation at host startup via `SqlServerSettingsStorageInitializer`, with PascalCase tables, columns, keys, and indexes (`SettingValues`, `ProviderKey`, `IX_SettingValues_Name_ProviderName_ProviderKey`)
+- Table, index, and table-type creation at host startup as schema steps (`Settings/1` tables, `Settings/2` indexes, `Settings/3` the `HeadlessSettingsIdList`/`HeadlessSettingsNameList` table types) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with PascalCase tables, columns, keys, and indexes (`SettingValues`, `ProviderKey`, `IX_SettingValues_Name_ProviderName_ProviderKey`)
 - Raw ADO.NET repositories for setting values and definitions
 - `SqlServerSettingsOptions` — connection string and command timeout
 - Shares `SettingsStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
@@ -629,6 +629,6 @@ Configure schema and table names through `SettingsStorageOptions` via `setup.Con
 
 ### Runtime behavior
 
-- Registers `SqlServerSettingsStorageInitializer` as `IHostedService` and `IInitializer`
+- Registers the settings schema contribution; the one schema runner applies it at startup
 - Registers `SqlServerSettingValueRecordRepository` as `ISettingValueRecordRepository` (singleton)
 - Registers `SqlServerSettingDefinitionRecordRepository` as `ISettingDefinitionRecordRepository` (singleton)
