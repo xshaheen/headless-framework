@@ -258,8 +258,8 @@ A runtime subscription sets `RuntimeSubscriptionOptions.EveryInstance = true`.
 | NATS | Core subscription on the Bus subject, not a JetStream consumer | Nothing |
 | RabbitMQ | Server-named exclusive, auto-delete, non-durable queue bound to the Bus exchange | Nothing |
 | Redis | Group-less blocking stream read from the last seen id | Nothing |
-| Pulsar | Non-durable, exclusive subscription starting at the latest message | Nothing |
-| Azure Service Bus | Subscription named from the identity and instance id with `AutoDeleteOnIdle` of 5 minutes, deleted on graceful stop; needs `AutoProvision` or Manage rights | The subscription, for up to 5 minutes |
+| Pulsar | Non-durable, exclusive subscription starting at the latest message; Pulsar.Client reconnects on its own, and the transport reports each recovery within about a second | Nothing |
+| Azure Service Bus | Subscription named from the identity and instance id with `AutoDeleteOnIdle` of 5 minutes, created on subscribe, kept across client rebuilds, and deleted when the host disposes its services after a graceful stop; recreated, with the reconnect signal, if Azure deleted it during a long disconnect. Needs `AutoProvision` and Manage rights: with `AutoProvision` off, startup fails | The subscription, for up to 5 minutes |
 | AWS SNS/SQS | Not supported: no idle auto-delete, so a crash would leak the queue and its subscription | Startup fails |
 | Kafka | Not applicable: Kafka has no Bus lane | Not applicable |
 
