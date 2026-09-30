@@ -199,18 +199,20 @@ public enum ApnsPushType
 /// <summary>
 /// The APNs delivery priority. The numeric values are the <c>apns-priority</c> header values.
 /// </summary>
+#pragma warning disable CA1008 // The values are the apns-priority header values, and APNs defines no zero priority.
 [PublicAPI]
 public enum ApnsPriority
 {
-    /// <summary>Deliver immediately.</summary>
-    Immediate = 10,
+    /// <summary>Prioritize the device's power over all other factors; the notification may be delayed.</summary>
+    PowerPrioritized = 1,
 
     /// <summary>Deliver based on the device's power considerations.</summary>
     PowerConsiderate = 5,
 
-    /// <summary>Prioritize the device's power over all other factors; the notification may be delayed.</summary>
-    PowerPrioritized = 1,
+    /// <summary>Deliver immediately.</summary>
+    Immediate = 10,
 }
+#pragma warning restore CA1008
 
 /// <summary>
 /// FluentValidation validator for <see cref="ApnsOptions"/>. Wired up and executed at startup by the

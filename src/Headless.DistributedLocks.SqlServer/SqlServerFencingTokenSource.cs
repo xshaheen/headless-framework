@@ -39,7 +39,7 @@ internal sealed class SqlServerFencingTokenSource(
     /// connection.
     /// </remarks>
     /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
-    public async ValueTask<long?> NextAsync(
+    public async ValueTask<LockFencingToken?> NextAsync(
         string resource,
         DbConnection? connection = null,
         CancellationToken cancellationToken = default
@@ -63,17 +63,19 @@ internal sealed class SqlServerFencingTokenSource(
         return await _NextAsync(ownedConnection, cancellationToken).ConfigureAwait(false);
     }
 
-    private async ValueTask<long?> _NextAsync(SqlConnection connection, CancellationToken cancellationToken)
+    private async ValueTask<LockFencingToken> _NextAsync(SqlConnection connection, CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.CommandTimeout = SqlServerApplicationLock.GetCommandTimeoutSeconds(options.Value.CommandTimeout);
         command.CommandText =
             $"SELECT NEXT VALUE FOR {SqlServerIdentifier.Quote(storageOptions.Value.Schema)}.{SqlServerIdentifier.Quote(SqlServerIdentifier.FenceSequenceName(options.Value.KeyPrefix))}";
 
-        return Convert.ToInt64(
+        var value = Convert.ToInt64(
             await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
             CultureInfo.InvariantCulture
         );
+
+        return new LockFencingToken(value);
     }
 }
 #pragma warning restore CA2100

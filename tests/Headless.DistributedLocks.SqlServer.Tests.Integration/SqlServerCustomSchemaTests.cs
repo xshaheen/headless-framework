@@ -90,7 +90,7 @@ public sealed class SqlServerCustomSchemaTests(SqlServerDistributedLockFixture f
 
         // then
         first.FencingToken.Should().NotBeNull();
-        second.FencingToken.Should().BeGreaterThan(first.FencingToken!.Value);
+        second.FencingToken!.Value.Should().BeGreaterThan(first.FencingToken!.Value);
     }
 
     // What host startup runs: the schema runner creates the key prefix's fence sequence before the first acquire.
@@ -142,7 +142,7 @@ public sealed class SqlServerCustomSchemaTests(SqlServerDistributedLockFixture f
             JOIN sys.schemas s ON s.schema_id = q.schema_id
             WHERE s.name = @schema;
             """;
-        command.Parameters.AddWithValue("schema", schema);
+        command.Parameters.AddWithValue(nameof(schema), schema);
 
         var sequences = new List<string>();
         await using var reader = await command.ExecuteReaderAsync(AbortToken);

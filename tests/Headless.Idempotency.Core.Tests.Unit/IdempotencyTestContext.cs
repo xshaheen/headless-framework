@@ -134,6 +134,28 @@ internal sealed class IdempotencyTestContext
     }
 }
 
+/// <summary>
+/// A serializable theory label for the record the store hands an attempt that no longer owns its key. Each test maps
+/// it to the <see cref="IdempotencyRecordState" /> it needs, so Test Explorer can enumerate the rows.
+/// </summary>
+public enum NotOwnedRecord
+{
+    /// <summary>The attempt's own generation, whose lease has expired.</summary>
+    ExpiredLease,
+
+    /// <summary>A newer generation holding a live lease.</summary>
+    NewerGeneration,
+
+    /// <summary>A released key that no generation owns.</summary>
+    Released,
+
+    /// <summary>A completed record carrying a stored result.</summary>
+    Completed,
+
+    /// <summary>No record at all.</summary>
+    Missing,
+}
+
 internal sealed class MutableCurrentTenant : ICurrentTenant
 {
     public bool IsAvailable => Id is not null;

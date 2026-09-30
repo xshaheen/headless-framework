@@ -77,8 +77,9 @@ public sealed class InMemoryIdempotencyFixture
     public Task ShiftLeaseIntoPastAsync(IdempotencyRecordKey key, TimeSpan by, CancellationToken cancellationToken)
     {
         var row = _storage.Table.Read(key);
-        row?.LeaseExpiresAt.Should().NotBeNull("the lease to age must exist");
-        _storage.Table.Write(key, row! with { LeaseExpiresAt = row.LeaseExpiresAt - by });
+        row.Should().NotBeNull("the lease to age must exist");
+        row!.LeaseExpiresAt.Should().NotBeNull("the lease to age must exist");
+        _storage.Table.Write(key, row with { LeaseExpiresAt = row.LeaseExpiresAt - by });
 
         return Task.CompletedTask;
     }

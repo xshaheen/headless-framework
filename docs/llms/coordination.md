@@ -207,7 +207,7 @@ None.
 - Atomic incarnation allocation with `INSERT ... ON CONFLICT ... RETURNING`.
 - Heartbeat guard rejects stale, impossible, dead, gracefully left, and pruned incarnations.
 - Liveness classification uses `clock_timestamp()`.
-- The membership tables are schema steps (`Coordination/1` creates them, `Coordination/2` renames legacy timestamp columns) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
+- The membership tables are one schema step (`Coordination/1`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
 
 ### Design constraints
 
@@ -317,7 +317,7 @@ Registers the core membership services, Redis membership store, keyed Lua script
 - Heartbeat guard rejects stale, impossible, dead, gracefully left, and pruned incarnations.
 - Liveness classification uses `SYSUTCDATETIME()`.
 - Guarded membership writes retry SQL Server deadlock victim error `1205` with a bounded jittered Polly policy.
-- The membership tables are schema steps (`Coordination/1` creates them, `Coordination/2` renames legacy timestamp columns) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
+- The membership tables are one schema step (`Coordination/1`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
 
 ### Design constraints
 

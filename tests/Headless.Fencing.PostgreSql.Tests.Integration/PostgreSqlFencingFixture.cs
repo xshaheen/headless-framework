@@ -153,7 +153,7 @@ public sealed class PostgreSqlFencingFixture
             connection
         );
         _AddKey(command, key);
-        command.Parameters.Add(new NpgsqlParameter<TimeSpan>("by", NpgsqlDbType.Interval) { TypedValue = by });
+        command.Parameters.Add(new NpgsqlParameter<TimeSpan>(nameof(by), NpgsqlDbType.Interval) { TypedValue = by });
 
         (await command.ExecuteNonQueryAsync(cancellationToken)).Should().Be(1, "the lease row to age must exist");
     }
@@ -182,7 +182,7 @@ public sealed class PostgreSqlFencingFixture
             $"SELECT tenant_id, resource, generation FROM {_HandoffTable} WHERE kind = @kind",
             connection
         );
-        command.Parameters.AddWithValue("kind", kind);
+        command.Parameters.AddWithValue(nameof(kind), kind);
 
         var handoffs = new List<LeaseHandoff>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

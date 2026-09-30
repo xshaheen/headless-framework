@@ -50,7 +50,10 @@ internal sealed class SecretHasher : ISecretHasher
         if (secret.Length > options.MaxSecretLength)
         {
             throw new ArgumentException(
-                $"The secret is longer than the configured maximum of {options.MaxSecretLength} characters.",
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"The secret is longer than the configured maximum of {options.MaxSecretLength} characters."
+                ),
                 nameof(secret)
             );
         }

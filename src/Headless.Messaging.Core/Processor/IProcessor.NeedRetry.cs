@@ -68,7 +68,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         _circuitBreakerStateManager = circuitBreakerStateManager;
         _consumerResolver = consumerResolver;
         _capabilityModel = capabilityModel;
-        _inboxMetricPolicy = inboxMetricPolicy ?? new InboxMetricPolicy(IncludeTenantId: false);
+        _inboxMetricPolicy = inboxMetricPolicy ?? new InboxMetricPolicy(TenantTagName: null);
 
         _adaptivePolling = retryOptions.Value.AdaptivePolling;
         _maxInterval = retryOptions.Value.MaxPollingInterval;
@@ -680,7 +680,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
             tier,
             storageCapability.Provider,
             message.Origin.Headers.TryGetValue(Headers.TenantId, out var tenantId) ? tenantId : null,
-            _inboxMetricPolicy.IncludeTenantId
+            _inboxMetricPolicy.TenantTagName
         );
     }
 

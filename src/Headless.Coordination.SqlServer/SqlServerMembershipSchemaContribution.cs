@@ -8,13 +8,12 @@ namespace Headless.Coordination.SqlServer;
 
 /// <summary>
 /// The Coordination feature's schema contribution for SQL Server: the membership generation, descriptor, and
-/// liveness tables plus the liveness index, and the legacy column renames, as two idempotent steps the Headless
+/// liveness tables plus the liveness index, as one idempotent step the Headless
 /// schema runner applies.
 /// </summary>
 internal static class SqlServerMembershipSchemaContribution
 {
     public const string TablesStepVersion = "1";
-    public const string RenameStepVersion = "2";
 
     public static SchemaContribution Create(
         SqlServerCoordinationOptions providerOptions,
@@ -92,18 +91,6 @@ internal static class SqlServerMembershipSchemaContribution
                     ON {{livenessTable}} ([{{SqlServerMembershipSchema.ClusterName}}] ASC, [{{SqlServerMembershipSchema.Liveness.LastBeat}}] ASC);
             """;
 
-        // The renames are a separate step: they are a schema repair, not a creation, and keeping them apart keeps
-        // the creation step's checksum stable while the repair evolves.
-        var renameSql = $$"""
-            IF COL_LENGTH(N'{{generationObject}}', N'DateUpdated') IS NOT NULL
-               AND COL_LENGTH(N'{{generationObject}}', N'{{SqlServerMembershipSchema.UpdatedAt}}') IS NULL
-                EXEC sys.sp_rename N'{{generationObject}}.DateUpdated', N'{{SqlServerMembershipSchema.UpdatedAt}}', N'COLUMN';
-
-            IF COL_LENGTH(N'{{descriptorObject}}', N'DateCreated') IS NOT NULL
-               AND COL_LENGTH(N'{{descriptorObject}}', N'{{SqlServerMembershipSchema.CreatedAt}}') IS NULL
-                EXEC sys.sp_rename N'{{descriptorObject}}.DateCreated', N'{{SqlServerMembershipSchema.CreatedAt}}', N'COLUMN';
-            """;
-
         return new SchemaContribution(
             feature: "Coordination",
             dialect: SqlServerSchemaDialect.Instance,
@@ -115,11 +102,6 @@ internal static class SqlServerMembershipSchemaContribution
                     TablesStepVersion,
                     "Create the membership generation, descriptor, and liveness tables.",
                     tablesSql
-                ),
-                new SchemaStep(
-                    RenameStepVersion,
-                    "Rename the legacy DateUpdated and DateCreated columns to the current names.",
-                    renameSql
                 ),
             ],
             applyOnStartup: providerOptions.InitializeOnStartup

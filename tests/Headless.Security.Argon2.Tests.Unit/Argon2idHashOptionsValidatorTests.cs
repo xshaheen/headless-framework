@@ -16,12 +16,17 @@ public sealed class Argon2idHashOptionsValidatorTests : TestBase
     }
 
     [Theory]
-    [MemberData(nameof(InvalidOptions))]
-    public void should_reject_out_of_bounds_values(string property, Action<Argon2idHashOptions> mutate)
+    [InlineData(nameof(Argon2idHashOptions.MemorySize), SecretHashLimits.MinArgon2idMemorySize - 1)]
+    [InlineData(nameof(Argon2idHashOptions.MemorySize), SecretHashLimits.MaxArgon2idMemorySize + 1)]
+    [InlineData(nameof(Argon2idHashOptions.Iterations), 0)]
+    [InlineData(nameof(Argon2idHashOptions.Iterations), SecretHashLimits.MaxArgon2idIterations + 1)]
+    [InlineData(nameof(Argon2idHashOptions.HashSize), 15)]
+    [InlineData(nameof(Argon2idHashOptions.HashSize), 65)]
+    public void should_reject_out_of_bounds_values(string property, int value)
     {
         // given
         var options = new Argon2idHashOptions();
-        mutate(options);
+        _Assign(options, property, value);
 
         // when
         var result = _sut.Validate(options);
@@ -31,14 +36,21 @@ public sealed class Argon2idHashOptionsValidatorTests : TestBase
         result.Errors.Should().Contain(e => e.PropertyName == property);
     }
 
-    public static TheoryData<string, Action<Argon2idHashOptions>> InvalidOptions =>
-        new()
+    private static void _Assign(Argon2idHashOptions options, string property, int value)
+    {
+        switch (property)
         {
-            { "MemorySize", o => o.MemorySize = SecretHashLimits.MinArgon2idMemorySize - 1 },
-            { "MemorySize", o => o.MemorySize = SecretHashLimits.MaxArgon2idMemorySize + 1 },
-            { "Iterations", o => o.Iterations = 0 },
-            { "Iterations", o => o.Iterations = SecretHashLimits.MaxArgon2idIterations + 1 },
-            { "HashSize", o => o.HashSize = 15 },
-            { "HashSize", o => o.HashSize = 65 },
-        };
+            case nameof(Argon2idHashOptions.MemorySize):
+                options.MemorySize = value;
+                break;
+            case nameof(Argon2idHashOptions.Iterations):
+                options.Iterations = value;
+                break;
+            case nameof(Argon2idHashOptions.HashSize):
+                options.HashSize = value;
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(property));
+        }
+    }
 }

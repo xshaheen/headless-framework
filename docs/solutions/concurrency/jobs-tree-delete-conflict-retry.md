@@ -43,10 +43,10 @@ The mechanism lives in the generic EF provider and is therefore identical for ge
 
 ### Retry only classified pre-commit conflicts
 
-The provider retries the complete scope, with fresh discovery, at most three times using jittered exponential backoff. Retryable failures are driver-reported transient database errors plus these provider codes:
+The provider retries the complete scope, with fresh discovery, at most three times using jittered exponential backoff. Retryable failures are the unit of work's shared transient classification (`RelationalTransientFaults` in `Headless.UnitOfWork`: driver-reported transient errors, serialization failure `40001`, deadlock `40P01`, and on SQL Server the same error-number set EF Core's `SqlServerTransientExceptionDetector` retries, read across every error in the exception, not only the first) plus the foreign-key violation that signals a concurrent append:
 
-- PostgreSQL: foreign-key violation `23503`, serialization failure `40001`, and deadlock `40P01`.
-- SQL Server: foreign-key violation `547`, deadlock victim `1205`, and snapshot isolation conflict `3960`.
+- PostgreSQL: foreign-key violation `23503`.
+- SQL Server: foreign-key violation `547`.
 
 `40001` and `3960` remain classified so the delete still behaves correctly when a consumer raises the default isolation level. Cancellation and non-database failures are never retried. When all retries are exhausted, the last conflict reaches `JobsManager`, which returns a failed `JobResult`; every failed attempt has rolled back, so the tree remains intact.
 
