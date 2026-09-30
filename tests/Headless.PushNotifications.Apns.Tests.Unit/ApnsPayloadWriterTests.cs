@@ -6,6 +6,7 @@ using Headless.PushNotifications.Apns.Internals;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 
+#pragma warning disable xUnit1044, xUnit1045 // The rows are notification object graphs and factories; these theories do not need per-row enumeration in Test Explorer.
 namespace Tests;
 
 public sealed class ApnsPayloadWriterTests : TestBase

@@ -129,7 +129,7 @@ public sealed class SqlServerCustomSchemaTests(SqlServerDistributedLockFixture f
             JOIN sys.schemas s ON s.schema_id = q.schema_id
             WHERE s.name = @schema;
             """;
-        command.Parameters.AddWithValue("schema", schema);
+        command.Parameters.AddWithValue(nameof(schema), schema);
 
         var sequences = new List<string>();
         await using var reader = await command.ExecuteReaderAsync(AbortToken);

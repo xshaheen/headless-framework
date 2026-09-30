@@ -175,7 +175,9 @@ public sealed class ApnsConnectionBoundTests : TestBase
         // then - every token was delivered exactly once: the ones the first connections did not process arrived
         // on another connection, and none is duplicated.
         result.SuccessCount.Should().Be(9);
-        var counts = server.Requests.GroupBy(r => r.DeviceToken).ToDictionary(g => g.Key, g => g.Count());
+        var counts = server
+            .Requests.GroupBy(r => r.DeviceToken, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
         foreach (var token in tokens)
         {
             counts[token].Should().Be(1, $"token {token} must be delivered exactly once");
