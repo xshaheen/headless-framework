@@ -28,7 +28,7 @@ packages: Core, Checks, Domain, Domain.LocalEventBus
 - Use `ApiResult<T>` / `ApiResult` from `Headless.Extensions` for service return types instead of throwing exceptions for expected failures. Use `Result<TValue, TError>` when you need custom error types.
 - For local (in-process) domain events, register `AddHeadlessDomainEventDispatcher()` and implement `IDomainEventHandler<T>`. Use `DomainEventHandlerOrderAttribute` to control handler execution order. For integration (distributed) events, emit integration payloads via `AddIntegrationEvent()` on the aggregate; dispatch is handled by the ORM/messaging layer (see [orm.md](orm.md)), not by this package.
 - For strongly-typed IDs, use the primitives from `Headless.Extensions` (`UserId`, `AccountId`) — they have source-generated JSON and TypeConverter support.
-- Auditing interfaces (`ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`) are marker interfaces — the ORM layer fills the properties automatically.
+- Auditing interfaces (`ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`) are marker interfaces — the ORM layer fills the properties automatically. For an entity that needs all four, inherit `AuditedEntity<TId, …>` or `AuditedAggregateRoot<TId, …>` instead of re-declaring the properties. When implementing the interfaces by hand, give each property a `private` or `protected` setter: the ORM writes non-public setters, but a `private` setter declared on a base class is invisible to it, so a hand-written base class needs `protected`.
 - Register GUID generation through `AddHeadlessGuidGenerator()` only from host/package setup; persisted backends should resolve `SequentialGuidType.Version7` or `SequentialGuidType.SqlServer` by key instead of depending on the unkeyed default. The `IGuidGenerator` / `SequentialGuidType` contracts live in `Headless.Extensions` (see [extensions.md](extensions.md)).
 - Use `Polly.Core`'s `ResiliencePipelineBuilder().AddRetry(...)` for retry logic with exponential backoff and jitter. Build the pipeline once per operation class (e.g. one for transient-Redis-error retries, one for status-check retries) and reuse it. `Polly.Core` has zero transitive dependencies on `net10.0`.
 - Use `LogState` with `HeadlessLoggerExtensions` for structured logging with tags and properties.
@@ -224,7 +224,8 @@ Core domain-driven design abstractions including entities, aggregate roots, valu
 - **Aggregate Roots**: `IAggregateRoot`, `AggregateRoot` with built-in message emission
 - **Value Objects**: `ValueObject<TSelf>` base class with equality over the components it compares and hashes
 
-- **Auditing**: `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`
+- **Auditing**: `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`, each in three arities: timestamps only, `<TAccountId>` adding actor ids, and `<TAccountId, TAccount>` adding actor navigations plus `Suspend`/`Unsuspend` and `Delete`/`Restore`
+- **Audited bases**: `AuditedEntity<TId>` (over `Entity<TId>`) and `AuditedAggregateRoot<TId>` (over `AggregateRoot<TId>`) implement all four audit interfaces with `protected` setters. The `<TId, TAccountId>` and `<TId, TAccountId, TAccount>` forms add the matching interface arity; only the last form exposes the public transition methods
 - **Concurrency**: `IHasConcurrencyStamp`
 - **Multi-tenancy**: `IMultiTenant`
 - **Domain Events (in-process)**: `IDomainEventEmitter`, `IDomainEventHandler<T>`, `DomainEventHandlerOrderAttribute`. An aggregate raises its own events through the `protected AddDomainEvent`; the readers/clearers (`GetDomainEvents`, `ClearDomainEvents`) and the `IDomainEventEmitter` contract stay public for infrastructure that collects and dispatches them. Dispatch is provided by `Headless.Domain.LocalEventBus`.
@@ -296,10 +297,23 @@ Implement audit interfaces for automatic tracking:
 public sealed class Product : Entity<int>, ICreateAudit, IUpdateAudit
 {
     public required string Name { get; set; }
-    public DateTimeOffset CreatedAt { get; set; }
-    public DateTimeOffset? UpdatedAt { get; set; }
+    public DateTimeOffset CreatedAt { get; private set; }
+    public DateTimeOffset? UpdatedAt { get; private set; }
 }
 ```
+
+Or inherit an audited base, which carries create, update, suspend, and soft-delete fields. The `HeadlessDbContext` save pipeline stamps `CreatedAt`, `UpdatedAt`, `SuspendedAt`, and `DeletedAt`, and it stamps the matching `*ById` from `ICurrentUser` when `TAccountId` is `UserId` or `AccountId`. The entity changes `IsSuspended` / `IsDeleted` through its own behavior:
+
+```csharp
+public sealed class Invoice : AuditedAggregateRoot<Guid, UserId>
+{
+    public required string Number { get; init; }
+
+    public void Void() => IsDeleted = true;
+}
+```
+
+The `<TId, TAccountId, TAccount>` form also implements the public `Suspend`/`Unsuspend` and `Delete`/`Restore` methods. They record the given time and actor, clear the opposite state's fields, and do nothing when the entity is already in the target state. The save pipeline keeps a time the method recorded, and it fills a missing actor id from `ICurrentUser`.
 
 #### Value Objects
 
