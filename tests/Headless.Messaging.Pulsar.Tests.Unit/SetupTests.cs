@@ -80,6 +80,7 @@ public sealed class SetupTests : TestBase
             .NotBeSameAs(provider.GetRequiredService<IQueueTransport>());
         var capabilities = provider.GetRequiredService<MessagingProviderCapabilities>();
         capabilities.SupportsIndependentLaneTopology.Should().BeTrue();
+        capabilities.SupportsEveryInstance.Should().BeTrue();
     }
 
     private static MessagingSetupBuilder _CreateSetup()

@@ -36,22 +36,12 @@ internal sealed class PulsarConsumerClientFactory : IConsumerClientFactory
     {
         Argument.IsNotNull(request);
 
-        if (request.Kind is ConsumerSubscriptionKind.EveryInstance)
-        {
-            throw new System.NotSupportedException(
-                "The Pulsar transport does not support every-instance subscriptions."
-            );
-        }
-
-        var subscriptionName = request.SubscriptionName;
-        var concurrency = request.Concurrency;
-        var lane = request.Lane;
-
         try
         {
+            // Creating the client touches no broker object: the subscription, every-instance or competing, is opened by
+            // SubscribeAsync, so the topology-only client the core creates and disposes leaves nothing behind.
             var client = await _connection.RentClientAsync(cancellationToken).ConfigureAwait(false);
-            var consumerClient = new PulsarConsumerClient(_pulsarOptions, client, subscriptionName, concurrency, lane);
-            return consumerClient;
+            return new PulsarConsumerClient(_pulsarOptions, client, request);
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {

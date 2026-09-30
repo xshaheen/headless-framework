@@ -126,7 +126,8 @@ public static class SetupPulsarMessaging
                             metadata.Route.MessageName,
                             PulsarRoutingAffinity.Mapping
                         ))
-                        .ToArray()
+                        .ToArray(),
+                    supportsEveryInstance: true
                 )
             );
 

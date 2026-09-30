@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using Headless.Messaging;
 using Headless.Messaging.Pulsar;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
@@ -17,8 +18,7 @@ public sealed class PulsarConsumerClientLifecycleTests : TestBase
         await using var client = new PulsarConsumerClient(
             Options.Create(new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" }),
             client: null!,
-            subscriptionName: "lifecycle-test",
-            groupConcurrent: 0
+            new ConsumerClientRequest("lifecycle-test", concurrency: 0, MessageLane.Bus)
         );
         var receiveLock = _GetField<Lock>(client, "_receiveLock");
         var pauseGate = _GetField<ConsumerPauseGate>(client, "_pauseGate");

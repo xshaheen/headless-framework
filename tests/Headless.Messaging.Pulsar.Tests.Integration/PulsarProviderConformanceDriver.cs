@@ -16,6 +16,8 @@ internal sealed class PulsarProviderConformanceDriver(PulsarFixture fixture) : T
 
     public override bool SupportsRoutingAffinity => true;
 
+    public override bool SupportsEveryInstance => true;
+
     public override void ConfigureRoutingAffinityTransport(
         Headless.Messaging.Configuration.MessagingSetupBuilder setup
     ) => setup.UsePulsar(fixture.ConnectionString);
@@ -66,11 +68,6 @@ internal sealed class PulsarProviderConformanceDriver(PulsarFixture fixture) : T
         CancellationToken cancellationToken
     )
     {
-        return fixture.CreateLaneSessionAsync(
-            endpoint.Lane,
-            endpoint.LogicalName,
-            endpoint.SubscriptionName,
-            cancellationToken
-        );
+        return fixture.CreateEndpointSessionAsync(endpoint, cancellationToken);
     }
 }

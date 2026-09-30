@@ -37,11 +37,19 @@ internal static class PulsarPhysicalAddress
     /// subscription on each Queue topic.
     /// </summary>
     public static string Subscription(MessageLane lane, string subscriptionName) =>
-        lane switch
+        Subscription(new ConsumerClientRequest(subscriptionName, concurrency: 0, lane));
+
+    /// <summary>
+    /// Returns the subscription a consumer client of <paramref name="request"/> reads through: one per consumer
+    /// identity on the Bus lane, one per identity and process for an every-instance Bus request, and one shared
+    /// subscription on each Queue topic.
+    /// </summary>
+    public static string Subscription(ConsumerClientRequest request) =>
+        request.Lane switch
         {
-            MessageLane.Bus => _BusSubscriptionPrefix + BusNameBuilder.Build(subscriptionName, _BusSubscriptionRules),
+            MessageLane.Bus => _BusSubscriptionPrefix + BusNameBuilder.Build(request, _BusSubscriptionRules),
             MessageLane.Queue => "headless-queue",
-            _ => throw new ArgumentOutOfRangeException(nameof(lane), lane, message: null),
+            _ => throw new ArgumentOutOfRangeException(nameof(request), request.Lane, message: null),
         };
 
     private static string _Lane(MessageLane lane) =>
