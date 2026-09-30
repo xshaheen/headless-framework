@@ -98,11 +98,12 @@ public sealed class HeadlessCorsOptions
     public bool ExposeFrameworkHeaders { get; set; } = true;
 
     /// <summary>
-    /// How long a browser may cache a preflight response, sent as <c>Access-Control-Max-Age</c>.
-    /// <see langword="null"/>, the default, sends no header and leaves the browser default in place. Browsers cap
+    /// How long a browser may cache a preflight response, sent as <c>Access-Control-Max-Age</c>. Default ten
+    /// minutes: without the header Chromium caches a preflight for five seconds, so nearly every non-simple call pays
+    /// an extra round trip. <see cref="TimeSpan.Zero"/> sends <c>0</c>, which turns preflight caching off. Browsers cap
     /// the value (Chromium at two hours), so a longer one has no further effect.
     /// </summary>
-    public TimeSpan? MaxAge { get; set; }
+    public TimeSpan MaxAge { get; set; } = TimeSpan.FromMinutes(10);
 
     /// <summary>Marked by <c>AddHeadlessCorsOriginSource</c>; not bindable from configuration.</summary>
     internal bool HasOriginSource { get; set; }
@@ -141,7 +142,7 @@ internal sealed class HeadlessCorsOptionsValidator : AbstractValidator<HeadlessC
         RuleForEach(x => x.AllowedHeaders).NotEmpty();
         RuleForEach(x => x.AllowedMethods).NotEmpty();
         RuleForEach(x => x.ExposedHeaders).NotEmpty();
-        RuleFor(x => x.MaxAge).GreaterThan(TimeSpan.Zero).When(x => x.MaxAge is not null);
+        RuleFor(x => x.MaxAge).GreaterThanOrEqualTo(TimeSpan.Zero);
     }
 
     private void _AddAnyOriginRules(IHostEnvironment? environment)
