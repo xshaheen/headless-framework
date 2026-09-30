@@ -45,7 +45,7 @@ public sealed class GeneratedSourceSnapshotTests
             public sealed class PriceCache : IConsume<PriceChanged>, IOnSubscriptionEstablished, IDisposable
             {
                 public ValueTask ConsumeAsync(ConsumeContext<PriceChanged> context, CancellationToken cancellationToken) => default;
-                public ValueTask OnSubscriptionEstablishedAsync(CancellationToken cancellationToken) => default;
+                public ValueTask OnSubscriptionEstablishedAsync(SubscriptionEstablishedContext context, CancellationToken cancellationToken) => default;
                 public void Dispose() { }
             }
 

@@ -75,6 +75,17 @@ public sealed class RuntimeSubscriptionOptions
     /// </summary>
     public RuntimeSubscriptionDuplicateBehavior DuplicateBehavior { get; init; } =
         RuntimeSubscriptionDuplicateBehavior.Reject;
+
+    /// <summary>
+    /// Gets or sets whether this process receives every published message through a subscription of its own, instead of
+    /// competing with the other processes that attach the same handler. Defaults to <see langword="false"/>.
+    /// </summary>
+    /// <remarks>
+    /// Delivery is at most once and only while the subscription is attached: there is no backlog, no inbox row, and no
+    /// retry, and a handler failure is logged and the message dropped. The transport must support every-instance
+    /// subscriptions, and an explicit <see cref="Group"/> is rejected because the subscription belongs to this process.
+    /// </remarks>
+    public bool EveryInstance { get; init; }
 }
 
 /// <summary>

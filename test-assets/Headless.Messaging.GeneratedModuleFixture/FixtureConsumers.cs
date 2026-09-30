@@ -56,7 +56,10 @@ public sealed class InvoiceProjection(FixtureProbe probe)
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask OnSubscriptionEstablishedAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
+    public ValueTask OnSubscriptionEstablishedAsync(
+        SubscriptionEstablishedContext context,
+        CancellationToken cancellationToken
+    ) => ValueTask.CompletedTask;
 
     public void Dispose() => probe.Record("projection disposed");
 }

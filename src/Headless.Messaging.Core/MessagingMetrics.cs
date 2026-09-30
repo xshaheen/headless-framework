@@ -45,6 +45,7 @@ internal static class MessagingMetrics
     internal const string InboxCapabilitiesName = "messaging.inbox.capabilities";
     internal const string OperatorOperationsName = "messaging.operator.operations";
     internal const string ReceiveOutcomesName = "messaging.receive.outcomes";
+    internal const string EveryInstanceDeliveriesName = "messaging.every_instance.deliveries";
 
     // --- Dimension (tag) names --------------------------------------------------------------------------------
 
@@ -58,6 +59,7 @@ internal static class MessagingMetrics
     internal const string TagSubscriber = "messaging.subscriber";
     internal const string TagPersistenceType = "messaging.persistence.type";
     internal const string TagReceiveOutcome = "messaging.receive.outcome";
+    internal const string TagEveryInstanceOutcome = "messaging.every_instance.outcome";
 
     // --- Instruments ------------------------------------------------------------------------------------------
 
@@ -139,6 +141,10 @@ internal static class MessagingMetrics
         ReceiveOutcomesName
     );
 
+    private static readonly Counter<long> _EveryInstanceDeliveries = MessagingDiagnostics.Meter.CreateCounter<long>(
+        EveryInstanceDeliveriesName
+    );
+
     /// <summary>Whether any messaging instrument currently has a subscribed listener.</summary>
     internal static bool AnyEnabled =>
         _MessagesPublished.Enabled
@@ -159,7 +165,8 @@ internal static class MessagingMetrics
         || _InboxReplays.Enabled
         || _InboxRetention.Enabled
         || _InboxCapabilities.Enabled
-        || _ReceiveOutcomes.Enabled;
+        || _ReceiveOutcomes.Enabled
+        || _EveryInstanceDeliveries.Enabled;
 
     internal static void RecordInbox(
         InboxMetricKind kind,
@@ -417,6 +424,27 @@ internal static class MessagingMetrics
         }
 
         _ReceiveOutcomes.Add(1, new TagList { { TagReceiveOutcome, outcome } });
+    }
+
+    /// <summary>
+    /// Records one every-instance delivery, which has no inbox row to count it: <c>succeeded</c> when the consumer
+    /// returned, <c>failed</c> when it threw (with <c>error.type</c>), and <c>dropped</c> when the message never reached
+    /// it (no consumer on the subscription, or a receive-stage reject). Every outcome commits the message.
+    /// </summary>
+    internal static void RecordEveryInstanceDelivery(string consumerIdentity, string outcome, string? errorType = null)
+    {
+        if (!_EveryInstanceDeliveries.Enabled)
+        {
+            return;
+        }
+
+        var tags = new TagList { { TagConsumerGroupName, consumerIdentity }, { TagEveryInstanceOutcome, outcome } };
+        if (errorType is not null)
+        {
+            tags.Add(TagErrorType, errorType);
+        }
+
+        _EveryInstanceDeliveries.Add(1, tags);
     }
 
     private static TagList _CreateDeliveryTags(

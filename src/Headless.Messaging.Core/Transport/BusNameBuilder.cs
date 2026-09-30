@@ -80,6 +80,25 @@ internal static class BusNameBuilder
         return readable.Length == 0 ? hash : $"{readable}{_Replacement}{hash}";
     }
 
+    /// <summary>
+    /// Returns the broker subscription name a Bus client of <paramref name="request"/> opens: the name of its identity
+    /// for a competing subscription, which every process shares, or a name derived from the identity and the requesting
+    /// host's instance id for an every-instance subscription, which no other process shares.
+    /// </summary>
+    /// <param name="request">The consumer client request; its lane must be <see cref="MessageLane.Bus"/>.</param>
+    /// <param name="rules">The broker's naming rules.</param>
+    /// <returns>A name the broker accepts, stable for one identity and one instance id.</returns>
+    public static string Build(ConsumerClientRequest request, BusNameRules rules)
+    {
+        Argument.IsNotNull(request);
+
+        // The hash covers the instance id too, so a shortened every-instance name stays unique per process even when
+        // the readable prefix only has room for the identity.
+        return request.Kind is ConsumerSubscriptionKind.EveryInstance
+            ? Build($"{request.SubscriptionName}.{request.InstanceId:N}", rules)
+            : Build(request.SubscriptionName, rules);
+    }
+
     private static bool _IsValid(string name, BusNameRules rules)
     {
         if (name.Length > rules.MaxLength)

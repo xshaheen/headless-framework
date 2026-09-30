@@ -167,6 +167,16 @@ in a received-exception row, commits (acks) the transport delivery, and invokes 
 contract-version mismatch, deserialization failure, and (with receive middleware) an explicit
 or defaulted Reject outcome.
 
+### Every-instance subscription
+A Bus subscription that belongs to one running process instead of being shared by every process that
+registers the consumer identity. Declared with `[BusConsumer(identity, EveryInstance = true)]` or
+`RuntimeSubscriptionOptions.EveryInstance`. Each process derives its own broker subscription from the
+identity and its `MessagingInstanceId`, so every process receives every message, and the broker removes
+the subscription once the process no longer holds it. Delivery is at most once and only while the process
+is subscribed: no backlog, no inbox row, no retry, and a consumer failure is logged and committed. A
+consumer that mirrors state resynchronizes through `IOnSubscriptionEstablished`. The opposite kind,
+the default, is a **competing** subscription: durable and shared, one copy per identity.
+
 ## Flagged ambiguities
 
 - "Generation" had been used loosely for both a node's Incarnation and the durable counter that

@@ -3,6 +3,7 @@
 using Headless.Messaging;
 using Headless.Messaging.AzureServiceBus;
 using Headless.Messaging.Exceptions;
+using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -31,7 +32,8 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var act = async () => await factory.CreateAsync("test-group", 1, MessageLane.Queue, cts.Token);
+        var act = async () =>
+            await factory.CreateAsync(new ConsumerClientRequest("test-group", 1, MessageLane.Queue), cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -58,7 +60,7 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         var factory = new AzureServiceBusConsumerClientFactory(loggerFactory, options, serviceProvider, pool);
 
         // when
-        var act = async () => await factory.CreateAsync("test-group", 5, MessageLane.Queue);
+        var act = async () => await factory.CreateAsync(new ConsumerClientRequest("test-group", 5, MessageLane.Queue));
 
         // then
         await act.Should().ThrowAsync<BrokerConnectionException>();
@@ -85,7 +87,7 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         var factory = new AzureServiceBusConsumerClientFactory(loggerFactory, options, serviceProvider, pool);
 
         // when
-        var act = async () => await factory.CreateAsync("test-group", 5, MessageLane.Queue);
+        var act = async () => await factory.CreateAsync(new ConsumerClientRequest("test-group", 5, MessageLane.Queue));
 
         // then
         await act.Should().ThrowAsync<BrokerConnectionException>();
@@ -109,7 +111,7 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         var groupName = new string('a', 80);
 
         // when
-        var act = async () => await factory.CreateAsync(groupName, 5, MessageLane.Queue);
+        var act = async () => await factory.CreateAsync(new ConsumerClientRequest(groupName, 5, MessageLane.Queue));
 
         // then - reaches connection setup instead of rejecting the framework-local group name.
         await act.Should().ThrowAsync<BrokerConnectionException>();
@@ -132,7 +134,7 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         var identity = "billing." + new string('a', 112);
 
         // when
-        var act = async () => await factory.CreateAsync(identity, 5, MessageLane.Bus);
+        var act = async () => await factory.CreateAsync(new ConsumerClientRequest(identity, 5, MessageLane.Bus));
 
         // then - the identity maps to a valid subscription name, so creation reaches connection setup.
         await act.Should().ThrowAsync<BrokerConnectionException>();

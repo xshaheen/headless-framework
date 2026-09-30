@@ -123,7 +123,8 @@ public sealed class MessagingContributionBuilder
         string messageContractVersion,
         string? messageName = null,
         string? group = null,
-        byte concurrency = 1
+        byte concurrency = 1,
+        bool everyInstance = false
     )
         where TMessage : class
         where TConsumer : class, IConsume<TMessage>
@@ -148,7 +149,10 @@ public sealed class MessagingContributionBuilder
                     ConsumerIdentity: consumerIdentity,
                     CircuitBreakerOverride: null,
                     ProviderConfigs: new Dictionary<Type, object>()
-                ),
+                )
+                {
+                    EveryInstance = everyInstance,
+                },
                 messageContractVersion
             )
         );

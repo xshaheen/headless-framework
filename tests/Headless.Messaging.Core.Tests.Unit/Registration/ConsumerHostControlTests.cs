@@ -73,13 +73,18 @@ public sealed class ConsumerHostControlTests : TestBase
         await bus.PublishAsync(new Fixture.LedgerEntryPosted("L-1"), cancellationToken: AbortToken);
         await bus.PublishAsync(new Fixture.LedgerEntryReversed("L-1"), cancellationToken: AbortToken);
         var probe = provider.GetRequiredService<Fixture.FixtureProbe>();
-        await _WaitUntilAsync(() => probe.Calls.Count >= 2);
+
+        // The every-instance invoice projection's subscription-established hook runs on its own instance at startup,
+        // and that instance records its disposal, so only the consumed calls are counted.
+        IEnumerable<string> consumed() =>
+            probe.Calls.Where(x => !string.Equals(x, "projection disposed", StringComparison.Ordinal));
+        await _WaitUntilAsync(() => consumed().Skip(1).Any());
 
         // then
-        probe.Calls.Should().BeEquivalentTo("posted L-1", "reversed L-1");
+        consumed().Should().BeEquivalentTo("posted L-1", "reversed L-1");
         factory
             .Created.Where(x => x.Lane == MessageLane.Bus)
-            .Select(x => x.Group)
+            .Select(x => x.SubscriptionName)
             .Distinct(StringComparer.Ordinal)
             .Should()
             .BeEquivalentTo(Fixture.InvoiceProjection.Identity, Fixture.LedgerProjection.Identity);
@@ -342,7 +347,7 @@ public sealed class ConsumerHostControlTests : TestBase
         await _WaitUntilAsync(() => probe.Calls.Contains("orders ORD-9", StringComparer.Ordinal));
 
         // then
-        factory.Created.Select(x => x.Group).Should().OnlyContain(x => x == TestConsumers.Shipment);
+        factory.Created.Select(x => x.SubscriptionName).Should().OnlyContain(x => x == TestConsumers.Shipment);
         probe.Calls.Should().Equal("orders ORD-9");
         provider
             .GetRequiredService<ConsumerRegistry>()
@@ -477,9 +482,9 @@ public sealed class ConsumerHostControlTests : TestBase
     private sealed class RecordingConsumerClientFactory
     {
         private readonly Lock _lock = new();
-        private readonly List<(string Group, MessageLane Lane)> _created = [];
+        private readonly List<ConsumerClientRequest> _created = [];
 
-        public IReadOnlyList<(string Group, MessageLane Lane)> Created
+        public IReadOnlyList<ConsumerClientRequest> Created
         {
             get
             {
@@ -496,18 +501,16 @@ public sealed class ConsumerHostControlTests : TestBase
             : IConsumerClientFactory
         {
             public Task<IConsumerClient> CreateAsync(
-                string groupName,
-                byte groupConcurrent,
-                MessageLane lane,
+                ConsumerClientRequest request,
                 CancellationToken cancellationToken = default
             )
             {
                 lock (owner._lock)
                 {
-                    owner._created.Add((groupName, lane));
+                    owner._created.Add(request);
                 }
 
-                return inner.CreateAsync(groupName, groupConcurrent, lane, cancellationToken);
+                return inner.CreateAsync(request, cancellationToken);
             }
         }
     }

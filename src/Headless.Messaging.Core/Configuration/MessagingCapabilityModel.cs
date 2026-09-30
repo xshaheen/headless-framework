@@ -44,6 +44,8 @@ internal interface IMessageCapabilityGate : IMessagingCapabilityModel
     );
 
     void EnsureOutboxSupported(MessageLane lane, bool scheduled);
+
+    void EnsureEveryInstanceSupported(string consumerIdentity);
 }
 
 /// <summary>Composes immutable provider contributions into the runtime capability authority.</summary>
@@ -268,6 +270,31 @@ public sealed class MessagingCapabilityModel : IMessageCapabilityGate
         );
     }
 
+    /// <summary>
+    /// Rejects an every-instance consumer, declared or attached at runtime, when the transport cannot give each process a
+    /// Bus subscription of its own. Runs before any consumer client exists, so a rejected consumer creates nothing on the
+    /// broker.
+    /// </summary>
+    /// <param name="consumerIdentity">The consumer identity, or the runtime subscription name, to name in the error.</param>
+    internal void EnsureEveryInstanceSupported(string consumerIdentity)
+    {
+        var transport = _providersByRole.TryGetValue(MessagingProviderRole.Transport, out var transports)
+            ? transports.SingleOrDefault()
+            : null;
+
+        if (transport is { SupportsEveryInstance: true })
+        {
+            return;
+        }
+
+        var provider = transport?.Provider ?? "(none declared)";
+        throw new MessagingConfigurationException(
+            $"Consumer '{consumerIdentity}' requires every-instance Bus delivery, which transport provider '{provider}' "
+                + "does not support. Remove EveryInstance from the consumer, or select a transport that supports "
+                + "every-instance subscriptions."
+        );
+    }
+
     /// <summary>Rejects an outbox publish when transport, storage, or scheduling support is absent.</summary>
     internal void EnsureOutboxSupported(MessageLane lane, bool scheduled)
     {
@@ -330,6 +357,12 @@ public sealed class MessagingCapabilityModel : IMessageCapabilityGate
             }
         }
 
+        // Every-instance delivery is a Bus-lane property, so only the contributions that carry the Bus lane decide it, and
+        // all of them must declare it; a Queue-only contribution has no say.
+        var busContributions = contributions.Where(static x => x.Lanes.Contains(MessageLane.Bus)).ToArray();
+        var supportsEveryInstance =
+            busContributions.Length != 0 && busContributions.All(static x => x.SupportsEveryInstance);
+
         var topologyValues = contributions
             .Select(static capability => capability.SupportsIndependentLaneTopology)
             .Distinct()
@@ -346,7 +379,8 @@ public sealed class MessagingCapabilityModel : IMessageCapabilityGate
                 providerNames[0],
                 occupiedLanes.ToArray(),
                 topologyValues[0],
-                contributions.SelectMany(static contribution => contribution.RoutingAffinityRoutes).ToArray()
+                contributions.SelectMany(static contribution => contribution.RoutingAffinityRoutes).ToArray(),
+                supportsEveryInstance
             )
         );
     }
@@ -404,4 +438,7 @@ public sealed class MessagingCapabilityModel : IMessageCapabilityGate
 
     void IMessageCapabilityGate.EnsureOutboxSupported(MessageLane lane, bool scheduled) =>
         EnsureOutboxSupported(lane, scheduled);
+
+    void IMessageCapabilityGate.EnsureEveryInstanceSupported(string consumerIdentity) =>
+        EnsureEveryInstanceSupported(consumerIdentity);
 }

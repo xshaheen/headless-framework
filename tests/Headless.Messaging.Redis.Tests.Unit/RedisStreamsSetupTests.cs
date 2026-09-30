@@ -108,9 +108,15 @@ public sealed class RedisStreamsSetupTests : TestBase
         var factory = provider.GetRequiredService<IConsumerClientFactory>();
 
         // then
-        await using var queueClient = await factory.CreateAsync("queue-group", 1, MessageLane.Queue, AbortToken);
+        await using var queueClient = await factory.CreateAsync(
+            new ConsumerClientRequest("queue-group", 1, MessageLane.Queue),
+            AbortToken
+        );
 
-        await using var busClient = await factory.CreateAsync("bus-group", 1, MessageLane.Bus, AbortToken);
+        await using var busClient = await factory.CreateAsync(
+            new ConsumerClientRequest("bus-group", 1, MessageLane.Bus),
+            AbortToken
+        );
 
         queueClient.Should().BeOfType<RedisConsumerClient>();
         busClient.Should().BeOfType<RedisConsumerClient>();
@@ -128,7 +134,8 @@ public sealed class RedisStreamsSetupTests : TestBase
         var factory = provider.GetRequiredService<IConsumerClientFactory>();
         var cancellationToken = new CancellationToken(canceled: true);
 
-        var act = async () => await factory.CreateAsync("test-group", 1, lane, cancellationToken);
+        var act = async () =>
+            await factory.CreateAsync(new ConsumerClientRequest("test-group", 1, lane), cancellationToken);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }

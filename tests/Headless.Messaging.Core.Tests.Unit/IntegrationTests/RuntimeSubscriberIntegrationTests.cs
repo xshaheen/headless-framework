@@ -464,9 +464,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
         public int MaximumConcurrentListenerCount => Volatile.Read(ref _maximumConcurrentListenerCount);
 
         public async Task<IConsumerClient> CreateAsync(
-            string groupName,
-            byte groupConcurrent,
-            MessageLane lane,
+            ConsumerClientRequest request,
             CancellationToken cancellationToken = default
         )
         {

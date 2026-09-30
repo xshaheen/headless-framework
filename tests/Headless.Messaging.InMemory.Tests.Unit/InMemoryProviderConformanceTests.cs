@@ -2,6 +2,7 @@
 
 using Headless.Messaging;
 using Headless.Messaging.InMemory;
+using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Tests.Capabilities;
@@ -18,6 +19,12 @@ public sealed class InMemoryProviderConformanceTests : TestBase
     public Task should_deliver_one_bus_copy_per_consumer_identity_while_replicas_compete()
     {
         return TransportProviderConformance.AssertBusConsumerIdentitiesAsync(_CreateDriver(), AbortToken);
+    }
+
+    [Fact]
+    public Task should_deliver_every_bus_message_to_every_every_instance_replica()
+    {
+        return TransportProviderConformance.AssertBusEveryInstanceAsync(_CreateDriver(), AbortToken);
     }
 
     [Fact]
@@ -47,6 +54,8 @@ public sealed class InMemoryProviderConformanceTests : TestBase
 
         public override TransportMalformedEnvelopeBound MalformedEnvelopeBound => _Profile.MalformedEnvelopeBound!;
 
+        public override bool SupportsEveryInstance => true;
+
         public override async ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
             TransportConformanceEndpoint endpoint,
             CancellationToken cancellationToken
@@ -59,8 +68,11 @@ public sealed class InMemoryProviderConformanceTests : TestBase
                 MessageLane.Queue => new InMemoryQueueTransport(queue, NullLogger<InMemoryQueueTransport>.Instance),
                 _ => throw new ArgumentOutOfRangeException(nameof(endpoint), endpoint.Lane, null),
             };
-            var consumer = new InMemoryConsumerClient(queue, endpoint.SubscriptionName, 1, endpoint.Lane);
 #pragma warning restore CA2000
+            var consumer = await new InMemoryConsumerClientFactory(queue).CreateAsync(
+                endpoint.ToRequest(),
+                cancellationToken
+            );
             await consumer.SubscribeAsync([endpoint.LogicalName], cancellationToken);
 
             return new TransportConsumerConformanceSession(

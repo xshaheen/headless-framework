@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Transport;
 using Tests.Capabilities;
 using MessagingHeaders = Headless.Messaging.Headers;
 
@@ -21,7 +22,20 @@ public sealed record TransportConformanceEndpoint(
     string LogicalName,
     string SubscriptionName,
     string Replica
-);
+)
+{
+    /// <summary>Whether the session competes with the other replicas or holds a subscription of its own.</summary>
+    public ConsumerSubscriptionKind Kind { get; init; } = ConsumerSubscriptionKind.Competing;
+
+    /// <summary>
+    /// The instance id of the process the session stands for; every-instance sessions of different replicas differ.
+    /// </summary>
+    public Guid InstanceId { get; init; }
+
+    /// <summary>The consumer client request a driver passes to its provider's factory for this endpoint.</summary>
+    public ConsumerClientRequest ToRequest(byte concurrency = 1) =>
+        new(SubscriptionName, concurrency, Lane, Kind, InstanceId);
+}
 
 /// <summary>Optional broker operations exposed by a provider-specific conformance driver.</summary>
 [PublicAPI]
@@ -67,6 +81,12 @@ public abstract class TransportProviderConformanceDriver
     public abstract string ProviderName { get; }
 
     public virtual bool SupportsRoutingAffinity => false;
+
+    /// <summary>
+    /// Whether the provider gives each process a Bus subscription of its own. A driver opts in once its provider maps
+    /// <see cref="ConsumerSubscriptionKind.EveryInstance"/> requests to per-process subscriptions.
+    /// </summary>
+    public virtual bool SupportsEveryInstance => false;
 
     public virtual void ConfigureRoutingAffinityTransport(MessagingSetupBuilder setup) =>
         throw new NotSupportedException($"{ProviderName} does not support affinity.");
@@ -175,6 +195,80 @@ public static class TransportProviderConformance
         longDeliveries
             .Should()
             .ContainSingle("replicas of a shortened consumer identity must share one subscription and compete");
+    }
+
+    /// <summary>
+    /// The inverse of <see cref="AssertBusConsumerIdentitiesAsync"/>: replicas that register one Bus consumer identity as
+    /// every-instance each hold their own subscription, so each receives every message exactly once.
+    /// </summary>
+    /// <exception cref="NotSupportedException">The driver does not declare <see cref="TransportProviderConformanceDriver.SupportsEveryInstance"/>.</exception>
+    public static async Task AssertBusEveryInstanceAsync(
+        TransportProviderConformanceDriver driver,
+        CancellationToken cancellationToken,
+        int replicas = 3
+    )
+    {
+        if (!driver.SupportsEveryInstance)
+        {
+            throw new NotSupportedException($"{driver.ProviderName} does not declare every-instance subscriptions.");
+        }
+
+        var logicalName = $"conformance-{Guid.NewGuid():N}";
+        var identity = $"conformance.{Guid.NewGuid():N}-every";
+        var deliveries = new ConcurrentBag<TransportConformanceDelivery>[replicas];
+        var sessions = new List<TransportConsumerConformanceSession>(replicas);
+
+        try
+        {
+            for (var i = 0; i < replicas; i++)
+            {
+                deliveries[i] = [];
+                sessions.Add(
+                    await driver.CreateSessionAsync(
+                        new TransportConformanceEndpoint(MessageLane.Bus, logicalName, identity, $"replica-{i + 1}")
+                        {
+                            Kind = ConsumerSubscriptionKind.EveryInstance,
+                            InstanceId = Guid.NewGuid(),
+                        },
+                        cancellationToken
+                    )
+                );
+            }
+
+            await Task.WhenAll(
+                sessions.Select((session, i) => _StartAndCommitAsync(session, deliveries[i], cancellationToken))
+            );
+
+            var first = _CreateMessage(MessageLane.Bus, logicalName);
+            var second = _CreateMessage(MessageLane.Bus, logicalName);
+            (await sessions[0].PublishAsync(first, cancellationToken)).Succeeded.Should().BeTrue();
+            (await sessions[0].PublishAsync(second, cancellationToken)).Succeeded.Should().BeTrue();
+
+            foreach (var replica in deliveries)
+            {
+                await _WaitForCountAsync(replica, 2, cancellationToken);
+            }
+
+            await Task.Delay(_NegativeObservationWindow(driver), cancellationToken);
+
+            foreach (var replica in deliveries)
+            {
+                replica
+                    .Select(delivery => delivery.Message.Id)
+                    .Should()
+                    .BeEquivalentTo(
+                        [first.Id, second.Id],
+                        "every every-instance replica receives every message exactly once"
+                    );
+            }
+        }
+        finally
+        {
+            foreach (var session in sessions)
+            {
+                await session.DisposeAsync();
+            }
+        }
     }
 
     public static async Task AssertQueueOwnershipAsync(

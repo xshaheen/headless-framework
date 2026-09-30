@@ -149,7 +149,10 @@ public sealed class ConsumerDeclarationTests : TestBase
         public ValueTask ConsumeAsync(ConsumeContext<PriceChanged> context, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
 
-        public ValueTask OnSubscriptionEstablishedAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
+        public ValueTask OnSubscriptionEstablishedAsync(
+            SubscriptionEstablishedContext context,
+            CancellationToken cancellationToken
+        ) => ValueTask.CompletedTask;
     }
 
     [QueueConsumer("billing.issue-invoice")]

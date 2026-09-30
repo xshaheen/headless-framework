@@ -23,11 +23,12 @@ internal sealed class ConsumerExecutorDescriptorComparer(ILogger logger) : IEqua
         }
 
         //Check whether the ConsumerExecutorDescriptor' properties are equal.
-        // Lane is part of the identity: a (MessageName, Group) pair under Bus and the same pair
-        // under Queue are two independent subscriptions and must not collapse.
+        // Lane and kind are part of the identity: a (MessageName, Group) pair under Bus and the same pair
+        // under Queue, or competing and every-instance, are independent subscriptions and must not collapse.
         var ret =
             x.MessageName.Equals(y.MessageName, StringComparison.OrdinalIgnoreCase)
             && x.Lane == y.Lane
+            && x.EveryInstance == y.EveryInstance
             && (
                 (y.GroupName is null && x.GroupName is null)
                 || x.GroupName?.Equals(y.GroupName, StringComparison.OrdinalIgnoreCase) == true
@@ -56,6 +57,6 @@ internal sealed class ConsumerExecutorDescriptorComparer(ILogger logger) : IEqua
         var hashMessageName = StringComparer.Ordinal.GetHashCode(obj.MessageName);
 
         // Calculate the hash code with the runtime lane so Bus and Queue do not collide.
-        return HashCode.Combine(hashMessageName, hashGroup, obj.Lane);
+        return HashCode.Combine(hashMessageName, hashGroup, obj.Lane, obj.EveryInstance);
     }
 }

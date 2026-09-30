@@ -218,7 +218,7 @@ public sealed class ConsumerRegisterTests : TestBase
         // so the exception propagates out of ExecuteAsync.
         var factorySub = Substitute.For<IConsumerClientFactory>();
         factorySub
-            .CreateAsync(Arg.Any<string>(), Arg.Any<byte>(), Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .CreateAsync(Arg.Any<ConsumerClientRequest>(), Arg.Any<CancellationToken>())
             .Returns<Task<IConsumerClient>>(_ => throw new InvalidOperationException("boom"));
 
         typeof(ConsumerRegister)
@@ -302,7 +302,7 @@ public sealed class ConsumerRegisterTests : TestBase
         var callCount = 0;
         var factorySub = Substitute.For<IConsumerClientFactory>();
         factorySub
-            .CreateAsync(Arg.Any<string>(), Arg.Any<byte>(), Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .CreateAsync(Arg.Any<ConsumerClientRequest>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 if (Interlocked.Increment(ref callCount) == 1)
@@ -633,7 +633,7 @@ public sealed class ConsumerRegisterTests : TestBase
         parameters
             .Select(parameter => parameter.ParameterType)
             .Should()
-            .Equal(typeof(string), typeof(byte), typeof(MessageLane), typeof(CancellationToken));
+            .Equal(typeof(ConsumerClientRequest), typeof(CancellationToken));
     }
 
     [Fact]
@@ -1783,7 +1783,8 @@ public sealed class ConsumerRegisterTests : TestBase
         IDispatcher dispatcher,
         Headless.Messaging.Serialization.ISerializer serializer,
         Headless.Messaging.Persistence.IDataStorage? storage = null,
-        object? clientHandle = null
+        object? clientHandle = null,
+        ConsumerGroupKey? groupKey = null
     )
     {
         var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
@@ -1792,23 +1793,15 @@ public sealed class ConsumerRegisterTests : TestBase
                 "_RegisterMessageProcessor",
                 BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
                 binder: null,
-                types:
-                [
-                    typeof(IConsumerClient),
-                    typeof(string),
-                    handleType,
-                    typeof(MessageLane),
-                    typeof(CancellationToken),
-                ],
+                types: [typeof(IConsumerClient), typeof(ConsumerGroupKey), handleType, typeof(CancellationToken)],
                 modifiers: null
             )!
             .Invoke(
                 register,
                 [
                     client,
-                    "ready-group",
+                    groupKey ?? new ConsumerGroupKey("ready-group", MessageLane.Bus),
                     clientHandle ?? _CreateHandle(handleType),
-                    MessageLane.Bus,
                     CancellationToken.None,
                 ]
             );
@@ -1820,6 +1813,7 @@ public sealed class ConsumerRegisterTests : TestBase
                 ("_dispatcher", dispatcher),
                 ("_serializer", serializer),
                 ("_storage", storage ?? provider.GetRequiredService<Headless.Messaging.Persistence.IDataStorage>()),
+                ("_subscribeInvoker", provider.GetRequiredService<ISubscribeInvoker>()),
             }
         )
         {
@@ -1910,9 +1904,7 @@ public sealed class ConsumerRegisterTests : TestBase
         private int _createCount;
 
         public async Task<IConsumerClient> CreateAsync(
-            string groupName,
-            byte groupConcurrent,
-            MessageLane lane,
+            ConsumerClientRequest request,
             CancellationToken cancellationToken = default
         )
         {
@@ -2027,9 +2019,7 @@ public sealed class ConsumerRegisterTests : TestBase
         private readonly Queue<IConsumerClient> _clients = new(clients);
 
         public Task<IConsumerClient> CreateAsync(
-            string groupName,
-            byte groupConcurrent,
-            MessageLane lane,
+            ConsumerClientRequest request,
             CancellationToken cancellationToken = default
         )
         {

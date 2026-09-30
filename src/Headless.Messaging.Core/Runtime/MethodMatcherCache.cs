@@ -86,7 +86,11 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
                 groupConcurrent.TryAdd(item.Key, maxConcurrency);
             }
 
-            var laneGroupedCandidates = executorCollection.GroupBy(x => new ConsumerGroupKey(x.GroupName, x.Lane));
+            var laneGroupedCandidates = executorCollection.GroupBy(x => new ConsumerGroupKey(
+                x.GroupName,
+                x.Lane,
+                x.SubscriptionKind
+            ));
 
             foreach (var item in laneGroupedCandidates)
             {
@@ -197,15 +201,14 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
 
     internal bool TryGetMessageNameExecutor(
         string messageName,
-        string groupName,
-        MessageLane lane,
+        ConsumerGroupKey group,
         [NotNullWhen(true)] out ConsumerExecutorDescriptor? matchMessageName
     )
     {
         matchMessageName = null;
         _EnsureEntries();
 
-        if (_laneEntries.TryGetValue(new ConsumerGroupKey(groupName, lane), out var groupMatchMessageNames))
+        if (_laneEntries.TryGetValue(group, out var groupMatchMessageNames))
         {
             matchMessageName = selector.SelectBestCandidate(messageName, groupMatchMessageNames);
             return matchMessageName is not null;
@@ -269,7 +272,15 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
     }
 }
 
-internal readonly record struct ConsumerGroupKey(string GroupName, MessageLane Lane);
+/// <summary>
+/// One subscription the host opens: a competing group and an every-instance group never share clients, even under one
+/// name, because one is broker-durable and shared across processes and the other belongs to this process alone.
+/// </summary>
+internal readonly record struct ConsumerGroupKey(
+    string GroupName,
+    MessageLane Lane,
+    Transport.ConsumerSubscriptionKind Kind = Transport.ConsumerSubscriptionKind.Competing
+);
 
 internal readonly record struct ConsumerIdentityKey(string ConsumerIdentity, MessageLane Lane);
 

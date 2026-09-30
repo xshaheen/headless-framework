@@ -44,7 +44,8 @@ public sealed record MessagingProviderCapabilities
         bool supportsIndependentLaneTopology,
         bool supportsDelayedScheduling,
         MessagingInboxCapabilityTier? inboxCapability,
-        IReadOnlyCollection<MessagingRoutingAffinityRoute>? routingAffinityRoutes = null
+        IReadOnlyCollection<MessagingRoutingAffinityRoute>? routingAffinityRoutes = null,
+        bool supportsEveryInstance = false
     )
     {
         Argument.IsNotNullOrWhiteSpace(provider);
@@ -55,6 +56,15 @@ public sealed record MessagingProviderCapabilities
         SupportsDelayedScheduling = supportsDelayedScheduling;
         InboxCapability = inboxCapability;
         RoutingAffinityRoutes = Array.AsReadOnly((routingAffinityRoutes ?? []).ToArray());
+        SupportsEveryInstance = supportsEveryInstance;
+
+        if (supportsEveryInstance && !Lanes.Contains(MessageLane.Bus))
+        {
+            throw new ArgumentException(
+                "Only a transport contribution that declares the Bus lane can support every-instance subscriptions.",
+                nameof(supportsEveryInstance)
+            );
+        }
 
         if (Lanes.Count == 0 && role is not MessagingProviderRole.Coordination)
         {
@@ -102,12 +112,33 @@ public sealed record MessagingProviderCapabilities
     /// <summary>Locally verified registered destinations with native affinity mappings; empty means unsupported.</summary>
     public IReadOnlyList<MessagingRoutingAffinityRoute> RoutingAffinityRoutes { get; }
 
+    /// <summary>
+    /// Whether the transport can give each process a Bus subscription of its own that the broker removes once the
+    /// process no longer holds it, as every-instance consumers require.
+    /// </summary>
+    public bool SupportsEveryInstance { get; }
+
     /// <summary>Creates an immutable transport capability contribution.</summary>
+    /// <param name="provider">The stable provider identifier.</param>
+    /// <param name="lanes">The semantic lanes the transport carries.</param>
+    /// <param name="supportsIndependentLaneTopology">
+    /// Whether a shared logical name stays physically independent across Bus and Queue.
+    /// </param>
+    /// <param name="routingAffinityRoutes">The registered destinations with native affinity mappings.</param>
+    /// <param name="supportsEveryInstance">
+    /// Whether the transport supports every-instance Bus subscriptions; requires the Bus lane in
+    /// <paramref name="lanes"/>.
+    /// </param>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="lanes"/> is empty or undefined, or <paramref name="supportsEveryInstance"/> is set without the Bus
+    /// lane.
+    /// </exception>
     public static MessagingProviderCapabilities Transport(
         string provider,
         IReadOnlyCollection<MessageLane> lanes,
         bool supportsIndependentLaneTopology,
-        IReadOnlyCollection<MessagingRoutingAffinityRoute>? routingAffinityRoutes = null
+        IReadOnlyCollection<MessagingRoutingAffinityRoute>? routingAffinityRoutes = null,
+        bool supportsEveryInstance = false
     )
     {
         Argument.IsNotNull(lanes);
@@ -118,7 +149,8 @@ public sealed record MessagingProviderCapabilities
             supportsIndependentLaneTopology,
             supportsDelayedScheduling: false,
             inboxCapability: null,
-            routingAffinityRoutes
+            routingAffinityRoutes,
+            supportsEveryInstance
         );
     }
 

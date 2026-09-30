@@ -195,6 +195,9 @@ public static class SetupMessaging
 
         services.TryAddSingleton<ISerializer, JsonUtf8Serializer>();
 
+        // One id per host: every-instance subscriptions name their per-process broker object after it.
+        services.TryAddSingleton<MessagingInstanceId>();
+
         // Warning: IPublishMessageSender need to inject at extension project.
         services.TryAddSingleton<ISubscribeExecutor, SubscribeExecutor>();
 
@@ -445,6 +448,8 @@ public static class SetupMessaging
                     continue;
                 }
 
+                _EnsureEveryInstanceIsConsistent(registration, consumer);
+
                 var resolved = options.CreateConsumerMetadata(
                     consumer.ConsumerType,
                     registration.MessageType,
@@ -554,6 +559,41 @@ public static class SetupMessaging
         );
 
         registry.MarkMessageRegistrationDrainCompleted(consumeFilter);
+    }
+
+    /// <summary>
+    /// Rejects an every-instance consumer combined with a setting that assumes a durable, shared subscription: an inbox
+    /// retention (it has no inbox), a circuit breaker (it has no retry backlog to protect), or an explicit group (its
+    /// subscription belongs to one process, so there is nothing to share).
+    /// </summary>
+    private static void _EnsureEveryInstanceIsConsistent(
+        MessageRegistration registration,
+        MessageConsumerRegistration consumer
+    )
+    {
+        if (!consumer.EveryInstance)
+        {
+            return;
+        }
+
+        var conflict =
+            registration.Lane != MessageLane.Bus ? "the Queue lane, which is point-to-point"
+            : consumer.Group is not null ? $"the explicit group '{consumer.Group}'"
+            : consumer.InboxRetention is not null ? "an inbox retention"
+            : consumer.CircuitBreakerOverride is not null ? "a circuit breaker"
+            : null;
+
+        if (conflict is null)
+        {
+            return;
+        }
+
+        var consumerName = consumer.ConsumerIdentity ?? consumer.ConsumerType.FullName ?? consumer.ConsumerType.Name;
+        throw new InvalidOperationException(
+            $"Every-instance consumer '{consumerName}' for {registration.MessageType.FullName ?? registration.MessageType.Name} "
+                + $"cannot be combined with {conflict}. An every-instance subscription belongs to one process and "
+                + "delivers at most once, with no inbox, retry, or circuit breaker. Remove the setting or EveryInstance."
+        );
     }
 
     private static void _ApplyCircuitBreakerOverride(

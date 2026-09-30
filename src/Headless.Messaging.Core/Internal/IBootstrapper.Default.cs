@@ -347,10 +347,24 @@ internal sealed class Bootstrapper(
         serviceProvider
             .GetRequiredService<MessagingCapabilityModel>()
             .ValidateRoutingAffinityStartup(serviceProvider.GetRequiredService<IMessageMetadataRegistry>().GetAll());
-        var hasDurableConsumers = serviceProvider.GetRequiredService<ConsumerRegistry>().GetAll().Count > 0;
-        serviceProvider
-            .GetRequiredService<IMessageCapabilityGate>()
-            .ValidateStartup(_GetRegisteredRoutes(), hasDurableConsumers, options.Value.RequiredInboxCapability);
+        var consumers = serviceProvider.GetRequiredService<ConsumerRegistry>().GetAll();
+        var gate = serviceProvider.GetRequiredService<IMessageCapabilityGate>();
+
+        // Every-instance consumers keep no inbox state, so they alone never require an inbox tier from storage.
+        var hasDurableConsumers = consumers.Any(static consumer => !consumer.EveryInstance);
+        gate.ValidateStartup(_GetRegisteredRoutes(), hasDurableConsumers, options.Value.RequiredInboxCapability);
+
+        // Runs before any processor starts, so a transport without every-instance subscriptions rejects the consumer
+        // before any consumer client, and so any broker object, exists.
+        foreach (
+            var identity in consumers
+                .Where(static x => x.EveryInstance)
+                .Select(static x => x.ConsumerIdentity)
+                .Distinct(StringComparer.Ordinal)
+        )
+        {
+            gate.EnsureEveryInstanceSupported(identity);
+        }
     }
 
     private HashSet<MessageRouteKey> _GetRegisteredRoutes()

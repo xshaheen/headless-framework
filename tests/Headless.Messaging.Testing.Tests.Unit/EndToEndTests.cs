@@ -570,9 +570,7 @@ public sealed class EndToEndTests : TestBase
     private sealed class UnusedConsumerClientFactory : IConsumerClientFactory
     {
         public Task<IConsumerClient> CreateAsync(
-            string groupName,
-            byte groupConcurrent,
-            MessageLane lane,
+            ConsumerClientRequest request,
             CancellationToken cancellationToken = default
         )
         {

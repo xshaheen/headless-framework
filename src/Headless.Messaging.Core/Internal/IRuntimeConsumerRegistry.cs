@@ -100,7 +100,8 @@ internal sealed record RuntimeConsumerRegistration(
 internal sealed class RuntimeConsumerRegistry(
     IOptions<MessagingOptions> options,
     IConsumerRegistry consumerRegistry,
-    ILogger<RuntimeConsumerRegistry> logger
+    ILogger<RuntimeConsumerRegistry> logger,
+    IMessageCapabilityGate? capabilityGate = null
 ) : IRuntimeConsumerRegistry
 {
     private readonly Lock _lock = new();
@@ -134,13 +135,41 @@ internal sealed class RuntimeConsumerRegistry(
         Argument.IsNotNull(handler);
 
         const MessageLane lane = MessageLane.Bus;
+        var everyInstance = options?.EveryInstance ?? false;
+        if (everyInstance && !string.IsNullOrWhiteSpace(options?.Group))
+        {
+            throw new ArgumentException(
+                $"Runtime subscription group '{options.Group}' cannot be combined with EveryInstance: an every-instance "
+                    + "subscription belongs to this process, so it has no group to share. Remove the group.",
+                nameof(options)
+            );
+        }
+
         var method = handler.Method;
         var handlerId = _ResolveHandlerId(method, typeof(TMessage), options?.HandlerId);
         var messageName = _ResolveMessageName(typeof(TMessage), lane, options?.MessageName);
         var group = _ResolveGroup(handlerId, options?.Group);
         var concurrency = Argument.IsPositive(options?.Concurrency ?? 1);
+
+        // Checked before the registration exists, so a transport without every-instance subscriptions rejects the
+        // subscription before any consumer client, and so any broker object, is created for it.
+        if (everyInstance)
+        {
+            (
+                capabilityGate ?? throw new InvalidOperationException("Messaging capabilities are not available.")
+            ).EnsureEveryInstanceSupported(group);
+        }
+
         var invoker = new RuntimeMessageHandlerInvoker<TMessage>(handler);
-        var descriptor = _CreateDescriptor<TMessage>(method, messageName, group, handlerId, concurrency, lane);
+        var descriptor = _CreateDescriptor<TMessage>(
+            method,
+            messageName,
+            group,
+            handlerId,
+            concurrency,
+            lane,
+            everyInstance
+        );
 
         lock (_lock)
         {
@@ -321,7 +350,8 @@ internal sealed class RuntimeConsumerRegistry(
         string group,
         string handlerId,
         byte concurrency,
-        MessageLane lane
+        MessageLane lane,
+        bool everyInstance
     )
         where TMessage : class
     {
@@ -337,6 +367,7 @@ internal sealed class RuntimeConsumerRegistry(
             Concurrency = concurrency,
             HandlerId = handlerId,
             Lane = lane,
+            EveryInstance = everyInstance,
             Parameters =
             [
                 new ParameterDescriptor

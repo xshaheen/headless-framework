@@ -75,7 +75,11 @@ public sealed class MethodMatcherCacheInboxTests : TestBase
         var cache = provider.GetRequiredService<MethodMatcherCache>();
 
         cache
-            .TryGetMessageNameExecutor("orders.created", "current-group", MessageLane.Bus, out var subscription)
+            .TryGetMessageNameExecutor(
+                "orders.created",
+                new ConsumerGroupKey("current-group", MessageLane.Bus),
+                out var subscription
+            )
             .Should()
             .BeTrue();
         subscription.Should().NotBeNull();

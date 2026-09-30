@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
@@ -26,12 +27,23 @@ internal sealed class AzureServiceBusConsumerClientFactory(
     internal static string BusSubscriptionName(string identity) => BusNameBuilder.Build(identity, _SubscriptionRules);
 
     public async Task<IConsumerClient> CreateAsync(
-        string subscriptionName,
-        byte concurrency,
-        MessageLane lane,
+        ConsumerClientRequest request,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(request);
+
+        if (request.Kind is ConsumerSubscriptionKind.EveryInstance)
+        {
+            throw new NotSupportedException(
+                "The Azure Service Bus transport does not support every-instance subscriptions."
+            );
+        }
+
+        var subscriptionName = request.SubscriptionName;
+        var concurrency = request.Concurrency;
+        var lane = request.Lane;
+
         // A Bus consumer identity becomes an Azure subscription name. Queue subscription names are framework-local
         // handler selectors; their broker entity names are validated on SubscribeAsync.
         if (lane == MessageLane.Bus)

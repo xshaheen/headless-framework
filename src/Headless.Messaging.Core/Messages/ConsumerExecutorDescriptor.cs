@@ -69,6 +69,16 @@ public sealed class ConsumerExecutorDescriptor
     public required MessageLane Lane { get; init; }
 
     /// <summary>
+    /// Whether this process receives every message of this consumer through a subscription of its own, rather than
+    /// competing with other processes. Always <see langword="false"/> on the Queue lane.
+    /// </summary>
+    public bool EveryInstance { get; init; }
+
+    /// <summary>The subscription kind the consumer's client opens.</summary>
+    internal Transport.ConsumerSubscriptionKind SubscriptionKind =>
+        EveryInstance ? Transport.ConsumerSubscriptionKind.EveryInstance : Transport.ConsumerSubscriptionKind.Competing;
+
+    /// <summary>
     /// The generated dispatch of an attribute-declared consumer. When set, a delivery runs it instead of resolving the
     /// consumer from the container.
     /// </summary>

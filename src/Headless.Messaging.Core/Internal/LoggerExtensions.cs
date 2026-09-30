@@ -840,4 +840,46 @@ internal static partial class LoggerExtensions
         Exception exception,
         string middlewareType
     );
+
+    [LoggerMessage(
+        EventId = 103,
+        EventName = "EveryInstanceConsumerFailed",
+        Level = LogLevel.Error,
+        Message = "Every-instance consumer '{Consumer}' failed on message {MessageId} (name '{MessageName}'); the message is dropped because every-instance delivery has no retry."
+    )]
+    public static partial void EveryInstanceConsumerFailed(
+        this ILogger logger,
+        Exception exception,
+        string consumer,
+        string messageId,
+        string messageName
+    );
+
+    [LoggerMessage(
+        EventId = 104,
+        EventName = "EveryInstanceMessageDropped",
+        Level = LogLevel.Warning,
+        Message = "Every-instance subscription '{Subscription}' dropped message {MessageId} (name '{MessageName}') before its consumer ran: {Reason}"
+    )]
+    public static partial void EveryInstanceMessageDropped(
+        this ILogger logger,
+        Exception? exception,
+        string subscription,
+        string messageId,
+        string messageName,
+        string reason
+    );
+
+    [LoggerMessage(
+        EventId = 105,
+        EventName = "SubscriptionEstablishedHookFailed",
+        Level = LogLevel.Error,
+        Message = "The subscription-established hook of consumer '{Consumer}' failed (generation {Generation}); the subscription keeps receiving."
+    )]
+    public static partial void SubscriptionEstablishedHookFailed(
+        this ILogger logger,
+        Exception exception,
+        string consumer,
+        long generation
+    );
 }

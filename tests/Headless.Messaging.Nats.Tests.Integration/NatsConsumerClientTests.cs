@@ -4,6 +4,7 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Nats;
+using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NATS.Client.Core;
@@ -469,7 +470,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         var factory = new NatsConsumerClientFactory(badOptions, _serviceProvider);
 
         // when
-        var act = async () => await factory.CreateAsync("test-group", 1, MessageLane.Queue);
+        var act = async () => await factory.CreateAsync(new ConsumerClientRequest("test-group", 1, MessageLane.Queue));
 
         // then
         await act.Should().ThrowAsync<BrokerConnectionException>();

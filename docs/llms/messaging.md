@@ -225,6 +225,46 @@ Stored keyed outbox rows are revalidated against the current frozen destination 
 **Affinity configuration:** use the typed `RoutingAffinityKey` option for portable routing intent. Native provider adapters must have exactly matching values when both are supplied. Verify the destination session/FIFO/partition configuration before using a key. Keep partition topology and hashing stable when placement matters; Headless does not promise placement across a topology change. Third-party providers declare immutable `MessagingRoutingAffinityRoute` mappings in their capability contribution and validate native adapters before client I/O.
 
 
+### Every-instance Bus delivery
+
+A competing Bus subscription gives one copy per consumer identity, shared by every process that registers it. A consumer that holds per-process state, such as an in-memory cache or a lock waiter, needs every process to receive every message instead. Declare it every-instance:
+
+```csharp
+[BusConsumer("pricing.price-cache", EveryInstance = true)]
+public sealed class PriceCache(IPriceCacheStore store) : IConsume<PriceChanged>, IOnSubscriptionEstablished
+{
+    public ValueTask ConsumeAsync(ConsumeContext<PriceChanged> context, CancellationToken cancellationToken) =>
+        store.EvictAsync(context.Message.Sku, cancellationToken);
+
+    // Messages published while this process was not subscribed never arrive, so drop what may be stale.
+    public ValueTask OnSubscriptionEstablishedAsync(SubscriptionEstablishedContext context, CancellationToken cancellationToken) =>
+        context.IsReconnect ? store.ClearAsync(cancellationToken) : ValueTask.CompletedTask;
+}
+```
+
+A runtime subscription sets `RuntimeSubscriptionOptions.EveryInstance = true`.
+
+- **Subscription kind**: each process opens a subscription of its own, named from the identity and the host's `MessagingInstanceId` (a GUID generated once per host start, never the host name). The subscription exists only while the process holds it; the broker removes it after the process stops or crashes, within the bound in the matrix below.
+- **One client per process**: an every-instance identity gets exactly one consumer client whatever `ConsumerThreadCount` is, because a second client would be a second subscription and deliver every message twice in one process. The identity's `Concurrency` still applies inside that client.
+- **At most once, no backlog**: a process receives only what is published while it is subscribed. Nothing is stored for the delivery: no inbox row or admission, no reservation or lease, no retry pipeline, no circuit breaker, and no dashboard row. Receive middleware, the contract-version check, and deserialization still run, and the consumer runs in a fresh scope with the consume middleware, then the message is committed.
+- **Failures are logged and committed**: a consumer exception, a receive-stage reject, and a message no consumer on the subscription handles are logged, counted in `messaging.every_instance.deliveries` (`messaging.every_instance.outcome` = `succeeded`, `failed`, `dropped`, or `skipped`; `error.type` on failures), and committed. None is requeued and `RetryPolicy.OnExhausted` is not called.
+- **Reconnect signal**: a consumer that implements `IOnSubscriptionEstablished` is called once its subscription receives: at host start (`IsReconnect = false`, `Generation = 1`), after every rebuild of the host's consumer clients (a broker failure, or a runtime subscription changing the topology), and after the transport re-establishes the subscription on its own. `IsReconnect = true` means messages may have been missed; a mirror of state should flush or reload. The hook runs on a new consumer instance in its own scope, host startup waits for it, and a failing hook is logged without stopping the subscription. Runtime subscriptions have no hook.
+- **Startup rules**: an every-instance consumer on a transport without every-instance support fails startup before any consumer client or broker object is created, with a `MessagingConfigurationException` that names the consumer and the provider; a runtime subscription is checked the same way before it attaches. Combining every-instance delivery with an inbox retention, a circuit breaker, an explicit group, or the Queue lane fails startup, because none of them means anything for a per-process, at-most-once subscription. A host whose only consumers are every-instance does not need an inbox tier from storage.
+- **Choose it for derived state only**: every-instance delivery refreshes what a process can rebuild. Work that must happen once, or must not be lost, stays on a competing consumer.
+
+| Provider | Every-instance primitive | Left behind after a crash |
+| --- | --- | --- |
+| InMemory | A group per identity and instance id | Nothing |
+| NATS | Core subscription on the Bus subject, not a JetStream consumer | Nothing |
+| RabbitMQ | Server-named exclusive, auto-delete, non-durable queue bound to the Bus exchange | Nothing |
+| Redis | Group-less blocking stream read from the last seen id | Nothing |
+| Pulsar | Non-durable, exclusive subscription starting at the latest message | Nothing |
+| Azure Service Bus | Subscription named from the identity and instance id with `AutoDeleteOnIdle` of 5 minutes, deleted on graceful stop; needs `AutoProvision` or Manage rights | The subscription, for up to 5 minutes |
+| AWS SNS/SQS | Not supported: no idle auto-delete, so a crash would leak the queue and its subscription | Startup fails |
+| Kafka | Not applicable: Kafka has no Bus lane | Not applicable |
+
+Transports declare support with `MessagingProviderCapabilities.Transport(..., supportsEveryInstance: true)`. A transport that recovers its connection internally reports each re-established every-instance subscription through the callback attached with `IConsumerClient.AttachReestablishedCallback`, so the consumer hook fires for gaps the core never saw.
+
 ### Provider topology and operational requirements
 
 | Provider | Topology | Conformance boundary | Operational requirement |
@@ -543,7 +583,7 @@ Storage providers may also implement `IGracefulLeaseReleaseStorage`. Core detect
 
 The four `IDataStorage` state-transition methods — `ChangePublishStateAsync`, `ChangePublishRetryStateAsync`, `ChangeReceiveStateAsync`, `ChangeReceiveRetryStateAsync` — take a `MessageContentWrite` declaring whether the transition also rewrites the persisted envelope. `MessageContentWrite.Preserve`, the default on the two non-retry methods, skips re-serializing `MediumMessage.Origin` and omits the content column from the update, because a status transition does not change the envelope. `MessageContentWrite.Refresh` re-serializes `Origin`, writes it to the row, and refreshes `MediumMessage.Content` so the caller's copy keeps matching the row. A caller that mutated `Origin` before the write — the failure paths, which stamp the exception type onto the headers — must pass `Refresh`, or the mutation never reaches storage. Implementors owe the invariant `persisted Content == Serialize(Origin)` in both directions: `Preserve` must leave the stored envelope byte-identical even when the caller's copy has since drifted, and a provider that keeps the envelope as anything other than serialized bytes must update every representation of it on `Refresh`.
 
-`IConsumerClientFactory.CreateAsync(subscriptionName, concurrency, lane, ...)` receives the consumer identity on the Bus lane and the message name on the Queue lane. Transports do not stamp the consumer on received envelopes; Core stamps `headless-msg-consumer-identity` once it routes the delivery. The public consumer startup contracts accept trailing optional cancellation tokens: `IConsumerClientFactory.CreateAsync(...)`, `IConsumerClient.FetchMessageNamesAsync(...)`, and `IConsumerClient.SubscribeAsync(...)`. Core passes the host-stopping token to metadata startup and a linked group token to worker creation and subscription. Implementations must let `OperationCanceledException` escape unchanged.
+`IConsumerClientFactory.CreateAsync(ConsumerClientRequest, ...)` receives a request whose `SubscriptionName` is the consumer identity on the Bus lane and the message name on the Queue lane, with its `Concurrency`, `Lane`, subscription `Kind` (`Competing` or `EveryInstance`), and the host's `InstanceId`. See [Every-instance Bus delivery](#every-instance-bus-delivery) for what a transport owes an every-instance request. Transports do not stamp the consumer on received envelopes; Core stamps `headless-msg-consumer-identity` once it routes the delivery. The public consumer startup contracts accept trailing optional cancellation tokens: `IConsumerClientFactory.CreateAsync(...)`, `IConsumerClient.FetchMessageNamesAsync(...)`, and `IConsumerClient.SubscribeAsync(...)`. Core passes the host-stopping token to metadata startup and a linked group token to worker creation and subscription. Implementations must let `OperationCanceledException` escape unchanged.
 
 The blessed cross-package SPI (the contracts that storage providers, transports, and dashboards resolve or implement) lives in the public `Headless.Messaging.Runtime` namespace: `IProcessingServer` (implement to attach a long-running unit to the bootstrap sequence) and `IConsumerServiceSelector` / `MethodMatcherCache` (inspect the resolved consumer topology). The `TransportNaming` (`WildcardToRegex`, `Normalize`) and `RuntimeTypeInspection` (`IsComplexType`, `DeclaresFieldOfType`) helpers in the same namespace are `internal` and shared with the first-party transports via `InternalsVisibleTo` — they are not part of the NuGet contract. These types were previously exposed under `Headless.Messaging.Internal`; that namespace now holds only genuine implementation detail. The monitoring status is a typed enum — `StatusName` (in `Headless.Messaging.Monitoring`, next to `MessageView`/`MessageQuery`) — so `MessageView.StatusName` and the `MessageQuery.StatusName` filter are compile-time safe. Storage providers persist and compare the enum member names verbatim as strings, so the SQL column contract is unchanged, and the dashboard serializes the status by name to keep the SPA wire shape stable.
 

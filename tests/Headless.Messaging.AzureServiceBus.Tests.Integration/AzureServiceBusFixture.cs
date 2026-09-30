@@ -233,7 +233,7 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
                     ? (ITransport)serviceProvider.GetRequiredService<IQueueTransport>()
                     : serviceProvider.GetRequiredService<IBusTransport>();
             var factory = serviceProvider.GetRequiredService<IConsumerClientFactory>();
-            var consumer = await factory.CreateAsync(group, 2, lane, cancellationToken);
+            var consumer = await factory.CreateAsync(new ConsumerClientRequest(group, 2, lane), cancellationToken);
             consumer.AttachCallbacks(onMessage: null, onLog: _ => { });
 
             try

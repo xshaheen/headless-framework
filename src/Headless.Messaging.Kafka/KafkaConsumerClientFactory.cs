@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
@@ -21,12 +22,21 @@ internal sealed class KafkaConsumerClientFactory(
 ) : IConsumerClientFactory
 {
     public Task<IConsumerClient> CreateAsync(
-        string subscriptionName,
-        byte concurrency,
-        MessageLane lane,
+        ConsumerClientRequest request,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(request);
+
+        if (request.Kind is ConsumerSubscriptionKind.EveryInstance)
+        {
+            throw new NotSupportedException("The Kafka transport does not support every-instance subscriptions.");
+        }
+
+        var subscriptionName = request.SubscriptionName;
+        var concurrency = request.Concurrency;
+        var lane = request.Lane;
+
         cancellationToken.ThrowIfCancellationRequested();
 
         if (lane == MessageLane.Bus)

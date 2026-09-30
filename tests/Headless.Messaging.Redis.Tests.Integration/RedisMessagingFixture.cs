@@ -42,7 +42,7 @@ public sealed class RedisMessagingFixture : HeadlessRedisFixture, ICollectionFix
                     ? (ITransport)provider.GetRequiredService<IBusTransport>()
                     : provider.GetRequiredService<IQueueTransport>();
             var factory = provider.GetRequiredService<IConsumerClientFactory>();
-            var consumer = await factory.CreateAsync(group, 1, lane, cancellationToken);
+            var consumer = await factory.CreateAsync(new ConsumerClientRequest(group, 1, lane), cancellationToken);
             await consumer.SubscribeAsync([destination], cancellationToken);
             var physicalStream = RedisPhysicalAddress.ForLane(lane, destination);
 

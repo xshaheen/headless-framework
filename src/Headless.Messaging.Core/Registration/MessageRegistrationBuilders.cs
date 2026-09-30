@@ -258,6 +258,10 @@ internal static class FrameworkConsumerRegistrationExtensions
     /// Contributes one framework-owned consumer through the same deferred path as <c>ConfigureMessaging</c>, so it
     /// registers whether the host calls <c>AddHeadlessMessaging</c> before or after the owning package's setup.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="everyInstance"/> makes a Bus consumer receive every message in every process, for a framework
+    /// consumer that refreshes per-process state; it cannot be combined with <paramref name="group"/>.
+    /// </remarks>
     public static void AddFrameworkConsumerRegistration<TMessage, TConsumer>(
         this IServiceCollection services,
         MessageLane lane,
@@ -265,7 +269,8 @@ internal static class FrameworkConsumerRegistrationExtensions
         string messageContractVersion,
         string? messageName = null,
         string? group = null,
-        byte concurrency = 1
+        byte concurrency = 1,
+        bool everyInstance = false
     )
         where TMessage : class
         where TConsumer : class, IConsume<TMessage>
@@ -277,7 +282,8 @@ internal static class FrameworkConsumerRegistrationExtensions
                 messageContractVersion,
                 messageName,
                 group,
-                concurrency
+                concurrency,
+                everyInstance
             )
         );
     }

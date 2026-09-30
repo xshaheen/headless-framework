@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
@@ -15,18 +16,22 @@ internal sealed class RedisConsumerClientFactory(
 ) : IConsumerClientFactory
 {
     public Task<IConsumerClient> CreateAsync(
-        string subscriptionName,
-        byte concurrency,
-        MessageLane lane,
+        ConsumerClientRequest request,
         CancellationToken cancellationToken = default
     )
     {
-        cancellationToken.ThrowIfCancellationRequested();
+        Argument.IsNotNull(request);
 
-        if (lane is not (MessageLane.Bus or MessageLane.Queue))
+        if (request.Kind is ConsumerSubscriptionKind.EveryInstance)
         {
-            throw new ArgumentOutOfRangeException(nameof(lane), lane, message: null);
+            throw new NotSupportedException("The Redis transport does not support every-instance subscriptions.");
         }
+
+        var subscriptionName = request.SubscriptionName;
+        var concurrency = request.Concurrency;
+        var lane = request.Lane;
+
+        cancellationToken.ThrowIfCancellationRequested();
 
         var client = new RedisConsumerClient(
             subscriptionName,
