@@ -3,6 +3,7 @@
 using System.Globalization;
 using System.Text;
 using Headless.Fencing;
+using Headless.Sql;
 using Headless.UnitOfWork;
 
 namespace Tests;
@@ -382,6 +383,13 @@ public sealed class FencingOracleSession : IAsyncDisposable
         CancellationToken cancellationToken
     )
     {
+        // A key call validation refuses never reaches a store, so it has no row to compare, and the fixtures' own raw
+        // reads cannot even look it up on every engine (PostgreSQL fails on NUL), so they are not asked.
+        if (_IsUnportable(key))
+        {
+            return (null, "refused-key");
+        }
+
         try
         {
             return (await _fixture.ReadLeaseAsync(key, cancellationToken).ConfigureAwait(false), null);
@@ -396,6 +404,13 @@ public sealed class FencingOracleSession : IAsyncDisposable
         {
             return (null, _Describe(e));
         }
+    }
+
+    private static bool _IsUnportable(LeaseKey key)
+    {
+        return SqlPortable.FindUnportableKeyText(key.TenantId) is not null
+            || SqlPortable.FindUnportableKeyText(key.Kind) is not null
+            || SqlPortable.FindUnportableKeyText(key.Resource) is not null;
     }
 
     private FencedLease _Lease(int key, int slot)

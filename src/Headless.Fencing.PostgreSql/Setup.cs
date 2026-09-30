@@ -1,12 +1,19 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless.Checks;
 using Headless.Fencing.PostgreSql;
 using Headless.Sql;
+using Headless.Sql.PostgreSql;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
+using Npgsql;
+using Extension = Headless.Fencing.RelationalFencingProviderExtension<
+    Headless.Fencing.PostgreSql.PostgreSqlFencingOptions,
+    Headless.Fencing.PostgreSql.PostgreSqlFencingOptionsValidator,
+    Headless.Fencing.PostgreSql.PostgreSqlFencingStorageOptionsValidator
+>;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Fencing;
@@ -38,7 +45,7 @@ public static class SetupFencingPostgreSql
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The lease table is created at host startup unless
-        /// <see cref="PostgreSqlFencingOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted call
+        /// <see cref="RelationalFencingOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted call
         /// is accepted only on a unit whose Npgsql connection reaches this same database.
         /// </remarks>
         /// <exception cref="ArgumentException"><paramref name="connectionString" /> is <see langword="null" /> or whitespace.</exception>
@@ -57,7 +64,7 @@ public static class SetupFencingPostgreSql
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The lease table is created at host startup unless
-        /// <see cref="PostgreSqlFencingOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted call
+        /// <see cref="RelationalFencingOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted call
         /// is accepted only on a unit whose Npgsql connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configuration" /> is <see langword="null" />.</exception>
@@ -65,7 +72,7 @@ public static class SetupFencingPostgreSql
         {
             Argument.IsNotNull(configuration);
 
-            setup.RegisterExtension(new PostgreSqlFencingOptionsExtension(configuration));
+            setup.RegisterExtension(new Extension(_Provider, configuration));
 
             return setup;
         }
@@ -75,7 +82,7 @@ public static class SetupFencingPostgreSql
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The lease table is created at host startup unless
-        /// <see cref="PostgreSqlFencingOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted call
+        /// <see cref="RelationalFencingOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted call
         /// is accepted only on a unit whose Npgsql connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
@@ -83,7 +90,7 @@ public static class SetupFencingPostgreSql
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new PostgreSqlFencingOptionsExtension(configure));
+            setup.RegisterExtension(new Extension(_Provider, configure));
 
             return setup;
         }
@@ -96,7 +103,7 @@ public static class SetupFencingPostgreSql
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The lease table is created at host startup unless
-        /// <see cref="PostgreSqlFencingOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted call
+        /// <see cref="RelationalFencingOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted call
         /// is accepted only on a unit whose Npgsql connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
@@ -104,58 +111,17 @@ public static class SetupFencingPostgreSql
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new PostgreSqlFencingOptionsExtension(configure));
+            setup.RegisterExtension(new Extension(_Provider, configure));
 
             return setup;
         }
     }
 
-    private sealed class PostgreSqlFencingOptionsExtension : IFencingProviderOptionsExtension
-    {
-        private readonly IConfiguration? _configuration;
-        private readonly Action<PostgreSqlFencingOptions>? _configure;
-        private readonly Action<PostgreSqlFencingOptions, IServiceProvider>? _configureWithServices;
-
-        public PostgreSqlFencingOptionsExtension(IConfiguration configuration)
-        {
-            _configuration = configuration;
-        }
-
-        public PostgreSqlFencingOptionsExtension(Action<PostgreSqlFencingOptions> configure)
-        {
-            _configure = configure;
-        }
-
-        public PostgreSqlFencingOptionsExtension(Action<PostgreSqlFencingOptions, IServiceProvider> configure)
-        {
-            _configureWithServices = configure;
-        }
-
-        public void AddServices(IServiceCollection services)
-        {
-            if (_configuration is not null)
-            {
-                services.Configure<PostgreSqlFencingOptions, PostgreSqlFencingOptionsValidator>(_configuration);
-            }
-            else if (_configure is not null)
-            {
-                services.Configure<PostgreSqlFencingOptions, PostgreSqlFencingOptionsValidator>(_configure);
-            }
-            else
-            {
-                services.Configure<PostgreSqlFencingOptions, PostgreSqlFencingOptionsValidator>(_configureWithServices);
-            }
-
-            services.AddOptions<FencingStorageOptions, PostgreSqlFencingStorageOptionsValidator>();
-
-            // Sweeps begin owned units through the unit-of-work factory, and enlisted calls reach the store through
-            // unit.Leases, so the factory must exist whether or not the host registered it.
-            services.AddPostgreSqlUnitOfWork();
-
-            services.AddInitializerHostedService<PostgreSqlFencingStorageInitializer>();
-            // The store waits between deadlock retries on this clock.
-            services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<ILeaseStore, PostgreSqlLeaseStore>();
-        }
-    }
+    private static readonly RelationalFencingProvider _Provider = new(
+        PostgreSqlDialect.Instance,
+        "Headless.Fencing.PostgreSql",
+        static (factory, connection, cancellationToken) =>
+            factory.BeginAsync((NpgsqlConnection)connection, IsolationLevel.ReadCommitted, cancellationToken),
+        static services => services.AddPostgreSqlUnitOfWork()
+    );
 }

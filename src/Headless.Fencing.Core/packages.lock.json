@@ -470,6 +470,22 @@
       "headless.sql.abstractions": {
         "type": "Project"
       },
+      "headless.sql.core": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Nito.AsyncEx": "[5.1.2, )"
+        }
+      },
+      "headless.unitofwork": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
+        }
+      },
       "headless.unitofwork.abstractions": {
         "type": "Project",
         "dependencies": {
