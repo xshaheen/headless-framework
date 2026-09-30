@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using System.Reflection;
 using Headless.Abstractions;
 using Headless.Domain;
 using Headless.EntityFramework;
@@ -10,6 +9,7 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Runtime;
 using Headless.Messaging.Serialization;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
@@ -451,30 +451,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
             Lane = MessageLane.Bus,
             Content = provider.GetRequiredService<ISerializer>().Serialize(message),
         };
-        var method = typeof(IConsume<ShipOrder>).GetMethod(
-            nameof(IConsume<>.ConsumeAsync),
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            [typeof(ConsumeContext<ShipOrder>), typeof(CancellationToken)]
-        )!;
-        var descriptor = new ConsumerExecutorDescriptor
-        {
-            ServiceTypeInfo = typeof(ShipOrderConsumer).GetTypeInfo(),
-            ImplTypeInfo = typeof(ShipOrderConsumer).GetTypeInfo(),
-            MethodInfo = method,
-            MessageName = "orders.ship",
-            SubscriptionName = "bridge-test",
-            Lane = MessageLane.Bus,
-            MessageContractVersion = "2",
-            Parameters = method
-                .GetParameters()
-                .Select(parameter => new ParameterDescriptor
-                {
-                    Name = parameter.Name!,
-                    ParameterType = parameter.ParameterType,
-                    IsFromMessaging = parameter.ParameterType == typeof(CancellationToken),
-                })
-                .ToArray(),
-        };
+        var descriptor = _GetDescriptor<ShipOrderConsumer>(provider);
 
         using var trace = new Activity("incoming-trace");
         trace.Start();
@@ -508,6 +485,15 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
 
     #region Setup
 
+    // The project's generated MessagingModule declares the consumers, so a test drives one through the same descriptor
+    // the subscribe executor would receive, and the delivery runs the generated dispatch.
+    private static ConsumerExecutorDescriptor _GetDescriptor<TConsumer>(IServiceProvider provider) =>
+        provider
+            .GetRequiredService<MethodMatcherCache>()
+            .GetCandidatesBySubscriptionName()
+            .Values.SelectMany(static descriptors => descriptors)
+            .Single(static descriptor => descriptor.ConsumerType == typeof(TConsumer));
+
     private async Task<ServiceProvider> _BuildProviderAsync(
         Action<IServiceCollection>? configureServices = null,
         Action<DbContextOptionsBuilder>? configureDbContext = null,
@@ -536,16 +522,8 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
             messaging.Message<OrderShipped>("orders.shipped", "2");
             messaging.Message<OrderInvoiced>("orders.invoiced", "3");
             messaging.Message<ShipOrder>("orders.ship", "2");
-            messaging.AddModule<ShipOrderModule>();
-            if (includeJobs)
-            {
-                messaging.AddModule<DeadlineConsumerModule>();
-            }
+            messaging.AddModule<global::Headless.EntityFramework.Messaging.Tests.Integration.MessagingModule>();
         });
-
-        // The tests drive consumers through hand-built executor descriptors, which resolve the consumer type from DI.
-        services.AddScoped<ShipOrderConsumer>();
-        services.AddScoped<DeadlineConsumer>();
 
         services.AddSingleton<EmissionEvidence>();
         new MessagingBuilder(services).AddTenantPropagationServices();
@@ -722,11 +700,11 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         public IExecutionStrategy Create() => new RetryOnceStrategy(dependencies);
     }
 
-    private sealed record ShipOrder(string Name);
+    internal sealed record ShipOrder(string Name);
 
-    private sealed record OrderShipping(OrderEntity Order);
+    internal sealed record OrderShipping(OrderEntity Order);
 
-    private sealed class EmissionEvidence
+    internal sealed class EmissionEvidence
     {
         public EventContext<OrderShipping>? Parent { get; set; }
         public List<EventContext<object>> Children { get; } = [];
@@ -735,35 +713,8 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         public int LocalHandlerCalls { get; set; }
     }
 
-    private sealed class ShipOrderModule : IMessagingModule
-    {
-        public static void Register(MessagingCatalogBuilder catalog) =>
-            catalog.AddBusConsumer<ShipOrderConsumer, ShipOrder>(
-                "tests.bridge.ship",
-                everyInstance: false,
-                policy: null,
-                _Dispatch<ShipOrderConsumer, ShipOrder>()
-            );
-    }
-
-    private sealed class DeadlineConsumerModule : IMessagingModule
-    {
-        public static void Register(MessagingCatalogBuilder catalog) =>
-            catalog.AddBusConsumer<DeadlineConsumer, OrderShipped>(
-                "tests.bridge.deadline",
-                everyInstance: false,
-                policy: null,
-                _Dispatch<DeadlineConsumer, OrderShipped>()
-            );
-    }
-
-    private static MessageConsumerDispatch _Dispatch<TConsumer, TMessage>()
-        where TConsumer : class, IConsume<TMessage>
-        where TMessage : class =>
-        static (services, context, cancellationToken) =>
-            services.GetRequiredService<TConsumer>().ConsumeAsync((ConsumeContext<TMessage>)context, cancellationToken);
-
-    private sealed class ShipOrderConsumer(BridgeTestDbContext db, EmissionEvidence evidence) : IConsume<ShipOrder>
+    [BusConsumer("tests.bridge.ship")]
+    internal sealed class ShipOrderConsumer(BridgeTestDbContext db, EmissionEvidence evidence) : IConsume<ShipOrder>
     {
         public async ValueTask ConsumeAsync(ConsumeContext<ShipOrder> context, CancellationToken cancellationToken)
         {
@@ -805,11 +756,11 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         }
     }
 
-    private sealed record OrderShipped(string UniqueId);
+    internal sealed record OrderShipped(string UniqueId);
 
     private sealed record OrderInvoiced(string UniqueId);
 
-    private sealed class OrderEntity : AggregateRoot, IEntity<Guid>
+    internal sealed class OrderEntity : AggregateRoot, IEntity<Guid>
     {
         public Guid Id { get; private init; } = Guid.NewGuid();
 
@@ -829,7 +780,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         }
     }
 
-    private sealed class BridgeTestDbContext(
+    internal sealed class BridgeTestDbContext(
         HeadlessDbContextServices services,
         DbContextOptions<BridgeTestDbContext> options
     ) : HeadlessDbContext(services, options)
