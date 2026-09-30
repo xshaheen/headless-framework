@@ -10,6 +10,7 @@ using Headless.Sql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Settings;
@@ -128,7 +129,12 @@ public static class SetupSettingsPostgreSql
             }
 
             services.AddOptions<SettingsStorageOptions, PostgreSqlSettingsStorageOptionsValidator>();
-            services.AddInitializerHostedService<PostgreSqlSettingsStorageInitializer>();
+            services.AddHeadlessSchemaContribution(sp =>
+                PostgreSqlSettingsSchemaContribution.Create(
+                    sp.GetRequiredService<IOptions<PostgreSqlSettingsOptions>>().Value,
+                    sp.GetRequiredService<IOptions<SettingsStorageOptions>>().Value
+                )
+            );
             services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
             services.TryAddSingleton<ISettingValueRecordRepository, PostgreSqlSettingValueRecordRepository>();
             services.TryAddSingleton<ISettingDefinitionRecordRepository, PostgreSqlSettingDefinitionRecordRepository>();

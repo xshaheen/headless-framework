@@ -23,7 +23,7 @@ internal sealed class PostgreSqlSettingDefinitionRecordRepository(
     public async Task<List<SettingDefinitionRecord>> GetListAsync(CancellationToken cancellationToken = default)
     {
         var sql =
-            $"""SELECT "id","name","display_name","description","default_value","providers","is_visible_to_clients","is_inherited","is_encrypted","extra_properties" FROM {PostgreSqlSettingsStorageInitializer.DefinitionsTable(storageOptions.Value)};""";
+            $"""SELECT "id","name","display_name","description","default_value","providers","is_visible_to_clients","is_inherited","is_encrypted","extra_properties" FROM {PostgreSqlSettingsSchema.DefinitionsTable(storageOptions.Value)};""";
 
         var result = new List<SettingDefinitionRecord>();
         await using var connection = providerOptions.Value.CreateConnection();
@@ -120,19 +120,19 @@ internal sealed class PostgreSqlSettingDefinitionRecordRepository(
     /// <summary>Returns the parameterized INSERT SQL for the setting definitions table.</summary>
     private string _InsertSql()
     {
-        return $"""INSERT INTO {PostgreSqlSettingsStorageInitializer.DefinitionsTable(storageOptions.Value)} ("id","name","display_name","description","default_value","providers","is_visible_to_clients","is_inherited","is_encrypted","extra_properties") VALUES (@Id,@Name,@DisplayName,@Description,@DefaultValue,@Providers,@IsVisibleToClients,@IsInherited,@IsEncrypted,@ExtraProperties);""";
+        return $"""INSERT INTO {PostgreSqlSettingsSchema.DefinitionsTable(storageOptions.Value)} ("id","name","display_name","description","default_value","providers","is_visible_to_clients","is_inherited","is_encrypted","extra_properties") VALUES (@Id,@Name,@DisplayName,@Description,@DefaultValue,@Providers,@IsVisibleToClients,@IsInherited,@IsEncrypted,@ExtraProperties);""";
     }
 
     /// <summary>Returns the parameterized UPDATE SQL for the setting definitions table.</summary>
     private string _UpdateSql()
     {
-        return $"""UPDATE {PostgreSqlSettingsStorageInitializer.DefinitionsTable(storageOptions.Value)} SET "name"=@Name,"display_name"=@DisplayName,"description"=@Description,"default_value"=@DefaultValue,"providers"=@Providers,"is_visible_to_clients"=@IsVisibleToClients,"is_inherited"=@IsInherited,"is_encrypted"=@IsEncrypted,"extra_properties"=@ExtraProperties WHERE "id"=@Id;""";
+        return $"""UPDATE {PostgreSqlSettingsSchema.DefinitionsTable(storageOptions.Value)} SET "name"=@Name,"display_name"=@DisplayName,"description"=@Description,"default_value"=@DefaultValue,"providers"=@Providers,"is_visible_to_clients"=@IsVisibleToClients,"is_inherited"=@IsInherited,"is_encrypted"=@IsEncrypted,"extra_properties"=@ExtraProperties WHERE "id"=@Id;""";
     }
 
     /// <summary>Returns the parameterized DELETE SQL for the setting definitions table.</summary>
     private string _DeleteSql()
     {
-        return $"""DELETE FROM {PostgreSqlSettingsStorageInitializer.DefinitionsTable(storageOptions.Value)} WHERE "id"=@Id;""";
+        return $"""DELETE FROM {PostgreSqlSettingsSchema.DefinitionsTable(storageOptions.Value)} WHERE "id"=@Id;""";
     }
 
     /// <summary>Deserializes <paramref name="json"/> into an <see cref="ExtraProperties"/> collection, returning an empty collection when the result is <see langword="null"/>.</summary>

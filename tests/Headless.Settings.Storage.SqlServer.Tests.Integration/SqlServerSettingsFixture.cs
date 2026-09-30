@@ -26,13 +26,16 @@ public sealed class SqlServerSettingsFixture
     {
         await using var connection = new SqlConnection(ConnectionString);
         await connection.OpenAsync(cancellationToken);
-        // The table types go before the schema: SQL Server refuses to drop a schema that still owns objects.
+        // The table types go before the schema: SQL Server refuses to drop a schema that still owns objects. The schema
+        // runner's history goes too: the runner trusts it, so a history that outlived the tables would stop them being
+        // recreated.
         await using var command = new SqlCommand(
             $"""
             IF OBJECT_ID(N'{schema}.SettingValues', N'U') IS NOT NULL DROP TABLE [{schema}].[SettingValues];
             IF OBJECT_ID(N'{schema}.SettingDefinitions', N'U') IS NOT NULL DROP TABLE [{schema}].[SettingDefinitions];
             IF TYPE_ID(N'{schema}.HeadlessSettingsIdList') IS NOT NULL DROP TYPE [{schema}].[HeadlessSettingsIdList];
             IF TYPE_ID(N'{schema}.HeadlessSettingsNameList') IS NOT NULL DROP TYPE [{schema}].[HeadlessSettingsNameList];
+            IF OBJECT_ID(N'{schema}.headless_schema_history', N'U') IS NOT NULL DROP TABLE [{schema}].[headless_schema_history];
             IF EXISTS (SELECT * FROM sys.schemas WHERE name = N'{schema}') EXEC(N'DROP SCHEMA [{schema}]');
             """,
             connection
@@ -73,7 +76,7 @@ public sealed class SqlServerSettingsFixture
         await connection.OpenAsync(cancellationToken);
         var columns = await _ReadPairsAsync(
             connection,
-            "SELECT TABLE_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = @schema",
+            "SELECT TABLE_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = @schema AND TABLE_NAME <> 'headless_schema_history'",
             schema,
             cancellationToken
         );
@@ -84,7 +87,7 @@ public sealed class SqlServerSettingsFixture
             FROM sys.indexes i
             JOIN sys.tables t ON t.object_id = i.object_id
             JOIN sys.schemas s ON s.schema_id = t.schema_id
-            WHERE s.name = @schema AND i.name IS NOT NULL
+            WHERE s.name = @schema AND i.name IS NOT NULL AND t.name <> 'headless_schema_history'
             """,
             schema,
             cancellationToken

@@ -10,6 +10,7 @@ using Headless.Sql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Settings;
@@ -126,7 +127,12 @@ public static class SetupSettingsSqlServer
             }
 
             services.AddOptions<SettingsStorageOptions, SqlServerSettingsStorageOptionsValidator>();
-            services.AddInitializerHostedService<SqlServerSettingsStorageInitializer>();
+            services.AddHeadlessSchemaContribution(sp =>
+                SqlServerSettingsSchemaContribution.Create(
+                    sp.GetRequiredService<IOptions<SqlServerSettingsOptions>>().Value,
+                    sp.GetRequiredService<IOptions<SettingsStorageOptions>>().Value
+                )
+            );
             services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
             services.TryAddSingleton<ISettingValueRecordRepository, SqlServerSettingValueRecordRepository>();
             services.TryAddSingleton<ISettingDefinitionRecordRepository, SqlServerSettingDefinitionRecordRepository>();

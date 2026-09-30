@@ -33,7 +33,7 @@ public abstract class SettingsStorageConformanceTests<TFixture>(TFixture fixture
     [Fact]
     public async Task should_create_the_same_tables_columns_and_indexes_the_ef_model_maps()
     {
-        // given — the raw initializer and the EF mapping must agree name for name, or an application that
+        // given — the raw schema contribution and the EF mapping must agree name for name, or an application that
         // provisions with one and reads with the other fails at its first query
         await fixture.DropSchemaAsync(_Schema, AbortToken);
         using var host = fixture.CreateHost(_Schema);

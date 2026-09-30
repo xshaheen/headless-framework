@@ -23,7 +23,7 @@ internal sealed class SqlServerSettingDefinitionRecordRepository(
     public async Task<List<SettingDefinitionRecord>> GetListAsync(CancellationToken cancellationToken = default)
     {
         var sql =
-            $"SELECT [Id],[Name],[DisplayName],[Description],[DefaultValue],[Providers],[IsVisibleToClients],[IsInherited],[IsEncrypted],[ExtraProperties] FROM {SqlServerSettingsStorageInitializer.DefinitionsTable(storageOptions.Value)};";
+            $"SELECT [Id],[Name],[DisplayName],[Description],[DefaultValue],[Providers],[IsVisibleToClients],[IsInherited],[IsEncrypted],[ExtraProperties] FROM {SqlServerSettingsSchema.DefinitionsTable(storageOptions.Value)};";
 
         var result = new List<SettingDefinitionRecord>();
         await using var connection = providerOptions.Value.CreateConnection();
@@ -122,19 +122,19 @@ internal sealed class SqlServerSettingDefinitionRecordRepository(
     /// <summary>Returns the parameterized INSERT SQL for the setting definitions table.</summary>
     private string _InsertSql()
     {
-        return $"INSERT INTO {SqlServerSettingsStorageInitializer.DefinitionsTable(storageOptions.Value)} ([Id],[Name],[DisplayName],[Description],[DefaultValue],[Providers],[IsVisibleToClients],[IsInherited],[IsEncrypted],[ExtraProperties]) VALUES (@Id,@Name,@DisplayName,@Description,@DefaultValue,@Providers,@IsVisibleToClients,@IsInherited,@IsEncrypted,@ExtraProperties);";
+        return $"INSERT INTO {SqlServerSettingsSchema.DefinitionsTable(storageOptions.Value)} ([Id],[Name],[DisplayName],[Description],[DefaultValue],[Providers],[IsVisibleToClients],[IsInherited],[IsEncrypted],[ExtraProperties]) VALUES (@Id,@Name,@DisplayName,@Description,@DefaultValue,@Providers,@IsVisibleToClients,@IsInherited,@IsEncrypted,@ExtraProperties);";
     }
 
     /// <summary>Returns the parameterized UPDATE SQL for the setting definitions table.</summary>
     private string _UpdateSql()
     {
-        return $"UPDATE {SqlServerSettingsStorageInitializer.DefinitionsTable(storageOptions.Value)} SET [Name]=@Name,[DisplayName]=@DisplayName,[Description]=@Description,[DefaultValue]=@DefaultValue,[Providers]=@Providers,[IsVisibleToClients]=@IsVisibleToClients,[IsInherited]=@IsInherited,[IsEncrypted]=@IsEncrypted,[ExtraProperties]=@ExtraProperties WHERE [Id]=@Id;";
+        return $"UPDATE {SqlServerSettingsSchema.DefinitionsTable(storageOptions.Value)} SET [Name]=@Name,[DisplayName]=@DisplayName,[Description]=@Description,[DefaultValue]=@DefaultValue,[Providers]=@Providers,[IsVisibleToClients]=@IsVisibleToClients,[IsInherited]=@IsInherited,[IsEncrypted]=@IsEncrypted,[ExtraProperties]=@ExtraProperties WHERE [Id]=@Id;";
     }
 
     /// <summary>Returns the parameterized DELETE SQL for the setting definitions table.</summary>
     private string _DeleteSql()
     {
-        return $"DELETE FROM {SqlServerSettingsStorageInitializer.DefinitionsTable(storageOptions.Value)} WHERE [Id]=@Id;";
+        return $"DELETE FROM {SqlServerSettingsSchema.DefinitionsTable(storageOptions.Value)} WHERE [Id]=@Id;";
     }
 
     /// <summary>Deserializes <paramref name="json"/> into an <see cref="ExtraProperties"/> collection, returning an empty collection when the result is <see langword="null"/>.</summary>

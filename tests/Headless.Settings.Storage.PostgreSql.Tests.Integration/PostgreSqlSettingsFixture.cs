@@ -66,13 +66,13 @@ public sealed class PostgreSqlSettingsFixture
         await connection.OpenAsync(cancellationToken);
         var columns = await _ReadPairsAsync(
             connection,
-            "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = @schema",
+            "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = @schema AND table_name <> 'headless_schema_history'",
             schema,
             cancellationToken
         );
         var indexes = await _ReadPairsAsync(
             connection,
-            "SELECT tablename, indexname FROM pg_indexes WHERE schemaname = @schema",
+            "SELECT tablename, indexname FROM pg_indexes WHERE schemaname = @schema AND tablename <> 'headless_schema_history'",
             schema,
             cancellationToken
         );
