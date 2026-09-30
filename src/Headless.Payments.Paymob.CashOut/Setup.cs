@@ -117,7 +117,10 @@ public static class SetupPaymobCashOut
         }
         else
         {
-            httpClientBuilder.AddStandardResilienceHandler();
+            // Paymob carries no idempotency key on its money-moving POSTs (/disburse, /authenticate):
+            // a retried request can pay out or charge twice. Reads (budget, transaction inquiry) stay
+            // retryable. Consumers who verified Paymob-side deduplication can re-enable retry explicitly.
+            httpClientBuilder.AddStandardResilienceHandler(options => options.Retry.DisableForUnsafeHttpMethods());
         }
 
         services.AddSingleton<IPaymobCashOutAuthenticator, PaymobCashOutAuthenticator>();

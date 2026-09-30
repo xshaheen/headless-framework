@@ -117,7 +117,11 @@ public static class SetupPaymobCashIn
         }
         else
         {
-            httpClientBuilder.AddStandardResilienceHandler();
+            // Paymob carries no idempotency key on its money-moving POSTs (intention, refund, void,
+            // order creation, payment key): a retried request can create a duplicate order or refund
+            // twice. Reads (order/transaction inquiry) stay retryable. Consumers who verified
+            // Paymob-side deduplication can re-enable retry explicitly.
+            httpClientBuilder.AddStandardResilienceHandler(options => options.Retry.DisableForUnsafeHttpMethods());
         }
 
         services.AddSingleton<IPaymobCashInAuthenticator, PaymobCashInAuthenticator>();
