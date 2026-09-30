@@ -27,7 +27,7 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
         await using var second = await locks.AcquireAsync(resource, cancellationToken: AbortToken);
 
         firstToken.Should().NotBeNull();
-        second.FencingToken.Should().BeGreaterThan(firstToken!.Value);
+        second.FencingToken!.Value.Should().BeGreaterThan(firstToken!.Value);
     }
 
     [Fact]
@@ -55,6 +55,7 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
         acquiredWriter.Should().NotBeNull();
     }
 
+#pragma warning disable VSTHRD103 // The synchronous DbTransaction overloads are the API under test.
     [Fact]
     public async Task should_acquire_and_release_synchronously_through_db_transaction()
     {
@@ -79,6 +80,7 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
             .Should()
             .BeTrue();
     }
+#pragma warning restore VSTHRD103
 
     [Fact]
     public async Task should_release_transaction_lock_on_commit()

@@ -112,7 +112,7 @@ public sealed class CompositeSemaphoreAcquireTests : TestBase
     public async Task should_return_original_slot_lease_for_single_canonical_resource()
     {
         var provider = _CreateProvider(new FakeTimeProvider());
-        await using var slot = new CompositeTestLease("a", fencingToken: 42);
+        await using var slot = new CompositeTestLease("a", fencingToken: new LockFencingToken(42));
         _StubSemaphore(provider, "a", 5, _ => Task.FromResult<IDistributedLease?>(slot));
 
         var result = await provider.TryAcquireAllAsync(
@@ -123,7 +123,7 @@ public sealed class CompositeSemaphoreAcquireTests : TestBase
         result.Should().BeSameAs(slot);
         result!.LeaseId.Should().Be(slot.LeaseId);
         result.Resource.Should().Be("a");
-        result.FencingToken.Should().Be(42);
+        result.FencingToken.Should().Be(new LockFencingToken(42));
     }
 
     [Fact]
@@ -268,14 +268,14 @@ public sealed class CompositeSemaphoreAcquireTests : TestBase
             provider,
             "a",
             5,
-            _ => Task.FromResult<IDistributedLease?>(new CompositeTestLease("a", fencingToken: 7))
+            _ => Task.FromResult<IDistributedLease?>(new CompositeTestLease("a", fencingToken: new LockFencingToken(7)))
         );
 
         _StubSemaphore(
             provider,
             "b",
             2,
-            _ => Task.FromResult<IDistributedLease?>(new CompositeTestLease("b", fencingToken: 9))
+            _ => Task.FromResult<IDistributedLease?>(new CompositeTestLease("b", fencingToken: new LockFencingToken(9)))
         );
 
         var result = await provider.TryAcquireAllAsync(

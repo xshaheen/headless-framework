@@ -30,7 +30,7 @@ internal interface IFencingTokenSource
     /// <see langword="null"/> (or incompatible), the implementation opens its own connection.
     /// </param>
     /// <param name="cancellationToken">Token used to cancel issuing the token.</param>
-    ValueTask<long?> NextAsync(
+    ValueTask<LockFencingToken?> NextAsync(
         string resource,
         DbConnection? connection = null,
         CancellationToken cancellationToken = default

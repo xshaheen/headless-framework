@@ -74,7 +74,9 @@ internal sealed class InMemoryDistributedSemaphoreStorage(TimeProvider timeProvi
             state.Holders[leaseId] = new HolderEntry(timeProvider.GetUtcNow().Add(ttl));
             var fencingToken = _fencingTokens.AddOrUpdate(resource, static _ => 1, static (_, current) => current + 1);
 
-            return ValueTask.FromResult(new DistributedLockAcquireResult(Acquired: true, fencingToken));
+            return ValueTask.FromResult(
+                new DistributedLockAcquireResult(Acquired: true, new LockFencingToken(fencingToken))
+            );
         }
     }
 

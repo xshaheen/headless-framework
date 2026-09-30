@@ -1470,10 +1470,12 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
                     )
                 )
             ),
+#pragma warning disable CA2000 // The fake transaction wraps a substitute connection and holds nothing to release; an observed (isOwned: false) resource is never disposed by the unit, by design.
             CoordinatorMode.ObservedRelational => new UnitOfWorkProbe(
                 unitOfWorkServices,
                 unitOfWorkFactory.Enlist(new FakeRelationalResource(_LiveTransaction(), isOwned: false))
             ),
+#pragma warning restore CA2000
             CoordinatorMode.DeadRelational => new UnitOfWorkProbe(
                 unitOfWorkServices,
                 _AwaitSync(

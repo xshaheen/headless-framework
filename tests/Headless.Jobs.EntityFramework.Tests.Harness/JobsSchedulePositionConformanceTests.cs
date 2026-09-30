@@ -1180,10 +1180,7 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
     private static IJobPersistenceProvider<TimeJobEntity, CronJobEntity> _Persistence(IHost host) =>
         host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-    private static CronScheduleMaterialization _Materialization(
-        Guid cronJobId,
-        (DateTime ReconciledThroughUtc, DateTime NextDueUtc) position
-    ) =>
+    private static CronScheduleMaterialization _Materialization(Guid cronJobId, CronSchedulePosition position) =>
         new()
         {
             Advance = new CronScheduleAdvance
@@ -1200,7 +1197,7 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
 
     private async Task _AssertPositionUnchangedAsync(
         Guid cronJobId,
-        (DateTime ReconciledThroughUtc, DateTime NextDueUtc) expected,
+        CronSchedulePosition expected,
         CancellationToken cancellationToken
     )
     {

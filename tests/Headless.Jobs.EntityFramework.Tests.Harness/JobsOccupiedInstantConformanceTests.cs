@@ -186,15 +186,15 @@ public abstract class JobsOccupiedInstantConformanceTests<TFixture>(TFixture fix
             }
 
             // The seeded row is never disturbed, whichever way the verdict fell.
-            var persisted = await fixture.ReadCronOccurrenceDispositionAsync(occurrenceId, ct);
-            persisted
-                .Status.Should()
+            var (status, disposition) = await fixture.ReadCronOccurrenceDispositionAsync(occurrenceId, ct);
+            status
+                .Should()
                 .Be(
                     testCase.RawStatus ?? testCase.Status.ToString(),
                     "case '{0}' must leave the pre-existing row alone",
                     testCase.Name
                 );
-            persisted.Disposition.Should().Be(testCase.Disposition.ToString());
+            disposition.Should().Be(testCase.Disposition.ToString());
         }
     }
 
@@ -493,10 +493,7 @@ public abstract class JobsOccupiedInstantConformanceTests<TFixture>(TFixture fix
     private static IJobPersistenceProvider<TimeJobEntity, CronJobEntity> _Persistence(IHost host) =>
         host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-    private static CronScheduleMaterialization _Materialization(
-        Guid cronJobId,
-        (DateTime ReconciledThroughUtc, DateTime NextDueUtc) position
-    ) =>
+    private static CronScheduleMaterialization _Materialization(Guid cronJobId, CronSchedulePosition position) =>
         new()
         {
             Advance = new CronScheduleAdvance

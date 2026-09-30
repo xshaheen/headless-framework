@@ -84,8 +84,8 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
         await using var second = await semaphore.AcquireAsync(options, AbortToken);
 
         // then
-        first.FencingToken.Should().Be(1);
-        second.FencingToken.Should().Be(2);
+        first.FencingToken.Should().Be(new LockFencingToken(1));
+        second.FencingToken.Should().Be(new LockFencingToken(2));
     }
 
     [Fact]
@@ -166,7 +166,7 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
 
         // then
         renewed.Should().BeTrue();
-        slot.FencingToken.Should().Be(1);
+        slot.FencingToken.Should().Be(new LockFencingToken(1));
     }
 
     [Fact]

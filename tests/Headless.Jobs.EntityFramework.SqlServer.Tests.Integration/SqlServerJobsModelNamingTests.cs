@@ -69,7 +69,13 @@ public sealed class SqlServerJobsModelNamingTests : TestBase
             .Be("FK_CronJobOccurrences_CronJobs_CronJobId");
         occurrence
             .GetIndexes()
-            .Single(index => index.GetDatabaseName() == "UQ_CronJobOccurrences_CronJobId_ExecutionTime")
+            .Single(index =>
+                string.Equals(
+                    index.GetDatabaseName(),
+                    "UQ_CronJobOccurrences_CronJobId_ExecutionTime",
+                    StringComparison.Ordinal
+                )
+            )
             .GetFilter()
             .Should()
             .Be("\"Status\" IN ('Idle', 'Queued', 'InProgress')");

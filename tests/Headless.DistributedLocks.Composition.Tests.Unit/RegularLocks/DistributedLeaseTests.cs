@@ -43,7 +43,7 @@ public sealed class DistributedLeaseTests
     {
         public string LeaseId => "test-lease";
 
-        public long? FencingToken => null;
+        public LockFencingToken? FencingToken => null;
 
         public string Resource => "test-resource";
 

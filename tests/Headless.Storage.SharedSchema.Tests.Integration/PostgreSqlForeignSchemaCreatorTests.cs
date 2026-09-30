@@ -166,7 +166,7 @@ public sealed class PostgreSqlForeignSchemaCreatorTests(PostgreSqlSharedSchemaFi
                 """,
                 observer
             );
-            probe.Parameters.AddWithValue("database", database);
+            probe.Parameters.AddWithValue(nameof(database), database);
 
             if ((int)(await probe.ExecuteScalarAsync(timeout.Token))! > 0)
             {

@@ -15,12 +15,17 @@ public sealed class Pbkdf2Sha256HashOptionsValidatorTests
     }
 
     [Theory]
-    [MemberData(nameof(InvalidOptions))]
-    public void should_reject_out_of_bounds_values(string property, Action<Pbkdf2Sha256HashOptions> mutate)
+    [InlineData(nameof(Pbkdf2Sha256HashOptions.Iterations), 0)]
+    [InlineData(nameof(Pbkdf2Sha256HashOptions.Iterations), SecretHashLimits.MaxPbkdf2Iterations + 1)]
+    [InlineData(nameof(Pbkdf2Sha256HashOptions.SaltSize), 15)]
+    [InlineData(nameof(Pbkdf2Sha256HashOptions.SaltSize), 65)]
+    [InlineData(nameof(Pbkdf2Sha256HashOptions.HashSize), 15)]
+    [InlineData(nameof(Pbkdf2Sha256HashOptions.HashSize), 65)]
+    public void should_reject_out_of_bounds_values(string property, int value)
     {
         // given
         var options = new Pbkdf2Sha256HashOptions();
-        mutate(options);
+        _Assign(options, property, value);
 
         // when
         var result = _sut.Validate(options);
@@ -30,14 +35,21 @@ public sealed class Pbkdf2Sha256HashOptionsValidatorTests
         result.Errors.Should().Contain(e => e.PropertyName == property);
     }
 
-    public static TheoryData<string, Action<Pbkdf2Sha256HashOptions>> InvalidOptions =>
-        new()
+    private static void _Assign(Pbkdf2Sha256HashOptions options, string property, int value)
+    {
+        switch (property)
         {
-            { "Iterations", o => o.Iterations = 0 },
-            { "Iterations", o => o.Iterations = SecretHashLimits.MaxPbkdf2Iterations + 1 },
-            { "SaltSize", o => o.SaltSize = 15 },
-            { "SaltSize", o => o.SaltSize = 65 },
-            { "HashSize", o => o.HashSize = 15 },
-            { "HashSize", o => o.HashSize = 65 },
-        };
+            case nameof(Pbkdf2Sha256HashOptions.Iterations):
+                options.Iterations = value;
+                break;
+            case nameof(Pbkdf2Sha256HashOptions.SaltSize):
+                options.SaltSize = value;
+                break;
+            case nameof(Pbkdf2Sha256HashOptions.HashSize):
+                options.HashSize = value;
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(property));
+        }
+    }
 }

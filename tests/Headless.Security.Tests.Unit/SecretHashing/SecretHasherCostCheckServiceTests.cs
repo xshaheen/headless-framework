@@ -37,7 +37,8 @@ public sealed class SecretHasherCostCheckServiceTests
         await using var provider = _BuildProvider(o => o.CostCheck.Mode = SecretHasherCostCheckMode.Off, algorithm);
 
         // when
-        await _Service(provider).StartingAsync(CancellationToken.None);
+        using var sut = _Service(provider);
+        await sut.StartingAsync(CancellationToken.None);
 
         // then
         algorithm.HashCalls.Should().Be(0);
@@ -48,7 +49,7 @@ public sealed class SecretHasherCostCheckServiceTests
     {
         // given
         var algorithm = new TimedAlgorithm { Cost = TimeSpan.FromMilliseconds(1) };
-        var logger = new RecordingLoggerProvider();
+        using var logger = new RecordingLoggerProvider();
         await using var provider = _BuildProvider(
             o => o.CostCheck.Mode = SecretHasherCostCheckMode.Warn,
             algorithm,
@@ -56,7 +57,8 @@ public sealed class SecretHasherCostCheckServiceTests
         );
 
         // when
-        await _StartAsync(_Service(provider));
+        using var sut = _Service(provider);
+        await _StartAsync(sut);
 
         // then
         logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Message.Contains("faster"));
@@ -83,7 +85,7 @@ public sealed class SecretHasherCostCheckServiceTests
     {
         // given
         var algorithm = new TimedAlgorithm { Cost = TimeSpan.FromSeconds(2) };
-        var logger = new RecordingLoggerProvider();
+        using var logger = new RecordingLoggerProvider();
         await using var provider = _BuildProvider(o => o.CostCheck.Mode = mode, algorithm, logger);
 
         // when
@@ -106,7 +108,7 @@ public sealed class SecretHasherCostCheckServiceTests
     {
         // given
         var algorithm = new TimedAlgorithm { Cost = TimeSpan.FromMilliseconds(50) };
-        var logger = new RecordingLoggerProvider();
+        using var logger = new RecordingLoggerProvider();
         await using var provider = _BuildProvider(
             o => o.CostCheck.Mode = SecretHasherCostCheckMode.Strict,
             algorithm,
@@ -114,7 +116,8 @@ public sealed class SecretHasherCostCheckServiceTests
         );
 
         // when
-        await _Service(provider).StartingAsync(CancellationToken.None);
+        using var sut = _Service(provider);
+        await sut.StartingAsync(CancellationToken.None);
 
         // then
         logger.Entries.Should().NotContain(e => e.Level >= LogLevel.Warning);
@@ -128,7 +131,8 @@ public sealed class SecretHasherCostCheckServiceTests
         await using var provider = _BuildProvider(o => o.CostCheck.Mode = SecretHasherCostCheckMode.Warn, algorithm);
 
         // when
-        await _Service(provider).StartingAsync(CancellationToken.None);
+        using var sut = _Service(provider);
+        await sut.StartingAsync(CancellationToken.None);
 
         // then
         algorithm.HashCalls.Should().Be(0);
@@ -139,7 +143,7 @@ public sealed class SecretHasherCostCheckServiceTests
     {
         // given
         var algorithm = new TimedAlgorithm { Failure = new InvalidOperationException("allocation failed") };
-        var logger = new RecordingLoggerProvider();
+        using var logger = new RecordingLoggerProvider();
         await using var provider = _BuildProvider(
             o => o.CostCheck.Mode = SecretHasherCostCheckMode.Warn,
             algorithm,
@@ -158,19 +162,16 @@ public sealed class SecretHasherCostCheckServiceTests
     public async Task should_stop_the_background_benchmark_between_samples_when_the_host_stops()
     {
         // given — the host starts stopping while the warm-up hash is running.
-        SecretHasherCostCheckService? sut = null;
         Task? stopping = null;
-        var algorithm = new TimedAlgorithm
-        {
-            AfterHash = () => stopping ??= sut!.StoppingAsync(CancellationToken.None),
-        };
-        var logger = new RecordingLoggerProvider();
+        var algorithm = new TimedAlgorithm();
+        using var logger = new RecordingLoggerProvider();
         await using var provider = _BuildProvider(
             o => o.CostCheck.Mode = SecretHasherCostCheckMode.Warn,
             algorithm,
             logger
         );
-        sut = _Service(provider);
+        using var sut = _Service(provider);
+        algorithm.AfterHash = () => stopping ??= sut.StoppingAsync(CancellationToken.None);
 
         // when
         await _StartAsync(sut);
@@ -203,7 +204,7 @@ public sealed class SecretHasherCostCheckServiceTests
         // given
         var algorithm = new TimedAlgorithm { Cost = TimeSpan.FromMilliseconds(50) };
         await using var provider = _BuildProvider(o => o.CostCheck.Mode = SecretHasherCostCheckMode.Warn, algorithm);
-        var sut = _Service(provider);
+        using var sut = _Service(provider);
 
         // when
         await _StartAsync(sut);
@@ -282,7 +283,7 @@ public sealed class SecretHasherCostCheckServiceTests
 
         public int HashCalls { get; private set; }
 
-        public Action? AfterHash { get; init; }
+        public Action? AfterHash { get; set; }
 
         public Exception? Failure { get; init; }
 

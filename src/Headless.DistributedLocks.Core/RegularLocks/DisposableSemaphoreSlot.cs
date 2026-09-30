@@ -32,7 +32,7 @@ internal sealed class DisposableSemaphoreSlot : DistributedLockHandleBase
     internal DisposableSemaphoreSlot(
         string resource,
         string leaseId,
-        long? fencingToken,
+        LockFencingToken? fencingToken,
         TimeSpan leaseDuration,
         TimeSpan timeWaitedForLock,
         DistributedSemaphoreProvider provider,

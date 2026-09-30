@@ -83,7 +83,7 @@ internal sealed class CompositeDistributedLease : IDistributedLease, ICompositeD
 
     public string LeaseId { get; }
 
-    public long? FencingToken => null;
+    public LockFencingToken? FencingToken => null;
 
     public string Resource { get; }
 
