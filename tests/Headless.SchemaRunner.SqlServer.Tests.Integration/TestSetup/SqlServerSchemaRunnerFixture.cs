@@ -99,7 +99,7 @@ public sealed partial class SqlServerSchemaRunnerFixture
         await using var connection = new SqlConnection(DatabaseConnectionString);
         await connection.OpenAsync(cancellationToken);
 
-        foreach (var batch in _GoSeparator().Split(script).Where(b => !string.IsNullOrWhiteSpace(b)))
+        foreach (var batch in GoSeparatorRegex.Split(script).Where(b => !string.IsNullOrWhiteSpace(b)))
         {
             await using var command = new SqlCommand(batch, connection);
             await command.ExecuteNonQueryAsync(cancellationToken);
@@ -108,7 +108,9 @@ public sealed partial class SqlServerSchemaRunnerFixture
 
     public async Task<IForeignCreator> BeginForeignCreatorAsync(string schema, CancellationToken cancellationToken)
     {
+#pragma warning disable CA2000 // False positive: the returned ForeignCreator owns and disposes the connection.
         var connection = new SqlConnection(DatabaseConnectionString);
+#pragma warning restore CA2000
         await connection.OpenAsync(cancellationToken);
 
         await using var spidCommand = new SqlCommand("SELECT @@SPID;", connection);
@@ -254,7 +256,7 @@ public sealed partial class SqlServerSchemaRunnerFixture
         RegexOptions.Multiline | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
         matchTimeoutMilliseconds: 1000
     )]
-    private static partial Regex _GoSeparator();
+    private static partial Regex GoSeparatorRegex { get; }
 
     private sealed class ForeignCreator(
         string connectionString,

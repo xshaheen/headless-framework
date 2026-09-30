@@ -34,16 +34,16 @@ public sealed record SchemaAppliedStep(string Schema, string Feature, string Ver
 public enum SchemaMismatchKind
 {
     /// <summary>A registered step has no history row: the database lacks it. Fails verify mode.</summary>
-    Missing = 1,
+    Missing = 0,
 
     /// <summary>
     /// A history row names a registered feature but a version this code does not register, as when an older replica
     /// starts after a newer one applied a later step during a rolling deploy. Reported, never fatal.
     /// </summary>
-    Unknown = 2,
+    Unknown = 1,
 
     /// <summary>A history row's checksum differs from its registered step: the step's SQL changed after it shipped. Fails both modes.</summary>
-    Checksum = 3,
+    Checksum = 2,
 }
 
 /// <summary>One disagreement between the history table and the registered steps.</summary>
@@ -72,12 +72,9 @@ public sealed record SchemaMismatch(
 
 /// <summary>Thrown when the schema runner cannot open a connection, take its lock, apply or record a step, or when startup finds a fatal history mismatch.</summary>
 [PublicAPI]
-public sealed class SchemaRunnerException : InvalidOperationException
+public sealed class SchemaRunnerException(string message, Exception? innerException = null)
+    : InvalidOperationException(message, innerException)
 {
-    /// <summary>Creates the exception.</summary>
-    public SchemaRunnerException(string message, Exception? innerException = null)
-        : base(message, innerException) { }
-
     /// <summary>The mismatches that failed startup, when that is the cause; otherwise empty.</summary>
     public IReadOnlyList<SchemaMismatch> Mismatches { get; init; } = [];
 }

@@ -82,7 +82,9 @@ public sealed class PostgreSqlSchemaRunnerFixture
 
     public async Task<IForeignCreator> BeginForeignCreatorAsync(string schema, CancellationToken cancellationToken)
     {
+#pragma warning disable CA2000 // False positive: the returned ForeignCreator owns and disposes the connection.
         var connection = new NpgsqlConnection(ConnectionString);
+#pragma warning restore CA2000
         await connection.OpenAsync(cancellationToken);
 
         await using var pidCommand = new NpgsqlCommand("SELECT pg_backend_pid();", connection);

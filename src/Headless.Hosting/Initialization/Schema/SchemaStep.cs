@@ -85,8 +85,9 @@ public sealed record SchemaContribution
         Schema = Argument.IsNotNullOrWhiteSpace(schema);
         Argument.IsNotNull(steps);
         Argument.IsTrue(steps.Count > 0, "A schema contribution needs at least one step.", nameof(steps));
-        Argument.IsTrue(
-            steps.Select(s => s.Version).Distinct(StringComparer.Ordinal).Count() == steps.Count,
+        Argument.HasNoDuplicates(
+            steps.Select(s => s.Version).ToList(),
+            StringComparer.Ordinal,
             "A schema contribution cannot repeat a step version.",
             nameof(steps)
         );

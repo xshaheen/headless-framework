@@ -105,7 +105,7 @@ public sealed class SchemaRunnerTests : TestBase
         script.Should().Contain("ALPHA 1;").And.NotContain("GAMMA 1;");
         script
             .Split('\n')
-            .Count(line => line.Trim() == "GO")
+            .Count(line => string.Equals(line.Trim(), "GO", StringComparison.Ordinal))
             .Should()
             .Be(3, "history, step, and history row are three batches");
     }

@@ -534,7 +534,10 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
         results.Should().AllSatisfy(r => r.Handled.Should().NotBeEmpty("both sweepers claimed before either finished"));
         var handled = results.SelectMany(static r => r.Handled).ToList();
 
-        handled.Select(static l => l.Resource).Should().OnlyHaveUniqueItems().And.BeEquivalentTo(generations.Keys);
+        // Uniqueness by resource on the leases, then set equality on the resources themselves: comparing the
+        // leases with the string keys directly would never match.
+        handled.Should().OnlyHaveUniqueItems(static l => l.Resource);
+        handled.Select(static l => l.Resource).Should().BeEquivalentTo(generations.Keys);
         handled.Should().AllSatisfy(l => l.Generation.Should().Be(generations[l.Resource]));
         invocations.Should().OnlyHaveUniqueItems().And.HaveCount(10);
 

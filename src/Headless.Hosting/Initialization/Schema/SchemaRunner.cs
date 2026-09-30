@@ -30,9 +30,21 @@ namespace Headless.Hosting.Initialization.Schema;
 /// A crash between the two leaves the objects without a row, and the next run re-applies the idempotent step.
 /// </para>
 /// </remarks>
+/// <param name="contributions">Every feature's contribution.</param>
+/// <param name="logger">Logs applied steps, absorbed races, and lock release failures.</param>
+/// <param name="timeProvider">Clock for the lock-wait bound and poll delay. Defaults to the system clock.</param>
+/// <param name="lockTimeout">How long to wait for another runner's lock. Defaults to <see cref="DefaultLockTimeout"/>.</param>
+/// <param name="commandTimeout">Timeout of every statement the runner sends. Defaults to <see cref="DefaultCommandTimeout"/>.</param>
+/// <exception cref="ArgumentNullException"><paramref name="contributions"/> is null.</exception>
 #pragma warning disable CA2100 // SQL text comes from dialect code and contributions, never from request input.
 [PublicAPI]
-public sealed partial class SchemaRunner
+public sealed partial class SchemaRunner(
+    IEnumerable<SchemaContribution> contributions,
+    ILogger<SchemaRunner>? logger = null,
+    TimeProvider? timeProvider = null,
+    TimeSpan? lockTimeout = null,
+    TimeSpan? commandTimeout = null
+)
 {
     /// <summary>The history table's name in every schema the runner manages.</summary>
     public const string HistoryTableName = "headless_schema_history";
@@ -48,35 +60,14 @@ public sealed partial class SchemaRunner
 
     private static readonly TimeSpan _LockPollInterval = TimeSpan.FromMilliseconds(100);
 
-    private readonly TimeSpan _lockTimeout;
-    private readonly int _commandTimeoutSeconds;
-    private readonly TimeProvider _timeProvider;
-    private readonly ILogger _logger;
-
-    /// <summary>Creates a runner over <paramref name="contributions"/>.</summary>
-    /// <param name="contributions">Every feature's contribution.</param>
-    /// <param name="logger">Logs applied steps, absorbed races, and lock release failures.</param>
-    /// <param name="timeProvider">Clock for the lock-wait bound and poll delay. Defaults to the system clock.</param>
-    /// <param name="lockTimeout">How long to wait for another runner's lock. Defaults to <see cref="DefaultLockTimeout"/>.</param>
-    /// <param name="commandTimeout">Timeout of every statement the runner sends. Defaults to <see cref="DefaultCommandTimeout"/>.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="contributions"/> is null.</exception>
-    public SchemaRunner(
-        IEnumerable<SchemaContribution> contributions,
-        ILogger<SchemaRunner>? logger = null,
-        TimeProvider? timeProvider = null,
-        TimeSpan? lockTimeout = null,
-        TimeSpan? commandTimeout = null
-    )
-    {
-        Contributions = [.. Argument.IsNotNull(contributions)];
-        _logger = logger ?? (ILogger)NullLogger.Instance;
-        _timeProvider = timeProvider ?? TimeProvider.System;
-        _lockTimeout = lockTimeout ?? DefaultLockTimeout;
-        _commandTimeoutSeconds = (int)Math.Ceiling((commandTimeout ?? DefaultCommandTimeout).TotalSeconds);
-    }
+    private readonly TimeSpan _lockTimeout = lockTimeout ?? DefaultLockTimeout;
+    private readonly int _commandTimeoutSeconds = (int)
+        Math.Ceiling((commandTimeout ?? DefaultCommandTimeout).TotalSeconds);
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+    private readonly ILogger _logger = logger ?? (ILogger)NullLogger.Instance;
 
     /// <summary>Every registered contribution, in registration order.</summary>
-    public IReadOnlyList<SchemaContribution> Contributions { get; }
+    public IReadOnlyList<SchemaContribution> Contributions { get; } = [.. Argument.IsNotNull(contributions)];
 
     /// <summary>
     /// Applies every missing step of every contribution whose <see cref="SchemaContribution.ApplyOnStartup"/> is set.
@@ -96,7 +87,7 @@ public sealed partial class SchemaRunner
         var mismatches = new List<SchemaMismatch>();
         var races = 0;
 
-        foreach (var group in _GroupByDatabase(applyingOnly: true))
+        foreach (var group in await _GroupByDatabaseAsync(applyingOnly: true).ConfigureAwait(false))
         {
             races += await _ApplyGroupAsync(group, applied, mismatches, cancellationToken).ConfigureAwait(false);
         }
@@ -121,7 +112,7 @@ public sealed partial class SchemaRunner
     {
         var mismatches = new List<SchemaMismatch>();
 
-        foreach (var group in _GroupByDatabase(applyingOnly: false))
+        foreach (var group in await _GroupByDatabaseAsync(applyingOnly: false).ConfigureAwait(false))
         {
             await using var connection = await _OpenAsync(group, cancellationToken).ConfigureAwait(false);
 
@@ -154,11 +145,9 @@ public sealed partial class SchemaRunner
         script.Append("-- Dialect: ").AppendLine(dialect.Name);
         script.AppendLine("-- Idempotent: every statement is guarded, so running it twice changes nothing.");
 
-        var contributions = Contributions.Where(c =>
-            string.Equals(c.Dialect.Name, dialect.Name, StringComparison.Ordinal)
-        );
+        var ofDialect = Contributions.Where(c => string.Equals(c.Dialect.Name, dialect.Name, StringComparison.Ordinal));
 
-        foreach (var schemaGroup in contributions.GroupBy(c => c.Schema, StringComparer.Ordinal))
+        foreach (var schemaGroup in ofDialect.GroupBy(c => c.Schema, StringComparer.Ordinal))
         {
             var schema = schemaGroup.Key;
             script.AppendLine();
@@ -226,18 +215,18 @@ public sealed partial class SchemaRunner
                     )
                     .ConfigureAwait(false);
 
-                var contributions = group.InSchema(schema);
+                var inSchema = group.InSchema(schema);
                 var history = await _ReadHistoryAsync(connection, dialect, schema, cancellationToken)
                     .ConfigureAwait(false);
 
                 // Missing is not a mismatch here: applying it is the point of the run.
                 mismatches.AddRange(
-                    _Compare(schema, contributions, history).Where(m => m.Kind != SchemaMismatchKind.Missing)
+                    _Compare(schema, inSchema, history).Where(m => m.Kind != SchemaMismatchKind.Missing)
                 );
 
                 var recorded = history.Select(h => (h.Feature, h.Version)).ToHashSet();
 
-                foreach (var contribution in contributions)
+                foreach (var contribution in inSchema)
                 {
                     foreach (var step in contribution.Steps)
                     {
@@ -529,7 +518,7 @@ public sealed partial class SchemaRunner
         }
     }
 
-    private List<DatabaseGroup> _GroupByDatabase(bool applyingOnly)
+    private async Task<List<DatabaseGroup>> _GroupByDatabaseAsync(bool applyingOnly)
     {
         var groups = new List<DatabaseGroup>();
 
@@ -539,7 +528,7 @@ public sealed partial class SchemaRunner
             // connection to one database still share one group, one lock, and one pass.
             string identity;
 
-            using (var probe = contribution.CreateConnection())
+            await using (var probe = contribution.CreateConnection())
             {
                 identity = contribution.Dialect.DatabaseIdentity(probe);
             }

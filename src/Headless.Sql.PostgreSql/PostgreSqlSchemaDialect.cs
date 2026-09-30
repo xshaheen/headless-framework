@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using System.Globalization;
 using Headless.Checks;
 using Headless.Constants;
 using Headless.Hosting.Initialization.Schema;
@@ -41,7 +42,8 @@ public sealed class PostgreSqlSchemaDialect : ISchemaDialect
         // PostgreSQL folds unquoted names to lower case, so the identity does too.
         var builder = new NpgsqlConnectionStringBuilder(connection.ConnectionString);
 
-        return $"{builder.Host}:{builder.Port}/{builder.Database}".ToLowerInvariant();
+        return string.Create(CultureInfo.InvariantCulture, $"{builder.Host}:{builder.Port}/{builder.Database}")
+            .ToLowerInvariant();
     }
 
     /// <inheritdoc />
