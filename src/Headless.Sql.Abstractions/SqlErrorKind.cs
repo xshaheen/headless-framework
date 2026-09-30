@@ -23,4 +23,11 @@ public enum SqlErrorKind
 
     /// <summary>A lock wait timed out (lock_timeout, blocked session).</summary>
     LockTimeout = 5,
+
+    /// <summary>
+    /// The statement ran on a transaction an earlier error already ended or doomed (PostgreSQL <c>25P02</c>, SQL Server
+    /// <c>3930</c>). Nothing more can run in it: the caller's unit of work is lost and must be rolled back, never
+    /// retried in place.
+    /// </summary>
+    TransactionAborted = 6,
 }

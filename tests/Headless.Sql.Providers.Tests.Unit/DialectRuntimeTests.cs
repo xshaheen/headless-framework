@@ -117,6 +117,8 @@ public sealed class DialectRuntimeTests : TestBase
                 System.Data.SqlDbType.DateTimeOffset
             ),
             (SqlColumnType.Binary, new byte[] { 1 }, NpgsqlDbType.Bytea, System.Data.SqlDbType.VarBinary),
+            (SqlColumnType.Guid, Guid.Empty, NpgsqlDbType.Uuid, System.Data.SqlDbType.UniqueIdentifier),
+            (SqlColumnType.Boolean, true, NpgsqlDbType.Boolean, System.Data.SqlDbType.Bit),
         };
 
         for (var i = 0; i < kinds.Length; i++)
@@ -143,6 +145,44 @@ public sealed class DialectRuntimeTests : TestBase
     }
 
     [Fact]
+    public void should_bind_a_postgresql_list_as_a_typed_array_with_utc_instants()
+    {
+        using var command = new NpgsqlCommand();
+        var instant = new DateTimeOffset(2026, 10, 1, 10, 0, 0, TimeSpan.FromHours(3));
+
+        PostgreSqlDialect.Instance.AddListParameter(command, "Keys", SqlColumnType.KeyText(8), new[] { "a", "b" });
+        PostgreSqlDialect.Instance.AddListParameter(command, "At", SqlColumnType.Timestamp, new[] { instant });
+
+        command.Parameters["Keys"].Value.Should().BeOfType<string[]>();
+        command.Parameters["Keys"].Value.Should().BeEquivalentTo(new[] { "a", "b" });
+        ((DateTimeOffset[])command.Parameters["At"].Value!)[0].Offset.Should().Be(TimeSpan.Zero);
+        FluentActions
+            .Invoking(() =>
+                PostgreSqlDialect.Instance.AddListParameter(command, "B", SqlColumnType.Binary, new[] { new byte[1] })
+            )
+            .Should()
+            .Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_bind_a_sql_server_list_as_one_json_array()
+    {
+        using var command = new SqlCommand();
+
+        SqlServerDialect.Instance.AddListParameter(command, "Ids", SqlColumnType.Int64, new[] { 1L, 2L });
+
+        command.Parameters["Ids"].SqlDbType.Should().Be(System.Data.SqlDbType.NVarChar);
+        command.Parameters["Ids"].Size.Should().Be(-1);
+        command.Parameters["Ids"].Value.Should().Be("[1,2]");
+        FluentActions
+            .Invoking(() =>
+                SqlServerDialect.Instance.AddListParameter(command, "B", SqlColumnType.Binary, new[] { new byte[1] })
+            )
+            .Should()
+            .Throw<ArgumentException>();
+    }
+
+    [Fact]
     public void should_expose_each_engines_provider_types()
     {
         PostgreSqlDialect.Instance.ConnectionType.Should().Be<NpgsqlConnection>();
@@ -159,6 +199,7 @@ public sealed class DialectRuntimeTests : TestBase
     [InlineData("23505", SqlErrorKind.UniqueViolation)]
     [InlineData("42P07", SqlErrorKind.DuplicateObject)]
     [InlineData("55P03", SqlErrorKind.LockTimeout)]
+    [InlineData("25P02", SqlErrorKind.TransactionAborted)]
     [InlineData("22021", SqlErrorKind.None)]
     public void should_classify_postgresql_errors_by_sqlstate(string sqlState, SqlErrorKind expected)
     {

@@ -98,6 +98,29 @@ public sealed class PostgreSqlDialect : ISqlDialect
         return $"({string.Join(", ", columns)}) > ({string.Join(", ", parameters.Select(static p => "@" + p))})";
     }
 
+    public string InList(string expression, string parameter, SqlColumnType elementType)
+    {
+        _EnsureListable(elementType);
+
+        return $"{expression} = ANY(@{parameter})";
+    }
+
+    public void AddListParameter<T>(
+        DbCommand command,
+        string parameter,
+        SqlColumnType elementType,
+        IReadOnlyCollection<T> values
+    )
+    {
+        _EnsureListable(elementType);
+        Array array = values is IReadOnlyCollection<DateTimeOffset> instants
+            ? instants.Select(static i => i.ToUniversalTime()).ToArray()
+            : values.ToArray();
+
+        // Npgsql types the parameter from the element type of the CLR array (string[] -> text[], Guid[] -> uuid[]).
+        command.Parameters.Add(new NpgsqlParameter(parameter, array));
+    }
+
     public string Render(SqlLockedRead statement)
     {
         return $"""
@@ -169,7 +192,7 @@ public sealed class PostgreSqlDialect : ISqlDialect
                 FROM {statement.Table} AS c, clock
                 WHERE {_Clocked(statement.Filter)}
                 ORDER BY {string.Join(", ", statement.OrderBy)}
-                LIMIT 1
+                LIMIT {(statement.BatchSizeParameter is null ? "1" : "@" + statement.BatchSizeParameter)}
                 FOR UPDATE OF c SKIP LOCKED
             )
             UPDATE {statement.Table} AS target
@@ -197,6 +220,42 @@ public sealed class PostgreSqlDialect : ISqlDialect
             """;
     }
 
+    public string Render(SqlUpsert statement)
+    {
+        var keyColumns = string.Join(", ", statement.Key.Select(static k => k.Column));
+        var columns = statement.Key.Select(static k => k.Column).Concat(statement.Columns);
+        var values = statement.Key.Select(static k => "@" + k.Parameter).Concat(statement.Values.Select(_Clocked));
+        var guard = statement.Guard is null ? "" : $"\n        WHERE {_Stored(_ClockedSubquery(statement.Guard))}";
+
+        // ON CONFLICT DO UPDATE has no FROM clause, so the update reads the clock through a subquery. xmax is zero only
+        // on a row version this statement created, which tells an insert from an update. A refused guard returns no
+        // row, so the outcome defaults to Refused.
+        return $"""
+            {_Clock},
+            upserted AS (
+                INSERT INTO {statement.Table} AS stored ({string.Join(", ", columns)})
+                SELECT {string.Join(", ", values)}
+                FROM clock
+                ON CONFLICT ({keyColumns}) DO UPDATE
+                SET {_Stored(_ClockedSubquery(statement.Set))}{guard}
+                RETURNING (stored.xmax = 0) AS was_inserted{_Prefixed(statement.Returning, "stored")}
+            )
+            SELECT CAST(CASE WHEN upserted.was_inserted IS NULL THEN {(int)
+                SqlUpsertOutcome.Refused} WHEN upserted.was_inserted THEN {(int)SqlUpsertOutcome.Inserted} ELSE {(int)
+                SqlUpsertOutcome.Updated} END AS smallint){_Prefixed(statement.Returning, "upserted")}
+            FROM clock
+            LEFT JOIN upserted ON TRUE;
+            """;
+    }
+
+    public string Render(SqlClockedStatement statement)
+    {
+        return $"""
+            {_Clock}
+            {_ClockedSubquery(statement.Sql)}
+            """;
+    }
+
     public SqlErrorKind Classify(Exception exception)
     {
         return exception is PostgresException { SqlState: var state }
@@ -209,6 +268,7 @@ public sealed class PostgreSqlDialect : ISqlDialect
                 or SqlErrorCodes.PostgreSql.DuplicateTable
                 or SqlErrorCodes.PostgreSql.DuplicateObject => SqlErrorKind.DuplicateObject,
                 SqlErrorCodes.PostgreSql.LockTimeout => SqlErrorKind.LockTimeout,
+                SqlErrorCodes.PostgreSql.InFailedSqlTransaction => SqlErrorKind.TransactionAborted,
                 _ => SqlErrorKind.None,
             }
             : SqlErrorKind.None;
@@ -217,6 +277,24 @@ public sealed class PostgreSqlDialect : ISqlDialect
     private static string _Clocked(string fragment)
     {
         return fragment.Replace(SqlDialectTokens.Now, "clock.now", StringComparison.Ordinal);
+    }
+
+    private static string _Stored(string fragment)
+    {
+        return fragment.Replace(SqlDialectTokens.Stored, "stored", StringComparison.Ordinal);
+    }
+
+    private static string _ClockedSubquery(string fragment)
+    {
+        return fragment.Replace(SqlDialectTokens.Now, "(SELECT clock.now FROM clock)", StringComparison.Ordinal);
+    }
+
+    private static void _EnsureListable(SqlColumnType elementType)
+    {
+        if (elementType.Kind == SqlColumnKind.Binary)
+        {
+            throw new ArgumentException("A list parameter cannot hold binary values.", nameof(elementType));
+        }
     }
 
     private static string _Key(IReadOnlyList<SqlKeyColumn> key, string? alias)
@@ -248,6 +326,8 @@ public sealed class PostgreSqlDialect : ISqlDialect
             SqlColumnKind.Int64 => NpgsqlDbType.Bigint,
             SqlColumnKind.Timestamp => NpgsqlDbType.TimestampTz,
             SqlColumnKind.Binary => NpgsqlDbType.Bytea,
+            SqlColumnKind.Guid => NpgsqlDbType.Uuid,
+            SqlColumnKind.Boolean => NpgsqlDbType.Boolean,
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown column kind."),
         };
     }

@@ -24,6 +24,7 @@ public sealed class DialectStatementTests : TestBase
         foreach (var sql in _Statements(dialect))
         {
             sql.Should().NotContain(SqlDialectTokens.Now);
+            sql.Should().NotContain(SqlDialectTokens.Stored);
             sql.Should().NotContainEquivalentOf("TRY", "a caught error could still doom a caller's transaction");
             sql.Should().NotContainEquivalentOf("SET XACT_ABORT");
         }
@@ -86,7 +87,73 @@ public sealed class DialectStatementTests : TestBase
         yield return dialect.Render(_Insert(dialect));
         yield return dialect.Render(_Claim(dialect));
         yield return dialect.Render(_Delete(dialect));
+        yield return dialect.Render(_Claim(dialect) with { BatchSizeParameter = "Batch" });
+        yield return dialect.Render(
+            _Upsert(dialect, guard: $"{SqlDialectTokens.Stored}.{dialect.Quote("v")} < @Limit")
+        );
+        yield return dialect.Render(_Upsert(dialect, guard: null));
+        yield return dialect.Render(
+            new SqlClockedStatement(
+                $"DELETE FROM {dialect.Qualify("s", "t")} WHERE {dialect.Quote("v")} < {SqlDialectTokens.Now}"
+            )
+        );
     }
+
+    [Fact]
+    public void should_upsert_with_on_conflict_and_bound_claims_by_the_batch_parameter_on_postgresql()
+    {
+        var dialect = PostgreSqlDialect.Instance;
+
+        dialect.Render(_Upsert(dialect, guard: "stored.\"v\" < 1")).Should().Contain("ON CONFLICT (\"k\") DO UPDATE");
+        dialect.Render(_Claim(dialect) with { BatchSizeParameter = "Batch" }).Should().Contain("LIMIT @Batch");
+        dialect.Render(_Claim(dialect)).Should().Contain("LIMIT 1");
+    }
+
+    [Fact]
+    public void should_lock_the_key_before_reading_the_clock_in_an_upsert_on_sql_server()
+    {
+        var dialect = SqlServerDialect.Instance;
+        var sql = dialect.Render(_Upsert(dialect, guard: null));
+
+        sql.IndexOf("SYSUTCDATETIME()", StringComparison.Ordinal)
+            .Should()
+            .BeGreaterThan(sql.IndexOf("UPDLOCK, HOLDLOCK, ROWLOCK", StringComparison.Ordinal));
+        dialect.Render(_Claim(dialect) with { BatchSizeParameter = "Batch" }).Should().Contain("TOP (@Batch)");
+    }
+
+    [Fact]
+    public void should_compare_with_a_list_through_any_on_postgresql_and_typed_openjson_on_sql_server()
+    {
+        PostgreSqlDialect.Instance.InList("\"k\"", "Keys", SqlColumnType.KeyText(64)).Should().Be("\"k\" = ANY(@Keys)");
+        SqlServerDialect
+            .Instance.InList("[k]", "Keys", SqlColumnType.KeyText(64))
+            .Should()
+            .Be("[k] IN (SELECT [value] FROM OPENJSON(@Keys) WITH ([value] nvarchar(64) '$'))");
+        SqlServerDialect.Instance.InList("[k]", "Ids", SqlColumnType.Guid).Should().Contain("uniqueidentifier");
+        SqlServerDialect.Instance.InList("[k]", "Texts", SqlColumnType.Text(0)).Should().Contain("nvarchar(max)");
+    }
+
+    [Theory]
+    [MemberData(nameof(Dialects))]
+    public void should_refuse_a_binary_list(string name)
+    {
+        var dialect = _Dialect(name);
+
+        var act = () => dialect.InList("x", "Values", SqlColumnType.Binary);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    private static SqlUpsert _Upsert(ISqlDialect d, string? guard) =>
+        new(
+            d.Qualify("s", "t"),
+            [new(d.Quote("k"), "K")],
+            [d.Quote("v")],
+            [SqlDialectTokens.Now],
+            $"{d.Quote("v")} = {SqlDialectTokens.Stored}.{d.Quote("v")} + 1",
+            guard,
+            [d.Quote("v")]
+        );
 
     private static SqlLockedRead _LockedRead(ISqlDialect d) =>
         new(d.Qualify("s", "t"), [new(d.Quote("k"), "K")], [d.Quote("v")]);

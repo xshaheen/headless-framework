@@ -4,6 +4,7 @@ using System.Data;
 using System.Data.Common;
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using Headless.Constants;
 using Microsoft.Data.SqlClient;
 
@@ -112,6 +113,8 @@ public sealed class SqlServerDialect : ISqlDialect
             SqlColumnKind.Int64 => new SqlParameter(parameter, SqlDbType.BigInt),
             SqlColumnKind.Timestamp => new SqlParameter(parameter, SqlDbType.DateTimeOffset),
             SqlColumnKind.Binary => new SqlParameter(parameter, SqlDbType.VarBinary, -1),
+            SqlColumnKind.Guid => new SqlParameter(parameter, SqlDbType.UniqueIdentifier),
+            SqlColumnKind.Boolean => new SqlParameter(parameter, SqlDbType.Bit),
             _ => throw new ArgumentOutOfRangeException(nameof(type), type.Kind, "Unknown column kind."),
         };
 
@@ -138,6 +141,25 @@ public sealed class SqlServerDialect : ISqlDialect
         }
 
         return "(" + string.Join(" OR ", terms) + ")";
+    }
+
+    public string InList(string expression, string parameter, SqlColumnType elementType)
+    {
+        // OPENJSON with a typed WITH clause yields one typed column per element; no table type has to exist first.
+        return $"{expression} IN (SELECT [value] FROM OPENJSON(@{parameter}) WITH ([value] {_ListElementType(elementType)} '$'))";
+    }
+
+    public void AddListParameter<T>(
+        DbCommand command,
+        string parameter,
+        SqlColumnType elementType,
+        IReadOnlyCollection<T> values
+    )
+    {
+        _ListElementType(elementType);
+        command.Parameters.Add(
+            new SqlParameter(parameter, SqlDbType.NVarChar, -1) { Value = JsonSerializer.Serialize(values) }
+        );
     }
 
     public string Render(SqlLockedRead statement)
@@ -201,7 +223,7 @@ public sealed class SqlServerDialect : ISqlDialect
         return $"""
             {_Clock}
             WITH candidate AS (
-                SELECT TOP (1) *
+                SELECT TOP ({(statement.BatchSizeParameter is null ? "1" : "@" + statement.BatchSizeParameter)}) *
                 FROM {statement.Table} WITH ({_SkipLocked})
                 WHERE {_Clocked(statement.Filter)}
                 ORDER BY {string.Join(", ", statement.OrderBy)}
@@ -225,6 +247,52 @@ public sealed class SqlServerDialect : ISqlDialect
             """;
     }
 
+    public string Render(SqlUpsert statement)
+    {
+        var columns = statement.Key.Select(static k => k.Column).Concat(statement.Columns);
+        var values = statement.Key.Select(static k => "@" + k.Parameter).Concat(statement.Values.Select(_Clocked));
+        var key = _Key(statement.Key, alias: null);
+        var guard = statement.Guard is null ? "" : $" AND ({_Stored(_Clocked(statement.Guard))})";
+        var returning =
+            statement.Returning.Count == 0
+                ? ""
+                : ", " + string.Join(", ", statement.Returning.Select(static c => "t." + c));
+
+        // The existence check takes the key lock, or the key-range lock when the row is absent, so two first writers
+        // of one key serialize and the insert never collides. The clock is read after that wait.
+        return $"""
+            DECLARE @now datetimeoffset(7);
+            DECLARE @outcome smallint = {(int)SqlUpsertOutcome.Refused};
+            IF EXISTS (SELECT 1 FROM {statement.Table} WITH (UPDLOCK, HOLDLOCK, ROWLOCK) WHERE {key})
+            BEGIN
+                SET @now = TODATETIMEOFFSET(SYSUTCDATETIME(), 0);
+                UPDATE stored
+                SET {_Stored(_Clocked(statement.Set))}
+                FROM {statement.Table} AS stored
+                WHERE {_Key(statement.Key, "stored")}{guard};
+                IF @@ROWCOUNT > 0 SET @outcome = {(int)SqlUpsertOutcome.Updated};
+            END
+            ELSE
+            BEGIN
+                SET @now = TODATETIMEOFFSET(SYSUTCDATETIME(), 0);
+                INSERT INTO {statement.Table} ({string.Join(", ", columns)})
+                VALUES ({string.Join(", ", values)});
+                SET @outcome = {(int)SqlUpsertOutcome.Inserted};
+            END;
+            SELECT @outcome{returning}
+            FROM (SELECT 1 AS one) AS x
+            LEFT JOIN {statement.Table} AS t ON @outcome > 0 AND {_Key(statement.Key, "t")};
+            """;
+    }
+
+    public string Render(SqlClockedStatement statement)
+    {
+        return $"""
+            {_Clock}
+            {_Clocked(statement.Sql)}
+            """;
+    }
+
     public SqlErrorKind Classify(Exception exception)
     {
         return exception is SqlException { Number: var number }
@@ -236,9 +304,31 @@ public sealed class SqlServerDialect : ISqlDialect
                 SqlErrorCodes.SqlServer.SnapshotUpdateConflict => SqlErrorKind.SerializationConflict,
                 2714 or 1913 or 2759 => SqlErrorKind.DuplicateObject,
                 1222 => SqlErrorKind.LockTimeout,
+                SqlErrorCodes.SqlServer.UncommittableTransaction => SqlErrorKind.TransactionAborted,
                 _ => SqlErrorKind.None,
             }
             : SqlErrorKind.None;
+    }
+
+    private static string _ListElementType(SqlColumnType elementType)
+    {
+        return elementType.Kind switch
+        {
+            SqlColumnKind.KeyText or SqlColumnKind.Text => elementType.MaxLength > 0
+                ? string.Create(CultureInfo.InvariantCulture, $"nvarchar({elementType.MaxLength})")
+                : "nvarchar(max)",
+            SqlColumnKind.Int16 => "smallint",
+            SqlColumnKind.Int32 => "int",
+            SqlColumnKind.Int64 => "bigint",
+            SqlColumnKind.Timestamp => "datetimeoffset(7)",
+            SqlColumnKind.Guid => "uniqueidentifier",
+            SqlColumnKind.Boolean => "bit",
+            SqlColumnKind.Binary => throw new ArgumentException(
+                "A list parameter cannot hold binary values.",
+                nameof(elementType)
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(elementType), elementType.Kind, "Unknown column kind."),
+        };
     }
 
     private static string _AppliedAndReturning(
@@ -256,6 +346,11 @@ public sealed class SqlServerDialect : ISqlDialect
             FROM (SELECT 1 AS one) AS x
             LEFT JOIN {table} AS t ON @applied = 1 AND {_Key(key, "t")};
             """;
+    }
+
+    private static string _Stored(string fragment)
+    {
+        return fragment.Replace(SqlDialectTokens.Stored, "stored", StringComparison.Ordinal);
     }
 
     private static string _Clocked(string fragment)
