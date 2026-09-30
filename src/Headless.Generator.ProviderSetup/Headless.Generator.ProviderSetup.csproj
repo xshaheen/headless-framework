@@ -1,0 +1,8 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Description>Roslyn source generator that emits provider registration surface (Use{Provider} overloads, options wiring, typed HttpClient with derived resilience) from one attributed options class.</Description>
+    <PackageTags>headless;generator;provider-setup;source-generator;dotnet</PackageTags>
+  </PropertyGroup>
+  <Import Project="..\Headless.SourceGenerators.Shared\Headless.SourceGenerators.Shared.props" />
+</Project>

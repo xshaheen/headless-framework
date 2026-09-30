@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Headless.Http.Effects;
 
 namespace Headless.Sms.Infobip;
 
@@ -11,6 +12,8 @@ namespace Headless.Sms.Infobip;
 /// <c>https://&lt;your-id&gt;.api.infobip.com</c>).
 /// </remarks>
 [PublicAPI]
+[OutboundEffect(OutboundEffect.Unsafe)] // an SMS send has no provider idempotency key: a retry can deliver twice
+[GenerateProviderSetup("UseInfobip", "Headless:InfobipSms", "InfobipSmsSender", "InfobipSmsOptionsValidator")]
 public sealed class InfobipSmsOptions
 {
     /// <summary>The registered sender name or number shown to recipients.</summary>

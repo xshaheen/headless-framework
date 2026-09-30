@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Headless.Http.Effects;
 
 namespace Headless.Sms.Connekio;
 
@@ -11,6 +12,8 @@ namespace Headless.Sms.Connekio;
 /// number of recipients in the request.
 /// </remarks>
 [PublicAPI]
+[OutboundEffect(OutboundEffect.Unsafe)] // an SMS send has no provider idempotency key: a retry can deliver twice
+[GenerateProviderSetup("UseConnekio", "Headless:ConnekioSms", "ConnekioSmsSender", "ConnekioSmsOptionsValidator")]
 public sealed class ConnekioSmsOptions
 {
     /// <summary>The Connekio endpoint for sending a single SMS. Defaults to the Connekio production URL.</summary>

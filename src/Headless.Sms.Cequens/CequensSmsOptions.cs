@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Headless.Http.Effects;
 
 namespace Headless.Sms.Cequens;
 
@@ -12,6 +13,8 @@ namespace Headless.Sms.Cequens;
 /// instead (useful for testing or environments where outbound auth calls are restricted).
 /// </remarks>
 [PublicAPI]
+[OutboundEffect(OutboundEffect.Unsafe)] // an SMS send has no provider idempotency key: a retry can deliver twice
+[GenerateProviderSetup("UseCequens", "Headless:CequensSms", "CequensSmsSender", "CequensSmsOptionsValidator")]
 public sealed class CequensSmsOptions
 {
     /// <summary>The Cequens REST endpoint for sending a single SMS. Defaults to the Cequens production URL.</summary>

@@ -513,6 +513,13 @@
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.12, )"
         }
       },
+      "headless.http.effects.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Microsoft.Extensions.Http.Resilience": "[10.10.0, )"
+        }
+      },
       "headless.primitives": {
         "type": "Project",
         "dependencies": {
