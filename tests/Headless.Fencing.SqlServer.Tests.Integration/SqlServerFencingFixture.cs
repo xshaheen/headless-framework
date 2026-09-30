@@ -274,9 +274,10 @@ public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IA
     }
 
     /// <summary>
-    /// Drops the lease table, the generation sequence, the schema runner's history, and then their schema, when they
-    /// exist. The history goes too: the runner trusts it, so a history that outlived the table would stop the table
-    /// being recreated.
+    /// Drops the lease table, the generation sequence, and the schema runner's history, then their schema once nothing
+    /// else is in it. The history goes too: the runner trusts it, so a history that outlived the table would stop the
+    /// table being recreated. The schema stays while another suite's objects are in it, because every Headless feature
+    /// shares it.
     /// </summary>
     public static string DropStorageSql(string schema)
     {
@@ -284,7 +285,9 @@ public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IA
             IF OBJECT_ID(N'{schema}.FencingLeases', N'U') IS NOT NULL DROP TABLE [{schema}].[FencingLeases];
             IF OBJECT_ID(N'{schema}.FencingLeaseGenerations', N'SO') IS NOT NULL DROP SEQUENCE [{schema}].[FencingLeaseGenerations];
             IF OBJECT_ID(N'{schema}.headless_schema_history', N'U') IS NOT NULL DROP TABLE [{schema}].[headless_schema_history];
-            IF SCHEMA_ID(N'{schema}') IS NOT NULL EXEC(N'DROP SCHEMA [{schema}]');
+            IF SCHEMA_ID(N'{schema}') IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM sys.objects WHERE schema_id = SCHEMA_ID(N'{schema}'))
+                EXEC(N'DROP SCHEMA [{schema}]');
             """;
     }
 

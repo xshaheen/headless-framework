@@ -1,13 +1,19 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless.Checks;
 using Headless.Fencing.SqlServer;
 using Headless.Sql;
+using Headless.Sql.SqlServer;
 using Headless.UnitOfWork;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Options;
+using Extension = Headless.Fencing.RelationalFencingProviderExtension<
+    Headless.Fencing.SqlServer.SqlServerFencingOptions,
+    Headless.Fencing.SqlServer.SqlServerFencingOptionsValidator,
+    Headless.Fencing.SqlServer.SqlServerFencingStorageOptionsValidator
+>;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Fencing;
@@ -39,7 +45,7 @@ public static class SetupFencingSqlServer
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The lease table is created at host startup unless
-        /// <see cref="SqlServerFencingOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted call
+        /// <see cref="RelationalFencingOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted call
         /// is accepted only on a unit whose SqlClient connection reaches this same database.
         /// </remarks>
         /// <exception cref="ArgumentException"><paramref name="connectionString" /> is <see langword="null" /> or whitespace.</exception>
@@ -58,7 +64,7 @@ public static class SetupFencingSqlServer
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The lease table is created at host startup unless
-        /// <see cref="SqlServerFencingOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted call
+        /// <see cref="RelationalFencingOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted call
         /// is accepted only on a unit whose SqlClient connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configuration" /> is <see langword="null" />.</exception>
@@ -66,7 +72,7 @@ public static class SetupFencingSqlServer
         {
             Argument.IsNotNull(configuration);
 
-            setup.RegisterExtension(new SqlServerFencingOptionsExtension(configuration));
+            setup.RegisterExtension(new Extension(_Provider, configuration));
 
             return setup;
         }
@@ -76,7 +82,7 @@ public static class SetupFencingSqlServer
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The lease table is created at host startup unless
-        /// <see cref="SqlServerFencingOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted call
+        /// <see cref="RelationalFencingOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted call
         /// is accepted only on a unit whose SqlClient connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
@@ -84,7 +90,7 @@ public static class SetupFencingSqlServer
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new SqlServerFencingOptionsExtension(configure));
+            setup.RegisterExtension(new Extension(_Provider, configure));
 
             return setup;
         }
@@ -97,7 +103,7 @@ public static class SetupFencingSqlServer
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The lease table is created at host startup unless
-        /// <see cref="SqlServerFencingOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted call
+        /// <see cref="RelationalFencingOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted call
         /// is accepted only on a unit whose SqlClient connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
@@ -105,66 +111,18 @@ public static class SetupFencingSqlServer
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new SqlServerFencingOptionsExtension(configure));
+            setup.RegisterExtension(new Extension(_Provider, configure));
 
             return setup;
         }
     }
 
-    private sealed class SqlServerFencingOptionsExtension : IFencingProviderOptionsExtension
-    {
-        private readonly IConfiguration? _configuration;
-        private readonly Action<SqlServerFencingOptions>? _configure;
-        private readonly Action<SqlServerFencingOptions, IServiceProvider>? _configureWithServices;
-
-        public SqlServerFencingOptionsExtension(IConfiguration configuration)
-        {
-            _configuration = configuration;
-        }
-
-        public SqlServerFencingOptionsExtension(Action<SqlServerFencingOptions> configure)
-        {
-            _configure = configure;
-        }
-
-        public SqlServerFencingOptionsExtension(Action<SqlServerFencingOptions, IServiceProvider> configure)
-        {
-            _configureWithServices = configure;
-        }
-
-        public void AddServices(IServiceCollection services)
-        {
-            if (_configuration is not null)
-            {
-                services.Configure<SqlServerFencingOptions, SqlServerFencingOptionsValidator>(_configuration);
-            }
-            else if (_configure is not null)
-            {
-                services.Configure<SqlServerFencingOptions, SqlServerFencingOptionsValidator>(_configure);
-            }
-            else
-            {
-                services.Configure<SqlServerFencingOptions, SqlServerFencingOptionsValidator>(_configureWithServices);
-            }
-
-            services.AddOptions<FencingStorageOptions, SqlServerFencingStorageOptionsValidator>();
-
-            // Sweeps begin owned units through the unit-of-work factory, and enlisted calls reach the store through
-            // unit.Leases, so the factory must exist whether or not the host registered it.
-            services.AddSqlServerUnitOfWork();
-
-            // The contribution factory reads options at first resolution, so InitializeOnStartup keeps its
-            // contract: false means the runner never creates the lease table (a migration tool owns it), while the
-            // initializer promise still completes for dependents.
-            services.AddHeadlessSchemaContribution(sp =>
-                SqlServerFencingSchemaContribution.Create(
-                    sp.GetRequiredService<IOptions<SqlServerFencingOptions>>().Value,
-                    sp.GetRequiredService<IOptions<FencingStorageOptions>>().Value
-                )
-            );
-            // The store waits between deadlock retries on this clock.
-            services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<ILeaseStore, SqlServerLeaseStore>();
-        }
-    }
+    private static readonly RelationalFencingProvider _Provider = new(
+        SqlServerDialect.Instance,
+        "Headless.Fencing.SqlServer",
+        static (factory, connection, cancellationToken) =>
+            factory.BeginAsync((SqlConnection)connection, IsolationLevel.ReadCommitted, cancellationToken),
+        static services => services.AddSqlServerUnitOfWork(),
+        SqlServerFencingSchemaContribution.Create
+    );
 }

@@ -13,7 +13,7 @@ internal static class PostgreSqlFencingSchemaContribution
 {
     public const string StepVersion = "1";
 
-    public static SchemaContribution Create(PostgreSqlFencingOptions options, FencingStorageOptions storageOptions)
+    public static SchemaContribution Create(RelationalFencingOptions options, FencingStorageOptions storageOptions)
     {
         var schema = storageOptions.Schema;
         var table = PostgreSqlFencingSchema.QualifiedTable(schema);
@@ -75,7 +75,7 @@ internal static class PostgreSqlFencingSchemaContribution
         return new SchemaContribution(
             feature: "Fencing",
             dialect: PostgreSqlSchemaDialect.Instance,
-            createConnection: options.CreateConnection,
+            createConnection: () => PostgreSqlDialect.Instance.CreateConnection(options.ConnectionString),
             schema: schema,
             steps:
             [

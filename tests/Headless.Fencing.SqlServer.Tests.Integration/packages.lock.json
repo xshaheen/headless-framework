@@ -802,14 +802,27 @@
           "FluentValidation": "[12.1.1, )",
           "Headless.Checks": "[1.0.0, )",
           "Headless.Core": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.Fencing.Abstractions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Core": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
           "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Options": "[10.0.12, )"
+        }
+      },
+      "headless.fencing.inmemory": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Fencing.Core": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )"
         }
       },
       "headless.fencing.sqlserver": {
@@ -833,6 +846,7 @@
           "Bogus": "[35.6.5, )",
           "DeepCloner": "[0.10.4, )",
           "Headless.Fencing.Core": "[1.0.0, )",
+          "Headless.Fencing.InMemory": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Testing": "[1.0.0, )",
           "Headless.Testing.Testcontainers": "[1.0.0, )",
@@ -898,6 +912,8 @@
       "headless.sql.core": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Nito.AsyncEx": "[5.1.2, )"
         }
@@ -906,6 +922,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.Sql.Core": "[1.0.0, )",

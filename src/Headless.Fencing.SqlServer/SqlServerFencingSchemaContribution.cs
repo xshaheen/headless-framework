@@ -13,7 +13,7 @@ internal static class SqlServerFencingSchemaContribution
 {
     public const string StepVersion = "1";
 
-    public static SchemaContribution Create(SqlServerFencingOptions options, FencingStorageOptions storageOptions)
+    public static SchemaContribution Create(RelationalFencingOptions options, FencingStorageOptions storageOptions)
     {
         var schema = storageOptions.Schema;
         var table = SqlServerFencingSchema.QualifiedTable(schema);
@@ -86,7 +86,7 @@ internal static class SqlServerFencingSchemaContribution
         return new SchemaContribution(
             feature: "Fencing",
             dialect: SqlServerSchemaDialect.Instance,
-            createConnection: options.CreateConnection,
+            createConnection: () => SqlServerDialect.Instance.CreateConnection(options.ConnectionString),
             schema: schema,
             steps:
             [
