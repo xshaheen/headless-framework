@@ -124,7 +124,7 @@ public abstract class SchemaRunnerConformanceTests(ISchemaRunnerFixture fixture)
         var schema = _Schema("verify_one");
         await fixture.DropSchemaAsync(schema, AbortToken);
         await fixture.CreateRunner(schema).ApplyAsync(AbortToken);
-        await fixture.DeleteHistoryRowAsync(schema, "Coordination", "2", AbortToken);
+        await fixture.DeleteHistoryRowAsync(schema, "Coordination", "1", AbortToken);
 
         var mismatches = await fixture.CreateRunner(schema).VerifyAsync(AbortToken);
 
@@ -133,7 +133,7 @@ public abstract class SchemaRunnerConformanceTests(ISchemaRunnerFixture fixture)
             .ContainSingle()
             .Which.Should()
             .Match<SchemaMismatch>(m =>
-                m.Kind == SchemaMismatchKind.Missing && m.Feature == "Coordination" && m.Version == "2"
+                m.Kind == SchemaMismatchKind.Missing && m.Feature == "Coordination" && m.Version == "1"
             );
         await fixture.DropSchemaAsync(schema, AbortToken);
     }

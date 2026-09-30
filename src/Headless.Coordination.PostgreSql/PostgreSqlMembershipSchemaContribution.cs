@@ -8,13 +8,12 @@ namespace Headless.Coordination.PostgreSql;
 
 /// <summary>
 /// The Coordination feature's schema contribution for PostgreSQL: the membership generation, descriptor, and
-/// liveness tables plus the liveness index, and the legacy column renames, as two idempotent steps the Headless
+/// liveness tables plus the liveness index, as one idempotent step the Headless
 /// schema runner applies.
 /// </summary>
 internal static class PostgreSqlMembershipSchemaContribution
 {
     public const string TablesStepVersion = "1";
-    public const string RenameStepVersion = "2";
 
     public static SchemaContribution Create(
         PostgreSqlCoordinationOptions providerOptions,
@@ -71,43 +70,6 @@ internal static class PostgreSqlMembershipSchemaContribution
                 ON {{livenessTable}} ({{PostgreSqlMembershipSchema.ClusterName}}, {{PostgreSqlMembershipSchema.Liveness.LastBeat}});
             """;
 
-        // The renames are a separate step: they are a schema repair, not a creation, and keeping them apart keeps
-        // the creation step's checksum stable while the repair evolves.
-        var renameSql = $$"""
-            DO $migration$
-            BEGIN
-                IF EXISTS (
-                    SELECT 1 FROM pg_attribute
-                    WHERE attrelid = to_regclass('{{generationTable}}')
-                      AND attname = 'date_updated'
-                      AND NOT attisdropped
-                ) AND NOT EXISTS (
-                    SELECT 1 FROM pg_attribute
-                    WHERE attrelid = to_regclass('{{generationTable}}')
-                      AND attname = '{{PostgreSqlMembershipSchema.UpdatedAt}}'
-                      AND NOT attisdropped
-                ) THEN
-                    ALTER TABLE {{generationTable}}
-                        RENAME COLUMN date_updated TO {{PostgreSqlMembershipSchema.UpdatedAt}};
-                END IF;
-
-                IF EXISTS (
-                    SELECT 1 FROM pg_attribute
-                    WHERE attrelid = to_regclass('{{descriptorTable}}')
-                      AND attname = 'date_created'
-                      AND NOT attisdropped
-                ) AND NOT EXISTS (
-                    SELECT 1 FROM pg_attribute
-                    WHERE attrelid = to_regclass('{{descriptorTable}}')
-                      AND attname = '{{PostgreSqlMembershipSchema.CreatedAt}}'
-                      AND NOT attisdropped
-                ) THEN
-                    ALTER TABLE {{descriptorTable}}
-                        RENAME COLUMN date_created TO {{PostgreSqlMembershipSchema.CreatedAt}};
-                END IF;
-            END $migration$;
-            """;
-
         return new SchemaContribution(
             feature: "Coordination",
             dialect: PostgreSqlSchemaDialect.Instance,
@@ -119,11 +81,6 @@ internal static class PostgreSqlMembershipSchemaContribution
                     TablesStepVersion,
                     "Create the membership generation, descriptor, and liveness tables.",
                     tablesSql
-                ),
-                new SchemaStep(
-                    RenameStepVersion,
-                    "Rename the legacy date_updated and date_created columns to the current names.",
-                    renameSql
                 ),
             ],
             applyOnStartup: providerOptions.InitializeOnStartup
