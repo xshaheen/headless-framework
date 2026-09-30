@@ -797,7 +797,7 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
 
     private sealed class ThrowingFencingTokenSource : IFencingTokenSource
     {
-        public ValueTask<long?> NextAsync(
+        public ValueTask<LockFencingToken?> NextAsync(
             string resource,
             System.Data.Common.DbConnection? connection = null,
             CancellationToken cancellationToken = default
@@ -813,7 +813,7 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
     {
         private long _next;
 
-        public ValueTask<long?> NextAsync(
+        public ValueTask<LockFencingToken?> NextAsync(
             string resource,
             System.Data.Common.DbConnection? connection = null,
             CancellationToken cancellationToken = default
@@ -821,7 +821,7 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            return ValueTask.FromResult<long?>(Interlocked.Increment(ref _next));
+            return ValueTask.FromResult<LockFencingToken?>(new LockFencingToken(Interlocked.Increment(ref _next)));
         }
     }
 
