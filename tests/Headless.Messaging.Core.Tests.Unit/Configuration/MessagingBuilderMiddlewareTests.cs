@@ -87,7 +87,7 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
         descriptor.Scope.Should().Be(MiddlewareScope.Message);
         descriptor.Direction.Should().Be(MiddlewareDirection.Consume);
         descriptor.MessageType.Should().Be<OrderPlaced>();
-        descriptor.GroupName.Should().Be("checkout");
+        descriptor.SubscriptionName.Should().Be("checkout");
     }
 
     [Fact]
@@ -103,7 +103,7 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
         // then
         var descriptor = _GetRegistry(services)
             .Descriptors.Single(x => x.MiddlewareType == typeof(TypedConsumeMiddleware));
-        descriptor.GroupName.Should().Be("tenant.checkout");
+        descriptor.SubscriptionName.Should().Be("tenant.checkout");
     }
 
     [Fact]
@@ -122,7 +122,7 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
         descriptor.Scope.Should().Be(MiddlewareScope.Message);
         descriptor.Direction.Should().Be(MiddlewareDirection.Publish);
         descriptor.MessageType.Should().Be<OrderPlaced>();
-        descriptor.GroupName.Should().BeNull();
+        descriptor.SubscriptionName.Should().BeNull();
     }
 
     [Fact]

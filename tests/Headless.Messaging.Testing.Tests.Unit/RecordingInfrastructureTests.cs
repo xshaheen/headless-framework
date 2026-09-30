@@ -72,7 +72,7 @@ public sealed class RecordingInfrastructureTests : TestBase
             )!,
             ImplTypeInfo = typeof(RecordingInfrastructureTests).GetTypeInfo(),
             MessageName = medium.Origin.Headers[Headers.MessageName]!,
-            GroupName = "test-group",
+            SubscriptionName = "test-group",
         };
 
         return new ConsumerContext(descriptor, medium);

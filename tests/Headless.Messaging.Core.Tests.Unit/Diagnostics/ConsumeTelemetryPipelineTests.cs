@@ -153,7 +153,7 @@ public sealed class ConsumeTelemetryPipelineTests : TestBase
             ImplTypeInfo = typeof(PipelineTestConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,
             MessageName = "test.pipeline.messageName",
-            GroupName = "test",
+            SubscriptionName = "test",
             Parameters = consumeMethod
                 .GetParameters()
                 .Select(p => new ParameterDescriptor

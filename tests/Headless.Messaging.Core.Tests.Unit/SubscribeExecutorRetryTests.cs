@@ -60,7 +60,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             ImplTypeInfo = typeof(CancellationExecutorTestConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,
             MessageName = "test.messageName",
-            GroupName = "test-group",
+            SubscriptionName = "test-group",
             ConsumerIdentity = CancellationExecutorTestConsumer.Identity,
             MessageContractVersion = "1",
             Parameters = consumeMethod

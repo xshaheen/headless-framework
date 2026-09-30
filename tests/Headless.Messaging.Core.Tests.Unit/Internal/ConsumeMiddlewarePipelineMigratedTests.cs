@@ -333,7 +333,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
             )!,
             ImplTypeInfo = typeof(ConsumeMiddlewarePipelineMigratedTests).GetTypeInfo(),
             MessageName = "orders",
-            GroupName = groupName,
+            SubscriptionName = groupName,
         };
 
         return new ConsumerContext(

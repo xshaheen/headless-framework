@@ -781,7 +781,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
 #pragma warning disable CA2000 // The GroupHandle owns the source once it is assigned.
         handleType.GetProperty("Cts")!.SetValue(handle, new CancellationTokenSource());
 #pragma warning restore CA2000
-        handleType.GetProperty("GroupName")!.SetValue(handle, groupName);
+        handleType.GetProperty("SubscriptionName")!.SetValue(handle, groupName);
         handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task>());
         await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
 

@@ -70,7 +70,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             ImplTypeInfo = typeof(CbTestConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,
             MessageName = _MessageName,
-            GroupName = _SubscriptionName,
+            SubscriptionName = _SubscriptionName,
             Parameters = consumeMethod
                 .GetParameters()
                 .Select(p => new ParameterDescriptor

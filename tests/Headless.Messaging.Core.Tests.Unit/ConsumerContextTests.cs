@@ -94,7 +94,7 @@ public sealed class ConsumerContextTests : TestBase
             MethodInfo = methodInfo,
             ImplTypeInfo = typeof(ConsumerContextTestConsumer).GetTypeInfo(),
             MessageName = "test.messageName",
-            GroupName = "test-group",
+            SubscriptionName = "test-group",
         };
     }
 

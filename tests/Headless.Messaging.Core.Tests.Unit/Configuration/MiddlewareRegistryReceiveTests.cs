@@ -162,7 +162,7 @@ public sealed class MiddlewareRegistryReceiveTests : TestBase
         // then
         var registry = _GetRegistry(services);
         var descriptor = registry.Descriptors.Single(x => x.MiddlewareType == typeof(TypedReceiveMiddleware));
-        descriptor.GroupName.Should().Be("tenant.checkout");
+        descriptor.SubscriptionName.Should().Be("tenant.checkout");
 
         registry
             .TryGetReceiveDescriptors(typeof(OrderPlaced), "checkout", MessageLane.Bus, out var unprefixed)
@@ -244,7 +244,7 @@ public sealed class MiddlewareRegistryReceiveTests : TestBase
         descriptor.Direction.Should().Be(MiddlewareDirection.Receive);
         descriptor.Scope.Should().Be(MiddlewareScope.Message);
         descriptor.MessageType.Should().Be<OrderPlaced>();
-        descriptor.GroupName.Should().Be("checkout");
+        descriptor.SubscriptionName.Should().Be("checkout");
         descriptor.Lane.Should().Be(MessageLane.Queue);
         descriptor.Priority.Should().Be(0);
     }

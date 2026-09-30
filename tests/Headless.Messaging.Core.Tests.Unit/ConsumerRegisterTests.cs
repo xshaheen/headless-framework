@@ -57,7 +57,7 @@ public sealed class ConsumerRegisterTests : TestBase
         using var cts = new CancellationTokenSource();
         handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
         handleType.GetProperty("Cts")!.SetValue(handle, cts);
-        handleType.GetProperty("GroupName")!.SetValue(handle, "payments");
+        handleType.GetProperty("SubscriptionName")!.SetValue(handle, "payments");
         handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task>());
 
         var addClient = handleType.GetMethod("AddClientAsync")!;
@@ -86,7 +86,7 @@ public sealed class ConsumerRegisterTests : TestBase
         using var cts = new CancellationTokenSource();
         handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
         handleType.GetProperty("Cts")!.SetValue(handle, cts);
-        handleType.GetProperty("GroupName")!.SetValue(handle, "payments");
+        handleType.GetProperty("SubscriptionName")!.SetValue(handle, "payments");
         handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task>());
 
         var addClient = handleType.GetMethod("AddClientAsync")!;
@@ -124,7 +124,7 @@ public sealed class ConsumerRegisterTests : TestBase
         using var cts = new CancellationTokenSource();
         handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
         handleType.GetProperty("Cts")!.SetValue(handle, cts);
-        handleType.GetProperty("GroupName")!.SetValue(handle, "payments");
+        handleType.GetProperty("SubscriptionName")!.SetValue(handle, "payments");
         handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task>());
         handleType.GetProperty("IsPaused")!.SetValue(handle, true);
 
@@ -167,7 +167,7 @@ public sealed class ConsumerRegisterTests : TestBase
         using var cts = new CancellationTokenSource();
         handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
         handleType.GetProperty("Cts")!.SetValue(handle, cts);
-        handleType.GetProperty("GroupName")!.SetValue(handle, "payments");
+        handleType.GetProperty("SubscriptionName")!.SetValue(handle, "payments");
         handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task>());
         var addClient = handleType.GetMethod("AddClientAsync")!;
         await (ValueTask)addClient.Invoke(handle, [first])!;
@@ -205,7 +205,7 @@ public sealed class ConsumerRegisterTests : TestBase
             )!,
             ImplTypeInfo = typeof(object).GetTypeInfo(),
             MessageName = "fake-messageName",
-            GroupName = "fake-group",
+            SubscriptionName = "fake-group",
         };
         selectorSub.SelectCandidates().Returns([fakeDescriptor]);
         var fakeCache = new MethodMatcherCache(selectorSub);
@@ -288,7 +288,7 @@ public sealed class ConsumerRegisterTests : TestBase
             )!,
             ImplTypeInfo = typeof(object).GetTypeInfo(),
             MessageName = "fake-messageName",
-            GroupName = groupName,
+            SubscriptionName = groupName,
         };
         selectorSub.SelectCandidates().Returns([fakeDescriptor]);
         var fakeCache = new MethodMatcherCache(selectorSub);
@@ -627,7 +627,7 @@ public sealed class ConsumerRegisterTests : TestBase
         using var handleCts = new CancellationTokenSource();
         handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
         handleType.GetProperty("Cts")!.SetValue(handle, handleCts);
-        handleType.GetProperty("GroupName")!.SetValue(handle, "payments");
+        handleType.GetProperty("SubscriptionName")!.SetValue(handle, "payments");
         handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task> { stillRunning.Task });
         var client = Substitute.For<IConsumerClient>();
         TimeSpan? receivedShutdownTimeout = null;
@@ -914,7 +914,7 @@ public sealed class ConsumerRegisterTests : TestBase
             )!
             .SetValue(register, mockCircuitBreaker);
         var handle = _CreateHandle(handleType);
-        handleType.GetProperty("GroupName")!.SetValue(handle, BootstrapReadyConsumer.Identity);
+        handleType.GetProperty("SubscriptionName")!.SetValue(handle, BootstrapReadyConsumer.Identity);
         await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [Substitute.For<IConsumerClient>()])!;
         await _InvokePauseAsync(register, handle, 7);
 
@@ -1654,7 +1654,7 @@ public sealed class ConsumerRegisterTests : TestBase
 #pragma warning disable CA2000 // The GroupHandle owns the source once it is assigned.
         handleType.GetProperty("Cts")!.SetValue(handle, new CancellationTokenSource());
 #pragma warning restore CA2000
-        handleType.GetProperty("GroupName")!.SetValue(handle, "payments");
+        handleType.GetProperty("SubscriptionName")!.SetValue(handle, "payments");
         handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task>());
         return handle;
     }
@@ -1728,7 +1728,7 @@ public sealed class ConsumerRegisterTests : TestBase
         Headless.Messaging.Serialization.ISerializer serializer,
         Headless.Messaging.Persistence.IDataStorage? storage = null,
         object? clientHandle = null,
-        ConsumerGroupKey? groupKey = null
+        ConsumerSubscriptionKey? groupKey = null
     )
     {
         var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
@@ -1737,14 +1737,20 @@ public sealed class ConsumerRegisterTests : TestBase
                 "_RegisterMessageProcessor",
                 BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
                 binder: null,
-                types: [typeof(IConsumerClient), typeof(ConsumerGroupKey), handleType, typeof(CancellationToken)],
+                types:
+                [
+                    typeof(IConsumerClient),
+                    typeof(ConsumerSubscriptionKey),
+                    handleType,
+                    typeof(CancellationToken),
+                ],
                 modifiers: null
             )!
             .Invoke(
                 register,
                 [
                     client,
-                    groupKey ?? new ConsumerGroupKey(BootstrapReadyConsumer.Identity, MessageLane.Bus),
+                    groupKey ?? new ConsumerSubscriptionKey(BootstrapReadyConsumer.Identity, MessageLane.Bus),
                     clientHandle ?? _CreateHandle(handleType),
                     CancellationToken.None,
                 ]

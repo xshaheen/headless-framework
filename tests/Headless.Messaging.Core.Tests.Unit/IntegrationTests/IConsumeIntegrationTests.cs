@@ -33,7 +33,7 @@ public sealed class IConsumeIntegrationTests
         candidates.Should().ContainSingle();
         var descriptor = candidates[0];
         descriptor.MessageName.Should().Be("orders.placed");
-        descriptor.GroupName.Should().Be(OrderPlacedConsumer.Identity);
+        descriptor.SubscriptionName.Should().Be(OrderPlacedConsumer.Identity);
 
         // And - selection
         var best = selector.SelectBestCandidate("orders.placed", candidates);
@@ -110,10 +110,10 @@ public sealed class IConsumeIntegrationTests
         candidates.Should().HaveCount(2);
 
         var orderService = candidates.First(c =>
-            string.Equals(c.GroupName, OrderPlacedConsumer.Identity, StringComparison.Ordinal)
+            string.Equals(c.SubscriptionName, OrderPlacedConsumer.Identity, StringComparison.Ordinal)
         );
         var analyticsService = candidates.First(c =>
-            string.Equals(c.GroupName, OrderAnalyticsConsumer.Identity, StringComparison.Ordinal)
+            string.Equals(c.SubscriptionName, OrderAnalyticsConsumer.Identity, StringComparison.Ordinal)
         );
 
         orderService.ImplTypeInfo.Should().Be(typeof(OrderPlacedConsumer).GetTypeInfo());

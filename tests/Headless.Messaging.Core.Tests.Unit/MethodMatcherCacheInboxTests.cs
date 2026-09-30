@@ -45,7 +45,7 @@ public sealed class MethodMatcherCacheInboxTests : TestBase
         cache.TryGetInboxExecutor("consumer", "orders", "1", lane, out var descriptor).Should().BeTrue();
         descriptor.Should().NotBeNull();
         // A declared Bus consumer subscribes under its identity; a Queue consumer under its message name.
-        descriptor.GroupName.Should().Be(lane is MessageLane.Bus ? _ConsumerIdentity : "orders");
+        descriptor.SubscriptionName.Should().Be(lane is MessageLane.Bus ? _ConsumerIdentity : "orders");
         descriptor.Lane.Should().Be(lane);
     }
 
@@ -76,7 +76,7 @@ public sealed class MethodMatcherCacheInboxTests : TestBase
         cache
             .TryGetMessageNameExecutor(
                 "orders.created",
-                new ConsumerGroupKey(_ConsumerIdentity, MessageLane.Bus),
+                new ConsumerSubscriptionKey(_ConsumerIdentity, MessageLane.Bus),
                 out var subscription
             )
             .Should()

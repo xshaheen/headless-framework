@@ -186,7 +186,7 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
             )!,
             ImplTypeInfo = typeof(ConsumeMiddlewarePipelineTests).GetTypeInfo(),
             MessageName = "test.messageName",
-            GroupName = "test-group",
+            SubscriptionName = "test-group",
         };
 
         var origin = new Message(

@@ -270,7 +270,7 @@ public sealed class SubscribeInvokerTests : TestBase
                 null
             )!,
             MessageName = "test.messageName",
-            GroupName = "test",
+            SubscriptionName = "test",
             Parameters = [],
         };
 

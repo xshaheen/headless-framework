@@ -236,7 +236,7 @@ public sealed partial class OutboxBridgeIntegrationTests
             ImplTypeInfo = typeof(TConsumer).GetTypeInfo(),
             MethodInfo = method,
             MessageName = message.Headers[Headers.MessageName]!,
-            GroupName = "bridge-test",
+            SubscriptionName = "bridge-test",
             Lane = MessageLane.Bus,
             MessageContractVersion = message.Headers[Headers.ContractVersion]!,
             Parameters = method

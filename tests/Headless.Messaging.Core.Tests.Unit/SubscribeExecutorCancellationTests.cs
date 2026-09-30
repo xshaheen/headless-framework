@@ -61,7 +61,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             ImplTypeInfo = typeof(CancellationExecutorTestConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,
             MessageName = "test.messageName",
-            GroupName = "test",
+            SubscriptionName = "test",
             Parameters = consumeMethod
                 .GetParameters()
                 .Select(p => new ParameterDescriptor

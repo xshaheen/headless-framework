@@ -79,7 +79,7 @@ public class ConsumeDispatchBenchmarks
             )!,
             ImplTypeInfo = typeof(ConsumeDispatchBenchmarks).GetTypeInfo(),
             MessageName = "benchmark.payload",
-            GroupName = "benchmark-group",
+            SubscriptionName = "benchmark-group",
         };
 
         var origin = new Message(

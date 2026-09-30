@@ -72,7 +72,7 @@ public sealed class ConsumerServiceSelectorTests
 
         // then
         var descriptor = candidates[0];
-        descriptor.GroupName.Should().Be("test-group");
+        descriptor.SubscriptionName.Should().Be("test-group");
     }
 
     [Fact]
@@ -108,7 +108,7 @@ public sealed class ConsumerServiceSelectorTests
             typeof(SelectorTestConsumer),
             typeof(SelectorTestMessage)
         );
-        descriptor.GroupName.Should().Be(conventions.GetGroupName(handlerId));
+        descriptor.SubscriptionName.Should().Be(conventions.GetGroupName(handlerId));
     }
 
     [Fact]

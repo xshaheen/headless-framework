@@ -132,7 +132,7 @@ public sealed class RuntimeSubscriberTests : TestBase
             AbortToken
         );
 
-        cache.GetCandidatesMethodsOfGroupNameGrouped();
+        cache.GetCandidatesBySubscriptionName();
         cache.TryGetMessageNameExecutor("runtime.duplicate", "runtime.group", out var descriptor).Should().BeTrue();
         descriptor.Should().NotBeNull();
         descriptor!.HandlerId.Should().Be(replaced.HandlerId);

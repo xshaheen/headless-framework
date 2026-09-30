@@ -458,7 +458,7 @@ public sealed class MessagingLaneSplitTests : TestBase
             MethodInfo = methodInfo,
             ImplTypeInfo = implTypeInfo,
             MessageName = "orders.created",
-            GroupName = "workers",
+            SubscriptionName = "workers",
             Lane = MessageLane.Bus,
         };
         var queueDescriptor = new ConsumerExecutorDescriptor
@@ -466,7 +466,7 @@ public sealed class MessagingLaneSplitTests : TestBase
             MethodInfo = methodInfo,
             ImplTypeInfo = implTypeInfo,
             MessageName = "orders.created",
-            GroupName = "workers",
+            SubscriptionName = "workers",
             Lane = MessageLane.Queue,
         };
 
@@ -490,7 +490,7 @@ public sealed class MessagingLaneSplitTests : TestBase
             MethodInfo = methodInfo,
             ImplTypeInfo = implTypeInfo,
             MessageName = "orders.created",
-            GroupName = "workers",
+            SubscriptionName = "workers",
             Lane = MessageLane.Bus,
         };
         var second = new ConsumerExecutorDescriptor
@@ -498,7 +498,7 @@ public sealed class MessagingLaneSplitTests : TestBase
             MethodInfo = methodInfo,
             ImplTypeInfo = implTypeInfo,
             MessageName = "orders.created",
-            GroupName = "workers",
+            SubscriptionName = "workers",
             Lane = MessageLane.Bus,
         };
 

@@ -257,7 +257,7 @@ public sealed class SubscribeExecutorCallbackPublishTests : TestBase
             ImplTypeInfo = typeof(CallbackOrderShippedConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,
             MessageName = "test.messageName",
-            GroupName = "test-group",
+            SubscriptionName = "test-group",
             ConsumerIdentity = "tests.subscribe-callback",
             MessageContractVersion = "1",
             Parameters = consumeMethod

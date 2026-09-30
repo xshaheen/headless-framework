@@ -86,7 +86,7 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
 
         var descriptor = provider
             .GetRequiredService<MethodMatcherCache>()
-            .GetCandidatesMethodsOfGroupNameGrouped()
+            .GetCandidatesBySubscriptionName()
             .Values.SelectMany(descriptors => descriptors)
             .Single();
         var origin = new Message(

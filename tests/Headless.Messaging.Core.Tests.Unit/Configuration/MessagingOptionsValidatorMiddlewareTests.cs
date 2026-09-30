@@ -22,7 +22,7 @@ public sealed class MessagingOptionsValidatorMiddlewareTests : TestBase
                 typeof(IConsumeMiddleware<ConsumeContext<OrderPlaced>>),
                 typeof(ConsumeContext<OrderPlaced>),
                 MessageType: null,
-                GroupName: null,
+                SubscriptionName: null,
                 Lane: MessageLane.Bus
             )
         );
@@ -50,7 +50,7 @@ public sealed class MessagingOptionsValidatorMiddlewareTests : TestBase
                 typeof(IPublishMiddleware<PublishContext<OrderPlaced>>),
                 typeof(PublishContext<OrderPlaced>),
                 MessageType: null,
-                GroupName: null,
+                SubscriptionName: null,
                 Lane: MessageLane.Bus
             )
         );
@@ -78,7 +78,7 @@ public sealed class MessagingOptionsValidatorMiddlewareTests : TestBase
                 typeof(IConsumeMiddleware<ConsumeContext>),
                 typeof(ConsumeContext),
                 MessageType: null,
-                GroupName: null,
+                SubscriptionName: null,
                 Lane: MessageLane.Bus
             )
         );

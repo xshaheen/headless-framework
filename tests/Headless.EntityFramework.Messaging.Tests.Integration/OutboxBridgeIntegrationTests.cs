@@ -462,7 +462,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
             ImplTypeInfo = typeof(ShipOrderConsumer).GetTypeInfo(),
             MethodInfo = method,
             MessageName = "orders.ship",
-            GroupName = "bridge-test",
+            SubscriptionName = "bridge-test",
             Lane = MessageLane.Bus,
             MessageContractVersion = "2",
             Parameters = method

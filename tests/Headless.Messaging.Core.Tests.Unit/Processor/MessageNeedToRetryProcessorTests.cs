@@ -73,7 +73,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             )!,
             ImplTypeInfo = typeof(object).GetTypeInfo(),
             MessageName = "test.messageName",
-            GroupName = group,
+            SubscriptionName = group,
             ConsumerIdentity = consumerIdentity,
             MessageContractVersion = "v1",
             Lane = MessageLane.Bus,

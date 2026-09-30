@@ -36,14 +36,12 @@ public sealed class ConsumerHostControlTests : TestBase
             .GetAll()
             .Where(x => x.ConsumerType == typeof(Fixture.LedgerProjection))
             .ToList();
-        var subscriptions = provider
-            .GetRequiredService<MethodMatcherCache>()
-            .GetCandidatesMethodsOfLaneGroupNameGrouped();
+        var subscriptions = provider.GetRequiredService<MethodMatcherCache>().GetCandidatesBySubscription();
 
         // then
         ledger.Should().HaveCount(2);
         ledger.Should().AllSatisfy(x => x.Group.Should().Be(Fixture.LedgerProjection.Identity));
-        subscriptions[new ConsumerGroupKey(Fixture.LedgerProjection.Identity, MessageLane.Bus)]
+        subscriptions[new ConsumerSubscriptionKey(Fixture.LedgerProjection.Identity, MessageLane.Bus)]
             .Select(x => x.MessageName)
             .Should()
             .BeEquivalentTo(ledger.Select(x => x.MessageName));
@@ -284,7 +282,9 @@ public sealed class ConsumerHostControlTests : TestBase
         var consumers = provider.GetDrainedConsumerRegistry().GetAll();
         var limit = provider
             .GetRequiredService<MethodMatcherCache>()
-            .GetGroupConcurrentLimit(new ConsumerGroupKey(TestConsumers.InvoiceProjection, MessageLane.Bus));
+            .GetSubscriptionConcurrentLimit(
+                new ConsumerSubscriptionKey(TestConsumers.InvoiceProjection, MessageLane.Bus)
+            );
 
         // then
         consumers
