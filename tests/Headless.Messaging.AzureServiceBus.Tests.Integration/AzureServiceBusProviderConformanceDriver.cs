@@ -20,6 +20,8 @@ internal sealed class AzureServiceBusProviderConformanceDriver(AzureServiceBusFi
 
     public override bool SupportsRoutingAffinity => true;
 
+    public override bool SupportsEveryInstance => true;
+
     public override void ConfigureRoutingAffinityTransport(
         Headless.Messaging.Configuration.MessagingSetupBuilder setup
     ) =>
@@ -114,9 +116,7 @@ internal sealed class AzureServiceBusProviderConformanceDriver(AzureServiceBusFi
             topicName = _topicName;
         }
         return await fixture.CreateConformanceSessionAsync(
-            endpoint.Lane,
-            endpoint.LogicalName,
-            endpoint.SubscriptionName,
+            endpoint,
             topicName,
             ownsEntity: string.Equals(endpoint.Replica, "replica-1", StringComparison.Ordinal),
             cancellationToken

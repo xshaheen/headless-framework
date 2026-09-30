@@ -150,7 +150,11 @@ public static class SetupAzureServiceBusMessaging
                             metadata.Route.MessageName,
                             AzureServiceBusRoutingAffinity.Mapping
                         ))
-                        .ToArray()
+                        .ToArray(),
+                    // Each process creates and deletes a subscription of its own, which takes AutoProvision.
+                    supportsEveryInstance: sp.GetRequiredService<
+                        IOptions<AzureServiceBusMessagingOptions>
+                    >().Value.AutoProvision
                 )
             );
 

@@ -18,7 +18,7 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
     {
         var loggerFactory = Substitute.For<ILoggerFactory>();
         loggerFactory.CreateLogger(Arg.Any<string>()).Returns(Substitute.For<ILogger>());
-        var factory = new AzureServiceBusConsumerClientFactory(
+        await using var factory = new AzureServiceBusConsumerClientFactory(
             loggerFactory,
             Options.Create(
                 new AzureServiceBusMessagingOptions
@@ -57,7 +57,12 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
 
         // Real pool: the invalid options must fail through the actual client creation path.
         await using var pool = new AzureServiceBusClientPool(NullLogger<AzureServiceBusClientPool>.Instance, options);
-        var factory = new AzureServiceBusConsumerClientFactory(loggerFactory, options, serviceProvider, pool);
+        await using var factory = new AzureServiceBusConsumerClientFactory(
+            loggerFactory,
+            options,
+            serviceProvider,
+            pool
+        );
 
         // when
         var act = async () => await factory.CreateAsync(new ConsumerClientRequest("test-group", 5, MessageLane.Queue));
@@ -84,7 +89,12 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
 
         // Real pool: the malformed connection string must fail through the actual client creation path.
         await using var pool = new AzureServiceBusClientPool(NullLogger<AzureServiceBusClientPool>.Instance, options);
-        var factory = new AzureServiceBusConsumerClientFactory(loggerFactory, options, serviceProvider, pool);
+        await using var factory = new AzureServiceBusConsumerClientFactory(
+            loggerFactory,
+            options,
+            serviceProvider,
+            pool
+        );
 
         // when
         var act = async () => await factory.CreateAsync(new ConsumerClientRequest("test-group", 5, MessageLane.Queue));
@@ -107,7 +117,12 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
 
         // Real pool: the invalid connection string must fail through the actual client creation path.
         await using var pool = new AzureServiceBusClientPool(NullLogger<AzureServiceBusClientPool>.Instance, options);
-        var factory = new AzureServiceBusConsumerClientFactory(loggerFactory, options, serviceProvider, pool);
+        await using var factory = new AzureServiceBusConsumerClientFactory(
+            loggerFactory,
+            options,
+            serviceProvider,
+            pool
+        );
         var groupName = new string('a', 80);
 
         // when
@@ -130,7 +145,12 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         var serviceProvider = new ServiceCollection().BuildServiceProvider();
 
         await using var pool = new AzureServiceBusClientPool(NullLogger<AzureServiceBusClientPool>.Instance, options);
-        var factory = new AzureServiceBusConsumerClientFactory(loggerFactory, options, serviceProvider, pool);
+        await using var factory = new AzureServiceBusConsumerClientFactory(
+            loggerFactory,
+            options,
+            serviceProvider,
+            pool
+        );
         var identity = "billing." + new string('a', 112);
 
         // when
