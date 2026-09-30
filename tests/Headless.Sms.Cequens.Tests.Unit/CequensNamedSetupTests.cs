@@ -37,6 +37,23 @@ public sealed class CequensNamedSetupTests
     }
 
     [Fact]
+    public void should_resolve_named_sender_when_host_registers_no_time_provider()
+    {
+        // given - a named-only setup, without the TimeProvider the other tests register themselves; the package
+        // resolves TimeProvider, so it must guarantee one for named instances, not only for the default sender.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessSms(setup => setup.AddNamed("otp", instance => instance.UseCequens(_Config("OTP"))));
+
+        // when
+        using var provider = services.BuildServiceProvider();
+        var sender = provider.GetRequiredKeyedService<ISmsSender>("otp");
+
+        // then
+        sender.Should().BeOfType<CequensSmsSender>();
+    }
+
+    [Fact]
     public void should_isolate_options_and_http_clients_across_named_instances()
     {
         // given
