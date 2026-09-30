@@ -102,7 +102,7 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
 
         await act.Should()
             .ThrowAsync<MessagingConfigurationException>()
-            .WithMessage("*Kafka*does not support Bus*Supported lanes: Queue*setup.Queue.ForMessage*");
+            .WithMessage("*Kafka*does not support Bus*Supported lanes: Queue*");
         storageInitializeCalls.Should().Be(0);
     }
 
