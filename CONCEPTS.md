@@ -210,27 +210,27 @@ enlisting receivers hang off the unit, not off DI: `unit.Outbox` for Messaging, 
 
 ### Transaction enlistment
 
-The guard a **Jobs** write (a one-shot deadline, a keyed job, a chain node, a recurring definition)
-uses to refuse the autonomous receiver: `TransactionEnlistment { Optional, Required }`, surfaced as
-`JobOptions.Enlistment` and `RecurringJobOptions.Enlistment`. Precedence is per call, then per
-function, then the host default; composition across those tiers is strictest-wins. Enlistment itself
-is chosen by the receiver — `unit.Jobs` always enlists, an injected scheduler never does — and the
-knob only says whether the autonomous receiver is acceptable. The guarantee matrix:
+Whether a write joins the caller's transaction. The receiver the caller invokes is the only thing
+that decides it, in every domain: `unit.Outbox`, `unit.Jobs`, `unit.TimeJobs<T>()`, and
+`unit.CronJobs<T>()` always enlist, and the injected `IBus`/`IQueue`/`IJobScheduler`/managers never
+do. No option, per-function policy, or host default selects enlistment. For a **Jobs** write (a
+one-shot deadline, a keyed job, a chain, a recurring definition):
 
-| Receiver | `Optional` (default) | `Required` |
-|---|---|---|
-| `unit.Jobs` over a unit with a live, same-database relational resource | enlist in the transaction, dispatch/signal after commit | same |
-| `unit.Jobs` over a resource-less, dead, or other-database unit | throw | throw |
-| Injected `IJobScheduler` / managers | autonomous durable write, poller recovers it | throw |
+| Receiver | Write |
+|---|---|
+| `unit.Jobs` over a unit with a live, same-database relational resource | enlist in the transaction, dispatch/signal after commit |
+| `unit.Jobs` over a resource-less, dead, or other-database unit | throw |
+| Injected `IJobScheduler` / managers | autonomous durable write in the store's own transaction, poller recovers it |
 
 Every refusal happens at the call itself, before any effect — there is no separate startup gate,
 because the factory always exists (`AddUnitOfWork()` is idempotent and called by every consumer
 package's setup).
 
-The enum is Jobs-only. Messaging once shared it, with the same matrix and the same precedence; it
-now expresses the same intent structurally, by which publisher is called — see [Enlisted
-outbox](#enlisted-outbox) — so no Messaging option, per-type policy, or host default selects
-enlistment any more.
+Both domains once carried a `TransactionEnlistment { Optional, Required }` guard that made the
+autonomous receiver refuse a function. It was removed from each for the same reason: one function or
+message type is written from sites with different needs (a business transaction, an admin resend, a
+backfill, startup seeding), and a function-level flag refuses the legitimate autonomous ones. See
+[Enlisted outbox](#enlisted-outbox).
 
 ### Unit-of-work resource
 
@@ -446,14 +446,12 @@ keyed rows remain indefinitely; ordinary edits, resets, retries, and hard deleti
 
 ### Transactional deadline capability
 
-`TransactionEnlistment.Required` requires a Jobs write — a one-shot deadline or a recurring definition — to use
-the exact live relational transaction that owns the application update. The requirement is transient;
-it is not job payload, definition payload, or persisted intent. A keyed result returned inside that
-transaction is provisional until the caller commits, and rollback removes the write. Scheduler wake-up
-is post-commit acceleration; polling recovers a missed wake-up. Recurring definitions take the
-requirement from the call or the function policy, never the host default, and startup seeding of
-attribute-defined definitions is exempt because it runs before any application transaction exists.
-Messaging delivery delay, distributed locks, and membership do not provide this capability.
+A Jobs write made through `unit.Jobs` — a one-shot deadline, a keyed job, a chain, or a recurring
+definition — uses the exact live relational transaction that owns the application update. A keyed result
+returned inside that transaction is provisional until the caller commits, and rollback removes the write.
+Scheduler wake-up is post-commit acceleration; polling recovers a missed wake-up. The same write through
+the injected scheduler is its own commit. Messaging delivery delay, distributed locks, and membership do
+not provide this capability.
 
 ### Catch step
 

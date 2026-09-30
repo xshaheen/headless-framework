@@ -62,18 +62,10 @@ public sealed partial class OutboxBridgeIntegrationTests
             (await reader.GetFieldValueAsync<DateTimeOffset>(1, AbortToken)).Should().BeAfter(beforePublish);
         }
 
-        var schedule = async () =>
-            await scope
-                .ServiceProvider.GetRequiredService<IJobScheduler>()
-                .ScheduleKeyedAsync(
-                    new JobKey(marker),
-                    DeadlineRegistration.Descriptor,
-                    provider.GetRequiredService<DeadlineEvidence>().Due,
-                    new JobOptions { Enlistment = TransactionEnlistment.Required },
-                    AbortToken
-                );
-        await schedule.Should().ThrowAsync<InvalidOperationException>().WithMessage("*requires a unit of work*");
-        (await _ReadDeadlineRowsAsync(provider, marker)).Should().BeEmpty();
+        // A durable delay is a Messaging row the relay releases later, never a Jobs row.
+        (await _ReadDeadlineRowsAsync(provider, marker))
+            .Should()
+            .BeEmpty();
         (await _ReadPublishedAsync(provider, marker)).Should().ContainSingle();
     }
 
@@ -300,7 +292,6 @@ public sealed partial class OutboxBridgeIntegrationTests
                             evidence.Due,
                             new JobOptions
                             {
-                                Enlistment = TransactionEnlistment.Required,
                                 CorrelationId = context.CorrelationId,
                                 CausationId = context.MessageId,
                                 TenantId = context.TenantId,

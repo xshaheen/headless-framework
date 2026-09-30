@@ -3,8 +3,6 @@
 using Headless.Hosting.Initialization;
 using Headless.Jobs;
 using Headless.Jobs.Entities;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Models;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
@@ -35,7 +33,6 @@ public abstract class JobsApplicationConfigurationConformanceTests<TFixture>(TFi
                     coordination.ClusterName = "application-dx";
                 }
             );
-            jobs.ConfigureJob<CoordinatedFacadeRequest>(new JobOptions { Enlistment = TransactionEnlistment.Required });
         });
         builder.Services.AddHeadlessMessaging(messaging =>
         {
@@ -53,13 +50,8 @@ public abstract class JobsApplicationConfigurationConformanceTests<TFixture>(TFi
             await using var scope = host.Services.CreateAsyncScope();
             var services = scope.ServiceProvider;
             var context = services.GetRequiredService<ApplicationContext>();
-            var scheduler = services.GetRequiredService<IJobScheduler>();
             var request = new CoordinatedFacadeRequest(Guid.NewGuid(), "application transaction");
             var dueAt = new DateTimeOffset(2035, 4, 5, 12, 30, 0, TimeSpan.FromHours(3));
-
-            var outsideTransaction = () => scheduler.ScheduleAsync(request, dueAt, AbortToken);
-            await outsideTransaction.Should().ThrowAsync<InvalidOperationException>();
-            (await fixture.CountTimeJobsAsync(AbortToken)).Should().Be(0);
 
             var sentinel = new InvalidOperationException("rollback application transaction");
             var scheduledId = Guid.Empty;

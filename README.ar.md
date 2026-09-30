@@ -624,7 +624,7 @@ Unit of work صريح: تبدأه من singleton factory في السطر الل�
 
 | Package | الوصف |
 |---------|-------|
-| [Headless.UnitOfWork.Abstractions](src/Headless.UnitOfWork.Abstractions/README.md) | الـ contracts بتاعة الـ unit of work: `IUnitOfWorkFactory` (singleton)، `IUnitOfWork`، `IUnitOfWorkResource`، `IUnitOfWorkFeature`، `TransactionEnlistment` (من غير dependencies) |
+| [Headless.UnitOfWork.Abstractions](src/Headless.UnitOfWork.Abstractions/README.md) | الـ contracts بتاعة الـ unit of work: `IUnitOfWorkFactory` (singleton)، `IUnitOfWork`، `IUnitOfWorkResource`، `IUnitOfWorkFeature` (من غير dependencies) |
 | [Headless.UnitOfWork](src/Headless.UnitOfWork/README.md) | الـ singleton factory والـ engine وتسجيل `AddUnitOfWork()` |
 | [Headless.UnitOfWork.EntityFramework](src/Headless.UnitOfWork.EntityFramework/README.md) | Provider للـ EF Core: `BeginAsync(db)` / `Enlist(db, tx)` / `RunAsync(db, ...)` |
 | [Headless.UnitOfWork.PostgreSql](src/Headless.UnitOfWork.PostgreSql/README.md) | Provider لـ `NpgsqlConnection` بالـ ADO الخام، بنفس الشكل |

@@ -36,7 +36,7 @@ solves a different problem. Pick by the question you are answering:
 |---|---|---|
 | **DistributedLocks** | **Mutual exclusion** — at most one worker in a critical section across processes | `IDistributedLock`, `IDistributedSemaphore`, `IDistributedReadWriteLock`, `IDistributedLease` |
 | **Coordination** | **Cluster membership / node liveness** — which nodes are alive, who owns what, reclaim a dead owner's work | `INodeMembership`, `INodeIdProvider`, `IDeadOwnerReclaimer`, `NodeLivenessState`, `MembershipLostBehavior` |
-| **UnitOfWork** | **Transaction outcome orchestration** — enlist durable outbox/job writes in the caller's transaction and defer dispatch/notifications until it commits | `IUnitOfWorkFactory`, `IUnitOfWork`, `IUnitOfWorkResource`, `IRelationalUnitOfWorkResource`, `IUnitOfWorkFeature`, and `TransactionEnlistment` (Jobs' knob; Messaging enlists by calling `unit.Outbox` instead) |
+| **UnitOfWork** | **Transaction outcome orchestration** — enlist durable outbox/job writes in the caller's transaction and defer dispatch/notifications until it commits | `IUnitOfWorkFactory`, `IUnitOfWork`, `IUnitOfWorkResource`, `IRelationalUnitOfWorkResource`, and `IUnitOfWorkFeature` (Messaging and Jobs enlist by calling `unit.Outbox` / `unit.Jobs`) |
 
 ### Quick disambiguation
 
@@ -51,18 +51,17 @@ application transaction and accelerate its dispatch after commit.
 
 ### Jobs transactional deadlines
 
-`JobOptions.Enlistment = TransactionEnlistment.Required` (or `RecurringJobOptions.Enlistment`) asserts that
-an ordinary or keyed one-shot deadline must share the caller's live relational transaction — the active
-`IUnitOfWork`'s resource. Jobs validates its actual configured database and captures the exact caller
+Scheduling through `unit.Jobs` makes an ordinary, keyed, or recurring deadline share the caller's live
+relational transaction — that unit's resource. Jobs validates its actual configured database and captures the exact caller
 connection and transaction before scheduling middleware. The Jobs-owned writer enlists the durable row
 immediately; only restart/notification acceleration waits for commit. Keyed results are provisional until
 the caller outcome, and operation savepoints protect replacement retirement plus insertion together.
 Missing or incompatible capabilities fail before middleware.
 
-`TransactionEnlistment` is Jobs-only now. Messaging once resolved the same enum with the same
-matrix; it makes the same choice structurally instead, by which publisher the call site uses
-(`IBus`/`IQueue` are autonomous, `unit.Outbox` writes inside the caller's transaction). The Jobs
-semantics above are untouched by that change.
+Neither domain has an enlistment option any more. Both once resolved a
+`TransactionEnlistment { Optional, Required }` guard; both now make the choice structurally, by which
+receiver the call site uses (`IBus`/`IQueue`/`IJobScheduler` are autonomous, `unit.Outbox` and
+`unit.Jobs` write inside the caller's transaction).
 
 A Messaging transport delay is a delivery setting, not this transaction capability. Distributed locks
 and membership also cannot make an application update and a Jobs row atomic. See
