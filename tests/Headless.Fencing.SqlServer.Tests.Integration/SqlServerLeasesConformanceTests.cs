@@ -145,6 +145,12 @@ public sealed class SqlServerLeasesConformanceTests(SqlServerFencingFixture fixt
     }
 
     [Fact]
+    public override Task should_refuse_a_key_no_provider_stores_unchanged_before_any_write()
+    {
+        return base.should_refuse_a_key_no_provider_stores_unchanged_before_any_write();
+    }
+
+    [Fact]
     public override Task should_reject_oversized_progress_before_any_write()
     {
         return base.should_reject_oversized_progress_before_any_write();
