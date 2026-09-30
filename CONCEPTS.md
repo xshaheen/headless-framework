@@ -208,6 +208,16 @@ enlisting receivers hang off the unit, not off DI: `unit.Outbox` for Messaging, 
 `unit.TimeJobs<T>()` / `unit.CronJobs<T>()` for Jobs. The injected `IBus`/`IQueue` and
 `IJobScheduler`/managers are the autonomous receivers — singletons that never enlist.
 
+### In-doubt commit
+
+A commit whose request may have reached the database but whose connection failed or timed out before
+an answer came back, so the transaction may or may not have committed. The unit ends `Failed` with
+`UnitOfWorkFailureReason.InDoubt`, `OnCompleted` never runs, and `CompleteAsync` (and every
+`RunAsync`) throws `UnitOfWorkInDoubtException`. It differs from a `Faulted` commit, which the
+database answered with an error or which was never sent, so it certainly did not commit. The
+recovery is to check the operation's durable idempotency key before retrying; enlisted outbox and
+job rows share the transaction's fate, and the relay delivers them if it committed.
+
 ### Transaction enlistment
 
 Whether a write joins the caller's transaction. The receiver the caller invokes is the only thing

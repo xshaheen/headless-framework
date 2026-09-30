@@ -14,11 +14,13 @@ namespace Tests;
 /// <paramref name="useProvider" /> configures. The context's execution strategy replays
 /// <see cref="ReplayableFaultException" /> once with no delay, and an interceptor raises the same fault before the
 /// commit reaches the database when a scenario arms it. The probe table is the provider fixture's
-/// <c>probe_rows</c>, so counting and resetting go through <paramref name="probes" />.
+/// <c>probe_rows</c>, so counting and resetting go through <paramref name="probes" />, and
+/// <paramref name="breakConnection" /> ends the context's database session the provider's own way.
 /// </summary>
 public sealed class EntityFrameworkReplayFixture(
     IUnitOfWorkRunFixture probes,
-    Action<DbContextOptionsBuilder> useProvider
+    Action<DbContextOptionsBuilder> useProvider,
+    Func<DbConnection, CancellationToken, Task> breakConnection
 ) : IUnitOfWorkReplayFixture
 {
     public bool ReplaysBeforeCommit => true;
@@ -44,7 +46,7 @@ public sealed class EntityFrameworkReplayFixture(
 
         return await factory.RunAsync(
             db,
-            (unitOfWork, ct) => operation(new Context(factory, db, unitOfWork, commitFault), ct),
+            (unitOfWork, ct) => operation(new Context(factory, db, unitOfWork, commitFault, breakConnection), ct),
             cancellationToken: cancellationToken
         );
     }
@@ -63,7 +65,8 @@ public sealed class EntityFrameworkReplayFixture(
         IUnitOfWorkFactory factory,
         ReplayProbeDbContext db,
         IUnitOfWork unitOfWork,
-        CommitFaultInterceptor commitFault
+        CommitFaultInterceptor commitFault,
+        Func<DbConnection, CancellationToken, Task> breakConnection
     ) : IUnitOfWorkReplayContext
     {
         public IUnitOfWork UnitOfWork => unitOfWork;
@@ -79,6 +82,11 @@ public sealed class EntityFrameworkReplayFixture(
             commitFault.Arm();
 
             return Task.CompletedTask;
+        }
+
+        public Task BreakConnectionAsync(CancellationToken cancellationToken)
+        {
+            return breakConnection(db.Database.GetDbConnection(), cancellationToken);
         }
 
         public Task RunJoinedAsync(

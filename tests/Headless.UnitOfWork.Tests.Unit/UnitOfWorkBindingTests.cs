@@ -23,7 +23,6 @@ public sealed class UnitOfWorkBindingTests : TestBase
         var factory = new UnitOfWorkFactory();
         var unit = await factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(new FakeUnitOfWorkResource()),
-            options: null,
             AbortToken
         );
         binding.Bind(key, unit);
@@ -45,11 +44,7 @@ public sealed class UnitOfWorkBindingTests : TestBase
         var key = new object();
         var factory = new UnitOfWorkFactory();
         var resource = new GatedResource();
-        var unit = await factory.BeginAsync(
-            _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
-            AbortToken
-        );
+        var unit = await factory.BeginAsync(_ => ValueTask.FromResult<IUnitOfWorkResource>(resource), AbortToken);
         UnitOfWorkFailure? failure = null;
         unit.OnFailed(f =>
         {
@@ -84,11 +79,7 @@ public sealed class UnitOfWorkBindingTests : TestBase
         var key = new object();
         var factory = new UnitOfWorkFactory();
         var resource = new FakeUnitOfWorkResource();
-        var unit = await factory.BeginAsync(
-            _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
-            AbortToken
-        );
+        var unit = await factory.BeginAsync(_ => ValueTask.FromResult<IUnitOfWorkResource>(resource), AbortToken);
         binding.Bind(key, unit);
         resource.TransactionCompleted = true;
 

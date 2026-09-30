@@ -113,9 +113,58 @@ public abstract class UnitOfWorkReplayConformanceTests(IUnitOfWorkReplayFixture 
         attempts.Should().Be(1, "a fault raised once the commit started must never replay the block");
         unit!.State.Should().Be(UnitOfWorkState.Failed);
         failure.Should().NotBeNull();
-        failure!.Reason.Should().Be(UnitOfWorkFailureReason.Faulted);
+        failure!
+            .Reason.Should()
+            .Be(UnitOfWorkFailureReason.Faulted, "the database answered the commit, or it was never sent");
         failure.Exception.Should().BeSameAs(thrown.Which, "the caller receives the commit's own fault");
+        thrown.Which.Should().NotBeOfType<UnitOfWorkInDoubtException>();
         (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(0, "the faulted commit made nothing durable");
+    }
+
+    [Fact]
+    public virtual async Task should_report_an_in_doubt_commit_without_replay_when_the_connection_fails_during_the_commit()
+    {
+        await fixture.ResetAsync(AbortToken);
+
+        var attempts = 0;
+        var completed = false;
+        IUnitOfWork? unit = null;
+        UnitOfWorkFailure? failure = null;
+
+        var act = () =>
+            fixture.RunAsync(
+                async (context, ct) =>
+                {
+                    attempts++;
+                    unit = context.UnitOfWork;
+                    context.UnitOfWork.OnFailed(f =>
+                    {
+                        failure = f;
+
+                        return ValueTask.CompletedTask;
+                    });
+                    context.UnitOfWork.OnCompleted(() =>
+                    {
+                        completed = true;
+
+                        return ValueTask.CompletedTask;
+                    });
+                    await context.InsertProbeRowAsync("in-doubt", ct);
+                    await context.BreakConnectionAsync(ct);
+
+                    return 1;
+                },
+                AbortToken
+            );
+
+        var thrown = (await act.Should().ThrowAsync<UnitOfWorkInDoubtException>()).Which;
+        thrown.InnerException.Should().NotBeNull("the driver's own fault is kept as the inner exception");
+        attempts.Should().Be(1, "an in-doubt commit may already be durable, so it is never replayed");
+        unit!.State.Should().Be(UnitOfWorkState.Failed);
+        failure.Should().NotBeNull();
+        failure!.Reason.Should().Be(UnitOfWorkFailureReason.InDoubt);
+        failure.Exception.Should().BeSameAs(thrown);
+        completed.Should().BeFalse("OnCompleted never runs for a commit whose outcome is unknown");
     }
 
     [Fact]

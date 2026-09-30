@@ -11,13 +11,13 @@ namespace Headless.UnitOfWork;
 /// <remarks>
 /// The factory is a <b>singleton</b> that holds no state about the units it opens: there is no ambient
 /// "current" unit, no per-scope slot, and no <see cref="System.Threading.AsyncLocal{T}" /> anywhere. A unit of
-/// work is the handle <see cref="BeginAsync(UnitOfWorkOptions?, CancellationToken)" /> returns, and anything that
+/// work is the handle <see cref="BeginAsync(CancellationToken)" /> returns, and anything that
 /// must take part in it — an enlisted publish, an enlisted job write, a save on a context the unit was begun on —
 /// receives that handle explicitly, as an argument or through the resource it was begun on. Because nothing is
 /// ambient, any service may take the factory, including singletons and hosted services.
 /// <para>
 /// The developer opens the unit of work explicitly, on the line they choose, by calling
-/// <see cref="BeginAsync(UnitOfWorkOptions?, CancellationToken)" /> (resource-less) or a provider extension such
+/// <see cref="BeginAsync(CancellationToken)" /> (resource-less) or a provider extension such
 /// as <c>BeginAsync(db)</c>. No middleware, filter, or consumer runtime opens one on the developer's behalf, and
 /// no begin joins another: two calls open two independent units, and a resource that already carries a live unit
 /// refuses a second begin — the callee is handed the unit instead.
@@ -40,10 +40,9 @@ public interface IUnitOfWorkFactory
     /// several independent transactional saves but wants one commit-drain edge; the only storage that can join
     /// it is one that captures rows on the unit itself.
     /// </remarks>
-    /// <param name="options">Optional unit-of-work options; currently reserved for future propagation knobs.</param>
     /// <param name="cancellationToken">Propagates the caller's cancellation; ignored once the unit is active.</param>
     /// <returns>The begun unit of work; the caller completes or disposes it.</returns>
-    ValueTask<IUnitOfWork> BeginAsync(UnitOfWorkOptions? options = null, CancellationToken cancellationToken = default);
+    ValueTask<IUnitOfWork> BeginAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Provider primitive: begins a unit of work whose transaction is created by <paramref name="beginResource" />.
@@ -54,13 +53,11 @@ public interface IUnitOfWorkFactory
     /// it was begun on. Hidden from IntelliSense because only provider packages call it.
     /// </remarks>
     /// <param name="beginResource">Factory that begins the resource (and its transaction) and returns it.</param>
-    /// <param name="options">Optional unit-of-work options.</param>
     /// <param name="cancellationToken">Forwarded to <paramref name="beginResource" />.</param>
     /// <returns>The begun unit of work owning the resource returned by <paramref name="beginResource" />.</returns>
     [EditorBrowsable(EditorBrowsableState.Never)]
     ValueTask<IUnitOfWork> BeginAsync(
         Func<CancellationToken, ValueTask<IUnitOfWorkResource>> beginResource,
-        UnitOfWorkOptions? options,
         CancellationToken cancellationToken
     );
 
@@ -76,8 +73,7 @@ public interface IUnitOfWorkFactory
     /// IntelliSense because only provider packages call it.
     /// </remarks>
     /// <param name="resource">The resource exposing the caller-owned transaction.</param>
-    /// <param name="options">Optional unit-of-work options.</param>
     /// <returns>The enlisted unit of work.</returns>
     [EditorBrowsable(EditorBrowsableState.Never)]
-    IUnitOfWork Enlist(IUnitOfWorkResource resource, UnitOfWorkOptions? options = null);
+    IUnitOfWork Enlist(IUnitOfWorkResource resource);
 }
