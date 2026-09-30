@@ -10,8 +10,8 @@ namespace Headless.MultiTenancy;
 public static class SetupHeadlessTenancyTelemetry
 {
     /// <summary>
-    /// Configures <see cref="TenantTelemetryOptions"/>: the log scope property and span/metric attribute names, and
-    /// which channels are enriched. Enrichment is on with the defaults when this is never called.
+    /// Configures <see cref="TenantTelemetryOptions"/>: the log and span attribute names, and which channels are
+    /// enriched. Enrichment is on with the defaults when this is never called.
     /// </summary>
     /// <param name="builder">The root tenancy builder.</param>
     /// <param name="configure">The options callback.</param>

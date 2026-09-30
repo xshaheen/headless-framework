@@ -12,94 +12,55 @@ namespace Tests;
 public sealed class TenantTelemetryTests : TestBase
 {
     [Fact]
-    public void should_tag_current_activity_and_open_log_scope_with_default_names()
+    public void should_tag_activity_with_default_attribute_name()
     {
         // given
-        var logger = new ScopeRecordingLogger<TenantTelemetryTests>();
         using var recorded = RecordedTestActivity.Start();
 
         // when
-        using (TenantTelemetry.Enrich(logger, new TenantTelemetryOptions(), "acme"))
-        {
-            // then
-            logger.GetActiveScopeProperties().Should().ContainSingle().Which.Should().Be(_Pair("TenantId", "acme"));
-        }
+        TenantTelemetry.TagActivity(recorded.Activity, new TenantTelemetryOptions(), "acme");
 
+        // then
         recorded.Activity.GetTagItem("tenant.id").Should().Be("acme");
-        logger.GetActiveScopeProperties().Should().BeEmpty();
     }
 
     [Fact]
-    public void should_use_configured_names()
+    public void should_tag_activity_with_configured_attribute_name()
     {
         // given
-        var logger = new ScopeRecordingLogger<TenantTelemetryTests>();
-        var options = new TenantTelemetryOptions { LogScopePropertyName = "Tenant", AttributeName = "app.tenant" };
+        var options = new TenantTelemetryOptions { AttributeName = "app.tenant" };
         using var recorded = RecordedTestActivity.Start();
 
         // when
-        using (TenantTelemetry.Enrich(logger, options, "acme"))
-        {
-            // then
-            logger.GetActiveScopeProperties().Should().ContainSingle().Which.Should().Be(_Pair("Tenant", "acme"));
-        }
+        TenantTelemetry.TagActivity(recorded.Activity, options, "acme");
 
+        // then
         recorded.Activity.GetTagItem("app.tenant").Should().Be("acme");
         recorded.Activity.GetTagItem("tenant.id").Should().BeNull();
     }
 
     [Fact]
-    public void should_skip_disabled_channels()
+    public void should_not_tag_activity_when_traces_disabled()
     {
         // given
-        var logger = new ScopeRecordingLogger<TenantTelemetryTests>();
-        var options = new TenantTelemetryOptions { EnrichLogs = false, EnrichTraces = false };
+        var options = new TenantTelemetryOptions { EnrichTraces = false };
         using var recorded = RecordedTestActivity.Start();
 
         // when
-        using var scope = TenantTelemetry.Enrich(logger, options, "acme");
+        TenantTelemetry.TagActivity(recorded.Activity, options, "acme");
 
         // then
-        scope.Should().BeNull();
-        logger.GetActiveScopeProperties().Should().BeEmpty();
         recorded.Activity.GetTagItem("tenant.id").Should().BeNull();
     }
 
     [Fact]
-    public void should_open_no_scope_without_logger_or_activity()
+    public void should_ignore_null_activity()
     {
         // when
-        var scope = TenantTelemetry.Enrich(logger: null, new TenantTelemetryOptions(), "acme");
+        var act = () => TenantTelemetry.TagActivity(activity: null, new TenantTelemetryOptions(), "acme");
 
         // then
-        scope.Should().BeNull();
-    }
-
-    [Fact]
-    public void should_return_metric_tag_for_ambient_tenant()
-    {
-        // given
-        var currentTenant = new TestCurrentTenant { Id = "acme" };
-
-        // when
-        var found = TenantTelemetry.TryGetMetricTag(currentTenant, new TenantTelemetryOptions(), out var tag);
-
-        // then
-        found.Should().BeTrue();
-        tag.Should().Be(_Pair("tenant.id", "acme"));
-    }
-
-    [Fact]
-    public void should_return_no_metric_tag_without_tenant_or_when_disabled()
-    {
-        // given
-        var noTenant = new TestCurrentTenant();
-        var withTenant = new TestCurrentTenant { Id = "acme" };
-        var disabled = new TenantTelemetryOptions { EnrichMetrics = false };
-
-        // when / then
-        TenantTelemetry.TryGetMetricTag(noTenant, new TenantTelemetryOptions(), out _).Should().BeFalse();
-        TenantTelemetry.TryGetMetricTag(withTenant, disabled, out _).Should().BeFalse();
+        act.Should().NotThrow();
     }
 
     [Fact]
@@ -114,8 +75,7 @@ public sealed class TenantTelemetryTests : TestBase
         // then
         options.EnrichLogs.Should().BeTrue();
         options.EnrichTraces.Should().BeTrue();
-        options.EnrichMetrics.Should().BeTrue();
-        options.LogScopePropertyName.Should().Be(TenantTelemetryOptions.DefaultLogScopePropertyName);
+        options.LogAttributeName.Should().Be(TenantTelemetryOptions.DefaultLogAttributeName);
         options.AttributeName.Should().Be(TenantTelemetryOptions.DefaultAttributeName);
     }
 
@@ -133,12 +93,20 @@ public sealed class TenantTelemetryTests : TestBase
         provider.GetRequiredService<IOptions<TenantTelemetryOptions>>().Value.AttributeName.Should().Be("app.tenant");
     }
 
-    [Fact]
-    public void should_reject_blank_name_for_enabled_channel()
+    [Theory]
+    [InlineData(" ", "tenant.id")]
+    [InlineData("TenantId", "")]
+    public void should_reject_blank_names(string logAttributeName, string attributeName)
     {
         // given
         var builder = Host.CreateApplicationBuilder();
-        builder.AddHeadlessTenancy(tenancy => tenancy.Telemetry(options => options.LogScopePropertyName = " "));
+        builder.AddHeadlessTenancy(tenancy =>
+            tenancy.Telemetry(options =>
+            {
+                options.LogAttributeName = logAttributeName;
+                options.AttributeName = attributeName;
+            })
+        );
         using var provider = builder.Services.BuildServiceProvider();
 
         // when
@@ -149,16 +117,15 @@ public sealed class TenantTelemetryTests : TestBase
     }
 
     [Fact]
-    public void should_accept_blank_name_for_disabled_channel()
+    public void should_accept_blank_log_attribute_name_when_logs_disabled()
     {
         // given
         var builder = Host.CreateApplicationBuilder();
         builder.AddHeadlessTenancy(tenancy =>
             tenancy.Telemetry(options =>
             {
-                options.EnrichTraces = false;
-                options.EnrichMetrics = false;
-                options.AttributeName = "";
+                options.EnrichLogs = false;
+                options.LogAttributeName = "";
             })
         );
         using var provider = builder.Services.BuildServiceProvider();
@@ -167,11 +134,6 @@ public sealed class TenantTelemetryTests : TestBase
         var options = provider.GetRequiredService<IOptions<TenantTelemetryOptions>>().Value;
 
         // then
-        options.AttributeName.Should().BeEmpty();
-    }
-
-    private static KeyValuePair<string, object?> _Pair(string key, string value)
-    {
-        return new(key, value);
+        options.LogAttributeName.Should().BeEmpty();
     }
 }

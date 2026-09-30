@@ -6,6 +6,7 @@ using Headless.Checks;
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -166,8 +167,14 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
                 // issuer, authority) must observe the resolved tenant on that first authenticate call or
                 // permanently observe host context, defeating the reason this middleware runs pre-auth.
                 // The rejection writer reads no ambient tenant state, so rejection semantics are unchanged.
+                // Tagged before the claim check so a rejected request is still attributed to the tenant it targeted.
+                TenantTelemetry.TagActivity(
+                    context.Features.Get<IHttpActivityFeature>()?.Activity,
+                    _telemetryOptions,
+                    tenant.Id
+                );
+
                 using (currentTenant.Change(tenant.Id, tenant.Name))
-                using (TenantTelemetry.Enrich(logger, _telemetryOptions, tenant.Id))
                 {
                     var rejected = await _RejectOnClaimMismatchAsync(
                             context,

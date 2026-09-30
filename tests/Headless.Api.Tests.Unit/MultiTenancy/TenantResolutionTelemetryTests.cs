@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using System.Security.Claims;
 using Headless.Api;
 using Headless.Api.Middlewares;
@@ -9,73 +10,83 @@ using Headless.MultiTenancy;
 using Headless.Testing.Helpers;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Tests.MultiTenancy;
 
 /// <summary>
-/// Pins tenant telemetry at both HTTP entry points: while the inner pipeline runs, the <c>TenantId</c> logging scope
-/// is active and the request span carries <c>tenant.id</c>; once the middleware returns the scope is gone, while the
-/// span keeps the tag because it is exported after the middleware returns.
+/// Pins the request-span tag at both HTTP entry points. The request span starts before the tenant is resolved, so the
+/// telemetry pipeline cannot tag it at start; the middleware tags the span the host recorded for the request.
 /// </summary>
 public sealed class TenantResolutionTelemetryTests : TestBase
 {
-    private static readonly KeyValuePair<string, object?> _TenantScopeProperty = new("TenantId", "TENANT-1");
-
     [Fact]
-    public async Task should_enrich_logs_and_span_during_claim_resolved_request()
+    public async Task should_tag_request_span_for_claim_resolved_request()
     {
         // given
-        var logger = new ScopeRecordingLogger<TenantResolutionMiddleware>();
-        var observed = new Observed();
-        var middleware = new TenantResolutionMiddleware(
-            _ => observed.Capture(logger),
-            Options.Create(new MultiTenancyOptions { ClaimType = UserClaimTypes.TenantId }),
-            Options.Create(new TenantTelemetryOptions()),
-            logger
-        );
-        var context = _CreateContext(tenantClaim: "TENANT-1");
         using var request = RecordedTestActivity.Start();
+        var middleware = _CreateClaimMiddleware(new TenantTelemetryOptions());
 
         // when
-        await middleware.InvokeAsync(context, new TestCurrentTenant());
+        await middleware.InvokeAsync(_CreateContext("TENANT-1", request.Activity), new TestCurrentTenant());
 
         // then
-        observed.ScopeProperties.Should().ContainSingle().Which.Should().Be(_TenantScopeProperty);
-        observed.SpanTenant.Should().Be("TENANT-1");
-        logger.GetActiveScopeProperties().Should().BeEmpty();
         request.Activity.GetTagItem("tenant.id").Should().Be("TENANT-1");
     }
 
     [Fact]
-    public async Task should_not_enrich_when_request_has_no_tenant_claim()
+    public async Task should_tag_request_span_rather_than_current_child_span()
     {
         // given
-        var logger = new ScopeRecordingLogger<TenantResolutionMiddleware>();
-        var observed = new Observed();
-        var middleware = new TenantResolutionMiddleware(
-            _ => observed.Capture(logger),
-            Options.Create(new MultiTenancyOptions { ClaimType = UserClaimTypes.TenantId }),
-            Options.Create(new TenantTelemetryOptions()),
-            logger
-        );
         using var request = RecordedTestActivity.Start();
+        using var child = new Activity("child");
+        child.Start();
+        var middleware = _CreateClaimMiddleware(new TenantTelemetryOptions());
 
         // when
-        await middleware.InvokeAsync(_CreateContext(tenantClaim: null), new TestCurrentTenant());
+        await middleware.InvokeAsync(_CreateContext("TENANT-1", request.Activity), new TestCurrentTenant());
 
         // then
-        observed.ScopeProperties.Should().BeEmpty();
-        observed.SpanTenant.Should().BeNull();
+        request.Activity.GetTagItem("tenant.id").Should().Be("TENANT-1");
+        child.GetTagItem("tenant.id").Should().BeNull();
     }
 
     [Fact]
-    public async Task should_enrich_logs_and_span_during_catalog_resolved_request()
+    public async Task should_not_tag_when_request_has_no_tenant_claim()
     {
         // given
-        var logger = new ScopeRecordingLogger<TenantCatalogResolutionMiddleware>();
-        var observed = new Observed();
+        using var request = RecordedTestActivity.Start();
+        var middleware = _CreateClaimMiddleware(new TenantTelemetryOptions());
+
+        // when
+        await middleware.InvokeAsync(_CreateContext(tenantClaim: null, request.Activity), new TestCurrentTenant());
+
+        // then
+        request.Activity.GetTagItem("tenant.id").Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_not_tag_when_traces_disabled()
+    {
+        // given
+        using var request = RecordedTestActivity.Start();
+        var middleware = _CreateClaimMiddleware(new TenantTelemetryOptions { EnrichTraces = false });
+
+        // when
+        await middleware.InvokeAsync(_CreateContext("TENANT-1", request.Activity), new TestCurrentTenant());
+
+        // then
+        request.Activity.GetTagItem("tenant.id").Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_tag_request_span_for_catalog_resolved_request()
+    {
+        // given
+        using var request = RecordedTestActivity.Start();
         var source = Substitute.For<ITenantIdentifierSource>();
         source.GetIdentifier(Arg.Any<HttpContext>()).Returns(TenantIdentifierSourceResult.Found("acme"));
         var catalog = Substitute.For<ITenantCatalogService>();
@@ -83,49 +94,36 @@ public sealed class TenantResolutionTelemetryTests : TestBase
             .ResolveAsync("acme", Arg.Any<CancellationToken>())
             .Returns(TenantResolutionOutcome.Resolved(new TenantInfo("TENANT-1", "acme", "Acme", isEnabled: true)));
         var middleware = new TenantCatalogResolutionMiddleware(
-            _ => observed.Capture(logger),
+            _ => Task.CompletedTask,
             [source],
             Options.Create(new TenantCatalogOptions()),
             Options.Create(new MultiTenancyOptions { ClaimType = UserClaimTypes.TenantId }),
             Options.Create(new TenantTelemetryOptions()),
-            logger
+            NullLogger<TenantCatalogResolutionMiddleware>.Instance
         );
-        var context = _CreateContext(tenantClaim: null);
-        using var request = RecordedTestActivity.Start();
 
         // when
-        await middleware.InvokeAsync(context, new TestCurrentTenant(), catalog);
+        await middleware.InvokeAsync(
+            _CreateContext(tenantClaim: null, request.Activity),
+            new TestCurrentTenant(),
+            catalog
+        );
 
         // then
-        observed.ScopeProperties.Should().ContainSingle().Which.Should().Be(_TenantScopeProperty);
-        observed.SpanTenant.Should().Be("TENANT-1");
-        logger.GetActiveScopeProperties().Should().BeEmpty();
         request.Activity.GetTagItem("tenant.id").Should().Be("TENANT-1");
     }
 
-    [Fact]
-    public async Task should_skip_disabled_channels()
+    private static TenantResolutionMiddleware _CreateClaimMiddleware(TenantTelemetryOptions telemetry)
     {
-        // given
-        var logger = new ScopeRecordingLogger<TenantResolutionMiddleware>();
-        var observed = new Observed();
-        var middleware = new TenantResolutionMiddleware(
-            _ => observed.Capture(logger),
+        return new TenantResolutionMiddleware(
+            _ => Task.CompletedTask,
             Options.Create(new MultiTenancyOptions { ClaimType = UserClaimTypes.TenantId }),
-            Options.Create(new TenantTelemetryOptions { EnrichLogs = false, EnrichTraces = false }),
-            logger
+            Options.Create(telemetry),
+            NullLogger<TenantResolutionMiddleware>.Instance
         );
-        using var request = RecordedTestActivity.Start();
-
-        // when
-        await middleware.InvokeAsync(_CreateContext(tenantClaim: "TENANT-1"), new TestCurrentTenant());
-
-        // then
-        observed.ScopeProperties.Should().BeEmpty();
-        observed.SpanTenant.Should().BeNull();
     }
 
-    private static DefaultHttpContext _CreateContext(string? tenantClaim)
+    private static DefaultHttpContext _CreateContext(string? tenantClaim, Activity requestActivity)
     {
         List<Claim> claims = [new(UserClaimTypes.Name, "alice")];
 
@@ -134,25 +132,18 @@ public sealed class TenantResolutionTelemetryTests : TestBase
             claims.Add(new Claim(UserClaimTypes.TenantId, tenantClaim));
         }
 
-        return new DefaultHttpContext
+        var context = new DefaultHttpContext
         {
             User = new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType: "Test")),
             RequestServices = new ServiceCollection().BuildServiceProvider(),
         };
+        context.Features.Set<IHttpActivityFeature>(new RequestActivityFeature(requestActivity));
+
+        return context;
     }
 
-    private sealed class Observed
+    private sealed class RequestActivityFeature(Activity activity) : IHttpActivityFeature
     {
-        public IReadOnlyList<KeyValuePair<string, object?>> ScopeProperties { get; private set; } = [];
-
-        public object? SpanTenant { get; private set; }
-
-        public Task Capture<T>(ScopeRecordingLogger<T> logger)
-        {
-            ScopeProperties = logger.GetActiveScopeProperties();
-            SpanTenant = System.Diagnostics.Activity.Current?.GetTagItem("tenant.id");
-
-            return Task.CompletedTask;
-        }
+        public Activity Activity { get; set; } = activity;
     }
 }

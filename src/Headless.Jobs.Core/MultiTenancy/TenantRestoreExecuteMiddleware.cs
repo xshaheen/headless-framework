@@ -24,15 +24,11 @@ namespace Headless.Jobs.MultiTenancy;
 public sealed class TenantRestoreExecuteMiddleware(
     ICurrentTenant currentTenant,
     IOptions<JobsTenancyOptions> options,
-    ILogger<TenantRestoreExecuteMiddleware>? logger = null,
-    IOptions<TenantTelemetryOptions>? telemetryOptions = null
+    ILogger<TenantRestoreExecuteMiddleware>? logger = null
 ) : IJobExecuteMiddleware
 {
-    private static readonly TenantTelemetryOptions _DefaultTelemetryOptions = new();
-
     private readonly ICurrentTenant _currentTenant = Argument.IsNotNull(currentTenant);
     private readonly JobsTenancyOptions _options = Argument.IsNotNull(options).Value;
-    private readonly TenantTelemetryOptions _telemetryOptions = telemetryOptions?.Value ?? _DefaultTelemetryOptions;
 
     /// <inheritdoc/>
     public async Task InvokeAsync(
@@ -61,9 +57,6 @@ public sealed class TenantRestoreExecuteMiddleware(
         // the scope so the attempt runs system scope even if an ambient tenant leaked onto the worker. The scope reverts
         // to the prior ambient on dispose — success, fault, or cancellation.
         using var scope = _currentTenant.Change(tenantId);
-        using var telemetryScope = tenantId is null
-            ? null
-            : TenantTelemetry.Enrich(logger, _telemetryOptions, tenantId);
 
         if (tenantId is not null)
         {

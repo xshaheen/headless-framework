@@ -6,6 +6,7 @@ using Headless.Checks;
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -96,7 +97,12 @@ internal sealed partial class TenantResolutionMiddleware(
 
         // Claim-only host: no catalog resolution ran for this request, so no display name is known.
         using var _ = currentTenant.Change(tenantId);
-        using var __ = TenantTelemetry.Enrich(logger, _telemetryOptions, tenantId);
+        // The request span started before the tenant was known, so the pipeline's start-time tagging missed it.
+        TenantTelemetry.TagActivity(
+            context.Features.Get<IHttpActivityFeature>()?.Activity,
+            _telemetryOptions,
+            tenantId
+        );
         await next(context).ConfigureAwait(false);
     }
 
