@@ -2,73 +2,136 @@
 
 using System.Net;
 using Headless.Api.ServiceDefaults;
-using Headless.Http.Effects;
+using Headless.Payments.Paymob.CashOut;
+using Headless.Payments.Paymob.CashOut.Models;
 using Headless.Sms;
-using Headless.Sms.Connekio;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Http;
 
 namespace Tests;
 
 /// <summary>
-/// Answers the ServiceDefaults stacking question with an attempt count: when an app applies
-/// <c>AddHeadless()</c> (whose HttpClient defaults add the standard resilience handler to every
-/// client) <i>and</i> registers an SMS provider whose own handler disables retry, the SMS
-/// no-retry opt-out must still hold — the declared effect wins over the host-wide default.
+/// Answers the ServiceDefaults stacking question with attempt counts. <c>AddHeadless()</c> adds the standard
+/// resilience handler to every client through <c>ConfigureHttpClientDefaults</c>; that handler becomes an outer
+/// pipeline around the provider's own, so a provider-level no-retry opt-out is defeated unless the provider's
+/// pipeline removes it. The declared effect must win regardless of which is registered first.
 /// </summary>
 /// <remarks>
-/// The provider's endpoints are validated as https URLs, so the wire is stubbed at the handler
-/// level: the named client's primary handler counts attempts and answers 503. Attempt count is
-/// exactly what the stacking question turns on, and it is visible there as on a real wire.
+/// Provider endpoints are validated as https URLs, so the wire is stubbed at the primary handler: it counts attempts
+/// and answers 503. The attempt count is exactly what the stacking question turns on.
 /// </remarks>
 public sealed class ServiceDefaultsStackingTests : TestBase
 {
-    [Fact]
-    public async Task should_not_retry_sms_send_when_service_defaults_handler_stacks()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_not_retry_sms_send_under_service_defaults(bool serviceDefaultsFirst)
     {
-        // given - a host with ServiceDefaults HttpClient defaults ON (the default), plus Connekio
-        // selected as the SMS provider.
-        var counter = new AttemptCountingHandler();
+        // given - ServiceDefaults HttpClient defaults ON (the default), plus Connekio as the SMS provider.
+        using var counter = new AttemptCountingHandler();
+        var builder = _CreateBuilder(counter);
 
-        var builder = WebApplication.CreateBuilder();
-        _AddDefaultHeadlessSecurityConfiguration(builder);
-
-        builder.AddHeadless();
-        builder.Services.AddHeadlessSms(setup =>
-            setup.UseConnekio(
-                options =>
-                {
-                    options.Sender = "SENDER";
-                    options.AccountId = "account";
-                    options.UserName = "user";
-                    options.Password = "pass";
-                },
-                configureClient: null,
-                configureResilience: null
-            )
+        _Register(
+            builder,
+            serviceDefaultsFirst,
+            services =>
+                services.AddHeadlessSms(setup =>
+                    setup.UseConnekio(options =>
+                    {
+                        options.Sender = "SENDER";
+                        options.AccountId = "account";
+                        options.UserName = "user";
+                        options.Password = "pass";
+                    })
+                )
         );
-
-        // Route the Connekio client's primary handler at the counter AFTER AddHeadless applied the
-        // host-wide defaults, so both pipelines are in play exactly as in a real host.
-        builder.Services.ConfigureHttpClientDefaults(http => http.ConfigurePrimaryHttpMessageHandler(() => counter));
 
         await using var provider = builder.Services.BuildServiceProvider();
 
         // when
-        var sender = provider.GetRequiredService<ISmsSender>();
-        var result = await sender.SendAsync(SmsRequests.Single(), AbortToken);
+        var result = await provider.GetRequiredService<ISmsSender>().SendAsync(SmsRequests.Single(), AbortToken);
 
-        // then - failed (503), and exactly one send reached the wire: neither the provider's own
-        // pipeline nor the host-wide default pipeline retried it.
+        // then - one attempt: neither the provider pipeline nor the host-wide default pipeline retried the send.
         result.Success.Should().BeFalse();
-        counter.Attempts.Should().Be(1, "the SMS no-retry opt-out must survive the ServiceDefaults default handler");
+        counter
+            .Count(HttpMethod.Post)
+            .Should()
+            .Be(1, "the declared Unsafe effect must survive the ServiceDefaults handler");
     }
 
-    private static void _AddDefaultHeadlessSecurityConfiguration(WebApplicationBuilder builder)
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_not_retry_paymob_disburse_under_service_defaults(bool serviceDefaultsFirst)
     {
+        // given
+        using var counter = new AttemptCountingHandler();
+        var builder = _CreateBuilder(counter);
+        _Register(builder, serviceDefaultsFirst, _AddPaymobCashOut);
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var broker = scope.ServiceProvider.GetRequiredService<IPaymobCashOutBroker>();
+
+        // when
+        var act = async () =>
+            await broker.DisburseAsync(CashOutDisburseRequest.Vodafone(100m, "01012345678"), AbortToken);
+
+        // then - the payout POST reached the wire exactly once.
+        await act.Should().ThrowAsync<PaymobCashOutException>();
+        counter.Count(HttpMethod.Post).Should().Be(1, "a payout POST must never be retried automatically");
+    }
+
+    [Fact]
+    public async Task should_still_retry_paymob_budget_read_under_service_defaults()
+    {
+        // given - the Unsafe declaration covers mutating methods only; reads stay retryable.
+        using var counter = new AttemptCountingHandler();
+        var builder = _CreateBuilder(counter);
+        _Register(builder, serviceDefaultsFirst: true, _AddPaymobCashOut);
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var broker = scope.ServiceProvider.GetRequiredService<IPaymobCashOutBroker>();
+
+        // when
+        var act = async () => await broker.GetBudgetAsync(AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<PaymobCashOutException>();
+        counter.Count(HttpMethod.Get).Should().BeGreaterThan(1);
+    }
+
+    private static void _AddPaymobCashOut(IServiceCollection services)
+    {
+        // The options are init-only, so configuration binding is the overload a consumer uses.
+        services.AddPaymobCashOut(
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(
+                    new Dictionary<string, string?>(StringComparer.Ordinal)
+                    {
+                        ["ApiBaseUrl"] = "https://accept.paymob.test/v1/",
+                        ["UserName"] = "user",
+                        ["Password"] = "pass",
+                        ["ClientId"] = "client",
+                        ["ClientSecret"] = "secret",
+                    }
+                )
+                .Build()
+        );
+
+        // Registered after AddPaymobCashOut so the last registration wins and no real token call is made.
+        var authenticator = Substitute.For<IPaymobCashOutAuthenticator>();
+        authenticator.GetAccessTokenAsync(Arg.Any<CancellationToken>()).Returns("token");
+        services.AddSingleton(authenticator);
+    }
+
+    private static WebApplicationBuilder _CreateBuilder(AttemptCountingHandler counter)
+    {
+        var builder = WebApplication.CreateBuilder();
+
         builder.Configuration.AddInMemoryCollection(
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
@@ -78,20 +141,56 @@ public sealed class ServiceDefaultsStackingTests : TestBase
                 ["Headless:LookupHasher:DefaultSalt"] = "TestSalt",
             }
         );
+
+        builder.Services.ConfigureHttpClientDefaults(http => http.ConfigurePrimaryHttpMessageHandler(() => counter));
+
+        return builder;
+    }
+
+    // Registration order must not matter: HttpClientFactory runs default-client configuration before named-client
+    // configuration whichever was registered first.
+    private static void _Register(
+        WebApplicationBuilder builder,
+        bool serviceDefaultsFirst,
+        Action<IServiceCollection> registerProvider
+    )
+    {
+        if (serviceDefaultsFirst)
+        {
+            builder.AddHeadless();
+            registerProvider(builder.Services);
+        }
+        else
+        {
+            registerProvider(builder.Services);
+            builder.AddHeadless();
+        }
     }
 
     private sealed class AttemptCountingHandler : HttpMessageHandler
     {
-        public int Attempts { get; private set; }
+        private readonly Dictionary<HttpMethod, int> _attempts = [];
+
+        public int Count(HttpMethod method)
+        {
+            lock (_attempts)
+            {
+                return _attempts.GetValueOrDefault(method);
+            }
+        }
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken
         )
         {
-            Attempts++;
+            lock (_attempts)
+            {
+                _attempts[request.Method] = _attempts.GetValueOrDefault(request.Method) + 1;
+            }
+
             return Task.FromResult(
-                new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { Content = new StringContent("t") }
+                new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { Content = new StringContent("transient") }
             );
         }
     }

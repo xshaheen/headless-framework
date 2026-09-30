@@ -4,6 +4,7 @@ using System.Net;
 using Headless.Http.Effects;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http.Resilience;
 using Polly;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
@@ -35,7 +36,7 @@ public sealed class EffectResilienceTests : TestBase, IDisposable
 
         // when
         using var client = provider.GetRequiredService<IHttpClientFactory>().CreateClient("test");
-        using var response = await client.PostAsync($"{_server.Urls[0]}/unsafe", new StringContent("{}"), AbortToken);
+        using var response = await _PostAsync(client, "/unsafe");
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
@@ -85,11 +86,7 @@ public sealed class EffectResilienceTests : TestBase, IDisposable
 
         // when
         using var client = provider.GetRequiredService<IHttpClientFactory>().CreateClient("test");
-        using var response = await client.PostAsync(
-            $"{_server.Urls[0]}/idempotent",
-            new StringContent("{}"),
-            AbortToken
-        );
+        using var response = await _PostAsync(client, "/idempotent");
 
         // then - retried, and every attempt of this logical call carries the same key.
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
@@ -100,7 +97,7 @@ public sealed class EffectResilienceTests : TestBase, IDisposable
         var keys = entries
             .Select(static e => e.RequestMessage?.Headers?["Idempotency-Key"]?.ToString())
             .Where(static k => k is not null)
-            .Distinct()
+            .Distinct(StringComparer.Ordinal)
             .ToList();
 
         keys.Should().ContainSingle("retries of one logical call must reuse the key minted for it");
@@ -121,11 +118,7 @@ public sealed class EffectResilienceTests : TestBase, IDisposable
 
         // when
         using var client = provider.GetRequiredService<IHttpClientFactory>().CreateClient("test");
-        using var response = await client.PostAsync(
-            $"{_server.Urls[0]}/unsafe-opt-in",
-            new StringContent("{}"),
-            AbortToken
-        );
+        using var response = await _PostAsync(client, "/unsafe-opt-in");
 
         // then - the consumer explicitly took retry ownership back.
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
@@ -133,22 +126,40 @@ public sealed class EffectResilienceTests : TestBase, IDisposable
     }
 
     [Fact]
-    public void should_remove_host_wide_default_handler_when_deriving_the_pipeline()
+    public async Task should_retry_post_when_a_per_client_opt_out_stacks_under_a_host_wide_handler()
     {
-        // given - a host-wide default handler (service defaults shape) applied before the effect one.
+        // Characterizes the library behavior behind the stacking defect: a second standard handler is added, not
+        // swapped in, so the host-wide one becomes an outer pipeline whose stock retry ignores the inner opt-out.
+        // This is the shape of every hand-written opt-out (SMS, Captcha, the first Paymob fix) under ServiceDefaults.
+        _StubTransient("/stacked-opt-out");
         var services = new ServiceCollection();
         services.ConfigureHttpClientDefaults(http => http.AddStandardResilienceHandler());
+        services
+            .AddHttpClient("test")
+            .AddStandardResilienceHandler(options => options.Retry.DisableForUnsafeHttpMethods());
+        await using var provider = services.BuildServiceProvider();
 
-        // when
-        services.AddHttpClient("stacked").AddEffectResilienceHandler(OutboundEffect.Unsafe);
+        using var client = provider.GetRequiredService<IHttpClientFactory>().CreateClient("test");
+        using var response = await _PostAsync(client, "/stacked-opt-out");
 
-        // then - the effect handler replaced the default one instead of stacking under it; a leftover
-        // outer standard pipeline would surface as a second "standard" pipeline options registration.
-        using var provider = services.BuildServiceProvider();
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        _CountRequests("/stacked-opt-out").Should().BeGreaterThan(1, "the outer host-wide pipeline retries the POST");
+    }
 
-        using var client = provider.GetRequiredService<IHttpClientFactory>().CreateClient("stacked");
+    [Fact]
+    public async Task should_not_retry_unsafe_post_when_a_host_wide_handler_is_configured()
+    {
+        _StubTransient("/stacked-effect");
+        var services = new ServiceCollection();
+        services.ConfigureHttpClientDefaults(http => http.AddStandardResilienceHandler());
+        services.AddHttpClient("test").AddEffectResilienceHandler(OutboundEffect.Unsafe);
+        await using var provider = services.BuildServiceProvider();
 
-        client.Should().NotBeNull();
+        using var client = provider.GetRequiredService<IHttpClientFactory>().CreateClient("test");
+        using var response = await _PostAsync(client, "/stacked-effect");
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        _CountRequests("/stacked-effect").Should().Be(1, "the derived pipeline removes the host-wide handler");
     }
 
     private void _StubTransient(string path)
@@ -160,7 +171,14 @@ public sealed class EffectResilienceTests : TestBase, IDisposable
 
     private int _CountRequests(string path)
     {
-        return _server.FindLogEntries(Request.Create().WithPath(path)).Count();
+        return _server.FindLogEntries(Request.Create().WithPath(path)).Count;
+    }
+
+    private async Task<HttpResponseMessage> _PostAsync(HttpClient client, string path)
+    {
+        using var content = new StringContent("{}");
+
+        return await client.PostAsync($"{_server.Urls[0]}{path}", content, AbortToken);
     }
 
     private static ServiceProvider _BuildProvider(Action<IHttpClientBuilder> configureClient)
