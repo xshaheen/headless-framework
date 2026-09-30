@@ -14,9 +14,9 @@ namespace Headless.Messaging.Storage.PostgreSql;
 
 internal sealed partial class PostgreSqlDataStorage
 {
-    private string InboxReceiptsTable => $"\"{storageOptions.Value.Schema}\".\"inbox_operation_receipts\"";
+    private string InboxReceiptsTable => $"\"{storageOptions.Value.Schema}\".\"messaging_inbox_operation_receipts\"";
 
-    private string InboxAuditTable => $"\"{storageOptions.Value.Schema}\".\"inbox_audit\"";
+    private string InboxAuditTable => $"\"{storageOptions.Value.Schema}\".\"messaging_inbox_audit\"";
 
     public async ValueTask<IndexPage<InboxGenerationView>> QueryAsync(
         InboxGenerationQuery query,
@@ -27,30 +27,30 @@ internal sealed partial class PostgreSqlDataStorage
         authorization.Validate();
         var page = Math.Max(query.CurrentPage, 0);
         var pageSize = Math.Clamp(query.PageSize, 1, 200);
-        var where = "\"IsInboxRecord\"";
+        var where = "\"is_inbox_record\"";
         if (query.IncarnationId is not null)
         {
-            where += " AND \"GenerationIncarnationId\"=@IncarnationId";
+            where += " AND \"generation_incarnation_id\"=@IncarnationId";
         }
         if (!string.IsNullOrEmpty(query.ConsumerIdentity))
         {
-            where += " AND \"ConsumerIdentity\"=@ConsumerIdentity";
+            where += " AND \"consumer_identity\"=@ConsumerIdentity";
         }
         if (query.Lane is not null)
         {
-            where += " AND \"IntentType\"=@IntentType";
+            where += " AND \"intent_type\"=@IntentType";
         }
         if (query.Status is not null)
         {
-            where += " AND \"StatusName\"=@StatusName";
+            where += " AND \"status_name\"=@StatusName";
         }
         if (query.IsOrphaned is not null)
         {
-            where += " AND \"IsInboxOrphaned\"=@IsOrphaned";
+            where += " AND \"is_inbox_orphaned\"=@IsOrphaned";
         }
         if (query.IsHeld is not null)
         {
-            where += " AND \"IsHeld\"=@IsHeld";
+            where += " AND \"is_held\"=@IsHeld";
         }
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
@@ -61,13 +61,13 @@ internal sealed partial class PostgreSqlDataStorage
 
         await using var command = new NpgsqlCommand(
             $"""
-            SELECT "Id","GenerationIncarnationId","Generation","TenantPresent","TenantId","MessageId","IntentType",
-                   "ContractIdentity","ContractVersion","ConsumerIdentity","StatusName","IsCurrentGeneration",
-                   "IsInboxOrphaned","ReplayParentIncarnationId","ReplayOperationId","TerminalAt","EffectiveExpiresAt",
-                   "IsHeld","HeldAt","HeldBy","HoldReason"
+            SELECT "id","generation_incarnation_id","generation","tenant_present","tenant_id","message_id","intent_type",
+                   "contract_identity","contract_version","consumer_identity","status_name","is_current_generation",
+                   "is_inbox_orphaned","replay_parent_incarnation_id","replay_operation_id","terminal_at","effective_expires_at",
+                   "is_held","held_at","held_by","hold_reason"
             FROM {_receivedTable}
             WHERE {where}
-            ORDER BY "Added" DESC,"Id"
+            ORDER BY "added" DESC,"id"
             OFFSET @Offset LIMIT @Limit;
             """,
             connection
@@ -178,7 +178,7 @@ internal sealed partial class PostgreSqlDataStorage
                     await _ExecutePostgreSqlMutationAsync(
                             connection,
                             transaction,
-                            $"UPDATE {_receivedTable} SET \"IsHeld\"=TRUE,\"HeldAt\"=@Now,\"HeldBy\"=@Actor,\"HoldReason\"=@Reason,\"HoldOperationId\"=@OperationId WHERE \"GenerationIncarnationId\"=@IncarnationId;",
+                            $"UPDATE {_receivedTable} SET \"is_held\"=TRUE,\"held_at\"=@Now,\"held_by\"=@Actor,\"hold_reason\"=@Reason,\"hold_operation_id\"=@OperationId WHERE \"generation_incarnation_id\"=@IncarnationId;",
                             request,
                             now,
                             cancellationToken
@@ -189,7 +189,7 @@ internal sealed partial class PostgreSqlDataStorage
                     await _ExecutePostgreSqlMutationAsync(
                             connection,
                             transaction,
-                            $"UPDATE {_receivedTable} SET \"IsHeld\"=FALSE,\"HeldAt\"=NULL,\"HeldBy\"=NULL,\"HoldReason\"=NULL,\"HoldOperationId\"=@OperationId WHERE \"GenerationIncarnationId\"=@IncarnationId;",
+                            $"UPDATE {_receivedTable} SET \"is_held\"=FALSE,\"held_at\"=NULL,\"held_by\"=NULL,\"hold_reason\"=NULL,\"hold_operation_id\"=@OperationId WHERE \"generation_incarnation_id\"=@IncarnationId;",
                             request,
                             now,
                             cancellationToken
@@ -216,7 +216,7 @@ internal sealed partial class PostgreSqlDataStorage
                     await _ExecutePostgreSqlMutationAsync(
                             connection,
                             transaction,
-                            $"DELETE FROM {_receivedTable} WHERE \"GenerationIncarnationId\"=@IncarnationId;",
+                            $"DELETE FROM {_receivedTable} WHERE \"generation_incarnation_id\"=@IncarnationId;",
                             request,
                             now,
                             cancellationToken
@@ -388,7 +388,7 @@ internal sealed partial class PostgreSqlDataStorage
     )
     {
         await using var command = new NpgsqlCommand(
-            $"SELECT \"Id\",\"StatusName\",\"NextRetryAt\",\"IsHeld\",\"IsCurrentGeneration\",\"Generation\",\"IntentType\",\"ConsumerIdentity\",\"IsInboxOrphaned\",COALESCE(\"LockedUntil\" > clock_timestamp(), FALSE) FROM {_receivedTable} WHERE \"IsInboxRecord\" AND \"GenerationIncarnationId\"=@IncarnationId FOR UPDATE;",
+            $"SELECT \"id\",\"status_name\",\"next_retry_at\",\"is_held\",\"is_current_generation\",\"generation\",\"intent_type\",\"consumer_identity\",\"is_inbox_orphaned\",COALESCE(\"locked_until\" > clock_timestamp(), FALSE) FROM {_receivedTable} WHERE \"is_inbox_record\" AND \"generation_incarnation_id\"=@IncarnationId FOR UPDATE;",
             connection,
             transaction
         );
@@ -420,7 +420,7 @@ internal sealed partial class PostgreSqlDataStorage
     )
     {
         await using var command = new NpgsqlCommand(
-            $"SELECT \"GenerationIncarnationId\",\"OperationType\",\"ExpectedStatus\",\"Actor\",\"Reason\",\"Outcome\",\"StorageId\",\"ChildStorageId\",\"ChildGeneration\",\"ChildIncarnationId\",\"CreatedAt\",\"TargetKind\" FROM {InboxReceiptsTable} WHERE \"OperationId\"=@OperationId FOR UPDATE;",
+            $"SELECT \"generation_incarnation_id\",\"operation_type\",\"expected_status\",\"actor\",\"reason\",\"outcome\",\"storage_id\",\"child_storage_id\",\"child_generation\",\"child_incarnation_id\",\"created_at\",\"target_kind\" FROM {InboxReceiptsTable} WHERE \"operation_id\"=@OperationId FOR UPDATE;",
             connection,
             transaction
         );
@@ -480,10 +480,10 @@ internal sealed partial class PostgreSqlDataStorage
     )
     {
         var sql = $"""
-            UPDATE {_receivedTable} SET "IsCurrentGeneration"=FALSE WHERE "GenerationIncarnationId"=@ParentIncarnationId AND "IsCurrentGeneration";
-            INSERT INTO {_receivedTable}("Id","Version","Name","Group","Content","IntentType","Retries","InlineAttempts","Added","ExpiresAt","NextRetryAt","LockedUntil","Owner","StatusName","MessageId","ExceptionInfo","IsInboxRecord","TenantPresent","TenantId","ContractIdentity","ContractVersion","ConsumerIdentity","Generation","GenerationIncarnationId","LifecycleId","AttemptId","IsInboxOrphaned","IsCurrentGeneration","ReplayParentIncarnationId","ReplayOperationId","TerminalAt","EffectiveExpiresAt","IsHeld","HeldAt","HeldBy","HoldReason","HoldOperationId","InboxRetentionSeconds")
-            SELECT @ChildStorageId,"Version","Name","Group","Content","IntentType",0,0,@Now,NULL,@Now + (@GraceSeconds * INTERVAL '1 second'),NULL,NULL,'Scheduled',"MessageId",NULL,TRUE,"TenantPresent","TenantId","ContractIdentity","ContractVersion","ConsumerIdentity",@ChildGeneration,@ChildIncarnationId,"LifecycleId",NULL,FALSE,TRUE,"GenerationIncarnationId",@OperationId,NULL,NULL,FALSE,NULL,NULL,NULL,NULL,"InboxRetentionSeconds"
-            FROM {_receivedTable} WHERE "GenerationIncarnationId"=@ParentIncarnationId;
+            UPDATE {_receivedTable} SET "is_current_generation"=FALSE WHERE "generation_incarnation_id"=@ParentIncarnationId AND "is_current_generation";
+            INSERT INTO {_receivedTable}("id","version","name","group","content","intent_type","retries","inline_attempts","added","expires_at","next_retry_at","locked_until","owner","status_name","message_id","exception_info","is_inbox_record","tenant_present","tenant_id","contract_identity","contract_version","consumer_identity","generation","generation_incarnation_id","lifecycle_id","attempt_id","is_inbox_orphaned","is_current_generation","replay_parent_incarnation_id","replay_operation_id","terminal_at","effective_expires_at","is_held","held_at","held_by","hold_reason","hold_operation_id","inbox_retention_seconds")
+            SELECT @ChildStorageId,"version","name","group","content","intent_type",0,0,@Now,NULL,@Now + (@GraceSeconds * INTERVAL '1 second'),NULL,NULL,'Scheduled',"message_id",NULL,TRUE,"tenant_present","tenant_id","contract_identity","contract_version","consumer_identity",@ChildGeneration,@ChildIncarnationId,"lifecycle_id",NULL,FALSE,TRUE,"generation_incarnation_id",@OperationId,NULL,NULL,FALSE,NULL,NULL,NULL,NULL,"inbox_retention_seconds"
+            FROM {_receivedTable} WHERE "generation_incarnation_id"=@ParentIncarnationId;
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@ParentIncarnationId", request.ExpectedIncarnationId);
@@ -507,9 +507,9 @@ internal sealed partial class PostgreSqlDataStorage
     )
     {
         var sql = $"""
-            INSERT INTO {InboxReceiptsTable}("OperationId","TargetKind","GenerationIncarnationId","OperationType","ExpectedStatus","Actor","Reason","Outcome","StorageId","ChildStorageId","ChildGeneration","ChildIncarnationId","CreatedAt")
+            INSERT INTO {InboxReceiptsTable}("operation_id","target_kind","generation_incarnation_id","operation_type","expected_status","actor","reason","outcome","storage_id","child_storage_id","child_generation","child_incarnation_id","created_at")
             VALUES (@OperationId,'Inbox',@IncarnationId,@OperationType,@ExpectedStatus,@Actor,@Reason,@Outcome,@StorageId,@ChildStorageId,@ChildGeneration,@ChildIncarnationId,@CreatedAt);
-            INSERT INTO {InboxAuditTable}("AuditId","OperationId","TargetKind","GenerationIncarnationId","OperationType","Actor","Reason","Outcome","CreatedAt")
+            INSERT INTO {InboxAuditTable}("audit_id","operation_id","target_kind","generation_incarnation_id","operation_type","actor","reason","outcome","created_at")
             VALUES (@AuditId,@OperationId,'Inbox',@IncarnationId,@OperationType,@Actor,@Reason,@Outcome,@CreatedAt);
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
@@ -554,7 +554,7 @@ internal sealed partial class PostgreSqlDataStorage
     )
     {
         await using var command = new NpgsqlCommand(
-            $"INSERT INTO {InboxAuditTable}(\"AuditId\",\"OperationId\",\"TargetKind\",\"GenerationIncarnationId\",\"OperationType\",\"Actor\",\"Reason\",\"Outcome\",\"CreatedAt\") VALUES (@AuditId,@OperationId,'Inbox',@IncarnationId,@OperationType,@Actor,@Reason,@Outcome,transaction_timestamp());",
+            $"INSERT INTO {InboxAuditTable}(\"audit_id\",\"operation_id\",\"target_kind\",\"generation_incarnation_id\",\"operation_type\",\"actor\",\"reason\",\"outcome\",\"created_at\") VALUES (@AuditId,@OperationId,'Inbox',@IncarnationId,@OperationType,@Actor,@Reason,@Outcome,transaction_timestamp());",
             connection,
             transaction
         );

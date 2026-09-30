@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
 using Headless.Jobs;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
@@ -19,7 +20,7 @@ public abstract class JobsCustomSchemaConformanceTests<TFixture>(TFixture fixtur
     where TFixture : class, IJobsCoordinationFixture
 {
     private const string _Schema = JobsCoordinationFixtureExtensions.CustomSchemaName;
-    private const string _DefaultSchema = JobsStorageOptions.DefaultSchema;
+    private const string _DefaultSchema = HeadlessStorageDefaults.Schema;
     private const string _TimeJobsTable = "TimeJobs";
     private const string _ReservationsTable = "TimeJobIdempotencyReservations";
 

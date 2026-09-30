@@ -28,7 +28,7 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
         var schema = provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema;
         await storage.GetInboxOperationsApi().HoldAsync(_Request(Guid.NewGuid(), StatusName.Succeeded), AbortToken);
         var cutoffs = await storage.GetInboxHistoryRetentionCutoffsAsync(AbortToken);
-        var table = receipts ? "inbox_operation_receipts" : "inbox_audit";
+        var table = receipts ? "messaging_inbox_operation_receipts" : "messaging_inbox_audit";
         await using var blocker = new NpgsqlConnection(fixture.ConnectionString);
         await blocker.OpenAsync(AbortToken);
         await using var transaction = await blocker.BeginTransactionAsync(AbortToken);
@@ -72,8 +72,8 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
         await connection.OpenAsync(AbortToken);
         await using var align = new NpgsqlCommand(
             $"""
-            UPDATE "{schema}"."inbox_audit" SET "CreatedAt"=@Audit;
-            UPDATE "{schema}"."inbox_operation_receipts" SET "CreatedAt"=@Receipt;
+            UPDATE "{schema}"."messaging_inbox_audit" SET "created_at"=@Audit;
+            UPDATE "{schema}"."messaging_inbox_operation_receipts" SET "created_at"=@Receipt;
             """,
             connection
         );
@@ -98,16 +98,16 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         await using var count = new NpgsqlCommand(
-            "SELECT COUNT(*) FROM pg_indexes WHERE schemaname=@Schema AND indexname IN ('idx_inbox_receipts_type_created','idx_inbox_audit_type_created','idx_inbox_audit_operation');",
+            "SELECT COUNT(*) FROM pg_indexes WHERE schemaname=@Schema AND indexname IN ('idx_messaging_inbox_receipts_type_created','idx_messaging_inbox_audit_type_created','idx_messaging_inbox_audit_operation');",
             connection
         );
         count.Parameters.AddWithValue("@Schema", schema);
         (await count.ExecuteScalarAsync(AbortToken)).Should().Be(3L);
         await using var drop = new NpgsqlCommand(
             $"""
-            DROP INDEX "{schema}"."idx_inbox_receipts_type_created";
-            DROP INDEX "{schema}"."idx_inbox_audit_type_created";
-            DROP INDEX "{schema}"."idx_inbox_audit_operation";
+            DROP INDEX "{schema}"."idx_messaging_inbox_receipts_type_created";
+            DROP INDEX "{schema}"."idx_messaging_inbox_audit_type_created";
+            DROP INDEX "{schema}"."idx_messaging_inbox_audit_operation";
             """,
             connection
         );
@@ -181,15 +181,15 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
             .Be(conflict && result.IsReplay ? InboxOperationOutcome.OperationConflict : InboxOperationOutcome.NotFound);
         await using var integrity = new NpgsqlCommand(
             $"""
-            SELECT COUNT(*) FROM "{schema}"."inbox_audit" a
-            LEFT JOIN "{schema}"."inbox_operation_receipts" r ON r."OperationId"=a."OperationId"
-            WHERE r."OperationId" IS NULL;
+            SELECT COUNT(*) FROM "{schema}"."messaging_inbox_audit" a
+            LEFT JOIN "{schema}"."messaging_inbox_operation_receipts" r ON r."operation_id"=a."operation_id"
+            WHERE r."operation_id" IS NULL;
             """,
             blocker
         );
         (await integrity.ExecuteScalarAsync(AbortToken)).Should().Be(0L);
         await using var count = new NpgsqlCommand(
-            $"""SELECT COUNT(*) FROM "{schema}"."inbox_operation_receipts";""",
+            $"""SELECT COUNT(*) FROM "{schema}"."messaging_inbox_operation_receipts";""",
             blocker
         );
         (await count.ExecuteScalarAsync(AbortToken)).Should().Be(result.IsReplay && !conflict ? 0L : 1L);
@@ -202,8 +202,8 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
         await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand(
             $"""
-            UPDATE "{schema}"."inbox_operation_receipts" SET "CreatedAt"="CreatedAt"-@Age;
-            UPDATE "{schema}"."inbox_audit" SET "CreatedAt"="CreatedAt"-@Age;
+            UPDATE "{schema}"."messaging_inbox_operation_receipts" SET "created_at"="created_at"-@Age;
+            UPDATE "{schema}"."messaging_inbox_audit" SET "created_at"="created_at"-@Age;
             """,
             connection
         );
@@ -217,7 +217,7 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand(
-            $"""UPDATE {table} SET "EffectiveExpiresAt"=clock_timestamp()-INTERVAL '1 second' WHERE "Id"=@Id;""",
+            $"""UPDATE {table} SET "effective_expires_at"=clock_timestamp()-INTERVAL '1 second' WHERE "id"=@Id;""",
             connection
         );
         command.Parameters.AddWithValue("@Id", storageId);
@@ -248,7 +248,7 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
         await connection.OpenAsync(AbortToken);
         var table = initializer.GetReceivedTableName();
         await using var expire = new NpgsqlCommand(
-            $"""UPDATE {table} SET "LockedUntil"=clock_timestamp()-INTERVAL '1 second', "NextRetryAt"=clock_timestamp()-INTERVAL '1 second' WHERE "Id"=@Id;""",
+            $"""UPDATE {table} SET "locked_until"=clock_timestamp()-INTERVAL '1 second', "next_retry_at"=clock_timestamp()-INTERVAL '1 second' WHERE "id"=@Id;""",
             connection
         );
         expire.Parameters.AddWithValue("@Id", message.StorageId);
@@ -292,7 +292,7 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
         await blocker.OpenAsync(AbortToken);
         await using var transaction = await blocker.BeginTransactionAsync(AbortToken);
         await using var rowLock = new NpgsqlCommand(
-            $"""SELECT "Id" FROM {table} WHERE "Id"=@Id FOR UPDATE;""",
+            $"""SELECT "id" FROM {table} WHERE "id"=@Id FOR UPDATE;""",
             blocker,
             transaction
         );

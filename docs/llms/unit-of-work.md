@@ -23,7 +23,7 @@ Pick a provider by what owns the transaction:
 Both participant domains enlist through the unit, and the difference between an enlisted and an autonomous write is the receiver at the call site:
 
 - **Messaging:** `IBus` and `IQueue` are autonomous singletons; a publish through them writes a standalone durable row that survives the caller's rollback. To write a message inside the transaction, publish through the unit — `unit.Outbox.PublishAsync(...)` / `unit.Outbox.EnqueueAsync(...)`, an accessor `Headless.Messaging.Abstractions` adds to `IUnitOfWork`. That surface always enlists and refuses, before any effect, when the configured storage cannot join the unit. See [messaging.md § Delivery Modes](messaging.md#delivery-modes).
-- **Jobs:** the injected `IJobScheduler`, `ITimeJobManager<>`, and `ICronJobManager<>` are autonomous singletons; a schedule through them writes outside any transaction and the poller picks it up. To schedule inside the transaction, go through the unit — `unit.Jobs`, `unit.TimeJobs<T>()`, `unit.CronJobs<T>()`, accessors `Headless.Jobs.Abstractions` adds to `IUnitOfWork`. Those always enlist and refuse when the unit carries no live relational resource for the job store. `TransactionEnlistment.Required` on a function or a call is the guard against the wrong receiver: it makes the autonomous one throw. See [Guarantee Matrix](#guarantee-matrix).
+- **Jobs:** the injected `IJobScheduler`, `ITimeJobManager<>`, and `ICronJobManager<>` are autonomous singletons; a schedule through them writes outside any transaction and the poller picks it up. To schedule inside the transaction, go through the unit — `unit.Jobs`, `unit.TimeJobs<T>()`, `unit.CronJobs<T>()`, accessors `Headless.Jobs.Abstractions` adds to `IUnitOfWork`. Those always enlist and refuse when the unit carries no live relational resource for the job store. No option or policy overrides the receiver. See [Guarantee Matrix](#guarantee-matrix).
 - **Distributed locks:** `IDistributedLock` hands out TTL leases that never enlist; a lease taken inside a block outlives or dies independently of the transaction. A lock that must die with the transaction is `unit.TransactionLocks.AcquireAsync(resource, acquireTimeout?)` / `TryAcquireAsync(resource, acquireTimeout?)`, an accessor `Headless.DistributedLocks.Abstractions` adds to `IUnitOfWork` and the PostgreSQL and SQL Server lock providers implement (`pg_advisory_xact_lock`, `sp_getapplock @LockOwner = 'Transaction'`). Both return a `TransactionLockHandle`; the try form returns `null` on contention and the acquire form throws `LockAcquisitionTimeoutException` when its wait (30 seconds by default) elapses. It refuses, before any command, a unit with no relational resource, a transaction from another provider, or a unit that is no longer active; a host with only Redis or InMemory locks throws on the accessor. See [distributed-locks.md § Locks inside a unit of work](distributed-locks.md#locks-inside-a-unit-of-work).
 
 See [Choosing a Provider](#choosing-a-provider) for the package-selection table.
@@ -44,8 +44,7 @@ See [Choosing a Provider](#choosing-a-provider) for the package-selection table.
 - Under a retrying EF execution strategy, `BeginAsync(db)` throws by design — a user-initiated transaction cannot survive a strategy replay. Use `factory.RunAsync(db, ...)`, which runs begin → operation → complete *inside* the strategy and only lets a failure replay before the commit has started.
 - Raw-ADO replay is opt-in and belongs to one spelling per provider: `RunAsync(NpgsqlDataSource, …)` and `RunAsync(Func<CancellationToken, ValueTask<SqlConnection>>, …)` open a connection per attempt and replay under `UnitOfWorkRetryOptions.RetryStrategy` (host default) or the call's `retry:` argument. `RunAsync(connection, …)` never replays, and neither overload replays when both are `null`. Set `ShouldHandle = UnitOfWorkRetryOptions.DefaultShouldHandle` (or compose with it); Polly's own default replays every non-cancellation exception. Issue the block's commands on the connection it receives, never on one held from outside.
 - Replay re-runs the block that owns the unit, so an enlisted publish or Jobs write issued directly inside your own `RunAsync(db, …)` block leaves it replayable: a transient failure anywhere in the block replays it with a fresh unit, the first attempt's rows roll back, and the replayed block writes them again. An enlisted write ends replay where a replay would not re-run it. One place is an *observed-mode* unit — the `HeadlessDbContext` save pipeline's own save, from a domain-event handler, which the pipeline replays without re-running the handler; there both the publish and the Jobs write call `IUnitOfWork.PreventRetry()` before writing, and so does a save through a sibling context that joined that unit over the shared connection and wrote rows, because the pipeline's replay restores only its own context's tracker. Another is a `SaveChangesAsync` inside your own block that dispatched domain or integration events: the successful save clears the aggregate's events, so a replayed block would re-insert the aggregate with nothing left to dispatch and commit it without the handlers' rows; the save calls `PreventRetry()` before clearing them. After any mark the fault is surfaced outside the strategy, so reconcile an ambiguous post-commit fault with a durable idempotency key instead of retrying blind. The EF integration-event dispatcher is exempt in the pipeline-owned save: it marks the occurrences the save pipeline re-publishes on a replayed attempt.
-- Banned: reading Jobs' `TransactionEnlistment` on a call and manually branching on whether a transaction is present. The framework's guarantee matrix (below) already encodes every combination and throws with a message naming the fix; hand-rolled branching duplicates and can drift from it.
-- `GetFeature<TFeature>()` is a bridge-package seam, not an application API. Use the typed accessors a bridge ships (`unit.Outbox`, `unit.Jobs`, `unit.TransactionLocks`, `unit.Sequences`); register a feature (a singleton implementing `IUnitOfWorkFeature`) only when writing such a bridge.
+- `GetFeature<TFeature>()` is a bridge-package seam, not an application API. Use the typed accessors a bridge ships (`unit.Outbox`, `unit.Jobs`, `unit.TransactionLocks`, `unit.Sequences`, `unit.Leases`, `unit.Idempotency`); register a feature (a singleton implementing `IUnitOfWorkFeature`) only when writing such a bridge.
 
 ## Core Concepts
 
@@ -124,27 +123,27 @@ A bridge package can expose behavior on a unit of work that the unit-of-work pac
 - Features are singletons by contract, and the contract is enforced: `AddUnitOfWork()` records the collection it was called on, and `GetFeature` reads the feature's registered lifetime from it before resolving. A scoped or transient registration throws `InvalidOperationException` naming the type and the lifetime — in every environment, not only where `ValidateScopes` is on (the development default, off in production), and for transients, which scope validation never catches. A bridge that needs per-operation state binds it to the handle (a feature method that takes the unit and returns a small bound facade — the shape `unit.Jobs` uses) rather than to a scope.
 - `GetFeature` throws `ObjectDisposedException` on a disposed handle and the lifetime refusal above, nothing else. A factory constructed outside DI resolves no features and checks no lifetimes.
 
-The first-party features are Messaging's enlisted outbox (`AddHeadlessMessaging` registers `IUnitOfWorkOutbox`; `Headless.Messaging.Abstractions` surfaces it as `unit.Outbox`), Jobs' enlisted receivers (`AddHeadlessJobs` registers `IUnitOfWorkJobs`; `Headless.Jobs.Abstractions` surfaces them as `unit.Jobs`, `unit.TimeJobs<T>()`, and `unit.CronJobs<T>()`), and the transaction-scoped locks (`UsePostgreSql` / `UseSqlServer` on `AddHeadlessDistributedLocks` register `IUnitOfWorkTransactionLocks`; `Headless.DistributedLocks.Abstractions` surfaces it as `unit.TransactionLocks`), and gap-free sequences (`AddHeadlessSequences` registers `IUnitOfWorkSequences`; `Headless.Sequences.Abstractions` surfaces it as `unit.Sequences`). A bridge that resolves the unit's transaction uses `UnitOfWorkTransactions.RequireTransaction<TTransaction>(unit, operation)` from `Headless.UnitOfWork.Abstractions`, which owns the refusal messages for an inactive unit, a missing relational resource, a completed transaction, and a transaction of another provider.
+The first-party features are Messaging's enlisted outbox (`AddHeadlessMessaging` registers `IUnitOfWorkOutbox`; `Headless.Messaging.Abstractions` surfaces it as `unit.Outbox`), Jobs' enlisted receivers (`AddHeadlessJobs` registers `IUnitOfWorkJobs`; `Headless.Jobs.Abstractions` surfaces them as `unit.Jobs`, `unit.TimeJobs<T>()`, and `unit.CronJobs<T>()`), and the transaction-scoped locks (`UsePostgreSql` / `UseSqlServer` on `AddHeadlessDistributedLocks` register `IUnitOfWorkTransactionLocks`; `Headless.DistributedLocks.Abstractions` surfaces it as `unit.TransactionLocks`), gap-free sequences (`AddHeadlessSequences` registers `IUnitOfWorkSequences`; `Headless.Sequences.Abstractions` surfaces it as `unit.Sequences`), fenced leases (`AddHeadlessFencing` registers `IUnitOfWorkLeases`; `Headless.Fencing.Abstractions` surfaces it as `unit.Leases`), and durable idempotency (`AddHeadlessIdempotency` registers `IUnitOfWorkIdempotency`; `Headless.Idempotency.Abstractions` surfaces it as `unit.Idempotency`). A bridge that resolves the unit's transaction uses `UnitOfWorkTransactions.RequireTransaction<TTransaction>(unit, operation)` from `Headless.UnitOfWork.Abstractions`, which owns the refusal messages for an inactive unit, a missing relational resource, a completed transaction, and a transaction of another provider.
 
 ### Handle liveness: registrations answer for the handle
 
 `State` reports the unit's lifecycle, and with no nested views it is the handle's lifecycle too. Registrations are still the contract for attaching work: `OnCompleted`, `OnFailed`, and `GetOrAdd` on a unit that reached a terminal state throw `InvalidOperationException`, and every member throws `ObjectDisposedException` after the handle is disposed. An enlisted publish relies on this — the outbox writer's first act on the caller's handle is a registration, so a dead handle is refused before any row is stored.
 
-### `TransactionEnlistment` and the Jobs guarantee matrix
+### The Jobs guarantee matrix
 
-`TransactionEnlistment { Optional = 0 (default), Required = 1 }`, in `Headless.UnitOfWork.Abstractions`, states whether a **Jobs** write may run through the autonomous receiver or must run through the enlisted one, resolved **per call > per function > host default**, strictest wins. It is Jobs-only. Enlistment itself is decided by the receiver, never by this value: `unit.Jobs` always writes inside the unit's transaction, and an injected scheduler always writes autonomously. `Required` only lets a function declare that the autonomous receiver is not acceptable for it, so a schedule that would otherwise land outside a transaction fails before any effect. Messaging shares none of this — enlistment there is the receiver (`IBus`/`IQueue` versus `unit.Outbox`), and nothing in Messaging reads this enum.
+A **Jobs** write enlists when, and only when, it goes through `unit.Jobs`, `unit.TimeJobs<T>()`, or `unit.CronJobs<T>()`. No per-call option, per-function policy, or host default changes that, the same as Messaging (`IBus`/`IQueue` versus `unit.Outbox`).
 
 #### Guarantee Matrix
 
-| Receiver | `Optional` (default) | `Required` |
-|---|---|---|
-| `unit.Jobs` / `unit.TimeJobs<T>()` / `unit.CronJobs<T>()` over a unit with a live, same-database relational resource | Write happens on the unit's transaction; dispatch, scheduler restart, and notification deferred to after commit | Same |
-| `unit.Jobs` over a resource-less unit, or one whose resource is dead or belongs to another database | Throws | Throws |
-| Injected `IJobScheduler` / `ITimeJobManager<>` / `ICronJobManager<>` | Autonomous durable write; the poller picks it up | Throws |
+| Receiver | Write |
+|---|---|
+| `unit.Jobs` / `unit.TimeJobs<T>()` / `unit.CronJobs<T>()` over a unit with a live, same-database relational resource | Happens on the unit's transaction; dispatch, scheduler restart, and notification deferred to after commit |
+| `unit.Jobs` over a resource-less unit, or one whose resource is dead or belongs to another database | Throws |
+| Injected `IJobScheduler` / `ITimeJobManager<>` / `ICronJobManager<>` | Autonomous durable write in the store's own transaction; the poller picks it up |
 
-The enlisted receivers never downgrade: a unit that cannot host the write is refused with a message naming the fix, rather than silently written autonomously. The autonomous receivers never inspect a unit. Composition across host/function/call tiers is strictest-wins (`Required` > `Optional`); see `jobs.md`.
+The enlisted receivers never downgrade: a unit that cannot host the write is refused with a message naming the fix, rather than silently written autonomously. The autonomous receivers never inspect a unit. A job chain is atomic through either receiver: with the unit, or in the store's own transaction.
 
-Messaging's counterpart is not a matrix over this enum: an enlisted publish is refused whenever the configured storage cannot join the given unit, and an autonomous publish never consults a unit at all. See `messaging.md#delivery-modes`.
+Messaging follows the same rule without a matrix: an enlisted publish is refused whenever the configured storage cannot join the given unit, and an autonomous publish never consults a unit at all. See `messaging.md#delivery-modes`.
 
 ### Database identity and several databases
 
@@ -172,7 +171,6 @@ Every illegal transition throws with a message naming the remedy — never a bar
 | `unit.Outbox` in a host that never called `AddHeadlessMessaging` | `No messaging outbox is registered for this unit of work. Call AddHeadlessMessaging during startup to register it.` |
 | `unit.Jobs` in a host that never called `AddHeadlessJobs` | `No Jobs feature is registered for this unit of work. Call AddHeadlessJobs during startup to register it.` |
 | An enlisted publish into a unit the messaging storage cannot join | `Publishing '{MessageType}' cannot join the active unit of work ({Mismatch}): {detail}. {advice}` — for example `… (MissingRelationalCapability): the active unit of work exposes no relational resource for the messaging storage to write into. Begin the unit of work over a relational resource for the messaging database, or publish without coordination.` |
-| Scheduling with `TransactionEnlistment.Required` through an injected scheduler or manager | `Scheduling '{Function}' requires a unit of work (TransactionEnlistment.Required), so it cannot run through an injected scheduler or manager. Schedule it through unit.Jobs on the unit of work the write must join, or register the function with TransactionEnlistment.Optional.` |
 | `unit.Jobs` over a unit with no live relational resource | `Scheduling '{Function}' through unit.Jobs requires the unit of work to carry a live relational resource for the job store, but this one has none. Begin the unit of work on the job store's database (BeginAsync(db) or RunAsync(db, …)), or schedule through an injected scheduler for an autonomous write.` |
 | `unit.Jobs` over an incompatible or dead resource | `The active unit of work's transaction belongs to another database or is no longer live (closed, completed, or changed), so the Jobs write cannot enlist. Use the same database, or schedule through an injected scheduler for an autonomous write.` |
 | A relational unit of work, but the configured Jobs provider can't write inside it | `An active unit of work has a joinable relational resource but the configured job persistence provider does not support coordinated writes. The coordinated-enqueue path requires the EF Core operational store (UseEntityFramework).` |
@@ -191,7 +189,7 @@ Every illegal transition throws with a message naming the remedy — never a bar
 
 ## Headless.UnitOfWork.Abstractions
 
-Defines the public unit-of-work contracts without provider dependencies: the singleton factory entry point, the unit handle, the resource seams, the `IUnitOfWorkFeature` marker bridge packages opt into, and Jobs' `TransactionEnlistment` knob.
+Defines the public unit-of-work contracts without provider dependencies: the singleton factory entry point, the unit handle, the resource seams, and the `IUnitOfWorkFeature` marker bridge packages opt into.
 
 ### API and behavior
 
@@ -201,7 +199,6 @@ Defines the public unit-of-work contracts without provider dependencies: the sin
 - `IUnitOfWorkResource` (`IsOwned`, `IsTransactionCompleted`, `CommitAsync`, `RollbackAsync`) and `IRelationalUnitOfWorkResource` (`Connection`, `Transaction`, non-null while active).
 - `UnitOfWorkState` (`Active = 0`, `Completed = 1`, `Failed = 2`); `UnitOfWorkFailure` with `UnitOfWorkFailureReason` (`Unspecified`, `RolledBack`, `Abandoned`, `Faulted`).
 - `UnitOfWorkOptions`: intentionally empty today; propagation knobs land here additively.
-- `TransactionEnlistment { Optional = 0, Required = 1 }`: Jobs only. See [Guarantee Matrix](#guarantee-matrix).
 
 ### Design constraints
 
@@ -221,15 +218,15 @@ using Headless.UnitOfWork;  // IUnitOfWorkFactory and the unit.Outbox / unit.Job
 
 public sealed class PlaceOrderHandler(IUnitOfWorkFactory factory, AppDbContext db)
 {
-    public async Task<Result<OrderId>> Handle(PlaceOrder cmd, CancellationToken ct)
+    public async Task<OrderId> Handle(PlaceOrder cmd, CancellationToken ct)
     {
         await using var unit = await factory.BeginAsync(db, cancellationToken: ct); // the EF provider's overload
         db.Orders.Add(order);
         await db.SaveChangesAsync(ct);
         await unit.Outbox.PublishAsync(new OrderPlaced(orderId), ct);              // row inside this unit's transaction
-        await unit.Jobs.ScheduleAsync(ExpireReservation, orderId, dueAt, ct);      // job row inside the same transaction
+        await unit.Jobs.ScheduleAsync(new ExpireReservation(orderId), dueAt, ct);  // job row inside the same transaction
         await unit.CompleteAsync(ct);                                              // commit, then dispatch both
-        return Result.Ok(orderId);
+        return orderId;
     }
 }
 ```
@@ -260,6 +257,7 @@ Implements the singleton `UnitOfWorkFactory`, the in-process unit engine with th
 - `OnFailed` drain (log-and-continue) on rollback, abandon, and commit fault; `RollbackAsync` idempotent; a commit fault transitions to `Failed` before the exception propagates.
 - An observed unit disposed un-completed after its transaction finished logs the forgotten-completion warning.
 - `GetFeature<T>()` resolves an `IUnitOfWorkFeature` singleton from the host container the factory was registered in, and throws `InvalidOperationException` naming the type when that registration is scoped or transient.
+- `RelationalTransientFaults.IsTransient(exception, cancellationToken)`: the framework's shared replay classification — a driver-reported transient fault, a serialization failure (`40001`) or deadlock (`40P01`) reported by SQLSTATE, and on SQL Server (where SqlClient reports neither signal) the same error-number set EF Core replays under `EnableRetryOnFailure`, read across every error the exception carries; never a cancellation, a client-side command timeout, or a constraint violation. It backs the framework's own replay filters; a hand-rolled retry loop around `RunAsync` reuses it so its classification stays the framework's, and a narrower classifier composes it (the Jobs tree delete adds its foreign-key conflicts). It is classification only: the loop that applies it must still refuse to replay a commit, which may have succeeded on the server before it failed on the wire.
 
 ### Design constraints
 
@@ -379,13 +377,16 @@ if (db.UnitOfWork() is { } bound)
 // Or wrap your own work in RunAsync as if you owned the transaction: under a caller that already began on
 // this context, the block joins that unit (receives the same handle, commits nothing itself); with no caller
 // unit, it begins and commits its own. Either way the service composes.
-public Task ReserveStockAsync(OrderId id, CancellationToken ct) =>
-    factory.RunAsync(db, async (unit, ct) =>
-    {
-        db.Reservations.Add(new Reservation(id));
-        await db.SaveChangesAsync(ct);
-        await unit.Jobs.ScheduleAsync(new ReleaseReservation(id), dueAt, ct);
-    }, cancellationToken: ct);
+public sealed class StockService(IUnitOfWorkFactory factory, MyDbContext db)
+{
+    public Task ReserveStockAsync(OrderId id, DateTimeOffset dueAt, CancellationToken ct) =>
+        factory.RunAsync(db, async (unit, ct) =>
+        {
+            db.Reservations.Add(new Reservation(id));
+            await db.SaveChangesAsync(ct);
+            await unit.Jobs.ScheduleAsync(new ReleaseReservation(id), dueAt, ct);
+        }, cancellationToken: ct);
+}
 ```
 
 The same shapes apply to a `HeadlessDbContext` and a `HeadlessIdentityDbContext` (in `Headless.EntityFramework`) and to a plain `DbContext` alike: the receiver is always the singleton `IUnitOfWorkFactory`, never the context.
@@ -512,7 +513,8 @@ using Microsoft.Data.SqlClient;
 
 services.AddSqlServerUnitOfWork();
 
-// factory is the singleton IUnitOfWorkFactory.
+// factory is the singleton IUnitOfWorkFactory; BeginAsync opens a closed connection.
+await using var connection = new SqlConnection(connectionString);
 await using var unit = await factory.BeginAsync(connection, cancellationToken: ct);
 var relational = (IRelationalUnitOfWorkResource)unit.Resource!;
 await using (var command = new SqlCommand("INSERT INTO orders (id) VALUES (@id)", connection, (SqlTransaction)relational.Transaction))
@@ -545,6 +547,10 @@ await factory.RunAsync(
 Observed mode, for a transaction you own:
 
 ```csharp
+using Microsoft.Data.SqlClient;
+
+await using var connection = new SqlConnection(connectionString);
+await connection.OpenAsync(ct);
 await using var tx = (SqlTransaction)await connection.BeginTransactionAsync(ct);
 await using var unit = factory.Enlist(connection, tx);
 // ... raw-ADO work + unit.Outbox publishes ...

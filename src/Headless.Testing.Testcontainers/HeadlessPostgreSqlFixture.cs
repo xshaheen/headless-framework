@@ -18,6 +18,7 @@ public class HeadlessPostgreSqlFixture()
         return base.Configure()
             .WithImage(TestImages.PostgreSql)
             .WithReuse(true)
-            .WithLabel(ReuseLabel.Key, ReuseLabel.For(this));
+            .WithLabel(ReuseLabel.Key, ReuseLabel.For(this))
+            .WithLabel(ReuseLabel.CheckoutKey, ReuseLabel.Checkout);
     }
 }

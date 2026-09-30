@@ -1,0 +1,15 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Tenant scoping for Headless blob storage: every location is rewritten with the ambient tenant before it reaches the provider.</Description>
+    <PackageTags>headless;blobs;multi-tenancy;dotnet</PackageTags>
+    <RootNamespace>Headless.Blobs</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Blobs.Abstractions\Headless.Blobs.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Blobs.Core\Headless.Blobs.Core.csproj" />
+    <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
+  </ItemGroup>
+</Project>

@@ -63,10 +63,8 @@ public sealed partial class StringPrimitive : global::System.IEquatable<StringPr
     }
 
 #nullable disable
-#pragma warning disable HF1003 // Should not have non obsolete empty constructors.
     [Obsolete("Primitive cannot be created using empty Constructor", true)]
     public StringPrimitive() { }
-#pragma warning restore HF1003
 #nullable enable
 
     /// <summary>Tries to create an instance of AsciiString from the specified value.</summary>

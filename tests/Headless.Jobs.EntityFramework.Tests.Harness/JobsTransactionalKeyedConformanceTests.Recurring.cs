@@ -12,15 +12,29 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
 {
     private const string _RecurringExpression = "0 0 3 * * *";
 
-    public virtual Task required_recurring_definition_rejects_scheduling_outside_a_transaction() =>
+    // The injected scheduler never enlists: a definition it writes while a unit is open is its own commit, so the
+    // unit's rollback discards the unit's domain write and leaves the definition in place.
+    public virtual Task recurring_definition_through_the_injected_scheduler_survives_the_outer_rollback() =>
         _WithHostAsync(async host =>
         {
-            var schedule = () => _ScheduleRecurringAsync(host.Services.GetRequiredService<IJobScheduler>(), AbortToken);
-            await schedule.Should().ThrowAsync<InvalidOperationException>().WithMessage("*requires a unit of work*");
-            (await fixture.CountCronJobsAsync(AbortToken)).Should().Be(0);
+            var operation = () =>
+                fixture.RunCoordinatedTransactionAsync(
+                    host.Services,
+                    async (_, _, connection, transaction, ct) =>
+                    {
+                        await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, ct);
+                        await _ScheduleRecurringAsync(host.Services.GetRequiredService<IJobScheduler>(), ct);
+                        throw new InjectedFailureException();
+                    },
+                    AbortToken
+                );
+
+            await operation.Should().ThrowAsync<InjectedFailureException>();
+            (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(0);
+            (await fixture.CountCronJobsAsync(AbortToken)).Should().Be(1);
         });
 
-    public virtual Task required_recurring_definition_shares_the_outer_commit_or_rollback(bool commit) =>
+    public virtual Task enlisted_recurring_definition_shares_the_outer_commit_or_rollback(bool commit) =>
         _WithHostAsync(async host =>
         {
             Guid definitionId = default;
@@ -60,19 +74,6 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
             }
             persisted.Should().NotBeNull();
             persisted!.Expression.Should().Be(_RecurringExpression);
-            // The requirement is call intent, never a materialized definition attribute.
-            persisted.Enlistment.Should().Be(TransactionEnlistment.Optional);
-        });
-
-    public virtual Task recurring_atomic_flag_is_not_mapped_to_a_column() =>
-        _WithHostAsync(async host =>
-        {
-            await using var context = await _ContextAsync(host);
-            context
-                .Model.FindEntityType(typeof(CronJobEntity))!
-                .FindProperty(nameof(CronJobEntity.Enlistment))
-                .Should()
-                .BeNull();
         });
 
     private static Task<Guid> _ScheduleRecurringAsync(IJobScheduler scheduler, CancellationToken cancellationToken)
@@ -80,7 +81,6 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
         return scheduler.ScheduleRecurringAsync(
             new CoordinatedFacadeRequest(Guid.Empty, "recurring"),
             _RecurringExpression,
-            new RecurringJobOptions { Enlistment = TransactionEnlistment.Required },
             cancellationToken
         );
     }

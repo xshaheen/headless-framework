@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.UnitOfWork.Internal;
 using Polly;
 using Polly.Retry;
 

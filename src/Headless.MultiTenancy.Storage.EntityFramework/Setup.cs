@@ -56,13 +56,20 @@ public static class SetupTenantCatalogEntityFramework
             var storeType = typeof(EfTenantStore<>).MakeGenericType(dbContextType);
 
             // Singleton, matching Headless.Settings.Storage.EntityFramework's EfSettingValueRecordRepository:
-            // the store only wraps a thread-safe IDbContextFactory<TContext>, never a scoped DbContext
-            // instance directly, so it needs no per-request lifetime. One shared instance is exposed under
-            // both service types (mirroring InMemoryTenantStore/ConfigurationTenantStore) so ITenantStore
-            // and ITenantDirectory resolve the same object rather than two independently constructed stores.
+            // the store only wraps a thread-safe IDbContextFactory<TContext>, never a scoped DbContext instance
+            // directly, so it needs no per-request lifetime. That holds only while the factory is itself a
+            // singleton, so startup refuses a scoped or transient factory the store would capture for good.
+            // One shared instance is exposed under both service types (mirroring InMemoryTenantStore and
+            // ConfigurationTenantStore) so ITenantStore and ITenantDirectory resolve the same object rather than
+            // two independently constructed stores.
             services.TryAddSingleton(storeType);
             services.TryAddSingleton(typeof(ITenantStore), sp => sp.GetRequiredService(storeType));
             services.TryAddSingleton(typeof(ITenantDirectory), sp => sp.GetRequiredService(storeType));
+            services.RequireSingletonService(
+                typeof(IDbContextFactory<>).MakeGenericType(dbContextType),
+                requiredBy: "Headless tenant catalog EF storage",
+                remedy: "Register it with AddDbContextFactory<TContext>() or AddPooledDbContextFactory<TContext>() at the default singleton lifetime; the store is a singleton and would keep one scoped or transient factory for the life of the host."
+            );
             services.AddStartupValidator(typeof(TenantCatalogEntityStartupValidator<>).MakeGenericType(dbContextType));
         }
     }

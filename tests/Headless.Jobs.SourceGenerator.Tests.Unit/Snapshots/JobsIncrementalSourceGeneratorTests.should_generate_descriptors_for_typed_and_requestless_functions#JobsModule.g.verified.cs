@@ -1,0 +1,78 @@
+﻿//HintName: JobsModule.g.cs
+//Jobs readonly auto-generated file.
+#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
+
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
+using Headless.Jobs;
+using Headless.Jobs.Enums;
+using Headless.Jobs.Base;
+using Jobs.SourceGenerator.Tests;
+
+[assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute("invoice.cleanup", "1")]
+[assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute("invoice.create", "schema-v2")]
+namespace Jobs.SourceGenerator.Tests
+{
+    /// <summary>Generated Jobs registration for this assembly. Add it with <c>AddModule&lt;JobsModule&gt;()</c> inside <c>AddHeadlessJobs</c>.</summary>
+    public sealed class JobsModule : global::Headless.Jobs.IJobsModule
+    {
+        private JobsModule() { }
+
+        static void global::Headless.Jobs.IJobsModule.Register()
+        {
+            var jobFunctionDelegateDict = new Dictionary<string, JobFunctionRegistration>(2);
+            jobFunctionDelegateDict.Add("invoice.create", new JobFunctionRegistration { CronExpression = "0 */5 * * * *", Priority = (JobPriority)1, Delegate = new JobFunctionDelegate(async (serviceProvider, context, cancellationToken) =>
+            {
+                var genericContext = await ToGenericContextWithRequest<global::Demo.CreateInvoice>(context, cancellationToken);
+                await CreateDemoInvoiceJobs(serviceProvider).CreateAsync(genericContext, cancellationToken);
+            }), MaxConcurrency = 3 });
+            jobFunctionDelegateDict.Add("invoice.cleanup", new JobFunctionRegistration { CronExpression = string.Empty, Priority = (JobPriority)0, Delegate = new JobFunctionDelegate((serviceProvider, context, cancellationToken) =>
+            {
+                CreateDemoInvoiceJobs(serviceProvider).Cleanup();
+                return Task.CompletedTask;
+            }), MaxConcurrency = 0 });
+            JobFunctionProvider.RegisterFunctions(jobFunctionDelegateDict, 2);
+            RegisterRequestTypes();
+            RegisterDescriptors();
+        }
+
+        private static void RegisterDescriptors()
+        {
+            var descriptors = new Dictionary<string, JobFunctionDescriptor>(2);
+            descriptors.Add("invoice.cleanup", AppJobs.invoice_u002E_cleanup);
+            descriptors.Add("invoice.create", new JobFunctionDescriptor("invoice.create", typeof(global::Demo.CreateInvoice), "0 */5 * * * *", (JobPriority)1, 3, "schema-v2"));
+            JobFunctionProvider.RegisterDescriptors(descriptors, 2);
+        }
+
+        private static global::Demo.InvoiceJobs CreateDemoInvoiceJobs(IServiceProvider serviceProvider)
+        {
+            return new global::Demo.InvoiceJobs();
+        }
+
+        private static async Task<JobFunctionContext<T>> ToGenericContextWithRequest<T>(JobFunctionContext context, CancellationToken cancellationToken)
+        {
+            var request = await JobsRequestProvider.GetRequestAsync<T>(context, cancellationToken);
+            return new JobFunctionContext<T>(context, request);
+        }
+
+        private static void RegisterRequestTypes()
+        {
+            var requestTypes = new Dictionary<string, (string, Type)>(1);
+            requestTypes.Add("invoice.create", (typeof(global::Demo.CreateInvoice).FullName, typeof(global::Demo.CreateInvoice)));
+            JobFunctionProvider.RegisterRequestType(requestTypes, 1);
+        }
+    }
+}
+
+namespace Jobs.SourceGenerator.Tests
+{
+    /// <summary>Canonical generated handles for this assembly's requestless jobs.</summary>
+    public static class AppJobs
+    {
+        /// <summary>A canonical requestless job descriptor.</summary>
+        public static JobFunctionDescriptor invoice_u002E_cleanup { get; } = new JobFunctionDescriptor("invoice.cleanup", null, "", (JobPriority)0, 0, "1");
+    }
+}

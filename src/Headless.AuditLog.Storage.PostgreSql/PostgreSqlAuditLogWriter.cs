@@ -128,7 +128,7 @@ internal sealed class PostgreSqlAuditLogWriter(
         var builder = new StringBuilder(256 + (rowCount * 256));
         builder.Append("INSERT INTO ").Append(table);
         builder.Append(
-            " (\"CreatedAt\",\"UserId\",\"AccountId\",\"TenantId\",\"IpAddress\",\"UserAgent\",\"CorrelationId\",\"Action\",\"ChangeType\",\"EntityType\",\"EntityId\",\"OldValues\",\"NewValues\",\"ChangedFields\",\"Success\",\"ErrorCode\") VALUES "
+            " (\"created_at\",\"user_id\",\"account_id\",\"tenant_id\",\"ip_address\",\"user_agent\",\"correlation_id\",\"action\",\"change_type\",\"entity_type\",\"entity_id\",\"old_values\",\"new_values\",\"changed_fields\",\"success\",\"error_code\") VALUES "
         );
 
         for (var i = 0; i < rowCount; i++)

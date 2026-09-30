@@ -12,11 +12,16 @@ namespace Tests.Tenancy;
 [CollectionDefinition(DisableParallelization = true)]
 public sealed class MetadataTenantCollection
     : ICollectionFixture<PostgreSqlMetadataTenantFixture>,
-        ICollectionFixture<SqlServerMetadataTenantFixture>;
+        ICollectionFixture<SqlServerMetadataTenantFixture>,
+        ICollectionFixture<PostgreSqlPlacedMetadataTenantFixture>;
 
 public sealed class PostgreSqlMetadataTenantFixture() : MetadataTenantFixture(TenantDatabaseProvider.PostgreSql);
 
 public sealed class SqlServerMetadataTenantFixture() : MetadataTenantFixture(TenantDatabaseProvider.SqlServer);
+
+// A non-default database and schema, standing in for the placement a per-tenant topology would choose.
+public sealed class PostgreSqlPlacedMetadataTenantFixture()
+    : MetadataTenantFixture(TenantDatabaseProvider.PostgreSql, new TenantDataPlacement("tenant_placed", "placed"));
 
 [Collection<MetadataTenantCollection>]
 public sealed class PostgreSqlMetadataTenantConformanceTests(PostgreSqlMetadataTenantFixture fixture)
@@ -25,6 +30,18 @@ public sealed class PostgreSqlMetadataTenantConformanceTests(PostgreSqlMetadataT
 [Collection<MetadataTenantCollection>]
 public sealed class SqlServerMetadataTenantConformanceTests(SqlServerMetadataTenantFixture fixture)
     : MetadataTenantConformanceTests<SqlServerMetadataTenantFixture>(fixture);
+
+[Collection<MetadataTenantCollection>]
+public sealed class PostgreSqlTenantIsolationKitTests(PostgreSqlMetadataTenantFixture fixture)
+    : TenantIsolationKitConformanceTests<PostgreSqlMetadataTenantFixture>(fixture);
+
+[Collection<MetadataTenantCollection>]
+public sealed class SqlServerTenantIsolationKitTests(SqlServerMetadataTenantFixture fixture)
+    : TenantIsolationKitConformanceTests<SqlServerMetadataTenantFixture>(fixture);
+
+[Collection<MetadataTenantCollection>]
+public sealed class PlacedPostgreSqlTenantIsolationKitTests(PostgreSqlPlacedMetadataTenantFixture fixture)
+    : TenantIsolationKitConformanceTests<PostgreSqlPlacedMetadataTenantFixture>(fixture);
 
 [Collection<MetadataTenantCollection>]
 public sealed class SqlServerTenantIndexTests(SqlServerMetadataTenantFixture fixture) : TestBase

@@ -85,20 +85,20 @@ internal sealed partial class PostgreSqlDataStorage
         var insertSql = $"""
             WITH clock AS (SELECT statement_timestamp() AS now)
             INSERT INTO {_receivedTable}(
-                "Id","Version","Name","Group","Content","IntentType","Retries","InlineAttempts",
-                "Added","ExpiresAt","NextRetryAt","LockedUntil","Owner","StatusName","MessageId","ExceptionInfo",
-                "TenantPresent","TenantId","ContractIdentity","ContractVersion","ConsumerIdentity","Generation",
-                "GenerationIncarnationId","LifecycleId","AttemptId","IsInboxOrphaned","IsCurrentGeneration","IsInboxRecord","InboxRetentionSeconds"
+                "id","version","name","group","content","intent_type","retries","inline_attempts",
+                "added","expires_at","next_retry_at","locked_until","owner","status_name","message_id","exception_info",
+                "tenant_present","tenant_id","contract_identity","contract_version","consumer_identity","generation",
+                "generation_incarnation_id","lifecycle_id","attempt_id","is_inbox_orphaned","is_current_generation","is_inbox_record","inbox_retention_seconds"
             )
             SELECT @Id,@Version,@Name,@Group,@Content,@IntentType,0,0,
                 clock.now,NULL,clock.now + (@InitialDispatchGraceSeconds * INTERVAL '1 second'),NULL,NULL,@StatusName,@MessageId,NULL,
                 @TenantPresent,@TenantId,@ContractIdentity,@ContractVersion,@ConsumerIdentity,@Generation,
                 @GenerationIncarnationId,@GenerationIncarnationId,NULL,FALSE,TRUE,TRUE,@InboxRetentionSeconds
             FROM clock
-            ON CONFLICT ("TenantPresent","TenantId","MessageId","IntentType","ContractIdentity","ContractVersion","ConsumerIdentity","Generation")
-            WHERE "IsInboxRecord" AND "ReplayParentIncarnationId" IS NULL
+            ON CONFLICT ("tenant_present","tenant_id","message_id","intent_type","contract_identity","contract_version","consumer_identity","generation")
+            WHERE "is_inbox_record" AND "replay_parent_incarnation_id" IS NULL
             DO NOTHING
-            RETURNING "Id";
+            RETURNING "id";
             """;
 
         object[] parameters =
@@ -209,18 +209,18 @@ internal sealed partial class PostgreSqlDataStorage
         var nextRetryAt = timeProvider.GetUtcNow().Add(messagingOptions.Value.OrphanProbeInterval);
         var sql = $"""
             UPDATE {_receivedTable}
-            SET "IsInboxOrphaned"=@IsInboxOrphaned,
-                "NextRetryAt"=CASE WHEN @IsInboxOrphaned THEN @NextRetryAt ELSE "NextRetryAt" END,
-                "Owner"=CASE WHEN @IsInboxOrphaned THEN NULL ELSE "Owner" END,
-                "LockedUntil"=CASE WHEN @IsInboxOrphaned THEN NULL ELSE "LockedUntil" END
-            WHERE "Id"=@Id
-              AND "IntentType"=@IntentType
-              AND "Generation"=@Generation
-              AND "GenerationIncarnationId"=@GenerationIncarnationId
-              AND "AttemptId"=@AttemptId
-              AND "Owner" IS NOT DISTINCT FROM @Owner
-              AND "LockedUntil"=@LockedUntil
-              AND "LockedUntil">statement_timestamp();
+            SET "is_inbox_orphaned"=@IsInboxOrphaned,
+                "next_retry_at"=CASE WHEN @IsInboxOrphaned THEN @NextRetryAt ELSE "next_retry_at" END,
+                "owner"=CASE WHEN @IsInboxOrphaned THEN NULL ELSE "owner" END,
+                "locked_until"=CASE WHEN @IsInboxOrphaned THEN NULL ELSE "locked_until" END
+            WHERE "id"=@Id
+              AND "intent_type"=@IntentType
+              AND "generation"=@Generation
+              AND "generation_incarnation_id"=@GenerationIncarnationId
+              AND "attempt_id"=@AttemptId
+              AND "owner" IS NOT DISTINCT FROM @Owner
+              AND "locked_until"=@LockedUntil
+              AND "locked_until">statement_timestamp();
             """;
         object[] parameters =
         [
@@ -277,16 +277,16 @@ internal sealed partial class PostgreSqlDataStorage
     )
     {
         var sql = $"""
-            SELECT "Id","Content","IntentType","Retries","InlineAttempts","Added","ExpiresAt","NextRetryAt",
-                   "LockedUntil","Owner","StatusName","ExceptionInfo","TenantPresent","TenantId","MessageId",
-                   "ContractIdentity","ContractVersion","ConsumerIdentity","Generation","GenerationIncarnationId",
-                   "AttemptId","IsInboxOrphaned"
+            SELECT "id","content","intent_type","retries","inline_attempts","added","expires_at","next_retry_at",
+                   "locked_until","owner","status_name","exception_info","tenant_present","tenant_id","message_id",
+                   "contract_identity","contract_version","consumer_identity","generation","generation_incarnation_id",
+                   "attempt_id","is_inbox_orphaned"
             FROM {_receivedTable}
-            WHERE "TenantPresent"=@TenantPresent AND "TenantId"=@TenantId AND "MessageId"=@MessageId
-              AND "IntentType"=@IntentType AND "ContractIdentity"=@ContractIdentity
-              AND "ContractVersion"=@ContractVersion AND "ConsumerIdentity"=@ConsumerIdentity
-              AND "Generation"=@Generation
-              AND "IsInboxRecord" AND "ReplayParentIncarnationId" IS NULL;
+            WHERE "tenant_present"=@TenantPresent AND "tenant_id"=@TenantId AND "message_id"=@MessageId
+              AND "intent_type"=@IntentType AND "contract_identity"=@ContractIdentity
+              AND "contract_version"=@ContractVersion AND "consumer_identity"=@ConsumerIdentity
+              AND "generation"=@Generation
+              AND "is_inbox_record" AND "replay_parent_incarnation_id" IS NULL;
             """;
         object[] parameters =
         [

@@ -464,7 +464,7 @@ public sealed class CompositeDistributedLeaseTests : TestBase
 
         public string LeaseId { get; } = leaseId;
 
-        public long? FencingToken { get; init; }
+        public LockFencingToken? FencingToken { get; init; }
 
         public string Resource { get; } = resource;
 

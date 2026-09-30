@@ -92,21 +92,5 @@ internal sealed class JobsManagerFacade<TTimeJob, TCronJob>(
         JobKey key,
         long expectedGeneration,
         CancellationToken cancellationToken
-    ) =>
-        _core.CancelKeyedTimeJobAsync(
-            scope,
-            key,
-            expectedGeneration,
-            TransactionEnlistment.Optional,
-            unitOfWork,
-            cancellationToken
-        );
-
-    Task<JobScheduleResult> ITimeJobManager<TTimeJob>.CancelKeyedAsync(
-        JobKeyScope scope,
-        JobKey key,
-        long expectedGeneration,
-        TransactionEnlistment enlistment,
-        CancellationToken cancellationToken
-    ) => _core.CancelKeyedTimeJobAsync(scope, key, expectedGeneration, enlistment, unitOfWork, cancellationToken);
+    ) => _core.CancelKeyedTimeJobAsync(scope, key, expectedGeneration, unitOfWork, cancellationToken);
 }

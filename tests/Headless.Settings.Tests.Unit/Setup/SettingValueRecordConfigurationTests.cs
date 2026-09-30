@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
 using Headless.Settings;
 using Headless.Settings.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Tests.Setup;
 
@@ -12,7 +14,7 @@ public sealed class SettingValueRecordConfigurationTests
     public void should_enforce_uniqueness_for_both_null_and_non_null_provider_keys()
     {
         // given — PostgreSQL/SQLite treat NULLs as distinct, so the NULL-key scope needs its own index
-        using var context = _CreateContext();
+        using var context = _CreateContext(StorageNamingStyle.PascalCase);
 
         // when
         var entity = context.Model.FindEntityType(typeof(SettingValueRecord));
@@ -38,7 +40,7 @@ public sealed class SettingValueRecordConfigurationTests
     public void should_emit_both_unique_indexes_in_the_create_script()
     {
         // given
-        using var context = _CreateContext();
+        using var context = _CreateContext(StorageNamingStyle.PascalCase);
 
         // when
         var script = context.Database.GenerateCreateScript();
@@ -48,20 +50,60 @@ public sealed class SettingValueRecordConfigurationTests
         script.Should().Contain("IX_SettingValues_Name_ProviderName_NullProviderKey");
     }
 
-    private static SettingsModelDbContext _CreateContext()
+    [Fact]
+    public void should_name_every_object_in_snake_case_when_the_style_is_snake_case()
     {
-        return new SettingsModelDbContext(
-            new DbContextOptionsBuilder<SettingsModelDbContext>().UseSqlite("DataSource=:memory:").Options
-        );
+        // given
+        using var context = _CreateContext(StorageNamingStyle.SnakeCase);
+
+        // when
+        var entity = context.Model.FindEntityType(typeof(SettingValueRecord))!;
+        var table = StoreObjectIdentifier.Table(entity.GetTableName()!, entity.GetSchema());
+
+        // then
+        entity.GetTableName().Should().Be("setting_values");
+        entity
+            .GetProperties()
+            .Select(p => p.GetColumnName(table))
+            .Should()
+            .BeEquivalentTo("id", "name", "value", "provider_name", "provider_key", "created_at", "updated_at");
+        entity.FindPrimaryKey()!.GetName().Should().Be("pk_setting_values");
+        entity
+            .GetIndexes()
+            .Select(i => (i.GetDatabaseName(), i.GetFilter()))
+            .Should()
+            .BeEquivalentTo([
+                ("ix_setting_values_name_provider_name_provider_key", "\"provider_key\" IS NOT NULL"),
+                ("ix_setting_values_name_provider_name_null_provider_key", "\"provider_key\" IS NULL"),
+            ]);
     }
 
-    private sealed class SettingsModelDbContext(DbContextOptions<SettingsModelDbContext> options) : DbContext(options)
+    // EF caches one model per context type, so each naming style needs its own context type.
+    private static SettingsModelDbContext _CreateContext(StorageNamingStyle style)
+    {
+        return style == StorageNamingStyle.SnakeCase
+            ? new SnakeCaseSettingsModelDbContext(
+                new DbContextOptionsBuilder<SnakeCaseSettingsModelDbContext>().UseSqlite("DataSource=:memory:").Options
+            )
+            : new PascalCaseSettingsModelDbContext(
+                new DbContextOptionsBuilder<PascalCaseSettingsModelDbContext>().UseSqlite("DataSource=:memory:").Options
+            );
+    }
+
+    private abstract class SettingsModelDbContext(DbContextOptions options, StorageNamingStyle style)
+        : DbContext(options)
     {
         public DbSet<SettingValueRecord> SettingValues => Set<SettingValueRecord>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessSettings(new SettingsStorageOptions());
+            modelBuilder.AddHeadlessSettings(new SettingsStorageOptions(), style);
         }
     }
+
+    private sealed class PascalCaseSettingsModelDbContext(DbContextOptions<PascalCaseSettingsModelDbContext> options)
+        : SettingsModelDbContext(options, StorageNamingStyle.PascalCase);
+
+    private sealed class SnakeCaseSettingsModelDbContext(DbContextOptions<SnakeCaseSettingsModelDbContext> options)
+        : SettingsModelDbContext(options, StorageNamingStyle.SnakeCase);
 }

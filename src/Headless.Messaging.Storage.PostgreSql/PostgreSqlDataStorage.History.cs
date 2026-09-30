@@ -72,23 +72,23 @@ internal sealed partial class PostgreSqlDataStorage
             ",\n",
             _HistoryOperationTypes.Select(
                 (type, i) =>
-                    $"b{i.ToString(CultureInfo.InvariantCulture)} AS (SELECT \"AuditId\",\"CreatedAt\" FROM {InboxAuditTable} WHERE \"OperationType\"={_HistoryTypeParameter(i)} AND \"CreatedAt\"<={_HistoryCutoffParameter(type)} ORDER BY \"CreatedAt\",\"AuditId\" LIMIT @BatchSize FOR UPDATE SKIP LOCKED)"
+                    $"b{i.ToString(CultureInfo.InvariantCulture)} AS (SELECT \"audit_id\",\"created_at\" FROM {InboxAuditTable} WHERE \"operation_type\"={_HistoryTypeParameter(i)} AND \"created_at\"<={_HistoryCutoffParameter(type)} ORDER BY \"created_at\",\"audit_id\" LIMIT @BatchSize FOR UPDATE SKIP LOCKED)"
             )
         );
         var union = string.Join(
             " UNION ALL ",
             _HistoryOperationTypes.Select(
-                (_, i) => $"SELECT \"AuditId\",\"CreatedAt\" FROM b{i.ToString(CultureInfo.InvariantCulture)}"
+                (_, i) => $"SELECT \"audit_id\",\"created_at\" FROM b{i.ToString(CultureInfo.InvariantCulture)}"
             )
         );
 
         return $"""
             WITH {branches},
             candidates AS (
-                SELECT "AuditId" FROM ({union}) u
-                ORDER BY "CreatedAt","AuditId" LIMIT @BatchSize
+                SELECT "audit_id" FROM ({union}) u
+                ORDER BY "created_at","audit_id" LIMIT @BatchSize
             )
-            DELETE FROM {InboxAuditTable} a USING candidates c WHERE a."AuditId"=c."AuditId";
+            DELETE FROM {InboxAuditTable} a USING candidates c WHERE a."audit_id"=c."audit_id";
             """;
     }
 
@@ -129,9 +129,9 @@ internal sealed partial class PostgreSqlDataStorage
             // Keyed by the primary key, so the type/cutoff predicate is a residual filter, not a seek.
             await using var command = new NpgsqlCommand(
                 $"""
-                DELETE FROM {InboxReceiptsTable} r WHERE r."OperationId"=@OperationId
-                  AND r."CreatedAt"<=CASE WHEN r."OperationType"=@CleanupType THEN @Cleanup ELSE @Operator END
-                  AND NOT EXISTS (SELECT 1 FROM {InboxAuditTable} a WHERE a."OperationId"=r."OperationId");
+                DELETE FROM {InboxReceiptsTable} r WHERE r."operation_id"=@OperationId
+                  AND r."created_at"<=CASE WHEN r."operation_type"=@CleanupType THEN @Cleanup ELSE @Operator END
+                  AND NOT EXISTS (SELECT 1 FROM {InboxAuditTable} a WHERE a."operation_id"=r."operation_id");
                 """,
                 connection,
                 transaction
@@ -156,15 +156,15 @@ internal sealed partial class PostgreSqlDataStorage
             "\n    UNION ALL\n    ",
             _HistoryOperationTypes.Select(
                 (type, i) =>
-                    $"(SELECT r.\"OperationId\",r.\"CreatedAt\" FROM {InboxReceiptsTable} r WHERE r.\"OperationType\"={_HistoryTypeParameter(i)} AND r.\"CreatedAt\"<={_HistoryCutoffParameter(type)} AND NOT EXISTS (SELECT 1 FROM {InboxAuditTable} a WHERE a.\"OperationId\"=r.\"OperationId\") ORDER BY r.\"CreatedAt\",r.\"OperationId\" LIMIT @BatchSize)"
+                    $"(SELECT r.\"operation_id\",r.\"created_at\" FROM {InboxReceiptsTable} r WHERE r.\"operation_type\"={_HistoryTypeParameter(i)} AND r.\"created_at\"<={_HistoryCutoffParameter(type)} AND NOT EXISTS (SELECT 1 FROM {InboxAuditTable} a WHERE a.\"operation_id\"=r.\"operation_id\") ORDER BY r.\"created_at\",r.\"operation_id\" LIMIT @BatchSize)"
             )
         );
 
         return $"""
-            SELECT "OperationId" FROM (
+            SELECT "operation_id" FROM (
                 {union}
             ) u
-            ORDER BY "CreatedAt","OperationId" LIMIT @BatchSize;
+            ORDER BY "created_at","operation_id" LIMIT @BatchSize;
             """;
     }
 }

@@ -29,7 +29,7 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
         var schema = provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema;
         await storage.GetInboxOperationsApi().HoldAsync(_Request(Guid.NewGuid(), StatusName.Succeeded), AbortToken);
         var cutoffs = await storage.GetInboxHistoryRetentionCutoffsAsync(AbortToken);
-        var table = receipts ? "InboxOperationReceipts" : "InboxAudit";
+        var table = receipts ? "MessagingInboxOperationReceipts" : "MessagingInboxAudit";
         await using var blocker = new SqlConnection(fixture.ConnectionString);
         await blocker.OpenAsync(AbortToken);
         await using var transaction = (SqlTransaction)await blocker.BeginTransactionAsync(AbortToken);
@@ -73,8 +73,8 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
         await connection.OpenAsync(AbortToken);
         await using var align = new SqlCommand(
             $"""
-            UPDATE [{schema}].[InboxAudit] SET [CreatedAt]=@Audit;
-            UPDATE [{schema}].[InboxOperationReceipts] SET [CreatedAt]=@Receipt;
+            UPDATE [{schema}].[MessagingInboxAudit] SET [CreatedAt]=@Audit;
+            UPDATE [{schema}].[MessagingInboxOperationReceipts] SET [CreatedAt]=@Receipt;
             """,
             connection
         );
@@ -99,18 +99,22 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         await using var count = new SqlCommand(
-            "SELECT COUNT(*) FROM sys.indexes WHERE name IN (@Receipts,@Audits,@Operation);",
+            // Index names repeat in every schema, so scope the count to this schema's history tables.
+            $"""
+            SELECT COUNT(*) FROM sys.indexes WHERE name IN (@Receipts,@Audits,@Operation)
+              AND object_id IN (OBJECT_ID(N'[{schema}].[MessagingInboxOperationReceipts]'), OBJECT_ID(N'[{schema}].[MessagingInboxAudit]'));
+            """,
             connection
         );
-        count.Parameters.Add(new SqlParameter("@Receipts", $"IX_{schema}_InboxReceipts_Type_CreatedAt"));
-        count.Parameters.Add(new SqlParameter("@Audits", $"IX_{schema}_InboxAudit_Type_CreatedAt"));
-        count.Parameters.Add(new SqlParameter("@Operation", $"IX_{schema}_InboxAudit_Operation"));
+        count.Parameters.Add(new SqlParameter("@Receipts", "IX_MessagingInboxOperationReceipts_Type_CreatedAt"));
+        count.Parameters.Add(new SqlParameter("@Audits", "IX_MessagingInboxAudit_Type_CreatedAt"));
+        count.Parameters.Add(new SqlParameter("@Operation", "IX_MessagingInboxAudit_Operation"));
         (await count.ExecuteScalarAsync(AbortToken)).Should().Be(3);
         await using var drop = new SqlCommand(
             $"""
-            DROP INDEX [IX_{schema}_InboxReceipts_Type_CreatedAt] ON [{schema}].[InboxOperationReceipts];
-            DROP INDEX [IX_{schema}_InboxAudit_Type_CreatedAt] ON [{schema}].[InboxAudit];
-            DROP INDEX [IX_{schema}_InboxAudit_Operation] ON [{schema}].[InboxAudit];
+            DROP INDEX [IX_MessagingInboxOperationReceipts_Type_CreatedAt] ON [{schema}].[MessagingInboxOperationReceipts];
+            DROP INDEX [IX_MessagingInboxAudit_Type_CreatedAt] ON [{schema}].[MessagingInboxAudit];
+            DROP INDEX [IX_MessagingInboxAudit_Operation] ON [{schema}].[MessagingInboxAudit];
             """,
             connection
         );
@@ -209,14 +213,17 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
             .Be(conflict && result.IsReplay ? InboxOperationOutcome.OperationConflict : InboxOperationOutcome.NotFound);
         await using var integrity = new SqlCommand(
             $"""
-            SELECT COUNT(*) FROM [{schema}].[InboxAudit] a
-            LEFT JOIN [{schema}].[InboxOperationReceipts] r ON r.[OperationId]=a.[OperationId]
+            SELECT COUNT(*) FROM [{schema}].[MessagingInboxAudit] a
+            LEFT JOIN [{schema}].[MessagingInboxOperationReceipts] r ON r.[OperationId]=a.[OperationId]
             WHERE r.[OperationId] IS NULL;
             """,
             blocker
         );
         (await integrity.ExecuteScalarAsync(AbortToken)).Should().Be(0);
-        await using var count = new SqlCommand($"SELECT COUNT(*) FROM [{schema}].[InboxOperationReceipts];", blocker);
+        await using var count = new SqlCommand(
+            $"SELECT COUNT(*) FROM [{schema}].[MessagingInboxOperationReceipts];",
+            blocker
+        );
         (await count.ExecuteScalarAsync(AbortToken)).Should().Be(result.IsReplay && !conflict ? 0 : 1);
     }
 
@@ -227,8 +234,8 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
         await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             $"""
-            UPDATE [{schema}].[InboxOperationReceipts] SET [CreatedAt]=DATEADD(second,-@Age,[CreatedAt]);
-            UPDATE [{schema}].[InboxAudit] SET [CreatedAt]=DATEADD(second,-@Age,[CreatedAt]);
+            UPDATE [{schema}].[MessagingInboxOperationReceipts] SET [CreatedAt]=DATEADD(second,-@Age,[CreatedAt]);
+            UPDATE [{schema}].[MessagingInboxAudit] SET [CreatedAt]=DATEADD(second,-@Age,[CreatedAt]);
             """,
             connection
         );

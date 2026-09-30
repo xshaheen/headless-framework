@@ -70,7 +70,7 @@ public sealed class TenantRestoreExecuteMiddleware(
 internal static partial class TenantRestoreExecuteMiddlewareLog
 {
     [LoggerMessage(
-        EventId = 3222,
+        EventId = 3403,
         EventName = "JobTenantScopeRestored",
         Level = LogLevel.Debug,
         Message = "Restoring ICurrentTenant to tenant '{TenantId}' for the job execution attempt."

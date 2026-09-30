@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
+
 namespace Headless.Permissions;
 
 /// <summary>
@@ -9,17 +11,32 @@ namespace Headless.Permissions;
 [PublicAPI]
 public sealed class PermissionsStorageOptions
 {
-    /// <summary>Database schema that contains all permissions tables. Defaults to <c>"permissions"</c>.</summary>
-    public string Schema { get; set; } = "permissions";
+    /// <summary>
+    /// Database schema that contains all permissions tables. Defaults to
+    /// <see cref="HeadlessStorageDefaults.Schema"/> (<c>"headless"</c>), the schema every Headless feature shares.
+    /// </summary>
+    public string Schema { get; set; } = HeadlessStorageDefaults.Schema;
 
-    /// <summary>Table name for permission grant records. Defaults to <c>"PermissionGrants"</c>.</summary>
-    public string PermissionGrantsTableName { get; set; } = "PermissionGrants";
+    /// <summary>
+    /// Table name for permission grant records. Default: <see langword="null"/>, which uses the database's
+    /// conventional name: <c>permission_grants</c> on PostgreSQL, <c>PermissionGrants</c> elsewhere. A configured
+    /// name is used verbatim, and the table's key and index names derive from it.
+    /// </summary>
+    public string? PermissionGrantsTableName { get; set; }
 
-    /// <summary>Table name for static permission definition records. Defaults to <c>"PermissionDefinitions"</c>.</summary>
-    public string PermissionDefinitionsTableName { get; set; } = "PermissionDefinitions";
+    /// <summary>
+    /// Table name for static permission definition records. Default: <see langword="null"/>, which uses the
+    /// database's conventional name: <c>permission_definitions</c> on PostgreSQL, <c>PermissionDefinitions</c>
+    /// elsewhere. A configured name is used verbatim.
+    /// </summary>
+    public string? PermissionDefinitionsTableName { get; set; }
 
-    /// <summary>Table name for permission group definition records. Defaults to <c>"PermissionGroupDefinitions"</c>.</summary>
-    public string PermissionGroupDefinitionsTableName { get; set; } = "PermissionGroupDefinitions";
+    /// <summary>
+    /// Table name for permission group definition records. Default: <see langword="null"/>, which uses the
+    /// database's conventional name: <c>permission_group_definitions</c> on PostgreSQL,
+    /// <c>PermissionGroupDefinitions</c> elsewhere. A configured name is used verbatim.
+    /// </summary>
+    public string? PermissionGroupDefinitionsTableName { get; set; }
 
     /// <summary>
     /// When false, the startup storage initializer is skipped (no-op) — use when the schema is
@@ -28,6 +45,30 @@ public sealed class PermissionsStorageOptions
     /// affects raw-DDL self-initializing providers; EF-mode storage uses migrations.
     /// </summary>
     public bool InitializeOnStartup { get; set; } = true;
+
+    /// <summary>Returns the permission grants table name to use on a database with <paramref name="style"/>.</summary>
+    /// <param name="style">The naming style of the target database.</param>
+    /// <returns>The configured name, or the conventional default for <paramref name="style"/>.</returns>
+    public string ResolvePermissionGrantsTableName(StorageNamingStyle style)
+    {
+        return HeadlessStorageNaming.Resolve(PermissionGrantsTableName, style, "PermissionGrants");
+    }
+
+    /// <summary>Returns the permission definitions table name to use on a database with <paramref name="style"/>.</summary>
+    /// <param name="style">The naming style of the target database.</param>
+    /// <returns>The configured name, or the conventional default for <paramref name="style"/>.</returns>
+    public string ResolvePermissionDefinitionsTableName(StorageNamingStyle style)
+    {
+        return HeadlessStorageNaming.Resolve(PermissionDefinitionsTableName, style, "PermissionDefinitions");
+    }
+
+    /// <summary>Returns the permission group definitions table name to use on a database with <paramref name="style"/>.</summary>
+    /// <param name="style">The naming style of the target database.</param>
+    /// <returns>The configured name, or the conventional default for <paramref name="style"/>.</returns>
+    public string ResolvePermissionGroupDefinitionsTableName(StorageNamingStyle style)
+    {
+        return HeadlessStorageNaming.Resolve(PermissionGroupDefinitionsTableName, style, "PermissionGroupDefinitions");
+    }
 
     /// <summary>
     /// Copies every property to <paramref name="target"/>. Centralizes the property list so

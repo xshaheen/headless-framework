@@ -90,7 +90,11 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     )
     {
         Argument.IsNotNull(storage);
-        _storage = storage;
+
+        // The key ring is one host-level secret shared by every tenant. On a scoped store (tenant scoping), the first
+        // key read or write would otherwise land inside whichever tenant's request touched data protection first, or
+        // fail outright on a request with no tenant.
+        _storage = storage is IScopedBlobStorage scoped ? scoped.Unscoped : storage;
         ContainerManager = containerManager;
         _logger = loggerFactory?.CreateLogger(typeof(BlobStorageDataProtectionXmlRepository)) ?? NullLogger.Instance;
     }

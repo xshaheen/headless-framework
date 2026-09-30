@@ -55,6 +55,12 @@ public sealed class PostgresConnectionDeathTests(PostgreSqlDistributedLockFixtur
         }
 
         handle.LostToken.IsCancellationRequested.Should().BeTrue();
+
+        // Renewal must report the observed loss rather than claim a lock the database already dropped.
+        (await handle.RenewAsync(cancellationToken: AbortToken))
+            .Should()
+            .BeFalse();
+        (await locks.RenewAsync(resource, handle.LeaseId, cancellationToken: AbortToken)).Should().BeFalse();
     }
 
     private const string _KeyPrefix = "death:";

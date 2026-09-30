@@ -69,6 +69,9 @@ public static class SetupHeadlessTenancyCatalog
         services.AddScoped<TenantCatalogService>();
         services.AddScoped<ITenantCatalogService>(sp => sp.GetRequiredService<TenantCatalogService>());
 
+        // Singleton: it holds only the two ICache<T> services, which every caching provider registers as singletons.
+        services.TryAddSingleton<ITenantCatalogCacheInvalidator, TenantCatalogCacheInvalidator>();
+
         // Headless.MultiTenancy references only Headless.Caching.Abstractions, so the open-generic ICache<>
         // that backs both read-through caches comes from a caching provider package the host must install.
         // Declared here rather than under the resolution capability because accessor-only hosts need them

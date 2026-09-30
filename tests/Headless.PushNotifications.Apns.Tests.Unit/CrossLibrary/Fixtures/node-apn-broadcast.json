@@ -1,0 +1,88 @@
+{
+  "library": "@parse/node-apn",
+  "version": "8.1.0",
+  "generatedAt": "2026-01-01T00:00:00Z",
+  "broadcast": {
+    "method": "POST",
+    "path": "/4/broadcasts/apps/com.example.app",
+    "headers": {
+      "apns-push-type": "liveactivity",
+      "apns-priority": "5",
+      "apns-expiration": "0",
+      "apns-channel-id": "dHN0LXNyY2gtY2hubA==",
+      "apns-topic": null,
+      "apns-collapse-id": null
+    },
+    "hasRequestId": true,
+    "body": {
+      "aps": {
+        "content-state": {
+          "score": 2
+        },
+        "event": "update",
+        "timestamp": 1790330400
+      }
+    }
+  },
+  "channels": {
+    "create": {
+      "method": "POST",
+      "path": "/1/apps/com.example.app/channels",
+      "headers": {
+        "apns-push-type": null,
+        "apns-priority": "10",
+        "apns-expiration": null,
+        "apns-channel-id": null,
+        "apns-topic": null,
+        "apns-collapse-id": null
+      },
+      "hasRequestId": true,
+      "body": {
+        "message-storage-policy": 1,
+        "push-type": "liveactivity"
+      }
+    },
+    "read": {
+      "method": "GET",
+      "path": "/1/apps/com.example.app/channels",
+      "headers": {
+        "apns-push-type": null,
+        "apns-priority": "10",
+        "apns-expiration": null,
+        "apns-channel-id": "dHN0LXNyY2gtY2hubA==",
+        "apns-topic": null,
+        "apns-collapse-id": null
+      },
+      "hasRequestId": true,
+      "body": null
+    },
+    "list": {
+      "method": "GET",
+      "path": "/1/apps/com.example.app/all-channels",
+      "headers": {
+        "apns-push-type": null,
+        "apns-priority": "10",
+        "apns-expiration": null,
+        "apns-channel-id": null,
+        "apns-topic": null,
+        "apns-collapse-id": null
+      },
+      "hasRequestId": true,
+      "body": null
+    },
+    "delete": {
+      "method": "DELETE",
+      "path": "/1/apps/com.example.app/channels",
+      "headers": {
+        "apns-push-type": null,
+        "apns-priority": "10",
+        "apns-expiration": null,
+        "apns-channel-id": "dHN0LXNyY2gtY2hubA==",
+        "apns-topic": null,
+        "apns-collapse-id": null
+      },
+      "hasRequestId": true,
+      "body": null
+    }
+  }
+}

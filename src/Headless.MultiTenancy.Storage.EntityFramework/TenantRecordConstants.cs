@@ -7,11 +7,11 @@ public static class TenantRecordConstants
 {
     /// <summary>
     /// Maximum character length for <see cref="TenantRecord.Identifier"/> and
-    /// <see cref="TenantRecord.NormalizedIdentifier"/>. Generous relative to
-    /// <c>TenantCatalogOptions.MaxIdentifierLength</c>'s default of 63 (DNS-label form) so a custom,
-    /// longer identifier shape still fits.
+    /// <see cref="TenantRecord.NormalizedIdentifier"/>. Equals <see cref="TenantCatalogOptions.MaxIdentifierLengthLimit"/>
+    /// (253, the DNS hostname limit) so every identifier the catalog can accept, including a whole-host
+    /// custom-domain identifier, fits the column.
     /// </summary>
-    public const int IdentifierMaxLength = 128;
+    public const int IdentifierMaxLength = TenantCatalogOptions.MaxIdentifierLengthLimit;
 
     /// <summary>Maximum character length for <see cref="TenantRecord.Name"/>.</summary>
     public const int NameMaxLength = 256;

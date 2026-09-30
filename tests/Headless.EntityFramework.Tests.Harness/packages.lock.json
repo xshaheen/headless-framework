@@ -777,6 +777,13 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
         }
       },
+      "headless.entityframework.testing": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.EntityFramework": "[1.0.0, )",
+          "Headless.Testing": "[1.0.0, )"
+        }
+      },
       "headless.extensions": {
         "type": "Project",
         "dependencies": {

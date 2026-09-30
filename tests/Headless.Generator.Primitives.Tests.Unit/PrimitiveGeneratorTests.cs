@@ -26,46 +26,19 @@ public sealed class PrimitiveGeneratorTests
     [Fact]
     public void should_use_unique_headless_framework_diagnostic_ids()
     {
-        var diagnosticHelperType = typeof(PrimitiveGenerator).Assembly.GetType(
-            "Headless.Generator.Primitives.Helpers.DiagnosticHelper"
+        var catalog = typeof(PrimitiveGenerator).Assembly.GetType(
+            "Headless.Generator.Primitives.Diagnostics.DiagnosticDescriptors"
         );
 
-        diagnosticHelperType.Should().NotBeNull();
-        var diagnostics = diagnosticHelperType!
-            .GetMethods(BindingFlags.NonPublic | BindingFlags.Static)
-            .Where(method => method.ReturnType == typeof(Diagnostic))
-            .Select(method =>
-            {
-                var arguments = method
-                    .GetParameters()
-                    .Select<ParameterInfo, object?>(parameter =>
-                        parameter.ParameterType == typeof(Exception)
-                            ? new InvalidOperationException("diagnostic contract test")
-                        : parameter.ParameterType == typeof(string) ? "Primitive"
-                        : null
-                    )
-                    .ToArray();
-
-                return (Diagnostic)method.Invoke(null, arguments)!;
-            })
-            .Select(diagnostic => diagnostic.Id)
+        catalog.Should().NotBeNull();
+        var ids = catalog!
+            .GetFields(BindingFlags.Public | BindingFlags.Static)
+            .Where(field => field.FieldType == typeof(DiagnosticDescriptor))
+            .Select(field => ((DiagnosticDescriptor)field.GetValue(null)!).Id)
             .ToArray();
 
-        diagnostics.Should().OnlyHaveUniqueItems();
-        diagnostics
-            .Should()
-            .BeEquivalentTo(
-                "HF1000",
-                "HF1001",
-                "HF1002",
-                "HF1003",
-                "HF1011",
-                "HF1012",
-                "HF1013",
-                "HF1015",
-                "HF1016",
-                "HF1021"
-            );
+        ids.Should().OnlyHaveUniqueItems();
+        ids.Should().BeEquivalentTo("HF1000", "HF1001", "HF1002", "HF1012", "HF1013", "HF1015", "HF1016");
     }
 
     [Fact]
@@ -700,9 +673,8 @@ public sealed class PrimitiveGeneratorTests
     }
 
     [Fact]
-    public Task should_skip_generation_for_invalid_base_type()
+    public Task should_report_unsupported_underlying_type_when_wrapping_a_custom_type()
     {
-        // Generator silently skips types with unsupported underlying types
         const string source = """
             using System;
             using Headless.Generator.Primitives;
@@ -722,7 +694,7 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(source, generated => generated.Files.Should().BeEmpty());
+        return TestHelper.VerifyDiagnostic(source, "HF1001", generated => generated.Files.Should().BeEmpty());
     }
 
     [Fact]
@@ -744,9 +716,8 @@ public sealed class PrimitiveGeneratorTests
     }
 
     [Fact]
-    public Task should_skip_generation_for_nullable_underlying_type()
+    public Task should_report_unsupported_underlying_type_when_wrapping_a_nullable_value_type()
     {
-        // Generator does not support nullable value types as the underlying type
         const string source = """
             using System;
             using Headless.Generator.Primitives;
@@ -762,7 +733,7 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(source, generated => generated.Files.Should().BeEmpty());
+        return TestHelper.VerifyDiagnostic(source, "HF1001", generated => generated.Files.Should().BeEmpty());
     }
 
     private static class TestHelper
@@ -784,12 +755,14 @@ public sealed class PrimitiveGeneratorTests
         internal static Task VerifyDiagnostic(
             string source,
             string expectedDiagnosticId,
+            Action<GeneratedOutput>? additionalChecks = null,
             PrimitiveGlobalOptions? options = null
         )
         {
             var generatedOutput = TestHelpers.GetGeneratedOutput<PrimitiveGenerator>(source, options);
 
             generatedOutput.Diagnostics.Should().Contain(d => d.Id == expectedDiagnosticId);
+            additionalChecks?.Invoke(generatedOutput);
 
             return Verifier.Verify(generatedOutput.Driver).UseDirectory("Snapshots");
         }

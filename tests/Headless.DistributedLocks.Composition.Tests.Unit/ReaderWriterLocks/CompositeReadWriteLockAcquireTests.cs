@@ -265,7 +265,7 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
     {
         var provider = _CreateProvider(new FakeTimeProvider());
 #pragma warning disable CA2000 // Ownership transfers to the composite returned by the acquisition.
-        var child = new CompositeTestLease("a", fencingToken: 42);
+        var child = new CompositeTestLease("a", fencingToken: new LockFencingToken(42));
 #pragma warning restore CA2000
 
         provider
@@ -279,7 +279,7 @@ public sealed class CompositeReadWriteLockAcquireTests : TestBase
 
         result.Should().BeSameAs(child);
         result!.LeaseId.Should().Be(child.LeaseId);
-        result.FencingToken.Should().Be(42);
+        result.FencingToken.Should().Be(new LockFencingToken(42));
         result.Resource.Should().Be("a");
         await provider
             .Received(1)

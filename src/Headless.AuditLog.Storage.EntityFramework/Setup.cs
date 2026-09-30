@@ -22,8 +22,8 @@ public static class SetupAuditLogEntityFramework
         /// </summary>
         /// <typeparam name="TContext">
         /// The <c>DbContext</c> subclass that owns the audit log table. The context must call
-        /// <see cref="Microsoft.EntityFrameworkCore.HeadlessAuditLogModelBuilderExtensions.AddHeadlessAuditLog"/> inside
-        /// <c>OnModelCreating</c>, which is validated at application startup.
+        /// <c>modelBuilder.AddHeadlessAuditLog(this)</c> inside <c>OnModelCreating</c>, which is validated at
+        /// application startup.
         /// </typeparam>
         /// <remarks>
         /// This overload uses EF Core migrations for schema management; the startup storage
@@ -60,6 +60,11 @@ public static class SetupAuditLogEntityFramework
                 typeof(IReadAuditLog<>).MakeGenericType(dbContextType),
                 typeof(EfReadAuditLog<>).MakeGenericType(dbContextType)
             );
+            services.RequireSingletonService(
+                typeof(IDbContextFactory<>).MakeGenericType(dbContextType),
+                requiredBy: "Headless audit log EF storage",
+                remedy: "Register it with AddDbContextFactory<TContext>() or AddPooledDbContextFactory<TContext>() at the default singleton lifetime; the store is a singleton and would keep one scoped or transient factory for the life of the host."
+            );
             services.AddStartupValidator(typeof(AuditLogEntityStartupValidator<>).MakeGenericType(dbContextType));
         }
     }
@@ -67,13 +72,17 @@ public static class SetupAuditLogEntityFramework
     // EF dispatches to whatever DB the consumer wired up, so the validator uses the most
     // permissive identifier pattern (SqlServer, a superset of PostgreSQL's character set) and
     // the larger length cap (SqlServer), and accepts any JsonColumnType. The underlying DB
-    // surfaces type/length issues at migration time.
+    // surfaces type/length issues at migration time, except derived key and index names, which
+    // PostgreSQL truncates instead of rejecting, so those are bounded here.
     private sealed class EntityFrameworkAuditLogStorageOptionsValidator : AbstractValidator<AuditLogStorageOptions>
     {
         public EntityFrameworkAuditLogStorageOptionsValidator()
         {
             RuleFor(x => x.Schema).IsValidCrossProviderIdentifier();
-            RuleFor(x => x.TableName).IsValidCrossProviderIdentifier();
+            RuleFor(x => x.TableName)
+                .IsValidCrossProviderIdentifier()
+                .FitsDerivedPostgreSqlNames(AuditLogStorageNames.Indexes)
+                .When(x => x.TableName is not null);
             RuleFor(x => x.JsonColumnType).IsInEnum().When(x => x.JsonColumnType.HasValue);
             RuleFor(x => x.CreatedAtColumnType)
                 .MaximumLength(64)

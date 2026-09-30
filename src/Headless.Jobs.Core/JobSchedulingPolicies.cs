@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 using Headless.Jobs.Models;
-using Headless.UnitOfWork;
 
 namespace Headless.Jobs;
 
@@ -61,25 +60,18 @@ internal sealed class JobSchedulingPolicies
         }
     }
 
-    internal JobOptions Resolve(JobFunctionDescriptor descriptor, JobOptions? call) =>
-        _Resolve(descriptor, call, includeHostEnlistment: true);
-
     internal JobOptions ResolveRecurring(JobFunctionDescriptor descriptor, RecurringJobOptions? call) =>
-        _Resolve(
+        Resolve(
             descriptor,
             new JobOptions
             {
                 Retries = call?.Retries,
                 RetryIntervals = call?.RetryIntervals,
                 OnNodeDeath = call?.OnNodeDeath,
-                Enlistment = call?.Enlistment ?? TransactionEnlistment.Optional,
-            },
-            // Recurring definitions take the enlistment from the call or the function policy only: the host default
-            // describes one-shot deadlines, and a definition is usually created at bootstrap, outside any transaction.
-            includeHostEnlistment: false
+            }
         );
 
-    private JobOptions _Resolve(JobFunctionDescriptor descriptor, JobOptions? call, bool includeHostEnlistment)
+    internal JobOptions Resolve(JobFunctionDescriptor descriptor, JobOptions? call)
     {
         var function =
             _byFunction.GetValueOrDefault(descriptor.FunctionName)
@@ -90,11 +82,6 @@ internal sealed class JobSchedulingPolicies
             RetryIntervals = (call?.RetryIntervals ?? function?.RetryIntervals ?? _defaults.RetryIntervals)?.ToArray(),
             OnNodeDeath =
                 call?.OnNodeDeath ?? function?.OnNodeDeath ?? _defaults.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
-            Enlistment = ComposeEnlistment(
-                call?.Enlistment,
-                function?.Enlistment,
-                includeHostEnlistment ? _defaults.Enlistment : null
-            ),
             // The idempotency window is per call by contract: it is never inherited from host/function policy
             // (Snapshot rejects it there), so only the call's own key and TTL survive resolution.
             IdempotencyKey = call?.IdempotencyKey,
@@ -102,25 +89,6 @@ internal sealed class JobSchedulingPolicies
         };
         _ValidateOptions(result);
         return result;
-    }
-
-    // Strictest-wins composition across call > function policy > host default: TransactionEnlistment.Required from
-    // ANY tier wins outright; otherwise Optional. A null tier (call/function not configured, or the host default
-    // excluded for recurring definitions) contributes nothing.
-    internal static TransactionEnlistment ComposeEnlistment(params ReadOnlySpan<TransactionEnlistment?> tiers) =>
-        _ComposeEnlistmentCore(tiers);
-
-    private static TransactionEnlistment _ComposeEnlistmentCore(ReadOnlySpan<TransactionEnlistment?> tiers)
-    {
-        foreach (var tier in tiers)
-        {
-            if (tier == TransactionEnlistment.Required)
-            {
-                return TransactionEnlistment.Required;
-            }
-        }
-
-        return TransactionEnlistment.Optional;
     }
 
     internal static JobOptions Snapshot(JobOptions options)
@@ -137,7 +105,7 @@ internal sealed class JobSchedulingPolicies
         )
         {
             throw new ArgumentException(
-                "Startup job policies accept only retry, node-death, and enlistment settings. Supply invocation metadata on each call.",
+                "Startup job policies accept only retry and node-death settings. Supply invocation metadata on each call.",
                 nameof(options)
             );
         }
@@ -153,10 +121,6 @@ internal sealed class JobSchedulingPolicies
         if (options.OnNodeDeath is { } policy && !Enum.IsDefined(policy))
         {
             throw new ArgumentException("The node-death policy must be a defined value.", nameof(options));
-        }
-        if (!Enum.IsDefined(options.Enlistment))
-        {
-            throw new ArgumentException("The transaction-enlistment value must be a defined value.", nameof(options));
         }
         if (options.IdempotencyKey is { } key)
         {

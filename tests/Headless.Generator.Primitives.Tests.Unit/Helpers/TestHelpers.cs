@@ -12,31 +12,19 @@ namespace Tests.Helpers;
 internal static class TestHelpers
 {
     // Cache assembly references to avoid repeated enumeration across tests
-    private static readonly Lazy<ImmutableArray<MetadataReference>> _CachedReferences = new(() =>
-        [
-            .. AppDomain
-                .CurrentDomain.GetAssemblies()
-                .Where(x => !x.IsDynamic && !string.IsNullOrWhiteSpace(x.Location))
-                .Select(x => (MetadataReference)MetadataReference.CreateFromFile(x.Location))
-                .Concat([
-                    MetadataReference.CreateFromFile(typeof(PrimitiveGenerator).Assembly.Location),
-                    MetadataReference.CreateFromFile(typeof(IPrimitive<>).Assembly.Location),
-                    MetadataReference.CreateFromFile(typeof(DisplayAttribute).Assembly.Location),
-                ]),
-        ]
-    );
+    internal static Lazy<ImmutableArray<MetadataReference>> References { get; } =
+        new(() =>
+            GeneratorCompilation.LoadedAssemblyReferences(
+                typeof(PrimitiveGenerator).Assembly,
+                typeof(IPrimitive<>).Assembly,
+                typeof(DisplayAttribute).Assembly
+            )
+        );
 
     internal static GeneratedOutput GetGeneratedOutput<T>(string source, PrimitiveGlobalOptions? globalOptions = null)
         where T : IIncrementalGenerator, new()
     {
-        var syntaxTree = CSharpSyntaxTree.ParseText(source);
-
-        var compilation = CSharpCompilation.Create(
-            "generator_Test",
-            [syntaxTree],
-            _CachedReferences.Value,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
-        );
+        var compilation = GeneratorCompilation.Create("generator_Test", [(string.Empty, source)], References.Value);
 
         var originalTreeCount = compilation.SyntaxTrees.Length;
         var generator = new T();
@@ -61,7 +49,7 @@ internal static class TestHelpers
         );
     }
 
-    private sealed class PrimitiveConfigOptionsProvider(PrimitiveGlobalOptions options) : AnalyzerConfigOptionsProvider
+    internal sealed class PrimitiveConfigOptionsProvider(PrimitiveGlobalOptions options) : AnalyzerConfigOptionsProvider
     {
         public override AnalyzerConfigOptions GetOptions(SyntaxTree tree)
         {

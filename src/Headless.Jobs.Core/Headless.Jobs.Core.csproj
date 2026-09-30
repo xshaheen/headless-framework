@@ -4,6 +4,9 @@
     <Description>Core services, options, and setup primitives for Headless background jobs packages.</Description>
     <PackageTags>headless;jobs;dotnet</PackageTags>
     <RootNamespace>Headless.Jobs</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
+    <!-- Replaces reflection-based IConfiguration binding (ConfigureStorage) with generated, trim-safe binding. -->
+    <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Jobs.Composition.Tests.Unit" />

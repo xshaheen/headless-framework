@@ -44,7 +44,7 @@ internal sealed class ConsumerRegister(
     private readonly MessagingTelemetry _telemetry =
         serviceProvider.GetService<MessagingTelemetry>() ?? MessagingTelemetry.Default;
     private readonly InboxMetricPolicy _inboxMetricPolicy =
-        serviceProvider.GetService<InboxMetricPolicy>() ?? new InboxMetricPolicy(IncludeTenantId: false);
+        serviceProvider.GetService<InboxMetricPolicy>() ?? new InboxMetricPolicy(TenantTagName: null);
     private readonly IMessagingCapabilityModel _capabilityModel =
         serviceProvider.GetRequiredService<IMessagingCapabilityModel>();
     private readonly TimeSpan _pollingDelay = TimeSpan.FromSeconds(1);
@@ -1338,7 +1338,7 @@ internal sealed class ConsumerRegister(
                             inboxTier,
                             storageCapability.Provider,
                             message.Headers.TryGetValue(Headers.TenantId, out var tenantId) ? tenantId : null,
-                            _inboxMetricPolicy.IncludeTenantId
+                            _inboxMetricPolicy.TenantTagName
                         );
                     }
 

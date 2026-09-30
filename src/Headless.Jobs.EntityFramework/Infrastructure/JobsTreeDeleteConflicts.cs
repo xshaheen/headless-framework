@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using Headless.Constants;
+using Headless.UnitOfWork;
 using Headless.UnitOfWork.Internal;
 
 namespace Headless.Jobs.Infrastructure;
@@ -31,12 +32,12 @@ internal static class JobsTreeDeleteConflicts
         CancellationToken cancellationToken
     )
     {
-        if (commitStarted || RelationalTransientFaults.IsCancellation(exception, cancellationToken))
+        if (commitStarted || TransientFaults.IsCancellation(exception, cancellationToken))
         {
             return false;
         }
 
-        if (RelationalTransientFaults.FindDatabaseException(exception) is not { } databaseException)
+        if (TransientFaults.FindDatabaseException(exception) is not { } databaseException)
         {
             return false;
         }
