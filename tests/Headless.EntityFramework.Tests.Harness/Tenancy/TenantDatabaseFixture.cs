@@ -27,14 +27,14 @@ public enum TenantDatabaseProvider
     SqlServer,
 }
 
-public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider, TenantDataPlacement? placement = null)
+public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider, ConformanceDataPlacement? placement = null)
     : IAsyncLifetime
 {
     private IContainer? _container;
     private string _connectionString = null!;
 
     public TenantDatabaseProvider Provider { get; } = provider;
-    public TenantDataPlacement Placement { get; } = placement ?? TenantDataPlacement.Default;
+    public ConformanceDataPlacement Placement { get; } = placement ?? ConformanceDataPlacement.Default;
     public TestCurrentTenant CurrentTenant { get; } = new();
     public ServiceProvider Services { get; private set; } = null!;
     public string MigrationSql { get; private set; } = "";

@@ -13,11 +13,19 @@ namespace Headless.MultiTenancy;
 /// run over a routed context can detect it without referencing that package.
 /// </summary>
 /// <param name="contextType">The routed data context type.</param>
+/// <param name="dataStore">
+/// The routed data store the context belongs to, or <see langword="null"/> for
+/// <see cref="TenantDataPlacementRequest.DefaultDataStore"/>. It names the placement the resolver is asked for.
+/// </param>
 [PublicAPI]
-public sealed class TenantDataRoutedContextRegistration(Type contextType)
+public sealed class TenantDataRoutedContextRegistration(Type contextType, string? dataStore = null)
 {
     /// <summary>The routed data context type.</summary>
     public Type ContextType { get; } = Argument.IsNotNull(contextType);
+
+    /// <summary>The routed data store the context belongs to.</summary>
+    public string DataStore { get; } =
+        dataStore is null ? TenantDataPlacementRequest.DefaultDataStore : Argument.IsNotNullOrWhiteSpace(dataStore);
 }
 
 /// <summary>Registration helpers for features that must run over a context that is not tenant-routed.</summary>

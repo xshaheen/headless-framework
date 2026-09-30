@@ -21,7 +21,7 @@ public sealed class SqlServerMetadataTenantFixture() : MetadataTenantFixture(Ten
 
 // A non-default database and schema, standing in for the placement a per-tenant topology would choose.
 public sealed class PostgreSqlPlacedMetadataTenantFixture()
-    : MetadataTenantFixture(TenantDatabaseProvider.PostgreSql, new TenantDataPlacement("tenant_placed", "placed"));
+    : MetadataTenantFixture(TenantDatabaseProvider.PostgreSql, new ConformanceDataPlacement("tenant_placed", "placed"));
 
 [Collection<MetadataTenantCollection>]
 public sealed class PostgreSqlMetadataTenantConformanceTests(PostgreSqlMetadataTenantFixture fixture)

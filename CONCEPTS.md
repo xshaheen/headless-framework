@@ -524,10 +524,12 @@ catalog owns that. Built-in sources: host template, route value, header, delegat
 ### Tenant data placement
 
 Where one tenant's data physically lives: its own database schema, its own database (connection
-string), or both, resolved per canonical tenant id by `ITenantDataPlacementResolver`. Only an EF
-context registered with `RouteTenantData<TContext>()` applies it; that context is then
-*tenant-routed* and pinned to one tenant for its lifetime. A tenant with no placement is refused,
-never sent to the shared database. See
+string), both, or the shared placement (`TenantDataPlacement.Shared`, the context's own schema and
+database), resolved per canonical tenant id and *data store* (the group a routed context belongs
+to, `"default"` unless named) by `ITenantDataPlacementResolver`. Only an EF context registered with
+`RouteTenantData<TContext>()` applies it; that context is then *tenant-routed* and pinned to one
+tenant for its lifetime. A tenant with no placement is refused, never sent to the shared database.
+See
 [docs/llms/multi-tenancy.md](docs/llms/multi-tenancy.md#tenant-data-placement).
 
 ## Jobs (tenancy)

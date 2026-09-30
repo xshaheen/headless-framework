@@ -19,7 +19,11 @@ namespace Tests.Fixture;
 /// <summary>
 /// One PostgreSQL container hosting the shared database (schema <c>app</c>), two tenant schemas
 /// (<c>tenant_a</c>, <c>tenant_b</c>), two tenant databases (<c>tenant_da</c>, <c>tenant_db</c>), and two tenants
-/// (<c>sa</c>, <c>sb</c>) whose placement names the shared database, so they stay in the shared schema.
+/// (<c>sa</c>, <c>sb</c>) with the shared placement, so they stay in the shared schema. <see cref="EnumMappedDbContext"/>
+/// is routed under the <c>secondary</c> data store: tenant <c>a</c> places it in schema <c>tenant_a_secondary</c> and
+/// tenant <c>da</c> in its own database, while tenant <c>b</c> leaves it unplaced. Every routed context type costs
+/// one EF internal service provider, and EF throws past twenty per process, so the fixture reuses types rather than
+/// adding one per scenario.
 /// </summary>
 public sealed class TenantPlacementDbContextTestFixture : IAsyncLifetime
 {
@@ -30,6 +34,7 @@ public sealed class TenantPlacementDbContextTestFixture : IAsyncLifetime
     public const string SharedTenantA = "sa";
     public const string SharedTenantB = "sb";
     public const string UnplacedTenant = "unplaced";
+    public const string SecondaryDataStore = "secondary";
     public const int ManySchemaTenantCount = 45;
 
     private PostgreSqlContainer _container = null!;
@@ -68,6 +73,12 @@ public sealed class TenantPlacementDbContextTestFixture : IAsyncLifetime
             using var _ = CurrentTenant.Change(tenant);
             await using var db = await CreateAsync<PlacementDbContext>();
             await db.GetService<IRelationalDatabaseCreator>().CreateTablesAsync();
+        }
+
+        using (CurrentTenant.Change(SchemaTenantA))
+        {
+            await using var secondary = await CreateAsync<EnumMappedDbContext>();
+            await secondary.GetService<IRelationalDatabaseCreator>().CreateTablesAsync();
         }
 
         foreach (var tenant in new[] { DatabaseTenantA, DatabaseTenantB })
@@ -132,7 +143,7 @@ public sealed class TenantPlacementDbContextTestFixture : IAsyncLifetime
                     .RouteTenantData<ExplicitTenantSchemaDbContext>()
                     .RouteTenantData<ExplicitSharedSchemaDbContext>()
                     .RouteTenantData<DataSourceDbContext>()
-                    .RouteTenantData<EnumMappedDbContext>()
+                    .RouteTenantData<EnumMappedDbContext>(o => o.DataStore = SecondaryDataStore)
             );
         });
         services.AddOrReplaceSingleton<ICurrentTenant>(_ => CurrentTenant);
@@ -155,12 +166,28 @@ public sealed class TenantPlacementDbContextTestFixture : IAsyncLifetime
 
     private void _ConfigurePlacements(ConfigurationTenantDataPlacementOptions options)
     {
-        options.Tenants.Add(new() { TenantId = SharedTenantA, ConnectionString = SharedConnectionString });
-        options.Tenants.Add(new() { TenantId = SharedTenantB, ConnectionString = SharedConnectionString });
+        options.Tenants.Add(new() { TenantId = SharedTenantA, Shared = true });
+        options.Tenants.Add(new() { TenantId = SharedTenantB, Shared = true });
         options.Tenants.Add(new() { TenantId = SchemaTenantA, Schema = "tenant_a" });
+        options.Tenants.Add(
+            new()
+            {
+                TenantId = SchemaTenantA,
+                DataStore = SecondaryDataStore,
+                Schema = "tenant_a_secondary",
+            }
+        );
         options.Tenants.Add(new() { TenantId = SchemaTenantB, Schema = "tenant_b" });
         options.Tenants.Add(
             new() { TenantId = DatabaseTenantA, ConnectionString = TenantDatabaseConnectionString("tenant_da") }
+        );
+        options.Tenants.Add(
+            new()
+            {
+                TenantId = DatabaseTenantA,
+                DataStore = SecondaryDataStore,
+                ConnectionString = TenantDatabaseConnectionString("tenant_da"),
+            }
         );
         options.Tenants.Add(
             new() { TenantId = DatabaseTenantB, ConnectionString = TenantDatabaseConnectionString("tenant_db") }

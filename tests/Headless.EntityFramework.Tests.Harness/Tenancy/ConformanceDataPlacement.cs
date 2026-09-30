@@ -11,9 +11,9 @@ namespace Tests.Tenancy;
 /// Suites that must hold under non-default placement (a per-tenant schema or database) run the same tests against a
 /// fixture built with another placement instead of copying them.
 /// </remarks>
-public sealed record TenantDataPlacement(string Database, string? Schema)
+public sealed record ConformanceDataPlacement(string Database, string? Schema)
 {
-    public static TenantDataPlacement Default { get; } = new("tenant_conformance", "tenancy");
+    public static ConformanceDataPlacement Default { get; } = new("tenant_conformance", "tenancy");
 }
 
 /// <summary>

@@ -84,7 +84,9 @@ internal sealed class HeadlessDbContextFactory<TDbContext>(IServiceScopeFactory 
     /// </summary>
     private static async Task _PinTenantPlacementAsync(IServiceProvider services, CancellationToken cancellationToken)
     {
-        if (services.GetService<HeadlessTenantDataRouting>()?.IsRouted(typeof(TDbContext)) != true)
+        var routing = services.GetService<HeadlessTenantDataRouting>();
+
+        if (routing?.IsRouted(typeof(TDbContext)) != true)
         {
             return;
         }
@@ -99,13 +101,9 @@ internal sealed class HeadlessDbContextFactory<TDbContext>(IServiceScopeFactory 
         var placement =
             await services
                 .GetRequiredService<ITenantDataPlacementResolver>()
-                .ResolveAsync(tenantId, cancellationToken)
+                .ResolveAsync(routing.CreateRequest(typeof(TDbContext), tenantId), cancellationToken)
                 .ConfigureAwait(false)
-            ?? throw new InvalidOperationException(
-                $"Tenant '{tenantId}' has no data placement, so the tenant-routed context "
-                    + $"'{typeof(TDbContext).Name}' cannot be created for it. Add the tenant's placement to the "
-                    + "configured placement source; routed contexts never fall back to the shared database."
-            );
+            ?? throw HeadlessRoutedPlacement.NoPlacement(tenantId, typeof(TDbContext));
 
         services.GetRequiredService<HeadlessTenantPlacementPin>().Set(tenantId, placement);
     }

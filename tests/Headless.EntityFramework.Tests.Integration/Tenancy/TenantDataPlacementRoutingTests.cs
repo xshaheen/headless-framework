@@ -120,6 +120,54 @@ public sealed class TenantDataPlacementRoutingTests(TenantPlacementDbContextTest
     }
 
     [Fact]
+    public async Task should_keep_a_shared_tenant_on_the_registration_model_and_connection()
+    {
+        // given
+        using var tenant = fixture.CurrentTenant.Change(_SharedA);
+        await using var db = await fixture.CreateAsync<PlacementDbContext>(AbortToken);
+
+        // when
+        var hostModel = await _HostModelAsync();
+
+        // then: the shared placement changes nothing about the context, it only pins the tenant
+        db.Model.Should().BeSameAs(hostModel);
+        db.TenantId.Should().Be(_SharedA);
+        new NpgsqlConnectionStringBuilder(db.Database.GetConnectionString()).Database.Should().Be("placement_shared");
+    }
+
+    [Fact]
+    public async Task should_place_each_data_store_of_a_tenant_separately()
+    {
+        // given
+        using var tenant = fixture.CurrentTenant.Change(_A);
+        await using var primary = await fixture.CreateAsync<PlacementDbContext>(AbortToken);
+        await using var secondary = await fixture.CreateAsync<EnumMappedDbContext>(AbortToken);
+        secondary.Rows.Add(new PlacedRow { Name = "row-a-secondary" });
+        await secondary.SaveChangesAsync(AbortToken);
+
+        // then
+        primary.Model.FindEntityType(typeof(PlacedRow))!.GetSchema().Should().Be("tenant_a");
+        secondary.Model.FindEntityType(typeof(PlacedRow))!.GetSchema().Should().Be("tenant_a_secondary");
+        (await _CountRawAsync(fixture.SharedConnectionString, "tenant_a_secondary")).Should().Be(1);
+        (await _CountRawAsync(fixture.SharedConnectionString, "tenant_a")).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_refuse_a_data_store_the_tenant_has_no_placement_for()
+    {
+        // given: tenant b places only the default data store
+        using var tenant = fixture.CurrentTenant.Change(_B);
+
+        // when
+        var act = () => fixture.CreateAsync<EnumMappedDbContext>(AbortToken);
+
+        // then
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*'b' has no data placement*EnumMappedDbContext*");
+    }
+
+    [Fact]
     public async Task should_use_registration_placement_without_an_ambient_tenant()
     {
         // given
@@ -411,6 +459,14 @@ public sealed class TenantDataPlacementRoutingTests(TenantPlacementDbContextTest
     private async Task<IModel> _ModelAsync(string tenantId)
     {
         using var tenant = fixture.CurrentTenant.Change(tenantId);
+        await using var db = await fixture.CreateAsync<PlacementDbContext>(AbortToken);
+
+        return db.Model;
+    }
+
+    private async Task<IModel> _HostModelAsync()
+    {
+        using var tenant = fixture.CurrentTenant.Change(null);
         await using var db = await fixture.CreateAsync<PlacementDbContext>(AbortToken);
 
         return db.Model;

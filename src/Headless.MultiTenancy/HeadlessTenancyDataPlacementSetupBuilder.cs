@@ -101,8 +101,9 @@ public sealed class HeadlessTenancyDataPlacementSetupBuilder
 
     /// <summary>
     /// Resolves placements through an app-supplied <typeparamref name="TResolver"/>, registered as scoped and
-    /// cached in process for <see cref="TenantDataPlacementOptions.CacheExpiration"/>. Requires an in-memory cache
-    /// tier (<c>AddHeadlessCaching(c =&gt; c.UseInMemory())</c>, which a hybrid setup also uses as its local tier):
+    /// cached in process for <see cref="TenantDataPlacementOptions.CacheExpiration"/> or until
+    /// <see cref="ITenantDataPlacementCacheInvalidator"/> evicts the tenant. Requires an in-memory cache tier
+    /// (<c>AddHeadlessCaching(c =&gt; c.UseInMemory())</c>, which a hybrid setup also uses as its local tier):
     /// placements carry connection strings and are never written to a distributed cache.
     /// </summary>
     /// <typeparam name="TResolver">The resolver. It must read host-level storage only.</typeparam>
@@ -120,6 +121,12 @@ public sealed class HeadlessTenancyDataPlacementSetupBuilder
                         ServiceDescriptor.Scoped<
                             ITenantDataPlacementResolver,
                             CachingTenantDataPlacementResolver<TResolver>
+                        >()
+                    );
+                    services.Replace(
+                        ServiceDescriptor.Singleton<
+                            ITenantDataPlacementCacheInvalidator,
+                            TenantDataPlacementCacheInvalidator
                         >()
                     );
                     services.RequireRegisteredService<IInMemoryCache>(
@@ -146,6 +153,14 @@ public sealed class HeadlessTenancyDataPlacementSetupBuilder
                         ServiceDescriptor.Singleton<
                             ITenantDataPlacementResolver,
                             ConfigurationTenantDataPlacementResolver
+                        >()
+                    );
+                    // Bound once at startup and never cached, so there is nothing to evict; registered anyway so a
+                    // caller can invalidate without knowing which source the host configured.
+                    services.Replace(
+                        ServiceDescriptor.Singleton<
+                            ITenantDataPlacementCacheInvalidator,
+                            NullTenantDataPlacementCacheInvalidator
                         >()
                     );
                 }

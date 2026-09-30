@@ -10,9 +10,12 @@ namespace Headless.MultiTenancy;
 /// </summary>
 internal sealed class NullTenantDataPlacementResolver : ITenantDataPlacementResolver
 {
-    public Task<TenantDataPlacement?> ResolveAsync(string tenantId, CancellationToken cancellationToken = default)
+    public Task<TenantDataPlacement?> ResolveAsync(
+        TenantDataPlacementRequest request,
+        CancellationToken cancellationToken = default
+    )
     {
-        Argument.IsNotNull(tenantId);
+        Argument.IsNotNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
         return Task.FromResult<TenantDataPlacement?>(null);

@@ -14,7 +14,7 @@ namespace Tests.Tenancy;
 
 /// <summary>
 /// Proves the tenant-isolation assertions against a real database with the tenant write guard on, under whatever
-/// <see cref="TenantDataPlacement"/> the fixture was built with.
+/// <see cref="ConformanceDataPlacement"/> the fixture was built with.
 /// </summary>
 public abstract class TenantIsolationKitConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : MetadataTenantFixture
