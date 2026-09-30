@@ -553,7 +553,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        var fault = new FailAfterFirstTimeJobInsertInterceptor();
+        var fault = new FailAfterFirstTimeJobInsertInterceptor(fixture.QualifiedTimeJobsTable);
         using var host = fixture.BuildHost("chain-autonomous-fault", interceptor: fault);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
@@ -1931,9 +1931,10 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
 
 /// <summary>
 /// Fails the first command that inserts time-job rows, after the database has executed it, so the rows it wrote
-/// exist inside the open transaction when the failure surfaces. Inactive until <see cref="Arm" />.
+/// exist inside the open transaction when the failure surfaces. Inactive until <see cref="Arm" />. Matches the
+/// provider's qualified table name, since storage naming differs per provider.
 /// </summary>
-internal sealed class FailAfterFirstTimeJobInsertInterceptor : DbCommandInterceptor
+internal sealed class FailAfterFirstTimeJobInsertInterceptor(string qualifiedTimeJobsTable) : DbCommandInterceptor
 {
     private int _armed;
     private int _tripped;
@@ -1975,7 +1976,7 @@ internal sealed class FailAfterFirstTimeJobInsertInterceptor : DbCommandIntercep
 
     private bool _TryTrip(DbCommand command) =>
         command.CommandText.Contains("INSERT", StringComparison.OrdinalIgnoreCase)
-        && command.CommandText.Contains("TimeJobs", StringComparison.Ordinal)
+        && command.CommandText.Contains(qualifiedTimeJobsTable, StringComparison.Ordinal)
         && Interlocked.CompareExchange(ref _armed, 0, 1) == 1
         && Interlocked.Exchange(ref _tripped, 1) == 0;
 }
