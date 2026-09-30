@@ -187,9 +187,7 @@ public sealed class RelationalCronRecoveryScenarioBackend(IJobsCoordinationFixtu
             return rows;
         }
 
-        public async Task<(DateTime ReconciledThroughUtc, DateTime NextDueUtc)> ReadSchedulePositionAsync(
-            CancellationToken cancellationToken
-        )
+        public async Task<CronSchedulePosition> ReadSchedulePositionAsync(CancellationToken cancellationToken)
         {
             return await fixture.ReadCronSchedulePositionAsync(cronJobId, cancellationToken);
         }

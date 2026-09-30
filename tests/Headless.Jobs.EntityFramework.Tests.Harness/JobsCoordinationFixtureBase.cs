@@ -738,7 +738,7 @@ public static partial class JobsCoordinationFixtureExtensions
     }
 
     /// <summary>Reads back a definition's persisted schedule position, bypassing the entity's internal setters.</summary>
-    public static async Task<(DateTime ReconciledThroughUtc, DateTime NextDueUtc)> ReadCronSchedulePositionAsync(
+    public static async Task<CronSchedulePosition> ReadCronSchedulePositionAsync(
         this IJobsCoordinationFixture fixture,
         Guid cronJobId,
         CancellationToken cancellationToken
@@ -755,7 +755,7 @@ public static partial class JobsCoordinationFixtureExtensions
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         (await reader.ReadAsync(cancellationToken)).Should().BeTrue("the seeded cron definition must exist");
 
-        return (
+        return new CronSchedulePosition(
             DateTime.SpecifyKind(reader.GetDateTime(0), DateTimeKind.Utc),
             DateTime.SpecifyKind(reader.GetDateTime(1), DateTimeKind.Utc)
         );

@@ -290,7 +290,9 @@ internal static class SqlServerApplicationLock
             commandTimeout
         );
 
+#pragma warning disable MA0045 // TryAcquireTransaction is synchronous by contract for callers such as EF Core SavingChanges interceptors.
         var result = Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture);
+#pragma warning restore MA0045
 
         return MapAcquireResult(resource, result, acquireTimeout, CancellationToken.None);
     }

@@ -88,7 +88,7 @@ public sealed class IdempotencyRecoveryPointPostgreSqlEndToEndTests(ApiIdempoten
                     connection
                 );
                 command.Parameters.AddWithValue("tenant", key.TenantId ?? "");
-                command.Parameters.AddWithValue("key", key.Key);
+                command.Parameters.AddWithValue(nameof(key), key.Key);
                 (await command.ExecuteNonQueryAsync(cancellationToken)).Should().Be(1);
             },
             AbortToken
@@ -167,7 +167,7 @@ internal sealed class RecoveryPointScenario
     {
         app.MapPost(
             "/pay",
-            async (HttpContext ctx) =>
+            async ctx =>
             {
                 var idempotency = ctx.GetIdempotencyContext()!;
                 _admittedKey = idempotency.Admission.Key;

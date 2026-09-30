@@ -15,6 +15,7 @@ namespace Tests.CrossLibrary;
 /// </summary>
 public sealed class ApnsBroadcastCrossLibraryTests : TestBase
 {
+#pragma warning disable MA0045 // Lazy<T> factories are synchronous; each reads a small fixture file once per process.
     private static readonly Lazy<JsonObject> _Fixture = new(() =>
         JsonNode
             .Parse(
@@ -30,6 +31,7 @@ public sealed class ApnsBroadcastCrossLibraryTests : TestBase
             "broadcast"
         ]!.AsObject()
     );
+#pragma warning restore MA0045
 
     private FakeApnsServer _server = null!;
 
@@ -109,7 +111,7 @@ public sealed class ApnsBroadcastCrossLibraryTests : TestBase
             fixture["headers"]!["apns-priority"]!.GetValue<string>().Should().Be("10");
             fixture["headers"]!.AsObject()["apns-priority"] = null;
 
-            if (operation == "create")
+            if (string.Equals(operation, "create", StringComparison.Ordinal))
             {
                 // node-apn writes "push-type": "liveactivity"; Apple's create body table says "Allowed value is
                 // LiveActivity" and its sample sends "LiveActivity", which we follow.
@@ -117,7 +119,11 @@ public sealed class ApnsBroadcastCrossLibraryTests : TestBase
                 fixture["body"]!.AsObject()["push-type"] = "LiveActivity";
             }
 
-            _AssertSameRequest(fixture, sent[index], expectedBody: operation == "create");
+            _AssertSameRequest(
+                fixture,
+                sent[index],
+                expectedBody: string.Equals(operation, "create", StringComparison.Ordinal)
+            );
         }
     }
 
