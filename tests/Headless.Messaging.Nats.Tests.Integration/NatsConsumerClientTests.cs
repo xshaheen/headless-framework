@@ -233,6 +233,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
                 _serviceProvider,
                 kind: ConsumerSubscriptionKind.EveryInstance
             );
+            var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
 
             try
             {
@@ -246,7 +247,6 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
                 );
                 await client.ConnectAsync(AbortToken);
                 await client.SubscribeAsync([subject], AbortToken);
-                using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
                 var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
                 await client.WaitUntilReadyAsync(AbortToken);
 
@@ -277,6 +277,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
             {
                 release.TrySetResult();
                 await client.DisposeAsync();
+                cts.Dispose();
             }
         }
     }
