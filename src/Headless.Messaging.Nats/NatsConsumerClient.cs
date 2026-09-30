@@ -501,7 +501,10 @@ internal sealed class NatsConsumerClient(
                             .SubscribeCoreAsync(
                                 subject,
                                 serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
-                                cancellationToken: cancellationToken
+                                // The SDK ends the subscription when this token is cancelled. It is the token the
+                                // subject loops read with, so a loop that sees the channel close can already tell a
+                                // shutdown from a lost subscription.
+                                cancellationToken: listeningCts.Token
                             )
                             .ConfigureAwait(false)
                     );
@@ -579,7 +582,9 @@ internal sealed class NatsConsumerClient(
                 }
                 catch (ChannelClosedException ex)
                 {
-                    if (Volatile.Read(ref _disposed) != 0)
+                    // Cancelling the listening token also completes the channel of every subscription made with it,
+                    // and the read can see the closed channel before the cancellation: that is a shutdown, not a fault.
+                    if (Volatile.Read(ref _disposed) != 0 || cancellationToken.IsCancellationRequested)
                     {
                         return;
                     }

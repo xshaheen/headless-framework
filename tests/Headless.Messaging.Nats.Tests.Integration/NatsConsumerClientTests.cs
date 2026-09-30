@@ -204,13 +204,80 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
             await Task.Delay(NatsConsumerClient.DropSignalCoalesceWindow * 3, AbortToken);
 
             // then - every drop is counted and the burst is reported to the consumer once
-            Volatile.Read(ref dropped).Should().BeGreaterThan(0);
+            Volatile.Read(ref dropped).Should().BePositive();
             Volatile.Read(ref gaps).Should().Be(1, "one burst of drops is one gap");
         }
         finally
         {
             release.TrySetResult();
             await _StopListeningAsync(listening, cts);
+        }
+    }
+
+    [Fact]
+    public async Task should_end_every_instance_listening_quietly_when_the_host_cancels_it()
+    {
+        // Cancelling the listening token also ends the core subscriptions it created, so the read can observe a closed
+        // channel instead of a cancelled read; either way this is a shutdown, never a broker fault. Repeated because
+        // which of the two the read observes is a race.
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            // given
+            var subject = $"stop-{Guid.NewGuid():N}"[..30] + ".probe";
+            var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var received = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var client = new NatsConsumerClient(
+                $"group-{Guid.NewGuid():N}"[..30],
+                0,
+                _CreateOptions(NatsStreamProvisioning.Disabled),
+                _serviceProvider,
+                kind: ConsumerSubscriptionKind.EveryInstance
+            );
+
+            try
+            {
+                client.AttachCallbacks(
+                    onMessage: (_, _) =>
+                    {
+                        received.TrySetResult();
+                        return release.Task;
+                    },
+                    onLog: _ => { }
+                );
+                await client.ConnectAsync(AbortToken);
+                await client.SubscribeAsync([subject], AbortToken);
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+                var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
+                await client.WaitUntilReadyAsync(AbortToken);
+
+                // A consumer busy on one message with more buffered behind it, as at any shutdown under load.
+                var connection = await fixture.GetConnectionAsync();
+                for (var i = 0; i < 3; i++)
+                {
+                    await connection.PublishAsync(
+                        NatsPhysicalAddress.Subject(MessageLane.Bus, subject),
+                        new ReadOnlyMemory<byte>([1]),
+                        headers: _CreateHeaders(),
+                        serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
+                        cancellationToken: AbortToken
+                    );
+                }
+
+                await received.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+                // when - the consumer finishes its message as the host stops
+                release.TrySetResult();
+                await cts.CancelAsync();
+
+                // then
+                var act = () => listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+                await act.Should().NotThrowAsync("cancelling the listener is a shutdown (attempt {0})", attempt);
+            }
+            finally
+            {
+                release.TrySetResult();
+                await client.DisposeAsync();
+            }
         }
     }
 
