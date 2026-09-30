@@ -1,5 +1,5 @@
 ---
-title: Tenant data placement (schema or database per tenant) — built, evaluated, and dropped from the core
+title: Tenant data placement (schema or database per tenant) — evaluated and not adopted
 date: 2026-09-30
 category: tooling-decisions
 module: MultiTenancy
@@ -10,51 +10,45 @@ applies_when:
   - A consumer asks for schema-per-tenant or database-per-tenant data isolation
   - Evaluating whether to add per-tenant connection routing to Headless.EntityFramework
   - Reviewing why the tenancy guide states that one shared database is the only supported topology
-  - Deciding how to keep a large, tested, but unused feature without paying its maintenance cost
 tags: [multi-tenancy, data-placement, schema-per-tenant, database-per-tenant, entity-framework, outbox, tooling-decision]
 related_components: [Headless.MultiTenancy, Headless.EntityFramework, Headless.Messaging.Core, Headless.Jobs.Core, Headless.Api.Core]
 ---
 
-# Tenant data placement — built, evaluated, and dropped from the core
+# Tenant data placement — evaluated and not adopted
 
 ## Context
 
 Headless tenancy keeps every tenant's rows in one database and one schema, separated by an ambient
 canonical tenant id that drives the EF query filter, the write guard, caches, jobs, and messages.
-Pull requests 1019 and 1030 added the missing topologies: an EF context registered as
-*tenant-routed* could place each tenant in its own schema, its own database, or both, resolved per
-tenant and data store by an `ITenantDataPlacementResolver`. The work is complete and tested on the
-branches `shaheen/feat/tenant-data-placement` (last commit `0e4a53f39`) and
-`shaheen/feat/tenant-placement-preload` (last commit `340b3f154`), and the pull requests are closed
-without merging.
+Pull requests 1019 and 1030 proposed the missing topologies: an EF context registered as
+*tenant-routed* would place each tenant in its own schema, its own database, or both, resolved per
+tenant and data store by a placement resolver. The implementation was complete and its tests
+passed. Both pull requests were closed without merging and the work was discarded.
 
-This document records why, what the feature cost, what the rest of the field does, and the
-conditions under which it is worth reviving. The decision page at
-[docs/pages/tenant-data-placement-decision.html](../../pages/tenant-data-placement-decision.html)
-carries the same material with the options side by side.
+This document records why, what the feature would have cost, what the rest of the field does, and
+what a future implementation must solve before it belongs in the framework.
 
 ## Guidance
 
 **Keep one shared database with a tenant column as the only supported topology.** Every project
-that consumes the framework today uses it, and it is what Microsoft, AWS, PlanetScale, and every
-library surveyed recommend for most products.
+that consumes the framework uses it, and it is what Microsoft, AWS, PlanetScale, and every library
+surveyed recommend for most products.
 
 When a consumer asks for isolation:
 
 1. Ask what the isolation must deliver. Per-tenant backup, restore, and offboarding are usually
    the real need, and a per-tenant export from the shared database covers them.
-2. If a customer contract or a regulator requires a separate schema or database, revive the
-   branches rather than starting over. The hard parts are solved there: migrations scaffolded once
-   and rewritten per schema, a context pinned to its tenant with a check on every command, a
-   bounded per-schema model cache, and relay stores that refuse a routed context at startup.
-3. Revive it as two opt-in packages behind one generic entry-point hook, not into the core. The
-   reason is in the next section.
+2. If a customer contract or a regulator requires a separate schema or database, build it as
+   opt-in packages behind one generic entry-point hook, not into the core packages. The reason is
+   in the next section.
+3. Treat database-per-tenant as unsupported until the relay design below exists.
+   Schema-per-tenant is the topology to offer first.
 
 ## Why this matters
 
-### What the feature cost when unused
+### What the feature would have cost when unused
 
-Measured against `origin/main` from the 1030 branch after the follow-up commits:
+Measured on the proposed implementation against `main`:
 
 | Cost | Size | Effect on a project that never uses it |
 |---|---|---|
@@ -62,20 +56,47 @@ Measured against `origin/main` from the 1030 branch after the follow-up commits:
 | Placement-only source | 1 771 lines | Resolver, cache, preloader, pin, interceptor, model cache key, migration rewriter |
 | Test projects touched | 12 (35 files, 3 571 lines) | Every author of those paths reads the placement rules |
 | Runtime work | 2 service lookups that return null | One per context construction, one per tenant entry point |
-| EF version risk | Real | The migration rewriter derives from an internal EF class and can break on an EF major release |
+| EF version risk | Real | The migration rewriter derived from an internal EF class and could break on an EF major release |
 
-The runtime cost is near zero. The maintenance cost is not: every future change to the
+The runtime cost was near zero. The maintenance cost was not: every future change to the
 `HeadlessDbContext` runtime, to the HTTP, messaging, and Jobs tenancy entry points, or to a relay
-store must keep the placement invariants, and one integration test guards an EF internal.
+store would have had to keep the placement invariants, and one integration test guarded an EF
+internal.
 
-### The gap no option closes
+### The design that was proposed
+
+Recorded so a future implementation does not start from nothing:
+
+- A resolver keyed by tenant id and data store returns a schema, a connection string, both, an
+  explicit shared marker, or nothing. Nothing means the tenant is refused, never sent to the
+  shared database by accident. The explicit shared marker exists so a hybrid fleet does not repeat
+  the shared connection string per tenant.
+- A routed context resolves its placement before construction, because EF builds the model in the
+  constructor and the model carries the schema. The factory resolves it asynchronously into a new
+  scope, and the tenancy entry points preload it so a context can be injected.
+- The context pins its tenant and placement for its whole life and rechecks the ambient tenant on
+  every connection open and every command through a singleton interceptor.
+- Migrations are scaffolded once against the context's default schema and rewritten per tenant
+  schema in the operations, the target model, and the snapshot, with a migrations history table
+  per schema.
+- All routed context types of a host share one bounded model cache sized by the sum of their
+  per-type budgets. One cache per type costs one EF internal service provider per routed context,
+  and EF throws past twenty per process.
+- Relay-bearing contexts, the outbox storages, the Jobs store, and the catalog, Settings,
+  Features, and Permissions stores, refuse a routed context at startup.
+- Placements are cached in process only, because they carry connection strings, with an
+  invalidator per tenant.
+
+### The gap no option closed
 
 A database-per-tenant deployment has no transactional outbox and no enlisted Jobs writes, because
 the relays read one fixed database and `RelationalDatabaseIdentity` refuses enlistment from a unit
 on another database. ABP has the same hole and has stated it will not poll thousands of tenant
 databases (abpframework/abp issue 10036). Wolverine closes it with a durability agent per tenant
-database. A revived feature needs that relay-per-placement design before database-per-tenant is a
-supported topology; schema-per-tenant is unaffected because it shares the relay's database.
+database that routes each envelope to the tenant's store, discovers new tenant databases lazily,
+and isolates a failing tenant database from the rest. A future implementation needs that
+relay-per-placement design before database-per-tenant is a supported topology. Schema-per-tenant
+is unaffected because it shares the relay's database.
 
 ### What the field does
 
@@ -100,27 +121,22 @@ Two field lessons hold regardless of the decision. Schema-per-tenant cost is dri
 size, not schema count: PlanetScale, Citus, and django-tenants converge on a few thousand schemas
 per cluster before planning and migrations degrade. And `search_path` on a shared pool is unsafe
 behind PgBouncer transaction mode before PostgreSQL 18 with PgBouncer 1.26, which is why the
-branches rewrite the EF model per schema instead of setting a search path.
+proposed design rewrote the EF model per schema instead of setting a search path.
 
 ## When to revisit
 
-Revive the branches when one of these is true:
+Revisit when one of these is true:
 
 - A signed customer or a regulator requires a separate schema or database within the next year.
 - The framework targets a product line where premium tenants are sold a silo tier.
 
-Delete the branches when the framework is scoped to products where one shared database is the
-whole story for the foreseeable future. Keep this document either way.
-
 ## What to do instead
 
-Three ideas from the same research pay off for the shared-database topology and are in progress
-on their own branches:
+Three ideas from the same research pay off for the shared-database topology:
 
-- Tenant id on logs, traces, and metrics at every tenancy entry point
-  (`shaheen/feat/tenant-telemetry`).
+- Tenant id on logs, traces, and metrics at every tenancy entry point (#1035).
 - A tenancy seam that scopes blob storage paths and application cache keys by tenant, fail-closed
-  with an explicit host bypass (`shaheen/feat/tenant-scoped-storage`).
+  with an explicit host bypass (#1036).
 - Tenant lifecycle events from the catalog, so provisioning of permissions, settings, and seed
   data can react to a created or deleted tenant. Not started.
 
