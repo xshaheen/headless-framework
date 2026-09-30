@@ -59,7 +59,7 @@ await leases.SweepExpiredAsync("exports", async (expired, unit, ct) =>
 - `PurgeAsync` only deletes terminal rows (`Settled`, `Released`, `Abandoned`) older than the cutoff; it never weakens the generation guarantee — a lease granted again after its row is purged still gets a generation above every one issued before the purge, because generations are drawn from one store-wide sequence, not a per-row counter.
 - Progress is a resume cursor, not a result store. `LeaseProgress` is at most `FencingFieldLimits.ProgressMaxBytes` (64 KiB) of payload and `ProgressContractMaxLength` (256) characters of contract; a larger one throws `ArgumentException` before any SQL runs. Check the contract tag before decoding the bytes a grant hands back.
 - Read `TakeoverCount` on every grant and on every `ExpiredLease` a sweep hands you. A count above 0 means earlier holders expired without finishing; a count that keeps rising for one resource means the work never gets through, and resuming from the same progress will not fix it on its own.
-- `kind`, `resource`, and the current tenant id are validated against `FencingFieldLimits` (`KindMaxLength` 64, `ResourceMaxLength` 256, `TenantIdMaxLength` 128) before any SQL runs; a value with leading/trailing whitespace or over the limit throws `ArgumentException` immediately.
+- `kind`, `resource`, and the current tenant id are validated against `FencingFieldLimits` (`KindMaxLength` 64, `ResourceMaxLength` 256, `TenantIdMaxLength` 128) before any SQL runs; a value over the limit, or one no provider stores unchanged (leading or trailing whitespace, a NUL character, or an unpaired UTF-16 surrogate), throws `ArgumentException` immediately, on every provider including in-memory. Case, accents, surrogate pairs, and other control characters are distinct keys everywhere.
 
 ## Choosing a coordination primitive
 
@@ -245,7 +245,7 @@ Applications reach it through a provider package; call `AddHeadlessFencing` as s
 
 | Builder member | Effect |
 | --- | --- |
-| `ConfigureOptions(Action<FencingOptions>)` | Sets `MinimumLeaseDuration` (default 1 second) and `MaximumLeaseDuration` (default 1 day); every grant and renewal duration must fall within these bounds. Also sets `TakeoverWarningThreshold` (default `null`, off; must be positive when set): the takeover count at which a takeover grant or committed sweep abandonment logs a warning |
+| `ConfigureOptions(Action<FencingOptions>)` | Sets `MinimumLeaseDuration` (default 1 second) and `MaximumLeaseDuration` (default 1 day); every grant and renewal duration must fall within these bounds, and is then applied truncated to whole microseconds, the finest resolution every provider stores, so a lease expires at the same offset from its grant on every provider. Also sets `TakeoverWarningThreshold` (default `null`, off; must be positive when set): the takeover count at which a takeover grant or committed sweep abandonment logs a warning |
 | `ConfigureStorage(Action<FencingStorageOptions>)` / `ConfigureStorage(IConfiguration)` | Sets `Schema` (default `"headless"`, the schema every Headless feature shares), the schema the lease table and its generation sequence live in (`fencing_leases` and `fencing_lease_generations` on PostgreSQL, `FencingLeases` and `FencingLeaseGenerations` on SQL Server) |
 
 ### Design and runtime behavior
@@ -253,6 +253,10 @@ Applications reach it through a provider package; call `AddHeadlessFencing` as s
 - `AddHeadlessFencing` requires exactly one `Use…` provider call and throws when there are none, several, or it is called twice.
 - It registers `IFencedLeases`, `IUnitOfWorkLeases`, `LeaseRequestResolver`, and the takeover-warning logger as singletons, and falls back `ICurrentTenant` to the `AsyncLocal`-backed implementation when the host registered none — leases are keyed by the current tenant, so `ICurrentTenant.Change(...)` must actually change what a grant sees.
 - `ILeaseStore` is the provider seam. Applications do not call it.
+- The PostgreSQL and SQL Server providers share one store, written once against the `Headless.Sql` dialect kit. Renew, settle, release, and the fence are each one fenced transition: a locking read (`FOR NO KEY UPDATE` / `UPDLOCK, HOLDLOCK, ROWLOCK`) waits out any other holder, then a single conditional `UPDATE` whose `WHERE` is "this generation, active, unexpired by the database clock" decides and writes, so the check and the write cannot disagree; a refusal is classified from the row the locking read found. A grant is the same transition with the opposite fence ("no live holder"), drawing its generation from the store-wide sequence in the `UPDATE`'s own assignment, so a generation is drawn only for a grant that applies and only after the row is locked. An absent row is inserted by a statement that cannot raise a duplicate-key error inside a caller's transaction.
+- The database clock is read once per deciding statement, after its locks are held: a `clock_timestamp()` captured in a `MATERIALIZED` CTE on PostgreSQL (never `now()`, which is frozen at transaction start), `SYSUTCDATETIME()` captured into a variable on SQL Server (which evaluates it when a statement starts, before any lock wait).
+- Each provider contributes its table, indexes, and sequence as one schema step, in its own SQL, to the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts); the store only reads and writes rows.
+- `PostgreSqlFencingOptions` and `SqlServerFencingOptions` both derive from `RelationalFencingOptions`, which carries `ConnectionString`, `CommandTimeout`, and `InitializeOnStartup`.
 
 ---
 
@@ -319,9 +323,8 @@ The lease row stores progress as `progress bytea` plus `progress_contract varcha
 
 ### Design and runtime behavior
 
-- Grant is the one multi-statement verb: one transaction that reads the row `FOR NO KEY UPDATE`, decides from that locked read and a `clock_timestamp()` captured once in a `MATERIALIZED` CTE, and either `INSERT … ON CONFLICT DO NOTHING RETURNING` (retrying the locking read if the insert loses a race) or `UPDATE … SET generation = nextval(…)`. The generation is drawn from the store-wide sequence only after the row is locked, never before — drawing it earlier could let a slower caller overwrite a faster caller's still-live grant with a smaller number.
-- Every other verb — renew, settle, release, the fence read, sweep's claim — is one statement on one clock snapshot.
-- Sweep claims with `SKIP LOCKED`, so a lease another sweeper is already claiming is simply skipped, not waited on.
+- The verbs are the shared relational store's (see [Headless.Fencing.Core](#headlessfencingcore)). A first grant of a key inserts with `INSERT … ON CONFLICT DO NOTHING`; when it loses a race to another transaction's insert, it rereads the committed row and decides again.
+- Sweep claims and purge batches use `FOR UPDATE … SKIP LOCKED`, so a lease another sweeper is already claiming is simply skipped, not waited on.
 - The autonomous path opens its own connection at READ COMMITTED and retries a deadlock or serialization failure (`40P01`, `40001`) up to 3 attempts with a jittered delay between them; the enlisted path runs on the unit's own connection and transaction with no retry.
 - The table and sequence are one schema step (`Fencing/1`) the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup, under one advisory lock per database shared with every other Headless feature.
 
@@ -346,7 +349,7 @@ The parameterless overloads and the shared `headless` schema are described in [s
 
 Enlisted calls need a unit begun over a SqlClient connection or an EF `DbContext` on this same database (`AddSqlServerUnitOfWork()`, added automatically, or the EF unit-of-work package). Name the database explicitly (`Initial Catalog`) in the connection string.
 
-The lease row stores progress as `progress varbinary(max)` plus `progress_contract nvarchar(256)` (both null or both set) and the count as `takeover_count int NOT NULL DEFAULT 0`.
+The lease row stores progress as `Progress varbinary(max)` plus `ProgressContract nvarchar(256)` (both null or both set) and the count as `TakeoverCount int NOT NULL DEFAULT 0`.
 
 ### Configuration
 
@@ -358,7 +361,7 @@ The lease row stores progress as `progress varbinary(max)` plus `progress_contra
 
 ### Design and runtime behavior
 
-- Every verb is one T-SQL batch on one `SYSUTCDATETIME()` snapshot captured into a variable. Grant draws its generation with `SET @g = NEXT VALUE FOR …` after the locking read (`WITH (UPDLOCK, HOLDLOCK, ROWLOCK)`) — `NEXT VALUE FOR` cannot appear inside `CASE`, `OUTPUT`, `WHERE`, a subquery, or `MERGE`, which is why grant reads first and computes the generation in a separate statement within the same batch.
-- Sweep claims with `UPDLOCK, READPAST, ROWLOCK`, plus `READCOMMITTEDLOCK` when the database has read-committed snapshot isolation on — plain `READPAST` is rejected under RCSI at READ COMMITTED.
+- The verbs are the shared relational store's (see [Headless.Fencing.Core](#headlessfencingcore)). The locking read's `HOLDLOCK` takes a key-range lock when the row is absent, so two first grants of one key serialize and the insert never collides; no batch uses `TRY/CATCH` or a session `SET`, so nothing leaks into or dooms a caller's `XACT_ABORT ON` transaction.
+- Sweep claims and purge batches use `UPDLOCK, READPAST, ROWLOCK, READCOMMITTEDLOCK`: `READPAST` is refused under read committed snapshot isolation unless the read also takes locks, and the hint is the default without it, so the same statement works either way.
 - The autonomous path opens its own connection at READ COMMITTED and retries a deadlock or snapshot update conflict (1205, 3960) up to 3 attempts with a jittered delay between them; the enlisted path runs on the unit's own connection and transaction with no retry.
 - The table and sequence are one schema step (`Fencing/1`) the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup, under one `sp_getapplock` per database shared with every other Headless feature.
