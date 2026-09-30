@@ -45,7 +45,7 @@ public sealed class MessagingOutboxesTests : TestBase
 
         // then — no storage is stamped, so the row is written to the primary storage
         coordination.Status.Should().Be(DeliveryCoordinationStatus.Compatible);
-        coordination.Storage.Should().BeNull();
+        coordination.Outbox.Should().BeNull();
         ((IDeliveryCoordinationResolver)billing.Storage).DidNotReceive().Resolve(Arg.Any<IUnitOfWork>());
     }
 
@@ -67,7 +67,7 @@ public sealed class MessagingOutboxesTests : TestBase
         // then
         coordination.Status.Should().Be(DeliveryCoordinationStatus.Compatible);
         coordination.UnitOfWork.Should().BeSameAs(_unit);
-        coordination.Storage.Should().BeSameAs(shipping.Storage);
+        coordination.Outbox.Should().BeSameAs(shipping);
     }
 
     [Fact]

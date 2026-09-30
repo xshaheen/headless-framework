@@ -111,8 +111,8 @@ internal sealed class OutboxMessageWriter(
     {
         if (decision.Coordination.Transaction is { } transaction)
         {
-            return decision.Coordination.Storage is { } outboxStorage
-                ? _StoreInOutboxAsync(outboxStorage, publishRequest, decision, transaction, cancellationToken)
+            return decision.Coordination.Outbox is { } outbox
+                ? _StoreInOutboxAsync(outbox, publishRequest, decision, transaction, cancellationToken)
                 : _StoreMessageAsync(storage, publishRequest, decision, transaction, cancellationToken);
         }
 
@@ -137,17 +137,21 @@ internal sealed class OutboxMessageWriter(
 
     // The unit's transaction belongs to an additional outbox's database: the row is written there, and the stamp
     // routes the relay's later state changes of this row back to the same database.
+    // An outbox whose database was unreachable at startup may not be initialized yet. The open transaction proves
+    // the database is reachable now, so initialize it here rather than fail the write on a missing table.
     private static async ValueTask<MediumMessage> _StoreInOutboxAsync(
-        IDataStorage outboxStorage,
+        MessagingOutbox outbox,
         PreparedPublishMessage publishRequest,
         DeliveryDecision decision,
         System.Data.Common.DbTransaction transaction,
         CancellationToken cancellationToken
     )
     {
-        var message = await _StoreMessageAsync(outboxStorage, publishRequest, decision, transaction, cancellationToken)
+        await outbox.EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+
+        var message = await _StoreMessageAsync(outbox.Storage, publishRequest, decision, transaction, cancellationToken)
             .ConfigureAwait(false);
-        message.OutboxStorage = outboxStorage;
+        message.OutboxStorage = outbox.Storage;
 
         return message;
     }

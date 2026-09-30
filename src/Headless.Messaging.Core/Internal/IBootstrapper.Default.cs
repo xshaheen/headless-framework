@@ -109,25 +109,25 @@ internal sealed class Bootstrapper(
                 _processors = resolvedProcessors;
             }
 
+            IReadOnlyList<MessagingOutbox> secondaries;
             try
             {
                 // Resolved first so an invalid AddOutbox() registration fails before any schema work.
-                var secondaries = serviceProvider.GetService<MessagingOutboxes>()?.Secondaries ?? [];
+                secondaries = serviceProvider.GetService<MessagingOutboxes>()?.Secondaries ?? [];
                 var storageInitializer = serviceProvider.GetRequiredService<IStorageInitializer>();
                 await storageInitializer.InitializeAsync(startupToken).ConfigureAwait(false);
-
-                // Each additional outbox creates its own published table. Like the primary, an outbox whose database
-                // cannot be initialized fails startup rather than accepting publishes it could not store.
-                foreach (var outbox in secondaries)
-                {
-                    await outbox.Initializer.InitializeAsync(startupToken).ConfigureAwait(false);
-                }
             }
             catch (Exception e) when (e is not InvalidOperationException)
             {
                 logger.StorageInitFailed(e);
                 throw;
             }
+
+            // The primary storage holds the inbox and every IBus/IQueue publish, so it must be ready to start. An
+            // additional outbox serves only units of work on its own database: one module's database being down must
+            // not stop the host, so its failure is logged and the outbox initialization processor retries it.
+            await Task.WhenAll(secondaries.Select(outbox => _TryInitializeOutboxAsync(outbox, startupToken)))
+                .ConfigureAwait(false);
 
             if (_IsShutdownStarted())
             {
@@ -194,6 +194,18 @@ internal sealed class Bootstrapper(
             }
 
             throw;
+        }
+    }
+
+    private async Task _TryInitializeOutboxAsync(MessagingOutbox outbox, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await outbox.EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            logger.OutboxStorageInitFailed(e, outbox.Name);
         }
     }
 

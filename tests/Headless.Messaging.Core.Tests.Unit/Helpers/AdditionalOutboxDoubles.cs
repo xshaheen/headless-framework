@@ -35,16 +35,33 @@ internal static class AdditionalOutboxDoubles
         return storage;
     }
 
-    public static MessagingOutbox CreateOutbox(string database, string dataSource = "db-host:5432", string? name = null)
+    /// <summary>
+    /// An additional outbox, initialized by default as the bootstrapper leaves one whose database was reachable at
+    /// startup. Pass <paramref name="initialized"/> <see langword="false"/> for one whose database was not.
+    /// </summary>
+    public static MessagingOutbox CreateOutbox(
+        string database,
+        string dataSource = "db-host:5432",
+        string? name = null,
+        bool initialized = true
+    )
     {
         var initializer = Substitute.For<IStorageInitializer>();
         initializer.GetPublishedTableName().Returns($"{database}.published");
 
-        return new MessagingOutbox(
+        var outbox = new MessagingOutbox(
             name ?? $"AddOutbox().UseEntityFramework<{database}>()",
             CreateRelationalStorage(database, dataSource),
             initializer
         );
+
+        // The substitute initializer returns a completed task, so the initialization completes before returning.
+        if (initialized && !outbox.EnsureInitializedAsync(CancellationToken.None).IsCompletedSuccessfully)
+        {
+            throw new InvalidOperationException("The substitute outbox initialization did not complete synchronously.");
+        }
+
+        return outbox;
     }
 
     public static MessagingOutboxes CreateOutboxes(IDataStorage primary, params MessagingOutbox[] secondaries)

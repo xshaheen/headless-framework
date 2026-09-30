@@ -352,8 +352,17 @@ services.AddHeadlessMessaging(setup =>
   registrations. Mixing providers is allowed, for example a SQL Server primary with a PostgreSQL outbox.
 - **Schema.** Each additional outbox creates only the published table, its indexes, and the table types it uses,
   in the same `MessagingStorageOptions.Schema` as the primary. It has no received table, inbox history, or schema
-  readiness state. Its schema initialization runs at host startup after the primary's; a failure there fails
-  startup, like the primary's.
+  readiness state. Its schema initialization runs at host startup after the primary's.
+- **Availability at startup.** Only the primary storage must be reachable for the host to start. The additional
+  outboxes are initialized concurrently, once each; one whose database is unreachable logs EventId 103 and the
+  host starts without it. A background processor then retries it with jittered backoff from 1 second up to
+  30 seconds (EventId 104 per failed retry, 105 once it is initialized). Until then its relay (retry, delayed,
+  and collector) skips it, and a `unit.Outbox` publish on its database first initializes it, sharing one attempt
+  with the retry, then writes; if the initialization fails, the publish throws and the unit rolls back. Its rows
+  are relayed only once it is initialized, so a relay can lag a recovered database by up to that backoff.
+  Dead-owner recovery and `IMessageRevoker` keep reaching it and report its failures as they do for any outage.
+  A misconfigured additional outbox, such as wrong credentials, therefore does not stop startup either: watch for
+  EventId 103.
 - **Relay.** Each outbox relays its own rows: retry pickup runs one published-retry quadrant per outbox and lane,
   each with its own lock resource, backoff, and pickup-failure count, and the delayed-message claim runs for every
   outbox concurrently. An unreachable outbox database backs off alone; the primary and the other outboxes keep

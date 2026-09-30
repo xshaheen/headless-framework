@@ -21,9 +21,15 @@ internal sealed class MessageDelayedProcessor(ILogger<MessageDelayedProcessor> l
         Argument.IsNotNull(context);
 
         var storage = context.Provider.GetRequiredService<IDataStorage>();
-        var secondaries = context.Provider.GetService<MessagingOutboxes>()?.Secondaries ?? [];
+        // An outbox not initialized since startup is skipped until its initialization retry succeeds.
+        var secondaries =
+            context
+                .Provider.GetService<MessagingOutboxes>()
+                ?.Secondaries.Where(static outbox => outbox.IsInitialized)
+                .ToArray()
+            ?? [];
 
-        if (secondaries.Count == 0)
+        if (secondaries.Length == 0)
         {
             await _ProcessDelayedAsync(storage, outboxStorage: null, context).ConfigureAwait(false);
         }

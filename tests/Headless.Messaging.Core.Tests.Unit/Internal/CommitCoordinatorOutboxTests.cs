@@ -13,6 +13,7 @@ using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.Options;
+using Tests.Helpers;
 
 namespace Tests.Internal;
 
@@ -69,6 +70,97 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
 
         dispatcher.CommittedMessages.Should().ContainSingle().Which.Should().BeSameAs(stored);
         dispatcher.PublishCalls.Should().Be(0, "post-commit acceleration must not wait on transport dispatch");
+    }
+
+    [Fact]
+    public async Task should_initialize_an_additional_outbox_before_writing_the_units_row_to_it()
+    {
+        // given — the shipping database was down at startup, so its outbox was never initialized
+        await using var transaction = new TestDbTransaction();
+        await using var unitOfWork = new FakeUnitOfWork();
+        var shipping = AdditionalOutboxDoubles.CreateOutbox("shipping", initialized: false);
+        shipping
+            .Storage.StoreMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                Arg.Any<DbTransaction?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call => ValueTask.FromResult(call.ArgAt<MediumMessage>(1)));
+        var primary = Substitute.For<IDataStorage>();
+        await using var dispatcher = new RecordingCommittedDispatcher();
+        var writer = new OutboxMessageWriter(primary, dispatcher, TimeProvider.System);
+        var request = _CreatePublishRequestFactory().Create(new CoordinatorMessage("value"), lane: MessageLane.Bus);
+        var decision = DeliveryDecisionResolver.Resolve(
+            MessageLane.Bus,
+            DeliveryMode.Durable,
+            requireCoordination: false,
+            delay: null,
+            DeliveryCoordination.Compatible(unitOfWork, transaction).WithOutbox(shipping),
+            TimeProvider.System.GetUtcNow()
+        );
+
+        // when
+        await writer.WriteAsync(request, decision, AbortToken);
+
+        // then
+        shipping.IsInitialized.Should().BeTrue();
+        Received.InOrder(() =>
+        {
+            _ = shipping.Initializer.InitializeAsync(Arg.Any<CancellationToken>());
+            _ = shipping.Storage.StoreMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                transaction,
+                Arg.Any<CancellationToken>()
+            );
+        });
+        await primary
+            .DidNotReceive()
+            .StoreMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                Arg.Any<DbTransaction?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_fail_the_write_without_a_row_when_the_additional_outbox_cannot_initialize()
+    {
+        // given
+        await using var transaction = new TestDbTransaction();
+        await using var unitOfWork = new FakeUnitOfWork();
+        var failure = new InvalidOperationException("permission denied to create the published table");
+        var shipping = AdditionalOutboxDoubles.CreateOutbox("shipping", initialized: false);
+        shipping.Initializer.InitializeAsync(Arg.Any<CancellationToken>()).Returns(Task.FromException(failure));
+        await using var dispatcher = new RecordingCommittedDispatcher();
+        var writer = new OutboxMessageWriter(Substitute.For<IDataStorage>(), dispatcher, TimeProvider.System);
+        var request = _CreatePublishRequestFactory().Create(new CoordinatorMessage("value"), lane: MessageLane.Bus);
+        var decision = DeliveryDecisionResolver.Resolve(
+            MessageLane.Bus,
+            DeliveryMode.Durable,
+            requireCoordination: false,
+            delay: null,
+            DeliveryCoordination.Compatible(unitOfWork, transaction).WithOutbox(shipping),
+            TimeProvider.System.GetUtcNow()
+        );
+
+        // when
+        var act = () => writer.WriteAsync(request, decision, AbortToken);
+
+        // then
+        (await act.Should().ThrowAsync<InvalidOperationException>())
+            .Which.Should()
+            .BeSameAs(failure);
+        await shipping
+            .Storage.DidNotReceive()
+            .StoreMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                Arg.Any<DbTransaction?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]

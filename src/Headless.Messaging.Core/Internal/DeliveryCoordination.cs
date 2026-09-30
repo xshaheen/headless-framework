@@ -85,14 +85,14 @@ internal readonly record struct DeliveryCoordination
         DeliveryCoordinationMismatch mismatch,
         IUnitOfWork? unitOfWork,
         DbTransaction? transaction,
-        IDataStorage? storage = null
+        MessagingOutbox? outbox = null
     )
     {
         Status = status;
         Mismatch = mismatch;
         UnitOfWork = unitOfWork;
         Transaction = transaction;
-        Storage = storage;
+        Outbox = outbox;
     }
 
     internal static DeliveryCoordination None => default;
@@ -110,22 +110,22 @@ internal readonly record struct DeliveryCoordination
     internal DbTransaction? Transaction { get; }
 
     /// <summary>
-    /// The additional outbox storage whose database the unit's transaction belongs to, or <see langword="null" />
-    /// when the row goes to the primary storage.
+    /// The additional outbox whose database the unit's transaction belongs to, or <see langword="null" /> when the row
+    /// goes to the primary storage.
     /// </summary>
-    internal IDataStorage? Storage { get; }
+    internal MessagingOutbox? Outbox { get; }
 
-    /// <summary>Routes a compatible coordination to the additional outbox storage that resolved it.</summary>
-    internal DeliveryCoordination WithStorage(IDataStorage storage)
+    /// <summary>Routes a compatible coordination to the additional outbox that resolved it.</summary>
+    internal DeliveryCoordination WithOutbox(MessagingOutbox outbox)
     {
-        Argument.IsNotNull(storage);
+        Argument.IsNotNull(outbox);
 
         if (Status is not DeliveryCoordinationStatus.Compatible)
         {
             throw new InvalidOperationException("Only a compatible coordination can be routed to an outbox storage.");
         }
 
-        return new DeliveryCoordination(Status, Mismatch, UnitOfWork, Transaction, storage);
+        return new DeliveryCoordination(Status, Mismatch, UnitOfWork, Transaction, outbox);
     }
 
     internal static DeliveryCoordination Compatible(IUnitOfWork unitOfWork, DbTransaction? transaction)

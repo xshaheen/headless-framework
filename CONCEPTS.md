@@ -144,7 +144,8 @@ A messaging storage registered with `setup.AddOutbox().Use…()` for a database 
 storage's, so a unit of work on that database can publish through the [enlisted outbox](#enlisted-outbox).
 It holds only published rows and relays them under its own lease; the inbox, received-message retry state,
 and the dashboard stay on the primary storage. At most one outbox, the primary included, may resolve to
-each database. Contract in [messaging.md § Additional outboxes](docs/llms/messaging.md#additional-outboxes).
+each database. Unlike the primary, one whose database is down at startup does not stop the host: it is
+initialized in the background, or by the first unit of work on its database. Contract in [messaging.md § Additional outboxes](docs/llms/messaging.md#additional-outboxes).
 
 ### Operator ledger
 One generalized receipt-and-audit ledger, shared by the inbox operator surface and the

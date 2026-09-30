@@ -86,6 +86,103 @@ public sealed class AdditionalOutboxRelayTests : TestBase
     }
 
     [Fact]
+    public async Task retry_should_not_poll_an_outbox_until_it_is_initialized()
+    {
+        // given — shipping's database was down at startup
+        var shipping = AdditionalOutboxDoubles.CreateOutbox("shipping", initialized: false);
+        shipping
+            .Storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+        var sut = _CreateRetryProcessor(Substitute.For<IDispatcher>(), shipping);
+        await using var context = _CreateContext();
+
+        // when
+        await _RunPublishBusCycleAsync(sut, context);
+
+        // then
+        await shipping
+            .Storage.DidNotReceive()
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>());
+        sut.GetPickupFailureCountForTest(MessageType.Publish, MessageLane.Bus, outbox: 1).Should().Be(0);
+
+        // and when — its initialization succeeds
+        await shipping.EnsureInitializedAsync(AbortToken);
+        await _RunPublishBusCycleAsync(sut, context);
+
+        // then
+        await shipping
+            .Storage.Received(1)
+            .GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task delayed_and_collector_should_skip_an_outbox_until_it_is_initialized()
+    {
+        // given
+        var shipping = AdditionalOutboxDoubles.CreateOutbox("shipping", initialized: false);
+        var initializer = Substitute.For<IStorageInitializer>();
+        initializer.GetPublishedTableName().Returns("orders.published");
+        initializer.GetReceivedTableName().Returns("orders.received");
+        await using var provider = new ServiceCollection()
+            .AddSingleton(TimeProvider.System)
+            .AddSingleton(initializer)
+            .AddSingleton(_primary)
+            .AddSingleton(AdditionalOutboxDoubles.CreateOutboxes(_primary, shipping))
+            .BuildServiceProvider();
+        var delayed = new MessageDelayedProcessor(
+            NullLogger<MessageDelayedProcessor>.Instance,
+            Substitute.For<IDispatcher, ICommittedDelayedMessageDispatcher>()
+        );
+        var collector = new CollectorProcessor(
+            NullLogger<CollectorProcessor>.Instance,
+            Options.Create(new MessagingOptions()),
+            provider
+        );
+        ((IDelayedMessageClaimStorage)_primary)
+            .ClaimDelayedMessagesAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IReadOnlyList<MediumMessage>>([]));
+
+        // when — each runs one pass, then is stopped while it waits for the next
+        using var delayedCancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        await using (var context = new ProcessingContext(provider, TimeProvider.System, delayedCancellation.Token))
+        {
+            var runDelayed = () => delayed.ProcessAsync(context);
+            await runDelayed.Should().ThrowAsync<OperationCanceledException>();
+        }
+
+        using var collectorCancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        await using (var context = new ProcessingContext(provider, TimeProvider.System, collectorCancellation.Token))
+        {
+            var runCollector = () => collector.ProcessAsync(context);
+            await runCollector.Should().ThrowAsync<OperationCanceledException>();
+        }
+
+        // then
+        await ((IDelayedMessageClaimStorage)shipping.Storage)
+            .DidNotReceive()
+            .ClaimDelayedMessagesAsync(Arg.Any<CancellationToken>());
+        await shipping
+            .Storage.DidNotReceive()
+            .DeleteExpiresAsync(
+                Arg.Any<string>(),
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+        await ((IDelayedMessageClaimStorage)_primary)
+            .Received(1)
+            .ClaimDelayedMessagesAsync(Arg.Any<CancellationToken>());
+        await _primary
+            .Received(1)
+            .DeleteExpiresAsync(
+                "orders.published",
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public void retry_should_give_each_outbox_its_own_publish_lock_and_leave_the_primary_lock_unchanged()
     {
         var sut = _CreateRetryProcessor(Substitute.For<IDispatcher>());
@@ -263,7 +360,7 @@ public sealed class AdditionalOutboxRelayTests : TestBase
             .RevokeAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 
-    private MessageNeedToRetryProcessor _CreateRetryProcessor(IDispatcher dispatcher)
+    private MessageNeedToRetryProcessor _CreateRetryProcessor(IDispatcher dispatcher, MessagingOutbox? outbox = null)
     {
         return new MessageNeedToRetryProcessor(
             Options.Create(new MessagingOptions()),
@@ -271,7 +368,7 @@ public sealed class AdditionalOutboxRelayTests : TestBase
             NullLogger<MessageNeedToRetryProcessor>.Instance,
             dispatcher,
             Substitute.For<IDistributedLock>(),
-            outboxes: AdditionalOutboxDoubles.CreateOutboxes(_primary, _billing)
+            outboxes: AdditionalOutboxDoubles.CreateOutboxes(_primary, outbox ?? _billing)
         );
     }
 

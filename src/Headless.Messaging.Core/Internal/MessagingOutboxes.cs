@@ -32,8 +32,16 @@ internal sealed class OutboxStorageRegistration(string name, Func<IServiceProvid
 }
 
 /// <summary>An additional outbox storage: published rows and their relay for one database.</summary>
+/// <remarks>
+/// Its schema is initialized apart from the host's startup: an outbox whose database is unreachable at startup
+/// leaves the host running, and the first of the background retry or a unit of work on that database initializes
+/// it. Until then its relay skips it, and a unit of work on its database initializes it before writing.
+/// </remarks>
 internal sealed class MessagingOutbox
 {
+    private readonly Lock _initializationLock = new();
+    private Task? _initialization;
+
     public MessagingOutbox(string name, IDataStorage storage, IStorageInitializer initializer)
     {
         Argument.IsNotNullOrWhiteSpace(name);
@@ -66,6 +74,71 @@ internal sealed class MessagingOutbox
     public IDeliveryCoordinationResolver Coordination { get; }
 
     public IRelationalOutboxStorage Relational { get; }
+
+    /// <summary>Whether this outbox's schema initialization has completed in this process.</summary>
+    public bool IsInitialized
+    {
+        get
+        {
+            lock (_initializationLock)
+            {
+                return _initialization is { IsCompletedSuccessfully: true };
+            }
+        }
+    }
+
+    /// <summary>
+    /// Initializes this outbox's schema unless that already succeeded. Concurrent callers share one attempt; a failed
+    /// attempt is reported to every caller that shared it, and the next call starts a fresh one.
+    /// </summary>
+    public async Task EnsureInitializedAsync(CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            Task attempt;
+            TaskCompletionSource? owned = null;
+
+            lock (_initializationLock)
+            {
+                if (_initialization is null or { IsFaulted: true } or { IsCanceled: true })
+                {
+                    owned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    _initialization = owned.Task;
+                }
+
+                attempt = _initialization;
+            }
+
+            if (owned is not null)
+            {
+                // Run outside the lock: initialization is database I/O, and IsInitialized readers must not wait on it.
+                try
+                {
+                    await Initializer.InitializeAsync(cancellationToken).ConfigureAwait(false);
+                    owned.SetResult();
+                }
+                catch (OperationCanceledException e)
+                {
+                    owned.SetCanceled(e.CancellationToken);
+                }
+                catch (Exception e)
+                {
+                    owned.SetException(e);
+                }
+            }
+
+            try
+            {
+                await attempt.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+                return;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                // The shared attempt was canceled by the caller that started it, not by this one: start another.
+            }
+        }
+    }
 
     /// <summary>
     /// A short stable key for this outbox's database, used to give its relay its own lock resources. Replicas of
@@ -174,7 +247,7 @@ internal sealed class MessagingOutboxes : IDeliveryCoordinationResolver
             var candidate = outbox.Coordination.Resolve(unitOfWork);
             if (candidate.Status is DeliveryCoordinationStatus.Compatible)
             {
-                return candidate.WithStorage(outbox.Storage);
+                return candidate.WithOutbox(outbox);
             }
 
             if (

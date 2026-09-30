@@ -257,6 +257,14 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
 
                 startedThisTurn.Add(state.Key);
                 state.ScheduleNext(now);
+
+                // An outbox not initialized since startup is only rechecked, not polled: its initialization retry
+                // already reports the outage, and the schema it polls may not exist yet.
+                if (state.Outbox is { IsInitialized: false })
+                {
+                    continue;
+                }
+
                 var task = Task
                     .Factory.StartNew(
                         () => _ProcessQuadrantAsync(state, storage, context),

@@ -16,6 +16,10 @@ public sealed class SqlServerAdditionalOutboxTests(SqlServerTestFixture fixture)
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.ExecuteAsync($"CREATE DATABASE [{name}];");
 
+        // A database recreated under an earlier name must not be refused by a pool still blocking on the login
+        // failures of its absence (SqlClient's pool blocking period).
+        SqlConnection.ClearAllPools();
+
         return new SqlConnectionStringBuilder(fixture.ConnectionString) { InitialCatalog = name }.ConnectionString;
     }
 
@@ -25,8 +29,10 @@ public sealed class SqlServerAdditionalOutboxTests(SqlServerTestFixture fixture)
         SqlConnection.ClearAllPools();
 
         // A running relay still polls the database, and forcing it to single-user can deadlock with those
-        // sessions. The drop takes deadlock priority, and a rare victim of it retries.
+        // sessions. The drop takes deadlock priority, and a rare victim of it retries. The relay can also take the
+        // one single-user connection between the ALTER and the DROP, which fails the drop as in use; retry that too.
         const int deadlockVictim = 1205;
+        const int databaseInUse = 3702;
         for (var attempt = 1; ; attempt++)
         {
             try
@@ -45,7 +51,7 @@ public sealed class SqlServerAdditionalOutboxTests(SqlServerTestFixture fixture)
 
                 return;
             }
-            catch (SqlException ex) when (ex.Number == deadlockVictim && attempt < 5)
+            catch (SqlException ex) when ((ex.Number is deadlockVictim or databaseInUse) && attempt < 5)
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt));
             }

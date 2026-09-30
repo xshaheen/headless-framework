@@ -36,7 +36,7 @@ internal sealed class InfiniteRetryProcessor(IProcessor inner, ILoggerFactory lo
             catch (Exception ex)
             {
                 _logger.LogProcessorFailedRetrying(ex, inner.ToString(), (long)backoff.TotalSeconds);
-                await context.WaitAsync(_WithJitter(backoff)).ConfigureAwait(false);
+                await context.WaitAsync(WithJitter(backoff)).ConfigureAwait(false);
 
                 // Double delay for next failure, capped at MaxBackoff.
                 var nextMs = Math.Min(backoff.TotalMilliseconds * 2, _MaxBackoff.TotalMilliseconds);
@@ -50,7 +50,7 @@ internal sealed class InfiniteRetryProcessor(IProcessor inner, ILoggerFactory lo
         return inner.ToString();
     }
 
-    private static TimeSpan _WithJitter(TimeSpan delay)
+    internal static TimeSpan WithJitter(TimeSpan delay)
     {
 #pragma warning disable CA5394 // Non-security jitter for retry backoff; cryptographic RNG is unnecessary here.
         var jitterMs = Random.Shared.Next(0, (int)Math.Max(1, delay.TotalMilliseconds / 4));

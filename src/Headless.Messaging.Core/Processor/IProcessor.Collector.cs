@@ -115,6 +115,11 @@ internal sealed class CollectorProcessor : IProcessor
 
         foreach (var outbox in secondaries)
         {
+            if (!outbox.IsInitialized)
+            {
+                continue;
+            }
+
             var category = $"{nameof(CleanupCategory.Published)} ({outbox.Name})";
             try
             {

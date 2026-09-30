@@ -18,7 +18,8 @@ namespace Tests;
 /// <summary>
 /// One outbox per database, against a real provider: a unit begun on an additional outbox's database commits its
 /// row there and the relay delivers it, a rollback leaves no row anywhere, a unit on an unregistered database is
-/// refused, two outboxes on one database fail startup, and one database's outage does not stop the others' relay.
+/// refused, two outboxes on one database fail startup, one database's outage does not stop the others' relay, and
+/// an outbox whose database is down at startup does not stop the host and works once its database is back.
 /// </summary>
 /// <remarks>Each test creates its own databases, so the primary and the outboxes never share one by accident.</remarks>
 public abstract class AdditionalOutboxConformanceTests : TestBase
@@ -224,6 +225,53 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
         await host.StopAsync(AbortToken);
     }
 
+    [Fact]
+    public async Task should_start_while_an_outbox_database_is_down_and_publish_to_it_once_it_is_back()
+    {
+        // given — the shipping database does not exist when the host starts
+        var orders = await _CreateDatabaseAsync("orders");
+        var billing = await _CreateDatabaseAsync("billing");
+        var shipping = await _CreateDatabaseAsync("shipping");
+        await DropDatabaseAsync(shipping.Name);
+        using var host = _BuildHost(
+            orders,
+            billing,
+            setup =>
+            {
+                UseOutboxStorage<BillingOutboxDbContext>(setup.AddOutbox());
+                UseOutboxStorage<ShippingOutboxDbContext>(setup.AddOutbox());
+            },
+            services =>
+                services.AddDbContext<ShippingOutboxDbContext>(options =>
+                    UseDatabase(options, shipping.ConnectionString)
+                )
+        );
+
+        // when
+        await _StartAsync(host);
+
+        // then — the host runs, and the other outboxes publish and relay
+        var shippingOutbox = host.Services.GetRequiredService<MessagingOutboxes>().Secondaries[1];
+        shippingOutbox.IsInitialized.Should().BeFalse();
+        var inbox = host.Services.GetRequiredService<ProbeInbox>();
+        var billingMarker = $"billing-{Guid.NewGuid():N}";
+        await _PublishAsync<BillingOutboxDbContext>(host.Services, billingMarker);
+        await inbox.WaitAsync(billingMarker, _DeliveryTimeout, AbortToken);
+
+        // and when — the shipping database comes back and a unit on it publishes
+        await CreateDatabaseAsync(shipping.Name);
+        var shippingMarker = $"shipping-{Guid.NewGuid():N}";
+        await _PublishAsync<ShippingOutboxDbContext>(host.Services, shippingMarker);
+
+        // then — the outbox is initialized (by the unit's write, or by the background retry if it ran first), and
+        // the row is relayed from the shipping database
+        shippingOutbox.IsInitialized.Should().BeTrue();
+        await inbox.WaitAsync(shippingMarker, _DeliveryTimeout, AbortToken);
+        await _WaitForStatusAsync(shipping.ConnectionString, shippingMarker, "Succeeded");
+        (await HasReceivedTableAsync(shipping.ConnectionString)).Should().BeFalse("an additional outbox has no inbox");
+        await host.StopAsync(AbortToken);
+    }
+
     private IHost _BuildHost(
         TestDatabase primary,
         TestDatabase billing,
@@ -256,7 +304,7 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
     }
 
     // The bootstrapper is a background service, so the host's start returns before schema initialization ends;
-    // joining its bootstrap waits for every outbox to be ready.
+    // joining its bootstrap waits for the primary and for one initialization attempt of every additional outbox.
     private async Task _StartAsync(IHost host)
     {
         await host.StartAsync(AbortToken);
