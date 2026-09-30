@@ -36,19 +36,32 @@ public sealed class LeaseRequestResolverTests : TestBase
         act.Should().Throw<ArgumentException>();
     }
 
-    // PostgreSQL cannot store NUL; an unpaired surrogate is not Unicode, so PostgreSQL's UTF-8 encoding refuses it and
-    // SQL Server hands it back rewritten as U+FFFD. Found by the differential oracle (seeds 1, 12, and 20).
+    // PostgreSQL cannot store NUL; an unpaired surrogate is not Unicode, so Npgsql's UTF-8 encoder refuses it and SQL
+    // Server hands it back rewritten as U+FFFD. Found by the differential oracle (seeds 1, 12, and 20). The values are
+    // built in code: attribute arguments are stored as UTF-8, which would turn a lone surrogate into U+FFFD before the
+    // test ever ran.
+    private static readonly string[] _Unportable =
+    [
+        "x\u0000y",
+        "lone\ud800",
+        "\udc00lone",
+        "\udc00\ud800",
+        "t\u0000",
+        "t\ud800",
+    ];
+
     [Theory]
-    [InlineData(0, "x\u0000y")]
-    [InlineData(0, "lone\ud800")]
-    [InlineData(0, "\udc00lone")]
-    [InlineData(1, "x\u0000y")]
-    [InlineData(1, "lone\ud800")]
-    [InlineData(1, "\udc00\ud800")]
-    [InlineData(2, "t\u0000")]
-    [InlineData(2, "t\ud800")]
-    public void should_reject_a_key_part_no_provider_stores_unchanged(int part, string value)
+    [InlineData(0, 0)]
+    [InlineData(0, 1)]
+    [InlineData(0, 2)]
+    [InlineData(1, 0)]
+    [InlineData(1, 1)]
+    [InlineData(1, 3)]
+    [InlineData(2, 4)]
+    [InlineData(2, 5)]
+    public void should_reject_a_key_part_no_provider_stores_unchanged(int part, int valueIndex)
     {
+        var value = _Unportable[valueIndex];
         var context = new FencingTestContext();
 
         if (part == 2)

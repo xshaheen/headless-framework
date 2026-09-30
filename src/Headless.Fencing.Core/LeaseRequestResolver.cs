@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.MultiTenancy;
+using Headless.Sql;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Fencing;
@@ -12,15 +13,9 @@ namespace Headless.Fencing;
 /// </summary>
 internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOptionsMonitor<FencingOptions> options)
 {
-    // SQL Server pads nvarchar values with trailing spaces before comparing them, under every collation and in
-    // primary-key uniqueness, so "a" and "a " would share one lease there while PostgreSQL keeps them apart. Refusing
-    // surrounding whitespace keeps key parts ordinal on every provider.
-    private const string _MergeReason =
-        " must not start or end with whitespace: some providers ignore trailing spaces when comparing keys, which "
-        + "would merge two leases.";
-    private const string _KindWhitespaceMessage = "A lease kind" + _MergeReason;
-    private const string _ResourceWhitespaceMessage = "A lease resource" + _MergeReason;
-    private const string _TenantIdWhitespaceMessage = "A lease tenant id" + _MergeReason;
+    // Every key part must be text every provider stores, compares, and returns unchanged, whichever provider this
+    // host uses: a key one provider merges (trailing spaces on SQL Server), rejects (NUL on PostgreSQL), or rewrites
+    // (an unpaired surrogate on SQL Server) would make the providers disagree about which lease a call names.
 
     /// <summary>Validates a grant's arguments and the current tenant, and returns the lease key.</summary>
     /// <exception cref="ArgumentException">The kind, resource, or current tenant id is invalid.</exception>
@@ -114,14 +109,14 @@ internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOption
     {
         Argument.IsNotNullOrWhiteSpace(kind, paramName: paramName);
         Argument.HasMaxLength(kind, FencingFieldLimits.KindMaxLength, paramName: paramName);
-        Argument.HasNoSurroundingWhiteSpace(kind, _KindWhitespaceMessage, paramName);
+        _EnsurePortable(kind, "A lease kind", paramName);
     }
 
     private static void _ValidateResource(string resource, string paramName)
     {
         Argument.IsNotNullOrWhiteSpace(resource, paramName: paramName);
         Argument.HasMaxLength(resource, FencingFieldLimits.ResourceMaxLength, paramName: paramName);
-        Argument.HasNoSurroundingWhiteSpace(resource, _ResourceWhitespaceMessage, paramName);
+        _EnsurePortable(resource, "A lease resource", paramName);
     }
 
     private static string _NormalizeTenantId(string? tenantId, string what, string paramName)
@@ -150,8 +145,19 @@ internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOption
             );
         }
 
-        Argument.HasNoSurroundingWhiteSpace(tenantId, _TenantIdWhitespaceMessage, paramName);
+        _EnsurePortable(tenantId, "A lease tenant id", paramName);
 
         return tenantId;
+    }
+
+    private static void _EnsurePortable(string value, string what, string paramName)
+    {
+        if (SqlPortable.FindUnportableKeyText(value) is { } reason)
+        {
+            throw new ArgumentException(
+                $"{what} {reason}, so providers would disagree about which lease it names.",
+                paramName
+            );
+        }
     }
 }
