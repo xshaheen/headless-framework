@@ -76,25 +76,25 @@ internal sealed class PostgreSqlMonitoringApi(
         var sql = $"""
             SELECT
             (
-                SELECT COUNT("Id") FROM {_publishedTable} WHERE "IntentType" IN (0, 1) AND "StatusName" = 'Succeeded'
+                SELECT COUNT("id") FROM {_publishedTable} WHERE "intent_type" IN (0, 1) AND "status_name" = 'Succeeded'
             ) AS "PublishedSucceeded",
             (
-                SELECT COUNT("Id") FROM {_receivedTable} WHERE "IntentType" IN (0, 1) AND "StatusName" = 'Succeeded'
+                SELECT COUNT("id") FROM {_receivedTable} WHERE "intent_type" IN (0, 1) AND "status_name" = 'Succeeded'
             ) AS "ReceivedSucceeded",
             (
-                SELECT COUNT("Id") FROM {_publishedTable} WHERE "IntentType" IN (0, 1) AND "StatusName" = 'Failed'
+                SELECT COUNT("id") FROM {_publishedTable} WHERE "intent_type" IN (0, 1) AND "status_name" = 'Failed'
             ) AS "PublishedFailed",
             (
-                SELECT COUNT("Id") FROM {_receivedTable} WHERE "IntentType" IN (0, 1) AND "StatusName" = 'Failed'
+                SELECT COUNT("id") FROM {_receivedTable} WHERE "intent_type" IN (0, 1) AND "status_name" = 'Failed'
             ) AS "ReceivedFailed",
             (
-                SELECT COUNT("Id") FROM {_publishedTable} WHERE "IntentType" IN (0, 1) AND "StatusName" = 'Delayed'
+                SELECT COUNT("id") FROM {_publishedTable} WHERE "intent_type" IN (0, 1) AND "status_name" = 'Delayed'
             ) AS "PublishedDelayed",
             (
-                SELECT COUNT("Id") FROM {_publishedTable} WHERE "IntentType" IN (0, 1) AND "NextRetryAt" IS NOT NULL
+                SELECT COUNT("id") FROM {_publishedTable} WHERE "intent_type" IN (0, 1) AND "next_retry_at" IS NOT NULL
             ) AS "PublishedPendingRetry",
             (
-                SELECT COUNT("Id") FROM {_receivedTable} WHERE "IntentType" IN (0, 1) AND "NextRetryAt" IS NOT NULL
+                SELECT COUNT("id") FROM {_receivedTable} WHERE "intent_type" IN (0, 1) AND "next_retry_at" IS NOT NULL
             ) AS "ReceivedPendingRetry";
             """;
 
@@ -140,41 +140,41 @@ internal sealed class PostgreSqlMonitoringApi(
         var tableName = query.MessageType == MessageType.Publish ? _publishedTable : _receivedTable;
         var selectColumns =
             query.MessageType == MessageType.Publish
-                ? @"""Id"",""MessageId"",""Version"",""Name"",CAST(NULL AS VARCHAR(200)) AS ""Group"",""Content"",""IntentType"",""Retries"",""Added"",""ExpiresAt"",""StatusName"",""NextRetryAt"",""LockedUntil"""
-                : @"""Id"",""MessageId"",""Version"",""Name"",""Group"",""Content"",""IntentType"",""Retries"",""Added"",""ExpiresAt"",""StatusName"",""NextRetryAt"",""LockedUntil""";
-        var where = " AND \"IntentType\" IN (0, 1)";
+                ? @"""id"",""message_id"",""version"",""name"",CAST(NULL AS VARCHAR(200)) AS ""group"",""content"",""intent_type"",""retries"",""added"",""expires_at"",""status_name"",""next_retry_at"",""locked_until"""
+                : @"""id"",""message_id"",""version"",""name"",""group"",""content"",""intent_type"",""retries"",""added"",""expires_at"",""status_name"",""next_retry_at"",""locked_until""";
+        var where = " AND \"intent_type\" IN (0, 1)";
 
         if (query.StatusName is not null)
         {
-            where += " AND \"StatusName\" = @StatusName";
+            where += " AND \"status_name\" = @StatusName";
         }
 
         if (!string.IsNullOrEmpty(query.Name))
         {
-            where += " AND \"Name\" = @Name";
+            where += " AND \"name\" = @Name";
         }
 
         if (!string.IsNullOrEmpty(query.Group))
         {
-            where += " AND \"Group\" = @Group";
+            where += " AND \"group\" = @Group";
         }
 
         if (!string.IsNullOrEmpty(query.Content))
         {
-            where += " AND \"Content\" ILIKE @Content ESCAPE '\\'";
+            where += " AND \"content\" ILIKE @Content ESCAPE '\\'";
         }
 
         if (query.Lane is { })
         {
-            where += " AND \"IntentType\" = @IntentType";
+            where += " AND \"intent_type\" = @IntentType";
         }
 
         // Keep the total count in a separate query: COUNT(*) OVER() returns no count row when OFFSET/LIMIT yields
         // an empty later page, which breaks pagination metadata even though matching rows still exist.
-        var countQuery = $"SELECT COUNT(\"Id\") FROM {tableName} WHERE 1=1 {where}";
+        var countQuery = $"SELECT COUNT(\"id\") FROM {tableName} WHERE 1=1 {where}";
 
         var sqlQuery =
-            $"SELECT {selectColumns} FROM {tableName} WHERE 1=1 {where} ORDER BY \"Added\" DESC OFFSET @Offset LIMIT @Limit";
+            $"SELECT {selectColumns} FROM {tableName} WHERE 1=1 {where} ORDER BY \"added\" DESC OFFSET @Offset LIMIT @Limit";
 
         await using var connection = _options.CreateConnection();
 
@@ -290,12 +290,12 @@ internal sealed class PostgreSqlMonitoringApi(
         var currentPage = Math.Max(query.CurrentPage, 1);
         var pageSize = query.PageSize <= 0 ? 50 : Math.Min(query.PageSize, 200);
         var offset = (long)(currentPage - 1) * pageSize;
-        var countSql = $"SELECT COUNT(\"Id\") FROM {tableName} WHERE \"IntentType\" NOT IN (0, 1)";
+        var countSql = $"SELECT COUNT(\"id\") FROM {tableName} WHERE \"intent_type\" NOT IN (0, 1)";
         var pageSql = $"""
-            SELECT "Id", "IntentType", "Name", "StatusName", "Added", "NextRetryAt", "LockedUntil"
+            SELECT "id", "intent_type", "name", "status_name", "added", "next_retry_at", "locked_until"
             FROM {tableName}
-            WHERE "IntentType" NOT IN (0, 1)
-            ORDER BY "Added", "Id"
+            WHERE "intent_type" NOT IN (0, 1)
+            ORDER BY "added", "id"
             OFFSET @Offset LIMIT @Limit;
             """;
         object[] sqlParams = [new NpgsqlParameter("@Offset", offset), new NpgsqlParameter("@Limit", pageSize)];
@@ -406,7 +406,7 @@ internal sealed class PostgreSqlMonitoringApi(
     )
     {
         var sqlQuery =
-            $"SELECT COUNT(\"Id\") FROM {tableName} WHERE \"IntentType\" IN (0, 1) AND \"StatusName\" = @State";
+            $"SELECT COUNT(\"id\") FROM {tableName} WHERE \"intent_type\" IN (0, 1) AND \"status_name\" = @State";
 
         await using var connection = _options.CreateConnection();
 
@@ -467,13 +467,13 @@ internal sealed class PostgreSqlMonitoringApi(
                 -- matching the UTC hour-bucket keys built in C#. HH24 (24-hour) matches the C# key built
                 -- with ToString("yyyy-MM-dd-HH"); Postgres 'HH' is 12-hour, which silently mismatched
                 -- buckets for hours 00 and 13-23.
-                SELECT to_char("Added" AT TIME ZONE 'UTC','yyyy-MM-dd-HH24') AS "Key",
-                COUNT("Id") AS "Count"
+                SELECT to_char("added" AT TIME ZONE 'UTC','yyyy-MM-dd-HH24') AS "key",
+                COUNT("id") AS "count"
                 FROM {tableName}
-                    WHERE "IntentType" IN (0, 1) AND "StatusName" = @StatusName AND "Added" >= @MinAdded AND "Added" < @MaxAdded
-                GROUP BY to_char("Added" AT TIME ZONE 'UTC', 'yyyy-MM-dd-HH24')
+                    WHERE "intent_type" IN (0, 1) AND "status_name" = @StatusName AND "added" >= @MinAdded AND "added" < @MaxAdded
+                GROUP BY to_char("added" AT TIME ZONE 'UTC', 'yyyy-MM-dd-HH24')
             )
-            SELECT "Key","Count" from Aggr;
+            SELECT "key","count" from Aggr;
             """;
 
         object[] sqlParams =
@@ -529,7 +529,7 @@ internal sealed class PostgreSqlMonitoringApi(
             return [];
         }
 
-        var sql = _BuildSelectMessageSql(tableName, "WHERE \"Id\" = ANY(@Ids) AND \"IntentType\" IN (0, 1)");
+        var sql = _BuildSelectMessageSql(tableName, "WHERE \"id\" = ANY(@Ids) AND \"intent_type\" IN (0, 1)");
 
         await using var connection = _options.CreateConnection();
 
@@ -560,7 +560,7 @@ internal sealed class PostgreSqlMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        var sql = _BuildSelectMessageSql(tableName, "WHERE \"Id\"=@Id AND \"IntentType\" IN (0, 1)");
+        var sql = _BuildSelectMessageSql(tableName, "WHERE \"id\"=@Id AND \"intent_type\" IN (0, 1)");
 
         await using var connection = _options.CreateConnection();
 
@@ -593,10 +593,10 @@ internal sealed class PostgreSqlMonitoringApi(
     private string _BuildSelectMessageSql(string tableName, string whereClause)
     {
         var exceptionInfoSql = string.Equals(tableName, _receivedTable, StringComparison.Ordinal)
-            ? @"""ExceptionInfo"""
-            : "NULL AS \"ExceptionInfo\"";
+            ? @"""exception_info"""
+            : "NULL AS \"exception_info\"";
 
-        return $@"SELECT ""Id"" AS ""StorageId"", ""Content"", ""IntentType"", ""Added"", ""ExpiresAt"", ""Retries"", {exceptionInfoSql}, ""NextRetryAt"", ""LockedUntil"" FROM {tableName} {whereClause}";
+        return $@"SELECT ""id"" AS ""storage_id"", ""content"", ""intent_type"", ""added"", ""expires_at"", ""retries"", {exceptionInfoSql}, ""next_retry_at"", ""locked_until"" FROM {tableName} {whereClause}";
     }
 
     private async Task<MediumMessage> _ReadMediumMessageAsync(DbDataReader reader, CancellationToken token)

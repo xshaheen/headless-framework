@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
+
 namespace Headless.Coordination;
 
 /// <summary>
@@ -10,14 +12,12 @@ namespace Headless.Coordination;
 [PublicAPI]
 public sealed class CoordinationStorageOptions
 {
-    /// <summary>The schema the coordination membership tables are created in when none is configured.</summary>
-    public const string DefaultSchema = "coordination";
-
     /// <summary>
     /// Gets or sets the database schema that holds the coordination membership tables
     /// (<c>coordination_node_generation</c>, <c>coordination_descriptor</c>, <c>coordination_liveness</c> and
     /// their SQL Server equivalents). Must be a valid identifier for the selected provider; validated on startup.
-    /// Default: <see cref="DefaultSchema"/> (<c>"coordination"</c>).
+    /// Default: <see cref="HeadlessStorageDefaults.Schema"/> (<c>"headless"</c>), the schema every Headless feature
+    /// shares.
     /// </summary>
-    public string Schema { get; set; } = DefaultSchema;
+    public string Schema { get; set; } = HeadlessStorageDefaults.Schema;
 }

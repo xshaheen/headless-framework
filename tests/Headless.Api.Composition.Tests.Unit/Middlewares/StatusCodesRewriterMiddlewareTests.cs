@@ -6,14 +6,12 @@ using Headless.Abstractions;
 using Headless.Api.Middlewares;
 using Headless.Api.MultiTenancy;
 using Headless.Constants;
-using Headless.MultiTenancy;
 using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 
 namespace Tests.Middlewares;
 
@@ -22,7 +20,7 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
     private static StatusCodesRewriterMiddleware _CreateMiddleware(IProblemDetailsCreator? problemDetailsCreator = null)
     {
         problemDetailsCreator ??= _CreateProblemDetailsCreator();
-        return new StatusCodesRewriterMiddleware(problemDetailsCreator, Options.Create(new TenantCatalogOptions()));
+        return new StatusCodesRewriterMiddleware(problemDetailsCreator);
     }
 
     private static IProblemDetailsCreator _CreateProblemDetailsCreator()
@@ -65,10 +63,19 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
         return creator;
     }
 
-    private static DefaultHttpContext _CreateContext()
+    // The creator is registered in request services for the tenancy rejections, which resolve it per
+    // request rather than receiving the middleware's.
+    private static DefaultHttpContext _CreateContext(IProblemDetailsCreator? problemDetailsCreator = null)
     {
         var ctx = new DefaultHttpContext();
-        var services = new ServiceCollection().AddLogging().AddProblemDetails().BuildServiceProvider();
+        var serviceCollection = new ServiceCollection().AddLogging().AddProblemDetails();
+
+        if (problemDetailsCreator is not null)
+        {
+            serviceCollection.AddSingleton(problemDetailsCreator);
+        }
+
+        var services = serviceCollection.BuildServiceProvider();
         ctx.RequestServices = services;
         ctx.Response.Body = new MemoryStream();
         return ctx;
@@ -251,10 +258,9 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
     [Fact]
     public async Task should_return_tenant_required_problem_details_when_typed_feature_set()
     {
-        // given - TenantRequirementHandler sets this typed feature on the IFeatureCollection when
-        // it fails authorization. The rewriter detects it and substitutes the structured
-        // g:tenant_required body for the generic Forbidden body. This is the path that decouples
-        // tenant 403s from the IAuthorizationMiddlewareResultHandler registration order.
+        // given - TenantRequirementHandler sets this rejection when it fails authorization; it replaces
+        // the generic Forbidden body with the structured g:tenant_required body. This is the path that
+        // decouples tenant 403s from the IAuthorizationMiddlewareResultHandler registration order.
         var problemCreator = Substitute.For<IProblemDetailsCreator>();
         problemCreator
             .Forbidden(
@@ -274,8 +280,8 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
                 }
             );
         var middleware = _CreateMiddleware(problemCreator);
-        var context = _CreateContext();
-        context.Features.Set(new TenantContextRequiredFeature());
+        var context = _CreateContext(problemCreator);
+        context.TrySetStatusCodeRejection(TenantContextRequiredFeature.Instance);
         Task next(HttpContext ctx)
         {
             ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
@@ -348,8 +354,8 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
         var problemCreator = Substitute.For<IProblemDetailsCreator>();
         problemCreator.Unauthorized().Returns(new ProblemDetails { Status = StatusCodes.Status401Unauthorized });
         var middleware = _CreateMiddleware(problemCreator);
-        var context = _CreateContext();
-        context.Features.Set(new TenantContextRequiredFeature());
+        var context = _CreateContext(problemCreator);
+        context.TrySetStatusCodeRejection(TenantContextRequiredFeature.Instance);
         Task next(HttpContext ctx)
         {
             ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
@@ -369,7 +375,7 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
     [Fact]
     public async Task should_rewrite_when_typed_feature_set_even_if_content_type_already_set()
     {
-        // given - the tenant feature bypasses the Content-Type/Content-Length short-circuit so that
+        // given - the tenant rejection runs ahead of the Content-Type/Content-Length short-circuit so that
         // a partial response written by a consumer's IAuthorizationMiddlewareResultHandler is
         // replaced with the structured g:tenant_required body.
         var problemCreator = Substitute.For<IProblemDetailsCreator>();
@@ -386,8 +392,8 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
                 }
             );
         var middleware = _CreateMiddleware(problemCreator);
-        var context = _CreateContext();
-        context.Features.Set(new TenantContextRequiredFeature());
+        var context = _CreateContext(problemCreator);
+        context.TrySetStatusCodeRejection(TenantContextRequiredFeature.Instance);
         Task next(HttpContext ctx)
         {
             ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
@@ -454,5 +460,108 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
 
         // then
         context.Response.ContentType.Should().StartWith("application/problem+json");
+    }
+
+    [Fact]
+    public async Task should_let_an_accepting_rejection_own_the_response_whatever_the_status()
+    {
+        // given - a cookie-style scheme forbids with a 302, which the bare-status rewrite ignores
+        var problemCreator = Substitute.For<IProblemDetailsCreator>();
+        var middleware = _CreateMiddleware(problemCreator);
+        var context = _CreateContext();
+        var rejection = new RecordingRejection(accept: true, writeStatus: StatusCodes.Status404NotFound);
+        context.TrySetStatusCodeRejection(rejection);
+        Task next(HttpContext ctx)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status302Found;
+            return Task.CompletedTask;
+        }
+
+        // when
+        await middleware.InvokeAsync(context, next);
+
+        // then
+        rejection.Calls.Should().Be(1);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        problemCreator.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_fall_back_to_the_bare_status_rewrite_when_the_rejection_declines()
+    {
+        // given
+        var problemCreator = _CreateProblemDetailsCreator();
+        var middleware = _CreateMiddleware(problemCreator);
+        var context = _CreateContext();
+        var rejection = new RecordingRejection(accept: false, writeStatus: StatusCodes.Status404NotFound);
+        context.TrySetStatusCodeRejection(rejection);
+        Task next(HttpContext ctx)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return Task.CompletedTask;
+        }
+
+        // when
+        await middleware.InvokeAsync(context, next);
+
+        // then
+        rejection.Calls.Should().Be(1);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        problemCreator.Received(1).Forbidden();
+    }
+
+    [Fact]
+    public async Task should_not_offer_the_rejection_when_the_response_already_started()
+    {
+        // given
+        var middleware = _CreateMiddleware();
+        var context = _CreateContext();
+        var responseFeature = Substitute.For<IHttpResponseFeature>();
+        responseFeature.HasStarted.Returns(true);
+        context.Features.Set(responseFeature);
+        var rejection = new RecordingRejection(accept: true, writeStatus: StatusCodes.Status404NotFound);
+        context.TrySetStatusCodeRejection(rejection);
+        Task next(HttpContext ctx) => Task.CompletedTask;
+
+        // when
+        await middleware.InvokeAsync(context, next);
+
+        // then
+        rejection.Calls.Should().Be(0);
+    }
+
+    [Fact]
+    public void should_keep_the_first_rejection_when_another_handler_tries_to_set_one()
+    {
+        // given
+        var context = _CreateContext();
+        var first = new RecordingRejection(accept: true, writeStatus: StatusCodes.Status404NotFound);
+        var second = new RecordingRejection(accept: true, writeStatus: StatusCodes.Status403Forbidden);
+
+        // when
+        var firstStored = context.TrySetStatusCodeRejection(first);
+        var secondStored = context.TrySetStatusCodeRejection(second);
+
+        // then
+        firstStored.Should().BeTrue();
+        secondStored.Should().BeFalse();
+        context.Features.Get<IStatusCodeRejectionFeature>().Should().BeSameAs(first);
+    }
+
+    private sealed class RecordingRejection(bool accept, int writeStatus) : IStatusCodeRejectionFeature
+    {
+        public int Calls { get; private set; }
+
+        public Task<bool> TryWriteResponseAsync(HttpContext context)
+        {
+            Calls++;
+
+            if (accept)
+            {
+                context.Response.StatusCode = writeStatus;
+            }
+
+            return Task.FromResult(accept);
+        }
     }
 }

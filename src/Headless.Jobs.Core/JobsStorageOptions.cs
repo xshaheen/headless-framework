@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
+
 namespace Headless.Jobs;
 
 /// <summary>
@@ -11,12 +13,10 @@ namespace Headless.Jobs;
 [PublicAPI]
 public sealed class JobsStorageOptions
 {
-    /// <summary>The schema Jobs tables are mapped into when no override is configured.</summary>
-    public const string DefaultSchema = "jobs";
-
     /// <summary>
     /// Gets or sets the database schema that contains every Jobs table — the time-job, cron-job, cron-occurrence,
-    /// and idempotency-reservation tables alike. Default: <see cref="DefaultSchema"/>.
+    /// and idempotency-reservation tables alike. Default: <see cref="HeadlessStorageDefaults.Schema"/>
+    /// (<c>"headless"</c>), the schema every Headless feature shares.
     /// </summary>
-    public string Schema { get; set; } = DefaultSchema;
+    public string Schema { get; set; } = HeadlessStorageDefaults.Schema;
 }

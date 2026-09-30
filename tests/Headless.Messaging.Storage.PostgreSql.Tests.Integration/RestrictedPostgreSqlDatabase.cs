@@ -52,7 +52,7 @@ internal static class RestrictedPostgreSqlDatabase
                 );
                 await databaseAdminConnection.ExecuteAsync(
                     new CommandDefinition(
-                        $"CREATE SCHEMA messaging AUTHORIZATION \"{role}\";",
+                        $"CREATE SCHEMA headless AUTHORIZATION \"{role}\";",
                         cancellationToken: cancellationToken
                     )
                 );

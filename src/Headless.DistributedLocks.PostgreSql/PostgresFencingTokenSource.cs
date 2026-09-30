@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using Headless.Constants;
+using Headless.Sql.PostgreSql;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -98,9 +99,9 @@ internal sealed class PostgresFencingTokenSource(
 
     // Runs the catalog-mutating DDL once per source lifetime instead of on every acquire, which
     // would otherwise hammer pg_class with catalog locks under contention. The in-process gate
-    // serializes concurrent first-callers in this process; the transaction-scoped advisory lock plus
-    // already-exists SqlState handling makes the CREATE safe across replicas, where PG's
-    // CREATE SEQUENCE IF NOT EXISTS check is not atomic with the catalog insert.
+    // serializes concurrent first-callers in this process; the transaction-scoped advisory locks plus
+    // one rerun on an already-exists SqlState make the CREATE safe across replicas and foreign creators,
+    // where PG's IF NOT EXISTS check is not atomic with the catalog insert.
     private async ValueTask _EnsureSequenceAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
         if (Volatile.Read(ref _sequenceEnsured))
@@ -117,51 +118,61 @@ internal sealed class PostgresFencingTokenSource(
                 return;
             }
 
-            // Gate the DDL behind a transaction-scoped advisory lock keyed on the sequence name so racing
-            // replicas serialize on the create rather than both passing the IF NOT EXISTS check and one
-            // failing. The lock releases automatically on transaction end.
-            await using var transaction = await connection
-                .BeginTransactionAsync(cancellationToken)
-                .ConfigureAwait(false);
-
-            try
+            // A schema or sequence creator outside our advisory locks (a consumer's EF migration, other application
+            // code) can still commit the same CREATE first, failing this transaction with 42P06/42P07 or 23505 on the
+            // catalog unique index. The rollback discards the sequence too, so treating that as success would leave
+            // every later nextval failing. The conflicting creator has committed by the time we see the error, so one
+            // rerun in a fresh transaction passes the IF NOT EXISTS guards; a second failure propagates and the next
+            // caller tries again, because the ensured flag is set only after a commit.
+            for (var attempt = 1; ; attempt++)
             {
-                await using (var lockCommand = connection.CreateCommand())
+                // Gate the DDL behind a transaction-scoped advisory lock keyed on the sequence name so racing
+                // replicas serialize on the create rather than both passing the IF NOT EXISTS check and one
+                // failing. The lock releases automatically on transaction end. The key names this feature so it
+                // never shares an advisory lock with the Fencing feature's own storage initializer.
+                await using var transaction = await connection
+                    .BeginTransactionAsync(cancellationToken)
+                    .ConfigureAwait(false);
+
+                try
                 {
-                    lockCommand.Transaction = transaction;
-                    lockCommand.CommandText =
-                        $"SELECT pg_advisory_xact_lock(hashtextextended('headless_fencing_init:{_qualifiedSequence}', 0))";
-                    lockCommand.CommandTimeout = (int)_commandTimeout.TotalSeconds;
-                    await lockCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-                }
+                    await using (var lockCommand = connection.CreateCommand())
+                    {
+                        lockCommand.Transaction = transaction;
+                        lockCommand.CommandText =
+                            $"SELECT pg_advisory_xact_lock(hashtextextended('headless_distributed_locks_init:{_qualifiedSequence}', 0))";
+                        lockCommand.CommandTimeout = (int)_commandTimeout.TotalSeconds;
+                        await lockCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                    }
 
-                await using (var command = connection.CreateCommand())
+                    await using (var command = connection.CreateCommand())
+                    {
+                        command.Transaction = transaction;
+                        command.CommandText = $"""
+                            {PostgreSqlSchemaInitLock.AcquireStatement(_schema)}
+                            CREATE SCHEMA IF NOT EXISTS "{_schema}";
+                            CREATE SEQUENCE IF NOT EXISTS {_qualifiedSequence};
+                            """;
+                        command.CommandTimeout = (int)_commandTimeout.TotalSeconds;
+                        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                    }
+
+                    await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                    Volatile.Write(ref _sequenceEnsured, value: true);
+
+                    return;
+                }
+                catch (PostgresException exception)
+                    when (attempt == 1
+                        && exception.SqlState
+                            is SqlErrorCodes.PostgreSql.DuplicateSchema
+                                or SqlErrorCodes.PostgreSql.DuplicateTable
+                                or SqlErrorCodes.PostgreSql.UniqueViolation
+                    )
                 {
-                    command.Transaction = transaction;
-                    command.CommandText = $"""
-                        CREATE SCHEMA IF NOT EXISTS "{_schema}";
-                        CREATE SEQUENCE IF NOT EXISTS {_qualifiedSequence};
-                        """;
-                    command.CommandTimeout = (int)_commandTimeout.TotalSeconds;
-                    await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                    await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
                 }
-
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             }
-            catch (PostgresException exception)
-                when (exception.SqlState
-                        is SqlErrorCodes.PostgreSql.DuplicateSchema
-                            or SqlErrorCodes.PostgreSql.DuplicateTable
-                            or SqlErrorCodes.PostgreSql.UniqueViolation
-                )
-            {
-                // A concurrent replica created the sequence (or its schema) between our lock acquire and
-                // the create: duplicate_schema / duplicate_table / unique_violation all mean "already
-                // created", so treat as success. Roll back this transaction's no-op.
-                await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            }
-
-            Volatile.Write(ref _sequenceEnsured, value: true);
         }
         finally
         {

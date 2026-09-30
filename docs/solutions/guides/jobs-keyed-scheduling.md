@@ -40,9 +40,11 @@ var collation = Database.ProviderName switch
     "Microsoft.EntityFrameworkCore.SqlServer" => "Latin1_General_100_BIN2",
     _ => throw new NotSupportedException("This store does not support keyed Jobs."),
 };
-modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TimeJobEntity>("jobs", collation));
-modelBuilder.ApplyConfiguration(new CronJobConfigurations<CronJobEntity>("jobs", collation));
-modelBuilder.ApplyConfiguration(new CronJobOccurrenceConfigurations<CronJobEntity>("jobs", collation));
+// snake_case names on PostgreSQL, PascalCase elsewhere; must match the database the model targets.
+var style = HeadlessStorageNaming.ForProvider(Database.ProviderName);
+modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TimeJobEntity>("jobs", style, collation));
+modelBuilder.ApplyConfiguration(new CronJobConfigurations<CronJobEntity>("jobs", style, collation));
+modelBuilder.ApplyConfiguration(new CronJobOccurrenceConfigurations<CronJobEntity>("jobs", style, collation));
 
 modelBuilder.Entity<TimeJobEntity>().ToTable("scheduled_jobs", "application");
 modelBuilder.Entity<TimeJobEntity>().Property(job => job.BusinessKey).HasColumnName("business_key");

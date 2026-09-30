@@ -28,27 +28,27 @@ internal sealed partial class PostgreSqlDataStorage
 
         if (!string.IsNullOrWhiteSpace(query.MessageName))
         {
-            where += " AND \"Name\"=@Name";
+            where += " AND \"name\"=@Name";
         }
 
         if (query.Lane is not null)
         {
-            where += " AND \"IntentType\"=@IntentType";
+            where += " AND \"intent_type\"=@IntentType";
         }
 
         if (query.DueFrom is not null)
         {
-            where += " AND \"ExpiresAt\">=@DueFrom";
+            where += " AND \"expires_at\">=@DueFrom";
         }
 
         if (query.DueTo is not null)
         {
-            where += " AND \"ExpiresAt\"<=@DueTo";
+            where += " AND \"expires_at\"<=@DueTo";
         }
 
         if (query.StorageIds is { Count: > 0 })
         {
-            where += " AND \"Id\"=ANY(@StorageIds)";
+            where += " AND \"id\"=ANY(@StorageIds)";
         }
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
@@ -63,10 +63,10 @@ internal sealed partial class PostgreSqlDataStorage
 
         await using var command = new NpgsqlCommand(
             $"""
-            SELECT "Id","MessageId","Name","IntentType","ExpiresAt","LockedUntil","Owner","InlineAttempts",COALESCE("LockedUntil" > statement_timestamp(), FALSE)
+            SELECT "id","message_id","name","intent_type","expires_at","locked_until","owner","inline_attempts",COALESCE("locked_until" > statement_timestamp(), FALSE)
             FROM {_publishedTable}
             WHERE {where}
-            ORDER BY "ExpiresAt" ASC,"Id" ASC
+            ORDER BY "expires_at" ASC,"id" ASC
             LIMIT @PageSize OFFSET @Offset;
             """,
             connection
@@ -229,7 +229,7 @@ internal sealed partial class PostgreSqlDataStorage
     )
     {
         await using var command = new NpgsqlCommand(
-            $"SELECT \"TargetKind\",\"OperationType\",\"Outcome\",\"StorageId\",\"ExpectedDueAt\",\"MessageName\",\"MessageId\",\"Lane\",\"Actor\",\"Reason\",\"CreatedAt\" FROM {InboxReceiptsTable} WHERE \"OperationId\"=@OperationId FOR UPDATE;",
+            $"SELECT \"target_kind\",\"operation_type\",\"outcome\",\"storage_id\",\"expected_due_at\",\"message_name\",\"message_id\",\"lane\",\"actor\",\"reason\",\"created_at\" FROM {InboxReceiptsTable} WHERE \"operation_id\"=@OperationId FOR UPDATE;",
             connection,
             transaction
         );
@@ -315,7 +315,7 @@ internal sealed partial class PostgreSqlDataStorage
     )
     {
         await using var command = new NpgsqlCommand(
-            $"SELECT \"Version\",\"StatusName\",\"InlineAttempts\",\"Retries\",\"NextRetryAt\",COALESCE(\"LockedUntil\" > statement_timestamp(), FALSE),\"ExpiresAt\",\"Name\",\"MessageId\",\"IntentType\" FROM {_publishedTable} WHERE \"Id\"=@Id FOR UPDATE;",
+            $"SELECT \"version\",\"status_name\",\"inline_attempts\",\"retries\",\"next_retry_at\",COALESCE(\"locked_until\" > statement_timestamp(), FALSE),\"expires_at\",\"name\",\"message_id\",\"intent_type\" FROM {_publishedTable} WHERE \"id\"=@Id FOR UPDATE;",
             connection,
             transaction
         );
@@ -363,7 +363,7 @@ internal sealed partial class PostgreSqlDataStorage
     {
         var sql = $"""
             DELETE FROM {_publishedTable}
-            WHERE "Id"=@StorageId AND "Version"=@Version AND "ExpiresAt"=@ExpectedDueAt
+            WHERE "id"=@StorageId AND "version"=@Version AND "expires_at"=@ExpectedDueAt
               AND {_ScheduledEligibilityPredicate};
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
@@ -385,12 +385,12 @@ internal sealed partial class PostgreSqlDataStorage
     {
         var sql = $"""
             UPDATE {_publishedTable}
-            SET "StatusName"='Delayed',
-                "ExpiresAt"=@Now,
-                "LockedUntil"=NULL,
-                "Owner"=NULL
-            WHERE "Id"=@StorageId AND "Version"=@Version AND "ExpiresAt"=@ExpectedDueAt
-              AND (NOT (COALESCE("LockedUntil" > statement_timestamp(), FALSE)))
+            SET "status_name"='Delayed',
+                "expires_at"=@Now,
+                "locked_until"=NULL,
+                "owner"=NULL
+            WHERE "id"=@StorageId AND "version"=@Version AND "expires_at"=@ExpectedDueAt
+              AND (NOT (COALESCE("locked_until" > statement_timestamp(), FALSE)))
               AND {_ScheduledEligibilityPredicate};
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
@@ -411,9 +411,9 @@ internal sealed partial class PostgreSqlDataStorage
     )
     {
         var sql = $"""
-            INSERT INTO {InboxReceiptsTable}("OperationId","TargetKind","OperationType","Outcome","Actor","Reason","ExpectedDueAt","StorageId","MessageName","MessageId","Lane","CreatedAt")
+            INSERT INTO {InboxReceiptsTable}("operation_id","target_kind","operation_type","outcome","actor","reason","expected_due_at","storage_id","message_name","message_id","lane","created_at")
             VALUES (@OperationId,'ScheduledDelivery',@OperationType,@Outcome,@Actor,@Reason,@ExpectedDueAt,@StorageId,@MessageName,@MessageId,@Lane,@CreatedAt);
-            INSERT INTO {InboxAuditTable}("AuditId","OperationId","TargetKind","OperationType","Actor","Reason","Outcome","CreatedAt")
+            INSERT INTO {InboxAuditTable}("audit_id","operation_id","target_kind","operation_type","actor","reason","outcome","created_at")
             VALUES (@AuditId,@OperationId,'ScheduledDelivery',@OperationType,@Actor,@Reason,@Outcome,@CreatedAt);
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
@@ -459,7 +459,7 @@ internal sealed partial class PostgreSqlDataStorage
     )
     {
         await using var command = new NpgsqlCommand(
-            $"INSERT INTO {InboxAuditTable}(\"AuditId\",\"OperationId\",\"TargetKind\",\"OperationType\",\"Actor\",\"Reason\",\"Outcome\",\"CreatedAt\") VALUES (@AuditId,@OperationId,'ScheduledDelivery',@OperationType,@Actor,@Reason,@Outcome,statement_timestamp());",
+            $"INSERT INTO {InboxAuditTable}(\"audit_id\",\"operation_id\",\"target_kind\",\"operation_type\",\"actor\",\"reason\",\"outcome\",\"created_at\") VALUES (@AuditId,@OperationId,'ScheduledDelivery',@OperationType,@Actor,@Reason,@Outcome,statement_timestamp());",
             connection,
             transaction
         );

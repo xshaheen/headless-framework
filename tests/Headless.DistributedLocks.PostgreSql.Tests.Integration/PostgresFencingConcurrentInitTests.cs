@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.DistributedLocks;
+using Headless.Hosting.Initialization;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -12,7 +13,7 @@ public sealed class PostgresFencingConcurrentInitTests(PostgreSqlDistributedLock
 {
     private const string _SequenceName = "headless_distributed_locks_fence";
     private const string _QualifiedSequence = $"""
-        "{DistributedLocksStorageOptions.DefaultSchema}"."{_SequenceName}"
+        "{HeadlessStorageDefaults.Schema}"."{_SequenceName}"
         """;
 
     [Fact]

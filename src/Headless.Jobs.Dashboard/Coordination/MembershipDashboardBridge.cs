@@ -85,7 +85,7 @@ internal sealed class MembershipDashboardBridge(
 internal static partial class MembershipDashboardBridgeLog
 {
     [LoggerMessage(
-        EventId = 1,
+        EventId = 2020,
         EventName = "MembershipDashboardWatchFailed",
         Level = LogLevel.Error,
         Message = "Dashboard membership watch loop failed; the live-nodes panel will not receive push updates"

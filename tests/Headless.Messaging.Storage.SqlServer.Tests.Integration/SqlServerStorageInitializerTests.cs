@@ -40,7 +40,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         // cleanup
         await connection.ExecuteAsync(
             new CommandDefinition(
-                $"DROP TABLE IF EXISTS [{customSchema}].InboxAudit; DROP TABLE IF EXISTS [{customSchema}].InboxOperationReceipts; DROP TABLE IF EXISTS [{customSchema}].SchemaState; DROP TABLE IF EXISTS [{customSchema}].Published; DROP TABLE IF EXISTS [{customSchema}].Received; DROP TYPE IF EXISTS [{customSchema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{customSchema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{customSchema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{customSchema}]",
+                $"DROP TABLE IF EXISTS [{customSchema}].MessagingInboxAudit; DROP TABLE IF EXISTS [{customSchema}].MessagingInboxOperationReceipts; DROP TABLE IF EXISTS [{customSchema}].MessagingSchemaState; DROP TABLE IF EXISTS [{customSchema}].MessagingPublished; DROP TABLE IF EXISTS [{customSchema}].MessagingReceived; DROP TYPE IF EXISTS [{customSchema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{customSchema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{customSchema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{customSchema}]",
                 cancellationToken: AbortToken
             )
         );
@@ -63,7 +63,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         var columns = await connection.QueryAsync<string>(
             """
             SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME = 'Published'
+            WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME = 'MessagingPublished'
             """,
             new { Schema = schema }
         );
@@ -75,7 +75,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         // cleanup
         await connection.ExecuteAsync(
             new CommandDefinition(
-                $"DROP TABLE IF EXISTS [{schema}].InboxAudit; DROP TABLE IF EXISTS [{schema}].InboxOperationReceipts; DROP TABLE IF EXISTS [{schema}].SchemaState; DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
+                $"DROP TABLE IF EXISTS [{schema}].MessagingInboxAudit; DROP TABLE IF EXISTS [{schema}].MessagingInboxOperationReceipts; DROP TABLE IF EXISTS [{schema}].MessagingSchemaState; DROP TABLE IF EXISTS [{schema}].MessagingPublished; DROP TABLE IF EXISTS [{schema}].MessagingReceived; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
                 cancellationToken: AbortToken
             )
         );
@@ -98,7 +98,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         var columns = await connection.QueryAsync<string>(
             """
             SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME = 'Received'
+            WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME = 'MessagingReceived'
             """,
             new { Schema = schema }
         );
@@ -121,7 +121,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         // cleanup
         await connection.ExecuteAsync(
             new CommandDefinition(
-                $"DROP TABLE IF EXISTS [{schema}].InboxAudit; DROP TABLE IF EXISTS [{schema}].InboxOperationReceipts; DROP TABLE IF EXISTS [{schema}].SchemaState; DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
+                $"DROP TABLE IF EXISTS [{schema}].MessagingInboxAudit; DROP TABLE IF EXISTS [{schema}].MessagingInboxOperationReceipts; DROP TABLE IF EXISTS [{schema}].MessagingSchemaState; DROP TABLE IF EXISTS [{schema}].MessagingPublished; DROP TABLE IF EXISTS [{schema}].MessagingReceived; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
                 cancellationToken: AbortToken
             )
         );
@@ -148,7 +148,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
                 FROM sys.indexes i
                 INNER JOIN sys.tables t ON i.object_id = t.object_id
                 INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
-                WHERE s.name = @Schema AND t.name = 'Published' AND i.name IS NOT NULL
+                WHERE s.name = @Schema AND t.name = 'MessagingPublished' AND i.name IS NOT NULL
                 """,
                 new { Schema = schema },
                 cancellationToken: AbortToken
@@ -160,15 +160,15 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         // cleanup
         await connection.ExecuteAsync(
             new CommandDefinition(
-                $"DROP TABLE IF EXISTS [{schema}].InboxAudit; DROP TABLE IF EXISTS [{schema}].InboxOperationReceipts; DROP TABLE IF EXISTS [{schema}].SchemaState; DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
+                $"DROP TABLE IF EXISTS [{schema}].MessagingInboxAudit; DROP TABLE IF EXISTS [{schema}].MessagingInboxOperationReceipts; DROP TABLE IF EXISTS [{schema}].MessagingSchemaState; DROP TABLE IF EXISTS [{schema}].MessagingPublished; DROP TABLE IF EXISTS [{schema}].MessagingReceived; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
                 cancellationToken: AbortToken
             )
         );
     }
 
     [Theory]
-    [InlineData("Published", "IX_{schema}_Published_Version_NextRetryAt")]
-    [InlineData("Received", "IX_{schema}_Received_Version_NextRetryAt")]
+    [InlineData("MessagingPublished", "IX_MessagingPublished_Version_NextRetryAt")]
+    [InlineData("MessagingReceived", "IX_MessagingReceived_Version_NextRetryAt")]
     public async Task should_key_retry_pickup_index_on_version_lane_then_next_retry_at(
         string table,
         string indexNamePattern
@@ -190,7 +190,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         // cleanup
         await connection.ExecuteAsync(
             new CommandDefinition(
-                $"DROP TABLE IF EXISTS [{schema}].InboxAudit; DROP TABLE IF EXISTS [{schema}].InboxOperationReceipts; DROP TABLE IF EXISTS [{schema}].SchemaState; DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
+                $"DROP TABLE IF EXISTS [{schema}].MessagingInboxAudit; DROP TABLE IF EXISTS [{schema}].MessagingInboxOperationReceipts; DROP TABLE IF EXISTS [{schema}].MessagingSchemaState; DROP TABLE IF EXISTS [{schema}].MessagingPublished; DROP TABLE IF EXISTS [{schema}].MessagingReceived; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
                 cancellationToken: AbortToken
             )
         );
@@ -214,15 +214,20 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         await _AssertRetryIndexShapeAsync(
             connection,
             schema,
-            "Published",
-            $"IX_{schema}_Published_Version_NextRetryAt"
+            "MessagingPublished",
+            "IX_MessagingPublished_Version_NextRetryAt"
         );
-        await _AssertRetryIndexShapeAsync(connection, schema, "Received", $"IX_{schema}_Received_Version_NextRetryAt");
+        await _AssertRetryIndexShapeAsync(
+            connection,
+            schema,
+            "MessagingReceived",
+            "IX_MessagingReceived_Version_NextRetryAt"
+        );
 
         // cleanup
         await connection.ExecuteAsync(
             new CommandDefinition(
-                $"DROP TABLE IF EXISTS [{schema}].InboxAudit; DROP TABLE IF EXISTS [{schema}].InboxOperationReceipts; DROP TABLE IF EXISTS [{schema}].SchemaState; DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
+                $"DROP TABLE IF EXISTS [{schema}].MessagingInboxAudit; DROP TABLE IF EXISTS [{schema}].MessagingInboxOperationReceipts; DROP TABLE IF EXISTS [{schema}].MessagingSchemaState; DROP TABLE IF EXISTS [{schema}].MessagingPublished; DROP TABLE IF EXISTS [{schema}].MessagingReceived; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
                 cancellationToken: AbortToken
             )
         );
@@ -287,8 +292,8 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
     }
 
     [Theory]
-    [InlineData("Published")]
-    [InlineData("Received")]
+    [InlineData("MessagingPublished")]
+    [InlineData("MessagingReceived")]
     public async Task should_create_status_added_composite_index(string table)
     {
         // #508 — the initializer creates the final ([StatusName],[Added]) dashboard index directly.
@@ -317,7 +322,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
                     {
                         Schema = schema,
                         Table = table,
-                        IndexName = $"IX_{schema}_{table}_StatusName_Added",
+                        IndexName = $"IX_{table}_StatusName_Added",
                     },
                     cancellationToken: AbortToken
                 )
@@ -329,7 +334,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         // cleanup
         await connection.ExecuteAsync(
             new CommandDefinition(
-                $"DROP TABLE IF EXISTS [{schema}].InboxAudit; DROP TABLE IF EXISTS [{schema}].InboxOperationReceipts; DROP TABLE IF EXISTS [{schema}].SchemaState; DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
+                $"DROP TABLE IF EXISTS [{schema}].MessagingInboxAudit; DROP TABLE IF EXISTS [{schema}].MessagingInboxOperationReceipts; DROP TABLE IF EXISTS [{schema}].MessagingSchemaState; DROP TABLE IF EXISTS [{schema}].MessagingPublished; DROP TABLE IF EXISTS [{schema}].MessagingReceived; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
                 cancellationToken: AbortToken
             )
         );
@@ -353,7 +358,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         var tableCount = await connection.QueryFirstOrDefaultAsync<int>(
             """
             SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES
-            WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME IN ('Published', 'Received')
+            WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME IN ('MessagingPublished', 'MessagingReceived')
             """,
             new { Schema = schema }
         );
@@ -363,7 +368,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         // cleanup
         await connection.ExecuteAsync(
             new CommandDefinition(
-                $"DROP TABLE IF EXISTS [{schema}].InboxAudit; DROP TABLE IF EXISTS [{schema}].InboxOperationReceipts; DROP TABLE IF EXISTS [{schema}].SchemaState; DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
+                $"DROP TABLE IF EXISTS [{schema}].MessagingInboxAudit; DROP TABLE IF EXISTS [{schema}].MessagingInboxOperationReceipts; DROP TABLE IF EXISTS [{schema}].MessagingSchemaState; DROP TABLE IF EXISTS [{schema}].MessagingPublished; DROP TABLE IF EXISTS [{schema}].MessagingReceived; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
                 cancellationToken: AbortToken
             )
         );
@@ -384,14 +389,14 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         await connection.ExecuteAsync(
             new CommandDefinition(
                 $"""
-                DROP INDEX IF EXISTS [UX_{schema}_Received_InboxRootKey] ON [{schema}].[Received];
-                DROP INDEX IF EXISTS [UX_{schema}_Received_InboxLifecycleGeneration] ON [{schema}].[Received];
-                DROP INDEX IF EXISTS [IX_{schema}_Received_Version_ExpiresAt_StatusName] ON [{schema}].[Received];
-                DROP INDEX IF EXISTS [IX_{schema}_Received_ExpiresAt_StatusName] ON [{schema}].[Received];
-                DROP INDEX IF EXISTS [IX_{schema}_Received_Version_NextRetryAt] ON [{schema}].[Received];
-                DROP INDEX IF EXISTS [IX_{schema}_Published_Version_ExpiresAt_StatusName] ON [{schema}].[Published];
-                DROP INDEX IF EXISTS [IX_{schema}_Published_ExpiresAt_StatusName] ON [{schema}].[Published];
-                DROP INDEX IF EXISTS [IX_{schema}_Published_Version_NextRetryAt] ON [{schema}].[Published];
+                DROP INDEX IF EXISTS [UX_MessagingReceived_InboxRootKey] ON [{schema}].[MessagingReceived];
+                DROP INDEX IF EXISTS [UX_MessagingReceived_InboxLifecycleGeneration] ON [{schema}].[MessagingReceived];
+                DROP INDEX IF EXISTS [IX_MessagingReceived_Version_ExpiresAt_StatusName] ON [{schema}].[MessagingReceived];
+                DROP INDEX IF EXISTS [IX_MessagingReceived_ExpiresAt_StatusName] ON [{schema}].[MessagingReceived];
+                DROP INDEX IF EXISTS [IX_MessagingReceived_Version_NextRetryAt] ON [{schema}].[MessagingReceived];
+                DROP INDEX IF EXISTS [IX_MessagingPublished_Version_ExpiresAt_StatusName] ON [{schema}].[MessagingPublished];
+                DROP INDEX IF EXISTS [IX_MessagingPublished_ExpiresAt_StatusName] ON [{schema}].[MessagingPublished];
+                DROP INDEX IF EXISTS [IX_MessagingPublished_Version_NextRetryAt] ON [{schema}].[MessagingPublished];
                 """,
                 cancellationToken: AbortToken
             )
@@ -423,14 +428,14 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
                 new
                 {
                     Schema = schema,
-                    ReceivedUnique = $"UX_{schema}_Received_InboxRootKey",
-                    ReceivedLifecycle = $"UX_{schema}_Received_InboxLifecycleGeneration",
-                    ReceivedVersionExpires = $"IX_{schema}_Received_Version_ExpiresAt_StatusName",
-                    ReceivedExpires = $"IX_{schema}_Received_ExpiresAt_StatusName",
-                    ReceivedRetry = $"IX_{schema}_Received_Version_NextRetryAt",
-                    PublishedVersionExpires = $"IX_{schema}_Published_Version_ExpiresAt_StatusName",
-                    PublishedExpires = $"IX_{schema}_Published_ExpiresAt_StatusName",
-                    PublishedRetry = $"IX_{schema}_Published_Version_NextRetryAt",
+                    ReceivedUnique = "UX_MessagingReceived_InboxRootKey",
+                    ReceivedLifecycle = "UX_MessagingReceived_InboxLifecycleGeneration",
+                    ReceivedVersionExpires = "IX_MessagingReceived_Version_ExpiresAt_StatusName",
+                    ReceivedExpires = "IX_MessagingReceived_ExpiresAt_StatusName",
+                    ReceivedRetry = "IX_MessagingReceived_Version_NextRetryAt",
+                    PublishedVersionExpires = "IX_MessagingPublished_Version_ExpiresAt_StatusName",
+                    PublishedExpires = "IX_MessagingPublished_ExpiresAt_StatusName",
+                    PublishedRetry = "IX_MessagingPublished_Version_NextRetryAt",
                 },
                 cancellationToken: AbortToken
             )
@@ -441,10 +446,71 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         // cleanup
         await connection.ExecuteAsync(
             new CommandDefinition(
-                $"DROP TABLE IF EXISTS [{schema}].InboxAudit; DROP TABLE IF EXISTS [{schema}].InboxOperationReceipts; DROP TABLE IF EXISTS [{schema}].SchemaState; DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
+                $"DROP TABLE IF EXISTS [{schema}].MessagingInboxAudit; DROP TABLE IF EXISTS [{schema}].MessagingInboxOperationReceipts; DROP TABLE IF EXISTS [{schema}].MessagingSchemaState; DROP TABLE IF EXISTS [{schema}].MessagingPublished; DROP TABLE IF EXISTS [{schema}].MessagingReceived; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{schema}]",
                 cancellationToken: AbortToken
             )
         );
+    }
+
+    [Fact]
+    public async Task should_name_constraints_after_the_table_in_every_schema()
+    {
+        // given - the shared default schema plus a second schema in the same database, so the
+        // schema-scoped constraint names must not collide across them
+        const string otherSchema = "constraint_names";
+        await _CreateInitializer("headless", useStorageLock: false).InitializeAsync(AbortToken);
+        await _CreateInitializer(otherSchema, useStorageLock: false).InitializeAsync(AbortToken);
+
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        try
+        {
+            foreach (var schema in new[] { "headless", otherSchema })
+            {
+                // when
+                var names = (
+                    await connection.QueryAsync<string>(
+                        new CommandDefinition(
+                            """
+                            SELECT o.name FROM sys.objects o JOIN sys.tables t ON t.object_id = o.parent_object_id
+                            JOIN sys.schemas s ON s.schema_id = t.schema_id
+                            WHERE s.name = @Schema AND o.type IN ('PK','UQ','F','C','D')
+                            UNION ALL
+                            SELECT i.name FROM sys.indexes i JOIN sys.tables t ON t.object_id = i.object_id
+                            JOIN sys.schemas s ON s.schema_id = t.schema_id
+                            WHERE s.name = @Schema AND i.name IS NOT NULL
+                            """,
+                            new { Schema = schema },
+                            cancellationToken: AbortToken
+                        )
+                    )
+                ).ToList();
+
+                // then
+                names
+                    .Should()
+                    .Contain([
+                        "PK_MessagingReceived",
+                        "PK_MessagingPublished",
+                        "CK_MessagingReceived_InboxIdentity",
+                        "UX_MessagingReceived_InboxRootKey",
+                        "FK_MessagingInboxAudit_Operation",
+                        "IX_MessagingInboxOperationReceipts_Type_CreatedAt",
+                    ]);
+                names.Should().OnlyContain(name => name.Contains("_Messaging", StringComparison.Ordinal));
+                names.Should().NotContain(name => name.Contains($"_{schema}_", StringComparison.Ordinal));
+            }
+        }
+        finally
+        {
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    $"DROP TABLE IF EXISTS [{otherSchema}].MessagingInboxAudit; DROP TABLE IF EXISTS [{otherSchema}].MessagingInboxOperationReceipts; DROP TABLE IF EXISTS [{otherSchema}].MessagingSchemaState; DROP TABLE IF EXISTS [{otherSchema}].MessagingPublished; DROP TABLE IF EXISTS [{otherSchema}].MessagingReceived; DROP TYPE IF EXISTS [{otherSchema}].[HeadlessMessagingIdList]; DROP TYPE IF EXISTS [{otherSchema}].[HeadlessMessagingOwnerList]; DROP TYPE IF EXISTS [{otherSchema}].[HeadlessMessagingPoisonMessageList]; DROP SCHEMA IF EXISTS [{otherSchema}]",
+                    cancellationToken: AbortToken
+                )
+            );
+        }
     }
 
     [Fact]
@@ -455,8 +521,8 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         var initializer = _CreateInitializer(schema, useStorageLock: true);
 
         // when & then
-        initializer.GetPublishedTableName().Should().Be($"{schema}.Published");
-        initializer.GetReceivedTableName().Should().Be($"{schema}.Received");
+        initializer.GetPublishedTableName().Should().Be($"{schema}.MessagingPublished");
+        initializer.GetReceivedTableName().Should().Be($"{schema}.MessagingReceived");
     }
 
     [Fact]

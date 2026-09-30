@@ -4,6 +4,7 @@
     <Description>Contracts and shared abstractions for Headless background jobs packages.</Description>
     <PackageTags>headless;jobs;dotnet</PackageTags>
     <RootNamespace>Headless.Jobs</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Jobs.Composition.Tests.Unit" />

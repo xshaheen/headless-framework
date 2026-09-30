@@ -22,10 +22,13 @@ public class JobsDbContext<TTimeJob, TCronJob> : DbContext
         var schema = this.GetService<JobsStorageOptions>().Schema;
 
         var contractCollation = JobsContractCollation.TryResolve(Database.ProviderName);
+        var style = JobsStorageNaming.StyleOf(this);
 
-        modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TTimeJob>(schema, contractCollation));
-        modelBuilder.ApplyConfiguration(new CronJobConfigurations<TCronJob>(schema, contractCollation));
-        modelBuilder.ApplyConfiguration(new CronJobOccurrenceConfigurations<TCronJob>(schema, contractCollation));
+        modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TTimeJob>(schema, style, contractCollation));
+        modelBuilder.ApplyConfiguration(new CronJobConfigurations<TCronJob>(schema, style, contractCollation));
+        modelBuilder.ApplyConfiguration(
+            new CronJobOccurrenceConfigurations<TCronJob>(schema, style, contractCollation)
+        );
         base.OnModelCreating(modelBuilder);
         JobsKeyedModelConfiguration.Configure<TTimeJob>(modelBuilder, this);
     }

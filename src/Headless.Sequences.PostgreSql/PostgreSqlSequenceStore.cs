@@ -3,6 +3,7 @@
 using System.Data;
 using Headless.Checks;
 using Headless.Constants;
+using Headless.Threading;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -20,51 +21,55 @@ namespace Headless.Sequences.PostgreSql;
 /// transaction ends, which is what makes a gap-free counter serialize its writers until commit.
 /// </remarks>
 #pragma warning disable CA2100 // SQL text is built from the validated schema and table names plus internal column constants.
-internal sealed class PostgreSqlSequenceStore(IOptions<PostgreSqlSequencesOptions> options) : ISequenceStore
+internal sealed class PostgreSqlSequenceStore(IOptions<PostgreSqlSequencesOptions> options, TimeProvider timeProvider)
+    : ISequenceStore
 {
-    // A deadlock is the one failure a fresh transaction can clear on its own; the first attempt plus two retries.
-    private const int _MaxAttempts = 3;
+    // A deadlock is the one failure a fresh transaction can clear on its own.
+    private static readonly Func<Exception, bool> _IsRetryable = static ex =>
+        ex is PostgresException pg
+        && string.Equals(pg.SqlState, SqlErrorCodes.PostgreSql.DeadlockDetected, StringComparison.Ordinal);
 
     private readonly PostgreSqlSequencesOptions _options = options.Value;
     private readonly string _incrementSql = _BuildIncrementSql(options.Value);
 
-    public async ValueTask<long> IncrementAsync(
+    public ValueTask<long> IncrementAsync(
         SequenceKey key,
         long insertValue,
         long delta,
         CancellationToken cancellationToken = default
     )
     {
-        for (var attempt = 1; ; attempt++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
+        // Each attempt opens its own connection and transaction, so the deadlock victim's rolled-back transaction is
+        // already disposed and the retry starts clean.
+        return TransientRetry.RunAsync(
+            ct => _IncrementOnceAsync(key, insertValue, delta, ct),
+            _IsRetryable,
+            timeProvider,
+            cancellationToken
+        );
+    }
 
-            try
-            {
-                await using var connection = _options.CreateConnection();
-                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-                // Explicit so the statement runs at READ COMMITTED even when the server's default isolation level
-                // is stricter: a stricter level would turn a concurrent first use into a serialization failure.
-                await using var transaction = await connection
-                    .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
-                    .ConfigureAwait(false);
+    private async ValueTask<long> _IncrementOnceAsync(
+        SequenceKey key,
+        long insertValue,
+        long delta,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = _options.CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        // Explicit so the statement runs at READ COMMITTED even when the server's default isolation level is
+        // stricter: a stricter level would turn a concurrent first use into a serialization failure.
+        await using var transaction = await connection
+            .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+            .ConfigureAwait(false);
 
-                var value = await _ExecuteAsync(connection, transaction, key, insertValue, delta, cancellationToken)
-                    .ConfigureAwait(false);
+        var value = await _ExecuteAsync(connection, transaction, key, insertValue, delta, cancellationToken)
+            .ConfigureAwait(false);
 
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
-                return value;
-            }
-            catch (PostgresException ex)
-                when (string.Equals(ex.SqlState, SqlErrorCodes.PostgreSql.DeadlockDetected, StringComparison.Ordinal)
-                    && attempt < _MaxAttempts
-                )
-            {
-                // The deadlock victim's transaction is already rolled back and disposed above; the next attempt
-                // starts clean.
-            }
-        }
+        return value;
     }
 
     public void ValidateEnlistment(IRelationalUnitOfWorkResource resource)

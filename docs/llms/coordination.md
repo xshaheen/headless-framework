@@ -24,6 +24,10 @@ The store is the temporal authority. PostgreSQL uses `clock_timestamp()`, SQL Se
 - Choose stable node ids deliberately. Kubernetes StatefulSet ordinal names are the strongest default; Deployment pod name plus namespace is stable for the pod lifetime; generated ids are local/dev only.
 - Keep `MembershipLostBehavior.StopApplication` unless every ownership-sensitive worker observes `LocalMembershipLostToken`.
 
+## How this differs from locks and leases
+
+Membership answers "which node incarnations are alive?". It reports liveness only and never grants ownership. To decide who may run or who owns work, use a [distributed lock](distributed-locks.md) (a live process), a [fenced lease](fencing.md) (a durable row any executor carries), or a lease on your own work row stamped with `NodeIdentity`, as Jobs does. Comparison of all four primitives: [Choosing a coordination primitive](fencing.md#choosing-a-coordination-primitive).
+
 ## Core Concepts
 
 ### Node Identity
@@ -145,7 +149,7 @@ Applications normally use a provider package and call `AddHeadlessCoordination(s
 
 Set `HeartbeatInterval < SuspicionThreshold < DeadThreshold`; `DeadThreshold` must be at least three heartbeat intervals (a single missed or slow beat must not kill the node), and `DeadRetentionWindow` must be at least two heartbeat intervals.
 
-Storage naming is a separate, feature-owned options type. `CoordinationStorageOptions.Schema` (default `"coordination"`) names the database schema that holds the membership tables, and it is configured through the setup builder rather than through any one provider:
+Storage naming is a separate, feature-owned options type. `CoordinationStorageOptions.Schema` (default `"headless"`, the schema every Headless feature shares) names the database schema that holds the membership tables, and it is configured through the setup builder rather than through any one provider:
 
 ```csharp
 services.AddHeadlessCoordination(setup =>
@@ -233,14 +237,17 @@ services.AddHeadlessCoordination(setup =>
     {
         options.ConnectionString = connectionString;
     });
+    // or reuse the connection from services.AddPostgreSqlSql(connectionString): setup.UsePostgreSql();
 });
 ```
+
+The parameterless overload and the shared `headless` schema are described in [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features).
 
 ### Configuration
 
 Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `PostgreSqlCoordinationOptions.ConnectionString`, optional `DataSource`, `CommandTimeout`, and `InitializeOnStartup` with `setup.UsePostgreSql(...)`.
 
-The schema is not a provider option: set it with `setup.ConfigureStorage(storage => storage.Schema = "…")` (default `"coordination"`). The initializer creates that schema when absent and every statement names its tables as `"schema"."table"`, so the provider no longer depends on `search_path`. The provider validates the schema against PostgreSQL's unquoted-identifier rules at startup.
+The schema is not a provider option: set it with `setup.ConfigureStorage(storage => storage.Schema = "…")` (default `"headless"`). The initializer creates that schema when absent and every statement names its tables as `"schema"."table"`, so the provider no longer depends on `search_path`. The provider validates the schema against PostgreSQL's unquoted-identifier rules at startup.
 
 ### Runtime behavior
 
@@ -339,14 +346,17 @@ services.AddHeadlessCoordination(setup =>
     {
         options.ConnectionString = connectionString;
     });
+    // or reuse the connection from services.AddSqlServerSql(connectionString): setup.UseSqlServer();
 });
 ```
+
+The parameterless overload and the shared `headless` schema are described in [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features).
 
 ### Configuration
 
 Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `ConnectionString`, `CommandTimeout`, and `InitializeOnStartup` with `setup.UseSqlServer(...)`.
 
-The schema is not a provider option: set it with `setup.ConfigureStorage(storage => storage.Schema = "…")`. The default is the feature name `"coordination"`, not `dbo` — the initializer creates the schema when absent. The provider validates the schema against SQL Server's regular-identifier rules at startup.
+The schema is not a provider option: set it with `setup.ConfigureStorage(storage => storage.Schema = "…")`. The default is `"headless"`, not `dbo` — the initializer creates the schema when absent. The provider validates the schema against SQL Server's regular-identifier rules at startup.
 
 ### Runtime behavior
 

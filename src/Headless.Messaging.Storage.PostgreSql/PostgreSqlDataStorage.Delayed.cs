@@ -25,8 +25,8 @@ internal sealed partial class PostgreSqlDataStorage
     )
     {
         var sql =
-            $"SELECT \"Id\",\"Content\",\"IntentType\",\"Retries\",\"InlineAttempts\",\"Added\",\"ExpiresAt\" FROM {_publishedTable} WHERE \"Version\"=@Version "
-            + $"AND \"IntentType\" IN (0, 1) AND ((\"ExpiresAt\"< @TwoMinutesLater AND \"StatusName\" = '{nameof(StatusName.Delayed)}') OR (\"ExpiresAt\"< @OneMinutesAgo AND \"StatusName\" = '{nameof(StatusName.Queued)}')) FOR UPDATE SKIP LOCKED LIMIT @BatchSize;";
+            $"SELECT \"id\",\"content\",\"intent_type\",\"retries\",\"inline_attempts\",\"added\",\"expires_at\" FROM {_publishedTable} WHERE \"version\"=@Version "
+            + $"AND \"intent_type\" IN (0, 1) AND ((\"expires_at\"< @TwoMinutesLater AND \"status_name\" = '{nameof(StatusName.Delayed)}') OR (\"expires_at\"< @OneMinutesAgo AND \"status_name\" = '{nameof(StatusName.Queued)}')) FOR UPDATE SKIP LOCKED LIMIT @BatchSize;";
 
         var sqlParams = new object[]
         {
@@ -116,31 +116,31 @@ internal sealed partial class PostgreSqlDataStorage
                 SELECT clock_timestamp() AS now
             ),
             candidates AS MATERIALIZED (
-                SELECT message."Id"
+                SELECT message."id"
                 FROM {_publishedTable} AS message, claim_clock
-                WHERE message."Version"=@Version
-                  AND message."IntentType" IN (0, 1)
-                  AND (message."LockedUntil" IS NULL OR message."LockedUntil" <= claim_clock.now)
+                WHERE message."version"=@Version
+                  AND message."intent_type" IN (0, 1)
+                  AND (message."locked_until" IS NULL OR message."locked_until" <= claim_clock.now)
                   AND (
-                      (message."StatusName"=@DelayedStatusName AND message."ExpiresAt" < @TwoMinutesLater)
-                      OR (message."StatusName"=@QueuedStatusName AND message."ExpiresAt" < @OneMinuteAgo)
+                      (message."status_name"=@DelayedStatusName AND message."expires_at" < @TwoMinutesLater)
+                      OR (message."status_name"=@QueuedStatusName AND message."expires_at" < @OneMinuteAgo)
                   )
-                ORDER BY message."ExpiresAt", message."Id"
+                ORDER BY message."expires_at", message."id"
                 LIMIT @BatchSize
                 FOR UPDATE OF message SKIP LOCKED
             )
             UPDATE {_publishedTable} AS message
-            SET "StatusName"=@QueuedStatusName,
-                "LockedUntil"=GREATEST(claim_clock.now, message."ExpiresAt")
+            SET "status_name"=@QueuedStatusName,
+                "locked_until"=GREATEST(claim_clock.now, message."expires_at")
                     + (@LeaseSeconds * INTERVAL '1 second'),
-                "Owner"=@Owner
+                "owner"=@Owner
             FROM candidates, claim_clock
-            WHERE message."Id"=candidates."Id"
-              AND (message."LockedUntil" IS NULL OR message."LockedUntil" <= claim_clock.now)
+            WHERE message."id"=candidates."id"
+              AND (message."locked_until" IS NULL OR message."locked_until" <= claim_clock.now)
               AND {_TerminalRowGuardSimple}
-            RETURNING message."Id",message."Content",message."IntentType",message."Retries",
-                      message."InlineAttempts",message."Added",message."ExpiresAt",
-                      message."LockedUntil",message."Owner";
+            RETURNING message."id",message."content",message."intent_type",message."retries",
+                      message."inline_attempts",message."added",message."expires_at",
+                      message."locked_until",message."owner";
             """;
 
         object[] sqlParams =

@@ -198,7 +198,7 @@ public sealed class SecretHasherTests
         // given
         var sut = SecretHashingTestKit.CreateHasher(SecretHashingTestKit.Pbkdf2Options());
         var stored = sut.Hash("pin");
-        var invalid = "pin\uD800";
+        const string invalid = "pin\uD800";
 
         // then
         FluentActions.Invoking(() => sut.Hash(invalid)).Should().Throw<ArgumentException>();

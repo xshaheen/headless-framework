@@ -465,14 +465,14 @@ public sealed class FeatureValueStoreTests : TestBase
             "set-provider-key" => async () => await _sut.SetAsync("Reports", "true", "Tenant", "acme ", AbortToken),
             "set-all-names" => async () =>
                 await _sut.SetAllAsync(
-                    new Dictionary<string, string?> { ["Reports "] = "true" },
+                    new Dictionary<string, string?>(StringComparer.Ordinal) { ["Reports "] = "true" },
                     "Tenant",
                     "acme",
                     AbortToken
                 ),
             "set-all-provider-key" => async () =>
                 await _sut.SetAllAsync(
-                    new Dictionary<string, string?> { ["Reports"] = "true" },
+                    new Dictionary<string, string?>(StringComparer.Ordinal) { ["Reports"] = "true" },
                     "Tenant",
                     "acme ",
                     AbortToken

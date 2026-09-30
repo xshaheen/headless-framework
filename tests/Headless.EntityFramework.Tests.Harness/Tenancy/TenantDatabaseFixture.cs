@@ -27,12 +27,14 @@ public enum TenantDatabaseProvider
     SqlServer,
 }
 
-public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider) : IAsyncLifetime
+public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider, TenantDataPlacement? placement = null)
+    : IAsyncLifetime
 {
     private IContainer? _container;
     private string _connectionString = null!;
 
     public TenantDatabaseProvider Provider { get; } = provider;
+    public TenantDataPlacement Placement { get; } = placement ?? TenantDataPlacement.Default;
     public TestCurrentTenant CurrentTenant { get; } = new();
     public ServiceProvider Services { get; private set; } = null!;
     public string MigrationSql { get; private set; } = "";
@@ -43,7 +45,7 @@ public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider) : I
         if (Provider == TenantDatabaseProvider.PostgreSql)
         {
             var container = new PostgreSqlBuilder(TestImages.PostgreSql)
-                .WithDatabase("tenant_conformance")
+                .WithDatabase(Placement.Database)
                 .WithUsername("postgres")
                 .WithPassword("postgres")
                 .WithLabel("type", "tenant-conformance")
@@ -68,7 +70,7 @@ public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider) : I
                 command.CommandText = "SELECT CONVERT(int, SERVERPROPERTY('ProductMajorVersion'))";
                 ((int)(await command.ExecuteScalarAsync(timeout.Token))!).Should().Be(16);
             }
-            connectionString.InitialCatalog = "tenant_conformance";
+            connectionString.InitialCatalog = Placement.Database;
             _connectionString = connectionString.ConnectionString;
         }
 
@@ -101,6 +103,7 @@ public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider) : I
             options.UseSqlServer(_connectionString);
         }
         options.AddHeadlessExtension();
+        options.ReplaceService<IModelCacheKeyFactory, PlacementModelCacheKeyFactory>();
     }
 
     public ServiceProvider CreateServices(Action<IServiceCollection> configure)
@@ -111,12 +114,15 @@ public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider) : I
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<ICurrentUser>(new TestCurrentUser());
         services.AddSingleton<IGuidGenerator>(new SequentialGuidGenerator(SequentialGuidType.Version7));
-        builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
+        builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ConfigureTenancy));
         services.AddSingleton<ICurrentTenant>(CurrentTenant);
+        services.AddSingleton(Placement);
         services.AddRecordingHeadlessDispatcher();
         configure(services);
         return services.BuildServiceProvider();
     }
+
+    protected virtual void ConfigureTenancy(HeadlessEntityFrameworkTenancyBuilder ef) => ef.GuardTenantWrites();
 
     protected abstract void ConfigureServices(IServiceCollection services);
     protected abstract DbContext GetContext(IServiceProvider services);

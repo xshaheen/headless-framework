@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="GeneratorFailureTitle" xml:space="preserve">
+    <value>Primitive generator failed</value>
+  </data>
+  <data name="GeneratorFailureMessage" xml:space="preserve">
+    <value>The primitive generator threw an exception: {0}</value>
+  </data>
+  <data name="UnsupportedUnderlyingTypeTitle" xml:space="preserve">
+    <value>Unsupported primitive underlying type</value>
+  </data>
+  <data name="UnsupportedUnderlyingTypeMessage" xml:space="preserve">
+    <value>Primitive '{0}' wraps '{1}', which the primitive generator does not support; wrap a string, Guid, bool, char, numeric, or date and time type, or another primitive</value>
+  </data>
+  <data name="PrimitiveMustBePartialTitle" xml:space="preserve">
+    <value>Primitive must be partial</value>
+  </data>
+  <data name="PrimitiveMustBePartialMessage" xml:space="preserve">
+    <value>Primitive '{0}' must be declared partial so the generator can add its members</value>
+  </data>
+  <data name="SerializationFormatRequiresDateOrTimeTitle" xml:space="preserve">
+    <value>SerializationFormat requires a date or time primitive</value>
+  </data>
+  <data name="SerializationFormatRequiresDateOrTimeMessage" xml:space="preserve">
+    <value>Primitive '{0}' wraps '{1}'; [SerializationFormat] applies only to DateTime, DateTimeOffset, DateOnly, TimeOnly, and TimeSpan primitives</value>
+  </data>
+  <data name="SupportedOperationsRequiresNumericTitle" xml:space="preserve">
+    <value>SupportedOperations requires a numeric primitive</value>
+  </data>
+  <data name="SupportedOperationsRequiresNumericMessage" xml:space="preserve">
+    <value>Primitive '{0}' wraps '{1}'; [SupportedOperations] applies only to numeric primitives</value>
+  </data>
+  <data name="TypeShouldBeValueTypeTitle" xml:space="preserve">
+    <value>Primitive should be a value type</value>
+  </data>
+  <data name="TypeShouldBeValueTypeMessage" xml:space="preserve">
+    <value>Primitive '{0}' should be a struct because it wraps the value type '{1}'</value>
+  </data>
+  <data name="TypeShouldBeReferenceTypeTitle" xml:space="preserve">
+    <value>Primitive should be a reference type</value>
+  </data>
+  <data name="TypeShouldBeReferenceTypeMessage" xml:space="preserve">
+    <value>Primitive '{0}' should be a class because it wraps the reference type '{1}'</value>
+  </data>
+</root>

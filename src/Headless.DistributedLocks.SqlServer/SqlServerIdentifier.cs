@@ -11,13 +11,22 @@ namespace Headless.DistributedLocks.SqlServer;
 /// </summary>
 internal static partial class SqlServerIdentifier
 {
-    private const string _DefaultSequenceName = "headless_distlocks_fence";
+    // PascalCase like every other SQL Server object the framework creates. The feature noun already identifies the
+    // family, and the schema carries the headless scope, so the name needs no extra prefix.
+    private const string _DefaultSequenceName = "DistributedLocksFence";
 
     /// <summary>
-    /// Derives the fence sequence object name for a given <paramref name="keyPrefix"/>: starts from the
-    /// default name, appends the prefix with unsafe characters collapsed to <c>_</c>, and truncates the
-    /// result to <see cref="SqlServerDistributedLockFieldLimits.MaxIdentifierLength"/> when needed.
+    /// Derives the fence sequence object name for a given <paramref name="keyPrefix"/>: starts from
+    /// <c>DistributedLocksFence</c>, appends <c>_</c> and the prefix with unsafe characters collapsed to <c>_</c>, and
+    /// truncates the result to <see cref="SqlServerDistributedLockFieldLimits.MaxIdentifierLength"/> when needed. The
+    /// default prefix <c>distributed-lock:</c> gives <c>DistributedLocksFence_distributed_lock</c>.
     /// </summary>
+    /// <remarks>
+    /// The normalized prefix is appended verbatim rather than re-cased to PascalCase: re-casing would fold prefixes
+    /// that differ only by an underscore (<c>my_app</c> and <c>myapp</c>) into one sequence, so two lock namespaces
+    /// that must issue independent tokens could share one. The <c>_</c> separator keeps the prefix readable and keeps
+    /// every name a valid regular identifier, since the fixed part starts with a letter.
+    /// </remarks>
     /// <param name="keyPrefix">The lock key prefix to fold into the sequence name. Must be non-null and non-whitespace.</param>
     /// <returns>A SQL Server-safe, length-bounded sequence object name.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="keyPrefix"/> is <see langword="null"/>.</exception>

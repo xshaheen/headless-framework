@@ -47,36 +47,11 @@ public sealed class PostgreSqlSettingsStorageTests(PostgreSqlSettingsFixture fix
         await host.StartAsync(AbortToken);
 
         // then
-        (await _IndexExistsAsync("IX_SettingDefinitions_Name"))
+        (await _IndexExistsAsync("ix_setting_definitions_name"))
             .Should()
             .BeTrue();
-        (await _IndexExistsAsync("IX_SettingValues_Name_ProviderName_ProviderKey")).Should().BeTrue();
-        (await _IndexExistsAsync("IX_SettingValues_Name_ProviderName_NullProviderKey")).Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task should_rename_legacy_timestamp_columns_without_losing_setting_value()
-    {
-        // given
-        await fixture.DropSchemaAsync(_Schema, AbortToken);
-        var id = Guid.NewGuid();
-        var createdAt = new DateTimeOffset(2026, 7, 25, 10, 0, 0, TimeSpan.Zero);
-        var updatedAt = createdAt.AddMinutes(5);
-        await _CreateLegacyValueTableAsync(id, createdAt, updatedAt);
-        using var host = fixture.CreateHost(_Schema);
-
-        // when
-        await host.StartAsync(AbortToken);
-        var repository = host.Services.GetRequiredService<ISettingValueRecordRepository>();
-        var stored = await repository.FindAsync("Legacy.Theme", "Global", null, AbortToken);
-
-        // then
-        stored.Should().NotBeNull();
-        stored!.Id.Should().Be(id);
-        stored.CreatedAt.Should().Be(createdAt);
-        stored.UpdatedAt.Should().Be(updatedAt);
-        (await _ColumnExistsAsync("SettingValues", "DateCreated")).Should().BeFalse();
-        (await _ColumnExistsAsync("SettingValues", "DateUpdated")).Should().BeFalse();
+        (await _IndexExistsAsync("ix_setting_values_name_provider_name_provider_key")).Should().BeTrue();
+        (await _IndexExistsAsync("ix_setting_values_name_provider_name_null_provider_key")).Should().BeTrue();
     }
 
     private async Task<bool> _IndexExistsAsync(string indexName)
@@ -99,54 +74,6 @@ public sealed class PostgreSqlSettingsStorageTests(PostgreSqlSettingsFixture fix
         return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
     }
 
-    private async Task<bool> _ColumnExistsAsync(string tableName, string columnName)
-    {
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        await using var command = new NpgsqlCommand(
-            """
-            SELECT EXISTS (
-                SELECT 1 FROM information_schema.columns
-                WHERE table_schema = @schema AND table_name = @table AND column_name = @column
-            )
-            """,
-            connection
-        );
-        command.Parameters.AddWithValue("schema", _Schema);
-        command.Parameters.AddWithValue("table", tableName);
-        command.Parameters.AddWithValue("column", columnName);
-
-        return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
-    }
-
-    private async Task _CreateLegacyValueTableAsync(Guid id, DateTimeOffset createdAt, DateTimeOffset updatedAt)
-    {
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        await using var command = new NpgsqlCommand(
-            $"""
-            CREATE SCHEMA "{_Schema}";
-            CREATE TABLE "{_Schema}"."SettingValues" (
-                "Id" uuid NOT NULL PRIMARY KEY,
-                "Name" character varying(128) NOT NULL,
-                "Value" character varying(2000) NOT NULL,
-                "ProviderName" character varying(64) NOT NULL,
-                "ProviderKey" character varying(64),
-                "DateCreated" timestamp with time zone NOT NULL,
-                "DateUpdated" timestamp with time zone
-            );
-            INSERT INTO "{_Schema}"."SettingValues"
-                ("Id", "Name", "Value", "ProviderName", "ProviderKey", "DateCreated", "DateUpdated")
-            VALUES (@id, 'Legacy.Theme', 'Dark', 'Global', NULL, @createdAt, @updatedAt);
-            """,
-            connection
-        );
-        command.Parameters.AddWithValue(nameof(id), id);
-        command.Parameters.AddWithValue(nameof(createdAt), createdAt);
-        command.Parameters.AddWithValue(nameof(updatedAt), updatedAt);
-        await command.ExecuteNonQueryAsync(AbortToken);
-    }
-
     private async Task _CreateTablesWithoutIndexesAsync()
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
@@ -155,29 +82,29 @@ public sealed class PostgreSqlSettingsStorageTests(PostgreSqlSettingsFixture fix
             $"""
             CREATE SCHEMA IF NOT EXISTS "{_Schema}";
 
-            CREATE TABLE IF NOT EXISTS "{_Schema}"."SettingDefinitions" (
-                "Id" uuid NOT NULL,
-                "Name" character varying(128) NOT NULL,
-                "DisplayName" character varying(256) NOT NULL,
-                "Description" character varying(512),
-                "DefaultValue" character varying(2000),
-                "IsVisibleToClients" boolean NOT NULL,
-                "IsInherited" boolean NOT NULL,
-                "IsEncrypted" boolean NOT NULL,
-                "Providers" character varying(1024),
-                "ExtraProperties" text NOT NULL,
-                CONSTRAINT "PK_SettingDefinitions" PRIMARY KEY ("Id")
+            CREATE TABLE IF NOT EXISTS "{_Schema}".setting_definitions (
+                id uuid NOT NULL,
+                name character varying(128) NOT NULL,
+                display_name character varying(256) NOT NULL,
+                description character varying(512),
+                default_value character varying(2000),
+                is_visible_to_clients boolean NOT NULL,
+                is_inherited boolean NOT NULL,
+                is_encrypted boolean NOT NULL,
+                providers character varying(1024),
+                extra_properties text NOT NULL,
+                CONSTRAINT pk_setting_definitions PRIMARY KEY (id)
             );
 
-            CREATE TABLE IF NOT EXISTS "{_Schema}"."SettingValues" (
-                "Id" uuid NOT NULL,
-                "Name" character varying(128) NOT NULL,
-                "Value" character varying(2000) NOT NULL,
-                "ProviderName" character varying(64) NOT NULL,
-                "ProviderKey" character varying(64),
-                "CreatedAt" timestamp with time zone NOT NULL,
-                "UpdatedAt" timestamp with time zone,
-                CONSTRAINT "PK_SettingValues" PRIMARY KEY ("Id")
+            CREATE TABLE IF NOT EXISTS "{_Schema}".setting_values (
+                id uuid NOT NULL,
+                name character varying(128) NOT NULL,
+                value character varying(2000) NOT NULL,
+                provider_name character varying(64) NOT NULL,
+                provider_key character varying(64),
+                created_at timestamp with time zone NOT NULL,
+                updated_at timestamp with time zone,
+                CONSTRAINT pk_setting_values PRIMARY KEY (id)
             );
             """,
             connection

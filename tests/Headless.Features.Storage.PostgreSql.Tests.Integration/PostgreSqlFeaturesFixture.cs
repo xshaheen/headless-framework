@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Features;
+using Headless.Hosting.Initialization;
 using Headless.Testing.Testcontainers;
+using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Testcontainers.PostgreSql;
 
@@ -49,6 +51,53 @@ public sealed class PostgreSqlFeaturesFixture
         command.Parameters.AddWithValue("table", tableName);
 
         return (bool)(await command.ExecuteScalarAsync(cancellationToken))!;
+    }
+
+    public StorageNamingStyle NamingStyle => StorageNamingStyle.SnakeCase;
+
+    public void UseEntityFrameworkProvider(DbContextOptionsBuilder builder, string connectionString)
+    {
+        builder.UseNpgsql(connectionString);
+    }
+
+    public async Task<FeaturesStoreObjects> ReadStoreObjectsAsync(string schema, CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        var columns = await _ReadPairsAsync(
+            connection,
+            "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = @schema",
+            schema,
+            cancellationToken
+        );
+        var indexes = await _ReadPairsAsync(
+            connection,
+            "SELECT tablename, indexname FROM pg_indexes WHERE schemaname = @schema",
+            schema,
+            cancellationToken
+        );
+
+        return new FeaturesStoreObjects(columns, indexes);
+    }
+
+    private static async Task<HashSet<string>> _ReadPairsAsync(
+        NpgsqlConnection connection,
+        string sql,
+        string schema,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue(nameof(schema), schema);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var pairs = new HashSet<string>(StringComparer.Ordinal);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            pairs.Add($"{reader.GetString(0)}.{reader.GetString(1)}");
+        }
+
+        return pairs;
     }
 
     protected override PostgreSqlBuilder Configure()

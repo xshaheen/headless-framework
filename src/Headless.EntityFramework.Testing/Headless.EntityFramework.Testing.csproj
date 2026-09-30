@@ -1,0 +1,13 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Tenant-isolation assertions for Headless EF Core contexts: cross-tenant reads come back empty and cross-tenant writes are refused.</Description>
+    <PackageTags>headless;entity-framework;multi-tenancy;testing;dotnet</PackageTags>
+    <RootNamespace>Headless.EntityFramework.Testing</RootNamespace>
+    <IsTestProject>false</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.EntityFramework\Headless.EntityFramework.csproj" />
+    <ProjectReference Include="..\Headless.Testing\Headless.Testing.csproj" />
+  </ItemGroup>
+</Project>

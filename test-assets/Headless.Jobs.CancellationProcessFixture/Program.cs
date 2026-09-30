@@ -48,6 +48,7 @@ internal static class Program
         });
         builder.Services.AddHeadlessJobs(options =>
         {
+            options.AddModule<JobsModule>();
             options.ConfigureScheduler(scheduler =>
             {
                 scheduler.LeaseDuration = TimeSpan.FromSeconds(3);

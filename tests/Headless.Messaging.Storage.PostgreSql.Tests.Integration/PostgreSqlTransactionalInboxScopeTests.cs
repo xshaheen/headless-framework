@@ -25,5 +25,5 @@ public sealed class PostgreSqlTransactionalInboxScopeTests(PostgreSqlTestFixture
         "CREATE TABLE IF NOT EXISTS \"TenantInboxScopeEffects\" (\"Id\" uuid PRIMARY KEY, \"TenantId\" text NULL);";
 
     protected override string ReplaceAttemptSql(string receivedTable) =>
-        $"UPDATE {receivedTable} SET \"AttemptId\"=@attempt WHERE \"Id\"=@id;";
+        $"UPDATE {receivedTable} SET \"attempt_id\"=@attempt WHERE \"id\"=@id;";
 }

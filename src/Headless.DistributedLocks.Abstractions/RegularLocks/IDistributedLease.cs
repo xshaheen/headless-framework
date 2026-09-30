@@ -15,11 +15,17 @@ public interface IDistributedLease : IAsyncDisposable
     string LeaseId { get; }
 
     /// <summary>
-    /// A per-resource monotonic grant counter used by protected resources to reject stale writes.
-    /// This is distinct from <see cref="LeaseId"/>, which remains the opaque ownership token used
-    /// for release and renew equality checks. Returns <see langword="null"/> when the backend or
-    /// lock type does not support fencing tokens.
+    /// A token issued with this grant that the protected resource uses to reject writes from a stale holder.
+    /// Tokens increase for a resource with every grant but may skip values (PostgreSQL and SQL Server draw them from
+    /// one sequence shared by all resources), so the protected resource must store the highest token it has accepted
+    /// and reject any write whose token is less than or equal to it, never compare for equality. This is distinct from
+    /// <see cref="LeaseId"/>, which remains the opaque ownership token used for release and renew equality checks.
+    /// Returns <see langword="null"/> when the backend or lock type does not issue fencing tokens.
     /// </summary>
+    /// <remarks>
+    /// The lock tells this process it may run; only the fencing check at the protected resource stops a write made
+    /// after the lease was lost without this process noticing (a pause, a partition, or clock skew).
+    /// </remarks>
     long? FencingToken { get; }
 
     /// <summary>A name that uniquely identifies the leased resource.</summary>

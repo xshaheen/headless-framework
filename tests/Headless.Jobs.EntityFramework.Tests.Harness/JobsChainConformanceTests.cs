@@ -1036,7 +1036,9 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
                 await seamConnection.OpenAsync(ct);
                 await _SqlAsync(
                     seamConnection,
-                    $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"LockedUntil\" = @past WHERE \"Id\" = @id;",
+                    fixture.Sql(
+                        $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"LockedUntil\" = @past WHERE \"Id\" = @id;"
+                    ),
                     ("@past", DateTime.UtcNow.AddMinutes(-5)),
                     ("@id", fencedRoot.Id)
                 );
@@ -1187,7 +1189,9 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
                 // Case (i): expire the claimed root's lease so EXISTS(... LockedUntil > now) fails.
                 await _SqlAsync(
                     fixtureConn,
-                    $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"LockedUntil\" = @past WHERE \"Id\" = @id;",
+                    fixture.Sql(
+                        $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"LockedUntil\" = @past WHERE \"Id\" = @id;"
+                    ),
                     ("@past", DateTime.UtcNow.AddMinutes(-5)),
                     ("@id", rootId)
                 );
@@ -1204,7 +1208,9 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
                 // Case (ii): reassign the claimed root to a different owner so EXISTS(... OwnerId = me) fails.
                 await _SqlAsync(
                     fixtureConn,
-                    $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"OwnerId\" = @thief WHERE \"Id\" = @id;",
+                    fixture.Sql(
+                        $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"OwnerId\" = @thief WHERE \"Id\" = @id;"
+                    ),
                     ("@thief", "thief@9"),
                     ("@id", rootId)
                 );
@@ -1710,8 +1716,9 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(ct);
         await using var command = connection.CreateCommand();
-        command.CommandText =
-            $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"Status\" = @status, \"UpdatedAt\" = @updatedAt WHERE \"Id\" = @id;";
+        command.CommandText = fixture.Sql(
+            $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"Status\" = @status, \"UpdatedAt\" = @updatedAt WHERE \"Id\" = @id;"
+        );
         JobsCoordinationFixtureExtensions.AddParameter(command, "@status", status.ToString());
         JobsCoordinationFixtureExtensions.AddParameter(command, "@updatedAt", DateTime.UtcNow);
         JobsCoordinationFixtureExtensions.AddParameter(command, "@id", id);
@@ -1828,9 +1835,10 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(ct);
         await using var command = connection.CreateCommand();
-        command.CommandText =
+        command.CommandText = fixture.Sql(
             "SELECT \"Status\", \"OwnerId\", \"LockedUntil\", \"ExecutionTime\", \"ParentId\", \"RunCondition\", "
-            + $"\"SkippedReason\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;";
+                + $"\"SkippedReason\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;"
+        );
         JobsCoordinationFixtureExtensions.AddParameter(command, "@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(ct);
@@ -1860,9 +1868,10 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(ct);
         await using var command = connection.CreateCommand();
-        command.CommandText =
+        command.CommandText = fixture.Sql(
             $"SELECT \"Id\", \"RunCondition\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"ParentId\" = @parentId "
-            + "ORDER BY \"RunCondition\";";
+                + "ORDER BY \"RunCondition\";"
+        );
         JobsCoordinationFixtureExtensions.AddParameter(command, "@parentId", parentId);
 
         var children = new List<(Guid, RunCondition?)>();
@@ -1889,8 +1898,10 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         await connection.OpenAsync(ct);
         await _SqlAsync(
             connection,
-            $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"Status\" = @status, \"OwnerId\" = @ownerId, "
-                + "\"LockedUntil\" = @lockedUntil, \"UpdatedAt\" = @updatedAt WHERE \"Id\" = @id;",
+            fixture.Sql(
+                $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"Status\" = @status, \"OwnerId\" = @ownerId, "
+                    + "\"LockedUntil\" = @lockedUntil, \"UpdatedAt\" = @updatedAt WHERE \"Id\" = @id;"
+            ),
             ("@status", nameof(JobStatus.InProgress)),
             ("@ownerId", ownerId),
             ("@lockedUntil", lockedUntil),
@@ -1905,9 +1916,10 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(ct);
         await using var command = connection.CreateCommand();
-        command.CommandText =
+        command.CommandText = fixture.Sql(
             $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"Status\" = @status, \"OwnerId\" = @ownerId, "
-            + "\"LockedUntil\" = @lockedUntil, \"UpdatedAt\" = @lockedUntil WHERE \"Id\" = @id;";
+                + "\"LockedUntil\" = @lockedUntil, \"UpdatedAt\" = @lockedUntil WHERE \"Id\" = @id;"
+        );
         JobsCoordinationFixtureExtensions.AddParameter(command, "@status", nameof(JobStatus.InProgress));
         JobsCoordinationFixtureExtensions.AddParameter(command, "@ownerId", ownerId);
         JobsCoordinationFixtureExtensions.AddParameter(command, "@lockedUntil", DateTime.UtcNow.AddMinutes(-5));
