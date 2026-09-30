@@ -12,7 +12,7 @@ internal sealed class ConsumerExecutorDescriptorComparer(ILogger logger) : IEqua
         //Check whether the compared objects reference the same data.
         if (ReferenceEquals(x, y))
         {
-            logger.ConsumerDuplicates(x!.MessageName, x.GroupName);
+            logger.ConsumerDuplicates(x!.MessageName, x.SubscriptionName);
             return true;
         }
 
@@ -23,20 +23,25 @@ internal sealed class ConsumerExecutorDescriptorComparer(ILogger logger) : IEqua
         }
 
         //Check whether the ConsumerExecutorDescriptor' properties are equal.
-        // Lane and kind are part of the identity: a (MessageName, Group) pair under Bus and the same pair
+        // Lane and kind are part of the identity: a (MessageName, subscription) pair under Bus and the same pair
         // under Queue, or competing and every-instance, are independent subscriptions and must not collapse.
         var ret =
             x.MessageName.Equals(y.MessageName, StringComparison.OrdinalIgnoreCase)
             && x.Lane == y.Lane
             && x.EveryInstance == y.EveryInstance
             && (
-                (y.GroupName is null && x.GroupName is null)
-                || x.GroupName?.Equals(y.GroupName, StringComparison.OrdinalIgnoreCase) == true
+                (y.SubscriptionName is null && x.SubscriptionName is null)
+                || x.SubscriptionName?.Equals(y.SubscriptionName, StringComparison.OrdinalIgnoreCase) == true
             );
 
-        if (ret && (x.ImplTypeInfo != y.ImplTypeInfo || x.MethodInfo != y.MethodInfo))
+        if (
+            ret
+            && (
+                x.ConsumerType != y.ConsumerType || !string.Equals(x.MethodName, y.MethodName, StringComparison.Ordinal)
+            )
+        )
         {
-            logger.ConsumerDuplicates(x.MessageName, x.GroupName);
+            logger.ConsumerDuplicates(x.MessageName, x.SubscriptionName);
         }
 
         return ret;
@@ -50,8 +55,8 @@ internal sealed class ConsumerExecutorDescriptorComparer(ILogger logger) : IEqua
             return 0;
         }
 
-        //Get hash code for the GroupName field if it is not null.
-        var hashGroup = obj.GroupName == null ? 0 : StringComparer.Ordinal.GetHashCode(obj.GroupName);
+        //Get hash code for the SubscriptionName field if it is not null.
+        var hashGroup = obj.SubscriptionName == null ? 0 : StringComparer.Ordinal.GetHashCode(obj.SubscriptionName);
 
         //Get hash code for the MessageName field.
         var hashMessageName = StringComparer.Ordinal.GetHashCode(obj.MessageName);

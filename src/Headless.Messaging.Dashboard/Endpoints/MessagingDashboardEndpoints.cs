@@ -293,7 +293,7 @@ public static partial class MessagingDashboardEndpoints
 
         // Set subscriber count
         var subscriberCache = sp.GetRequiredService<MethodMatcherCache>();
-        result.Subscribers = subscriberCache.GetCandidatesMethodsOfGroupNameGrouped().Sum(g => g.Value.Count);
+        result.Subscribers = subscriberCache.GetCandidatesBySubscriptionName().Sum(g => g.Value.Count);
 
         // Try to set server count from cache or discovery
         var cache = sp.GetRequiredService<MessagingDashboardCache>();
@@ -856,7 +856,7 @@ public static partial class MessagingDashboardEndpoints
             // Listed by consumer identity, the key received rows and circuits use, rather than by the subscription
             // a client consumes.
             var consumers = cache
-                .GetCandidatesMethodsOfGroupNameGrouped()
+                .GetCandidatesBySubscriptionName()
                 .Values.SelectMany(static descriptors => descriptors)
                 .GroupBy(static descriptor => descriptor.ResolvedConsumerIdentity, StringComparer.Ordinal)
                 .OrderBy(static consumer => consumer.Key, StringComparer.Ordinal);
@@ -873,8 +873,8 @@ public static partial class MessagingDashboardEndpoints
                         {
                             MessageName = descriptor.MessageName,
                             Lane = descriptor.Lane.ToString("G"),
-                            ImplName = descriptor.ImplTypeInfo.Name,
-                            MethodEscaped = HtmlHelper.MethodEscaped(descriptor.MethodInfo),
+                            ImplName = descriptor.ConsumerType.Name,
+                            MethodEscaped = HtmlHelper.MethodEscaped(descriptor.MethodName, descriptor.MessageType),
                         }
                     );
                 }

@@ -1,24 +1,32 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reflection;
 using Headless.Messaging.CircuitBreaker;
 
 namespace Headless.Messaging.Messages;
 
 /// <summary>
-/// A descriptor of user definition method.
+/// Describes one subscribed consumer of one message: what the host's consumer clients subscribe to and how a delivery
+/// reaches the consumer.
 /// </summary>
 public sealed class ConsumerExecutorDescriptor
 {
-    public TypeInfo? ServiceTypeInfo { get; init; }
+    /// <summary>
+    /// The class that handles the message: the attribute-declared consumer, or the type that declares a runtime
+    /// subscription's delegate.
+    /// </summary>
+    public required Type ConsumerType { get; init; }
 
-    public required MethodInfo MethodInfo { get; init; }
+    /// <summary>
+    /// The method that handles the message, for diagnostics: <c>ConsumeAsync</c> for an attribute-declared consumer, the
+    /// delegate's method for a runtime subscription.
+    /// </summary>
+    public string MethodName { get; init; } = nameof(IConsume<>.ConsumeAsync);
 
-    public required TypeInfo ImplTypeInfo { get; init; }
-
-    public IReadOnlyList<ParameterDescriptor> Parameters { get; init; } = [];
-
-    public string? MessageNamePrefix { get; init; }
+    /// <summary>
+    /// The message payload type deliveries are deserialized into, or <see langword="null"/> for an untyped consumer,
+    /// whose payload stays as delivered.
+    /// </summary>
+    public Type? MessageType { get; init; }
 
     /// <summary>
     /// Message name for the consumer. Can be set directly or computed from attributes.
@@ -26,9 +34,10 @@ public sealed class ConsumerExecutorDescriptor
     public required string MessageName { get; init; }
 
     /// <summary>
-    /// Group name for the consumer.
+    /// The broker subscription the consumer's client opens: the consumer identity on the Bus lane, the message name on
+    /// the Queue lane, and the resolved identity of a runtime subscription.
     /// </summary>
-    public required string GroupName { get; init; }
+    public required string SubscriptionName { get; init; }
 
     /// <summary>
     /// Maximum number of messages to process concurrently for this consumer.
@@ -36,7 +45,8 @@ public sealed class ConsumerExecutorDescriptor
     public byte Concurrency { get; init; } = 1;
 
     /// <summary>
-    /// Deterministic handler identity used for diagnostics and runtime subscription matching.
+    /// The deterministic identity of a runtime subscription's delegate, which routes a delivery to that delegate;
+    /// <see langword="null"/> for an attribute-declared consumer.
     /// </summary>
     public string? HandlerId { get; init; }
 
@@ -49,7 +59,7 @@ public sealed class ConsumerExecutorDescriptor
     /// subscription, which declares none.
     /// </summary>
     internal string ResolvedConsumerIdentity =>
-        string.IsNullOrWhiteSpace(ConsumerIdentity) ? GroupName : ConsumerIdentity;
+        string.IsNullOrWhiteSpace(ConsumerIdentity) ? SubscriptionName : ConsumerIdentity;
 
     /// <summary>
     /// The circuit breaker key of this consumer's identity on its lane. Cached because every delivery reads it and the
@@ -79,68 +89,11 @@ public sealed class ConsumerExecutorDescriptor
         EveryInstance ? Transport.ConsumerSubscriptionKind.EveryInstance : Transport.ConsumerSubscriptionKind.Competing;
 
     /// <summary>
-    /// The generated dispatch of an attribute-declared consumer. When set, a delivery runs it instead of resolving the
-    /// consumer from the container.
+    /// The generated dispatch of an attribute-declared consumer, which builds the consumer class and calls the typed
+    /// <see cref="IConsume{TMessage}.ConsumeAsync"/>; <see langword="null"/> for a runtime subscription.
     /// </summary>
     internal MessageConsumerDispatch? Dispatch { get; init; }
 
     /// <summary>Consume middleware types that run for this consumer alone, resolved from the delivery's scope.</summary>
     internal IReadOnlyList<Type> Middleware { get; init; } = [];
-
-    /// <summary>
-    /// The message payload type used for deserialization: <c>T</c> when the first non-framework parameter is
-    /// <see cref="ConsumeContext{T}"/>, otherwise that parameter's type. Cached — descriptors are immutable
-    /// after registration, so recomputing this per received message is pure reflection overhead. The benign
-    /// publication race writes the same <see cref="Type"/> reference.
-    /// </summary>
-    public Type? MessageValueType => field ??= _ComputeMessageValueType();
-
-    /// <summary>
-    /// The <c>T</c> of the consumer's <see cref="ConsumeContext{T}"/> parameter, or <see langword="null"/> when
-    /// the method has no such parameter. Cached for the same reason as <see cref="MessageValueType"/>.
-    /// </summary>
-    public Type? ConsumeContextValueType => field ??= _ComputeConsumeContextValueType();
-
-    private Type? _ComputeMessageValueType()
-    {
-        foreach (var parameter in Parameters)
-        {
-            if (parameter.IsFromMessaging)
-            {
-                continue;
-            }
-
-            var parameterType = parameter.ParameterType;
-
-            return parameterType.IsGenericType && parameterType.GetGenericTypeDefinition() == typeof(ConsumeContext<>)
-                ? parameterType.GetGenericArguments()[0]
-                : parameterType;
-        }
-
-        return null;
-    }
-
-    private Type? _ComputeConsumeContextValueType()
-    {
-        foreach (var parameter in Parameters)
-        {
-            var parameterType = parameter.ParameterType;
-
-            if (parameterType.IsGenericType && parameterType.GetGenericTypeDefinition() == typeof(ConsumeContext<>))
-            {
-                return parameterType.GetGenericArguments()[0];
-            }
-        }
-
-        return null;
-    }
-}
-
-public sealed class ParameterDescriptor
-{
-    public required string? Name { get; init; }
-
-    public required Type ParameterType { get; init; }
-
-    public required bool IsFromMessaging { get; init; }
 }

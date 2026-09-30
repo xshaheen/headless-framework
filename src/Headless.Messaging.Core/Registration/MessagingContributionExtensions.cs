@@ -18,15 +18,14 @@ public static class MessagingContributionExtensions
     /// <remarks>
     /// <paramref name="configure"/> runs once, synchronously, during this call. A module calls this from its own
     /// <c>Add{Module}</c> entry point instead of calling <c>AddHeadlessMessaging</c>, which the host owns and calls once.
-    /// Identical contributions for one consumer merge; conflicting ones fail at startup with both named.
+    /// Identical contract declarations merge; conflicting ones fail naming both.
     /// </remarks>
     /// <param name="services">The host's service collection.</param>
     /// <param name="configure">Adds this module's registrations.</param>
     /// <returns>The same <paramref name="services"/>, for chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
-    /// A contribution declares a message type on a lane that another registration already declares, or declares a message
-    /// contract that conflicts with an earlier one.
+    /// A contribution declares a message contract that conflicts with an earlier one.
     /// </exception>
     public static IServiceCollection ConfigureMessaging(
         this IServiceCollection services,

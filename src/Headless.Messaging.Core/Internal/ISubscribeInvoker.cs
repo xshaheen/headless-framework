@@ -50,12 +50,10 @@ internal sealed class SubscribeInvoker(ISerializer serializer, IConsumeMiddlewar
         var mediumMessage = context.MediumMessage;
         var descriptor = context.ConsumerDescriptor;
 
-        // Extract message type from method parameter: IConsume<T>.Consume(ConsumeContext<T>, CancellationToken).
-        // Cached on the descriptor - recomputing it per execute is pure reflection overhead.
         var messageType =
-            descriptor.ConsumeContextValueType
+            descriptor.MessageType
             ?? throw new InvalidOperationException(
-                $"Consumer method must have a ConsumeContext<T> parameter. Method: {descriptor.MethodInfo.Name}"
+                $"Consumer {descriptor.ConsumerType.Name} of message '{descriptor.MessageName}' declares no message type."
             );
 
         // Deserialize message
@@ -100,7 +98,7 @@ internal sealed class SubscribeInvoker(ISerializer serializer, IConsumeMiddlewar
 
         if (messageInstance == null)
         {
-            throw new MessageDeserializationException($"Failed to deserialize message of type {messageType.Name}");
+            throw new MessageDeserializationException(MessageDeserializationException.EmptyBody(messageType));
         }
 
         return services is null

@@ -37,7 +37,9 @@ internal sealed class ConsumerRegister(
 {
     private static readonly TimeSpan _RestartShutdownTimeout = TimeSpan.FromSeconds(2);
 
-    private readonly ConcurrentDictionary<string, GroupHandle> _groupHandles = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, SubscriptionHandle> _subscriptionHandles = new(
+        StringComparer.Ordinal
+    );
     private readonly ILogger _logger = logger;
     private readonly MessagingOptions _options = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
     private readonly TimeProvider _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
@@ -364,7 +366,7 @@ internal sealed class ConsumerRegister(
                 // finalization stages. This generation is terminal (final disposal, never a restart),
                 // so still initiate broker-client shutdown and finalization best-effort in the
                 // background instead of abandoning the clients outright.
-                _ = _ObserveBestEffortHandleTeardownAsync(_groupHandles.Values.ToArray());
+                _ = _ObserveBestEffortHandleTeardownAsync(_subscriptionHandles.Values.ToArray());
             }
         }
         catch (AggregateException e)
@@ -402,11 +404,11 @@ internal sealed class ConsumerRegister(
         }
     }
 
-    private async Task _ObserveBestEffortHandleTeardownAsync(IReadOnlyCollection<GroupHandle> handles)
+    private async Task _ObserveBestEffortHandleTeardownAsync(IReadOnlyCollection<SubscriptionHandle> handles)
     {
         try
         {
-            // GroupHandle.DisposeAsync is idempotent via its cached dispose task; TimeSpan.Zero bounds
+            // SubscriptionHandle.DisposeAsync is idempotent via its cached dispose task; TimeSpan.Zero bounds
             // each client ShutdownAsync to its immediate path so shutdown is at least initiated.
             await Task.WhenAll(handles.Select(handle => handle.DisposeAsync(TimeSpan.Zero).AsTask()))
                 .ConfigureAwait(false);
@@ -414,7 +416,7 @@ internal sealed class ConsumerRegister(
             await _FinalizePulseAsync(handles, removeCircuitState: true, _stoppingCtsRegistration, _stoppingCts)
                 .ConfigureAwait(false);
 
-            _groupHandles.Clear();
+            _subscriptionHandles.Clear();
         }
         catch (Exception ex)
         {
@@ -426,9 +428,9 @@ internal sealed class ConsumerRegister(
     {
         var shutdownTimeout = waitTimeout ?? _RestartShutdownTimeout;
         var shutdownStarted = _timeProvider.GetTimestamp();
-        var handles = _groupHandles.Values.ToArray();
+        var handles = _subscriptionHandles.Values.ToArray();
 
-        // Signal every group concurrently so one slow cancellation callback cannot delay the others.
+        // Signal every subscription concurrently so one slow cancellation callback cannot delay the others.
         if (handles.Length > 0)
         {
             var cancellationTask = Task.WhenAll(handles.Select(handle => handle.CancelAsync().AsTask()));
@@ -487,12 +489,12 @@ internal sealed class ConsumerRegister(
             return false;
         }
 
-        _groupHandles.Clear();
+        _subscriptionHandles.Clear();
         return true;
     }
 
     private async Task _FinalizePulseAsync(
-        IReadOnlyCollection<GroupHandle> handles,
+        IReadOnlyCollection<SubscriptionHandle> handles,
         bool removeCircuitState,
         CancellationTokenRegistration stoppingRegistration,
         CancellationTokenSource stoppingCts
@@ -552,7 +554,7 @@ internal sealed class ConsumerRegister(
 
     public async ValueTask ExecuteAsync()
     {
-        var groupingMatches = _selector.GetCandidatesMethodsOfLaneGroupNameGrouped();
+        var subscriptions = _selector.GetCandidatesBySubscription();
         List<Task>? startupTasks = null;
 
         // Circuits belong to consumer identities, not to the subscriptions their clients consume, so an identity whose
@@ -560,29 +562,29 @@ internal sealed class ConsumerRegister(
         // unrecognized keys from reaching the OTel cardinality. Every-instance consumers have no circuit: their
         // deliveries are at most once, so there is no retry backlog for a breaker to protect.
         _circuitBreakerStateManager?.RegisterKnownConsumers(
-            groupingMatches
+            subscriptions
                 .Values.SelectMany(static x => x)
                 .Where(static x => !x.EveryInstance)
                 .Select(CircuitBreakerKeys.For)
                 .Distinct(StringComparer.Ordinal)
         );
 
-        foreach (var matchGroup in groupingMatches)
+        foreach (var match in subscriptions)
         {
-            var groupKey = matchGroup.Key;
-            var handleName = _CreateHandleName(groupKey);
-            var limit = _selector.GetGroupConcurrentLimit(groupKey);
-            var everyInstance = groupKey.Kind is ConsumerSubscriptionKind.EveryInstance;
-            var descriptors = matchGroup.Value;
+            var subscriptionKey = match.Key;
+            var handleName = _CreateHandleName(subscriptionKey);
+            var limit = _selector.GetSubscriptionConcurrentLimit(subscriptionKey);
+            var everyInstance = subscriptionKey.Kind is ConsumerSubscriptionKind.EveryInstance;
+            var descriptors = match.Value;
 
             ICollection<string> messageNames;
             try
             {
-                await using var client = await _CreateConsumerClientAsync(groupKey, limit, _stoppingCts.Token)
+                await using var client = await _CreateConsumerClientAsync(subscriptionKey, limit, _stoppingCts.Token)
                     .ConfigureAwait(false);
                 client.AttachCallbacks(onMessage: null, onLog: _WriteLog);
                 messageNames = await client
-                    .FetchMessageNamesAsync(matchGroup.Value.Select(x => x.MessageName), _stoppingCts.Token)
+                    .FetchMessageNamesAsync(match.Value.Select(x => x.MessageName), _stoppingCts.Token)
                     .ConfigureAwait(false);
             }
             catch (BrokerConnectionException e)
@@ -593,17 +595,17 @@ internal sealed class ConsumerRegister(
             }
 
             var groupCts = CancellationTokenSource.CreateLinkedTokenSource(_stoppingCts.Token);
-            var handle = new GroupHandle
+            var handle = new SubscriptionHandle
             {
                 Logger = _logger,
                 Cts = groupCts,
-                GroupName = handleName,
+                SubscriptionName = handleName,
                 CircuitKeys = everyInstance
                     ? []
-                    : matchGroup.Value.Select(CircuitBreakerKeys.For).ToFrozenSet(StringComparer.Ordinal),
+                    : match.Value.Select(CircuitBreakerKeys.For).ToFrozenSet(StringComparer.Ordinal),
             };
 
-            _groupHandles[handleName] = handle;
+            _subscriptionHandles[handleName] = handle;
 
             if (_circuitBreakerStateManager is not null)
             {
@@ -643,14 +645,18 @@ internal sealed class ConsumerRegister(
                         {
                             try
                             {
-                                var innerClient = await _CreateConsumerClientAsync(groupKey, limit, groupCts.Token)
+                                var innerClient = await _CreateConsumerClientAsync(
+                                        subscriptionKey,
+                                        limit,
+                                        groupCts.Token
+                                    )
                                     .ConfigureAwait(false);
 
                                 await handle.AddClientAsync(innerClient).ConfigureAwait(false);
 
                                 _serverAddress = innerClient.BrokerAddress;
 
-                                _RegisterMessageProcessor(innerClient, groupKey, handle, groupCts.Token);
+                                _RegisterMessageProcessor(innerClient, subscriptionKey, handle, groupCts.Token);
 
                                 Func<Task>? onReady = null;
                                 if (everyInstance)
@@ -710,24 +716,36 @@ internal sealed class ConsumerRegister(
     }
 
     private Task<IConsumerClient> _CreateConsumerClientAsync(
-        ConsumerGroupKey groupKey,
+        ConsumerSubscriptionKey subscriptionKey,
         byte groupConcurrent,
         CancellationToken cancellationToken
     )
     {
         return _consumerClientFactory.CreateAsync(
-            new ConsumerClientRequest(groupKey.GroupName, groupConcurrent, groupKey.Lane, groupKey.Kind, _instanceId),
+            new ConsumerClientRequest(
+                subscriptionKey.SubscriptionName,
+                groupConcurrent,
+                subscriptionKey.Lane,
+                subscriptionKey.Kind,
+                _instanceId
+            ),
             cancellationToken
         );
     }
 
     // Names the clients of one subscription on one lane; circuits are keyed by consumer identity instead. The kind is
     // part of the name because a competing and an every-instance subscription never share clients.
-    private static string _CreateHandleName(ConsumerGroupKey groupKey)
+    private static string _CreateHandleName(ConsumerSubscriptionKey subscriptionKey)
     {
-        return groupKey.Kind is ConsumerSubscriptionKind.EveryInstance
-            ? string.Create(CultureInfo.InvariantCulture, $"{(short)groupKey.Lane}:{groupKey.GroupName}:every-instance")
-            : string.Create(CultureInfo.InvariantCulture, $"{(short)groupKey.Lane}:{groupKey.GroupName}");
+        return subscriptionKey.Kind is ConsumerSubscriptionKind.EveryInstance
+            ? string.Create(
+                CultureInfo.InvariantCulture,
+                $"{(short)subscriptionKey.Lane}:{subscriptionKey.SubscriptionName}:every-instance"
+            )
+            : string.Create(
+                CultureInfo.InvariantCulture,
+                $"{(short)subscriptionKey.Lane}:{subscriptionKey.SubscriptionName}"
+            );
     }
 
     private async Task _AwaitConsumerReadyThenListenAsync(
@@ -787,7 +805,7 @@ internal sealed class ConsumerRegister(
         foreach (
             var consumer in descriptors
                 .Where(static x => !string.IsNullOrWhiteSpace(x.ConsumerIdentity))
-                .GroupBy(static x => x.ImplTypeInfo.AsType())
+                .GroupBy(static x => x.ConsumerType)
         )
         {
             if (!typeof(IOnSubscriptionEstablished).IsAssignableFrom(consumer.Key))
@@ -948,7 +966,7 @@ internal sealed class ConsumerRegister(
     /// </summary>
     private async ValueTask _ApplyCircuitIntentAsync(string circuitKey, bool pause, long epoch)
     {
-        foreach (var handle in _groupHandles.Values)
+        foreach (var handle in _subscriptionHandles.Values)
         {
             if (!handle.CircuitKeys.Contains(circuitKey))
             {
@@ -964,7 +982,7 @@ internal sealed class ConsumerRegister(
         }
     }
 
-    private bool _IsAnotherCircuitOpen(GroupHandle handle, string circuitKey)
+    private bool _IsAnotherCircuitOpen(SubscriptionHandle handle, string circuitKey)
     {
         foreach (var other in handle.CircuitKeys)
         {
@@ -980,12 +998,12 @@ internal sealed class ConsumerRegister(
         return false;
     }
 
-    private ValueTask _PauseGroupAsync(GroupHandle handle, long epoch)
+    private ValueTask _PauseGroupAsync(SubscriptionHandle handle, long epoch)
     {
         return _ApplyGroupIntentAsync(handle, pause: true, epoch);
     }
 
-    private async ValueTask _ApplyGroupIntentAsync(GroupHandle handle, bool pause, long epoch)
+    private async ValueTask _ApplyGroupIntentAsync(SubscriptionHandle handle, bool pause, long epoch)
     {
         if (
             handle.IsDisposing
@@ -1008,7 +1026,7 @@ internal sealed class ConsumerRegister(
         {
             if (handle.IsDisposing || epoch < handle.LastAppliedEpoch)
             {
-                _logger.StaleCircuitIntentSkipped(handle.GroupName, epoch, handle.LastAppliedEpoch);
+                _logger.StaleCircuitIntentSkipped(handle.SubscriptionName, epoch, handle.LastAppliedEpoch);
                 return;
             }
 
@@ -1029,9 +1047,9 @@ internal sealed class ConsumerRegister(
         }
     }
 
-    private async ValueTask _PauseClientsAsync(GroupHandle handle)
+    private async ValueTask _PauseClientsAsync(SubscriptionHandle handle)
     {
-        _logger.CircuitBreakerOpenedPausingConsumers(handle.GroupName);
+        _logger.CircuitBreakerOpenedPausingConsumers(handle.SubscriptionName);
 
         // Do NOT cancel the CTS here — the ListeningAsync loops must stay alive so they can
         // resume without restarting tasks. Transport-level pause (PauseAsync) is sufficient:
@@ -1049,16 +1067,16 @@ internal sealed class ConsumerRegister(
                     }
                     catch (Exception ex)
                     {
-                        _logger.PauseConsumerClientFailed(ex, handle.GroupName);
+                        _logger.PauseConsumerClientFailed(ex, handle.SubscriptionName);
                     }
                 })
             )
             .ConfigureAwait(false);
     }
 
-    private async ValueTask _ResumeClientsAsync(GroupHandle handle)
+    private async ValueTask _ResumeClientsAsync(SubscriptionHandle handle)
     {
-        _logger.ResumingConsumersHalfOpen(handle.GroupName);
+        _logger.ResumingConsumersHalfOpen(handle.SubscriptionName);
 
         // No CTS recreation needed — the original CTS was never cancelled during pause,
         // so ListeningAsync loops are still running. Just un-gate the transport.
@@ -1075,7 +1093,7 @@ internal sealed class ConsumerRegister(
                     }
                     catch (Exception ex)
                     {
-                        _logger.ResumeConsumerClientFailed(ex, handle.GroupName);
+                        _logger.ResumeConsumerClientFailed(ex, handle.SubscriptionName);
                         failures.Add(ex);
                     }
                 })
@@ -1095,26 +1113,26 @@ internal sealed class ConsumerRegister(
         }
 
         throw new AggregateException(
-            $"Failed to resume one or more consumer clients for group '{handle.GroupName}'.",
+            $"Failed to resume one or more consumer clients for subscription '{handle.SubscriptionName}'.",
             failureList
         );
     }
 
     private void _RegisterMessageProcessor(
         IConsumerClient client,
-        ConsumerGroupKey groupKey,
-        GroupHandle clientHandle,
+        ConsumerSubscriptionKey subscriptionKey,
+        SubscriptionHandle clientHandle,
         CancellationToken hostShutdownToken
     )
     {
-        var group = groupKey.GroupName;
-        var lane = groupKey.Lane;
+        var subscription = subscriptionKey.SubscriptionName;
+        var lane = subscriptionKey.Lane;
 
-        if (groupKey.Kind is ConsumerSubscriptionKind.EveryInstance)
+        if (subscriptionKey.Kind is ConsumerSubscriptionKind.EveryInstance)
         {
             client.AttachCallbacks(
                 (transportMessage, sender) =>
-                    _OnEveryInstanceMessageAsync(client, groupKey, transportMessage, sender, hostShutdownToken),
+                    _OnEveryInstanceMessageAsync(client, subscriptionKey, transportMessage, sender, hostShutdownToken),
                 _WriteLog
             );
 
@@ -1150,8 +1168,8 @@ internal sealed class ConsumerRegister(
             try
             {
                 var name = transportMessage.Name;
-                var canFindSubscriber = _selector.TryGetMessageNameExecutor(name, groupKey, out var executor);
-                var consumerIdentity = executor?.ResolvedConsumerIdentity ?? group;
+                var canFindSubscriber = _selector.TryGetMessageNameExecutor(name, subscriptionKey, out var executor);
+                var consumerIdentity = executor?.ResolvedConsumerIdentity ?? subscription;
 
                 // Replaces whatever the publisher sent, so the header always names the consumer that received it.
                 transportMessage.Headers[Headers.ConsumerIdentity] = consumerIdentity;
@@ -1212,7 +1230,7 @@ internal sealed class ConsumerRegister(
                     if (!canFindSubscriber)
                     {
                         var safeName = LogSanitizer.Sanitize(name);
-                        var safeSubscription = LogSanitizer.Sanitize(group);
+                        var safeSubscription = LogSanitizer.Sanitize(subscription);
                         var error =
                             $"Message can not be found subscriber. Name:{safeName}, Subscription:{safeSubscription}. {Environment.NewLine} Ensure a consumer is registered for the message on this subscription.";
                         var ex = new SubscriberNotFoundException(error);
@@ -1230,7 +1248,6 @@ internal sealed class ConsumerRegister(
                     var receiveOutcome = await _RunReceiveRingAsync(
                             transportMessage,
                             executor!,
-                            group,
                             lane,
                             _RunInnerReceiveAsync,
                             hostShutdownToken
@@ -1399,7 +1416,7 @@ internal sealed class ConsumerRegister(
                         // Poisoned-on-arrival messages bypass the normal Dispatcher scope,
                         // so we create a fresh async scope here instead of using the root provider.
                         // RetryHelper.InvokeOnExhaustedAsync applies the configured OnExhaustedTimeout
-                        // and swallows handler exceptions; pass the group/host shutdown token so a
+                        // and swallows handler exceptions; pass the subscription/host shutdown token so a
                         // cooperative callback can short-circuit when the consumer is stopping.
                         await using var exhaustedScope = serviceScopeFactory.CreateAsyncScope();
 
@@ -1614,7 +1631,7 @@ internal sealed class ConsumerRegister(
     /// </remarks>
     private async Task _OnEveryInstanceMessageAsync(
         IConsumerClient client,
-        ConsumerGroupKey groupKey,
+        ConsumerSubscriptionKey subscriptionKey,
         TransportMessage transportMessage,
         object? sender,
         CancellationToken hostShutdownToken
@@ -1623,13 +1640,13 @@ internal sealed class ConsumerRegister(
         var transportSettled = false;
         var consumeOutcomeRecorded = false;
         MessagingTraceHandle traceHandle = default;
-        var lane = groupKey.Lane;
+        var lane = subscriptionKey.Lane;
 
         try
         {
             var name = transportMessage.Name;
-            _selector.TryGetMessageNameExecutor(name, groupKey, out var executor);
-            var consumerIdentity = executor?.ResolvedConsumerIdentity ?? groupKey.GroupName;
+            _selector.TryGetMessageNameExecutor(name, subscriptionKey, out var executor);
+            var consumerIdentity = executor?.ResolvedConsumerIdentity ?? subscriptionKey.SubscriptionName;
 
             // Replaces whatever the publisher sent, so the header always names the consumer that received it.
             transportMessage.Headers[Headers.ConsumerIdentity] = consumerIdentity;
@@ -1648,7 +1665,7 @@ internal sealed class ConsumerRegister(
             {
                 var notFound = new SubscriberNotFoundException(
                     $"Message can not be found subscriber. Name:{LogSanitizer.Sanitize(name)}, "
-                        + $"Subscription:{LogSanitizer.Sanitize(groupKey.GroupName)}."
+                        + $"Subscription:{LogSanitizer.Sanitize(subscriptionKey.SubscriptionName)}."
                 );
                 _DropEveryInstanceMessage(transportMessage, consumerIdentity, notFound, notFound.Message);
                 _TracingError(traceHandle, transportMessage, client.BrokerAddress, notFound);
@@ -1658,7 +1675,7 @@ internal sealed class ConsumerRegister(
             {
                 consumeOutcomeRecorded = await _ReceiveAndConsumeEveryInstanceAsync(
                         client,
-                        groupKey,
+                        subscriptionKey,
                         executor,
                         transportMessage,
                         traceHandle,
@@ -1698,7 +1715,7 @@ internal sealed class ConsumerRegister(
     /// </summary>
     private async Task<bool> _ReceiveAndConsumeEveryInstanceAsync(
         IConsumerClient client,
-        ConsumerGroupKey groupKey,
+        ConsumerSubscriptionKey subscriptionKey,
         ConsumerExecutorDescriptor executor,
         TransportMessage transportMessage,
         MessagingTraceHandle traceHandle,
@@ -1713,8 +1730,7 @@ internal sealed class ConsumerRegister(
             receiveOutcome = await _RunReceiveRingAsync(
                     transportMessage,
                     executor,
-                    groupKey.GroupName,
-                    groupKey.Lane,
+                    subscriptionKey.Lane,
                     _RunInnerReceiveAsync,
                     hostShutdownToken
                 )
@@ -1757,7 +1773,7 @@ internal sealed class ConsumerRegister(
             StorageId = Guid.Empty,
             Origin = receiveOutcome.Message!,
             Content = string.Empty,
-            Lane = groupKey.Lane,
+            Lane = subscriptionKey.Lane,
             Added = _timeProvider.GetUtcNow(),
         };
 
@@ -1861,26 +1877,23 @@ internal sealed class ConsumerRegister(
         try
         {
             deserialized = await _serializer
-                .DeserializeAsync(effectiveTransport, executor.MessageValueType, cancellationToken)
+                .DeserializeAsync(effectiveTransport, executor.MessageType, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception deserializeEx)
         {
             throw new MessageDeserializationException(
                 $"Failed to deserialize the message body for '{executor.MessageName}' into "
-                    + $"'{executor.MessageValueType}' (group '{executor.GroupName}'): {deserializeEx.Message}",
+                    + $"'{executor.MessageType}' (subscription '{executor.SubscriptionName}'): {deserializeEx.Message}",
                 deserializeEx
             );
         }
 
         // An empty body for a typed consumer is the same deterministic payload defect as a malformed
-        // one; untyped consumers (null MessageValueType) keep Value = null passing as before.
-        if (executor.MessageValueType is { } typedPayload && deserialized.Value is null)
+        // one; untyped consumers (null MessageType) keep Value = null passing as before.
+        if (executor.MessageType is { } typedPayload && deserialized.Value is null)
         {
-            throw new MessageDeserializationException(
-                $"Empty message body for typed consumer '{executor.MessageName}' "
-                    + $"(payload type '{typedPayload}', group '{executor.GroupName}')."
-            );
+            throw new MessageDeserializationException(MessageDeserializationException.EmptyBody(typedPayload));
         }
 
         deserialized.RemoveException();
@@ -1896,7 +1909,6 @@ internal sealed class ConsumerRegister(
     private async ValueTask<ReceiveRingOutcome> _RunReceiveRingAsync(
         TransportMessage transportMessage,
         ConsumerExecutorDescriptor executor,
-        string group,
         MessageLane lane,
         Func<
             IDictionary<string, string?>,
@@ -1911,11 +1923,11 @@ internal sealed class ConsumerRegister(
         // Runtime subscriptions can carry a null payload type (no typed handler parameter). They
         // still flow through the ring: object stands in as the context/lookup type, so global
         // receive middleware runs and only descriptors explicitly registered for object match.
-        var messageType = executor.MessageValueType ?? typeof(object);
+        var messageType = executor.MessageType ?? typeof(object);
         IReadOnlyList<MiddlewareDescriptor>? descriptors = null;
         var hasDescriptors =
             _middlewareDescriptorRegistry is not null
-            && _middlewareDescriptorRegistry.TryGetReceiveDescriptors(messageType, group, lane, out descriptors);
+            && _middlewareDescriptorRegistry.TryGetReceiveDescriptors(messageType, lane, out descriptors);
 
         if (!hasDescriptors)
         {
@@ -2259,7 +2271,7 @@ internal sealed class ConsumerRegister(
         Disposed = 4,
     }
 
-    private sealed class GroupHandle
+    private sealed class SubscriptionHandle
     {
         private readonly Lock _clientsLock = new();
         private Task? _disposeTask;
@@ -2287,7 +2299,7 @@ internal sealed class ConsumerRegister(
 
         public required ILogger Logger { get; init; }
         public required CancellationTokenSource Cts { get; init; }
-        public required string GroupName { get; init; }
+        public required string SubscriptionName { get; init; }
 
         /// <summary>The lane-qualified circuit keys of the consumer identities this handle's clients deliver to.</summary>
         public FrozenSet<string> CircuitKeys { get; init; } = [];
@@ -2367,7 +2379,7 @@ internal sealed class ConsumerRegister(
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogPauseNewlyAddedClientFailed(ex, GroupName);
+                    Logger.LogPauseNewlyAddedClientFailed(ex, SubscriptionName);
                     lock (_clientsLock)
                     {
                         _clients.Remove(client);
@@ -2496,11 +2508,11 @@ internal static partial class ConsumerRegisterLog
         EventId = 2,
         EventName = "PauseNewlyAddedClientFailed",
         Level = LogLevel.Error,
-        Message = "Failed to pause newly added consumer client for group '{GroupName}'."
+        Message = "Failed to pause newly added consumer client for subscription '{SubscriptionName}'."
     )]
     public static partial void LogPauseNewlyAddedClientFailed(
         this ILogger logger,
         Exception exception,
-        string groupName
+        string subscriptionName
     );
 }

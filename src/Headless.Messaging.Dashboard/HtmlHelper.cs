@@ -1,97 +1,22 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reflection;
-using System.Runtime.CompilerServices;
 using Headless.Messaging.Runtime;
 
 namespace Headless.Messaging.Dashboard;
 
 internal static class HtmlHelper
 {
-    public static string MethodEscaped(MethodInfo method)
-    {
-        var @public = _WrapKeyword("public");
-        var async = string.Empty;
-        string @return;
-
-        var isAwaitable = _IsTypeAwaitable(method.ReturnType, out var resultType);
-        if (isAwaitable)
-        {
-            async = _WrapKeyword("async");
-            @return =
-                resultType == typeof(void)
-                    ? _WrapType("Task")
-                    : _WrapType("Task") + _WrapIdentifier("<") + _WrapType(resultType) + _WrapIdentifier(">");
-        }
-        else
-        {
-            @return = _WrapType(method.ReturnType);
-        }
-
-        var name = method.Name;
-
-        string? paramType = null;
-        string? paramName = null;
-
-        var @params = method.GetParameters();
-        if (@params.Length == 1)
-        {
-            var firstParam = @params[0];
-            var firstParamType = firstParam.ParameterType;
-            paramType = _WrapType(firstParamType);
-            paramName = firstParam.Name;
-        }
-
-        var paramString = paramType == null ? "();" : $"({paramType} {paramName});";
-
-        var outputString =
-            @public + " " + (string.IsNullOrEmpty(async) ? "" : async + " ") + @return + " " + name + paramString;
-
-        return outputString;
-    }
-
     /// <summary>
-    /// Checks if a type is awaitable and returns its result type.
-    /// Based on Roslyn's awaitable pattern detection.
+    /// Renders the handler a consumer runs as a highlighted C# signature: <c>ConsumeAsync</c> taking the typed consume
+    /// context for an attribute-declared consumer, or the delegate method of a runtime subscription.
     /// </summary>
-    private static bool _IsTypeAwaitable(Type type, out Type resultType)
+    public static string MethodEscaped(string methodName, Type? messageType)
     {
-        // Check for GetAwaiter method
-        var getAwaiterMethod = type.GetRuntimeMethods()
-            .FirstOrDefault(m =>
-                m.Name.Equals("GetAwaiter", StringComparison.OrdinalIgnoreCase)
-                && m.GetParameters().Length == 0
-                && m.ReturnType != null
-            );
+        var context = messageType is null
+            ? _WrapType(nameof(ConsumeContext))
+            : _WrapType(nameof(ConsumeContext)) + _WrapIdentifier("<") + _WrapType(messageType) + _WrapIdentifier(">");
 
-        if (getAwaiterMethod == null)
-        {
-            resultType = typeof(void);
-            return false;
-        }
-
-        var awaiterType = getAwaiterMethod.ReturnType;
-
-        // Awaiter must implement INotifyCompletion
-        if (awaiterType.GetInterfaces().All(t => t != typeof(INotifyCompletion)))
-        {
-            resultType = typeof(void);
-            return false;
-        }
-
-        // Awaiter must have GetResult method
-        var getResultMethod = awaiterType
-            .GetRuntimeMethods()
-            .FirstOrDefault(m => m.Name.Equals("GetResult", StringComparison.Ordinal) && m.GetParameters().Length == 0);
-
-        if (getResultMethod == null)
-        {
-            resultType = typeof(void);
-            return false;
-        }
-
-        resultType = getResultMethod.ReturnType;
-        return true;
+        return $"{_WrapKeyword("public")} {_WrapType(nameof(ValueTask))} {methodName}({context} context);";
     }
 
     private static string _WrapType(Type? type)

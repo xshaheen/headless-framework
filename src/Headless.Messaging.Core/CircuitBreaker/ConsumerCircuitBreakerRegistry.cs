@@ -6,8 +6,8 @@ using FluentValidation;
 namespace Headless.Messaging.CircuitBreaker;
 
 /// <summary>
-/// Stores per-consumer circuit breaker overrides registered via
-/// <c>IConsumerBuilderBase&lt;T&gt;.WithCircuitBreaker()</c>.
+/// Stores per-consumer circuit breaker overrides set through
+/// <c>Tune(identity, consumer =&gt; consumer.CircuitBreaker(...))</c> or configuration.
 /// </summary>
 /// <remarks>
 /// This registry is an internal singleton. Both the consumer builder (at startup) and the
@@ -40,31 +40,9 @@ internal sealed class ConsumerCircuitBreakerRegistry
         {
             throw new InvalidOperationException(
                 $"Circuit breaker already registered for consumer '{consumerKey}'. "
-                    + "Each consumer can only have one circuit breaker override. "
-                    + "Check that you haven't configured the same consumer via both "
-                    + "ForMessage<T>().Bus.Consumer<TConsumer>(...)/Queue.Consumer<TConsumer>(...) registrations."
+                    + "Each consumer can only have one circuit breaker override."
             );
         }
-    }
-
-    /// <summary>
-    /// Registers or updates circuit breaker options for the specified consumer.
-    /// Used internally by builders that defer registration until the final consumer name is known.
-    /// </summary>
-    internal void RegisterOrUpdate(string consumerKey, ConsumerCircuitBreakerOptions options)
-    {
-#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
-        _Validator.ValidateAndThrow(options);
-#pragma warning restore MA0045
-        _options[consumerKey] = options;
-    }
-
-    /// <summary>
-    /// Removes a previously registered override for the specified consumer, if any.
-    /// </summary>
-    internal void Remove(string consumerKey)
-    {
-        _options.TryRemove(consumerKey, out _);
     }
 
     /// <summary>

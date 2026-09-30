@@ -11,7 +11,7 @@ namespace Headless.Messaging;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The registry stores metadata for all consumers registered via <see cref="IMessagingBuilder"/>.
+/// The registry stores metadata for every consumer the host's generated modules declare.
 /// This metadata is used by <see cref="IConsumerServiceSelector"/> during startup to discover
 /// and configure message subscriptions. The registry is registered as a singleton in DI.
 /// </para>
@@ -57,15 +57,15 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
 
             _ThrowOnOwnershipConflict(_consumers!, metadata);
 
-            var existingConflict = _FindDuplicateTopicGroupConflict(_consumers!, metadata);
+            var existingConflict = _FindDuplicateSubscriptionConflict(_consumers!, metadata);
 
             if (existingConflict != null)
             {
                 throw new InvalidOperationException(
-                    "Duplicate consumer registration detected for messageName/group identity: "
-                        + $"intent='{metadata.Lane}', messageName='{metadata.MessageName}', group='{metadata.Group ?? "<default>"}', "
-                        + $"existingHandlerId='{existingConflict.ResolvedHandlerId}', "
-                        + $"newHandlerId='{metadata.ResolvedHandlerId}'."
+                    "Duplicate consumer registration detected for message name and subscription: "
+                        + $"lane='{metadata.Lane}', messageName='{metadata.MessageName}', "
+                        + $"subscription='{metadata.SubscriptionName}', existing consumer {_Describe(existingConflict)}, "
+                        + $"new consumer {_Describe(metadata)}."
                 );
             }
 
@@ -159,14 +159,14 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
             {
                 _ThrowOnOwnershipConflict(_consumers!, newMetadata, index);
 
-                var existingConflict = _FindDuplicateTopicGroupConflict(_consumers!, newMetadata, index);
+                var existingConflict = _FindDuplicateSubscriptionConflict(_consumers!, newMetadata, index);
                 if (existingConflict != null)
                 {
                     throw new InvalidOperationException(
-                        "Duplicate consumer registration detected for messageName/group identity: "
-                            + $"intent='{newMetadata.Lane}', messageName='{newMetadata.MessageName}', group='{newMetadata.Group ?? "<default>"}', "
-                            + $"existingHandlerId='{existingConflict.ResolvedHandlerId}', "
-                            + $"newHandlerId='{newMetadata.ResolvedHandlerId}'."
+                        "Duplicate consumer registration detected for message name and subscription: "
+                            + $"lane='{newMetadata.Lane}', messageName='{newMetadata.MessageName}', "
+                            + $"subscription='{newMetadata.SubscriptionName}', existing consumer "
+                            + $"{_Describe(existingConflict)}, new consumer {_Describe(newMetadata)}."
                     );
                 }
 
@@ -201,19 +201,20 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
         return _frozen;
     }
 
-    /// <summary>
-    /// Finds a consumer by message name and optional group.
-    /// </summary>
+    /// <summary>Finds a consumer by message name and optional subscription name.</summary>
     /// <param name="messageName">The message name to search for.</param>
-    /// <param name="group">Optional consumer group name. If null, returns first match by message name only.</param>
+    /// <param name="subscriptionName">
+    /// Optional subscription name, the consumer identity on the Bus lane. If null, returns the first match by message
+    /// name only.
+    /// </param>
     /// <returns>
-    /// The matching consumer metadata, or null if no consumer is registered for the message-name/group combination.
+    /// The matching consumer metadata, or null if no consumer is registered for the message name and subscription.
     /// </returns>
-    public ConsumerMetadata? FindByMessageName(string messageName, string? group = null)
+    public ConsumerMetadata? FindByMessageName(string messageName, string? subscriptionName = null)
     {
         var all = GetAll();
 
-        if (group is null)
+        if (subscriptionName is null)
         {
             return all.FirstOrDefault(m =>
                 string.Equals(m.MessageName, messageName, StringComparison.OrdinalIgnoreCase)
@@ -222,7 +223,7 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
 
         return all.FirstOrDefault(m =>
             string.Equals(m.MessageName, messageName, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(m.Group, group, StringComparison.Ordinal)
+            && string.Equals(m.SubscriptionName, subscriptionName, StringComparison.Ordinal)
         );
     }
 
@@ -305,10 +306,7 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
         }
     }
 
-    /// <summary>
-    /// Finds a consumer by consumer type and message type without freezing the registry.
-    /// Used internally during setup to resolve group names for deferred registrations.
-    /// </summary>
+    /// <summary>Finds a consumer by consumer type and message type without freezing the registry.</summary>
     internal ConsumerMetadata? FindByTypes(Type consumerType, Type messageType)
     {
         if (_frozen != null)
@@ -375,7 +373,7 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
         }
     }
 
-    private static ConsumerMetadata? _FindDuplicateTopicGroupConflict(
+    private static ConsumerMetadata? _FindDuplicateSubscriptionConflict(
         IEnumerable<ConsumerMetadata> consumers,
         ConsumerMetadata candidate,
         int? skipIndex = null
@@ -391,9 +389,9 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
             }
 
             if (
-                // Message names match case-insensitively at dispatch; groups stay case-sensitive.
+                // Message names match case-insensitively at dispatch; subscription names stay case-sensitive.
                 string.Equals(existing.MessageName, candidate.MessageName, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(existing.Group, candidate.Group, StringComparison.Ordinal)
+                && string.Equals(existing.SubscriptionName, candidate.SubscriptionName, StringComparison.Ordinal)
                 && existing.Lane == candidate.Lane
             )
             {
@@ -444,12 +442,9 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
         foreach (var existing in _Others(consumers, skipIndex))
         {
             // Queue destinations are keyed by the message name, so a second consumer would compete for the same queue.
-            // Consumers registered through ForMessage predate the rule and may still share a Queue message between
-            // groups, so it binds only when an attribute-declared consumer takes part.
             if (
                 candidate.Lane == MessageLane.Queue
                 && existing.Lane == MessageLane.Queue
-                && (candidate.Dispatch is not null || existing.Dispatch is not null)
                 && string.Equals(existing.MessageName, candidate.MessageName, StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(existing.ConsumerIdentity, candidate.ConsumerIdentity, StringComparison.Ordinal)
             )

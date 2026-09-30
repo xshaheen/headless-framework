@@ -6,7 +6,7 @@ using Headless.Messaging.Messages;
 namespace Headless.Messaging.Runtime;
 
 /// <summary>
-/// Caches the resolved consumer topology (message name plus group to executor descriptor) so the
+/// Caches the resolved consumer topology (message name plus subscription to executor descriptor) so the
 /// dispatch hot path and dashboards can look up handlers without re-running consumer selection. The
 /// snapshot is lazily built on first access and rebuilt after <see cref="Invalidate"/>.
 /// </summary>
@@ -18,11 +18,12 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
         StringComparer.Ordinal
     );
 
-    private ConcurrentDictionary<ConsumerGroupKey, IReadOnlyList<ConsumerExecutorDescriptor>> _laneEntries = new();
+    private ConcurrentDictionary<ConsumerSubscriptionKey, IReadOnlyList<ConsumerExecutorDescriptor>> _laneEntries =
+        new();
 
     private ConcurrentDictionary<string, byte> _groupConcurrent = new(StringComparer.Ordinal);
 
-    private ConcurrentDictionary<ConsumerGroupKey, byte> _laneGroupConcurrent = new();
+    private ConcurrentDictionary<ConsumerSubscriptionKey, byte> _laneGroupConcurrent = new();
 
     private ConcurrentDictionary<ConsumerIdentityKey, IReadOnlyList<ConsumerExecutorDescriptor>> _identityEntries =
         new();
@@ -34,21 +35,18 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
 
     /// <summary>
     /// Get a dictionary of candidates.In the dictionary,
-    /// the Key is the Group name, the Value for the current Group of candidates
+    /// the Key is the subscription name, the Value for the current subscription of candidates
     /// </summary>
-    public ConcurrentDictionary<
-        string,
-        IReadOnlyList<ConsumerExecutorDescriptor>
-    > GetCandidatesMethodsOfGroupNameGrouped()
+    public ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>> GetCandidatesBySubscriptionName()
     {
         _EnsureEntries();
         return _entries;
     }
 
     internal ConcurrentDictionary<
-        ConsumerGroupKey,
+        ConsumerSubscriptionKey,
         IReadOnlyList<ConsumerExecutorDescriptor>
-    > GetCandidatesMethodsOfLaneGroupNameGrouped()
+    > GetCandidatesBySubscription()
     {
         _EnsureEntries();
         return _laneEntries;
@@ -73,10 +71,11 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
             var entries = new ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>>(
                 StringComparer.Ordinal
             );
-            var laneEntries = new ConcurrentDictionary<ConsumerGroupKey, IReadOnlyList<ConsumerExecutorDescriptor>>();
+            var laneEntries =
+                new ConcurrentDictionary<ConsumerSubscriptionKey, IReadOnlyList<ConsumerExecutorDescriptor>>();
             var groupConcurrent = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
-            var laneGroupConcurrent = new ConcurrentDictionary<ConsumerGroupKey, byte>();
-            var groupedCandidates = executorCollection.GroupBy(x => x.GroupName, StringComparer.Ordinal);
+            var laneGroupConcurrent = new ConcurrentDictionary<ConsumerSubscriptionKey, byte>();
+            var groupedCandidates = executorCollection.GroupBy(x => x.SubscriptionName, StringComparer.Ordinal);
 
             foreach (var item in groupedCandidates)
             {
@@ -86,8 +85,8 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
                 groupConcurrent.TryAdd(item.Key, maxConcurrency);
             }
 
-            var laneGroupedCandidates = executorCollection.GroupBy(x => new ConsumerGroupKey(
-                x.GroupName,
+            var laneGroupedCandidates = executorCollection.GroupBy(x => new ConsumerSubscriptionKey(
+                x.SubscriptionName,
                 x.Lane,
                 x.SubscriptionKind
             ));
@@ -111,7 +110,7 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
                 identityEntries.TryAdd(item.Key, item.ToList());
             }
 
-            // Persisted inbox identities must not use subscription wildcards or their group-level caches, so an inbox
+            // Persisted inbox identities must not use subscription wildcards or their subscription-level caches, so an inbox
             // row finds its consumer by exact identity, contract version, and message name. Walking the lane entries in
             // their own order and keeping the first descriptor per key picks the one a scan of them would.
             var inboxEntries = new Dictionary<InboxExecutorKey, ConsumerExecutorDescriptor>();
@@ -140,26 +139,26 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
         }
     }
 
-    /// <summary>Gets the maximum consumer concurrency configured for the supplied group, or <c>1</c> when unknown.</summary>
-    /// <param name="group">The consumer group name.</param>
-    public byte GetGroupConcurrentLimit(string group)
+    /// <summary>Gets the maximum consumer concurrency configured for the supplied subscription, or <c>1</c> when unknown.</summary>
+    /// <param name="subscriptionName">The subscription name.</param>
+    public byte GetSubscriptionConcurrentLimit(string subscriptionName)
     {
         _EnsureEntries();
-        return _groupConcurrent.TryGetValue(group, out var value) ? value : (byte)1;
+        return _groupConcurrent.TryGetValue(subscriptionName, out var value) ? value : (byte)1;
     }
 
-    internal byte GetGroupConcurrentLimit(ConsumerGroupKey group)
+    internal byte GetSubscriptionConcurrentLimit(ConsumerSubscriptionKey subscription)
     {
         _EnsureEntries();
-        return _laneGroupConcurrent.TryGetValue(group, out var value) ? value : (byte)1;
+        return _laneGroupConcurrent.TryGetValue(subscription, out var value) ? value : (byte)1;
     }
 
-    /// <summary>Gets the message names of every registered consumer across all groups.</summary>
+    /// <summary>Gets the message names of every registered consumer across all subscriptions.</summary>
     public List<string> GetAllMessageNames()
     {
         if (_entries.IsEmpty)
         {
-            GetCandidatesMethodsOfGroupNameGrouped();
+            GetCandidatesBySubscriptionName();
         }
 
         var result = new List<string>();
@@ -172,16 +171,16 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
     }
 
     /// <summary>
-    /// Attempts to get the message executor associated with the specified message name and group name from the
+    /// Attempts to get the message executor associated with the specified message name and subscription name from the
     /// cached descriptor snapshot.
     /// </summary>
     /// <param name="messageName">The message name of the value to get.</param>
-    /// <param name="groupName">The group name of the value to get.</param>
+    /// <param name="subscriptionName">The subscription name of the value to get.</param>
     /// <param name="matchMessageName">message name executor of the value.</param>
     /// <returns>true if the key was found, otherwise false. </returns>
     public bool TryGetMessageNameExecutor(
         string messageName,
-        string groupName,
+        string subscriptionName,
         [NotNullWhen(true)] out ConsumerExecutorDescriptor? matchMessageName
     )
     {
@@ -189,7 +188,7 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
 
         _EnsureEntries();
 
-        if (_entries.TryGetValue(groupName, out var groupMatchMessageNames))
+        if (_entries.TryGetValue(subscriptionName, out var groupMatchMessageNames))
         {
             matchMessageName = selector.SelectBestCandidate(messageName, groupMatchMessageNames);
 
@@ -201,14 +200,14 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
 
     internal bool TryGetMessageNameExecutor(
         string messageName,
-        ConsumerGroupKey group,
+        ConsumerSubscriptionKey subscription,
         [NotNullWhen(true)] out ConsumerExecutorDescriptor? matchMessageName
     )
     {
         matchMessageName = null;
         _EnsureEntries();
 
-        if (_laneEntries.TryGetValue(group, out var groupMatchMessageNames))
+        if (_laneEntries.TryGetValue(subscription, out var groupMatchMessageNames))
         {
             matchMessageName = selector.SelectBestCandidate(messageName, groupMatchMessageNames);
             return matchMessageName is not null;
@@ -260,9 +259,10 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
             _entries = new ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>>(
                 StringComparer.Ordinal
             );
-            _laneEntries = new ConcurrentDictionary<ConsumerGroupKey, IReadOnlyList<ConsumerExecutorDescriptor>>();
+            _laneEntries =
+                new ConcurrentDictionary<ConsumerSubscriptionKey, IReadOnlyList<ConsumerExecutorDescriptor>>();
             _groupConcurrent = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
-            _laneGroupConcurrent = new ConcurrentDictionary<ConsumerGroupKey, byte>();
+            _laneGroupConcurrent = new ConcurrentDictionary<ConsumerSubscriptionKey, byte>();
             _identityEntries =
                 new ConcurrentDictionary<ConsumerIdentityKey, IReadOnlyList<ConsumerExecutorDescriptor>>();
             _inboxEntries = FrozenDictionary<InboxExecutorKey, ConsumerExecutorDescriptor>.Empty;
@@ -273,11 +273,11 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
 }
 
 /// <summary>
-/// One subscription the host opens: a competing group and an every-instance group never share clients, even under one
+/// One subscription the host opens: a competing subscription and an every-instance subscription never share clients, even under one
 /// name, because one is broker-durable and shared across processes and the other belongs to this process alone.
 /// </summary>
-internal readonly record struct ConsumerGroupKey(
-    string GroupName,
+internal readonly record struct ConsumerSubscriptionKey(
+    string SubscriptionName,
     MessageLane Lane,
     Transport.ConsumerSubscriptionKind Kind = Transport.ConsumerSubscriptionKind.Competing
 );

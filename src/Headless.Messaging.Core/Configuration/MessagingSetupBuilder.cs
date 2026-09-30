@@ -5,7 +5,6 @@ using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Registration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Messaging.Configuration;
 
@@ -35,9 +34,6 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
         Services = services;
         Options = options;
         Registry = registry;
-        var sink = new MessageRegistrationSink(services, registry);
-        Bus = new BusRegistrationBuilder(sink);
-        Queue = new QueueRegistrationBuilder(sink);
     }
 
     /// <summary>
@@ -117,7 +113,8 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     /// </summary>
     /// <remarks>
     /// The identity is checked when messaging starts: an identity no registered consumer declares fails startup.
-    /// <c>Headless:Messaging:Consumers:{identity}</c> configuration (<c>Concurrency</c>) applies after every
+    /// <c>Headless:Messaging:Consumers:{identity}</c> configuration (<c>Concurrency</c>, <c>InboxRetention</c>, and
+    /// <c>CircuitBreaker</c>) applies after every
     /// <c>Tune</c> call. <paramref name="configure"/> runs once, synchronously, during this call.
     /// </remarks>
     /// <param name="identity">The consumer's identity.</param>
@@ -159,12 +156,6 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     /// <summary>The <c>ConsumeOnly</c> entries authored so far, snapshotted when <c>AddHeadlessMessaging</c> returns.</summary>
     internal string[] FreezeConsumeOnly() => [.. _consumeOnly];
 
-    /// <summary>Gets the structural registration root for Bus consumers.</summary>
-    public IBusRegistrationBuilder Bus { get; }
-
-    /// <summary>Gets the structural registration root for Queue consumers.</summary>
-    public IQueueRegistrationBuilder Queue { get; }
-
     internal IServiceCollection Services { get; }
 
     internal ConsumerRegistry Registry { get; }
@@ -201,52 +192,6 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
         Argument.IsNotNull(configure);
 
         configure(Options.Conventions);
-        Options.Version = Options.Conventions.Version;
         return this;
-    }
-
-    /// <summary>
-    /// Registers a single consumer directly into the consumer registry at setup time and wires its
-    /// DI descriptors.
-    /// </summary>
-    /// <remarks>
-    /// Internal setup-time registration seam. Unlike the public <c>ForMessage&lt;T&gt;</c> surface,
-    /// this does not validate <paramref name="messageName"/>, so it can register wildcard
-    /// subscriptions (e.g. <c>"orders.*"</c>) that selector/runtime scenarios and their tests rely
-    /// on. Kept internal deliberately — it is not dead code and must not be promoted to the public API.
-    /// </remarks>
-    [UsedImplicitly]
-    internal ConsumerMetadata RegisterConsumer(
-        Type consumerType,
-        Type messageType,
-        string? messageName,
-        string? group,
-        byte concurrency,
-        MessageLane lane,
-        string consumerIdentity,
-        string messageContractVersion
-    )
-    {
-        var metadata = Options.CreateConsumerMetadata(
-            consumerType,
-            messageType,
-            messageName,
-            Registry.TryGetRawMessageName(messageType, lane, out var mappedMessageName) ? mappedMessageName : null,
-            group,
-            concurrency,
-            consumerIdentity: consumerIdentity,
-            messageContractVersion: messageContractVersion,
-            lane: lane
-        );
-
-        Registry.Register(metadata);
-        Services.TryAdd(new ServiceDescriptor(consumerType, consumerType, ServiceLifetime.Scoped));
-
-        var serviceType = typeof(IConsume<>).MakeGenericType(messageType);
-        Services.TryAdd(
-            new ServiceDescriptor(serviceType, sp => sp.GetRequiredService(consumerType), ServiceLifetime.Scoped)
-        );
-
-        return metadata;
     }
 }

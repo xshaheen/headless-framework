@@ -8,27 +8,23 @@ namespace Headless.Messaging;
 /// <param name="MessageType">The type of message this consumer handles.</param>
 /// <param name="ConsumerType">The type of the consumer implementation.</param>
 /// <param name="MessageName">The message name to subscribe to.</param>
-/// <param name="Group">The consumer group name (Kafka group.id or RabbitMQ queue name).</param>
 /// <param name="Concurrency">The maximum number of messages to process concurrently.</param>
 /// <param name="Lane">The delivery lane used to subscribe this consumer.</param>
-/// <param name="ConsumerIdentity">The operator-stable identity used by durable inbox state.</param>
+/// <param name="ConsumerIdentity">The consumer identity its attribute declares, which keys durable inbox state.</param>
 /// <param name="MessageContractVersion">The schema version of the message contract.</param>
-/// <param name="HandlerId">The deterministic handler identity used for diagnostics and default group generation.</param>
 /// <remarks>
-/// This record stores the configuration metadata for a consumer registered via
-/// <c>ForMessage&lt;TMessage&gt;(...)</c> or assembly scanning.
+/// A consumer declared with <see cref="BusConsumerAttribute"/> or <see cref="QueueConsumerAttribute"/> has one entry per
+/// message it consumes.
 /// </remarks>
 [PublicAPI]
 public sealed record ConsumerMetadata(
     Type MessageType,
     Type ConsumerType,
     string MessageName,
-    string? Group,
     byte Concurrency,
     MessageLane Lane,
     string ConsumerIdentity,
-    string MessageContractVersion,
-    string? HandlerId = null
+    string MessageContractVersion
 )
 {
     /// <summary>Maximum supported consumer identity length for durable inbox storage.</summary>
@@ -37,23 +33,18 @@ public sealed record ConsumerMetadata(
     private static readonly IReadOnlyDictionary<Type, object> _EmptyProviderConfigs = new Dictionary<Type, object>();
 
     /// <summary>
-    /// Gets the resolved handler identity used by the runtime when an explicit id is not supplied.
+    /// The broker subscription this consumer's client opens: its identity on the Bus lane, so one client binds every
+    /// message the identity covers, and its message name on the Queue lane, which has one consumer per message.
     /// </summary>
-    public string ResolvedHandlerId =>
-        string.IsNullOrWhiteSpace(HandlerId)
-            ? MessagingConventions.GetDefaultHandlerId(ConsumerType, MessageType)
-            : HandlerId;
+    public string SubscriptionName => Lane == MessageLane.Bus ? ConsumerIdentity : MessageName;
 
     /// <summary>
-    /// Per-consumer circuit breaker overrides registered via
-    /// lane-owned <c>ForMessage&lt;TMessage&gt;(...).Consumer&lt;TConsumer&gt;(...)</c>. Applied to the
+    /// The circuit breaker overrides <c>Tune</c> or configuration gave this consumer. Applied to the
     /// <see cref="ConsumerCircuitBreakerRegistry"/> during startup discovery.
     /// </summary>
     internal ConsumerCircuitBreakerOptions? CircuitBreakerOverride { get; init; }
 
-    /// <summary>
-    /// Provider-specific consumer configuration registered through provider escape hatches.
-    /// </summary>
+    /// <summary>Provider-specific consumer configuration that <c>Tune</c> gave this consumer.</summary>
     internal IReadOnlyDictionary<Type, object> ProviderConfigs { get; init; } = _EmptyProviderConfigs;
 
     /// <summary>Terminal retention captured into each newly admitted inbox generation.</summary>
@@ -61,14 +52,14 @@ public sealed record ConsumerMetadata(
 
     /// <summary>
     /// Whether this consumer receives every Bus message in every process, as its <see cref="BusConsumerAttribute"/>
-    /// declares. Always <see langword="false"/> on the Queue lane and for consumers registered without the attribute.
+    /// declares. Always <see langword="false"/> on the Queue lane.
     /// </summary>
     public bool EveryInstance { get; init; }
 
     /// <summary>The failure policy type the consumer's attribute names, or <see langword="null"/>.</summary>
     public Type? FailurePolicy { get; init; }
 
-    /// <summary>The generated dispatch of an attribute-declared consumer; null for every other consumer.</summary>
+    /// <summary>The generated dispatch that runs the consumer class.</summary>
     internal MessageConsumerDispatch? Dispatch { get; init; }
 
     /// <summary>The generated module that declared the consumer, or <see langword="null"/> outside modules.</summary>

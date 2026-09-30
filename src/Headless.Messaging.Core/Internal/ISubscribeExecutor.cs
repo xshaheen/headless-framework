@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using System.Reflection;
 using Headless.Checks;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
@@ -224,8 +223,8 @@ internal sealed class SubscribeExecutor(
         try
         {
             logger.ConsumerExecuting(
-                descriptor.ImplTypeInfo.Name,
-                descriptor.MethodInfo.Name,
+                descriptor.ConsumerType.Name,
+                descriptor.MethodName,
                 descriptor.ResolvedConsumerIdentity
             );
 
@@ -241,11 +240,10 @@ internal sealed class SubscribeExecutor(
                 await using var attemptScope = dispatchServices.CreateAsyncScope();
                 var attemptServices = attemptScope.ServiceProvider;
                 var propagateTenant =
-                    descriptor.MessageValueType is { } messageType
+                    descriptor.MessageType is { } messageType
                     && attemptServices.GetService<IMiddlewareDescriptorRegistry>() is { } middlewareRegistry
                     && middlewareRegistry.TryGetConsumeDescriptors(
                         messageType,
-                        descriptor.GroupName,
                         descriptor.Lane,
                         out var middlewareDescriptors
                     )
@@ -288,8 +286,8 @@ internal sealed class SubscribeExecutor(
             {
                 var executionInstanceId = message.Origin.GetExecutionInstanceId();
                 logger.ConsumerExecuted(
-                    descriptor.ImplTypeInfo.Name,
-                    descriptor.MethodInfo.Name,
+                    descriptor.ConsumerType.Name,
+                    descriptor.MethodName,
                     descriptor.ResolvedConsumerIdentity,
                     sp.Elapsed.TotalMilliseconds,
                     executionInstanceId
@@ -743,7 +741,7 @@ internal sealed class SubscribeExecutor(
     )
     {
         var consumerContext = new ConsumerContext(descriptor, message, unitOfWork);
-        var traceHandle = _TracingBefore(message.Origin, message.Lane, descriptor.MethodInfo, message.Retries);
+        var traceHandle = _TracingBefore(message.Origin, message.Lane, descriptor.MethodName, message.Retries);
         try
         {
             var ret = services is null
@@ -822,7 +820,7 @@ internal sealed class SubscribeExecutor(
 
             // Fire the invoke success span only after the callback response publish completes so the success
             // event also reflects a successful callback publish; still fires on the no-callback path above.
-            _TracingAfter(traceHandle, message.Origin.Name, descriptor.MethodInfo);
+            _TracingAfter(traceHandle, message.Origin.Name, descriptor.MethodName);
         }
         catch (OperationCanceledException oce)
         {
@@ -831,7 +829,7 @@ internal sealed class SubscribeExecutor(
             if (oce is TaskCanceledException && !oce.CancellationToken.IsCancellationRequested)
             {
                 var e = new SubscriberExecutionFailedException(LogSanitizer.Sanitize(oce.Message), oce);
-                _TracingError(traceHandle, message.Origin.Name, descriptor.MethodInfo, e);
+                _TracingError(traceHandle, message.Origin.Name, descriptor.MethodName, e);
                 e.ReThrow();
             }
 
@@ -844,7 +842,7 @@ internal sealed class SubscribeExecutor(
         {
             var e = new SubscriberExecutionFailedException(LogSanitizer.Sanitize(ex.Message), ex);
 
-            _TracingError(traceHandle, message.Origin.Name, descriptor.MethodInfo, e);
+            _TracingError(traceHandle, message.Origin.Name, descriptor.MethodName, e);
 
             e.ReThrow();
         }
@@ -852,7 +850,7 @@ internal sealed class SubscribeExecutor(
 
     #region tracing
 
-    private MessagingTraceHandle _TracingBefore(Message message, MessageLane lane, MethodInfo method, int retryCount)
+    private MessagingTraceHandle _TracingBefore(Message message, MessageLane lane, string method, int retryCount)
     {
         if (!MessagingDiagnostics.IsEnabled)
         {
@@ -865,7 +863,7 @@ internal sealed class SubscribeExecutor(
         return new MessagingTraceHandle(activity, now);
     }
 
-    private void _TracingAfter(MessagingTraceHandle traceHandle, string operation, MethodInfo method)
+    private void _TracingAfter(MessagingTraceHandle traceHandle, string operation, string method)
     {
         MessageEventCounterSource.Log.WriteInvokeMetrics();
 
@@ -884,12 +882,7 @@ internal sealed class SubscribeExecutor(
         );
     }
 
-    private static void _TracingError(
-        MessagingTraceHandle traceHandle,
-        string operation,
-        MethodInfo method,
-        Exception ex
-    )
+    private static void _TracingError(MessagingTraceHandle traceHandle, string operation, string method, Exception ex)
     {
         if (!traceHandle.IsRecording)
         {

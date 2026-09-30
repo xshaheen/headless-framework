@@ -25,9 +25,8 @@ internal sealed class MessagePublisher(
     private readonly MessagingTelemetry _telemetry = telemetry ?? MessagingTelemetry.Default;
     private readonly TimeSpan _transportPublishTimeout = transportPublishTimeout ?? TimeSpan.FromSeconds(10);
 
-    // Frozen at construction from the explicit ForMessage<T> registrations only: assembly-scan and framework
-    // contributions never carry a policy, and several of them can share a (type, lane) key, so indexing every
-    // registration would collide while adding nothing.
+    // Frozen at construction from the message contracts only: consumer registrations never carry a policy, and several
+    // of them can share a (type, lane) key, so indexing every registration would collide while adding nothing.
     private readonly FrozenDictionary<(Type MessageType, MessageLane Lane), DeliveryMode> _deliveryPolicies = (
         registrations ?? []
     )

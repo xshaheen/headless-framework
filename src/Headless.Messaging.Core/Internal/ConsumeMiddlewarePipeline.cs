@@ -42,11 +42,6 @@ internal sealed class ConsumeMiddlewarePipeline(
     private static readonly ConcurrentDictionary<MiddlewareDispatchKey, ConsumeMiddlewareInvoker> _TypedInvokers =
         new();
 
-    // Caches a compiled delegate per message type that calls the strongly-typed
-    // IMessageDispatcher.DispatchInScopeAsync<TMessage>(...) overload, so the per-dispatch path avoids the
-    // reflective GetMethods().Single(...).MakeGenericMethod(...).Invoke(...) the fallback used to run per message.
-    private static readonly ConcurrentDictionary<Type, DispatchInvoker> _DispatchInvokers = new();
-
     // Caches the IConsumeMiddleware<TContext> closed service type per concrete ConsumeContext type, so the
     // resolution path avoids running MakeGenericType on every dispatch.
     private static readonly ConcurrentDictionary<Type, Type> _TypedMiddlewareServiceTypes = new();
@@ -192,7 +187,7 @@ internal sealed class ConsumeMiddlewarePipeline(
     )
     {
         // An attribute-declared consumer runs its generated dispatch, which builds the class and calls the typed
-        // ConsumeAsync without the container registration or compiled invoker the dispatcher path needs.
+        // ConsumeAsync.
         if (descriptor.Dispatch is { } dispatch)
         {
             await dispatch(provider, consumeContext, consumeContext.CancellationToken).ConfigureAwait(false);
@@ -204,7 +199,7 @@ internal sealed class ConsumeMiddlewarePipeline(
             descriptor.HandlerId is { Length: > 0 } handlerId
             && runtimeRegistry.TryGetInvoker(
                 descriptor.MessageName,
-                descriptor.GroupName,
+                descriptor.SubscriptionName,
                 handlerId,
                 descriptor.Lane,
                 out var runtimeInvoker
@@ -218,16 +213,12 @@ internal sealed class ConsumeMiddlewarePipeline(
             return;
         }
 
-        var dispatcher = provider.GetRequiredService<IMessageDispatcher>();
-        await _DispatchAsync(
-                dispatcher,
-                provider,
-                descriptor,
-                consumeContext,
-                messageType,
-                consumeContext.CancellationToken
-            )
-            .ConfigureAwait(false);
+        // Consumers run through generated dispatch or a runtime subscription's delegate; reaching here means the
+        // runtime subscription was detached after its delivery was selected.
+        throw new InvalidOperationException(
+            $"No handler is attached for consumer {descriptor.ConsumerType.FullName ?? descriptor.ConsumerType.Name} "
+                + $"of message '{descriptor.MessageName}' on lane {descriptor.Lane}."
+        );
     }
 
     private async ValueTask _InvokeAsync(
@@ -280,7 +271,7 @@ internal sealed class ConsumeMiddlewarePipeline(
         ConsumerExecutorDescriptor consumer
     )
     {
-        var shared = _ResolveSharedMiddleware(provider, context, consumer.GroupName);
+        var shared = _ResolveSharedMiddleware(provider, context);
         var tuned = consumer.Middleware;
         if (tuned.Count == 0)
         {
@@ -298,19 +289,14 @@ internal sealed class ConsumeMiddlewarePipeline(
         return middleware;
     }
 
-    private object[] _ResolveSharedMiddleware(IServiceProvider provider, ConsumeContext context, string? groupName)
+    private object[] _ResolveSharedMiddleware(IServiceProvider provider, ConsumeContext context)
     {
         // _ResolveDirectMiddleware already materializes a fresh array; reuse it directly instead of copying again.
         var directMiddleware = _ResolveDirectMiddleware(provider, context);
 
         if (
             descriptorRegistry is not null
-            && descriptorRegistry.TryGetConsumeDescriptors(
-                context.MessageType,
-                groupName,
-                context.Lane,
-                out var descriptors
-            )
+            && descriptorRegistry.TryGetConsumeDescriptors(context.MessageType, context.Lane, out var descriptors)
         )
         {
             return
@@ -593,62 +579,6 @@ internal sealed class ConsumeMiddlewarePipeline(
         return added;
     }
 
-    private static Task _DispatchAsync(
-        IMessageDispatcher dispatcher,
-        IServiceProvider serviceProvider,
-        ConsumerExecutorDescriptor descriptor,
-        object consumeContext,
-        Type messageType,
-        CancellationToken cancellationToken
-    )
-    {
-        var invoker = _DispatchInvokers.GetOrAdd(messageType, _CompileDispatchInvoker);
-
-        // Calling the compiled delegate invokes the generic overload directly, so handler exceptions propagate
-        // unwrapped (no TargetInvocationException) — the same observable result the old reflective unwrap produced.
-        return invoker(dispatcher, serviceProvider, descriptor, consumeContext, cancellationToken);
-    }
-
-    private static DispatchInvoker _CompileDispatchInvoker(Type messageType)
-    {
-        var consumeContextType = typeof(ConsumeContext<>).MakeGenericType(messageType);
-
-        var dispatchMethod = typeof(IMessageDispatcher)
-            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-            .Single(method =>
-                string.Equals(method.Name, nameof(IMessageDispatcher.DispatchInScopeAsync), StringComparison.Ordinal)
-                && method.GetParameters().Length == 4
-                && method.GetParameters()[1].ParameterType == typeof(ConsumerExecutorDescriptor)
-            )
-            .MakeGenericMethod(messageType);
-
-        var dispatcherParam = Expression.Parameter(typeof(IMessageDispatcher), "dispatcher");
-        var serviceProviderParam = Expression.Parameter(typeof(IServiceProvider), "serviceProvider");
-        var descriptorParam = Expression.Parameter(typeof(ConsumerExecutorDescriptor), "descriptor");
-        var consumeContextParam = Expression.Parameter(typeof(object), "consumeContext");
-        var cancellationTokenParam = Expression.Parameter(typeof(CancellationToken), "cancellationToken");
-
-        var body = Expression.Call(
-            dispatcherParam,
-            dispatchMethod,
-            serviceProviderParam,
-            descriptorParam,
-            Expression.Convert(consumeContextParam, consumeContextType),
-            cancellationTokenParam
-        );
-
-        return Expression
-            .Lambda<DispatchInvoker>(
-                body,
-                dispatcherParam,
-                serviceProviderParam,
-                descriptorParam,
-                consumeContextParam,
-                cancellationTokenParam
-            )
-            .CompileFast();
-    }
-
     private static void _ValidateLaneHeader(
         IDictionary<string, string?> headers,
         ConsumerExecutorDescriptor descriptor,
@@ -700,13 +630,5 @@ internal sealed class ConsumeMiddlewarePipeline(
         object middleware,
         ConsumeContext context,
         Func<ValueTask> next
-    );
-
-    private delegate Task DispatchInvoker(
-        IMessageDispatcher dispatcher,
-        IServiceProvider serviceProvider,
-        ConsumerExecutorDescriptor descriptor,
-        object consumeContext,
-        CancellationToken cancellationToken
     );
 }

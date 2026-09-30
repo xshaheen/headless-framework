@@ -41,7 +41,9 @@ public static class SetupMessaging
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="configure"/> is null.</exception>
     /// <remarks>
     /// <para>
-    /// This method configures messaging infrastructure and message consumers.
+    /// This method configures messaging infrastructure. Consumers declare themselves with
+    /// <see cref="BusConsumerAttribute"/> or <see cref="QueueConsumerAttribute"/> and register through their assembly's
+    /// generated <see cref="IMessagingModule"/>, added here or from a module's <c>ConfigureMessaging</c> contribution.
     /// </para>
     /// <para>
     /// <strong>Example:</strong>
@@ -58,12 +60,8 @@ public static class SetupMessaging
     ///         rabbit.Port = 5672;
     ///     });
     ///
-    ///     setup.Bus.ForMessage&lt;OrderPlaced&gt;(message => message
-    ///         .Contract("orders.placed")
-    ///         .Consumer&lt;OrderPlacedHandler&gt;(consumer => consumer
-    ///             .ConsumerIdentity("order-service.order-placed")
-    ///             .Group("order-service")
-    ///             .Concurrency(5)));
+    ///     setup.AddModule&lt;Orders.MessagingModule&gt;();
+    ///     setup.Tune(OrderPlacedHandler.Identity, consumer => consumer.Concurrency(5));
     /// });
     /// </code>
     /// </para>
@@ -154,7 +152,6 @@ public static class SetupMessaging
         services.TryAddSingleton<IPublishMiddlewarePipeline, PublishMiddlewarePipeline>();
         services.TryAddSingleton<ISubscribeInvoker, SubscribeInvoker>();
         services.TryAddSingleton<MethodMatcherCache>();
-        services.TryAddSingleton<IMessageDispatcher, CompiledMessageDispatcher>();
 
         services.TryAddSingleton<IConsumerRegister, ConsumerRegister>();
 
@@ -283,7 +280,7 @@ public static class SetupMessaging
         services.TryAddSingleton<IBootstrapper>(sp => sp.GetRequiredService<Bootstrapper>());
         services.AddHostedService(sp => sp.GetRequiredService<Bootstrapper>());
 
-        return new MessagingBuilder(services, options);
+        return new MessagingBuilder(services);
     }
 
     /// <summary>
@@ -318,9 +315,9 @@ public static class SetupMessaging
             return;
         }
 
-        // Every source records MessageRegistration descriptors: the AddHeadlessMessaging callback, ConfigureMessaging
-        // contributions, and framework consumers. The container returns them in registration order. Generated modules
-        // register last, so their consumers read the contract versions those registrations declare.
+        // Message contracts record MessageRegistration descriptors from the AddHeadlessMessaging callback and every
+        // ConfigureMessaging contribution, which the container returns in registration order. Generated modules register
+        // last, so their consumers read the contract versions those contracts declare.
         var registrations = provider.GetServices<MessageRegistration>().ToList();
         registrations.AddRange(
             CreateModuleRegistrations(provider.GetServices<MessagingModuleContribution>(), registrations)
@@ -383,16 +380,10 @@ public static class SetupMessaging
                 new MessageConsumerRegistration(
                     consumer.ConsumerType,
                     consumer.Lane,
-                    IsAssemblyScan: false,
-                    Group: null,
-                    Concurrency: 1,
-                    HandlerId: null,
                     consumer.Identity,
-                    CircuitBreakerOverride: null,
-                    ProviderConfigs: new Dictionary<Type, object>()
+                    consumer.Dispatch
                 )
                 {
-                    Dispatch = consumer.Dispatch,
                     EveryInstance = consumer.EveryInstance,
                     FailurePolicy = consumer.Policy,
                     DeclaringModule = consumer.Source,
@@ -423,37 +414,16 @@ public static class SetupMessaging
             return;
         }
 
-        var explicitPairs = registrations
-            .SelectMany(static registration =>
-                registration
-                    .Consumers.Where(static consumer => !consumer.IsAssemblyScan)
-                    .Select(consumer => (registration.MessageType, consumer.ConsumerType, registration.Lane))
-            )
-            .ToHashSet();
-
         var registeredKeys = new Dictionary<ConsumerRegistrationKey, ConsumerRegistrationSettings>();
-        var consumers = new List<(ConsumerMetadata Metadata, ConsumerCircuitBreakerOptions? CircuitBreakerOverride)>();
+        var consumers = new List<ConsumerMetadata>();
 
-        // Names are registered eagerly at lane-owned registration time, so the drain only builds consumer
-        // metadata (which needs MessagingOptions). Iterate registrations directly — no per-type grouping.
         foreach (var registration in registrations)
         {
             foreach (var consumer in registration.Consumers)
             {
-                if (
-                    consumer.IsAssemblyScan
-                    && explicitPairs.Contains((registration.MessageType, consumer.ConsumerType, registration.Lane))
-                )
-                {
-                    continue;
-                }
-
-                _EnsureEveryInstanceIsConsistent(registration, consumer);
-
                 var resolved = options.CreateConsumerMetadata(
                     consumer.ConsumerType,
                     registration.MessageType,
-                    registration.MessageName,
                     registry.TryGetRawMessageName(
                         registration.MessageType,
                         registration.Lane,
@@ -461,69 +431,36 @@ public static class SetupMessaging
                     )
                         ? mappedMessageName
                         : null,
-                    consumer.Group,
-                    consumer.Concurrency,
-                    consumer.HandlerId,
                     consumer.ConsumerIdentity,
                     registration.ContractVersion,
                     registration.Lane
                 ) with
                 {
-                    ProviderConfigs = consumer.ProviderConfigs,
-                    InboxRetention = consumer.InboxRetention ?? TimeSpan.FromDays(30),
                     EveryInstance = consumer.EveryInstance,
                     FailurePolicy = consumer.FailurePolicy,
                     Dispatch = consumer.Dispatch,
                     DeclaringModule = consumer.DeclaringModule,
                 };
 
-                // An attribute-declared consumer subscribes under its identity on the Bus lane, so one client binds every
-                // message the identity covers, and under its message name on the Queue lane, which has one consumer per
-                // message. Consumers registered through ForMessage keep their group.
-                if (consumer.Dispatch is not null)
-                {
-                    resolved = resolved with
-                    {
-                        Group = options.ResolveGroupName(
-                            resolved.ResolvedHandlerId,
-                            resolved.Lane == MessageLane.Bus ? resolved.ConsumerIdentity : resolved.MessageName
-                        ),
-                    };
-                }
-
-                var key = new ConsumerRegistrationKey(
-                    resolved.MessageName,
-                    resolved.Group,
-                    resolved.Lane,
-                    resolved.ConsumerType
-                );
-
+                var key = new ConsumerRegistrationKey(resolved.MessageName, resolved.Lane, resolved.ConsumerType);
                 var settings = new ConsumerRegistrationSettings(
-                    resolved.Concurrency,
-                    resolved.ResolvedHandlerId,
                     resolved.ConsumerIdentity,
                     resolved.MessageContractVersion,
-                    resolved.InboxRetention,
-                    ConsumerCircuitBreakerSettings.From(consumer.CircuitBreakerOverride),
-                    resolved.ProviderConfigs,
                     resolved.EveryInstance,
                     resolved.FailurePolicy
                 );
 
                 if (registeredKeys.TryGetValue(key, out var existing))
                 {
-                    // R9a: re-registering the SAME consumer for the same (message name, group, intent)
-                    // is an idempotent merge only when the registration is genuinely identical. Diverging
-                    // concurrency / handler id / circuit-breaker / provider overrides would otherwise be silently
-                    // dropped here, so fail fast and name the conflict instead.
+                    // A hand-written module may redeclare a generated consumer. An identical redeclaration merges; a
+                    // different one would silently lose settings, so it fails naming both.
                     if (existing != settings)
                     {
                         throw new InvalidOperationException(
-                            $"Consumer {resolved.ConsumerType.FullName ?? resolved.ConsumerType.Name} is registered "
-                                + $"more than once for message name '{resolved.MessageName}' "
-                                + $"(group '{resolved.Group}', intent {resolved.Lane}) with conflicting settings: "
-                                + $"the first registration has {existing.Describe()}; a later one has "
-                                + $"{settings.Describe()}. Register the consumer once, or make every registration identical."
+                            $"Consumer {resolved.ConsumerType.FullName ?? resolved.ConsumerType.Name} is declared more "
+                                + $"than once for message name '{resolved.MessageName}' on lane {resolved.Lane} with "
+                                + $"conflicting settings: {existing} and {settings}. Declare the consumer once, or make "
+                                + "every declaration identical."
                         );
                     }
 
@@ -531,18 +468,29 @@ public static class SetupMessaging
                 }
 
                 registeredKeys.Add(key, settings);
-                consumers.Add((resolved, consumer.CircuitBreakerOverride));
+                consumers.Add(resolved);
             }
         }
 
         // Tuning never changes the identity, lane, or message a conflict check reads, so its errors are reported only
         // after registration: a conflicting declaration surfaces first.
         var errors = new List<string>();
-        var tuned = ConsumerTuningApplier.Apply([.. consumers.Select(static x => x.Metadata)], controls, errors);
-        for (var index = 0; index < consumers.Count; index++)
+        var tuned = ConsumerTuningApplier.Apply(consumers, controls, errors);
+        var circuitBreakerKeys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var consumer in tuned)
         {
-            registry.Register(tuned[index]);
-            _ApplyCircuitBreakerOverride(circuitBreakerRegistry, tuned[index], consumers[index].CircuitBreakerOverride);
+            registry.Register(consumer);
+
+            // A Bus identity covering several messages has one entry per message but one circuit, so its override is
+            // registered once.
+            if (
+                circuitBreakerRegistry is not null
+                && consumer.CircuitBreakerOverride is { } circuitBreaker
+                && circuitBreakerKeys.Add(CircuitBreakerKeys.For(consumer))
+            )
+            {
+                circuitBreakerRegistry.Register(CircuitBreakerKeys.For(consumer), circuitBreaker);
+            }
         }
 
         if (errors.Count != 0)
@@ -558,219 +506,27 @@ public static class SetupMessaging
         registry.MarkMessageRegistrationDrainCompleted(consumeFilter);
     }
 
-    /// <summary>
-    /// Rejects an every-instance consumer combined with a setting that assumes a durable, shared subscription: an inbox
-    /// retention (it has no inbox), a circuit breaker (it has no retry backlog to protect), or an explicit group (its
-    /// subscription belongs to one process, so there is nothing to share).
-    /// </summary>
-    private static void _EnsureEveryInstanceIsConsistent(
-        MessageRegistration registration,
-        MessageConsumerRegistration consumer
-    )
+    private readonly record struct ConsumerRegistrationKey(string MessageName, MessageLane Lane, Type ConsumerType)
     {
-        if (!consumer.EveryInstance)
-        {
-            return;
-        }
-
-        var conflict =
-            registration.Lane != MessageLane.Bus ? "the Queue lane, which is point-to-point"
-            : consumer.Group is not null ? $"the explicit group '{consumer.Group}'"
-            : consumer.InboxRetention is not null ? "an inbox retention"
-            : consumer.CircuitBreakerOverride is not null ? "a circuit breaker"
-            : null;
-
-        if (conflict is null)
-        {
-            return;
-        }
-
-        var consumerName = consumer.ConsumerIdentity ?? consumer.ConsumerType.FullName ?? consumer.ConsumerType.Name;
-        throw new InvalidOperationException(
-            $"Every-instance consumer '{consumerName}' for {registration.MessageType.FullName ?? registration.MessageType.Name} "
-                + $"cannot be combined with {conflict}. An every-instance subscription belongs to one process and "
-                + "delivers at most once, with no inbox, retry, or circuit breaker. Remove the setting or EveryInstance."
-        );
-    }
-
-    private static void _ApplyCircuitBreakerOverride(
-        ConsumerCircuitBreakerRegistry? circuitBreakerRegistry,
-        ConsumerMetadata resolved,
-        ConsumerCircuitBreakerOptions? circuitBreakerOverride
-    )
-    {
-        if (circuitBreakerRegistry is null || circuitBreakerOverride is null)
-        {
-            return;
-        }
-
-        circuitBreakerRegistry.Register(CircuitBreakerKeys.For(resolved), circuitBreakerOverride);
-    }
-
-    private readonly record struct ConsumerRegistrationKey(
-        string MessageName,
-        string? Group,
-        MessageLane Lane,
-        Type ConsumerType
-    )
-    {
-        // Message names are matched case-insensitively at dispatch, so the dedup key must treat
-        // case-variant names as identical. Groups stay case-sensitive (Ordinal everywhere else).
+        // Message names are matched case-insensitively at dispatch, so the dedup key must treat case-variant names as
+        // identical.
         public bool Equals(ConsumerRegistrationKey other)
         {
             return Lane == other.Lane
                 && ConsumerType == other.ConsumerType
-                && string.Equals(MessageName, other.MessageName, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(Group, other.Group, StringComparison.Ordinal);
+                && string.Equals(MessageName, other.MessageName, StringComparison.OrdinalIgnoreCase);
         }
 
         public override int GetHashCode()
         {
-            return HashCode.Combine(
-                StringComparer.OrdinalIgnoreCase.GetHashCode(MessageName),
-                Group is null ? 0 : StringComparer.Ordinal.GetHashCode(Group),
-                Lane,
-                ConsumerType
-            );
+            return HashCode.Combine(StringComparer.OrdinalIgnoreCase.GetHashCode(MessageName), Lane, ConsumerType);
         }
     }
 
-    private readonly struct ConsumerRegistrationSettings(
-        byte concurrency,
-        string resolvedHandlerId,
-        string consumerIdentity,
-        string messageContractVersion,
-        TimeSpan inboxRetention,
-        ConsumerCircuitBreakerSettings circuitBreaker,
-        IReadOnlyDictionary<Type, object> providerConfigs,
-        bool everyInstance,
-        Type? failurePolicy
-    ) : IEquatable<ConsumerRegistrationSettings>
-    {
-        private readonly bool _everyInstance = everyInstance;
-        private readonly Type? _failurePolicy = failurePolicy;
-        private readonly byte _concurrency = concurrency;
-        private readonly string _resolvedHandlerId = resolvedHandlerId;
-        private readonly string _consumerIdentity = consumerIdentity;
-        private readonly string _messageContractVersion = messageContractVersion;
-        private readonly TimeSpan _inboxRetention = inboxRetention;
-        private readonly ConsumerCircuitBreakerSettings _circuitBreaker = circuitBreaker;
-        private readonly IReadOnlyDictionary<Type, object> _providerConfigs = providerConfigs;
-
-        public bool Equals(ConsumerRegistrationSettings other)
-        {
-            return _concurrency == other._concurrency
-                && string.Equals(_resolvedHandlerId, other._resolvedHandlerId, StringComparison.Ordinal)
-                && string.Equals(_consumerIdentity, other._consumerIdentity, StringComparison.Ordinal)
-                && string.Equals(_messageContractVersion, other._messageContractVersion, StringComparison.Ordinal)
-                && _inboxRetention == other._inboxRetention
-                && _circuitBreaker == other._circuitBreaker
-                && _everyInstance == other._everyInstance
-                && _failurePolicy == other._failurePolicy
-                && _ProviderConfigsEqual(_providerConfigs, other._providerConfigs);
-        }
-
-        public override bool Equals(object? obj)
-        {
-            return obj is ConsumerRegistrationSettings other && Equals(other);
-        }
-
-        // Names every compared setting so a conflict message shows both sides without the reader diffing sources.
-        public string Describe()
-        {
-            var providerSettings = string.Join(
-                ", ",
-                _providerConfigs.Keys.Select(static type => type.Name).Order(StringComparer.Ordinal)
-            );
-
-            return $"concurrency {_concurrency}, consumer identity '{_consumerIdentity}', handler id '{_resolvedHandlerId}', "
-                + $"contract version '{_messageContractVersion}', inbox retention {_inboxRetention}, "
-                + $"circuit-breaker override {(_circuitBreaker.HasOverride ? "set" : "none")}, "
-                + $"every instance {_everyInstance}, failure policy {_failurePolicy?.Name ?? "none"}, "
-                + $"provider settings [{providerSettings}]";
-        }
-
-        public override int GetHashCode()
-        {
-            var hash = new HashCode();
-            hash.Add(_concurrency);
-            hash.Add(_resolvedHandlerId, StringComparer.Ordinal);
-            hash.Add(_consumerIdentity, StringComparer.Ordinal);
-            hash.Add(_messageContractVersion, StringComparer.Ordinal);
-            hash.Add(_inboxRetention);
-            hash.Add(_circuitBreaker);
-            hash.Add(_everyInstance);
-            hash.Add(_failurePolicy);
-
-            foreach (var pair in _providerConfigs.OrderBy(static pair => pair.Key.FullName, StringComparer.Ordinal))
-            {
-                hash.Add(pair.Key);
-                hash.Add(pair.Value);
-            }
-
-            return hash.ToHashCode();
-        }
-
-        public static bool operator ==(ConsumerRegistrationSettings left, ConsumerRegistrationSettings right) =>
-            left.Equals(right);
-
-        public static bool operator !=(ConsumerRegistrationSettings left, ConsumerRegistrationSettings right) =>
-            !left.Equals(right);
-
-        private static bool _ProviderConfigsEqual(
-            IReadOnlyDictionary<Type, object> left,
-            IReadOnlyDictionary<Type, object> right
-        )
-        {
-            if (left.Count != right.Count)
-            {
-                return false;
-            }
-
-            foreach (var (key, value) in left)
-            {
-                if (!right.TryGetValue(key, out var otherValue))
-                {
-                    return false;
-                }
-
-                // Class-based message-scope configs (e.g. KafkaMessageConfig<T>) implement
-                // IProviderHeaderContributions and hold a Func — they have no meaningful value
-                // equality. Two instances of the same type for the same key are idempotent.
-                if (value is IProviderHeaderContributions)
-                {
-                    continue;
-                }
-
-                if (!Equals(value, otherValue))
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-    }
-
-    private readonly record struct ConsumerCircuitBreakerSettings(
-        bool HasOverride,
-        bool Enabled,
-        int? FailureThreshold,
-        TimeSpan? OpenDuration,
-        Func<Exception, bool>? IsTransientException
-    )
-    {
-        public static ConsumerCircuitBreakerSettings From(ConsumerCircuitBreakerOptions? options)
-        {
-            return options is null
-                ? default
-                : new ConsumerCircuitBreakerSettings(
-                    HasOverride: true,
-                    options.Enabled,
-                    options.FailureThreshold,
-                    options.OpenDuration,
-                    options.IsTransientException
-                );
-        }
-    }
+    private readonly record struct ConsumerRegistrationSettings(
+        string ConsumerIdentity,
+        string MessageContractVersion,
+        bool EveryInstance,
+        Type? FailurePolicy
+    );
 }

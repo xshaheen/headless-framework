@@ -2,7 +2,6 @@
 
 using System.Collections.ObjectModel;
 using System.Diagnostics;
-using System.Reflection;
 using Headless.Messaging.Messages;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry;
@@ -357,7 +356,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
         Message message,
         string operation,
         MessageLane lane,
-        MethodInfo method,
+        string method,
         int retryCount,
         long startTimestampMs
     )
@@ -381,7 +380,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
             return null;
         }
 
-        activity.SetTag("code.function.name", method.Name);
+        activity.SetTag("code.function.name", method);
         activity.AddEvent(
             new ActivityEvent("subscriber.invoke.start", DateTimeOffset.FromUnixTimeMilliseconds(startTimestampMs))
         );
@@ -407,7 +406,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
     public static void SubscriberInvokeStop(
         Activity? activity,
         string operation,
-        MethodInfo method,
+        string method,
         long startTimestampMs,
         long endTimestampMs
     )
@@ -422,19 +421,14 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
             )
         );
 
-        MessagingMetrics.RecordSubscriberInvocation(method.Name, operation, elapsedMs);
+        MessagingMetrics.RecordSubscriberInvocation(method, operation, elapsedMs);
 
         activity?.Stop();
     }
 
-    public static void SubscriberInvokeError(
-        Activity? activity,
-        string operation,
-        MethodInfo method,
-        Exception exception
-    )
+    public static void SubscriberInvokeError(Activity? activity, string operation, string method, Exception exception)
     {
-        MessagingMetrics.RecordSubscriberError(method.Name, operation, exception.GetType().Name);
+        MessagingMetrics.RecordSubscriberError(method, operation, exception.GetType().Name);
 
         if (activity is null)
         {
