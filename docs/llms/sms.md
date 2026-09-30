@@ -96,7 +96,9 @@ Check `response.Success` after every send. `FailureError` is guaranteed non-null
 
 ### Retry safety
 
-SMS sends are not idempotent by default. Re-sending on transient failure can cause the recipient to receive the same message twice. All HTTP-backed providers therefore disable the standard resilience-handler retry pipeline. If a provider issues idempotency keys, pass `configureResilience` (per default or named instance) to opt back in selectively.
+SMS sends are not idempotent by default. Re-sending on transient failure can cause the recipient to receive the same message twice. Every HTTP-backed provider declares `[OutboundEffect(OutboundEffect.Unsafe)]` on its options class, and its HttpClient pipeline is derived from that declaration (`Headless.Http.Effects`): no automatic retry for POST, PUT, PATCH, DELETE, or CONNECT, which covers every SMS send path. If a provider issues idempotency keys, pass `configureResilience` (per default or named instance) to opt back in selectively; it runs after the derived defaults.
+
+The declaration also holds in hosts that add a resilience handler to every client, such as `AddHeadless()` service defaults (`ConfigureHttpClientDefaults(b => b.AddStandardResilienceHandler())`). A second standard handler stacks as an outer pipeline rather than replacing the provider's, so a per-provider opt-out alone would be retried by the outer pipeline. The derived pipeline removes earlier resilience handlers from the provider's client first, so the declared effect wins in either registration order.
 
 ---
 
@@ -311,7 +313,7 @@ Cequens SMS gateway implementation of `ISmsSender`.
 
 ### Design constraints
 
-The HTTP resilience handler is wired with `options.Retry.ShouldHandle = static _ => PredicateResult.False()` — no retries by default. SMS sends are not idempotent, and retrying a failed send without an idempotency key can deliver duplicate messages. Pass `configureResilience` to opt back in if Cequens provides idempotency support for your account. Each instance owns its own JWT token cache (an instance field on the sender), so a named instance never shares a token with the default sender or another name.
+The HTTP resilience pipeline is derived from the declared `Unsafe` effect (see [Retry safety](#retry-safety)) — no retries on the send POST by default. SMS sends are not idempotent, and retrying a failed send without an idempotency key can deliver duplicate messages. Pass `configureResilience` to opt back in if Cequens provides idempotency support for your account. Each instance owns its own JWT token cache (an instance field on the sender), so a named instance never shares a token with the default sender or another name.
 
 ### Install
 
