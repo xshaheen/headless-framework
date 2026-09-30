@@ -24,9 +24,12 @@ namespace Headless.Api.Middlewares;
 internal sealed partial class TenantResolutionMiddleware(
     RequestDelegate next,
     IOptions<MultiTenancyOptions> options,
+    IOptions<TenantTelemetryOptions> telemetryOptions,
     ILogger<TenantResolutionMiddleware> logger
 )
 {
+    private readonly TenantTelemetryOptions _telemetryOptions = telemetryOptions.Value;
+
     // Fires exactly once per process for HEADLESS_TENANCY_MIDDLEWARE_ORDERING. 0 = not yet warned,
     // 1 = warned. CompareExchange ensures the warning is emitted by at most one request.
     private static int _orderingWarningEmitted;
@@ -93,6 +96,7 @@ internal sealed partial class TenantResolutionMiddleware(
 
         // Claim-only host: no catalog resolution ran for this request, so no display name is known.
         using var _ = currentTenant.Change(tenantId);
+        using var __ = TenantTelemetry.Enrich(logger, _telemetryOptions, tenantId);
         await next(context).ConfigureAwait(false);
     }
 

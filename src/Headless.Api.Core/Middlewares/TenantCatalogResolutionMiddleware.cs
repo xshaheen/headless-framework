@@ -48,9 +48,12 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
     IEnumerable<ITenantIdentifierSource> sources,
     IOptions<TenantCatalogOptions> options,
     IOptions<MultiTenancyOptions> tenancyOptions,
+    IOptions<TenantTelemetryOptions> telemetryOptions,
     ILogger<TenantCatalogResolutionMiddleware> logger
 )
 {
+    private readonly TenantTelemetryOptions _telemetryOptions = telemetryOptions.Value;
+
     // Fires exactly once per process for HEADLESS_TENANT_CATALOG_MIDDLEWARE_ORDERING and
     // HEADLESS_TENANT_CATALOG_ROUTE_SOURCE_MISORDERED. 0 = not yet warned, 1 = warned.
     // CompareExchange ensures one of the two events is emitted by at most one request.
@@ -164,6 +167,7 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
                 // permanently observe host context, defeating the reason this middleware runs pre-auth.
                 // The rejection writer reads no ambient tenant state, so rejection semantics are unchanged.
                 using (currentTenant.Change(tenant.Id, tenant.Name))
+                using (TenantTelemetry.Enrich(logger, _telemetryOptions, tenant.Id))
                 {
                     var rejected = await _RejectOnClaimMismatchAsync(
                             context,
