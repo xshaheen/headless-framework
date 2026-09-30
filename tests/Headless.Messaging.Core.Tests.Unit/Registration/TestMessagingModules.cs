@@ -12,6 +12,8 @@ public sealed record InvoiceIssued(string Number);
 
 public sealed record OrderShipped(string OrderId);
 
+public sealed record PriceChanged(string Sku);
+
 public sealed record IssueInvoiceCommand(string OrderId);
 
 /// <summary>Records what the test consumers and middleware did, in order.</summary>
@@ -45,6 +47,15 @@ public sealed class BillingInvoiceProjection(HostControlProbe probe) : IConsume<
     public ValueTask ConsumeAsync(ConsumeContext<InvoiceIssued> context, CancellationToken cancellationToken)
     {
         probe.Record($"billing {context.Message.Number}");
+        return ValueTask.CompletedTask;
+    }
+}
+
+public sealed class BillingPriceCache(HostControlProbe probe) : IConsume<PriceChanged>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<PriceChanged> context, CancellationToken cancellationToken)
+    {
+        probe.Record($"price {context.Message.Sku}");
         return ValueTask.CompletedTask;
     }
 }
@@ -101,6 +112,18 @@ public sealed class BillingModule : IMessagingModule
             everyInstance: false,
             policy: null,
             TestConsumers.Dispatch<BillingInvoiceProjection, InvoiceIssued>()
+        );
+}
+
+/// <summary>An every-instance consumer outside the <c>orders</c> owner, for hosts that filter with <c>ConsumeOnly</c>.</summary>
+public sealed class BillingPriceCacheModule : IMessagingModule
+{
+    public static void Register(MessagingCatalogBuilder catalog) =>
+        catalog.AddBusConsumer<BillingPriceCache, PriceChanged>(
+            TestConsumers.PriceCache,
+            everyInstance: true,
+            policy: null,
+            TestConsumers.Dispatch<BillingPriceCache, PriceChanged>()
         );
 }
 
@@ -166,6 +189,7 @@ public sealed class OrdersQueueModule : IMessagingModule
 internal static class TestConsumers
 {
     public const string InvoiceProjection = "billing.invoice-projection";
+    public const string PriceCache = "billing.price-cache";
     public const string Shipment = "orders.shipment";
     public const string BillingIssueInvoice = "billing.issue-invoice";
     public const string OrdersIssueInvoice = "orders.issue-invoice";

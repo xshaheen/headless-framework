@@ -360,6 +360,72 @@ public sealed class ConsumerHostControlTests : TestBase
     }
 
     [Fact]
+    public async Task should_always_start_an_every_instance_consumer_outside_consume_only_and_deliver_to_it()
+    {
+        // given
+        var factory = new RecordingConsumerClientFactory();
+        await using var provider = _BuildTransportProvider(
+            factory,
+            services =>
+                services.ConfigureMessaging(messaging =>
+                {
+                    messaging.AddModule<BillingModule>().AddModule<OrdersModule>().AddModule<BillingPriceCacheModule>();
+                    messaging.Message<InvoiceIssued>("billing.invoice-issued");
+                    messaging.Message<OrderShipped>("orders.order-shipped");
+                    messaging.Message<PriceChanged>("billing.price-changed");
+                }),
+            setup => setup.ConsumeOnly("orders.*")
+        );
+        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+        var bus = provider.GetRequiredService<IBus>();
+        var probe = provider.GetRequiredService<HostControlProbe>();
+
+        // when
+        await bus.PublishAsync(new PriceChanged("SKU-1"), cancellationToken: AbortToken);
+        await _WaitUntilAsync(() => probe.Calls.Contains("price SKU-1", StringComparer.Ordinal));
+
+        // then
+        factory
+            .Created.Select(x => x.SubscriptionName)
+            .Should()
+            .NotContain(TestConsumers.InvoiceProjection, "a competing consumer outside the filter stays stopped")
+            .And.Contain(TestConsumers.Shipment);
+        probe.Calls.Should().Contain("price SKU-1");
+    }
+
+    [Fact]
+    public void should_fail_startup_when_a_consume_only_entry_matches_only_every_instance_consumers()
+    {
+        // given
+        using var provider = _BuildProvider(services =>
+            services.AddHeadlessMessaging(setup =>
+                setup.AddModule<BillingModule>().AddModule<BillingPriceCacheModule>().ConsumeOnly("billing.*")
+            )
+        );
+        using var onlyCache = _BuildProvider(services =>
+            services.AddHeadlessMessaging(setup =>
+                setup
+                    .AddModule<BillingModule>()
+                    .AddModule<BillingPriceCacheModule>()
+                    .ConsumeOnly(TestConsumers.PriceCache)
+            )
+        );
+
+        // when
+        var matchesCompeting = () => provider.GetDrainedConsumerRegistry();
+        var matchesOnlyEveryInstance = () => onlyCache.GetDrainedConsumerRegistry();
+
+        // then
+        matchesCompeting.Should().NotThrow("'billing.*' also matches a competing consumer");
+        matchesOnlyEveryInstance
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                $"Messaging ConsumeOnly entries match only every-instance consumers: '{TestConsumers.PriceCache}'.*"
+            );
+    }
+
+    [Fact]
     public void should_fail_startup_when_a_consume_only_entry_matches_no_consumer()
     {
         // given

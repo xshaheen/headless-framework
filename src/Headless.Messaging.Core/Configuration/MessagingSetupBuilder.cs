@@ -139,7 +139,8 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     /// <remarks>
     /// Consumers outside the filter stay registered: this host still publishes their messages and describes them, and
     /// another host without the filter consumes them. Without any <c>ConsumeOnly</c> call the host consumes with every
-    /// consumer. An entry that matches no registered consumer fails startup.
+    /// consumer. Every-instance consumers are never filtered: each host runs them because they keep per-process state.
+    /// An entry that matches no registered consumer, or only every-instance consumers, fails startup.
     /// </remarks>
     /// <param name="identities">Exact consumer identities or <c>owner.*</c> patterns.</param>
     /// <returns>This builder, for chaining.</returns>

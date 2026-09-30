@@ -553,10 +553,7 @@ public static class SetupMessaging
         }
 
         // Resolved against every registered identity, so a filter never makes a message unpublishable.
-        var consumeFilter = MessagingConsumeFilter.Create(
-            controls.ConsumeOnly,
-            tuned.Select(static x => x.ConsumerIdentity)
-        );
+        var consumeFilter = MessagingConsumeFilter.Create(controls.ConsumeOnly, tuned);
 
         registry.MarkMessageRegistrationDrainCompleted(consumeFilter);
     }
