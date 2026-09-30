@@ -101,8 +101,9 @@ public sealed class CacheIdempotencyFixture
     )
     {
         var row = await _ReadAsync(key, cancellationToken);
-        row?.LeaseExpiresAt.Should().NotBeNull("the lease to age must exist");
-        await _WriteAsync(key, row! with { LeaseExpiresAt = row.LeaseExpiresAt - by }, cancellationToken);
+        row.Should().NotBeNull("the lease to age must exist");
+        row!.LeaseExpiresAt.Should().NotBeNull("the lease to age must exist");
+        await _WriteAsync(key, row with { LeaseExpiresAt = row.LeaseExpiresAt - by }, cancellationToken);
     }
 
     public Task TouchAsync(IUnitOfWork unit, CancellationToken cancellationToken)

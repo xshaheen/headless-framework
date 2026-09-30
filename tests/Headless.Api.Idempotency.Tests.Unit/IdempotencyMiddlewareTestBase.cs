@@ -271,17 +271,19 @@ public abstract class IdempotencyMiddlewareTestBase : TestBase
     /// <summary>The idempotency keys the store was asked to admit, in call order.</summary>
     internal static List<string> AdmittedKeys(IIdempotentOperations operations)
     {
-        return operations
-            .ReceivedCalls()
-            .Where(c =>
-                string.Equals(
-                    c.GetMethodInfo().Name,
-                    nameof(IIdempotentOperations.AdmitAsync),
-                    StringComparison.Ordinal
+        return
+        [
+            .. operations
+                .ReceivedCalls()
+                .Where(c =>
+                    string.Equals(
+                        c.GetMethodInfo().Name,
+                        nameof(IIdempotentOperations.AdmitAsync),
+                        StringComparison.Ordinal
+                    )
                 )
-            )
-            .Select(c => (string)c.GetArguments()[0]!)
-            .ToList();
+                .Select(c => (string)c.GetArguments()[0]!),
+        ];
     }
 
     internal static int CallCount(IIdempotentOperations operations, string method)

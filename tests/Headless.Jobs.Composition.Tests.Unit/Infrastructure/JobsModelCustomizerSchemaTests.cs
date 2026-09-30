@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Tests;
+namespace Tests.Infrastructure;
 
 /// <summary>
 /// The model-customizer path is the one a consumer-hosted DbContext takes. It used to apply the Jobs configurations

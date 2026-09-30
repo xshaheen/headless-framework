@@ -501,6 +501,8 @@ builder.AddHeadless(configureServices: options =>
 });
 ```
 
+With HTTP tenancy configured, the request span carries `tenant.id`, and so does every span started during the request. Every log record written during the request carries a `TenantId` attribute naming the tenant ambient when it was written. ServiceDefaults adds both through OpenTelemetry processors registered ahead of your `ConfigureLogging`/`ConfigureTracing` callbacks and the OTLP exporter, so every exporter sees them. The names and switches live in `TenantTelemetryOptions`; see [Multi-tenancy observability](multi-tenancy.md#observability).
+
 When API surfaces are registered, the default OpenTelemetry response enricher adds `headless.api.surface.name` to completed request spans. It uses the selected endpoint's configured name, `unknown` for unmatched requests, and `unclassified` for unmarked endpoints. Replacing `EnrichWithHttpResponse` replaces this default too; capture and invoke the existing delegate to preserve it.
 
 With OpenAPI enabled, `AddHeadless()` infers document names from surfaces registered before it:
@@ -621,6 +623,8 @@ builder.Services.AddDataProtection().PersistKeysToBlobStorage(serviceKey: "keys"
 No specific configuration. Depends on the underlying `IBlobStorage` configuration. Cloud/object-store providers should also register or pass the matching `IBlobContainerManager` so the `DataProtection` container is created before the first key write.
 
 The missing-container failure mode is **enforced at configuration time**, not just documented: whenever the effective container manager is `null` and the storage reports `IBlobStorage.RequiresContainerProvisioning == true`, `PersistKeysToBlobStorage` throws `InvalidOperationException` (at call time for the storage-instance overload; at first options resolution for the DI/factory/keyed overloads) unless `provisioning: BlobContainerProvisioning.PreProvisioned` acknowledges that the `DataProtection` container was provisioned out-of-band (portal, CLI, IaC). When a manager is present it is always used to ensure the container — `PreProvisioned` never disables it.
+
+The repository reads and writes the key ring through `IScopedBlobStorage.Unscoped` when the store is scoped, so a store wrapped by the blob tenancy seam (`tenancy.Blobs(b => b.ScopeByTenant())`) keeps one host-level key ring at the physical `DataProtection` container root instead of placing it in the prefix of whichever tenant first touched data protection. See [Tenant-Scoped Blobs and Caches](multi-tenancy.md#tenant-scoped-blobs-and-caches).
 
 Provisioning matrix: **managed** — a manager is registered/keyed/passed, the container is ensured before writes, no acknowledgment needed; **explicit pre-provisioned** — no manager on a provisioning-requiring backend (AWS, Azure, FileSystem, SSH — and Cloudflare R2, where this is the *only* option because R2 ships no `IBlobContainerManager`), provision the container out-of-band and pass `provisioning: BlobContainerProvisioning.PreProvisioned`; **exempt** — Redis reports `RequiresContainerProvisioning == false` (the backing hash materializes on first write), so the storage-only overload works with no acknowledgment.
 

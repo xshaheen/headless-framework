@@ -42,27 +42,40 @@ public sealed class UnitOfWorkIdempotencySettlementTests : TestBase
         });
     }
 
-    public static TheoryData<IdempotencyRecordState?, IdempotentLeaseStatus> NotOwned =>
+    public static TheoryData<NotOwnedRecord, IdempotentLeaseStatus> NotOwned =>
         new()
         {
-            { Pending(generation: Generation, isLeaseLive: false), IdempotentLeaseStatus.Expired },
-            { Pending(generation: 8, isLeaseLive: true), IdempotentLeaseStatus.Stale },
-            { Pending(generation: null), IdempotentLeaseStatus.Released },
-            { Completed(_Stored), IdempotentLeaseStatus.Completed },
-            { null, IdempotentLeaseStatus.Stale },
+            { NotOwnedRecord.ExpiredLease, IdempotentLeaseStatus.Expired },
+            { NotOwnedRecord.NewerGeneration, IdempotentLeaseStatus.Stale },
+            { NotOwnedRecord.Released, IdempotentLeaseStatus.Released },
+            { NotOwnedRecord.Completed, IdempotentLeaseStatus.Completed },
+            { NotOwnedRecord.Missing, IdempotentLeaseStatus.Stale },
         };
+
+    private static IdempotencyRecordState? _Record(NotOwnedRecord kind)
+    {
+        return kind switch
+        {
+            NotOwnedRecord.ExpiredLease => Pending(generation: Generation, isLeaseLive: false),
+            NotOwnedRecord.NewerGeneration => Pending(generation: 8, isLeaseLive: true),
+            NotOwnedRecord.Released => Pending(generation: null),
+            NotOwnedRecord.Completed => Completed(_Stored),
+            NotOwnedRecord.Missing => null,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+    }
 
     [Theory]
     [MemberData(nameof(NotOwned))]
     public async Task should_refuse_completion_and_store_nothing_when_the_attempt_no_longer_owns_the_key(
-        IdempotencyRecordState? record,
+        NotOwnedRecord kind,
         IdempotentLeaseStatus reason
     )
     {
         // given
         var context = new IdempotencyTestContext();
         var (unit, _) = ActiveUnit();
-        context.Store.LockAsync(unit, RecordKey, AbortToken).Returns(record);
+        context.Store.LockAsync(unit, RecordKey, AbortToken).Returns(_Record(kind));
 
         // when
         var act = async () =>
@@ -144,28 +157,28 @@ public sealed class UnitOfWorkIdempotencySettlementTests : TestBase
         });
     }
 
-    public static TheoryData<IdempotencyRecordState?, IdempotentLeaseStatus> ReleaseRefusals =>
+    public static TheoryData<NotOwnedRecord, IdempotentLeaseStatus> ReleaseRefusals =>
         new()
         {
-            { Pending(generation: Generation, isLeaseLive: false), IdempotentLeaseStatus.Expired },
-            { Pending(generation: 8, isLeaseLive: true), IdempotentLeaseStatus.Stale },
-            { Completed(_Stored), IdempotentLeaseStatus.Completed },
-            { null, IdempotentLeaseStatus.Stale },
+            { NotOwnedRecord.ExpiredLease, IdempotentLeaseStatus.Expired },
+            { NotOwnedRecord.NewerGeneration, IdempotentLeaseStatus.Stale },
+            { NotOwnedRecord.Completed, IdempotentLeaseStatus.Completed },
+            { NotOwnedRecord.Missing, IdempotentLeaseStatus.Stale },
             // Already released: success again, and nothing to write.
-            { Pending(generation: null), IdempotentLeaseStatus.Released },
+            { NotOwnedRecord.Released, IdempotentLeaseStatus.Released },
         };
 
     [Theory]
     [MemberData(nameof(ReleaseRefusals))]
     public async Task should_leave_the_record_when_the_attempt_no_longer_owns_it(
-        IdempotencyRecordState? record,
+        NotOwnedRecord kind,
         IdempotentLeaseStatus expected
     )
     {
         // given
         var context = new IdempotencyTestContext();
         var (unit, _) = ActiveUnit();
-        context.Store.LockAsync(unit, RecordKey, AbortToken).Returns(record);
+        context.Store.LockAsync(unit, RecordKey, AbortToken).Returns(_Record(kind));
 
         // when
         var status = await context.Feature.ReleaseAsync(unit, Admitted(), AbortToken);
@@ -196,14 +209,14 @@ public sealed class UnitOfWorkIdempotencySettlementTests : TestBase
     [Theory]
     [MemberData(nameof(NotOwned))]
     public async Task should_refuse_the_fence_when_the_attempt_no_longer_owns_the_key(
-        IdempotencyRecordState? record,
+        NotOwnedRecord kind,
         IdempotentLeaseStatus reason
     )
     {
         // given
         var context = new IdempotencyTestContext();
         var (unit, _) = ActiveUnit();
-        context.Store.LockAsync(unit, RecordKey, AbortToken).Returns(record);
+        context.Store.LockAsync(unit, RecordKey, AbortToken).Returns(_Record(kind));
 
         // when
         var act = async () => await context.Feature.FenceAsync(unit, Admitted(), AbortToken);

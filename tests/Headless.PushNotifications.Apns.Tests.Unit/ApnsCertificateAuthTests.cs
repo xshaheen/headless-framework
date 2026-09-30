@@ -15,6 +15,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 
+#pragma warning disable xUnit1045 // The rows are notification object graphs; these theories do not need per-row enumeration in Test Explorer.
 namespace Tests;
 
 public sealed class ApnsCertificateAuthTests : TestBase
@@ -116,8 +117,7 @@ public sealed class ApnsCertificateAuthTests : TestBase
     }
 
     public static TheoryData<ApnsNotification> TokenOnlyNotifications =>
-        new()
-        {
+        [
             new ApnsLocationNotification(),
             new ApnsFileProviderNotification { ContainerIdentifier = "c", Domain = "d" },
             new ApnsLiveActivityNotification { Event = ApnsLiveActivityEvent.End },
@@ -129,7 +129,7 @@ public sealed class ApnsCertificateAuthTests : TestBase
             _Raw(ApnsNotificationType.LiveActivity),
             _Raw(ApnsNotificationType.Widgets),
             _Raw(ApnsNotificationType.Controls),
-        };
+        ];
 
     private static ApnsRawNotification _Raw(ApnsNotificationType type)
     {
@@ -340,7 +340,7 @@ public sealed class ApnsCertificateAuthTests : TestBase
         };
         var monitor = new TestOptionsMonitor(options);
         using var holder = _CreateHolder(monitor, clock);
-        var check = new ApnsCertificateExpiryCheck(
+        using var check = new ApnsCertificateExpiryCheck(
             monitor,
             name: null,
             () => holder,
@@ -368,7 +368,7 @@ public sealed class ApnsCertificateAuthTests : TestBase
             TeamId = FakeApnsServer.TeamId,
             PrivateKey = "unused",
         };
-        var check = new ApnsCertificateExpiryCheck(
+        using var check = new ApnsCertificateExpiryCheck(
             new TestOptionsMonitor(options),
             name: null,
             () => throw new InvalidOperationException("The holder must not be resolved in token mode."),
@@ -428,7 +428,7 @@ public sealed class ApnsCertificateAuthTests : TestBase
     }
 
     public static TheoryData<string> InvalidRenewals =>
-        new() { "expired", "wrong_password", "no_private_key", "not_base64", "no_certificate" };
+        ["expired", "wrong_password", "no_private_key", "not_base64", "no_certificate"];
 
     [Theory]
     [MemberData(nameof(InvalidRenewals))]
@@ -632,10 +632,10 @@ public sealed class ApnsCertificateAuthTests : TestBase
         }
 
         // then
-        logs.Entries.Where(e => e.EventName == "ApnsCertificateExpired")
-            .Should()
-            .NotBeEmpty()
-            .And.OnlyContain(e => e.Level == LogLevel.Error);
+        var expired = logs
+            .Entries.Where(e => string.Equals(e.EventName, "ApnsCertificateExpired", StringComparison.Ordinal))
+            .ToList();
+        expired.Should().NotBeEmpty().And.OnlyContain(e => e.Level == LogLevel.Error);
         logs.Entries.Should().NotContain(e => e.Text.Contains(_Password, StringComparison.Ordinal));
         var certificatePrefix = pkcs12[..40];
         logs.Entries.Should().NotContain(e => e.Text.Contains(certificatePrefix, StringComparison.Ordinal));
@@ -670,21 +670,27 @@ public sealed class ApnsCertificateAuthTests : TestBase
             loggerFactory.CreateLogger<ApnsCertificateExpiryCheck>()
         );
         await check.StartAsync(AbortToken);
-        logs.Entries.Count(e => e.EventName == "ApnsCertificateExpiringSoon").Should().Be(1);
+        logs.Entries.Count(e => string.Equals(e.EventName, "ApnsCertificateExpiringSoon", StringComparison.Ordinal))
+            .Should()
+            .Be(1);
 
         // when: the certificate is renewed, so the next check reads the renewed one
         monitor.Change(_CertificateOptions(TestCertificates.ToPkcs12Base64(renewed, _Password)));
         clock.Advance(ApnsCertificateExpiryCheck.RecheckPeriod);
 
         // then
-        logs.Entries.Count(e => e.EventName == "ApnsCertificateExpiringSoon").Should().Be(1);
+        logs.Entries.Count(e => string.Equals(e.EventName, "ApnsCertificateExpiringSoon", StringComparison.Ordinal))
+            .Should()
+            .Be(1);
 
         // when: stopped, no later check runs even once the renewed certificate would warn
         await check.StopAsync(AbortToken);
         clock.Advance(TimeSpan.FromDays(400));
 
         // then
-        logs.Entries.Count(e => e.EventName == "ApnsCertificateExpiringSoon").Should().Be(1);
+        logs.Entries.Count(e => string.Equals(e.EventName, "ApnsCertificateExpiringSoon", StringComparison.Ordinal))
+            .Should()
+            .Be(1);
         logs.Entries.Should().NotContain(e => e.EventName == "ApnsCertificateExpired");
     }
 
@@ -783,7 +789,8 @@ public sealed class ApnsCertificateAuthTests : TestBase
         ILoggerProvider? logs = null
     )
     {
-        ILoggerFactory loggerFactory = logs is null ? NullLoggerFactory.Instance : new LoggerFactory([logs]);
+        // The factory only builds the typed logger; disposing it right away is safe because it never owned the provider.
+        using ILoggerFactory loggerFactory = logs is null ? NullLoggerFactory.Instance : new LoggerFactory([logs]);
 
         return new ApnsCertificateHolder(
             monitor,

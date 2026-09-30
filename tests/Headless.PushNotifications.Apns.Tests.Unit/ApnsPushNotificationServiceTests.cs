@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 
+#pragma warning disable xUnit1044 // The rows are request object graphs; this theory does not need per-row enumeration in Test Explorer.
 namespace Tests;
 
 public sealed class ApnsPushNotificationServiceTests : TestBase
@@ -417,7 +418,7 @@ public sealed class ApnsPushNotificationServiceTests : TestBase
     public async Task should_retry_and_succeed_when_the_first_connection_attempt_fails_before_sending()
     {
         // given
-        var connectFailures = new ConnectFailingHandler(failures: 1);
+        using var connectFailures = new ConnectFailingHandler(failures: 1);
         await using var provider = _server.CreateProvider(postConfigureServices: s =>
             s.AddHttpClient(SetupApnsPushNotifications.HttpClientName).AddHttpMessageHandler(() => connectFailures)
         );
@@ -656,7 +657,7 @@ public sealed class ApnsPushNotificationServiceTests : TestBase
         ApnsOptions? options = null;
         ApnsProviderToken? rejected = null;
         string? newer = null;
-        var otherCaller = new AfterFirstResponseHandler(async cancellationToken =>
+        using var otherCaller = new AfterFirstResponseHandler(async cancellationToken =>
             newer = (await tokenSource!.InvalidateAsync(options!, rejected!.Generation, cancellationToken)).Value
         );
         using var logs = new CapturingLoggerProvider();
@@ -737,7 +738,7 @@ public sealed class ApnsPushNotificationServiceTests : TestBase
         result.Responses[1].IsUnregistered().Should().BeTrue();
         result.Responses[2].IsFailed().Should().BeTrue();
         result.Responses[3].IsFailed().Should().BeTrue();
-        _server.Requests.Count(r => r.DeviceToken == "broken").Should().Be(1);
+        _server.Requests.Count(r => string.Equals(r.DeviceToken, "broken", StringComparison.Ordinal)).Should().Be(1);
     }
 
     [Fact]
@@ -766,7 +767,9 @@ public sealed class ApnsPushNotificationServiceTests : TestBase
     {
         // given
         _server.Responder = r =>
-            r.DeviceToken == "fresh" ? FakeApnsReply.Ok : new FakeApnsReply(429, "TooManyRequests");
+            string.Equals(r.DeviceToken, "fresh", StringComparison.Ordinal)
+                ? FakeApnsReply.Ok
+                : new FakeApnsReply(429, "TooManyRequests");
         await using var provider = _server.CreateProvider();
         var service = provider.GetRequiredService<IPushNotificationService>();
         var tokens = Enumerable.Range(0, 150).Select(i => $"device-{i:D3}").ToArray();
@@ -778,7 +781,7 @@ public sealed class ApnsPushNotificationServiceTests : TestBase
         // then
         throttled.FailureCount.Should().Be(150);
         throttled.Responses.Should().AllSatisfy(r => r.FailureError.Should().Contain("TooManyRequests"));
-        _server.Requests.Count(r => r.DeviceToken != "fresh").Should().Be(150);
+        _server.Requests.Count(r => !string.Equals(r.DeviceToken, "fresh", StringComparison.Ordinal)).Should().Be(150);
         later.IsSucceeded().Should().BeTrue();
     }
 

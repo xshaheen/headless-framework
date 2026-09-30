@@ -117,27 +117,11 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
         JobKey key,
         long expectedGeneration,
         CancellationToken cancellationToken = default
-    ) => CancelKeyedAsync(scope, key, expectedGeneration, TransactionEnlistment.Optional, cancellationToken);
-
-    public Task<JobScheduleResult> CancelKeyedAsync(
-        JobKeyScope scope,
-        JobKey key,
-        long expectedGeneration,
-        TransactionEnlistment enlistment,
-        CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNull(scope);
-        var descriptor =
-            _descriptorByName(scope.Function) ?? throw new Exceptions.JobFunctionNotFoundException(scope.Function);
-        var policy = _policies.Resolve(descriptor, call: null);
-        return _timeJobManager.CancelKeyedAsync(
-            scope,
-            key,
-            expectedGeneration,
-            JobSchedulingPolicies.ComposeEnlistment(enlistment, policy.Enlistment),
-            cancellationToken
-        );
+        _ = _descriptorByName(scope.Function) ?? throw new Exceptions.JobFunctionNotFoundException(scope.Function);
+        return _timeJobManager.CancelKeyedAsync(scope, key, expectedGeneration, cancellationToken);
     }
 
     private JobFunctionDescriptor _GetKeyedDescriptor<TArgs>()
@@ -188,7 +172,6 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
             OnNodeDeath = options?.OnNodeDeath ?? NodeDeathPolicy.Retry,
             TenantId = options?.TenantId,
             IsSystemJob = options?.IsSystemJob ?? false,
-            Enlistment = options?.Enlistment ?? TransactionEnlistment.Optional,
         };
         return _timeJobManager.ScheduleKeyedAsync(key, entity, expectedGeneration, cancellationToken);
     }

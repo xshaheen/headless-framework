@@ -31,8 +31,8 @@ public sealed partial class SqlServerSchemaRunnerFixture
 
     public ISchemaDialect Dialect => SqlServerSchemaDialect.Instance;
 
-    // Sequences 1, Idempotency 1, Coordination 2.
-    public int ExpectedStepCount => 4;
+    // Sequences 1, Idempotency 1, Coordination 1.
+    public int ExpectedStepCount => 3;
 
     // Sequences, IdempotencyRecords, three coordination tables, and the history table.
     public int ExpectedTableCount => 6;

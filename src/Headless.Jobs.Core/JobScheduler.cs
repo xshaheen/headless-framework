@@ -321,7 +321,6 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             OnNodeDeath = resolved.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
             TenantId = resolved.TenantId,
             IsSystemJob = resolved.IsSystemJob,
-            Enlistment = resolved.Enlistment,
         };
 
         if (resolved.IdempotencyKey is not { } idempotencyKey)
@@ -361,7 +360,6 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             Retries = policy.Retries ?? 0,
             RetryIntervals = policy.RetryIntervals,
             OnNodeDeath = policy.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
-            Enlistment = policy.Enlistment,
         };
 
         var persisted = await _cronJobManager.AddAsync(entity, cancellationToken).ConfigureAwait(false);
@@ -396,7 +394,6 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             Retries = options.Retries ?? 0,
             RetryIntervals = options.RetryIntervals,
             OnNodeDeath = options.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
-            Enlistment = options.Enlistment,
             TenantId = options.TenantId,
             IsSystemJob = options.IsSystemJob,
             RunCondition = runCondition,

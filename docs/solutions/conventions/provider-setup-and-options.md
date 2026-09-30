@@ -161,8 +161,10 @@ lifecycle. The provider's part is a `{Provider}{Feature}SchemaContribution.Creat
   a catalog check, because the runner re-runs a step once after absorbing a race and an exported script may run
   twice. A step takes no lock, opens no transaction, has no `TRY/CATCH` for already-exists errors, and never creates
   the schema: the runner and dialect do all of that.
-- **Never edit a shipped step; add one.** The history records a checksum of each step's SQL, and a changed step fails
+- **Never edit a released step; add one.** The history records a checksum of each step's SQL, and a changed step fails
   startup. A repair or upgrade of an existing object is its own step, so the creation step's checksum stays stable.
+  Before a release ships a step, change it in place instead: no database runs it, and the repository adds no upgrade
+  path for a schema nobody has.
 - **Carry every configurable object name in the feature id** with `SchemaContribution.FeatureId(feature,
   (configured, default), …)`. Two hosts naming a feature's table differently in one schema otherwise read each
   other's history row as a checksum change, and the second host never creates its table.

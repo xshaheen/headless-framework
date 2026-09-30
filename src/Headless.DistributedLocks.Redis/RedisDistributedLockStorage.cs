@@ -379,7 +379,7 @@ internal sealed class RedisDistributedLockStorage(
         return count;
     }
 
-    private async Task<(bool Acquired, long? FencingToken)> _TryAcquireLockAsync(
+    private async Task<(bool Acquired, LockFencingToken? FencingToken)> _TryAcquireLockAsync(
         IDatabase db,
         RedisKey key,
         RedisKey fenceKey,
@@ -415,7 +415,7 @@ internal sealed class RedisDistributedLockStorage(
 #pragma warning restore CS0618
         }
 
-        return (true, (long)values[1]);
+        return (true, new LockFencingToken((long)values[1]));
     }
 
     private static ReplaceIfEqualParams _GetReplaceIfEqualParameters(
