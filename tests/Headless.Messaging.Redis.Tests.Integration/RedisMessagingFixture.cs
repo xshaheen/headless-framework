@@ -21,7 +21,8 @@ public sealed class RedisMessagingFixture : HeadlessRedisFixture, ICollectionFix
         string group,
         CancellationToken cancellationToken,
         bool ownsStream = true,
-        Func<RedisMessagingOptions.ConsumeErrorContext, Task>? onConsumeError = null
+        Func<RedisMessagingOptions.ConsumeErrorContext, Task>? onConsumeError = null,
+        ConsumerClientRequest? request = null
     )
     {
         var services = new ServiceCollection();
@@ -42,7 +43,10 @@ public sealed class RedisMessagingFixture : HeadlessRedisFixture, ICollectionFix
                     ? (ITransport)provider.GetRequiredService<IBusTransport>()
                     : provider.GetRequiredService<IQueueTransport>();
             var factory = provider.GetRequiredService<IConsumerClientFactory>();
-            var consumer = await factory.CreateAsync(new ConsumerClientRequest(group, 1, lane), cancellationToken);
+            var consumer = await factory.CreateAsync(
+                request ?? new ConsumerClientRequest(group, 1, lane),
+                cancellationToken
+            );
             await consumer.SubscribeAsync([destination], cancellationToken);
             var physicalStream = RedisPhysicalAddress.ForLane(lane, destination);
 

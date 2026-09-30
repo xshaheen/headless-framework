@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Net.Sockets;
+using System.Threading.Channels;
 using Headless.Checks;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Internal;
@@ -23,7 +24,8 @@ internal sealed class NatsConsumerClient(
     MessageLane lane = MessageLane.Bus,
     TimeProvider? timeProvider = null,
     Func<NatsConnection, Task>? connect = null,
-    Func<NatsConnection, ValueTask>? disposeConnection = null
+    Func<NatsConnection, ValueTask>? disposeConnection = null,
+    ConsumerSubscriptionKind kind = ConsumerSubscriptionKind.Competing
 ) : IConsumerClient
 {
     private readonly Lock _receiveLock = new();
@@ -50,6 +52,8 @@ internal sealed class NatsConsumerClient(
     private NatsJSContext? _jsContext;
     private ReceiveTokenState _receiveTokenState = new();
     private IEnumerable<string>? _subscribedMessageNames;
+    private Func<CancellationToken, Task>? _onReestablished;
+    private int _connectionLost;
     private int _disposed;
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
@@ -60,6 +64,11 @@ internal sealed class NatsConsumerClient(
     {
         OnMessageCallback = onMessage;
         OnLogCallback = onLog;
+    }
+
+    public void AttachReestablishedCallback(Func<CancellationToken, Task>? onReestablished)
+    {
+        _onReestablished = onReestablished;
     }
 
     public BrokerAddress BrokerAddress => new("nats", BrokerAddressDisplay.FormatMany(_natsOptions.Servers));
@@ -77,6 +86,13 @@ internal sealed class NatsConsumerClient(
 
         var connection = new NatsConnection(opts);
         _connection = connection;
+
+        if (kind is ConsumerSubscriptionKind.EveryInstance)
+        {
+            connection.ConnectionDisconnected += _OnConnectionDisconnectedAsync;
+            connection.ConnectionOpened += _OnConnectionOpenedAsync;
+        }
+
         var connectTask = connect?.Invoke(connection) ?? connection.ConnectAsync().AsTask();
         _connectTask = connectTask;
 
@@ -339,6 +355,12 @@ internal sealed class NatsConsumerClient(
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
+        if (kind is ConsumerSubscriptionKind.EveryInstance)
+        {
+            await _ListenEveryInstanceAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         using var listeningCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
         var streamGroups = _subscribedMessageNames!.GroupBy(
@@ -433,6 +455,210 @@ internal sealed class NatsConsumerClient(
         _ = await Task.WhenAny(tasks).ConfigureAwait(false);
         await listeningCts.CancelAsync().ConfigureAwait(false);
         await Task.WhenAll(tasks).ConfigureAwait(false);
+    }
+
+    // An every-instance client reads plain NATS subscriptions on the Bus subjects instead of a JetStream consumer:
+    // the server keeps nothing for a core subscription once its connection closes, so a crashed process leaves no
+    // durable consumer behind, and a publish reaches every subscriber of its subject. Publishing still goes through
+    // the stream, which FetchMessageNamesAsync keeps provisioning.
+    private async Task _ListenEveryInstanceAsync(CancellationToken cancellationToken)
+    {
+        var connection =
+            _connection
+            ?? throw new InvalidOperationException("ConnectAsync must complete before the NATS consumer listens.");
+
+        var subjects = BuildEveryInstanceSubjects(_subscribedMessageNames!, _ResolveShardedMessageNames);
+        var subscriptions = new List<INatsSub<ReadOnlyMemory<byte>>>(subjects.Count);
+
+        using var listeningCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        try
+        {
+            try
+            {
+                foreach (var subject in subjects)
+                {
+                    subscriptions.Add(
+                        await connection
+                            .SubscribeCoreAsync(
+                                subject,
+                                serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
+                                cancellationToken: cancellationToken
+                            )
+                            .ConfigureAwait(false)
+                    );
+                }
+
+                // The server handles a connection's protocol in order, so its PONG proves it registered every SUB
+                // above: a message published after readiness cannot miss this process.
+                await connection.PingAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                _ready.TrySetCanceled(cancellationToken);
+                throw;
+            }
+            catch (Exception e)
+            {
+                var failure = e as BrokerConnectionException ?? new BrokerConnectionException(e);
+                _ready.TrySetException(failure);
+                throw failure;
+            }
+
+            _ready.TrySetResult();
+
+            if (subscriptions.Count == 0)
+            {
+                return;
+            }
+
+            var loops = subscriptions.ConvertAll(subscription =>
+                _ConsumeCoreSubscriptionAsync(subscription, listeningCts.Token)
+            );
+
+            // One subject loop ending means its subscription is gone; stop the siblings so a failure surfaces and
+            // the core rebuilds the whole client.
+            _ = await Task.WhenAny(loops).ConfigureAwait(false);
+            await listeningCts.CancelAsync().ConfigureAwait(false);
+            await Task.WhenAll(loops).ConfigureAwait(false);
+        }
+        finally
+        {
+            foreach (var subscription in subscriptions)
+            {
+                await _UnsubscribeQuietlyAsync(subscription).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async Task _ConsumeCoreSubscriptionAsync(
+        INatsSub<ReadOnlyMemory<byte>> subscription,
+        CancellationToken cancellationToken
+    )
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
+
+            NatsMsg<ReadOnlyMemory<byte>> msg;
+            using (var receiveLease = _AcquireReceiveLease(cancellationToken))
+            {
+                try
+                {
+                    msg = await subscription.Msgs.ReadAsync(receiveLease.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (OperationCanceledException) when (_pauseGate.IsPaused)
+                {
+                    continue;
+                }
+                catch (ChannelClosedException ex)
+                {
+                    if (Volatile.Read(ref _disposed) != 0)
+                    {
+                        return;
+                    }
+
+                    // The SDK completes a subscription only when it or its connection ends; either way this client
+                    // no longer receives, so fail the listener for the core to rebuild it.
+                    throw new BrokerConnectionException(
+                        new InvalidOperationException(
+                            $"The NATS subscription to '{subscription.Subject}' ended while the consumer was listening.",
+                            ex
+                        )
+                    );
+                }
+            }
+
+            await _DispatchEnvelopeAsync(msg.Headers, msg.Data, jsMsg: null, settlement: msg, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async Task _UnsubscribeQuietlyAsync(INatsSub<ReadOnlyMemory<byte>> subscription)
+    {
+        try
+        {
+            await subscription.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Closing the connection drops the subscription on the server anyway, so a failed UNSUB leaks nothing.
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ExceptionReceived,
+                    Reason = $"Failed to unsubscribe NATS subject '{subscription.Subject}': {ex}",
+                }
+            );
+        }
+    }
+
+    /// <summary>
+    /// The Bus subjects an every-instance client subscribes to: the same subjects a competing client's JetStream
+    /// consumers filter on, so both kinds receive the same messages.
+    /// </summary>
+    internal static IReadOnlyList<string> BuildEveryInstanceSubjects(
+        IEnumerable<string> messageNames,
+        Func<IEnumerable<string>, ISet<string>> resolveShardedMessageNames
+    )
+    {
+        Argument.IsNotNull(messageNames);
+        Argument.IsNotNull(resolveShardedMessageNames);
+
+        var names = messageNames.AsIReadOnlyList();
+
+        return
+        [
+            .. BuildConsumerSubjects(names, resolveShardedMessageNames(names))
+                .Select(subject => NatsPhysicalAddress.Subject(MessageLane.Bus, subject)),
+        ];
+    }
+
+    private ValueTask _OnConnectionDisconnectedAsync(object? sender, NatsEventArgs args)
+    {
+        Volatile.Write(ref _connectionLost, 1);
+        return ValueTask.CompletedTask;
+    }
+
+    // The SDK reconnects on its own and re-sends every SUB before it raises ConnectionOpened, so the subscriptions
+    // are live again here. Messages published while the connection was down never reached them, and the consumer
+    // must learn that.
+    private async ValueTask _OnConnectionOpenedAsync(object? sender, NatsEventArgs args)
+    {
+        if (
+            Interlocked.Exchange(ref _connectionLost, 0) == 0
+            || !_ready.Task.IsCompletedSuccessfully
+            || Volatile.Read(ref _disposed) != 0
+            || _onReestablished is not { } onReestablished
+        )
+        {
+            return;
+        }
+
+        try
+        {
+            if (_connection is { } connection)
+            {
+                await connection.PingAsync().ConfigureAwait(false);
+            }
+
+            await onReestablished(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // A throwing event handler would reach the SDK's event loop; report it instead.
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ExceptionReceived,
+                    Reason = $"Reporting a re-established NATS subscription failed: {ex}",
+                }
+            );
+        }
     }
 
     private HashSet<string> _ResolveShardedMessageNames(IEnumerable<string> messageNames)
@@ -650,8 +876,18 @@ internal sealed class NatsConsumerClient(
                 or NatsException { InnerException: SocketException or IOException };
     }
 
-    private async ValueTask _DispatchMessageAsync(
-        INatsJSMsg<ReadOnlyMemory<byte>> msg,
+    private ValueTask _DispatchMessageAsync(INatsJSMsg<ReadOnlyMemory<byte>> msg, CancellationToken cancellationToken)
+    {
+        return _DispatchEnvelopeAsync(msg.Headers, msg.Data, msg, msg, cancellationToken);
+    }
+
+    // A JetStream delivery is its own settlement token. A core delivery passes the core message instead, which
+    // CommitAsync and RejectAsync ignore: an every-instance subscription neither acknowledges nor redelivers.
+    private async ValueTask _DispatchEnvelopeAsync(
+        NatsHeaders? natsHeaders,
+        ReadOnlyMemory<byte> data,
+        INatsJSMsg<ReadOnlyMemory<byte>>? jsMsg,
+        object settlement,
         CancellationToken cancellationToken
     )
     {
@@ -664,7 +900,7 @@ internal sealed class NatsConsumerClient(
                 {
                     try
                     {
-                        await _ProcessMessageAsync(msg).ConfigureAwait(false);
+                        await _ProcessEnvelopeAsync(natsHeaders, data, jsMsg, settlement).ConfigureAwait(false);
                     }
                     finally
                     {
@@ -679,7 +915,7 @@ internal sealed class NatsConsumerClient(
         }
         else
         {
-            await _ProcessMessageAsync(msg).ConfigureAwait(false);
+            await _ProcessEnvelopeAsync(natsHeaders, data, jsMsg, settlement).ConfigureAwait(false);
         }
     }
 
@@ -769,14 +1005,19 @@ internal sealed class NatsConsumerClient(
         return lower + TimeSpan.FromMilliseconds(offsetMs);
     }
 
-    private async Task _ProcessMessageAsync(INatsJSMsg<ReadOnlyMemory<byte>> msg)
+    private async Task _ProcessEnvelopeAsync(
+        NatsHeaders? natsHeaders,
+        ReadOnlyMemory<byte> data,
+        INatsJSMsg<ReadOnlyMemory<byte>>? jsMsg,
+        object settlement
+    )
     {
         Dictionary<string, string?> headers;
         try
         {
             headers = new Dictionary<string, string?>(StringComparer.Ordinal);
 
-            if (msg.Headers is { Count: > 0 } natsHeaders)
+            if (natsHeaders is { Count: > 0 })
             {
                 foreach (var (key, values) in natsHeaders)
                 {
@@ -786,7 +1027,7 @@ internal sealed class NatsConsumerClient(
         }
         catch (Exception ex)
         {
-            await _TerminallyAcknowledgeMalformedEnvelopeAsync(msg, ex).ConfigureAwait(false);
+            await _TerminallyAcknowledgeMalformedEnvelopeAsync(jsMsg, ex).ConfigureAwait(false);
             return;
         }
 
@@ -794,8 +1035,8 @@ internal sealed class NatsConsumerClient(
         {
             try
             {
-                var metadata = msg.Metadata;
-                var customHeaders = _natsOptions.CustomHeadersBuilder(metadata, msg.Headers, serviceProvider);
+                var metadata = jsMsg?.Metadata;
+                var customHeaders = _natsOptions.CustomHeadersBuilder(metadata, natsHeaders, serviceProvider);
                 foreach (var customHeader in customHeaders)
                 {
                     headers[customHeader.Key] = customHeader.Value;
@@ -807,12 +1048,13 @@ internal sealed class NatsConsumerClient(
                     new LogMessageEventArgs
                     {
                         LogType = MqLogType.ConsumeError,
-                        Reason =
-                            $"NATS custom headers builder failed; message negatively acknowledged: {ex.GetType().Name}",
+                        Reason = jsMsg is null
+                            ? $"NATS custom headers builder failed; message dropped: {ex.GetType().Name}"
+                            : $"NATS custom headers builder failed; message negatively acknowledged: {ex.GetType().Name}",
                     }
                 );
 
-                await RejectAsync(msg).ConfigureAwait(false);
+                await RejectAsync(jsMsg).ConfigureAwait(false);
                 return;
             }
         }
@@ -821,11 +1063,11 @@ internal sealed class NatsConsumerClient(
         try
         {
             _ValidateRequiredHeaders(headers);
-            message = new TransportMessage(headers, msg.Data);
+            message = new TransportMessage(headers, data);
         }
         catch (Exception ex)
         {
-            await _TerminallyAcknowledgeMalformedEnvelopeAsync(msg, ex).ConfigureAwait(false);
+            await _TerminallyAcknowledgeMalformedEnvelopeAsync(jsMsg, ex).ConfigureAwait(false);
             return;
         }
 
@@ -837,14 +1079,28 @@ internal sealed class NatsConsumerClient(
                 "OnMessageCallback must be set before the NATS consumer client starts listening."
             );
 
-        await onMessage(message, msg).ConfigureAwait(false);
+        await onMessage(message, settlement).ConfigureAwait(false);
     }
 
     private async Task _TerminallyAcknowledgeMalformedEnvelopeAsync(
-        INatsJSMsg<ReadOnlyMemory<byte>> msg,
+        INatsJSMsg<ReadOnlyMemory<byte>>? jsMsg,
         Exception exception
     )
     {
+        if (jsMsg is null)
+        {
+            // A core delivery is never redelivered, so dropping it is already terminal.
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ConsumeError,
+                    Reason = $"Malformed NATS transport envelope dropped: {exception.GetType().Name}",
+                }
+            );
+
+            return;
+        }
+
         OnLogCallback?.Invoke(
             new LogMessageEventArgs
             {
@@ -853,7 +1109,7 @@ internal sealed class NatsConsumerClient(
             }
         );
 
-        await msg.AckAsync(new AckOpts { DoubleAck = true }, CancellationToken.None).ConfigureAwait(false);
+        await jsMsg.AckAsync(new AckOpts { DoubleAck = true }, CancellationToken.None).ConfigureAwait(false);
     }
 
     private static void _ValidateRequiredHeaders(Dictionary<string, string?> headers)

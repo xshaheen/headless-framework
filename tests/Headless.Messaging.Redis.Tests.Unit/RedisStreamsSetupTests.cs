@@ -36,6 +36,21 @@ public sealed class RedisStreamsSetupTests : TestBase
     }
 
     [Fact]
+    public async Task should_declare_every_instance_support_on_the_transport_capability()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(opt => opt.UseRedis("localhost:6379"));
+        await using var provider = services.BuildServiceProvider();
+
+        provider
+            .GetServices<MessagingProviderCapabilities>()
+            .Single(x => x.Role == MessagingProviderRole.Transport)
+            .SupportsEveryInstance.Should()
+            .BeTrue();
+    }
+
+    [Fact]
     public async Task should_register_redis_services_with_configure_action()
     {
         // given

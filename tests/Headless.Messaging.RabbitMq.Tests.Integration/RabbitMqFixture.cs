@@ -3,6 +3,7 @@
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.RabbitMq;
+using Headless.Messaging.Transport;
 using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -112,6 +113,25 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
         );
     }
 
+    /// <summary>Opens a session whose consumer the production factory builds from <paramref name="endpoint"/>.</summary>
+    public ValueTask<TransportConsumerConformanceSession> CreateEndpointSessionAsync(
+        TransportConformanceEndpoint endpoint,
+        string exchangeName,
+        CancellationToken cancellationToken
+    )
+    {
+        return _CreateConformanceSessionAsync(
+            endpoint.Lane,
+            endpoint.LogicalName,
+            endpoint.SubscriptionName,
+            exchangeName,
+            createReplacement: false,
+            failEnvelopeBuild: false,
+            cancellationToken,
+            endpoint.ToRequest()
+        );
+    }
+
     public ValueTask<TransportConsumerConformanceSession> CreateMalformedSessionAsync(
         string exchangeName,
         string destination,
@@ -137,7 +157,8 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
         string? exchangeName,
         bool createReplacement,
         bool failEnvelopeBuild,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        ConsumerClientRequest? request = null
     )
     {
         destination ??= $"conf-{Guid.NewGuid():N}";
@@ -167,11 +188,19 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
             rabbitOptions
         );
         var producer = new RabbitMqTransport(NullLogger<RabbitMqTransport>.Instance, pool, lane);
-        var consumer = new RabbitMqConsumerClient(group, 1, pool, rabbitOptions, services, lane: _ToMessageLane(lane));
 #pragma warning restore CA2000
+        IConsumerClient? consumer = null;
 
         try
         {
+#pragma warning disable CA2000 // False positive: consumer transfers to the returned session or the catch disposes it.
+            consumer = request is null
+                ? new RabbitMqConsumerClient(group, 1, pool, rabbitOptions, services, lane: _ToMessageLane(lane))
+                : await new RabbitMqConsumerClientFactory(rabbitOptions, pool, services).CreateAsync(
+                    request,
+                    cancellationToken
+                );
+#pragma warning restore CA2000
             await consumer.SubscribeAsync([destination], cancellationToken);
 
             return new TransportConsumerConformanceSession(
@@ -200,7 +229,11 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
         }
         catch
         {
-            await consumer.DisposeAsync();
+            if (consumer is not null)
+            {
+                await consumer.DisposeAsync();
+            }
+
             await pool.DisposeAsync();
             await services.DisposeAsync();
             throw;

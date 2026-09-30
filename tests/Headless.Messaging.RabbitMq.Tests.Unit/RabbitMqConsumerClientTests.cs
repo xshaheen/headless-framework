@@ -109,6 +109,168 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_open_every_instance_client_on_its_own_connection_without_declaring_a_queue()
+    {
+        // given
+        var ownedConnection = Substitute.For<IConnection>();
+        ownedConnection
+            .CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_channel);
+        _pool.CreateNonRecoveringConnectionAsync(Arg.Any<CancellationToken>()).Returns(ownedConnection);
+        await using var client = _CreateEveryInstanceClient();
+
+        // when
+        await client.ConnectAsync(AbortToken);
+
+        // then: the topology-only client the core opens stops here, so nothing per process may exist yet
+        await _pool.DidNotReceive().GetConnectionAsync(Arg.Any<CancellationToken>());
+        await ownedConnection
+            .Received(1)
+            .CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>());
+        await _channel
+            .DidNotReceiveWithAnyArgs()
+            .QueueDeclareAsync(default!, default, default, default, default, default, default, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_bind_every_routing_key_to_one_server_named_exclusive_queue_when_every_instance_subscribes()
+    {
+        // given
+        var ownedConnection = Substitute.For<IConnection>();
+        ownedConnection
+            .CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_channel);
+        _pool.CreateNonRecoveringConnectionAsync(Arg.Any<CancellationToken>()).Returns(ownedConnection);
+        _channel
+            .QueueDeclareAsync(
+                Arg.Any<string>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<IDictionary<string, object?>?>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(new QueueDeclareOk("amq.gen-every", 0, 0));
+        await using var client = _CreateEveryInstanceClient();
+
+        // when
+        await client.SubscribeAsync(["orders.created", "orders.cancelled"], AbortToken);
+
+        // then
+        await _channel
+            .Received(1)
+            .QueueDeclareAsync(
+                string.Empty,
+                false, // durable
+                true, // exclusive
+                false, // autoDelete: pausing cancels the only consumer and must not delete the queue
+                Arg.Is<IDictionary<string, object?>?>(d => d != null && d.Count == 1 && d.ContainsKey("x-message-ttl")),
+                false,
+                false,
+                Arg.Any<CancellationToken>()
+            );
+        await _channel
+            .Received(1)
+            .QueueBindAsync(
+                "amq.gen-every",
+                "test.exchange.bus",
+                "bus.orders.created",
+                Arg.Any<IDictionary<string, object?>?>(),
+                Arg.Any<bool>(),
+                Arg.Any<CancellationToken>()
+            );
+        await _channel
+            .Received(1)
+            .QueueBindAsync(
+                "amq.gen-every",
+                "test.exchange.bus",
+                "bus.orders.cancelled",
+                Arg.Any<IDictionary<string, object?>?>(),
+                Arg.Any<bool>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_close_its_own_connection_when_every_instance_client_disposes()
+    {
+        // given
+        var ownedConnection = Substitute.For<IConnection>();
+        ownedConnection
+            .CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_channel);
+        _pool.CreateNonRecoveringConnectionAsync(Arg.Any<CancellationToken>()).Returns(ownedConnection);
+        var client = _CreateEveryInstanceClient();
+        await client.ConnectAsync(AbortToken);
+
+        // when
+        await client.DisposeAsync();
+
+        // then
+        await ownedConnection
+            .Received(1)
+            .CloseAsync(
+                Arg.Any<ushort>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<bool>(),
+                Arg.Any<CancellationToken>()
+            );
+        await ownedConnection.Received(1).DisposeAsync();
+    }
+
+    [Fact]
+    public void should_carry_only_the_message_ttl_into_every_instance_queue_arguments()
+    {
+        var options = new RabbitMqMessagingOptions
+        {
+            UserName = "test_user",
+            Password = "test_pass",
+            QueueArguments = new RabbitMqMessagingOptions.QueueArgumentsOptions
+            {
+                MessageTTL = 1234,
+                QueueMode = "lazy",
+                QueueType = "quorum",
+            },
+        };
+
+        RabbitMqConsumerClient
+            .BuildEveryInstanceQueueArguments(options)
+            .Should()
+            .BeEquivalentTo(new Dictionary<string, object?>(StringComparer.Ordinal) { ["x-message-ttl"] = 1234 });
+    }
+
+    [Fact]
+    public void should_refuse_every_instance_client_on_the_queue_lane()
+    {
+        var act = () =>
+            new RabbitMqConsumerClient(
+                "orders.created",
+                1,
+                _pool,
+                _options,
+                _serviceProvider,
+                lane: MessageLane.Queue,
+                kind: ConsumerSubscriptionKind.EveryInstance
+            );
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    private RabbitMqConsumerClient _CreateEveryInstanceClient() =>
+        new(
+            "billing.cache",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            lane: MessageLane.Bus,
+            kind: ConsumerSubscriptionKind.EveryInstance
+        );
+
+    [Fact]
     public async Task should_declare_queue_with_default_options()
     {
         // given

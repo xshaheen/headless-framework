@@ -22,11 +22,6 @@ internal sealed class RedisConsumerClientFactory(
     {
         Argument.IsNotNull(request);
 
-        if (request.Kind is ConsumerSubscriptionKind.EveryInstance)
-        {
-            throw new NotSupportedException("The Redis transport does not support every-instance subscriptions.");
-        }
-
         var subscriptionName = request.SubscriptionName;
         var concurrency = request.Concurrency;
         var lane = request.Lane;
@@ -40,7 +35,8 @@ internal sealed class RedisConsumerClientFactory(
             redisOptions,
             logger,
             lane,
-            messagingOptions.Value.RetryPolicy.DispatchTimeout
+            messagingOptions.Value.RetryPolicy.DispatchTimeout,
+            kind: request.Kind
         );
         return Task.FromResult<IConsumerClient>(client);
     }

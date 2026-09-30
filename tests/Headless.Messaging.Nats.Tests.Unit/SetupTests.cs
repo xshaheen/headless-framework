@@ -101,6 +101,21 @@ public sealed class SetupTests : TestBase
             .Be("nats://localhost:4222");
     }
 
+    [Fact]
+    public async Task should_declare_every_instance_support_on_the_transport_capability()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup => setup.UseNats("nats://localhost:4222"));
+        await using var provider = services.BuildServiceProvider();
+
+        provider
+            .GetServices<MessagingProviderCapabilities>()
+            .Single(x => x.Role == MessagingProviderRole.Transport)
+            .SupportsEveryInstance.Should()
+            .BeTrue();
+    }
+
     // Shard symmetry validation
 
     [Fact]

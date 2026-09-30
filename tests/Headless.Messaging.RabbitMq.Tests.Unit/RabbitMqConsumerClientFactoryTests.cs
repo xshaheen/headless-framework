@@ -6,6 +6,7 @@ using Headless.Messaging.Exceptions;
 using Headless.Messaging.RabbitMq;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute.ExceptionExtensions;
@@ -49,6 +50,60 @@ public sealed class RabbitMqConsumerClientFactoryTests : TestBase
         // then
         client.Should().NotBeNull();
         client.Should().BeOfType<RabbitMqConsumerClient>();
+    }
+
+    [Fact]
+    public async Task should_declare_every_instance_support_on_the_transport_capability()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup => setup.UseRabbitMq(options => options.HostName = "localhost"));
+        await using var provider = services.BuildServiceProvider();
+
+        provider
+            .GetServices<MessagingProviderCapabilities>()
+            .Single(x => x.Role == MessagingProviderRole.Transport)
+            .SupportsEveryInstance.Should()
+            .BeTrue();
+    }
+
+    [Fact]
+    public async Task should_release_owned_connection_when_every_instance_client_fails_to_connect()
+    {
+        // given
+        var pool = Substitute.For<IConnectionChannelPool>();
+        var ownedConnection = Substitute.For<IConnection>();
+        pool.Exchange.Returns("test.exchange");
+        pool.CreateNonRecoveringConnectionAsync(Arg.Any<CancellationToken>()).Returns(ownedConnection);
+        ownedConnection
+            .CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("channel failed"));
+        var factory = new RabbitMqConsumerClientFactory(
+            Options.Create(
+                new RabbitMqMessagingOptions
+                {
+                    HostName = "localhost",
+                    UserName = "test_user",
+                    Password = "test_pass",
+                }
+            ),
+            pool,
+            Substitute.For<IServiceProvider>()
+        );
+        var request = new ConsumerClientRequest(
+            "billing.cache",
+            1,
+            MessageLane.Bus,
+            ConsumerSubscriptionKind.EveryInstance,
+            Guid.NewGuid()
+        );
+
+        // when
+        var act = () => factory.CreateAsync(request, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<BrokerConnectionException>();
+        await ownedConnection.Received(1).DisposeAsync();
     }
 
     [Fact]

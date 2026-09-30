@@ -256,8 +256,8 @@ A runtime subscription sets `RuntimeSubscriptionOptions.EveryInstance = true`.
 | --- | --- | --- |
 | InMemory | A group per identity and instance id | Nothing |
 | NATS | Core subscription on the Bus subject, not a JetStream consumer | Nothing |
-| RabbitMQ | Server-named exclusive, auto-delete, non-durable queue bound to the Bus exchange | Nothing |
-| Redis | Group-less blocking stream read from the last seen id | Nothing |
+| RabbitMQ | Server-named exclusive, non-durable queue bound to the Bus exchange, on a connection of its own without automatic recovery | Nothing |
+| Redis | Group-less polled stream read from each stream's tail at subscribe time, then from the last id read | Nothing |
 | Pulsar | Non-durable, exclusive subscription starting at the latest message | Nothing |
 | Azure Service Bus | Subscription named from the identity and instance id with `AutoDeleteOnIdle` of 5 minutes, deleted on graceful stop; needs `AutoProvision` or Manage rights | The subscription, for up to 5 minutes |
 | AWS SNS/SQS | Not supported: no idle auto-delete, so a crash would leak the queue and its subscription | Startup fails |

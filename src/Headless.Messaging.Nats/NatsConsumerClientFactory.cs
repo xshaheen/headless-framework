@@ -19,16 +19,16 @@ internal sealed class NatsConsumerClientFactory(
     {
         Argument.IsNotNull(request);
 
-        if (request.Kind is ConsumerSubscriptionKind.EveryInstance)
-        {
-            throw new NotSupportedException("The NATS transport does not support every-instance subscriptions.");
-        }
-
-        var subscriptionName = request.SubscriptionName;
-        var concurrency = request.Concurrency;
-        var lane = request.Lane;
-
-        var client = new NatsConsumerClient(subscriptionName, concurrency, natsOptions, serviceProvider, lane: lane);
+        // An every-instance client needs no name of its own: it opens plain subscriptions on the Bus subjects, which
+        // the server ties to this client's connection rather than to a durable consumer.
+        var client = new NatsConsumerClient(
+            request.SubscriptionName,
+            request.Concurrency,
+            natsOptions,
+            serviceProvider,
+            lane: request.Lane,
+            kind: request.Kind
+        );
         try
         {
             await client.ConnectAsync(cancellationToken).ConfigureAwait(false);

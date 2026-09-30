@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Transport;
 using Tests.Capabilities;
 
 namespace Tests;
@@ -13,11 +14,18 @@ internal sealed class NatsProviderConformanceDriver(NatsFixture fixture) : Trans
 
     public override TransportMalformedEnvelopeBound MalformedEnvelopeBound => _Profile.MalformedEnvelopeBound!;
 
+    public override bool SupportsEveryInstance => true;
+
     public override ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
         TransportConformanceEndpoint endpoint,
         CancellationToken cancellationToken
     )
     {
+        if (endpoint.Kind is ConsumerSubscriptionKind.EveryInstance)
+        {
+            return fixture.CreateEndpointSessionAsync(endpoint, _streamName, cancellationToken);
+        }
+
         return fixture.CreateLaneSessionAsync(
             endpoint.Lane,
             _streamName,

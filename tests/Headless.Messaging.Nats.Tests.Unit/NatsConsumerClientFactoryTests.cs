@@ -45,6 +45,24 @@ public sealed class NatsConsumerClientFactoryTests : TestBase
     }
 
     [Fact]
+    public async Task should_create_every_instance_client_instead_of_refusing_it()
+    {
+        var factory = new NatsConsumerClientFactory(_options, _serviceProvider);
+        var request = new ConsumerClientRequest(
+            "billing.cache",
+            1,
+            MessageLane.Bus,
+            ConsumerSubscriptionKind.EveryInstance,
+            Guid.NewGuid()
+        );
+
+        // The unreachable server fails the connect, which proves the factory accepted the kind and got that far.
+        var act = async () => await factory.CreateAsync(request, AbortToken);
+
+        await act.Should().ThrowAsync<BrokerConnectionException>();
+    }
+
+    [Fact]
     public async Task should_preserve_factory_cancellation()
     {
         var factory = new NatsConsumerClientFactory(_options, _serviceProvider);

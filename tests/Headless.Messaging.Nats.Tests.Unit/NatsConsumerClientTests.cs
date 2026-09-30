@@ -160,6 +160,21 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
+    public void should_subscribe_every_instance_client_to_the_bus_subjects_of_its_message_names()
+    {
+        NatsConsumerClient
+            .BuildEveryInstanceSubjects(
+                ["orders.created", "orders"],
+                names => new HashSet<string>(
+                    names.Where(x => string.Equals(x, "orders", StringComparison.Ordinal)),
+                    StringComparer.Ordinal
+                )
+            )
+            .Should()
+            .Equal("headless.bus.orders.created", "headless.bus.orders", "headless.bus.orders.>");
+    }
+
+    [Fact]
     public void should_include_consumer_identity_for_bus_intent_when_build_durable_name()
     {
         NatsConsumerClient

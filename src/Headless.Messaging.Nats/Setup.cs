@@ -121,7 +121,8 @@ public static class SetupNatsMessaging
                 MessagingProviderCapabilities.Transport(
                     "NATS JetStream",
                     [MessageLane.Bus, MessageLane.Queue],
-                    supportsIndependentLaneTopology: true
+                    supportsIndependentLaneTopology: true,
+                    supportsEveryInstance: true
                 )
             );
 

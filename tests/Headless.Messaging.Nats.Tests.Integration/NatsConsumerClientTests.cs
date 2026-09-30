@@ -78,6 +78,95 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
     }
 
     [Fact]
+    public Task should_deliver_every_bus_message_to_every_every_instance_replica()
+    {
+        return TransportProviderConformance.AssertBusEveryInstanceAsync(
+            new NatsProviderConformanceDriver(fixture),
+            AbortToken
+        );
+    }
+
+    [Fact]
+    public async Task should_fan_out_bus_message_to_every_instance_sessions_of_one_identity()
+    {
+        var streamName = $"every-{Guid.NewGuid():N}"[..29];
+        var destination = $"{streamName}.probe";
+        var identity = $"group-{Guid.NewGuid():N}"[..30];
+        await using var first = await fixture.CreateEndpointSessionAsync(
+            _EveryInstanceEndpoint(destination, identity, "replica-1"),
+            streamName,
+            AbortToken
+        );
+        await using var second = await fixture.CreateEndpointSessionAsync(
+            _EveryInstanceEndpoint(destination, identity, "replica-2"),
+            streamName,
+            AbortToken
+        );
+
+        await TransportBusConformance.AssertEveryInstanceFanOutAsync(first, second, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_leave_no_subscription_or_jetstream_consumer_after_every_instance_client_disposes()
+    {
+        // given
+        var streamName = $"every-{Guid.NewGuid():N}"[..29];
+        var destination = $"{streamName}.probe";
+        var subject = $"headless.bus.{destination}";
+        var js = new NatsJSContext(await fixture.GetConnectionAsync());
+        var session = await fixture.CreateEndpointSessionAsync(
+            _EveryInstanceEndpoint(destination, $"group-{Guid.NewGuid():N}"[..30], "replica-1"),
+            streamName,
+            AbortToken
+        );
+
+        try
+        {
+            await session.StartAsync(cancellationToken: AbortToken);
+
+            // Positive control: the listening client holds exactly one plain subscription and no JetStream consumer.
+            (await fixture.CountSubscriptionsAsync(subject, AbortToken))
+                .Should()
+                .Be(1);
+            (await _CountConsumersAsync(js, NatsPhysicalAddress.Stream(MessageLane.Bus, streamName))).Should().Be(0);
+        }
+        finally
+        {
+            // when
+            await session.DisposeAsync();
+        }
+
+        // then
+        (await fixture.CountSubscriptionsAsync(subject, AbortToken))
+            .Should()
+            .Be(0);
+        (await _CountConsumersAsync(js, NatsPhysicalAddress.Stream(MessageLane.Bus, streamName))).Should().Be(0);
+    }
+
+    private async Task<int> _CountConsumersAsync(NatsJSContext js, string streamName)
+    {
+        var count = 0;
+
+        await foreach (var _ in js.ListConsumerNamesAsync(streamName, AbortToken))
+        {
+            count++;
+        }
+
+        return count;
+    }
+
+    private static TransportConformanceEndpoint _EveryInstanceEndpoint(
+        string destination,
+        string identity,
+        string replica
+    ) =>
+        new(MessageLane.Bus, destination, identity, replica)
+        {
+            Kind = ConsumerSubscriptionKind.EveryInstance,
+            InstanceId = Guid.NewGuid(),
+        };
+
+    [Fact]
     public Task should_deliver_one_owned_queue_copy_across_replicas()
     {
         return TransportProviderConformance.AssertQueueOwnershipAsync(

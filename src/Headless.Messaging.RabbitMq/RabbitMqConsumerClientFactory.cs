@@ -22,11 +22,6 @@ internal sealed class RabbitMqConsumerClientFactory(
     {
         Argument.IsNotNull(request);
 
-        if (request.Kind is ConsumerSubscriptionKind.EveryInstance)
-        {
-            throw new NotSupportedException("The RabbitMQ transport does not support every-instance subscriptions.");
-        }
-
         var subscriptionName = request.SubscriptionName;
         var concurrency = request.Concurrency;
         var lane = request.Lane;
@@ -35,24 +30,33 @@ internal sealed class RabbitMqConsumerClientFactory(
         // not as a BrokerConnectionException.
         var config = consumerRegistry?.ResolveConsumerConfig<RabbitMqConsumerConfig>(subscriptionName, lane);
 
+        var client = new RabbitMqConsumerClient(
+            subscriptionName,
+            concurrency,
+            channelPool,
+            rabbitMqOptions,
+            serviceProvider,
+            config,
+            lane,
+            kind: request.Kind
+        );
+
         try
         {
-            var client = new RabbitMqConsumerClient(
-                subscriptionName,
-                concurrency,
-                channelPool,
-                rabbitMqOptions,
-                serviceProvider,
-                config,
-                lane
-            );
-
             await client.ConnectAsync(cancellationToken).ConfigureAwait(false);
 
             return client;
         }
-        catch (Exception e) when (e is not OperationCanceledException)
+        catch (Exception e)
         {
+            // An every-instance client may already own a connection; release it with the failed client.
+            await client.DisposeAsync().ConfigureAwait(false);
+
+            if (e is OperationCanceledException or BrokerConnectionException)
+            {
+                throw;
+            }
+
             throw new BrokerConnectionException(e);
         }
     }

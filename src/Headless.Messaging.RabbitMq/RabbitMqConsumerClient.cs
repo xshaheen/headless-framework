@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging.Exceptions;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -26,8 +27,17 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly Func<RabbitMqConsumerLifecycleCheckpoint, ValueTask>? _lifecycleCheckpointAsync;
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly ConsumerSubscriptionKind _kind;
+
+    // Completes with the broker's reason when an every-instance client's channel shuts down while it is in use.
+    private readonly TaskCompletionSource<string> _channelLost = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
     private RabbitMqBasicConsumer? _consumer;
     private IChannel? _channel;
+
+    // An every-instance client owns its connection; a competing client borrows the pool's shared one.
+    private IConnection? _ownedConnection;
     private int _disposed;
 
     public RabbitMqConsumerClient(
@@ -38,7 +48,8 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         IServiceProvider serviceProvider,
         RabbitMqConsumerConfig? consumerConfig = null,
         MessageLane lane = MessageLane.Bus,
-        Func<RabbitMqConsumerLifecycleCheckpoint, ValueTask>? lifecycleCheckpointAsync = null
+        Func<RabbitMqConsumerLifecycleCheckpoint, ValueTask>? lifecycleCheckpointAsync = null,
+        ConsumerSubscriptionKind kind = ConsumerSubscriptionKind.Competing
     )
     {
         // The subscription name is a consumer identity or a message name, not a queue name; the queue name derived from
@@ -55,6 +66,13 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         _consumerConfig = consumerConfig;
         _lane = lane;
         _lifecycleCheckpointAsync = lifecycleCheckpointAsync;
+        _kind = Argument.IsInEnum(kind);
+
+        if (kind is ConsumerSubscriptionKind.EveryInstance && lane is not MessageLane.Bus)
+        {
+            throw new ArgumentException("Only the Bus lane has every-instance subscriptions.", nameof(kind));
+        }
+
         if (lane == MessageLane.Bus)
         {
             _ = RabbitMqPhysicalAddress.Queue(lane, subscriptionName, subscriptionName);
@@ -71,6 +89,9 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         OnLogCallback = onLog;
     }
 
+    /// <summary>The queues this client consumes; an every-instance client's one queue has a broker-generated name.</summary>
+    internal IReadOnlyList<string> QueueNames => _queueNames;
+
     public BrokerAddress BrokerAddress =>
         new(
             "rabbitmq",
@@ -83,6 +104,12 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     )
     {
         Argument.IsNotNull(messageNames);
+
+        if (_kind is ConsumerSubscriptionKind.EveryInstance)
+        {
+            await _SubscribeEveryInstanceAsync(messageNames, cancellationToken).ConfigureAwait(false);
+            return;
+        }
 
         var subscriptions = messageNames
             .Select(messageName =>
@@ -176,6 +203,12 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
                 .ConfigureAwait(false);
             _ready.TrySetException(ex);
             throw;
+        }
+
+        if (_kind is ConsumerSubscriptionKind.EveryInstance)
+        {
+            await _WaitUntilChannelLostAsync(cancellationToken).ConfigureAwait(false);
+            return;
         }
 
         // RabbitMQ is push-based — after BasicConsumeAsync the broker delivers messages
@@ -288,11 +321,11 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         }
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
-            return ValueTask.CompletedTask;
+            return;
         }
 
         _pauseGate.Release();
@@ -301,14 +334,21 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         _consumer?.Dispose();
         _channel?.Dispose();
         _semaphore.Dispose();
-        return ValueTask.CompletedTask;
-        //The connection should not be closed here, because the connection is still in use elsewhere.
-        //_connection?.Dispose();
+
+        // A competing client leaves the pool's shared connection open for its other users. An every-instance client
+        // closes its own, and the broker deletes the exclusive queue with it.
+        if (_ownedConnection is { } ownedConnection)
+        {
+            await _CloseOwnedConnectionAsync(ownedConnection).ConfigureAwait(false);
+        }
     }
 
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
-        var connection = await _connectionChannelPool.GetConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection =
+            _kind is ConsumerSubscriptionKind.EveryInstance
+                ? null
+                : await _connectionChannelPool.GetConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -318,9 +358,34 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
                 return;
             }
 
-            var channel = await connection
+            if (_kind is ConsumerSubscriptionKind.EveryInstance)
+            {
+                // The exclusive queue died with the channel's connection, so a fresh channel would consume nothing;
+                // failing lets the core rebuild the client with a new queue and tell the consumer about the gap.
+                if (_channel is not null)
+                {
+                    throw new BrokerConnectionException(
+                        new InvalidOperationException(
+                            "The every-instance RabbitMQ consumer lost its connection and must be rebuilt."
+                        )
+                    );
+                }
+
+                // A retry after a failed declare reuses the connection; it has no queue on it yet.
+                _ownedConnection ??= await _connectionChannelPool
+                    .CreateNonRecoveringConnectionAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                connection = _ownedConnection;
+            }
+
+            var channel = await connection!
                 .CreateChannelAsync(cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
+
+            if (_kind is ConsumerSubscriptionKind.EveryInstance)
+            {
+                channel.ChannelShutdownAsync += _OnEveryInstanceChannelShutdownAsync;
+            }
 
             try
             {
@@ -335,8 +400,14 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
                 _channel = channel;
 
+                // An every-instance client declares its queue only when it subscribes, so the topology-only client
+                // the core opens to provision message names leaves no queue behind.
                 var busQueue = RabbitMqPhysicalAddress.Queue(MessageLane.Bus, _subscriptionName, _subscriptionName);
-                if (_lane == MessageLane.Bus && !_queueNames.Contains(busQueue, StringComparer.Ordinal))
+                if (
+                    _lane == MessageLane.Bus
+                    && _kind is ConsumerSubscriptionKind.Competing
+                    && !_queueNames.Contains(busQueue, StringComparer.Ordinal)
+                )
                 {
                     await _DeclareQueueAsync(busQueue, cancellationToken).ConfigureAwait(false);
                     _queueNames.Add(busQueue);
@@ -459,6 +530,113 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             }
 
             throw;
+        }
+    }
+
+    private async Task _SubscribeEveryInstanceAsync(
+        IEnumerable<string> messageNames,
+        CancellationToken cancellationToken
+    )
+    {
+        var routingKeys = messageNames
+            .Select(messageName =>
+            {
+                RabbitMqValidation.ValidateMessageName(messageName);
+                return RabbitMqPhysicalAddress.RoutingKey(MessageLane.Bus, messageName);
+            })
+            .ToArray();
+
+        await ConnectAsync(cancellationToken).ConfigureAwait(false);
+
+        if (_queueNames.Count == 0)
+        {
+            var declared = await _channel!
+                .QueueDeclareAsync(
+                    queue: string.Empty,
+                    durable: false,
+                    exclusive: true,
+                    autoDelete: false,
+                    arguments: BuildEveryInstanceQueueArguments(_rabbitMqOptions),
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            _queueNames.Add(declared.QueueName);
+        }
+
+        foreach (var routingKey in routingKeys)
+        {
+            await _channel!
+                .QueueBindAsync(_queueNames[0], _exchangeName, routingKey, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>The arguments of an every-instance client's server-named queue.</summary>
+    /// <remarks>
+    /// The queue is exclusive to the client's own connection, so the broker deletes it when the connection closes or
+    /// the process dies. It is deliberately not auto-delete: pausing cancels the queue's only consumer, and an
+    /// auto-delete queue would disappear then and fail the resume. Only the message TTL carries over from
+    /// <see cref="RabbitMqMessagingOptions.QueueArguments"/>: quorum and stream queue types cannot be exclusive.
+    /// </remarks>
+    internal static Dictionary<string, object?> BuildEveryInstanceQueueArguments(RabbitMqMessagingOptions options)
+    {
+        Argument.IsNotNull(options);
+
+        return new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            { "x-message-ttl", options.QueueArguments.MessageTTL },
+        };
+    }
+
+    private async Task _WaitUntilChannelLostAsync(CancellationToken cancellationToken)
+    {
+        string reason;
+        try
+        {
+            reason = await _channelLost.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        // The connection does not recover on its own, so the listener fails and the core rebuilds the client.
+        throw new BrokerConnectionException(
+            new InvalidOperationException($"The every-instance RabbitMQ consumer channel shut down: {reason}")
+        );
+    }
+
+    private Task _OnEveryInstanceChannelShutdownAsync(object sender, ShutdownEventArgs reason)
+    {
+        if (Volatile.Read(ref _disposed) == 0)
+        {
+            _channelLost.TrySetResult(reason.ReplyText);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task _CloseOwnedConnectionAsync(IConnection connection)
+    {
+        try
+        {
+            await connection.CloseAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // The connection is already gone, and the broker dropped the exclusive queue with it.
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ExceptionReceived,
+                    Reason = $"Closing the every-instance RabbitMQ connection failed: {ex}",
+                }
+            );
+        }
+        finally
+        {
+            await connection.DisposeAsync().ConfigureAwait(false);
         }
     }
 

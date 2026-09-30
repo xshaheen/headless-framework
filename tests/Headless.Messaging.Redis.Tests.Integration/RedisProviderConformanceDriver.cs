@@ -12,6 +12,8 @@ internal sealed class RedisProviderConformanceDriver(RedisMessagingFixture fixtu
 
     public override TransportMalformedEnvelopeBound MalformedEnvelopeBound => _Profile.MalformedEnvelopeBound!;
 
+    public override bool SupportsEveryInstance => true;
+
     public override ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
         TransportConformanceEndpoint endpoint,
         CancellationToken cancellationToken
@@ -22,7 +24,8 @@ internal sealed class RedisProviderConformanceDriver(RedisMessagingFixture fixtu
             endpoint.LogicalName,
             endpoint.SubscriptionName,
             cancellationToken,
-            ownsStream: string.Equals(endpoint.Replica, "replica-1", StringComparison.Ordinal)
+            ownsStream: string.Equals(endpoint.Replica, "replica-1", StringComparison.Ordinal),
+            request: endpoint.ToRequest()
         );
     }
 }
