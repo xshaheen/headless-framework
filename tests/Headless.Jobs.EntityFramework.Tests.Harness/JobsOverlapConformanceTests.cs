@@ -309,7 +309,7 @@ public abstract class JobsOverlapConformanceTests<TFixture>(TFixture fixture) : 
         retired.SkippedReason.Should().Be(_OverlapReason);
     }
 
-    private async Task<(DateTime ReconciledThroughUtc, DateTime NextDueUtc)> _SeedDueDefinitionAsync(
+    private async Task<CronSchedulePosition> _SeedDueDefinitionAsync(
         Guid cronId,
         string function,
         CronOverlapPolicy policy,
@@ -334,7 +334,7 @@ public abstract class JobsOverlapConformanceTests<TFixture>(TFixture fixture) : 
     /// <summary>Seeds the previous occurrence at the watermark instant, owned by another node when it is claimed.</summary>
     private async Task<Guid> _SeedEarlierAsync(
         Guid cronId,
-        (DateTime ReconciledThroughUtc, DateTime NextDueUtc) seeded,
+        CronSchedulePosition seeded,
         JobStatus status,
         CancellationToken ct
     )
@@ -355,10 +355,7 @@ public abstract class JobsOverlapConformanceTests<TFixture>(TFixture fixture) : 
         return id;
     }
 
-    private static CronScheduleMaterialization _Materialization(
-        Guid cronId,
-        (DateTime ReconciledThroughUtc, DateTime NextDueUtc) seeded
-    ) =>
+    private static CronScheduleMaterialization _Materialization(Guid cronId, CronSchedulePosition seeded) =>
         new()
         {
             Advance = new CronScheduleAdvance
@@ -373,10 +370,7 @@ public abstract class JobsOverlapConformanceTests<TFixture>(TFixture fixture) : 
             ExecutionTimeUtc = seeded.NextDueUtc,
         };
 
-    private static CronRecoveryRequest _Recovery(
-        Guid cronId,
-        (DateTime ReconciledThroughUtc, DateTime NextDueUtc) seeded
-    ) =>
+    private static CronRecoveryRequest _Recovery(Guid cronId, CronSchedulePosition seeded) =>
         new()
         {
             CronJobId = cronId,

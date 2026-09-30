@@ -29,7 +29,7 @@ namespace Headless.DistributedLocks;
 /// <param name="logger">Logger used to emit release-failure diagnostics.</param>
 internal sealed class ConnectionScopedDistributedLockHandle(
     ConnectionScopedLockHandle handle,
-    long? fencingToken,
+    LockFencingToken? fencingToken,
     TimeSpan timeWaitedForLock,
     bool releaseOnDispose,
     TimeProvider timeProvider,
@@ -48,7 +48,7 @@ internal sealed class ConnectionScopedDistributedLockHandle(
     public string LeaseId => handle.LeaseId;
 
     /// <inheritdoc/>
-    public long? FencingToken { get; } = fencingToken;
+    public LockFencingToken? FencingToken { get; } = fencingToken;
 
     /// <inheritdoc/>
     public string Resource => handle.Resource;

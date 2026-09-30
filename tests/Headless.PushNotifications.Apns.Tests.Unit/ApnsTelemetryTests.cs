@@ -77,7 +77,7 @@ public sealed class ApnsTelemetryTests : TestBase
                 )
             )
             .ToArray();
-        sends.Length.Should().Be(3);
+        sends.Should().HaveCount(3);
 
         var ok = sends.Single(m => _HasTag(m, ApnsTags.Outcome, "succeeded"));
         _HasTag(ok, ApnsTags.PushType, "alert").Should().BeTrue();
@@ -115,7 +115,7 @@ public sealed class ApnsTelemetryTests : TestBase
             .Measurements("headless.apns.send.duration")
             .Where(m => _HasTag(m, ApnsTags.Environment, "sandbox"))
             .ToArray();
-        durations.Length.Should().Be(1);
+        durations.Should().ContainSingle();
         _HasTag(durations[0], ApnsTags.PushType, "alert").Should().BeTrue();
     }
 
@@ -143,7 +143,7 @@ public sealed class ApnsTelemetryTests : TestBase
 
         // then - the counter is process-global and other test classes may mint concurrently, so the count is a
         // lower bound; the single distinct bearer proves this source minted once and reused it.
-        capture.Measurements("headless.apns.provider_tokens.minted").Length.Should().BeGreaterThanOrEqualTo(1);
+        capture.Measurements("headless.apns.provider_tokens.minted").Should().HaveCountGreaterThanOrEqualTo(1);
         _server.DistinctBearers().Should().ContainSingle();
     }
 
@@ -164,13 +164,11 @@ public sealed class ApnsTelemetryTests : TestBase
 
         // then
         var sends = _TakeStoppedSends(stopped);
-        sends.Length.Should().Be(2);
+        sends.Should().HaveCount(2);
 
         foreach (var send in sends)
         {
-            var values = send
-                .Tags.Select(t => t.Value?.ToString())
-                .Concat(send.TagObjects.Select(t => t.Value?.ToString()));
+            var values = send.Tags.Select(t => t.Value).Concat(send.TagObjects.Select(t => t.Value?.ToString()));
 
             foreach (var value in values)
             {
@@ -233,8 +231,8 @@ public sealed class ApnsTelemetryTests : TestBase
         var listener = new ActivityListener
         {
             ActivityStopped = stopped.Add,
-            ShouldListenTo = source => source.Name == ApnsDiagnostics.SourceName,
-            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ShouldListenTo = source => string.Equals(source.Name, ApnsDiagnostics.SourceName, StringComparison.Ordinal),
+            Sample = static (ref _) => ActivitySamplingResult.AllData,
         };
         ActivitySource.AddActivityListener(listener);
 
@@ -244,24 +242,28 @@ public sealed class ApnsTelemetryTests : TestBase
     /// <summary>The finished <c>apns.send</c> activities of a sandbox instance, which only this class sends with.</summary>
     private static Activity[] _TakeStoppedSends(ConcurrentBag<Activity> stopped)
     {
-        return stopped
-            .Where(a =>
-                a.OperationName == "apns.send"
-                && a.Tags.Any(t => t.Key == ApnsTags.Environment && (string?)t.Value == "sandbox")
-            )
-            .ToArray();
+        return
+        [
+            .. stopped.Where(a =>
+                string.Equals(a.OperationName, "apns.send", StringComparison.Ordinal)
+                && a.Tags.Any(t =>
+                    string.Equals(t.Key, ApnsTags.Environment, StringComparison.Ordinal)
+                    && string.Equals((string?)t.Value, "sandbox", StringComparison.Ordinal)
+                )
+            ),
+        ];
     }
 
     private static bool _HasTag(ApnsMeterCapture.Measurement measurement, string key, string? value)
     {
-        var tag = measurement.Tags.SingleOrDefault(t => t.Key == key);
+        var tag = measurement.Tags.SingleOrDefault(t => string.Equals(t.Key, key, StringComparison.Ordinal));
 
-        return tag.Key is not null && (string?)tag.Value == value;
+        return tag.Key is not null && string.Equals((string?)tag.Value, value, StringComparison.Ordinal);
     }
 
     private static bool _LacksTag(ApnsMeterCapture.Measurement measurement, string key)
     {
-        return measurement.Tags.All(t => t.Key != key);
+        return measurement.Tags.All(t => !string.Equals(t.Key, key, StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -281,14 +283,14 @@ public sealed class ApnsTelemetryTests : TestBase
         );
 
         public IReadOnlyList<Measurement> this[string instrumentName] =>
-            [.. _measurements.Where(m => m.InstrumentName == instrumentName)];
+            [.. _measurements.Where(m => string.Equals(m.InstrumentName, instrumentName, StringComparison.Ordinal))];
 
         public Measurement[] Measurements(string instrumentName) =>
-            [.. _measurements.Where(m => m.InstrumentName == instrumentName)];
+            [.. _measurements.Where(m => string.Equals(m.InstrumentName, instrumentName, StringComparison.Ordinal))];
 
         public Measurement[] Sends() => Measurements("headless.apns.sends");
 
-        public string[] MeterNames() => [.. _measurements.Select(m => m.MeterName).Distinct()];
+        public string[] MeterNames() => [.. _measurements.Select(m => m.MeterName).Distinct(StringComparer.Ordinal)];
 
         public MeterListener Start()
         {

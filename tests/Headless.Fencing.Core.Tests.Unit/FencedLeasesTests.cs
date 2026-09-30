@@ -144,7 +144,7 @@ public sealed class FencedLeasesTests : TestBase
         seen.Should().Equal((first, units[0].Unit), (second, units[1].Unit));
         await units[0].Unit.Received(1).CompleteAsync(CancellationToken.None);
         await units[1].Unit.Received(1).CompleteAsync(CancellationToken.None);
-        await units[2].Unit.DidNotReceiveWithAnyArgs().CompleteAsync(default);
+        await units[2].Unit.DidNotReceiveWithAnyArgs().CompleteAsync(AbortToken);
         await units[2].Unit.Received(1).RollbackAsync();
     }
 
@@ -197,7 +197,7 @@ public sealed class FencedLeasesTests : TestBase
         // then
         result.Handled.Should().Equal(second);
         result.Failures.Should().ContainSingle().Which.Should().Be(new LeaseSweepFailure(first, failure));
-        await units[0].Unit.DidNotReceiveWithAnyArgs().CompleteAsync(default);
+        await units[0].Unit.DidNotReceiveWithAnyArgs().CompleteAsync(AbortToken);
         await units[0].Unit.Received(1).RollbackAsync();
         await units[1].Unit.Received(1).CompleteAsync(CancellationToken.None);
     }
@@ -237,11 +237,10 @@ public sealed class FencedLeasesTests : TestBase
         var act = async () =>
             await context.Leases.SweepExpiredAsync(
                 "job",
-                (_, _, token) =>
+                async (_, _, token) =>
                 {
-                    cts.Cancel();
+                    await cts.CancelAsync();
                     token.ThrowIfCancellationRequested();
-                    return ValueTask.CompletedTask;
                 },
                 limit: 5,
                 cts.Token
@@ -249,7 +248,7 @@ public sealed class FencedLeasesTests : TestBase
 
         // then
         await act.Should().ThrowAsync<OperationCanceledException>();
-        await units[0].Unit.DidNotReceiveWithAnyArgs().CompleteAsync(default);
+        await units[0].Unit.DidNotReceiveWithAnyArgs().CompleteAsync(AbortToken);
     }
 
     [Fact]

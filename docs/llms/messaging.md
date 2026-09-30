@@ -73,7 +73,7 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 - **Message-name mapping**: Map message types to lane-specific logical names via `setup.Bus.ForMessage<TMessage>(x => x.Contract("message.name"))` or the Queue equivalent. `IMessagingBuilder.WithMessageNameMapping<TMessage>("message.name")` remains a global convention fallback when no lane-specific mapping exists.
 - **Fail-fast defaults**: Duplicate consumer or runtime registrations are rejected by default. Anonymous runtime delegates must provide `HandlerId`.
 - **Telemetry parity**: Existing diagnostic listener and metric names stay stable across direct publish, outbox publish, and runtime subscriptions.
-- **Inbox telemetry is bounded**: inbox counters use registered consumer identity plus finite lane, outcome, tier, and provider dimensions. Message/replay IDs, payloads, and headers are never metric labels. `setup.Instrumentation.IncludeTenantIdInMetricTags` is an explicit, default-off cardinality opt-in.
+- **Inbox telemetry is bounded**: inbox counters use registered consumer identity plus finite lane, outcome, tier, and provider dimensions. Message/replay IDs, payloads, and headers are never metric labels. `setup.Instrumentation.IncludeTenantIdInMetricTags` is an explicit, default-off cardinality opt-in; the dimension it adds is named by `TenantTelemetryOptions.AttributeName` (`tenant.id`).
 - **Retention resets identity after purge or expiry**: terminal generations are retained for 30 days by default; configure `InboxRetention(...)` per consumer. Direct admission suppresses duplicates while its root is retained. Once that root expires or is purged, readmission creates a fresh lifecycle, even if older replay descendants remain held. Replay generation numbers are local to their lifecycle; explicit admission generations remain independent. Holds, mutations, and operation receipts target immutable generation incarnations. Relational inbox schema v4 requires lifecycle identity and separate admission/replay uniqueness; startup rejects retained older inbox rows whose lifecycle identity cannot be reconstructed safely.
 - **Poison inbox retention**: recovery of an unreadable inbox envelope records a terminal failure and clears the attempt fence in the claim transaction. Terminal retention starts from the database clock using the row's persisted retention duration. Terminal redeliveries are suppressed without deserializing or replacing the retained payload; expiry then allows fresh admission.
 - Recover missing registrations with the exact consumer identity, logical contract name/version, and lane. Known orphans use independent probe capacity and consume no handler failure retries during deferral. They do not expire automatically; holds do not pause recovery. Unclaimed orphans allow Hold/ReleaseHold and unheld Purge, while live claims block these actions and ForceReprocess remains terminal-only.
@@ -142,7 +142,7 @@ Two independent questions, answered by two different things. **Durability** — 
 - **The default costs one storage write.** A `Durable` autonomous publish is stored first and dispatched by the relay, so high-rate events pay a storage write and a relay hop per message. Opt out per type with `WithDeliveryMode(DeliveryMode.Direct)` or per host with `DefaultDeliveryMode = DeliveryMode.Direct`; `Direct` gives up durability and atomicity and returns a receipt with no `StorageId`.
 - **Storage is mandatory**, so "no storage" is a configuration error raised by startup validation rather than another matrix column.
 - **Telemetry**: `headless.messaging.delivery.requested` and `headless.messaging.delivery.resolved` emit `durable` or `direct` only, and the `headless-delivery-requested` / `headless-delivery-resolved` headers carry the same names. Whether the row was written inside a transaction travels separately, in the framework-reserved `headless-delivery-coordinated` header, as the literal `"true"` or `"false"`. It is a three-state fact: an **absent** header means unrecorded, never "not coordinated" — rows written before this header existed read as unknown. The dashboard's message detail shows it as "Transaction coordinated" (`Yes` / `No` / `Not recorded`), `MessageView.IsCoordinated` is the monitoring projection, and `RecordedMessage.IsCoordinated` exposes it to tests. All three are `bool?`.
-- **Jobs is the exception that keeps the enum.** `TransactionEnlistment { Optional, Required }` still lives in `Headless.UnitOfWork.Abstractions` and still drives `JobOptions.Enlistment` / `RecurringJobOptions.Enlistment` as the guard that makes the autonomous receivers refuse a function. It has nothing to do with Messaging. See [Enlisted Enqueue](jobs.md#enlisted-enqueue-atomic-enqueue).
+- **Jobs follows the same rule.** `TransactionEnlistment` is gone from Jobs too: `unit.Jobs` enlists and the injected `IJobScheduler` never does. See [Enlisted Enqueue](jobs.md#enlisted-enqueue-atomic-enqueue).
 - **`IBus` and `IQueue` are autonomous singletons** (`TryAddSingleton`): they are handed no unit and look for none, so a publish made while a unit of work is open still writes a standalone durable row, and any singleton or hosted service can take them directly. The framework-internal singletons that publish through them (`HybridCache`, `DistributedLock`, `DistributedReadWriteLock`, `DistributedSemaphoreProvider`) resolve the registered service and keep requesting `Direct` explicitly.
 
 Two unit-of-work behaviors are documented, not defects. `IUnitOfWork.OnCompleted` registrations are savepoint-blind: a registration made inside a savepoint that is later rolled back still runs when the outer transaction commits, even though its row was discarded — publish after the last partial rollback. Under EF's execution strategy, `IUnitOfWorkFactory.RunAsync(db, …)` replays the whole operation, publishes included, for a failure before the commit starts; once the commit has started, or after `IUnitOfWork.PreventRetry()`, the fault surfaces without replay. See [Unit of Work](unit-of-work.md).
@@ -1299,14 +1299,14 @@ Spans and metrics for messaging publish, persist, consume, and subscriber-invoke
 - Delivery mode tags use lowercase values on spans and metrics. `headless.messaging.delivery.requested` and `headless.messaging.delivery.resolved` now only ever emit `durable` or `direct` — that removed `DeliveryMode` member never appears as a requested or resolved value. Queries and alerts must use `direct` for `DeliveryMode.Direct`. The former `transport_direct`, `auto`, and "coordinated" values have no compatibility alias.
 - Metrics are always registered; **subscribing a meter is the toggle** — there is no `EnableMetrics` flag. Emission is near-free when unobserved (`ActivitySource.HasListeners()` / `Counter.Enabled` early-outs).
 - Enricher registration and the built-in suppression toggles live on the **messaging setup builder** (`setup.Instrumentation`), not at OpenTelemetry-registration time. This is what fixes the old bridge's fire-and-forget async-enricher wart: enrichers run synchronously, so every tag they add is attached before the span can end.
-- **PII guardrails.** Enrichers must not write the reserved namespaces `messaging.*`, `server.*`, `headless.messaging.*`, `exception.*` (the framework/SDK overwrite them). `headless.messaging.tenant_id` is suppressible. Never serialize raw `context.Headers` onto tags — they may carry tokens/PII.
+- **PII guardrails.** Enrichers must not write the reserved namespaces `messaging.*`, `server.*`, `headless.messaging.*`, `exception.*` (the framework/SDK overwrite them). The tenant attribute is controlled by `TenantTelemetryOptions.EnrichTraces`. Never serialize raw `context.Headers` onto tags — they may carry tokens/PII.
 
 ### Span attributes and toggles
 
 | Tag / attribute | Emitted by | Toggle |
 | --- | --- | --- |
 | `headless.messaging.intent` (`bus`/`queue`) + `messaging.destination.kind` | built-in `IntentTagEnricher` | `setup.Instrumentation.SuppressIntentTags` |
-| `headless.messaging.tenant_id` | built-in `TenantIdTagEnricher` | `setup.Instrumentation.SuppressTenantIdTag` |
+| `tenant.id` (`TenantTelemetryOptions.AttributeName`), written before any enricher runs | `MessagingTelemetry` | `TenantTelemetryOptions.EnrichTraces`, set through `AddHeadlessTenancy(t => t.Telemetry(...))`; see [multi-tenancy observability](multi-tenancy.md#observability) |
 | `headless.messaging.retry_count` | built-in `RetryCountTagEnricher` (subscriber-invoke) | `setup.Instrumentation.SuppressRetryCountTag` |
 | custom tags | your `IActivityTagEnricher` | `setup.Instrumentation.AddEnricher(...)` |
 
@@ -1317,7 +1317,7 @@ Spans and metrics for messaging publish, persist, consume, and subscriber-invoke
 builder.Services.AddHeadlessMessaging(setup =>
 {
     // ... transport + storage registration ...
-    setup.Instrumentation.SuppressTenantIdTag = true;      // opt out of tenant-id tagging
+    setup.Instrumentation.SuppressRetryCountTag = true;    // opt out of retry-count tagging
     setup.Instrumentation.AddEnricher(new MyTagEnricher()); // custom tags
 });
 
@@ -1346,7 +1346,7 @@ All instruments register on the `Headless.Messaging` meter. Names and standard d
 | `messaging.persistence.duration` | Histogram (ms) | `messaging.operation`, `messaging.persistence.type` |
 | `messaging.message.size` | Histogram (bytes) | `messaging.operation`, `messaging.system` |
 
-Framework span attributes: `headless.messaging.intent` (`bus`/`queue`), `headless.messaging.tenant_id` (suppressible), `headless.messaging.retry_count` (suppressible), plus per-phase duration attributes (`headless.messaging.persistence.duration_ms`, `send.duration_ms`, `receive.duration_ms`, `invoke.duration_ms`) retained verbatim from the pre-migration bridge.
+Framework span attributes: `headless.messaging.intent` (`bus`/`queue`), `tenant.id` (named and switched by `TenantTelemetryOptions`), `headless.messaging.retry_count` (suppressible), plus per-phase duration attributes (`headless.messaging.persistence.duration_ms`, `send.duration_ms`, `receive.duration_ms`, `invoke.duration_ms`) retained verbatim from the pre-migration bridge.
 
 ## Headless.Messaging.Aws
 

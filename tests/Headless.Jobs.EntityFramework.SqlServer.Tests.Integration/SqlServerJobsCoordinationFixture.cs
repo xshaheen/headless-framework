@@ -80,7 +80,7 @@ public sealed class SqlServerJobsCoordinationFixture
     {
         get
         {
-            var schema = JobsCoordinationFixtureExtensions.CustomSchemaName;
+            const string schema = JobsCoordinationFixtureExtensions.CustomSchemaName;
 
             return $"DROP TABLE IF EXISTS [{schema}].[CronJobOccurrences];"
                 + $"DROP TABLE IF EXISTS [{schema}].[TimeJobIdempotencyReservations];"

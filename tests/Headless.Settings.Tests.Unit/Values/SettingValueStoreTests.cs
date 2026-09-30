@@ -426,14 +426,14 @@ public sealed class SettingValueStoreTests : TestBase
             "set-provider-key" => async () => await _sut.SetAsync("Theme", "Dark", "Tenant", "acme ", AbortToken),
             "set-all-names" => async () =>
                 await _sut.SetAllAsync(
-                    new Dictionary<string, string?> { ["Theme "] = "Dark" },
+                    new Dictionary<string, string?>(StringComparer.Ordinal) { ["Theme "] = "Dark" },
                     "Tenant",
                     "acme",
                     AbortToken
                 ),
             "set-all-provider-key" => async () =>
                 await _sut.SetAllAsync(
-                    new Dictionary<string, string?> { ["Theme"] = "Dark" },
+                    new Dictionary<string, string?>(StringComparer.Ordinal) { ["Theme"] = "Dark" },
                     "Tenant",
                     "acme ",
                     AbortToken

@@ -180,7 +180,8 @@
         "type": "Project",
         "dependencies": {
           "Headless.Blobs.Abstractions": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )"
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )"
         }
       },
       "headless.checks": {

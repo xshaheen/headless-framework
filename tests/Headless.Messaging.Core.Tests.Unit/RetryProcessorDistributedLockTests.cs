@@ -709,7 +709,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         }
 
         public string LeaseId => "tracking-lock-id";
-        public long? FencingToken => null;
+        public LockFencingToken? FencingToken => null;
         public string Resource => "tracking-lock-resource";
         public int RenewalCount => Volatile.Read(ref _renewalCount);
         public DateTimeOffset AcquiredAt => DateTimeOffset.UtcNow;

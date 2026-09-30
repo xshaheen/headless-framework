@@ -7,8 +7,10 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
+using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Tests.Instrumentation;
 
@@ -75,12 +77,45 @@ public sealed class LoggerInstrumentationTests : TestBase
         activity.GetTagItem("headless.job.contract_version").Should().Be("schema-2");
         activity.GetTagItem("headless.job.correlation_id").Should().Be("business-root");
         activity.GetTagItem("headless.job.causation_id").Should().Be("direct-cause");
-        activity.GetTagItem("headless.job.tenant_id").Should().Be("tenant-7");
+        activity.GetTagItem("tenant.id").Should().Be("tenant-7");
+        activity.GetTagItem("headless.job.tenant_id").Should().BeNull();
         activity.GetTagItem("headless.job.priority").Should().Be(context.CachedPriority.ToString());
         activity.GetTagItem("headless.job.machine").Should().Be(StubOwnerIdentity.Owner);
         activity.GetTagItem("headless.job.retry_count").Should().Be(context.Retries);
         activity.GetTagItem("headless.job.parent_id").Should().Be(context.ParentId!.Value.ToString());
         activity.GetTagItem("headless.job.run_condition").Should().Be(context.RunCondition.ToString());
+    }
+
+    [Fact]
+    public void start_job_activity_uses_configured_tenant_attribute_and_honors_the_trace_switch()
+    {
+        // given
+        var renamed = new LoggerInstrumentation(
+            Substitute.For<ILogger<LoggerInstrumentation>>(),
+            new StubOwnerIdentity(),
+            Options.Create(new TenantTelemetryOptions { AttributeName = "app.tenant" })
+        );
+        var disabled = new LoggerInstrumentation(
+            Substitute.For<ILogger<LoggerInstrumentation>>(),
+            new StubOwnerIdentity(),
+            Options.Create(new TenantTelemetryOptions { EnrichTraces = false })
+        );
+        using var listener = _StartListener();
+        var context = new JobExecutionState
+        {
+            JobId = Guid.NewGuid(),
+            FunctionName = "SendEmail",
+            TenantId = "tenant-7",
+        };
+
+        // when
+        using var renamedActivity = renamed.StartJobActivity("job.execute", context);
+        using var disabledActivity = disabled.StartJobActivity("job.execute", context);
+
+        // then
+        renamedActivity!.GetTagItem("app.tenant").Should().Be("tenant-7");
+        renamedActivity.GetTagItem("tenant.id").Should().BeNull();
+        disabledActivity!.GetTagItem("tenant.id").Should().BeNull();
     }
 
     [Fact]

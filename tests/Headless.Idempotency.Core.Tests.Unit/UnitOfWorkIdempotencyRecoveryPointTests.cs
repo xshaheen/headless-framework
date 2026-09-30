@@ -64,27 +64,40 @@ public sealed class UnitOfWorkIdempotencyRecoveryPointTests : TestBase
         unit.Received(1).PreventRetry();
     }
 
-    public static TheoryData<IdempotencyRecordState?, IdempotentLeaseStatus> NotOwned =>
+    public static TheoryData<NotOwnedRecord, IdempotentLeaseStatus> NotOwned =>
         new()
         {
-            { Pending(generation: Generation, isLeaseLive: false), IdempotentLeaseStatus.Expired },
-            { Pending(generation: 8, isLeaseLive: true), IdempotentLeaseStatus.Stale },
-            { Pending(generation: null), IdempotentLeaseStatus.Released },
-            { Completed(new IdempotentResult([9], "r/v1")), IdempotentLeaseStatus.Completed },
-            { null, IdempotentLeaseStatus.Stale },
+            { NotOwnedRecord.ExpiredLease, IdempotentLeaseStatus.Expired },
+            { NotOwnedRecord.NewerGeneration, IdempotentLeaseStatus.Stale },
+            { NotOwnedRecord.Released, IdempotentLeaseStatus.Released },
+            { NotOwnedRecord.Completed, IdempotentLeaseStatus.Completed },
+            { NotOwnedRecord.Missing, IdempotentLeaseStatus.Stale },
         };
+
+    private static IdempotencyRecordState? _Record(NotOwnedRecord kind)
+    {
+        return kind switch
+        {
+            NotOwnedRecord.ExpiredLease => Pending(generation: Generation, isLeaseLive: false),
+            NotOwnedRecord.NewerGeneration => Pending(generation: 8, isLeaseLive: true),
+            NotOwnedRecord.Released => Pending(generation: null),
+            NotOwnedRecord.Completed => Completed(new IdempotentResult([9], "r/v1")),
+            NotOwnedRecord.Missing => null,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+    }
 
     [Theory]
     [MemberData(nameof(NotOwned))]
     public async Task should_refuse_the_point_and_write_nothing_when_the_attempt_no_longer_owns_the_key(
-        IdempotencyRecordState? record,
+        NotOwnedRecord kind,
         IdempotentLeaseStatus reason
     )
     {
         // given
         var context = new IdempotencyTestContext();
         var (unit, _) = ActiveUnit();
-        context.Store.LockAsync(unit, RecordKey, AbortToken).Returns(record);
+        context.Store.LockAsync(unit, RecordKey, AbortToken).Returns(_Record(kind));
 
         // when
         var act = async () =>

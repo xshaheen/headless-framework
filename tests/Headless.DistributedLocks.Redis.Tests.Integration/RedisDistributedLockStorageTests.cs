@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.DistributedLocks;
 using Headless.DistributedLocks.Redis;
 using Headless.Redis.Testing;
 using Headless.Testing.Tests;
@@ -34,7 +35,7 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
 
         // then
         result.Acquired.Should().BeTrue();
-        result.FencingToken.Should().Be(1);
+        result.FencingToken.Should().Be(new LockFencingToken(1));
         var stored = await fixture.LockStorage.GetAsync(key, AbortToken);
         stored.Should().Be(leaseId);
     }
@@ -74,10 +75,10 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         var second = await fixture.LockStorage.InsertAsync(key, secondLockId, TimeSpan.FromMinutes(5), AbortToken);
 
         // then
-        first.FencingToken.Should().Be(1);
+        first.FencingToken.Should().Be(new LockFencingToken(1));
         failed.Acquired.Should().BeFalse();
         failed.FencingToken.Should().BeNull();
-        second.FencingToken.Should().Be(2);
+        second.FencingToken.Should().Be(new LockFencingToken(2));
     }
 
     [Fact]
@@ -137,8 +138,8 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         );
 
         // then
-        first.FencingToken.Should().Be(1);
-        second.FencingToken.Should().Be(1);
+        first.FencingToken.Should().Be(new LockFencingToken(1));
+        second.FencingToken.Should().Be(new LockFencingToken(1));
     }
 
     [Fact]

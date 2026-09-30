@@ -141,10 +141,18 @@ public static class SetupMessaging
         // custom enrichers) is captured once here from the setup-time instrumentation config. Instruments and the
         // ActivitySource are near-free until an exporter subscribes to the Headless.Messaging scope.
         var messagingEnrichers = setup.Instrumentation.BuildEnrichers();
-        services.TryAddSingleton(new InboxMetricPolicy(setup.Instrumentation.IncludeTenantIdInMetricTags));
+        var includeTenantIdInMetricTags = setup.Instrumentation.IncludeTenantIdInMetricTags;
+        services.TryAddSingleton(sp => new InboxMetricPolicy(
+            includeTenantIdInMetricTags
+                ? (
+                    sp.GetService<IOptions<TenantTelemetryOptions>>()?.Value ?? new TenantTelemetryOptions()
+                ).AttributeName
+                : null
+        ));
         services.TryAddSingleton(sp => new MessagingTelemetry(
             messagingEnrichers,
-            sp.GetService<ILogger<MessagingTelemetry>>()
+            sp.GetService<ILogger<MessagingTelemetry>>(),
+            sp.GetService<IOptions<TenantTelemetryOptions>>()?.Value
         ));
 
         // The primary storage plus every AddOutbox() registration. Resolving it validates them together, so the

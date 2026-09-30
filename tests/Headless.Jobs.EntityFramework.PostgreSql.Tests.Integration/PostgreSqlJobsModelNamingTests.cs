@@ -53,7 +53,9 @@ public sealed class PostgreSqlJobsModelNamingTests : TestBase
 
         entity
             .GetIndexes()
-            .Single(index => index.GetDatabaseName() == "ux_time_jobs_current_key_tenant")
+            .Single(index =>
+                string.Equals(index.GetDatabaseName(), "ux_time_jobs_current_key_tenant", StringComparison.Ordinal)
+            )
             .GetFilter()
             .Should()
             .Contain("tenant_id IS NOT NULL");

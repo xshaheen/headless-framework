@@ -434,7 +434,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         context.Response.StatusCode.Should().Be(201);
         context.Response.Headers[HttpHeaderNames.IdempotentReplayed].ToString().Should().Be("true");
         context.Response.Headers.ContentType.ToString().Should().Be("application/json");
-        context.Response.Headers.ContainsKey("Set-Cookie").Should().BeFalse("replay filters through the allowlist");
+        context.Response.Headers.Should().NotContainKey("Set-Cookie", "replay filters through the allowlist");
         context.Response.ContentLength.Should().Be(3);
         context.Response.Body.Position = 0;
         ((MemoryStream)context.Response.Body).ToArray().Should().Equal(10, 20, 30);
@@ -1017,7 +1017,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             CreateContext(idempotencyKey: "k1", body: body),
             async ctx =>
             {
-                using var buffer = new MemoryStream();
+                await using var buffer = new MemoryStream();
                 await ctx.Request.Body.CopyToAsync(buffer, AbortToken);
                 seenBody = buffer.ToArray();
             }

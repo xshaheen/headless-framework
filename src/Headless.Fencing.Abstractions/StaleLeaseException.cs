@@ -24,7 +24,7 @@ public sealed class StaleLeaseException(FencedLease lease, LeaseFenceStatus reas
 
     private static string _Message(FencedLease lease, LeaseFenceStatus reason)
     {
-        return $"Lease '{lease.Kind}/{lease.Resource}' generation {lease.Generation} no longer owns its writes "
-            + $"({reason}); roll the unit of work back.";
+        return $"Lease '{lease.Kind}/{lease.Resource}' generation {lease.Generation.ToString(CultureInfo.InvariantCulture)} "
+            + $"no longer owns its writes ({reason}); roll the unit of work back.";
     }
 }

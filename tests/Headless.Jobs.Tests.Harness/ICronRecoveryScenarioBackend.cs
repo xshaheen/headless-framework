@@ -83,9 +83,7 @@ public interface ICronRecoveryScenarioWorld
     Task<IReadOnlyList<CronOccurrenceRowSnapshot>> ReadOccurrencesAsync(CancellationToken cancellationToken);
 
     /// <summary>Reads the definition's persisted schedule position back out of the store.</summary>
-    Task<(DateTime ReconciledThroughUtc, DateTime NextDueUtc)> ReadSchedulePositionAsync(
-        CancellationToken cancellationToken
-    );
+    Task<CronSchedulePosition> ReadSchedulePositionAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>
