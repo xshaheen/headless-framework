@@ -82,7 +82,7 @@ public sealed class SqlServerSchemaDialect : ISchemaDialect
                     [StepVersion] nvarchar(50) COLLATE Latin1_General_100_BIN2 NOT NULL,
                     [Description] nvarchar(500) NOT NULL,
                     [Checksum] char(64) NOT NULL,
-                    [AppliedAt] datetime2(7) NOT NULL CONSTRAINT [DF_{SchemaRunner.HistoryTableName}_AppliedAt] DEFAULT SYSUTCDATETIME(),
+                    [AppliedAt] datetimeoffset(7) NOT NULL CONSTRAINT [DF_{SchemaRunner.HistoryTableName}_AppliedAt] DEFAULT TODATETIMEOFFSET(SYSUTCDATETIME(), 0),
                     CONSTRAINT [PK_{SchemaRunner.HistoryTableName}] PRIMARY KEY CLUSTERED ([Feature], [StepVersion])
                 );
             """;
