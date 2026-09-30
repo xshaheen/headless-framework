@@ -16,16 +16,10 @@ public sealed class IConsumeIntegrationTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<OrderPlaced>("orders.placed"));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Bus.ForMessage<OrderPlaced>(message =>
-                message
-                    .Contract("orders.placed")
-                    .Consumer<OrderPlacedConsumer>(consumer =>
-                        consumer.StableContract("tests.integration.orders-primary").Group("order-service")
-                    )
-            );
-            messaging.Options.DefaultGroupName = "default";
+            messaging.AddConsumer<OrderPlacedConsumer>();
             messaging.Options.Version = "v1";
         });
 
@@ -39,7 +33,7 @@ public sealed class IConsumeIntegrationTests
         candidates.Should().ContainSingle();
         var descriptor = candidates[0];
         descriptor.MessageName.Should().Be("orders.placed");
-        descriptor.GroupName.Should().Be("order-service");
+        descriptor.GroupName.Should().Be(OrderPlacedConsumer.Identity);
 
         // And - selection
         var best = selector.SelectBestCandidate("orders.placed", candidates);
@@ -98,19 +92,11 @@ public sealed class IConsumeIntegrationTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<OrderPlaced>("orders.placed"));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Bus.ForMessage<OrderPlaced>(message =>
-            {
-                message.Contract("orders.placed");
-                message.Consumer<OrderPlacedConsumer>(consumer =>
-                    consumer.StableContract("tests.integration.orders-primary").Group("order-service")
-                );
-                message.Consumer<OrderAnalyticsConsumer>(consumer =>
-                    consumer.StableContract("tests.integration.orders-analytics").Group("analytics-service")
-                );
-            });
-            messaging.Options.DefaultGroupName = "default";
+            messaging.AddConsumer<OrderPlacedConsumer>();
+            messaging.AddConsumer<OrderAnalyticsConsumer>();
             messaging.Options.Version = "v1";
         });
 
@@ -123,9 +109,11 @@ public sealed class IConsumeIntegrationTests
         // then
         candidates.Should().HaveCount(2);
 
-        var orderService = candidates.First(c => c.GroupName.Contains("order-service", StringComparison.Ordinal));
+        var orderService = candidates.First(c =>
+            string.Equals(c.GroupName, OrderPlacedConsumer.Identity, StringComparison.Ordinal)
+        );
         var analyticsService = candidates.First(c =>
-            c.GroupName.Contains("analytics-service", StringComparison.Ordinal)
+            string.Equals(c.GroupName, OrderAnalyticsConsumer.Identity, StringComparison.Ordinal)
         );
 
         orderService.ImplTypeInfo.Should().Be(typeof(OrderPlacedConsumer).GetTypeInfo());
@@ -297,8 +285,11 @@ public sealed record OrderPlaced(string OrderId, decimal Amount);
 public sealed record OrderCancelled(string OrderId, string Reason);
 
 // Test consumers
+[BusConsumer(Identity)]
 public sealed class OrderPlacedConsumer : IConsume<OrderPlaced>
 {
+    public const string Identity = "tests.integration.orders-primary";
+
     public static OrderPlaced? LastProcessed { get; private set; }
 
     public ValueTask ConsumeAsync(ConsumeContext<OrderPlaced> context, CancellationToken cancellationToken)
@@ -308,8 +299,11 @@ public sealed class OrderPlacedConsumer : IConsume<OrderPlaced>
     }
 }
 
+[BusConsumer(Identity)]
 public sealed class OrderAnalyticsConsumer : IConsume<OrderPlaced>
 {
+    public const string Identity = "tests.integration.orders-analytics";
+
     public static OrderPlaced? LastProcessed { get; private set; }
 
     public ValueTask ConsumeAsync(ConsumeContext<OrderPlaced> context, CancellationToken cancellationToken)
@@ -319,6 +313,7 @@ public sealed class OrderAnalyticsConsumer : IConsume<OrderPlaced>
     }
 }
 
+[BusConsumer("tests.integration.orders-cancelled")]
 public sealed class OrderCancelledConsumer : IConsume<OrderCancelled>
 {
     public static OrderCancelled? LastProcessed { get; private set; }
