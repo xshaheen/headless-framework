@@ -175,7 +175,6 @@ Registers `TimeProvider.System`, framework GUID generator defaults, `IHostIdenti
 
 - Base store algorithm hooks for cluster-scoped relational providers.
 - Provider-owned physical identifiers: PostgreSQL uses snake_case; SQL Server uses PascalCase.
-- Initializer contract for provider-specific race-safe DDL.
 
 ### Design constraints
 
@@ -208,7 +207,7 @@ None.
 - Atomic incarnation allocation with `INSERT ... ON CONFLICT ... RETURNING`.
 - Heartbeat guard rejects stale, impossible, dead, gracefully left, and pruned incarnations.
 - Liveness classification uses `clock_timestamp()`.
-- DDL initialization uses PostgreSQL advisory locks.
+- The membership tables are schema steps (`Coordination/1` creates them, `Coordination/2` renames legacy timestamp columns) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
 
 ### Design constraints
 
@@ -247,11 +246,11 @@ The parameterless overload and the shared `headless` schema are described in [sq
 
 Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `PostgreSqlCoordinationOptions.ConnectionString`, optional `DataSource`, `CommandTimeout`, and `InitializeOnStartup` with `setup.UsePostgreSql(...)`.
 
-The schema is not a provider option: set it with `setup.ConfigureStorage(storage => storage.Schema = "…")` (default `"headless"`). The initializer creates that schema when absent and every statement names its tables as `"schema"."table"`, so the provider no longer depends on `search_path`. The provider validates the schema against PostgreSQL's unquoted-identifier rules at startup.
+The schema is not a provider option: set it with `setup.ConfigureStorage(storage => storage.Schema = "…")` (default `"headless"`). The schema runner creates that schema when absent and every statement names its tables as `"schema"."table"`, so the provider no longer depends on `search_path`. The provider validates the schema against PostgreSQL's unquoted-identifier rules at startup.
 
 ### Runtime behavior
 
-Registers the core membership services, PostgreSQL membership store, storage initializer, and initializer hosted service. Creates snake_case tables and columns. Requires PostgreSQL DDL permission when initialization runs on startup.
+Registers the core membership services, the PostgreSQL membership store, and the membership schema contribution; the one schema runner applies it at startup. Creates snake_case tables and columns. Requires PostgreSQL DDL permission when initialization runs on startup.
 
 ---
 
@@ -318,7 +317,7 @@ Registers the core membership services, Redis membership store, keyed Lua script
 - Heartbeat guard rejects stale, impossible, dead, gracefully left, and pruned incarnations.
 - Liveness classification uses `SYSUTCDATETIME()`.
 - Guarded membership writes retry SQL Server deadlock victim error `1205` with a bounded jittered Polly policy.
-- DDL initialization uses `sp_getapplock`.
+- The membership tables are schema steps (`Coordination/1` creates them, `Coordination/2` renames legacy timestamp columns) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
 
 ### Design constraints
 
@@ -356,8 +355,8 @@ The parameterless overload and the shared `headless` schema are described in [sq
 
 Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `ConnectionString`, `CommandTimeout`, and `InitializeOnStartup` with `setup.UseSqlServer(...)`.
 
-The schema is not a provider option: set it with `setup.ConfigureStorage(storage => storage.Schema = "…")`. The default is `"headless"`, not `dbo` — the initializer creates the schema when absent. The provider validates the schema against SQL Server's regular-identifier rules at startup.
+The schema is not a provider option: set it with `setup.ConfigureStorage(storage => storage.Schema = "…")`. The default is `"headless"`, not `dbo` — the schema runner creates the schema when absent. The provider validates the schema against SQL Server's regular-identifier rules at startup.
 
 ### Runtime behavior
 
-Registers the core membership services, SQL Server membership store, storage initializer, and initializer hosted service. Creates PascalCase tables and columns. Requires SQL Server DDL permission when initialization runs on startup.
+Registers the core membership services, the SQL Server membership store, and the membership schema contribution; the one schema runner applies it at startup. Creates PascalCase tables and columns. Requires SQL Server DDL permission when initialization runs on startup.

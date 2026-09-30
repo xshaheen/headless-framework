@@ -293,7 +293,7 @@ The parameterless overloads and the shared `headless` schema are described in [s
 - Every decision reads `clock_timestamp()` after the row lock, captured once per statement in a `MATERIALIZED` CTE — never `now()`, which is frozen at transaction start and would keep an expired lease looking live inside a long enlisted unit. `nextval()` runs only in a statement after the lock is held.
 - The autonomous path begins an owned unit through `IIdempotencyRecordStore.BeginOwnedUnitAsync` at READ COMMITTED; the enlisted path runs on the unit's own connection and transaction with no retry.
 - Autonomous renewal and purge run in their own READ COMMITTED transaction and retry a deadlock or serialization failure (`40P01`, `40001`) in a fresh transaction up to 3 attempts, waiting a jittered delay (`n × 10–50 ms` before retry `n`, on the registered `TimeProvider`) between them. Enlisted calls never retry.
-- The initializer serializes concurrent hosts with an advisory lock and creates the schema and table idempotently.
+- The sequence, table, and index are one step the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup, under one advisory lock per database shared with every other Headless feature, recorded as `Idempotency/1`.
 
 ---
 
@@ -328,4 +328,4 @@ The parameterless overloads and the shared `headless` schema are described in [s
 - Each batch captures `SYSUTCDATETIME()` into a variable after the locking read. A generation is drawn with `SET @g = NEXT VALUE FOR …` into a variable after the lock, because `NEXT VALUE FOR` is illegal inside `CASE`, `OUTPUT`, `WHERE`, subqueries, and `MERGE`.
 - The autonomous path begins an owned unit through `IIdempotencyRecordStore.BeginOwnedUnitAsync` at READ COMMITTED; the enlisted path runs on the unit's own connection and transaction with no retry.
 - Autonomous renewal and purge run in their own READ COMMITTED transaction and retry a deadlock or snapshot update conflict (1205, 3960) in a fresh transaction up to 3 attempts, waiting a jittered delay (`n × 10–50 ms` before retry `n`, on the registered `TimeProvider`) between them. Enlisted calls never retry.
-- The initializer serializes concurrent hosts with `sp_getapplock` and creates the schema and table idempotently.
+- The sequence, table, and index are one step the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup, under one `sp_getapplock` per database shared with every other Headless feature, recorded as `Idempotency/1`.

@@ -58,7 +58,7 @@ Formatting stays in the application. The framework returns a `long`. Prefixes (`
 - A fast call cancelled or cut off during its commit may still have consumed a number. Treat that as an ordinary fast-mode gap.
 - The tenant is read from `ICurrentTenant` on every call. There is no tenant argument; host code numbering on behalf of a tenant switches with `ICurrentTenant.Change(...)`. With no tenant (`Id` is `null`), calls use the host counter. An empty or whitespace tenant id is refused, so it can never fall into the host counter.
 - Names and partitions compare ordinally and case-sensitively: `"INV"` and `"inv"` are two counters. A name may be at most 128 characters, a partition at most 64, and a tenant id at most 128 (`SequenceFieldLimits`). Longer values, a blank name, a whitespace-only partition, and any key part that starts or ends with whitespace throw `ArgumentException` before any SQL runs. The whitespace rule exists because SQL Server ignores trailing spaces when comparing keys, so `"acme"` and `"acme "` would otherwise share one counter there. A `null` or empty partition means no partition.
-- The table is created at startup by the provider's initializer. With `InitializeOnStartup = false` the application owns the table. A call against a missing table fails, and on PostgreSQL that failure aborts the caller's unit.
+- The table is created at startup by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts). With `InitializeOnStartup = false` the application owns the table. A call against a missing table fails, and on PostgreSQL that failure aborts the caller's unit.
 - There is no reset, set, peek, or delete API. Start a new period with a new partition.
 - On SQL Server, the first call on a new counter takes a key-range lock on the gap in the primary key that holds the new key. In gap-free mode that lock is held until the unit commits, so first use of any other new counter whose key sorts into the same gap waits, for any tenant and from either mode. Two units that each first-use several new counters can deadlock on those ranges. Keep a unit that takes a counter's first number short. PostgreSQL locks only the conflicting key.
 
@@ -175,7 +175,7 @@ Gap-free units begin over a PostgreSQL connection or an EF `DbContext` (`AddPost
 - Each call is one `INSERT … ON CONFLICT (tenant_id, name, partition) DO UPDATE … RETURNING`, so concurrent first calls on a new key never collide. Key columns use `COLLATE "C"`.
 - The fast path opens its own connection, runs in an explicit READ COMMITTED transaction, and retries a deadlock (`40P01`) in a fresh transaction up to 3 attempts, waiting a jittered delay (`n × 10–50 ms` before retry `n`, on the registered `TimeProvider`) between them.
 - The gap-free path runs on the unit's own connection and transaction, with no retry. A failed or cancelled statement aborts the caller's PostgreSQL transaction, so the unit can then only roll back.
-- The initializer serializes concurrent hosts with an advisory lock and creates the schema and table idempotently.
+- The table is a step the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup, under one advisory lock per database shared with every other Headless feature, and records in `headless_schema_history` as `Sequences/1` (`Sequences:<table>/1` for a configured table name).
 
 ---
 
@@ -213,4 +213,4 @@ Gap-free units begin over a SQL Server connection or an EF `DbContext` (`AddSqlS
 - Key columns use a binary (`_BIN2`) collation, so names compare ordinally, as on PostgreSQL. The clustered primary key is exactly `(TenantId, Name, Partition)`, and it is what makes the range lock above serialize first use.
 - The fast path opens its own connection, runs in an explicit READ COMMITTED transaction, and retries a deadlock (1205) in a fresh transaction up to 3 attempts, waiting a jittered delay (`n × 10–50 ms` before retry `n`, on the registered `TimeProvider`) between them.
 - The gap-free path runs on the unit's own connection and transaction with no retry. With `XACT_ABORT ON`, a timeout or cancellation rolls back the caller's transaction.
-- The initializer serializes concurrent hosts with `sp_getapplock` and creates the schema, table, and key idempotently.
+- The table and its clustered key are a step the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup, under one `sp_getapplock` per database shared with every other Headless feature, and records in `headless_schema_history` as `Sequences/1` (`Sequences:<table>/1` for a configured table name).

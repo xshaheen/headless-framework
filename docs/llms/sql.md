@@ -36,6 +36,7 @@ Inject `ISqlConnectionFactory` and call `CreateNewConnectionAsync()` to get an a
 - `IConnectionStringChecker` is for health checks and startup validation; `Add{Provider}Sql` registers the provider implementation, or register it yourself and inject `IConnectionStringChecker`. Note: `SqliteConnectionStringChecker` always returns `DatabaseExists = true` when connected (SQLite creates the file on open).
 - For in-process integration tests, call `AddSqliteSql("Data Source=:memory:")` — it needs no external server.
 - To give every Headless storage feature the same database, register the connection once with `AddPostgreSqlSql` or `AddSqlServerSql` and call the feature's parameterless `UsePostgreSql()` or `UseSqlServer()`. Do not repeat the connection string per feature. See [Shared connection and schema for storage features](#shared-connection-and-schema-for-storage-features).
+- Storage features create their tables through one schema runner that records applied steps in `headless_schema_history`. For hosts that must not run DDL, set `SchemaRunnerMode.Verify` and deploy the script from `SchemaRunner.ExportScript`. Never drop a feature table by hand without also deleting its history rows. See [Schema runner](#schema-runner-apply-verify-and-deploy-time-scripts).
 - Each provider package ships `Add{Provider}Sql(string connectionString)` and `Add{Provider}Sql(Func<IServiceProvider, string>)` on `IServiceCollection` (e.g. `AddPostgreSqlSql`, `AddSqlServerSql`, `AddSqliteSql`). Each registers `ISqlConnectionFactory` (singleton), `IConnectionStringChecker` (singleton), and `ISqlCurrentConnection` → `DefaultSqlCurrentConnection` (scoped). The factory and checker use the same connection string.
 
 ## Core Concepts
@@ -101,6 +102,46 @@ The parameterless overloads resolve the connection string when the feature's opt
 Custom provider code reads the same connection through `IServiceProvider.GetPostgreSqlConnectionString()` or `IServiceProvider.GetSqlServerConnectionString()` (namespace `Headless.Sql`), which throw the same `InvalidOperationException`.
 
 The EF Core storage variants and Jobs take their connection from the `DbContext` and do not have these overloads.
+
+### Schema runner: apply, verify, and deploy-time scripts
+
+Every raw PostgreSQL and SQL Server storage feature contributes its DDL to one schema runner (`SchemaRunner`, namespace `Headless.Hosting.Initialization.Schema`) instead of running its own initializer. Registering a feature is enough; the feature adds its contribution and the runner's hosted initializer. The runner:
+
+- Applies every missing step of every feature that reaches one database in a single pass at host start, under one session lock per database (`pg_try_advisory_lock` or `sp_getapplock`, polled), before any hosted service can use the tables.
+- Records each applied step, with a SHA-256 checksum of its SQL, in `headless_schema_history` in the feature's schema. A recorded step is never run again, so a warm start is one history read per schema and takes no lock.
+- Absorbs a creator outside the lock, such as your own EF migration committing the same schema or table first: the failed step is re-run once in a fresh transaction.
+
+Choose the startup mode with `services.AddHeadlessSchemaRunner(options => options.Mode = …)`:
+
+| Mode | Writes DDL | Fails startup when |
+|---|---|---|
+| `SchemaRunnerMode.Apply` (default) | Yes, missing steps only | A recorded step's checksum no longer matches the code |
+| `SchemaRunnerMode.Verify` | Never | A step is missing, or a recorded checksum no longer matches |
+
+Use `Verify` when DDL may not run from the application. Generate the reviewable script from the same registrations the application uses, and apply it with `psql` or `sqlcmd` in the deployment:
+
+```csharp
+// For example in a small console entry point or a test that CI runs: register the features exactly as the
+// application does, then export. Export performs no database access; the connection string is never opened.
+var services = new ServiceCollection();
+services.AddHeadlessSequences(setup => setup.UsePostgreSql(connectionString));
+services.AddHeadlessIdempotency(setup => setup.UsePostgreSql(connectionString));
+
+await using var provider = services.BuildServiceProvider();
+var script = provider.GetRequiredService<SchemaRunner>().ExportScript(PostgreSqlSchemaDialect.Instance);
+await File.WriteAllTextAsync("headless-schema.postgresql.sql", script);
+```
+
+The script is deterministic for a given set of registrations, so it can be committed and diffed. Every statement is guarded, so running it twice changes nothing. It inserts the same history rows the runner writes, so a host in `Verify` mode accepts the database afterwards. The SQL Server script separates batches with `GO`.
+
+Rules that change how you operate a database:
+
+- **The runner trusts its history.** Dropping a feature's table by hand does not make the next start recreate it. Delete that feature's rows from `headless_schema_history` too, or drop the whole schema.
+- **Never edit a shipped step.** A changed step fails startup with a checksum mismatch naming the feature and version. Features evolve their schema by adding a new step.
+- **Configuration that shapes DDL is part of the checksum.** Changing AuditLog's `JsonColumnType` after its table exists fails startup instead of being silently ignored.
+- **Features with configurable object names keep one history per name.** `Sequences` with the default table records `Sequences/1`; with `TableName = "counters"` it records `Sequences:counters/1`, so two hosts naming the table differently in one schema never collide.
+- **`InitializeOnStartup = false`** on a feature keeps its steps out of `Apply` mode. `Verify` mode and `ExportScript` still include them.
+- History rows of features a host does not register are ignored, so hosts with different feature sets can share one schema. A row for a registered feature whose step this host does not know, such as a newer replica's step during a rolling deploy, is logged, not fatal.
 
 ## Choosing a Provider
 
@@ -204,6 +245,8 @@ PostgreSQL connection factory backed by Npgsql.
 - `NpgsqlConnectionStringChecker` — `IConnectionStringChecker` that verifies server reachability and database existence by connecting to `postgres` first, then calling `ChangeDatabaseAsync` to the target
 - `SetupPostgreSqlSql.AddPostgreSqlSql(string connectionString)` / `AddPostgreSqlSql(Func<IServiceProvider, string>)` — one-call registration of the factory, checker, and scoped ambient connection
 - `IServiceProvider.GetPostgreSqlConnectionString()` (`HeadlessPostgreSqlSharedConnectionExtensions`) — returns the registered `NpgsqlConnectionFactory` connection string; the storage features' parameterless `UsePostgreSql()` calls it
+- `PostgreSqlSchemaDialect.Instance` — the schema runner's PostgreSQL dialect: polled session advisory lock per database, `headless_schema_history` DDL, and `42P06`/`42P07`/`42710`/`23505` classified as an absorbed race. Pass it to `SchemaRunner.ExportScript` for a `psql` script
+- `PostgreSqlSchemaInitLock.AcquireStatement(schema)` — the schema-wide transaction lock; the dialect takes it before `CREATE SCHEMA`
 
 ### Design constraints
 
@@ -274,6 +317,7 @@ SQL Server connection factory backed by `Microsoft.Data.SqlClient`.
 - `SqlServerConnectionStringChecker` — `IConnectionStringChecker` that verifies server reachability and database existence by connecting to `master` first, then calling `ChangeDatabaseAsync` to the target
 - `SetupSqlServerSql.AddSqlServerSql(string connectionString)` / `AddSqlServerSql(Func<IServiceProvider, string>)` — one-call registration of the factory, checker, and scoped ambient connection
 - `IServiceProvider.GetSqlServerConnectionString()` (`HeadlessSqlServerSharedConnectionExtensions`) — returns the registered `SqlServerConnectionFactory` connection string; the storage features' parameterless `UseSqlServer()` calls it
+- `SqlServerSchemaDialect.Instance` — the schema runner's SQL Server dialect: polled session `sp_getapplock` per database, `headless_schema_history` DDL, and errors 2714/1913/2759 classified as an absorbed race. Pass it to `SchemaRunner.ExportScript` for a `sqlcmd` script with `GO` batch separators
 
 ### Install
 
