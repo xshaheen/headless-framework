@@ -26,7 +26,6 @@ namespace Headless.UnitOfWork.Internal;
 /// </remarks>
 internal static class InDoubtCommitFaults
 {
-    private const string _SqlClientExceptionTypeName = "Microsoft.Data.SqlClient.SqlException";
     private const int _SqlClientTimeoutNumber = -2;
     private const byte _SqlClientConnectionClosingSeverity = 20;
 
@@ -52,9 +51,9 @@ internal static class InDoubtCommitFaults
             return true;
         }
 
-        if (string.Equals(databaseException.GetType().FullName, _SqlClientExceptionTypeName, StringComparison.Ordinal))
+        if (SqlServerTransientFaults.IsSqlClientException(databaseException))
         {
-            return RelationalTransientFaults.GetErrorNumber(databaseException) == _SqlClientTimeoutNumber
+            return SqlServerTransientFaults.GetErrorNumber(databaseException) == _SqlClientTimeoutNumber
                 || _GetSqlClientSeverity(databaseException) >= _SqlClientConnectionClosingSeverity;
         }
 

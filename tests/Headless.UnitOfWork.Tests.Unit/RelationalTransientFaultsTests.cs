@@ -66,15 +66,15 @@ public sealed class RelationalTransientFaultsTests : TestBase
         var exception = new Microsoft.Data.SqlClient.SqlException(2627, furtherNumbers: [1205]);
 
         RelationalTransientFaults.IsTransient(exception, CancellationToken.None).Should().BeTrue();
-        RelationalTransientFaults.GetErrorNumber(exception).Should().Be(2627);
-        RelationalTransientFaults.GetErrorNumbers(exception).Should().Equal(2627, 1205);
+        SqlServerTransientFaults.GetErrorNumber(exception).Should().Be(2627);
+        SqlServerTransientFaults.GetErrorNumbers(exception).Should().Equal(2627, 1205);
     }
 
     [Fact]
     public void should_fall_back_to_the_single_error_number_when_the_driver_exposes_no_collection()
     {
-        RelationalTransientFaults.GetErrorNumbers(new FakeDbException(number: 1205)).Should().Equal(1205);
-        RelationalTransientFaults.GetErrorNumbers(new NumberlessDbException()).Should().BeEmpty();
+        SqlServerTransientFaults.GetErrorNumbers(new FakeDbException(number: 1205)).Should().Equal(1205);
+        SqlServerTransientFaults.GetErrorNumbers(new NumberlessDbException()).Should().BeEmpty();
     }
 
     [Fact]
