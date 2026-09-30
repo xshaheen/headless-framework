@@ -772,6 +772,40 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
         ShouldCarry(third.Progress, recorded, "no later attempt recorded any");
     }
 
+    // Found by the differential oracle: call validation accepted these, then PostgreSQL failed the statement on NUL
+    // (22021) and Npgsql's UTF-8 encoder refused an unpaired surrogate, while SQL Server stored the surrogate and handed
+    // a sweep a resource rewritten to U+FFFD, which names a different lease than the one it abandoned.
+    public virtual async Task should_refuse_a_key_no_provider_stores_unchanged_before_any_write()
+    {
+        var (kind, resource) = (CreateKind(), CreateResource());
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        foreach (var unportable in (string[])["x\u0000y", "lone\ud800", "\udc00lone"])
+        {
+            var badResource = async () =>
+                await host.Leases.GrantAsync(kind, resource + unportable, LongDuration, AbortToken);
+            var badKind = async () =>
+                await host.Leases.GrantAsync(kind + unportable, resource, LongDuration, AbortToken);
+            var badLease = async () =>
+                await host.Leases.SettleAsync(new FencedLease(null, kind, resource + unportable, 1), AbortToken);
+
+            await badResource.Should().ThrowAsync<ArgumentException>();
+            await badKind.Should().ThrowAsync<ArgumentException>();
+            await badLease.Should().ThrowAsync<ArgumentException>();
+
+            using (host.CurrentTenant.Change("tenant" + unportable))
+            {
+                var badTenant = async () => await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+                await badTenant.Should().ThrowAsync<ArgumentException>();
+            }
+        }
+
+        // Nothing reached the store: the portable key is still free.
+        (await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken))
+            .Status.Should()
+            .Be(LeaseGrantStatus.Granted);
+    }
+
     public virtual async Task should_reject_oversized_progress_before_any_write()
     {
         var (kind, resource) = (CreateKind(), CreateResource());

@@ -36,6 +36,55 @@ public sealed class LeaseRequestResolverTests : TestBase
         act.Should().Throw<ArgumentException>();
     }
 
+    // PostgreSQL cannot store NUL; an unpaired surrogate is not Unicode, so PostgreSQL's UTF-8 encoding refuses it and
+    // SQL Server hands it back rewritten as U+FFFD. Found by the differential oracle (seeds 1, 12, and 20).
+    [Theory]
+    [InlineData(0, "x\u0000y")]
+    [InlineData(0, "lone\ud800")]
+    [InlineData(0, "\udc00lone")]
+    [InlineData(1, "x\u0000y")]
+    [InlineData(1, "lone\ud800")]
+    [InlineData(1, "\udc00\ud800")]
+    [InlineData(2, "t\u0000")]
+    [InlineData(2, "t\ud800")]
+    public void should_reject_a_key_part_no_provider_stores_unchanged(int part, string value)
+    {
+        var context = new FencingTestContext();
+
+        if (part == 2)
+        {
+            context.Tenant.Id = value;
+        }
+
+        var act = () => context.Resolver.Resolve(part == 0 ? value : "job", part == 1 ? value : "order-1");
+        var actLease = () =>
+            LeaseRequestResolver.ResolveLease(
+                new FencedLease(part == 2 ? value : null, part == 0 ? value : "job", part == 1 ? value : "order-1", 1)
+            );
+
+        act.Should().Throw<ArgumentException>();
+        actLease.Should().Throw<ArgumentException>();
+    }
+
+    [Theory]
+    [InlineData("Job")]
+    [InlineData("caf\u00e9")]
+    [InlineData("cafe\u0301")]
+    [InlineData("stra\u00dfe")]
+    [InlineData("a b")]
+    [InlineData("r\u200b")]
+    [InlineData("x\u0001y")]
+    [InlineData("\ud83d\ude00")]
+    public void should_keep_a_key_part_every_provider_stores_unchanged(string value)
+    {
+        var context = new FencingTestContext();
+        context.Tenant.Id = value;
+
+        var key = context.Resolver.Resolve(value, value);
+
+        key.Should().Be(new LeaseKey(value, value, value));
+    }
+
     [Fact]
     public void should_reject_a_null_kind_or_resource()
     {
