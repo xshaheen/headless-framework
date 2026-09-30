@@ -570,6 +570,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.Sql.Core": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )",
