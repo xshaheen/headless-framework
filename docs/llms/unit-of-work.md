@@ -244,6 +244,7 @@ Implements the singleton `UnitOfWorkFactory`, the in-process unit engine with th
 - `OnFailed` drain (log-and-continue) on rollback, abandon, and commit fault; `RollbackAsync` idempotent; a commit fault transitions to `Failed` before the exception propagates.
 - An observed unit disposed un-completed after its transaction finished logs the forgotten-completion warning.
 - `GetFeature<T>()` resolves an `IUnitOfWorkFeature` singleton from the host container the factory was registered in, and throws `InvalidOperationException` naming the type when that registration is scoped or transient.
+- `RelationalTransientFaults.IsTransient(exception, cancellationToken)`: the framework's shared replay classification — a driver-reported transient fault, a serialization failure (`40001`) or deadlock (`40P01`) reported by SQLSTATE, and on SQL Server (where SqlClient reports neither signal) the same error-number set EF Core replays under `EnableRetryOnFailure`, read across every error the exception carries; never a cancellation, a client-side command timeout, or a constraint violation. It backs the framework's own replay filters; a hand-rolled retry loop around `RunAsync` reuses it so its classification stays the framework's, and a narrower classifier composes it (the Jobs tree delete adds its foreign-key conflicts). It is classification only: the loop that applies it must still refuse to replay a commit, which may have succeeded on the server before it failed on the wire.
 
 ### Design constraints
 

@@ -1,15 +1,17 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using System.Data.Common;
+using Headless.Checks;
+using Headless.UnitOfWork.Internal;
 
-namespace Headless.UnitOfWork.Internal;
+namespace Headless.UnitOfWork;
 
 /// <summary>
 /// Classifies a relational failure as transient: a fault that a replay of the whole transaction, on a fresh
-/// transaction, may cure. It is the default replay filter for the unit of work and the base that narrower
-/// classifiers (the Jobs tree delete) add their own conflicts to. The rules that belong to one database live in
-/// <see cref="PostgreSqlTransientFaults" /> and <see cref="SqlServerTransientFaults" />; this type owns what is
-/// shared and composes them.
+/// transaction, may cure. It is the framework's default replay filter and the composition point a narrower
+/// classifier builds on (the Jobs tree delete adds its own foreign-key conflicts); reuse or compose it in a
+/// hand-rolled retry loop around <c>RunAsync</c> so a custom loop keeps the framework's classification.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -24,27 +26,33 @@ namespace Headless.UnitOfWork.Internal;
 /// <para>
 /// <see cref="DbException.IsTransient" /> is only one signal. Npgsql and MySqlConnector override it, so their
 /// connection, capacity, and lock faults arrive classified. SQL Server's <c>SqlException</c> overrides neither it
-/// nor <see cref="DbException.SqlState" />, which is why <see cref="SqlServerTransientFaults" /> matches on error
-/// numbers instead.
+/// nor <see cref="DbException.SqlState" />, which is why the SQL Server half matches on error numbers instead,
+/// over every error the exception carries.
 /// </para>
 /// <para>
 /// The commit phase is not this classifier's concern: whoever replays must refuse to replay a commit, which may
 /// have succeeded on the server before it failed on the wire, whatever this classifier says about its fault.
 /// </para>
 /// </remarks>
-internal static class RelationalTransientFaults
+[PublicAPI]
+public static class RelationalTransientFaults
 {
     /// <summary>Returns whether <paramref name="exception" /> is a transient relational failure.</summary>
     /// <param name="exception">The failure, as thrown; wrappers such as EF's <c>DbUpdateException</c> are walked.</param>
     /// <param name="cancellationToken">The caller's token; a failure observed after it was cancelled is never transient.</param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="exception" /> is <see langword="null" />.
+    /// </exception>
     public static bool IsTransient(Exception exception, CancellationToken cancellationToken)
     {
-        if (IsCancellation(exception, cancellationToken))
+        Argument.IsNotNull(exception);
+
+        if (TransientFaults.IsCancellation(exception, cancellationToken))
         {
             return false;
         }
 
-        if (FindDatabaseException(exception) is not { } databaseException)
+        if (TransientFaults.FindDatabaseException(exception) is not { } databaseException)
         {
             return false;
         }
@@ -55,25 +63,5 @@ internal static class RelationalTransientFaults
                 SqlServerTransientFaults.IsSqlClientException(databaseException)
                 && SqlServerTransientFaults.HasTransientError(databaseException)
             );
-    }
-
-    /// <summary>Whether the failure is, or was observed during, a cancellation.</summary>
-    public static bool IsCancellation(Exception exception, CancellationToken cancellationToken)
-    {
-        return cancellationToken.IsCancellationRequested || exception is OperationCanceledException;
-    }
-
-    /// <summary>The outermost <see cref="DbException" /> in <paramref name="exception" />'s inner-exception chain.</summary>
-    public static DbException? FindDatabaseException(Exception exception)
-    {
-        for (var current = exception; current is not null; current = current.InnerException)
-        {
-            if (current is DbException databaseException)
-            {
-                return databaseException;
-            }
-        }
-
-        return null;
     }
 }
