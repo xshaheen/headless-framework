@@ -18,6 +18,7 @@ public class HeadlessAzuriteFixture()
         return base.Configure()
             .WithImage(TestImages.Azurite)
             .WithReuse(true)
-            .WithLabel(ReuseLabel.Key, ReuseLabel.For(this));
+            .WithLabel(ReuseLabel.Key, ReuseLabel.For(this))
+            .WithLabel(ReuseLabel.CheckoutKey, ReuseLabel.Checkout);
     }
 }

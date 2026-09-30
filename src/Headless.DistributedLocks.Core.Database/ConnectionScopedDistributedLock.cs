@@ -186,7 +186,7 @@ internal sealed class ConnectionScopedDistributedLock(
 
                 if (handle is not null)
                 {
-                    long? fencingToken;
+                    LockFencingToken? fencingToken;
 
                     try
                     {

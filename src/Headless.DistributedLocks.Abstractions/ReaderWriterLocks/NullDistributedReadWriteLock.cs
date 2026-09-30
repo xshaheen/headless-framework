@@ -121,7 +121,7 @@ public sealed class NullDistributedReadWriteLock(
 
         public string LeaseId { get; } = Guid.NewGuid().ToString("N");
 
-        public long? FencingToken => null;
+        public LockFencingToken? FencingToken => null;
 
         public string Resource { get; } = resource;
 

@@ -6,6 +6,9 @@
     <IsTestProject>false</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Testing.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" />
     <PackageReference Include="Testcontainers" />
     <PackageReference Include="Testcontainers.Azurite" />

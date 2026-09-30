@@ -713,6 +713,7 @@ Base classes وbuilders وfixtures وتكامل Testcontainers لـ integration 
 | [Headless.Generator.Primitives](src/Headless.Generator.Primitives/README.md) | Source generator للـ primitive types |
 | [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | الـ abstractions بتاعة الـ generator |
 | [Headless.Hosting](src/Headless.Hosting/README.md) | أدوات للـ .NET hosting |
+| [Headless.Http.Resilience](src/Headless.Http.Resilience/README.md) | الـ side-effect classes المعلنة للـ outbound HTTP calls |
 | [Headless.NetTopologySuite](src/Headless.NetTopologySuite/README.md) | أدوات geospatial |
 | [Headless.Primitives](src/Headless.Primitives/README.md) | Value objects، والـ result pattern، وpaging models، وdomain primitives |
 | [Headless.Redis](src/Headless.Redis/README.md) | أدوات لـ Redis |

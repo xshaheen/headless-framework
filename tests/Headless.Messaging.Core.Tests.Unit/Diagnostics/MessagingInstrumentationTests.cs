@@ -44,18 +44,6 @@ public sealed class MessagingInstrumentationTests : TestBase
     }
 
     [Fact]
-    public void should_tag_tenant_when_present_and_skip_when_absent()
-    {
-        using var withTenant = new Activity("with");
-        new TenantIdTagEnricher().Enrich(withTenant, new MessagingEnrichmentContext { TenantId = "tenant-9" });
-        withTenant.GetTagItem(MessagingTags.TenantId).Should().Be("tenant-9");
-
-        using var withoutTenant = new Activity("without");
-        new TenantIdTagEnricher().Enrich(withoutTenant, new MessagingEnrichmentContext { TenantId = null });
-        withoutTenant.GetTagItem(MessagingTags.TenantId).Should().BeNull();
-    }
-
-    [Fact]
     public void should_tag_retry_count_when_positive_and_skip_when_zero()
     {
         using var withRetry = new Activity("with");
@@ -101,12 +89,7 @@ public sealed class MessagingInstrumentationTests : TestBase
             .BuildEnrichers()
             .Select(e => e.GetType())
             .Should()
-            .Equal(
-                typeof(TenantIdTagEnricher),
-                typeof(LaneTagEnricher),
-                typeof(DeliveryModeTagEnricher),
-                typeof(RetryCountTagEnricher)
-            );
+            .Equal(typeof(LaneTagEnricher), typeof(DeliveryModeTagEnricher), typeof(RetryCountTagEnricher));
     }
 
     [Fact]
@@ -114,7 +97,6 @@ public sealed class MessagingInstrumentationTests : TestBase
     {
         var options = new MessagingInstrumentationOptions
         {
-            SuppressTenantIdTag = true,
             SuppressLaneTags = true,
             SuppressDeliveryModeTags = true,
             SuppressRetryCountTag = true,
@@ -127,7 +109,7 @@ public sealed class MessagingInstrumentationTests : TestBase
     public void should_append_custom_enricher_after_builtins()
     {
         var custom = new StubEnricher();
-        var options = new MessagingInstrumentationOptions { SuppressTenantIdTag = true, SuppressRetryCountTag = true };
+        var options = new MessagingInstrumentationOptions { SuppressRetryCountTag = true };
         options.AddEnricher(custom);
 
         options

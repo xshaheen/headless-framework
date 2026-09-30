@@ -68,7 +68,7 @@ internal sealed class SubscribeExecutor(
     private readonly string? _hostName = HostIdentity.GetInstanceHostname();
     private readonly MessagingOptions _options = options.Value;
     private readonly InboxMetricPolicy _inboxMetricPolicy =
-        provider.GetService<InboxMetricPolicy>() ?? new InboxMetricPolicy(IncludeTenantId: false);
+        provider.GetService<InboxMetricPolicy>() ?? new InboxMetricPolicy(TenantTagName: null);
     private readonly IMessagingCapabilityModel? _capabilityModel = provider.GetService<IMessagingCapabilityModel>();
     private readonly RetryPolicyOptions _retryPolicy = options.Value.RetryPolicy;
     private readonly MessagingRetryPipeline _retryPipeline = new(options.Value.RetryPolicy, timeProvider, logger);
@@ -709,7 +709,7 @@ internal sealed class SubscribeExecutor(
             tier,
             storageCapability.Provider,
             message.Origin.Headers.TryGetValue(Headers.TenantId, out var tenantId) ? tenantId : null,
-            _inboxMetricPolicy.IncludeTenantId
+            _inboxMetricPolicy.TenantTagName
         );
     }
 

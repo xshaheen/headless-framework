@@ -136,7 +136,7 @@ internal sealed class SqlServerDistributedLocksStorageInitializer(
             END CATCH;
             """;
         command.Parameters.AddWithValue("lockResource", lockResource);
-        command.Parameters.AddWithValue("schema", schema);
+        command.Parameters.AddWithValue(nameof(schema), schema);
         command.Parameters.AddWithValue("sequenceName", sequenceName);
         command.Parameters.AddWithValue("lockTimeout", lockTimeoutMs);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);

@@ -78,10 +78,9 @@ public sealed class ConformanceCancelReceiveMiddleware : IReceiveMiddleware
 {
     public ValueTask InvokeAsync(ReceiveContext context, Func<ValueTask> next)
     {
-        using var cts = new CancellationTokenSource();
-        cts.Cancel();
-        context.SetCancellationToken(cts.Token);
-        throw new OperationCanceledException(cts.Token);
+        var cancelled = new CancellationToken(canceled: true);
+        context.SetCancellationToken(cancelled);
+        throw new OperationCanceledException(cancelled);
     }
 }
 

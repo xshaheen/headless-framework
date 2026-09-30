@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Http.Resilience;
 using Headless.Sms.Twilio;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -8,7 +9,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Polly;
 using Twilio.Clients;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -148,13 +148,10 @@ public static class SetupTwilio
             ? services.AddHttpClient(httpClientName)
             : services.AddHttpClient(httpClientName, configureClient);
 
-        // SMS sends are not idempotent: don't auto-retry by default to avoid duplicate messages.
-        // Consumers can opt back in via configureResilience (ideally with a provider idempotency key).
-        httpClientBuilder.AddStandardResilienceHandler(options =>
-        {
-            options.Retry.ShouldHandle = static _ => PredicateResult.False();
-            configureResilience?.Invoke(options);
-        });
+        // SMS sends are not idempotent: a retried send can deliver twice. Twilio keeps a hand-written setup (its
+        // sender wraps an SDK ITwilioRestClient the provider template cannot construct), but its pipeline is still
+        // derived from the declared effect, so a host-wide default handler cannot re-enable retry.
+        httpClientBuilder.AddEffectResilienceHandler(OutboundEffect.Unsafe, configureResilience: configureResilience);
 
         if (name is null)
         {

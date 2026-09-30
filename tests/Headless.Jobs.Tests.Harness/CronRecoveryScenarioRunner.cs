@@ -131,7 +131,7 @@ public static class CronRecoveryScenarioRunner
         ICronRecoveryScenarioWorld world,
         CronRecoveryScenario scenario,
         CronRecoveryOutcomeSnapshot result,
-        (DateTime ReconciledThroughUtc, DateTime NextDueUtc) position,
+        CronSchedulePosition position,
         string because
     )
     {

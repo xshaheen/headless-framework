@@ -13,12 +13,12 @@ namespace Headless.DistributedLocks;
 /// error prevented the acquire.
 /// </param>
 /// <param name="FencingToken">
-/// A monotonically-increasing integer token assigned by the backend when <paramref name="Acquired"/> is
+/// A monotonically-increasing token assigned by the backend when <paramref name="Acquired"/> is
 /// <see langword="true"/>, used to detect stale writes from prior holders. <see langword="null"/> when
 /// the backend does not support fencing tokens or acquisition failed.
 /// </param>
 [PublicAPI]
-public readonly record struct DistributedLockAcquireResult(bool Acquired, long? FencingToken)
+public readonly record struct DistributedLockAcquireResult(bool Acquired, LockFencingToken? FencingToken)
 {
     /// <summary>Canonical not-acquired sentinel. Safe to compare by value; both fields are value types.</summary>
     public static DistributedLockAcquireResult Failed => new(Acquired: false, FencingToken: null);

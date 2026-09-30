@@ -8,6 +8,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 
+#pragma warning disable xUnit1045 // The rows are notification object graphs; these theories do not need per-row enumeration in Test Explorer.
 namespace Tests;
 
 public sealed class ApnsTypedServiceTests : TestBase
@@ -153,7 +154,10 @@ public sealed class ApnsTypedServiceTests : TestBase
     public async Task should_keep_input_order_and_counts_without_throwing_when_one_multicast_token_is_gone()
     {
         // given
-        _server.Responder = r => r.DeviceToken == "t2" ? new FakeApnsReply(410, "Unregistered") : FakeApnsReply.Ok;
+        _server.Responder = r =>
+            string.Equals(r.DeviceToken, "t2", StringComparison.Ordinal)
+                ? new FakeApnsReply(410, "Unregistered")
+                : FakeApnsReply.Ok;
         await using var provider = _server.CreateProvider();
         var service = provider.GetRequiredService<IApnsPushNotificationService>();
 
@@ -388,7 +392,7 @@ public sealed class ApnsTypedServiceTests : TestBase
             .ContainSingle()
             .Which.Should()
             .Be("""{"aps":{"alert":{"body":"Hi"}},"order":{"id":42,"tags":["a","b"]},"urgent":true}""");
-        _server.Requests.Select(r => r.Headers["apns-id"]).Should().OnlyHaveUniqueItems();
+        _server.Requests.Should().OnlyHaveUniqueItems(r => r.Headers["apns-id"]);
         data.ToJsonString().Should().Be(before);
         data.Parent.Should().BeNull();
         nested.Parent.Should().BeSameAs(data);

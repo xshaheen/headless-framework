@@ -90,7 +90,7 @@ public sealed class ApnsPortAndProxyTests : TestBase
                 )
             )
         );
-        using var container = services.BuildServiceProvider(
+        await using var container = services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
         );
 

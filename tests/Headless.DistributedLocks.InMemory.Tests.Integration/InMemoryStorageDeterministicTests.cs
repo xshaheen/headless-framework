@@ -23,10 +23,10 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
         _timeProvider.Advance(TimeSpan.FromSeconds(6));
         var second = await storage.InsertAsync(key, "lock-3", TimeSpan.FromSeconds(5), AbortToken);
 
-        first.FencingToken.Should().Be(1);
+        first.FencingToken.Should().Be(new LockFencingToken(1));
         rejected.Acquired.Should().BeFalse();
         rejected.FencingToken.Should().BeNull();
-        second.FencingToken.Should().Be(2);
+        second.FencingToken.Should().Be(new LockFencingToken(2));
         (await storage.GetAsync(key, AbortToken)).Should().Be("lock-3");
     }
 
@@ -186,7 +186,7 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
                     continue;
                 }
 
-                var token = result.FencingToken!.Value;
+                var token = result.FencingToken!.Value.Value;
                 var observedMax = Interlocked.Read(ref maxToken);
 
                 // The holder owns the lock right now; its token must not be below a token already granted.

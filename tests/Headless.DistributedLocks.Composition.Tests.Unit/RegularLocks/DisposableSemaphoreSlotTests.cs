@@ -26,7 +26,7 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
                 Arg.Any<TimeSpan>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(new DistributedLockAcquireResult(Acquired: true, FencingToken: 1));
+            .Returns(new DistributedLockAcquireResult(Acquired: true, FencingToken: new LockFencingToken(1)));
         _storage
             .TryExtendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns(true);

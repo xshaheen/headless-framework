@@ -227,7 +227,7 @@ internal sealed class RedisDistributedSemaphoreStorage(
         return (long)result;
     }
 
-    private async Task<(bool Acquired, long? FencingToken)> _TryAcquireSemaphoreAsync(
+    private async Task<(bool Acquired, LockFencingToken? FencingToken)> _TryAcquireSemaphoreAsync(
         RedisKey holdersKey,
         RedisKey fenceKey,
         string leaseId,
@@ -269,7 +269,7 @@ internal sealed class RedisDistributedSemaphoreStorage(
 #pragma warning restore CS0618
         }
 
-        return (true, (long)values[1]);
+        return (true, new LockFencingToken((long)values[1]));
     }
 
     private static SemaphoreSlotParams _GetSemaphoreSlotParameters(RedisKey holdersKey, string leaseId, TimeSpan? ttl)

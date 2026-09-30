@@ -1,0 +1,19 @@
+<Project Sdk="Headless.NET.Sdk.Test">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Tests</RootNamespace>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="WireMock.Net" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.Api.ServiceDefaults\Headless.Api.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Http.Resilience\Headless.Http.Resilience.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Payments.Paymob.CashOut\Headless.Payments.Paymob.CashOut.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Sms.Connekio\Headless.Sms.Connekio.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <ProjectReference Include="..\Headless.Sms.Tests.Harness\Headless.Sms.Tests.Harness.csproj" />
+  </ItemGroup>
+</Project>
