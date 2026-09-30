@@ -27,9 +27,6 @@ public static class MessagingTags
     /// <summary>Number of persisted retry pickups for a subscriber invocation.</summary>
     public const string RetryCount = "headless.messaging.retry_count";
 
-    /// <summary>Tenant identifier extracted from the wire header.</summary>
-    public const string TenantId = "headless.messaging.tenant_id";
-
     /// <summary>Elapsed time (ms) for persisting an outbound message to the store.</summary>
     public const string PersistenceDurationMs = "headless.messaging.persistence.duration_ms";
 
