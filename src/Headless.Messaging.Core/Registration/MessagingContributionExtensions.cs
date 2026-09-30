@@ -25,7 +25,8 @@ public static class MessagingContributionExtensions
     /// <returns>The same <paramref name="services"/>, for chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
-    /// A contribution declares a message type on a lane that another registration already declares.
+    /// A contribution declares a message type on a lane that another registration already declares, or declares a message
+    /// contract that conflicts with an earlier one.
     /// </exception>
     public static IServiceCollection ConfigureMessaging(
         this IServiceCollection services,
@@ -35,7 +36,9 @@ public static class MessagingContributionExtensions
         Argument.IsNotNull(services);
         Argument.IsNotNull(configure);
 
-        configure(new MessagingContributionBuilder(services, SetupMessaging.GetOrAddConsumerRegistry(services)));
+        var builder = new MessagingContributionBuilder(services, SetupMessaging.GetOrAddConsumerRegistry(services));
+        configure(builder);
+        builder.Complete();
 
         return services;
     }

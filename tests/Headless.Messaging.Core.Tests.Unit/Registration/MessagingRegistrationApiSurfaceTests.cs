@@ -41,8 +41,9 @@ public sealed class MessagingRegistrationApiSurfaceTests : TestBase
             )
             .ToArray();
 
-        // then
+        // then: only the lane-agnostic message contract chains lane settings; no lane-owned builder switches lanes.
         publicRegistrationTypes
+            .Where(static type => type != typeof(IMessageContractBuilder<>))
             .SelectMany(static type => type.GetMethods(BindingFlags.Instance | BindingFlags.Public))
             .Select(static method => method.Name)
             .Should()

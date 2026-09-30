@@ -190,7 +190,8 @@ internal sealed class MessageRegistrationSink(IServiceCollection services, Consu
         {
             throw new InvalidOperationException(
                 $"Message type {registration.MessageType.Name} is registered more than once on lane {registration.Lane}. "
-                    + "Register each message type once per lane and configure all consumers in that registration."
+                    + "Register each message type once per lane and configure all consumers in that registration, "
+                    + "and do not also declare it with Message<T>(name, version)."
             );
         }
 
@@ -200,6 +201,57 @@ internal sealed class MessageRegistrationSink(IServiceCollection services, Consu
         {
             Registry.RegisterMessageName(registration.MessageType, registration.Lane, messageName);
         }
+    }
+
+    /// <summary>
+    /// Records one lane-agnostic message contract. The first declaration for a message type contributes that type's
+    /// route on both lanes; a later identical declaration, typically from a second module that shares the contracts
+    /// package, merges into it, and a different one fails naming both.
+    /// </summary>
+    public void RegisterContract(MessageContract contract)
+    {
+        Argument.IsNotNull(contract);
+
+        var existing = Services
+            .Select(static descriptor => descriptor.ImplementationInstance)
+            .OfType<MessageContract>()
+            .FirstOrDefault(existing => existing.MessageType == contract.MessageType);
+
+        if (existing is not null)
+        {
+            if (existing.IsSameDeclarationAs(contract))
+            {
+                return;
+            }
+
+            throw new InvalidOperationException(
+                $"Message type {contract.MessageType.FullName ?? contract.MessageType.Name} has conflicting contract "
+                    + $"declarations: {existing.Describe()} and {contract.Describe()}. A message has one contract for "
+                    + "both lanes; declare it once, or make every declaration identical."
+            );
+        }
+
+        // A contract owns the type's message-level settings on both lanes, so a lane-owned ForMessage<T> declaration
+        // for the same type would compete with it on that lane.
+        var laneDeclaration = Services
+            .Select(static descriptor => descriptor.ImplementationInstance)
+            .OfType<MessageRegistration>()
+            .FirstOrDefault(registration =>
+                registration.DeclaresMessage && registration.MessageType == contract.MessageType
+            );
+
+        if (laneDeclaration is not null)
+        {
+            throw new InvalidOperationException(
+                $"Message type {contract.MessageType.FullName ?? contract.MessageType.Name} is already declared on "
+                    + $"lane {laneDeclaration.Lane} through ForMessage, so {contract.Describe()} cannot also declare it. "
+                    + "Declare the message once."
+            );
+        }
+
+        Services.AddSingleton(contract);
+        Register(contract.ToRegistration(MessageLane.Bus));
+        Register(contract.ToRegistration(MessageLane.Queue));
     }
 }
 
