@@ -7,7 +7,7 @@ using Headless.Messaging.Registration;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Messaging;
 
-/// <summary>Extension methods that attach NATS JetStream provider-specific options to a message or consumer registration.</summary>
+/// <summary>Extension methods that attach NATS JetStream provider-specific options to a message contract or a tuned consumer.</summary>
 [PublicAPI]
 public static class NatsMessageBuilderExtensions
 {
@@ -15,15 +15,11 @@ public static class NatsMessageBuilderExtensions
     /// Configures NATS JetStream options for <typeparamref name="TMessage"/> publish operations.
     /// </summary>
     /// <typeparam name="TMessage">The message type being registered.</typeparam>
-    /// <param name="builder">The bus message builder.</param>
+    /// <param name="builder">The Bus route of the message contract.</param>
     /// <param name="configure">A delegate that configures the NATS options.</param>
     /// <returns>The same <paramref name="builder"/> for chaining.</returns>
-    /// <remarks>
-    /// Requires the framework-provided <see cref="IBusMessageBuilder{TMessage}"/> from
-    /// <c>setup.Bus.ForMessage&lt;TMessage&gt;</c>; custom or mocked builder implementations are not supported.
-    /// </remarks>
-    public static IBusMessageBuilder<TMessage> UseNats<TMessage>(
-        this IBusMessageBuilder<TMessage> builder,
+    public static IBusContractBuilder<TMessage> UseNats<TMessage>(
+        this IBusContractBuilder<TMessage> builder,
         Action<NatsMessageConfigBuilder<TMessage>> configure
     )
         where TMessage : class
@@ -39,8 +35,8 @@ public static class NatsMessageBuilderExtensions
     }
 
     /// <summary>Configures NATS JetStream options for <typeparamref name="TMessage"/> queue publish operations.</summary>
-    public static IQueueMessageBuilder<TMessage> UseNats<TMessage>(
-        this IQueueMessageBuilder<TMessage> builder,
+    public static IQueueContractBuilder<TMessage> UseNats<TMessage>(
+        this IQueueContractBuilder<TMessage> builder,
         Action<NatsMessageConfigBuilder<TMessage>> configure
     )
         where TMessage : class
@@ -52,40 +48,6 @@ public static class NatsMessageBuilderExtensions
         configure(configBuilder);
         ((IMessageProviderConfigBuilder<TMessage>)builder).SetMessageProviderConfig(configBuilder.Build());
 
-        return builder;
-    }
-
-    /// <summary>
-    /// Configures NATS JetStream consumer options for a bus consumer registration.
-    /// </summary>
-    /// <typeparam name="TConsumer">The consumer type being registered.</typeparam>
-    /// <param name="builder">The bus consumer builder.</param>
-    /// <param name="configure">A delegate that configures the NATS consumer options.</param>
-    /// <returns>The same <paramref name="builder"/> for chaining.</returns>
-    public static IBusConsumerBuilder<TConsumer> UseNats<TConsumer>(
-        this IBusConsumerBuilder<TConsumer> builder,
-        Action<NatsConsumerConfigBuilder> configure
-    )
-        where TConsumer : class
-    {
-        _SetConsumerConfig((IConsumerProviderConfigBuilder)builder, configure);
-        return builder;
-    }
-
-    /// <summary>
-    /// Configures NATS JetStream consumer options for a queue consumer registration.
-    /// </summary>
-    /// <typeparam name="TConsumer">The consumer type being registered.</typeparam>
-    /// <param name="builder">The queue consumer builder.</param>
-    /// <param name="configure">A delegate that configures the NATS consumer options.</param>
-    /// <returns>The same <paramref name="builder"/> for chaining.</returns>
-    public static IQueueConsumerBuilder<TConsumer> UseNats<TConsumer>(
-        this IQueueConsumerBuilder<TConsumer> builder,
-        Action<NatsConsumerConfigBuilder> configure
-    )
-        where TConsumer : class
-    {
-        _SetConsumerConfig((IConsumerProviderConfigBuilder)builder, configure);
         return builder;
     }
 
@@ -157,6 +119,15 @@ internal sealed class NatsMessageConfig<TMessage>(Func<TMessage, string?>? subje
     : IProviderHeaderContributions
     where TMessage : class
 {
+    // A message contract merges with an identical redeclaration from another module, so two configs holding the same
+    // selector are equal and two different selectors conflict.
+    private readonly Func<TMessage, string?>? _selector = subjectShardSelector;
+
+    public override bool Equals(object? obj) =>
+        obj is NatsMessageConfig<TMessage> other && Equals(_selector, other._selector);
+
+    public override int GetHashCode() => _selector?.GetHashCode() ?? 0;
+
     public IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; } =
         subjectShardSelector is null
             ? []
@@ -178,10 +149,13 @@ public sealed class NatsConsumerConfigBuilder
     /// <summary>
     /// Declares that this consumer subscribes to sharded subjects (i.e. the producer uses
     /// <c>SubjectShard(...)</c>). When set, the consumer registers a <c>{subject}.&gt;</c>
-    /// wildcard filter so that all shard tokens are received. Required whenever the producer
-    /// is sharded; omitting it causes silent message loss because NATS delivers zero messages
-    /// to a non-wildcard filter that does not match any shard subject.
+    /// wildcard filter so that all shard tokens are received.
     /// </summary>
+    /// <remarks>
+    /// A consumer of a message whose contract this host declares with <c>SubjectShard(...)</c> filters on the shard
+    /// wildcard without this call. Call it when the producer shards a message that this host declares without the
+    /// shard: NATS delivers zero messages to a non-wildcard filter that matches no shard subject.
+    /// </remarks>
     /// <returns>The same builder for chaining.</returns>
     public NatsConsumerConfigBuilder Sharded()
     {

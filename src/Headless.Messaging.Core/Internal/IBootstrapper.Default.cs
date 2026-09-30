@@ -344,15 +344,23 @@ internal sealed class Bootstrapper(
 
         _DrainPendingMessageRegistrations();
         _CheckMessageNameCollisions();
-        serviceProvider
-            .GetRequiredService<MessagingCapabilityModel>()
-            .ValidateRoutingAffinityStartup(serviceProvider.GetRequiredService<IMessageMetadataRegistry>().GetAll());
+        var capabilities = serviceProvider.GetRequiredService<MessagingCapabilityModel>();
+        capabilities.ValidateRoutingAffinityStartup(
+            serviceProvider
+                .GetRequiredService<IMessageMetadataRegistry>()
+                .GetAll()
+                .Where(route => capabilities.Supports(route.Route.Lane, MessagingProviderRole.Transport))
+        );
         var consumers = serviceProvider.GetRequiredService<ConsumerRegistry>().GetAll();
         var gate = serviceProvider.GetRequiredService<IMessageCapabilityGate>();
 
         // Every-instance consumers keep no inbox state, so they alone never require an inbox tier from storage.
         var hasDurableConsumers = consumers.Any(static consumer => !consumer.EveryInstance);
-        gate.ValidateStartup(_GetRegisteredRoutes(), hasDurableConsumers, options.Value.RequiredInboxCapability);
+        gate.ValidateStartup(
+            _GetRegisteredRoutes(capabilities),
+            hasDurableConsumers,
+            options.Value.RequiredInboxCapability
+        );
 
         // Runs before any processor starts, so a transport without every-instance subscriptions rejects the consumer
         // before any consumer client, and so any broker object, exists.
@@ -367,7 +375,17 @@ internal sealed class Bootstrapper(
         }
     }
 
-    private HashSet<MessageRouteKey> _GetRegisteredRoutes()
+    /// <summary>
+    /// The routes startup validates against the transport and storage: every consumer's route, and each declared
+    /// message name on the lanes the transport carries.
+    /// </summary>
+    /// <remarks>
+    /// A message contract or name mapping names the message for both lanes, because it belongs to the message schema and
+    /// a shared contracts package cannot know the host's transport. A lane the transport does not carry is left out, so a
+    /// Queue-only transport accepts every contract; a consumer on that lane still fails here, and a publish on it fails
+    /// when it is attempted.
+    /// </remarks>
+    private HashSet<MessageRouteKey> _GetRegisteredRoutes(MessagingCapabilityModel capabilities)
     {
         var registry = serviceProvider.GetRequiredService<ConsumerRegistry>();
         var routes = registry
@@ -377,6 +395,14 @@ internal sealed class Bootstrapper(
 
         foreach (var registration in serviceProvider.GetServices<MessageRegistration>())
         {
+            if (
+                registration.DeclaresMessage
+                && !capabilities.Supports(registration.Lane, MessagingProviderRole.Transport)
+            )
+            {
+                continue;
+            }
+
             var rawName = registration.MessageName;
             if (
                 rawName is null
@@ -397,7 +423,10 @@ internal sealed class Bootstrapper(
 
         foreach (var route in _GetEffectiveMessageNameRoutes(registry))
         {
-            routes.Add(route);
+            if (capabilities.Supports(route.Lane, MessagingProviderRole.Transport))
+            {
+                routes.Add(route);
+            }
         }
 
         return routes;

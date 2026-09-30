@@ -3,7 +3,6 @@
 using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Nats;
-using Headless.Messaging.Registration;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -140,56 +139,6 @@ public static class SetupNatsMessaging
             ));
             services.AddSingleton<IConsumerClientFactory, NatsConsumerClientFactory>();
             services.AddSingleton<INatsConnectionPool, NatsConnectionPool>();
-
-            _ValidateShardSymmetry(services);
-        }
-
-        /// <summary>
-        /// Ensures shard symmetry: every consumer of a sharded message must declare
-        /// <c>.UseNats(c => c.Sharded())</c>. NATS gives a non-matching FilterSubject zero
-        /// messages with no error, so omitting the declaration causes silent data loss.
-        /// </summary>
-        private static void _ValidateShardSymmetry(IServiceCollection services)
-        {
-            var messageRegistrations = services
-                .Where(static d =>
-                    d.ServiceType == typeof(MessageRegistration) && d.ImplementationInstance is MessageRegistration
-                )
-                .Select(static d => (MessageRegistration)d.ImplementationInstance!);
-
-            foreach (var reg in messageRegistrations)
-            {
-                var isShardedMessage = reg
-                    .ProviderConfigs.Values.OfType<IProviderHeaderContributions>()
-                    .Any(static c =>
-                        c.HeaderContributions.Any(static h =>
-                            string.Equals(h.HeaderName, NatsMessagingHeaders.SubjectShard, StringComparison.Ordinal)
-                        )
-                    );
-
-                if (!isShardedMessage)
-                {
-                    continue;
-                }
-
-                foreach (var consumer in reg.Consumers)
-                {
-                    var hasShardedConfig =
-                        consumer.ProviderConfigs.TryGetValue(typeof(NatsConsumerConfig), out var configObj)
-                        && configObj is NatsConsumerConfig { IsSharded: true };
-
-                    if (!hasShardedConfig)
-                    {
-                        throw new InvalidOperationException(
-                            $"Consumer '{consumer.ConsumerType.Name}' (group '{consumer.Group}') subscribes to "
-                                + $"'{reg.MessageType.Name}' which uses SubjectShard(...) but does not declare shard "
-                                + "coverage. Call .UseNats(c => c.Sharded()) on the consumer registration to prevent "
-                                + "silent message loss: NATS delivers zero messages to a non-wildcard filter that does "
-                                + "not match any shard subject."
-                        );
-                    }
-                }
-            }
         }
     }
 }

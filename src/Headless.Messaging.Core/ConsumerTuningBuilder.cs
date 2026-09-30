@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Registration;
 using Headless.Reliability;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,6 +26,8 @@ public sealed class ConsumerTuningBuilder : IConsumerProviderConfigBuilder
     private readonly ProviderConfigBag _providerConfigs = new();
     private byte? _concurrency;
     private Type? _failurePolicy;
+    private TimeSpan? _inboxRetention;
+    private ConsumerCircuitBreakerOptions? _circuitBreaker;
 
     internal ConsumerTuningBuilder(string identity)
     {
@@ -40,6 +43,37 @@ public sealed class ConsumerTuningBuilder : IConsumerProviderConfigBuilder
     public ConsumerTuningBuilder Concurrency(byte maxConcurrent)
     {
         _concurrency = Argument.IsPositive(maxConcurrent);
+        return this;
+    }
+
+    /// <summary>
+    /// Overrides how long the consumer's terminal inbox rows are kept, for inbox generations admitted from now on. The
+    /// default is 30 days. An every-instance consumer keeps no inbox, so tuning its retention fails startup.
+    /// </summary>
+    /// <param name="retention">A positive whole-second duration no greater than <see cref="int.MaxValue"/> seconds.</param>
+    /// <returns>This builder, for chaining.</returns>
+    /// <exception cref="ArgumentException"><paramref name="retention"/> is not a positive whole-second duration.</exception>
+    public ConsumerTuningBuilder InboxRetention(TimeSpan retention)
+    {
+        _inboxRetention = ValidateInboxRetention(retention);
+        return this;
+    }
+
+    /// <summary>
+    /// Overrides the host circuit breaker for this consumer. A setting left <see langword="null"/> falls back to
+    /// <see cref="CircuitBreakerOptions"/>. An every-instance consumer has no retry backlog to protect, so tuning its
+    /// circuit breaker fails startup.
+    /// </summary>
+    /// <param name="configure">Changes the consumer's circuit breaker overrides.</param>
+    /// <returns>This builder, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+    public ConsumerTuningBuilder CircuitBreaker(Action<ConsumerCircuitBreakerOptions> configure)
+    {
+        Argument.IsNotNull(configure);
+
+        var options = new ConsumerCircuitBreakerOptions();
+        configure(options);
+        _circuitBreaker = options;
         return this;
     }
 
@@ -81,7 +115,26 @@ public sealed class ConsumerTuningBuilder : IConsumerProviderConfigBuilder
     }
 
     internal ConsumerTuning Build() =>
-        new(Identity, _concurrency, _failurePolicy, [.. _middleware], _providerConfigs.Build());
+        new(
+            Identity,
+            _concurrency,
+            _failurePolicy,
+            [.. _middleware],
+            _providerConfigs.Build(),
+            _inboxRetention,
+            _circuitBreaker
+        );
+
+    internal static TimeSpan ValidateInboxRetention(TimeSpan retention)
+    {
+        const string message =
+            "Inbox retention must be a positive whole-second duration no greater than Int32.MaxValue seconds.";
+        Argument.IsPositive(retention, message);
+        Argument.IsZero(retention.Ticks % TimeSpan.TicksPerSecond, message, nameof(retention));
+        Argument.IsLessThanOrEqualTo(retention.TotalSeconds, int.MaxValue, message, nameof(retention));
+
+        return retention;
+    }
 }
 
 /// <summary>One immutable <c>Tune</c> call, applied to the host's consumers when its registrations drain.</summary>
@@ -90,7 +143,9 @@ internal sealed record ConsumerTuning(
     byte? Concurrency,
     Type? FailurePolicy,
     Type[] Middleware,
-    IReadOnlyDictionary<Type, object> ProviderConfigs
+    IReadOnlyDictionary<Type, object> ProviderConfigs,
+    TimeSpan? InboxRetention,
+    ConsumerCircuitBreakerOptions? CircuitBreaker
 );
 
 /// <summary>One <c>Tune</c> call recorded in the service collection.</summary>

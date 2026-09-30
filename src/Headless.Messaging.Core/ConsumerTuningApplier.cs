@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Globalization;
+using Headless.Messaging.CircuitBreaker;
 using Microsoft.Extensions.Configuration;
 
 namespace Headless.Messaging;
@@ -45,6 +46,11 @@ internal static class ConsumerTuningApplier
                 continue;
             }
 
+            if (_RejectDurableSettingsOnEveryInstance(tuned, tuning.Identity, tuning, errors))
+            {
+                continue;
+            }
+
             _Apply(tuned, tuning.Identity, metadata => _Tune(metadata, tuning));
         }
 
@@ -76,7 +82,37 @@ internal static class ConsumerTuningApplier
             FailurePolicy = tuning.FailurePolicy ?? metadata.FailurePolicy,
             Middleware = [.. metadata.Middleware.Union(tuning.Middleware)],
             ProviderConfigs = providerConfigs,
+            InboxRetention = tuning.InboxRetention ?? metadata.InboxRetention,
+            CircuitBreakerOverride = tuning.CircuitBreaker ?? metadata.CircuitBreakerOverride,
         };
+    }
+
+    // An every-instance subscription belongs to one process and delivers at most once, with no inbox and no retry
+    // backlog, so an inbox retention or a circuit breaker on it would silently do nothing.
+    private static bool _RejectDurableSettingsOnEveryInstance(
+        ConsumerMetadata[] tuned,
+        string identity,
+        ConsumerTuning tuning,
+        List<string> errors
+    )
+    {
+        if (tuning.InboxRetention is null && tuning.CircuitBreaker is null)
+        {
+            return false;
+        }
+
+        if (!tuned.Any(x => x.EveryInstance && string.Equals(x.ConsumerIdentity, identity, StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        var setting = tuning.InboxRetention is not null ? "an inbox retention" : "a circuit breaker";
+        errors.Add(
+            $"Tune gives every-instance consumer '{identity}' {setting}. An every-instance subscription belongs to one "
+                + "process and delivers at most once, with no inbox, retry, or circuit breaker."
+        );
+
+        return true;
     }
 
     private static void _ApplyConfiguration(
@@ -97,16 +133,40 @@ internal static class ConsumerTuningApplier
                 continue;
             }
 
-            byte? concurrency = null;
-            foreach (var setting in consumer.GetChildren())
+            var settings = _ReadConfiguredSettings(consumer, errors);
+            if (settings.IsEmpty)
             {
-                if (!string.Equals(setting.Key, "Concurrency", StringComparison.OrdinalIgnoreCase))
-                {
-                    errors.Add(
-                        $"Configuration '{setting.Path}' is not a consumer setting. The supported setting is Concurrency."
-                    );
-                }
-                else if (
+                continue;
+            }
+
+            var tuning = new ConsumerTuning(
+                consumer.Key,
+                settings.Concurrency,
+                FailurePolicy: null,
+                Middleware: [],
+                ProviderConfigs: new Dictionary<Type, object>(),
+                settings.InboxRetention,
+                settings.CircuitBreaker
+            );
+
+            if (!_RejectDurableSettingsOnEveryInstance(tuned, consumer.Key, tuning, errors))
+            {
+                _Apply(tuned, consumer.Key, metadata => _Tune(metadata, tuning));
+            }
+        }
+    }
+
+    private static ConfiguredSettings _ReadConfiguredSettings(IConfigurationSection consumer, List<string> errors)
+    {
+        byte? concurrency = null;
+        TimeSpan? inboxRetention = null;
+        ConsumerCircuitBreakerOptions? circuitBreaker = null;
+
+        foreach (var setting in consumer.GetChildren())
+        {
+            if (string.Equals(setting.Key, "Concurrency", StringComparison.OrdinalIgnoreCase))
+            {
+                if (
                     byte.TryParse(setting.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
                     && value > 0
                 )
@@ -118,12 +178,106 @@ internal static class ConsumerTuningApplier
                     errors.Add($"Configuration '{setting.Path}' must be an integer from 1 to {byte.MaxValue}.");
                 }
             }
-
-            if (concurrency is { } limit)
+            else if (string.Equals(setting.Key, "InboxRetention", StringComparison.OrdinalIgnoreCase))
             {
-                _Apply(tuned, consumer.Key, metadata => metadata with { Concurrency = limit });
+                inboxRetention = _ReadInboxRetention(setting, errors);
+            }
+            else if (string.Equals(setting.Key, "CircuitBreaker", StringComparison.OrdinalIgnoreCase))
+            {
+                circuitBreaker = _ReadCircuitBreaker(setting, errors);
+            }
+            else
+            {
+                errors.Add(
+                    $"Configuration '{setting.Path}' is not a consumer setting. The supported settings are "
+                        + "Concurrency, InboxRetention, and CircuitBreaker."
+                );
             }
         }
+
+        return new ConfiguredSettings(concurrency, inboxRetention, circuitBreaker);
+    }
+
+    private static TimeSpan? _ReadInboxRetention(IConfigurationSection setting, List<string> errors)
+    {
+        if (TimeSpan.TryParse(setting.Value, CultureInfo.InvariantCulture, out var retention))
+        {
+            try
+            {
+                return ConsumerTuningBuilder.ValidateInboxRetention(retention);
+            }
+            catch (ArgumentException)
+            {
+                // Reported below with the configuration path, which the argument exception does not carry.
+            }
+        }
+
+        errors.Add(
+            $"Configuration '{setting.Path}' must be a positive whole-second duration such as '30.00:00:00', no "
+                + "greater than Int32.MaxValue seconds."
+        );
+
+        return null;
+    }
+
+    private static ConsumerCircuitBreakerOptions? _ReadCircuitBreaker(
+        IConfigurationSection section,
+        List<string> errors
+    )
+    {
+        var options = new ConsumerCircuitBreakerOptions();
+        var valid = true;
+
+        foreach (var setting in section.GetChildren())
+        {
+            if (string.Equals(setting.Key, "Enabled", StringComparison.OrdinalIgnoreCase))
+            {
+                if (bool.TryParse(setting.Value, out var enabled))
+                {
+                    options.Enabled = enabled;
+                    continue;
+                }
+
+                errors.Add($"Configuration '{setting.Path}' must be true or false.");
+            }
+            else if (string.Equals(setting.Key, "FailureThreshold", StringComparison.OrdinalIgnoreCase))
+            {
+                if (
+                    int.TryParse(setting.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var threshold)
+                    && threshold > 0
+                )
+                {
+                    options.FailureThreshold = threshold;
+                    continue;
+                }
+
+                errors.Add($"Configuration '{setting.Path}' must be a positive integer.");
+            }
+            else if (string.Equals(setting.Key, "OpenDuration", StringComparison.OrdinalIgnoreCase))
+            {
+                if (
+                    TimeSpan.TryParse(setting.Value, CultureInfo.InvariantCulture, out var openDuration)
+                    && openDuration > TimeSpan.Zero
+                )
+                {
+                    options.OpenDuration = openDuration;
+                    continue;
+                }
+
+                errors.Add($"Configuration '{setting.Path}' must be a positive duration such as '00:00:30'.");
+            }
+            else
+            {
+                errors.Add(
+                    $"Configuration '{setting.Path}' is not a circuit breaker setting. The supported settings are "
+                        + "Enabled, FailureThreshold, and OpenDuration."
+                );
+            }
+
+            valid = false;
+        }
+
+        return valid ? options : null;
     }
 
     private static void _Apply(
@@ -139,5 +293,14 @@ internal static class ConsumerTuningApplier
                 tuned[index] = apply(tuned[index]);
             }
         }
+    }
+
+    private readonly record struct ConfiguredSettings(
+        byte? Concurrency,
+        TimeSpan? InboxRetention,
+        ConsumerCircuitBreakerOptions? CircuitBreaker
+    )
+    {
+        public bool IsEmpty => Concurrency is null && InboxRetention is null && CircuitBreaker is null;
     }
 }

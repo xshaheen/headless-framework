@@ -8,13 +8,13 @@ using Headless.Messaging.Registration;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Messaging;
 
-/// <summary>Extension methods that attach Kafka provider-specific options to a message or consumer registration.</summary>
+/// <summary>Extension methods that attach Kafka provider-specific options to a message contract or a tuned consumer.</summary>
 [PublicAPI]
 public static class KafkaMessageBuilderExtensions
 {
     /// <summary>Configures Kafka publish options for <typeparamref name="TMessage"/> on the queue lane.</summary>
-    public static IQueueMessageBuilder<TMessage> UseKafka<TMessage>(
-        this IQueueMessageBuilder<TMessage> builder,
+    public static IQueueContractBuilder<TMessage> UseKafka<TMessage>(
+        this IQueueContractBuilder<TMessage> builder,
         Action<KafkaMessageConfigBuilder<TMessage>> configure
     )
         where TMessage : class
@@ -26,23 +26,6 @@ public static class KafkaMessageBuilderExtensions
         configure(configBuilder);
         ((IMessageProviderConfigBuilder<TMessage>)builder).SetMessageProviderConfig(configBuilder.Build());
 
-        return builder;
-    }
-
-    /// <summary>
-    /// Configures Kafka consumer options for a queue consumer registration.
-    /// </summary>
-    /// <typeparam name="TConsumer">The consumer type being registered.</typeparam>
-    /// <param name="builder">The queue consumer builder.</param>
-    /// <param name="configure">A delegate that configures the Kafka consumer options.</param>
-    /// <returns>The same <paramref name="builder"/> for chaining.</returns>
-    public static IQueueConsumerBuilder<TConsumer> UseKafka<TConsumer>(
-        this IQueueConsumerBuilder<TConsumer> builder,
-        Action<KafkaConsumerConfigBuilder> configure
-    )
-        where TConsumer : class
-    {
-        _SetConsumerConfig((IConsumerProviderConfigBuilder)builder, configure);
         return builder;
     }
 
@@ -138,6 +121,15 @@ internal sealed class KafkaMessageConfig<TMessage>(Func<TMessage, string?>? part
     : IProviderHeaderContributions
     where TMessage : class
 {
+    // A message contract merges with an identical redeclaration from another module, so two configs holding the same
+    // selector are equal and two different selectors conflict.
+    private readonly Func<TMessage, string?>? _selector = partitionSelector;
+
+    public override bool Equals(object? obj) =>
+        obj is KafkaMessageConfig<TMessage> other && Equals(_selector, other._selector);
+
+    public override int GetHashCode() => _selector?.GetHashCode() ?? 0;
+
     public IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; } =
         partitionSelector is null
             ? []

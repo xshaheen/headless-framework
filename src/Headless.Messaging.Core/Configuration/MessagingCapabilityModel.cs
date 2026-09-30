@@ -266,7 +266,7 @@ public sealed class MessagingCapabilityModel : IMessageCapabilityGate
         throw new MessagingConfigurationException(
             $"{lane} direct delivery is unsupported: transport provider '{transport.Provider}' does not support {lane} delivery. "
                 + $"Supported lanes: {supportedLanes}. "
-                + $"Register this route with setup.{supportedLanes}.ForMessage<T>(...) or select a transport that supports {lane}."
+                + $"Consume and publish this message on a supported lane, or select a transport that supports {lane}."
         );
     }
 

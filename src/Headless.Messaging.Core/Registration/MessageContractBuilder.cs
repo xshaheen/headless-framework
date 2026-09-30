@@ -105,24 +105,22 @@ internal abstract class MessageContractBuilder
     }
 }
 
-internal sealed class MessageContractBuilder<TMessage>
-    : MessageContractBuilder,
-        IMessageContractBuilder<TMessage>,
-        IBusContractBuilder<TMessage>,
-        IQueueContractBuilder<TMessage>
+internal sealed class MessageContractBuilder<TMessage> : MessageContractBuilder, IMessageContractBuilder<TMessage>
     where TMessage : class
 {
     private readonly string _name;
     private readonly string _version;
+    private readonly LaneBuilder _bus;
+    private readonly LaneBuilder _queue;
     private Func<TMessage, string?>? _correlationSelector;
-    private MessageContractLaneSettings _bus;
-    private MessageContractLaneSettings _queue;
 
     public MessageContractBuilder(string name, string version)
     {
         MessagingOptions.ValidateMessageName(name);
         _name = name;
         _version = MessagingOptions.ValidateContractVersion(version);
+        _bus = new LaneBuilder(this);
+        _queue = new LaneBuilder(this);
     }
 
     public IMessageContractBuilder<TMessage> CorrelateBy(Func<TMessage, string?> selector)
@@ -137,7 +135,7 @@ internal sealed class MessageContractBuilder<TMessage>
     {
         Argument.IsNotNull(configure);
         EnsureNotCompleted();
-        configure(this);
+        configure(_bus);
         return this;
     }
 
@@ -145,37 +143,7 @@ internal sealed class MessageContractBuilder<TMessage>
     {
         Argument.IsNotNull(configure);
         EnsureNotCompleted();
-        configure(this);
-        return this;
-    }
-
-    IBusContractBuilder<TMessage> IBusContractBuilder<TMessage>.RequireRoutingAffinity()
-    {
-        EnsureNotCompleted();
-        _bus = _bus with { RequiresRoutingAffinity = true };
-        return this;
-    }
-
-    IBusContractBuilder<TMessage> IBusContractBuilder<TMessage>.WithDeliveryMode(DeliveryMode mode)
-    {
-        Argument.IsInEnum(mode);
-        EnsureNotCompleted();
-        _bus = _bus with { DeliveryMode = mode };
-        return this;
-    }
-
-    IQueueContractBuilder<TMessage> IQueueContractBuilder<TMessage>.RequireRoutingAffinity()
-    {
-        EnsureNotCompleted();
-        _queue = _queue with { RequiresRoutingAffinity = true };
-        return this;
-    }
-
-    IQueueContractBuilder<TMessage> IQueueContractBuilder<TMessage>.WithDeliveryMode(DeliveryMode mode)
-    {
-        Argument.IsInEnum(mode);
-        EnsureNotCompleted();
-        _queue = _queue with { DeliveryMode = mode };
+        configure(_queue);
         return this;
     }
 
@@ -189,20 +157,102 @@ internal sealed class MessageContractBuilder<TMessage>
             _version,
             selector,
             selector is null ? null : message => selector((TMessage)message),
-            _bus,
-            _queue
+            _bus.Build(),
+            _queue.Build()
         );
+    }
+
+    /// <summary>
+    /// Collects one lane's route settings. Each lane has its own instance, so a provider extension written against a
+    /// lane's builder reaches only that lane's route.
+    /// </summary>
+    private sealed class LaneBuilder(MessageContractBuilder<TMessage> owner)
+        : IBusContractBuilder<TMessage>,
+            IQueueContractBuilder<TMessage>,
+            IMessageProviderConfigBuilder<TMessage>
+    {
+        private readonly ProviderConfigBag _providerConfigs = new();
+        private bool _requiresRoutingAffinity;
+        private DeliveryMode? _deliveryMode;
+
+        IBusContractBuilder<TMessage> IBusContractBuilder<TMessage>.RequireRoutingAffinity()
+        {
+            _RequireRoutingAffinity();
+            return this;
+        }
+
+        IBusContractBuilder<TMessage> IBusContractBuilder<TMessage>.WithDeliveryMode(DeliveryMode mode)
+        {
+            _SetDeliveryMode(mode);
+            return this;
+        }
+
+        IQueueContractBuilder<TMessage> IQueueContractBuilder<TMessage>.RequireRoutingAffinity()
+        {
+            _RequireRoutingAffinity();
+            return this;
+        }
+
+        IQueueContractBuilder<TMessage> IQueueContractBuilder<TMessage>.WithDeliveryMode(DeliveryMode mode)
+        {
+            _SetDeliveryMode(mode);
+            return this;
+        }
+
+        void IMessageProviderConfigBuilder<TMessage>.SetMessageProviderConfig(object config)
+        {
+            owner.EnsureNotCompleted();
+            _providerConfigs.Set(config);
+        }
+
+        public MessageContractLaneSettings Build() =>
+            new(_requiresRoutingAffinity, _deliveryMode, _providerConfigs.Build());
+
+        private void _RequireRoutingAffinity()
+        {
+            owner.EnsureNotCompleted();
+            _requiresRoutingAffinity = true;
+        }
+
+        private void _SetDeliveryMode(DeliveryMode mode)
+        {
+            Argument.IsInEnum(mode);
+            owner.EnsureNotCompleted();
+            _deliveryMode = mode;
+        }
     }
 }
 
 /// <summary>Settings that apply to one lane's route of a message contract.</summary>
 /// <param name="RequiresRoutingAffinity">Whether startup requires a native affinity mapping for the route.</param>
 /// <param name="DeliveryMode">The pinned delivery mode, or <see langword="null"/> for the host default.</param>
-internal readonly record struct MessageContractLaneSettings(bool RequiresRoutingAffinity, DeliveryMode? DeliveryMode)
+/// <param name="ProviderConfigs">Provider settings for the route, such as a partition key, keyed by config type.</param>
+internal sealed record MessageContractLaneSettings(
+    bool RequiresRoutingAffinity,
+    DeliveryMode? DeliveryMode,
+    IReadOnlyDictionary<Type, object> ProviderConfigs
+)
 {
+    public static MessageContractLaneSettings Default { get; } = new(false, null, new Dictionary<Type, object>());
+
+    // Provider configs compare by value: the provider config types define equality over the selectors they hold, so two
+    // declarations from one shared contract method match and two different selectors conflict.
+    public bool Equals(MessageContractLaneSettings? other)
+    {
+        return other is not null
+            && RequiresRoutingAffinity == other.RequiresRoutingAffinity
+            && DeliveryMode == other.DeliveryMode
+            && ProviderConfigs.Count == other.ProviderConfigs.Count
+            && ProviderConfigs.All(pair =>
+                other.ProviderConfigs.TryGetValue(pair.Key, out var value) && Equals(pair.Value, value)
+            );
+    }
+
+    public override int GetHashCode() => HashCode.Combine(RequiresRoutingAffinity, DeliveryMode, ProviderConfigs.Count);
+
     public string Describe()
     {
-        if (!RequiresRoutingAffinity && DeliveryMode is null)
+        if (!RequiresRoutingAffinity && DeliveryMode is null && ProviderConfigs.Count == 0)
         {
             return "defaults";
         }
@@ -213,6 +263,13 @@ internal readonly record struct MessageContractLaneSettings(bool RequiresRouting
             {
                 RequiresRoutingAffinity ? "routing affinity required" : null,
                 DeliveryMode is { } mode ? $"delivery mode {mode}" : null,
+                ProviderConfigs.Count == 0
+                    ? null
+                    : "provider settings "
+                        + string.Join(
+                            ", ",
+                            ProviderConfigs.Keys.Select(static type => type.Name).Order(StringComparer.Ordinal)
+                        ),
             }.Where(static part => part is not null)
         );
     }
@@ -249,8 +306,8 @@ internal sealed record MessageContract(
             && string.Equals(Name, other.Name, StringComparison.Ordinal)
             && string.Equals(Version, other.Version, StringComparison.Ordinal)
             && Equals(DeclaredCorrelationSelector, other.DeclaredCorrelationSelector)
-            && Bus == other.Bus
-            && Queue == other.Queue;
+            && Bus.Equals(other.Bus)
+            && Queue.Equals(other.Queue);
     }
 
     /// <summary>The route registration this contract contributes to one lane.</summary>
@@ -263,7 +320,7 @@ internal sealed record MessageContract(
             lane,
             Name,
             CorrelationSelector,
-            ProviderConfigs: new Dictionary<Type, object>(),
+            settings.ProviderConfigs,
             Consumers: [],
             ContractVersion: Version,
             RequiresRoutingAffinity: settings.RequiresRoutingAffinity,

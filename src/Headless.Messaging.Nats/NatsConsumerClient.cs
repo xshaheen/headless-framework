@@ -6,6 +6,7 @@ using System.Threading.Channels;
 using Headless.Checks;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Registration;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -663,19 +664,44 @@ internal sealed class NatsConsumerClient(
 
     private HashSet<string> _ResolveShardedMessageNames(IEnumerable<string> messageNames)
     {
-        var consumerRegistry = serviceProvider.GetService<IConsumerRegistry>();
-        if (consumerRegistry is null)
+        var names = messageNames.ToHashSet(StringComparer.Ordinal);
+
+        var config = serviceProvider
+            .GetService<IConsumerRegistry>()
+            ?.ResolveConsumerConfig<NatsConsumerConfig>(name, lane);
+        if (config?.IsSharded == true)
         {
-            return [];
+            return names;
         }
 
-        var config = consumerRegistry.ResolveConsumerConfig<NatsConsumerConfig>(name, lane);
-        if (config?.IsSharded != true)
+        // A message whose contract shards its subject publishes to {subject}.{shard}, and NATS delivers nothing to a
+        // filter that matches no shard subject, so a consumer of that message filters on the shard wildcard without
+        // having to repeat the declaration.
+        var sharded = new HashSet<string>(StringComparer.Ordinal);
+        var metadata = serviceProvider.GetService<IMessageMetadataRegistry>();
+        if (metadata is null)
         {
-            return [];
+            return sharded;
         }
 
-        return messageNames.ToHashSet(StringComparer.Ordinal);
+        foreach (var route in metadata.GetAll())
+        {
+            if (
+                route.Route.Lane == lane
+                && names.Contains(route.Route.MessageName)
+                && route.ProviderConfigs.Values.OfType<IProviderHeaderContributions>().Any(IsSubjectSharded)
+            )
+            {
+                sharded.Add(route.Route.MessageName);
+            }
+        }
+
+        return sharded;
+
+        static bool IsSubjectSharded(IProviderHeaderContributions contributions) =>
+            contributions.HeaderContributions.Any(static header =>
+                string.Equals(header.HeaderName, NatsMessagingHeaders.SubjectShard, StringComparison.Ordinal)
+            );
     }
 
     public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
