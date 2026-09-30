@@ -17,13 +17,18 @@ namespace Headless.Coordination;
 public readonly record struct NodeId
 {
     /// <summary>Initializes a <see cref="NodeId"/> with the given string value.</summary>
-    /// <param name="value">The node identifier string. Must not be null, empty, or whitespace.</param>
+    /// <param name="value">
+    /// The node identifier string. Must not be null or blank, and must be text every membership store keeps unchanged
+    /// as a key.
+    /// </param>
     /// <exception cref="ArgumentException">
-    /// Thrown when <paramref name="value"/> is empty or contains only whitespace.
+    /// Thrown when <paramref name="value"/> is empty or whitespace-only, or is text some store would merge, reject, or
+    /// rewrite (see <see cref="Argument.IsPortableKey"/>).
     /// </exception>
     public NodeId(string value)
     {
-        Value = Argument.IsNotNullOrWhiteSpace(value);
+        Argument.IsNotNullOrWhiteSpace(value);
+        Value = Argument.IsPortableKey(value);
     }
 
     /// <summary>The underlying string value of this node identifier.</summary>

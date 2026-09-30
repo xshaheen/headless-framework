@@ -32,7 +32,7 @@ Membership answers "which node incarnations are alive?". It reports liveness onl
 
 ### Node Identity
 
-`NodeIdentity` is `NodeId + NodeIncarnation` and formats as `node@incarnation`. The store allocates incarnation monotonically per node id. A restarted process with the same node id becomes a different identity, so consumers can reclaim `node@1` work without touching `node@2`.
+`NodeIdentity` is `NodeId + NodeIncarnation` and formats as `node@incarnation`. The store allocates incarnation monotonically per node id. A restarted process with the same node id becomes a different identity, so consumers can reclaim `node@1` work without touching `node@2`. A `NodeId` must be text every membership store keeps unchanged (`Argument.IsPortableKey`): surrounding white space, a NUL character, or an unpaired UTF-16 surrogate throws `ArgumentException`.
 
 The per-node generation counter is never purged by any provider — purging it would let a returning node reuse an incarnation and defeat stale-owner detection — so every distinct node id ever registered leaves one permanent generation row (relational) or `:gen:<node-id>` key (Redis). Keep node-id cardinality bounded: prefer stable ids (StatefulSet ordinals, configured ids, or pod name plus namespace) and avoid the generated-`{guid}` fallback in long-lived deployments, where every process start mints a new immortal entry and the generation keyspace grows without bound.
 
