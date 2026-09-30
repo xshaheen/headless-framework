@@ -55,6 +55,7 @@ public sealed class PostgreSqlSharedSchemaTests(PostgreSqlSharedSchemaFixture fi
     protected override IReadOnlyDictionary<string, string[]> ExpectedRawTables { get; } =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
+            ["SchemaRunner"] = ["headless_schema_history"],
             ["AuditLog"] = ["audit_log_entries"],
             ["Coordination"] = ["coordination_descriptor", "coordination_liveness", "coordination_node_generation"],
             ["DistributedLocks"] = [],

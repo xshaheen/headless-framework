@@ -32,7 +32,13 @@ public sealed class PostgreSqlMembershipCustomSchemaTests(PostgreSqlMembershipFi
 
         tables
             .Should()
-            .BeEquivalentTo(["coordination_node_generation", "coordination_descriptor", "coordination_liveness"]);
+            .BeEquivalentTo([
+                "coordination_node_generation",
+                "coordination_descriptor",
+                "coordination_liveness",
+                // The schema runner records applied steps next to the feature's tables.
+                "headless_schema_history",
+            ]);
 
         // search_path's schema must hold none of them: a passing round trip alone would also be satisfied by
         // DDL that ignored the option and emitted unqualified names, as this provider did before the option

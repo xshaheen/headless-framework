@@ -228,8 +228,9 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
 
         var act = async () => await initializer.InitializeAsync(AbortToken);
 
+        // The schema runner reports which features' connection failed, so the operator sees Coordination named.
         var thrown = await act.Should().ThrowAsync<InvalidOperationException>();
-        thrown.WithMessage("*failed to initialize the membership schema*");
+        thrown.WithMessage("*schema runner*Coordination*");
         // The original transport error must be preserved as the inner exception so the cause is not lost.
         thrown.Which.InnerException.Should().NotBeNull();
     }

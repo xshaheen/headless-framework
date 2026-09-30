@@ -7,6 +7,7 @@ using Headless.UnitOfWork;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Idempotency;
@@ -158,7 +159,15 @@ public static class SetupIdempotencySqlServer
             // through unit.Idempotency, so the factory must exist whether or not the host registered it.
             services.AddSqlServerUnitOfWork();
 
-            services.AddInitializerHostedService<SqlServerIdempotencyStorageInitializer>();
+            // The contribution factory reads options at first resolution, so InitializeOnStartup keeps its
+            // contract: false means the runner never creates the record table (a migration tool owns it), while
+            // the initializer promise still completes for dependents.
+            services.AddHeadlessSchemaContribution(sp =>
+                SqlServerIdempotencySchemaContribution.Create(
+                    sp.GetRequiredService<IOptions<SqlServerIdempotencyOptions>>().Value,
+                    sp.GetRequiredService<IOptions<IdempotencyStorageOptions>>().Value
+                )
+            );
             services.TryAddSingleton<IIdempotencyRecordStore, SqlServerIdempotencyRecordStore>();
         }
     }

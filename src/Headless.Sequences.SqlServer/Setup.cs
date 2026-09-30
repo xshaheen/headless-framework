@@ -6,6 +6,7 @@ using Headless.Sql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Sequences;
@@ -147,7 +148,14 @@ public static class SetupSequencesSqlServer
                 );
             }
 
-            services.AddInitializerHostedService<SqlServerSequencesStorageInitializer>();
+            // The contribution factory reads options at first resolution, so InitializeOnStartup keeps its
+            // contract: false means the runner never creates the table (a migration tool owns it), while the
+            // initializer promise still completes for dependents.
+            services.AddHeadlessSchemaContribution(sp =>
+                SqlServerSequencesSchemaContribution.Create(
+                    sp.GetRequiredService<IOptions<SqlServerSequencesOptions>>().Value
+                )
+            );
             // The store waits between deadlock retries on this clock.
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<ISequenceStore, SqlServerSequenceStore>();

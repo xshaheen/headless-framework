@@ -311,6 +311,7 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
             DROP TABLE IF EXISTS {{_Schema}}.CoordinationLiveness;
             DROP TABLE IF EXISTS {{_Schema}}.CoordinationDescriptor;
             DROP TABLE IF EXISTS {{_Schema}}.CoordinationNodeGeneration;
+            DROP TABLE IF EXISTS {{_Schema}}.headless_schema_history;
             IF SCHEMA_ID(N'{{_Schema}}') IS NOT NULL EXEC(N'DROP SCHEMA [{{_Schema}}]');
             """,
             connection

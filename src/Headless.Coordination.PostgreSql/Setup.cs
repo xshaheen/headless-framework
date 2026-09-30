@@ -8,6 +8,7 @@ using Headless.Sql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Coordination;
@@ -126,10 +127,14 @@ public static class SetupPostgreSqlCoordination
     {
         services.AddOptions<CoordinationStorageOptions, PostgreSqlCoordinationStorageOptionsValidator>();
         services.TryAddSingleton<IMembershipStore>(static sp => sp.GetRequiredService<PostgreSqlMembershipStore>());
-        services.TryAddSingleton<IMembershipStorageInitializer>(static sp =>
-            sp.GetRequiredService<PostgreSqlMembershipStorageInitializer>()
+        // The membership schema is applied by the Headless schema runner from the contribution below; the
+        // IMembershipStorageInitializer marker this replaced had no consumer beyond the registration itself.
+        services.AddHeadlessSchemaContribution(sp =>
+            PostgreSqlMembershipSchemaContribution.Create(
+                sp.GetRequiredService<IOptions<PostgreSqlCoordinationOptions>>().Value,
+                sp.GetRequiredService<IOptions<CoordinationStorageOptions>>().Value
+            )
         );
-        services.AddInitializerHostedService<PostgreSqlMembershipStorageInitializer>();
     }
 
     private sealed class PostgreSqlCoordinationStorageOptionsValidator : AbstractValidator<CoordinationStorageOptions>

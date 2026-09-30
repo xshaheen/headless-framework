@@ -37,6 +37,7 @@ public sealed class SqlServerSharedSchemaTests(SqlServerSharedSchemaFixture fixt
     protected override IReadOnlyDictionary<string, string[]> ExpectedRawTables { get; } =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
+            ["SchemaRunner"] = ["headless_schema_history"],
             ["AuditLog"] = ["AuditLogEntries"],
             ["Coordination"] = ["CoordinationDescriptor", "CoordinationLiveness", "CoordinationNodeGeneration"],
             ["DistributedLocks"] = [],
