@@ -229,6 +229,7 @@
     <Folder Name="/Generators/Tests/">
         <Project Path="tests/Headless.Generator.Primitives.Abstractions.Tests.Unit/Headless.Generator.Primitives.Abstractions.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Generator.Primitives.Tests.Unit/Headless.Generator.Primitives.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Generator.ProviderSetup.Tests.Unit\Headless.Generator.ProviderSetup.Tests.Unit.csproj" />
         <Project Path="tests/Headless.SourceGenerators.Tests.Harness/Headless.SourceGenerators.Tests.Harness.csproj" />
     </Folder>
     <Folder Name="/Identities/">

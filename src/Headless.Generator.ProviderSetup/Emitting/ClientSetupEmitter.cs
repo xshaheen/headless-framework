@@ -11,7 +11,7 @@ namespace Headless.Generator.ProviderSetup.Emitting;
 /// <summary>
 /// Writes the registration surface for one <c>[GenerateClientSetup]</c> options class: the <c>Add{Feature}</c>
 /// overload trio on <c>IServiceCollection</c>, options validation, the named HttpClient with its resilience pipeline
-/// derived from the declared effect, and a call into the package's mandatory <c>AddServices</c> hook.
+/// derived from the declared effect, and a call into the package's mandatory <c>_AddServices</c> hook.
 /// </summary>
 internal static class ClientSetupEmitter
 {
@@ -28,6 +28,7 @@ internal static class ClientSetupEmitter
         var effectName = model.Effect.Replace("global::Headless.Http.Effects.", string.Empty);
 
         writer.AppendSourceHeader("Headless.Generator.ProviderSetup");
+        writer.AppendLine("using System;");
         writer.AppendLine("using Headless.Checks;");
         writer.AppendLine("using Headless.Http.Effects;");
         writer.AppendLine("using Microsoft.Extensions.Configuration;");
@@ -37,7 +38,6 @@ internal static class ClientSetupEmitter
         writer.AppendLine($"namespace {model.SetupNamespace};");
         writer.NewLine();
         writer.AppendLine($"/// <summary>Generated registration surface for {feature}.</summary>");
-        writer.AppendLine("[global::JetBrains.Annotations.PublicAPI]");
         writer.AppendLine($"public static partial class Setup{feature}");
         writer.OpenBracket();
         writer.AppendLine(
@@ -76,7 +76,7 @@ internal static class ClientSetupEmitter
         writer.AppendLine(
             "/// <summary>Registers the package's own services (typed clients, authenticators). Implemented by the package.</summary>"
         );
-        writer.AppendLine("private static partial void AddServices(IServiceCollection services);");
+        writer.AppendLine("private static partial void _AddServices(IServiceCollection services);");
         writer.NewLine();
 
         writer.AppendLine("private static IServiceCollection _AddCore(");
@@ -104,7 +104,7 @@ internal static class ClientSetupEmitter
         writer.AppendLine("    configureResilience: configureResilience");
         writer.AppendLine(");");
         writer.NewLine();
-        writer.AppendLine("AddServices(services);");
+        writer.AppendLine("_AddServices(services);");
         writer.NewLine();
         writer.AppendLine("return services;");
         writer.CloseBracket();
@@ -122,7 +122,7 @@ internal static class ClientSetupEmitter
         string effectName
     )
     {
-        var isConfig = argumentName == "config";
+        var isConfig = string.Equals(argumentName, "config", StringComparison.Ordinal);
 
         writer.AppendLine($"/// <summary>Registers {GetFeatureName(model)} services, {how}.</summary>");
         writer.AppendLine(
@@ -148,6 +148,17 @@ internal static class ClientSetupEmitter
         writer.AppendLine(
             $"/// <exception cref=\"global::System.ArgumentNullException\"><paramref name=\"services\"/> or <paramref name=\"{argumentName}\"/> is <see langword=\"null\"/>.</exception>"
         );
+        if (isConfig)
+        {
+            // Configuration binding is reflection-based; surface that to the caller who picks this overload.
+            writer.AppendLine(
+                "[global::System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode(\"Binding options from IConfiguration uses reflection. Use the Action<TOptions> overload in trimmed or native AOT apps.\")]"
+            );
+            writer.AppendLine(
+                "[global::System.Diagnostics.CodeAnalysis.RequiresDynamicCode(\"Binding options from IConfiguration may need runtime code generation. Use the Action<TOptions> overload in native AOT apps.\")]"
+            );
+        }
+
         writer.AppendLine($"public static IServiceCollection {model.AddMethodName}(");
         writer.AppendLine("    this IServiceCollection services,");
         writer.AppendLine($"    {argument},");

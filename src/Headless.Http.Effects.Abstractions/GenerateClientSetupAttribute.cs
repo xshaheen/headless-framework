@@ -13,7 +13,7 @@ namespace Headless.Http.Effects;
 /// <remarks>
 /// Service wiring beyond the client — typed brokers, authenticators, token caches — is package-specific, so the
 /// generated <c>Setup{Feature}</c> class is partial and requires the package to implement
-/// <c>private static partial void AddServices(IServiceCollection services)</c>. A missing implementation is a
+/// <c>private static partial void _AddServices(IServiceCollection services)</c>. A missing implementation is a
 /// compile error, not a silently empty registration.
 /// </remarks>
 /// <param name="addMethodName">The <c>Add{Feature}</c> member name, for example <c>AddPaymobCashOut</c>.</param>

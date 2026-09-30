@@ -25,6 +25,7 @@ internal static class ProviderSetupEmitter
         writer.AppendLine("#pragma warning disable IDE0130 // registration surface lives in the family root namespace");
         writer.NewLine();
 
+        writer.AppendLine("using System;");
         writer.AppendLine("using Headless.Checks;");
         writer.AppendLine("using Headless.Http.Effects;");
         writer.AppendLine("using Headless.Sms;");
@@ -52,7 +53,6 @@ internal static class ProviderSetupEmitter
         writer.AppendLine(
             $"/// <summary>Generated registration surface for {model.UseMethodName}. Extension members on <see cref=\"HeadlessSmsSetupBuilder\"/>.</summary>"
         );
-        writer.AppendLine("[global::JetBrains.Annotations.PublicAPI]");
         writer.AppendLine($"public static class Setup{GetProviderName(model)}");
         writer.OpenBracket();
         writer.AppendLine($"internal const string HttpClientName = {_Literal(model.HttpClientName)};");
@@ -78,7 +78,6 @@ internal static class ProviderSetupEmitter
         writer.AppendLine(
             $"/// <summary>Generated registration surface for named {model.UseMethodName} instances. Extension members on <see cref=\"HeadlessSmsInstanceBuilder\"/>.</summary>"
         );
-        writer.AppendLine("[global::JetBrains.Annotations.PublicAPI]");
         writer.AppendLine($"public static class Setup{GetProviderName(model)}Named");
         writer.OpenBracket();
         writer.AppendLine("extension(HeadlessSmsInstanceBuilder instance)");
@@ -166,6 +165,18 @@ internal static class ProviderSetupEmitter
         writer.AppendLine(
             $"/// <exception cref=\"global::System.ArgumentNullException\"><paramref name=\"{guard}\"/> is <see langword=\"null\"/>.</exception>"
         );
+        if (overload == Overload.Configuration)
+        {
+            // Configuration binding is reflection-based; surface that to the caller who picks this overload
+            // instead of absorbing the trim warning inside generated code.
+            writer.AppendLine(
+                "[global::System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode(\"Binding options from IConfiguration uses reflection. Use the Action<TOptions> overload in trimmed or native AOT apps.\")]"
+            );
+            writer.AppendLine(
+                "[global::System.Diagnostics.CodeAnalysis.RequiresDynamicCode(\"Binding options from IConfiguration may need runtime code generation. Use the Action<TOptions> overload in native AOT apps.\")]"
+            );
+        }
+
         writer.AppendLine($"public {receiverType} {model.UseMethodName}(");
         writer.AppendLine($"    {argument},");
         writer.AppendLine("    Action<global::System.Net.Http.HttpClient>? configureClient = null,");
@@ -302,7 +313,8 @@ internal static class ProviderSetupEmitter
             arguments.Add(
                 parameter.Kind switch
                 {
-                    SenderParameterKind.HttpClientFactory => "sp.GetRequiredService<IHttpClientFactory>()",
+                    SenderParameterKind.HttpClientFactory =>
+                        "sp.GetRequiredService<global::System.Net.Http.IHttpClientFactory>()",
                     SenderParameterKind.HttpClientNameString => "httpClientName",
                     SenderParameterKind.OptionsMonitor =>
                         $"sp.GetRequiredService<IOptionsMonitor<{model.OptionsTypeName}>>()",

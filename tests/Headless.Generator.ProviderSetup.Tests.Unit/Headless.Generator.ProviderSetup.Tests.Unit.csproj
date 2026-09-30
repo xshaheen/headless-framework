@@ -1,0 +1,28 @@
+<Project Sdk="Headless.NET.Sdk.Test">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Tests</RootNamespace>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
+    <PackageReference Include="Verify.SourceGenerators" />
+    <PackageReference Include="Verify.XunitV3" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Runtime assemblies the generated code compiles against, loaded so test compilations can reference them. -->
+    <ProjectReference Include="..\..\src\Headless.Generator.ProviderSetup\Headless.Generator.ProviderSetup.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Hosting\Headless.Hosting.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Http.Effects.Abstractions\Headless.Http.Effects.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Sms.Core\Headless.Sms.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <ProjectReference Include="..\Headless.SourceGenerators.Tests.Harness\Headless.SourceGenerators.Tests.Harness.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="Snapshots\**" />
+    <EmbeddedResource Remove="Snapshots\**" />
+    <None Remove="Snapshots\**" />
+  </ItemGroup>
+</Project>

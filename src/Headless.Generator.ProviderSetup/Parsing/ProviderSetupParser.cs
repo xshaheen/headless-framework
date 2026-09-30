@@ -171,7 +171,7 @@ internal static class ProviderSetupParser
     private static ProviderSetupResult _Fail(Location location, DiagnosticDescriptor descriptor, params object?[] args)
     {
         return new ProviderSetupResult(
-            null,
+            Model: null,
             LocationInfo.From(location),
             new[] { DiagnosticInfo.Create(descriptor, location, args) }.ToEquatableArray()
         );
@@ -189,7 +189,11 @@ internal static class ProviderSetupParser
         var attribute = classSymbol
             .GetAttributes()
             .FirstOrDefault(static a =>
-                a.AttributeClass?.ToDisplayString() == GeneratorConstants.OutboundEffectAttributeMetadataName
+                string.Equals(
+                    a.AttributeClass?.ToDisplayString(),
+                    GeneratorConstants.OutboundEffectAttributeMetadataName,
+                    StringComparison.Ordinal
+                )
             );
 
         if (attribute is null || attribute.ConstructorArguments.Length == 0)
@@ -221,10 +225,7 @@ internal static class ProviderSetupParser
     internal static INamedTypeSymbol? ResolveType(INamedTypeSymbol classSymbol, string name)
     {
         // Unqualified names resolve inside the options class's namespace; qualified names as metadata names.
-        var metadataName =
-            name.IndexOf(".", StringComparison.Ordinal) < 0
-                ? $"{classSymbol.ContainingNamespace.ToDisplayString()}.{name}"
-                : name;
+        var metadataName = name.IndexOf('.') < 0 ? $"{classSymbol.ContainingNamespace.ToDisplayString()}.{name}" : name;
 
         return classSymbol.ContainingAssembly.GetTypeByMetadataName(metadataName);
     }

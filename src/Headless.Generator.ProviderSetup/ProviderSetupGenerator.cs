@@ -57,35 +57,45 @@ public sealed class ProviderSetupGenerator : IIncrementalGenerator
                 static (results, _) =>
                 {
                     // Cross-declaration rule: one Use{Provider} method name per assembly, so two attributed
-                    // options classes can never emit colliding extension members.
+                    // options classes can never emit colliding extension members. A duplicate is reported and not
+                    // emitted: a second file with the same hint name would crash the generator instead.
                     var diagnostics = new List<DiagnosticInfo>();
+                    var models = new List<ProviderSetupModel>();
                     var seenNames = new HashSet<string>(StringComparer.Ordinal);
 
                     foreach (var result in results)
                     {
                         diagnostics.AddRange(result.Diagnostics);
 
-                        if (result.Model is { } model && !seenNames.Add(model.UseMethodName))
+                        if (result.Model is not { } model)
+                        {
+                            continue;
+                        }
+
+                        if (seenNames.Add(model.UseMethodName))
+                        {
+                            models.Add(model);
+                        }
+                        else
                         {
                             diagnostics.Add(
-                                DiagnosticInfo.Create(Descriptors.DuplicateUseMethod, null, model.UseMethodName)
+                                new DiagnosticInfo(
+                                    Descriptors.DuplicateUseMethod,
+                                    result.AttributeLocation,
+                                    new[] { model.UseMethodName }.ToEquatableArray()
+                                )
                             );
                         }
                     }
 
-                    return (Results: results.ToEquatableArray(), Diagnostics: diagnostics.ToEquatableArray());
+                    return (Models: models.ToEquatableArray(), Diagnostics: diagnostics.ToEquatableArray());
                 }
             )
             .WithTrackingName(TrackingNames.GenerationResult);
 
+        // Models only, without locations, so an edit that just moves an options class never re-emits source.
         var models = generation
-            .Select(
-                static (generation, _) =>
-                    generation
-                        .Results.Where(static result => result.Model is not null)
-                        .Select(static result => result.Model!)
-                        .ToEquatableArray()
-            )
+            .Select(static (generation, _) => generation.Models)
             .WithTrackingName(TrackingNames.Models);
 
         context.RegisterSourceOutput(

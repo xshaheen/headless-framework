@@ -77,7 +77,7 @@ internal static class ClientSetupParser
     private static ClientSetupResult _Fail(Location location, DiagnosticDescriptor descriptor, params object?[] args)
     {
         return new ClientSetupResult(
-            null,
+            Model: null,
             new[] { DiagnosticInfo.Create(descriptor, location, args) }.ToEquatableArray()
         );
     }
