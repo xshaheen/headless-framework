@@ -1,6 +1,6 @@
 ---
 domain: Blob Storage
-packages: Blobs.Abstractions, Blobs.Core, Blobs.Aws, Blobs.Azure, Blobs.CloudflareR2, Blobs.FileSystem, Blobs.Redis, Blobs.SshNet, Blobs.SignedUrlEndpoint
+packages: Blobs.Abstractions, Blobs.Core, Blobs.MultiTenancy, Blobs.Aws, Blobs.Azure, Blobs.CloudflareR2, Blobs.FileSystem, Blobs.Redis, Blobs.SshNet, Blobs.SignedUrlEndpoint
 ---
 
 # Blob Storage
@@ -52,7 +52,7 @@ The default store registers as a plain (unkeyed) `IBlobStorage` singleton; named
 - Non-seekable upload streams are handled per-provider, not uniformly: AWS/R2 and Redis buffer to memory (S3 needs a known length; Redis is capped); Azure, FileSystem, and SFTP stream through. Seekable streams are always rewound to position 0 first.
 - Redis blob storage (`Blobs.Redis`) is for small blobs only (metadata, thumbnails, temporary uploads); the default `MaxBlobSizeBytes` is 10 MB. For large files use S3 or Azure. The `UseRedis(IConfiguration)` overload cannot bind the required `IConnectionMultiplexer` property — use the `Action<RedisBlobStorageOptions>` overload to set it.
 - A default store is optional and there is at most one (injected as plain `IBlobStorage`); a named-only configuration is valid and leaves plain `IBlobStorage` unregistered. The same provider may back multiple named stores with isolated config. Resolve named stores with `IBlobStorageProvider.GetStorage("name")` or `[FromKeyedServices("name")] IBlobStorage`. Calling `AddHeadlessBlobs` more than once on the same service collection throws.
-- In a multi-tenant host, scope blobs by tenant with `builder.AddHeadlessTenancy(t => t.Blobs(b => b.ScopeByTenant()))` rather than building tenant ids into paths by hand. It wraps every store registered through `AddHeadlessBlobs`, rewrites each location with the ambient tenant (default: `avatars:acme/1.png` for `BlobLocation("avatars", "1.png")`), and refuses an operation with no ambient tenant (`MissingTenantContextException`). Keep blobs every tenant shares in a named store listed in `TenantBlobScopingOptions.UnscopedStores`, or reach them through `ITenantStorageScopeBypass.BeginBypass()`. See [Tenant scoping](#tenant-scoping).
+- In a multi-tenant host, install `Headless.Blobs.MultiTenancy` and scope blobs by tenant with `builder.AddHeadlessTenancy(t => t.Blobs(b => b.ScopeByTenant()))` rather than building tenant ids into paths by hand. It wraps every store registered through `AddHeadlessBlobs`, rewrites each location with the ambient tenant (default: `avatars:acme/1.png` for `BlobLocation("avatars", "1.png")`), and refuses an operation with no ambient tenant (`MissingTenantContextException`). Keep blobs every tenant shares in a named store listed in `TenantBlobScopingOptions.UnscopedStores`, and run cross-tenant work inside `currentTenant.Change(tenantId)`. See [Tenant scoping](#tenant-scoping).
 
 ## Core Concepts
 
@@ -111,7 +111,7 @@ Bulk operations return `IReadOnlyList<BlobBulkResult>`, where each item pairs th
 
 ### Tenant scoping
 
-Blob paths carry no tenant column, so two tenants that each own a user `1` collide on `avatars/1.png`. `ScopeByTenant()` on the tenancy builder (`Headless.Blobs.Core`) wraps each store in a decorator that rewrites every `BlobLocation`, `BlobQuery`, bulk path, and presigned URL request with the ambient tenant, and rewrites every returned key back, so application code keeps addressing logical locations. `TenantBlobScopingStrategy.PathPrefix` (default) makes the tenant id the first key segment inside the caller's container; `ContainerPerTenant` gives each tenant one container named `{ContainerPrefix}{tenantId}` and makes the caller's container the first key segment. Tenant ids that could normalize into another tenant's scope are refused. The wrapper is the outermost decorator, so a store behind `UseSignedUrlEndpoint` mints URLs for the tenant's physical location and the endpoint serves them without a tenant. `IBlobContainerManager` is not wrapped. The full contract, including host-level blobs and the bypass, is in [Tenant-Scoped Blobs and Caches](multi-tenancy.md#tenant-scoped-blobs-and-caches).
+Blob paths carry no tenant column, so two tenants that each own a user `1` collide on `avatars/1.png`. `ScopeByTenant()` on the tenancy builder (`Headless.Blobs.MultiTenancy`) wraps each store in a decorator that rewrites every `BlobLocation`, `BlobQuery`, bulk path, and presigned URL request with the ambient tenant, and rewrites every returned key back, so application code keeps addressing logical locations. `TenantBlobScopingStrategy.PathPrefix` (default) makes the tenant id the first key segment inside the caller's container; `ContainerPerTenant` gives each tenant one container named `{ContainerPrefix}{tenantId}` and makes the caller's container the first key segment. Tenant ids that could normalize into another tenant's scope are refused. The wrapper is the outermost decorator and implements `IScopedBlobStorage`, whose `Unscoped` store addresses physical locations: a store behind `UseSignedUrlEndpoint` mints URLs for the tenant's physical location, and the endpoint serves them through `Unscoped` without a tenant. `IBlobContainerManager` is not wrapped. The full contract, including host-level blobs, is in [Tenant-Scoped Blobs and Caches](multi-tenancy.md#tenant-scoped-blobs-and-caches).
 
 ### Migration from the array-addressing contract
 
@@ -170,6 +170,7 @@ Defines the unified interfaces and value types for blob/file storage operations 
 - `BlobQuery` / `BlobPage` — token-based paging primitive: a prefix-scoped page request (with an opt-in `IncludeMetadata` flag; listings omit per-object metadata by default) and its result plus an opaque continuation token.
 - `BlobBulkResult` — identity-carrying bulk outcome (`Container` + `Path` + optional validated `BlobLocation` + `Result<bool, Exception>`).
 - `IBlobContainerManager` — optional container-lifecycle capability (Ensure/Exists/Delete), resolved from DI; implemented by AWS, Azure, FileSystem, Redis, and SSH (not R2).
+- `IScopedBlobStorage` — a store that rewrites every location into a scope (tenant scoping); `Unscoped` is the wrapped store, which receives locations unchanged. Infrastructure that holds physical locations unwraps it: `storage is IScopedBlobStorage s ? s.Unscoped : storage`.
 - `IPresignedUrlBlobStorage` — optional presigned GET + PUT URL capability over a `BlobLocation`; implemented natively by AWS, Azure, and CloudflareR2, and for the other providers by the `Headless.Blobs.SignedUrlEndpoint` decorator.
 - `PresignedUploadConstraints` — optional `ContentType` and `MaxLength` an upload URL imposes; a backend ignores the ones it cannot enforce, and `IPresignedUrlBlobStorage.SupportedUploadConstraints` (`PresignedUploadConstraintKinds`) reports which it does.
 - `IBlobStorageProvider` — resolves named `IBlobStorage` instances registered through the setup builder (`GetStorage(name)`, `GetStorageOrNull(name)`, `RegisteredNames`).
@@ -281,7 +282,7 @@ Unified setup builder for composing one or more named blob stores in a single DI
 - `IBlobStorageProvider` — resolves named stores by name; exposes `RegisteredNames` for safe pre-validation.
 - Keyed `IBlobStorage` resolution via `[FromKeyedServices("name")]` or `GetRequiredKeyedService<IBlobStorage>("name")`.
 - Deferred, gate-validated registration: a misconfigured setup (duplicate default, duplicate name, zero providers for a named store) throws before mutating the service collection.
-- `HeadlessTenancyBuilder.Blobs(b => b.ScopeByTenant(...))` — the blob tenancy seam: wraps the default and every named store with tenant scoping, configured by `TenantBlobScopingOptions` (`Strategy`, `ContainerPrefix`, `UnscopedStores`). See [Tenant scoping](#tenant-scoping).
+- `services.DecorateHeadlessBlobs(new BlobStorageDecoration((store, name, services) => ...))` — wraps the default store and every named store after all provider and cross-cutting registrations, whichever call runs first. The factory receives the store name (`null` for the default) and returns the store to hand out, or the same store to leave it alone. `BlobStorageDecoration.DecoratedRegistrations` counts the wrapped registrations. `Headless.Blobs.MultiTenancy` builds tenant scoping on it.
 
 ### Design constraints
 
@@ -376,7 +377,58 @@ No options of its own. Each store's options are configured through its provider'
 - Default `Use{Provider}`: registers `IBlobStorage` as unkeyed singleton.
 - `AddNamed(... Use{Provider})`: registers `IBlobStorage` as keyed singleton (`name`). For AWS, Azure, and CloudflareR2 also registers `IPresignedUrlBlobStorage` as keyed singleton (`name`). For AWS, Azure, FileSystem, Redis, and SshNet also registers `IBlobContainerManager` (default + keyed `name`); CloudflareR2 registers none. For SshNet, also registers a keyed internal SFTP connection pool singleton (`name`).
 - There is no global (unkeyed) `IPresignedUrlBlobStorage` registration.
-- With the blob tenancy seam, the default and each named `IBlobStorage` registration is decorated with tenant scoping after every cross-cutting extension, whichever of `AddHeadlessBlobs` and `ScopeByTenant()` runs first; stores in `UnscopedStores` resolve undecorated. The seam records the `Blobs` seam as `Guarded` with the `scope-by-tenant` capability, and startup fails with `HEADLESS_TENANCY_BLOBS_NO_SCOPED_STORE` when it wrapped no store.
+- A `BlobStorageDecoration` registered through `DecorateHeadlessBlobs` decorates the default and each named `IBlobStorage` registration after every cross-cutting extension; decorations apply in registration order, a later one wrapping an earlier one, and a repeated registration of the same instance is ignored.
+
+---
+
+## Headless.Blobs.MultiTenancy
+
+Tenant scoping for blob stores: every location is rewritten with the ambient tenant before it reaches the provider.
+
+### Setup
+
+```bash
+dotnet add package Headless.Blobs.MultiTenancy
+```
+
+```csharp
+builder.Services.AddHeadlessBlobs(blobs =>
+{
+    blobs.UseAws(options => { /* ... */ });
+    blobs.AddNamed("shared", instance => instance.UseAws(options => { /* ... */ }));
+});
+
+builder.AddHeadlessTenancy(tenancy =>
+    tenancy
+        .Http(http => http.ResolveFromClaims())
+        .Blobs(blobs => blobs.ScopeByTenant(options => options.UnscopedStores.Add("shared")))
+);
+
+public sealed class AvatarService(IBlobStorage storage)
+{
+    // Stored as avatars:{tenantId}/{userId}.png; another tenant's {userId}.png never collides.
+    public ValueTask SaveAsync(string userId, Stream image, CancellationToken ct) =>
+        storage.UploadAsync(new BlobLocation("avatars", $"{userId}.png"), image, cancellationToken: ct);
+}
+```
+
+### Configuration
+
+`TenantBlobScopingOptions`, set through `ScopeByTenant(options => ...)`:
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `Strategy` | `PathPrefix` | `PathPrefix` stores `BlobLocation("avatars", "1.png")` at `avatars:{tenantId}/1.png`; `ContainerPerTenant` stores it at `{ContainerPrefix}{tenantId}:avatars/1.png`. |
+| `ContainerPrefix` | `""` | Prepended to the tenant id to name a tenant's container under `ContainerPerTenant`, for example `myapp-` to keep S3 bucket names unique. Lowercase letters, digits, and hyphens. |
+| `UnscopedStores` | empty | Named stores left unwrapped, for blobs every tenant shares. The default store is always scoped. |
+
+### Design and runtime behavior
+
+- Wraps the default store and every named store registered through `AddHeadlessBlobs`, as the outermost decorator, whichever of `AddHeadlessBlobs` and `ScopeByTenant()` runs first. Keyed `IPresignedUrlBlobStorage` forwards reach the wrapper. Stores registered directly as `IBlobStorage` and every `IBlobContainerManager` are not wrapped.
+- Rewrites every `BlobLocation`, list and delete-all `BlobQuery`, bulk path, move/copy pair, and presign request, and strips the tenant from every returned key (`BlobInfo.BlobKey`, `BlobDownloadResult.FileName`, `BlobBulkResult`). A returned key outside the tenant's scope is refused with `InvalidOperationException` rather than handed out. Bulk paths are validated before the tenant is prepended, so an invalid path such as `""` fails that entry instead of addressing the tenant root.
+- Fails closed: an operation with no ambient tenant throws `MissingTenantContextException` (HTTP 403 `g:tenant_required`) before the provider is called. A tenant id that is not one safe storage segment is refused with `InvalidOperationException`; see [Tenant-Scoped Blobs and Caches](multi-tenancy.md#tenant-scoped-blobs-and-caches) for the accepted shapes.
+- A wrapped store implements `IScopedBlobStorage`, and `IPresignedUrlBlobStorage` exactly when the wrapped store does. `Unscoped` is the wrapped store; the signed-URL endpoint and the data-protection key ring use it, because they hold physical locations.
+- Registers the `AsyncLocal`-backed `ICurrentTenant` fallback when no tenant source is registered, records the `Blobs` seam as `Guarded` with the `scope-by-tenant` capability, and fails startup with `HEADLESS_TENANCY_BLOBS_NO_SCOPED_STORE` when it wrapped no store.
 
 ---
 

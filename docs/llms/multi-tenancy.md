@@ -20,7 +20,7 @@ Headless multi-tenancy is built from these pieces:
 - `Headless.Jobs.Core` persists a tenant on time jobs — capturing the ambient tenant at schedule time and restoring it around every execution attempt — and can require a tenant on enqueue. Cron stays system-scope.
 - `Headless.EntityFramework` reads `ICurrentTenant.Id` in global query filters for finalized tenant-owned metadata and can opt in to tenant validation and Added-transition stamping.
 - `Headless.Permissions.Core` scopes permission grant cache keys by tenant via `ScopedCache<PermissionGrantCacheItem>`.
-- `Headless.Blobs.Core` scopes blob locations by tenant through `.Blobs(blobs => blobs.ScopeByTenant())`, and `Headless.MultiTenancy`'s `AddTenantScopedCache<T>()` does the same for application cache keys. See [Tenant-Scoped Blobs and Caches](#tenant-scoped-blobs-and-caches).
+- `Headless.Blobs.MultiTenancy` scopes blob locations by tenant through `.Blobs(blobs => blobs.ScopeByTenant())`, and `Headless.MultiTenancy`'s `AddTenantScopedCache<T>()` does the same for application cache keys. See [Tenant-Scoped Blobs and Caches](#tenant-scoped-blobs-and-caches).
 
 For tenant-aware hosts, the recommended setup is:
 
@@ -76,7 +76,7 @@ app.UseAuthorization();
 - Enable strict EF tenant reads with `.EntityFramework(ef => ef.GuardTenantReads())` when a query over required-tenant rows must fail instead of returning nothing without a tenant. See [EF Tenant Read Guard](#ef-tenant-read-guard).
 - Use `ITenantWriteGuardBypass.BeginBypass()` only around intentional admin or host-level writes. `IgnoreMultiTenancyFilter()` affects reads only; it does not bypass guarded writes.
 - Permission cache scoping depends on `ICurrentTenant.Id`. Host-level operations with no tenant use the shared `t:` scope by design.
-- Files and cache entries carry no tenant column. In a tenant-aware host, add `.Blobs(blobs => blobs.ScopeByTenant())` and register tenant-owned application caches with `services.AddTenantScopedCache<T>()`. Both refuse an operation with no ambient tenant; use `ITenantStorageScopeBypass.BeginBypass()` only around intentional host-level blob or cache access, and keep blobs every tenant shares in a named store listed in `TenantBlobScopingOptions.UnscopedStores`. See [Tenant-Scoped Blobs and Caches](#tenant-scoped-blobs-and-caches).
+- Files and cache entries carry no tenant column. In a tenant-aware host, add `.Blobs(blobs => blobs.ScopeByTenant())` and register tenant-owned application caches with `services.AddTenantScopedCache<T>()`. Both refuse an operation with no ambient tenant. Keep blobs every tenant shares in a named store listed in `TenantBlobScopingOptions.UnscopedStores`, cache values every tenant shares through the unscoped `ICache`, and run cross-tenant work inside `currentTenant.Change(tenantId)`. See [Tenant-Scoped Blobs and Caches](#tenant-scoped-blobs-and-caches).
 - For background jobs, adopt the Jobs tenancy seam (`.Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue())`) so time jobs capture the ambient tenant at schedule time and restore it around every execution attempt. Cron is always system-scope: fan out one explicit-tenant time job per tenant from application code — see [Background Jobs](#background-jobs).
 - For message consumers, use the Messaging seam. When not using a seam on either path, set tenant explicitly with `using (currentTenant.Change(tenantId)) { ... }`.
 - Do not assume HTTP middleware covers SignalR hubs, background jobs, or messaging consumers. Those execution paths need their own tenant resolution.
@@ -724,13 +724,17 @@ The query filter and write guard keep rows apart, but a file or a cache entry ca
 
 ### Blob storage
 
+```bash
+dotnet add package Headless.Blobs.MultiTenancy
+```
+
 ```csharp
 builder.Services.AddHeadlessBlobs(blobs => blobs.UseAws(options => { /* ... */ }));
 
 builder.AddHeadlessTenancy(tenancy => tenancy.Blobs(blobs => blobs.ScopeByTenant()));
 ```
 
-`ScopeByTenant()` (in `Headless.Blobs.Core`) wraps the default store and every named store registered through `AddHeadlessBlobs`, whichever of the two calls runs first. Every `BlobLocation`, `BlobQuery` (list and delete-all), bulk path, and presigned URL request is rewritten before it reaches the provider, and every key the provider returns (`BlobInfo.BlobKey`, `BlobDownloadResult.FileName`, `BlobBulkResult`) is rewritten back. Application code keeps addressing `new BlobLocation("avatars", "1.png")`.
+`ScopeByTenant()` (in `Headless.Blobs.MultiTenancy`) wraps the default store and every named store registered through `AddHeadlessBlobs`, whichever of the two calls runs first. Every `BlobLocation`, `BlobQuery` (list and delete-all), bulk path, and presigned URL request is rewritten before it reaches the provider, and every key the provider returns (`BlobInfo.BlobKey`, `BlobDownloadResult.FileName`, `BlobBulkResult`) is rewritten back. Application code keeps addressing `new BlobLocation("avatars", "1.png")`.
 
 | `TenantBlobScopingStrategy` | Physical location of `BlobLocation("avatars", "1.png")` under tenant `acme` | Use when |
 | --- | --- | --- |
@@ -752,9 +756,9 @@ builder.AddHeadlessTenancy(tenancy =>
 
 - **Fail closed.** A scoped operation with no ambient tenant throws `MissingTenantContextException` (HTTP 403 `g:tenant_required`) before reaching the provider.
 - **Tenant ids must be one safe storage segment.** Under `PathPrefix` a tenant id must start and end with an ASCII letter or digit and contain only ASCII letters, digits, `.`, `_`, and `-`. Under `ContainerPerTenant`, `ContainerPrefix` plus the tenant id must be 3-63 characters of lowercase ASCII letters, digits, and single hyphens, and a container used as a key segment cannot contain `/` or `\`. Any other id is refused with `InvalidOperationException`, because provider normalizers lowercase, strip, and truncate names and would otherwise land one tenant inside another's scope. GUIDs and DNS-slug ids pass unchanged. A FileSystem store on a case-insensitive disk still treats `Acme` and `acme` as one directory, so keep canonical ids distinct under case folding.
-- **Host-level shared blobs.** Put blobs every tenant shares in a named store listed in `UnscopedStores`, which is never wrapped. For a one-off host operation on a scoped store, such as a cross-tenant cleanup job, wrap the call in `ITenantStorageScopeBypass.BeginBypass()`: while it is active, locations pass through unchanged, whatever the ambient tenant, so the code addresses physical keys (`acme/1.png`) itself. Under `PathPrefix`, do not write host blobs at the top level of a container tenants use: a host folder named like a tenant id would sit inside that tenant's prefix.
-- **Data-protection key ring.** `PersistKeysToBlobStorage()` from `Headless.Api.DataProtection` reads and writes the key ring under the bypass, so on a scoped store it stays at the physical `DataProtection` container root, shared by every tenant, whichever request first touches data protection. The key XML sits at the top level of that container, where no tenant's `DataProtection/{tenantId}/` prefix reaches it.
-- **Presigned URLs.** A URL is minted for the tenant's physical location. The `Headless.Blobs.SignedUrlEndpoint` endpoint serves a grant under the bypass, because the grant already carries the physical location and its signature is the authorization, so an anonymous request redeems a tenant's URL.
+- **Host-level shared blobs.** Put blobs every tenant shares in a named store listed in `UnscopedStores`, which is never wrapped. Cross-tenant work, such as a cleanup job, runs once per tenant inside `currentTenant.Change(tenantId)`. A scoped store implements `IScopedBlobStorage`; its `Unscoped` property is the wrapped store, which addresses physical keys (`acme/1.png`) with no tenant. Reach for it only for infrastructure that holds physical locations, as the two consumers below do. Under `PathPrefix`, do not write host blobs at the top level of a container tenants use: a host folder named like a tenant id would sit inside that tenant's prefix.
+- **Data-protection key ring.** `PersistKeysToBlobStorage()` from `Headless.Api.DataProtection` reads and writes the key ring through `IScopedBlobStorage.Unscoped`, so on a scoped store it stays at the physical `DataProtection` container root, shared by every tenant, whichever request first touches data protection. The key XML sits at the top level of that container, where no tenant's `DataProtection/{tenantId}/` prefix reaches it.
+- **Presigned URLs.** A URL is minted for the tenant's physical location. The `Headless.Blobs.SignedUrlEndpoint` endpoint serves a grant through `IScopedBlobStorage.Unscoped`, because the grant already carries the physical location and its signature is the authorization, so an anonymous request redeems a tenant's URL.
 - **Not scoped.** `IBlobContainerManager` is never wrapped. Under `ContainerPerTenant`, provision each tenant's container (`{ContainerPrefix}{tenantId}`) at onboarding with `EnsureContainerAsync`. A store registered directly as `IBlobStorage`, outside `AddHeadlessBlobs`, is not wrapped either; when the seam wraps no store at all, startup fails with `HEADLESS_TENANCY_BLOBS_NO_SCOPED_STORE`.
 
 ### Application caches
@@ -771,9 +775,9 @@ public sealed class ProfileReader(ICache<UserProfile> cache)
 }
 ```
 
-`AddTenantScopedCache<T>()` (in `Headless.MultiTenancy`) registers `ICache<T>` as a `ScopedCache<T>` over the default `ICache` with the scope `t:{ICurrentTenant.Id}`, the same key layout the permission grant cache uses. The registration order relative to `AddHeadlessCaching` does not matter; a second call for the same type is a no-op, and a call for a type that already has its own closed `ICache<T>` registration throws.
+`AddTenantScopedCache<T>()` (in `Headless.MultiTenancy`) registers `ICache<T>` as a `ScopedCache<T>` over the default `ICache` with the scope `t:{ICurrentTenant.Id}`, the same key layout the permission grant cache uses. The registration order relative to `AddHeadlessCaching` does not matter; a second call for the same type is a no-op, and a call for a type that already has its own closed `ICache<T>` registration throws. The host must register an `ICurrentTenant`, as the HTTP tenancy seam and `AddHeadlessDbContextServices()` do; otherwise startup fails with `MissingRequiredServiceException`.
 
-- **Fail closed.** With no ambient tenant an operation throws `MissingTenantContextException`. Under `ITenantStorageScopeBypass.BeginBypass()` it addresses the shared host scope `t::{key}` instead, whatever the ambient tenant. A tenant id containing `:` is refused, because `t:a:b:x` cannot tell tenant `a` with key `b:x` from tenant `a:b` with key `x`.
+- **Fail closed.** With no ambient tenant an operation throws `MissingTenantContextException`; cache values every tenant shares through the unscoped `ICache`. A tenant id containing `:` is refused, because `t:a:b:x` cannot tell tenant `a` with key `b:x` from tenant `a:b` with key `x`.
 - **Per-tenant invalidation.** Under the tenant, `RemoveByPrefixAsync("")` evicts every entry that tenant has in the underlying cache, including entries of other tenant-scoped types and permission grants, since they share the `t:{tenantId}:` scope. Give each type its own key prefix (`profile:`) and pass it to narrow the eviction. To evict another tenant's entries from host code, run the call inside `ICurrentTenant.Change(tenantId)`.
 - **Not tenant-isolated.** `RemoveByTagAsync`, `ClearAsync`, and `FlushAsync` act on the whole underlying cache, and `ICache<T>.Events` is a no-op hub; see `ScopedCache<T>` in [Caching](caching.md).
 - Permissions keeps its own scoped registration because it serves the `t:` host scope with no tenant rather than refusing; Settings and Features key their caches by provider name and key, not by the ambient tenant.
@@ -992,7 +996,6 @@ Tests that assert the normalized 403 `g:tenant_required` ProblemDetails (or any 
     - `ICurrentTenant` — reads the ambient tenant id/name for the current async execution scope and scopes a temporary override via `Change(id, name)`
     - `ICurrentTenantAccessor` — low-level read/write slot for the ambient `TenantInformation`, intended for framework infrastructure (for example middleware that sets the tenant from a JWT claim)
     - `ITenantWriteGuardBypass` — tracks an operation-local bypass for intentional host or admin tenant-owned writes
-    - `ITenantStorageScopeBypass` — tracks an operation-local bypass of tenant-scoped blob storage and caches for intentional host-level access; `Headless.Core` supplies the `AsyncLocal`-backed `TenantStorageScopeBypass.Instance`
     - `CrossTenantWriteException` — thrown when a tenant write guard detects a tenant-owned write that does not match the current tenant context
     - `MissingTenantContextException` — thrown when an operation requires an ambient tenant context but none is available
 - **Tenant catalog** (opt-in; see `Headless.MultiTenancy`'s `Catalog(...)` for wiring):
@@ -1052,7 +1055,7 @@ None.
     - `HeadlessTenancyBuilder` — root builder passed to the configure callback. Exposes `ApplicationBuilder`, `Services`, `Manifest`, and `RecordSeam(...)`. Seam packages extend it with their own methods (`.Http(...)`, `.Authorization(...)`, `.Messaging(...)`, `.Jobs(...)`, `.EntityFramework(...)`, `.Blobs(...)`, `.Catalog(...)`).
     - `TenantPostureManifest` — thread-safe, singleton, non-PII record of seam posture: status (`TenantPostureStatus`), capability labels, and runtime markers. Diagnostic breadcrumb only; records do not create enforcement.
     - `TenantPostureStatus` — enum whose ordinal is posture precedence: `Configured(0) < Propagating(1) < Guarded(2) < Enforcing(3)`. `RecordSeam` always keeps the strongest status across contributions.
-    - `AddTenantScopedCache<T>()` — registers `ICache<T>` as a `ScopedCache<T>` keyed by the ambient tenant (`t:{tenantId}:{key}`), refusing an operation with no tenant unless `ITenantStorageScopeBypass` is active. See [Tenant-Scoped Blobs and Caches](#tenant-scoped-blobs-and-caches).
+    - `AddTenantScopedCache<T>()` — registers `ICache<T>` as a `ScopedCache<T>` keyed by the ambient tenant (`t:{tenantId}:{key}`), refusing an operation with no tenant. It declares `ICurrentTenant` as a required service, so a host with no tenant source fails at startup. See [Tenant-Scoped Blobs and Caches](#tenant-scoped-blobs-and-caches).
     - `IHeadlessTenancyValidator` / `HeadlessTenancyDiagnostic` — extension hook for seam packages to emit startup diagnostics. Diagnostics can be `Information`, `Warning`, or startup-blocking `Error`.
     - `HeadlessTenancyStartupValidator` — an `IHeadlessStartupValidator` that runs all registered tenancy validators before any hosted service starts; throws `HeadlessTenancyValidationException` (an `InvalidOperationException`) on any `Error` diagnostic.
     - `HeadlessTenancyValidationContext` — context record passed to validators: `Services` (the app `IServiceProvider`) + `Manifest`.
@@ -1118,7 +1121,7 @@ app.UseHeadlessTenancy(); // after UseAuthentication, before UseAuthorization
 app.UseAuthorization();
 ```
 
-`AddHeadlessTenancy` and `AddTenantScopedCache<T>()` are the calls owned by this package; the `.Http(...)`, `.Authorization(...)`, `.Messaging(...)`, `.Jobs(...)`, `.EntityFramework(...)`, and `.Blobs(...)` extensions are contributed by the respective seam packages once they are installed. See [Tenant Catalog](#tenant-catalog) for adding `.Catalog(...)`.
+`AddHeadlessTenancy` and `AddTenantScopedCache<T>()` are the calls owned by this package; the `.Http(...)`, `.Authorization(...)`, `.Messaging(...)`, `.Jobs(...)`, `.EntityFramework(...)`, and `.Blobs(...)` (`Headless.Blobs.MultiTenancy`) extensions are contributed by the respective seam packages once they are installed. See [Tenant Catalog](#tenant-catalog) for adding `.Catalog(...)`.
 
 ### Configuration
 
