@@ -61,6 +61,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | --- | --- |
 | Publish or consume messages; configure transports, outbox/inbox, retries, or ordering | [Messaging](messaging.md) |
 | Schedule or execute background jobs and recurring work | [Jobs](jobs.md) |
+| Name a failure policy type that a consumer or job declares | [Reliability](reliability.md) |
 | Acquire distributed locks, reader/writer locks, or semaphores, or fence stale writes with fencing tokens | [Distributed Locks](distributed-locks.md) |
 | Cap attempts per phone, email, IP, or card across replicas (OTP delivery, password reset, PIN verification) | [Rate Limiting](rate-limiting.md) |
 | Track node identity, liveness, and membership | [Coordination](coordination.md) |

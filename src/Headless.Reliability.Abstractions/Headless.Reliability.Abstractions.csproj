@@ -1,0 +1,9 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Shared reliability contracts for Headless packages, starting with IFailurePolicy: the type a message consumer or job names to declare how its failures are handled.</Description>
+    <PackageTags>headless;reliability;failure-policy;retry;messaging;jobs;dotnet</PackageTags>
+    <RootNamespace>Headless.Reliability</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+</Project>

@@ -130,6 +130,9 @@
       "headless.checks": {
         "type": "Project"
       },
+      "headless.reliability.abstractions": {
+        "type": "Project"
+      },
       "headless.unitofwork.abstractions": {
         "type": "Project",
         "dependencies": {

@@ -466,6 +466,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
+          "Headless.Reliability.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
         }
       },
@@ -500,6 +501,9 @@
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
           "libphonenumber-csharp": "[9.0.39, )"
         }
+      },
+      "headless.reliability.abstractions": {
+        "type": "Project"
       },
       "headless.serializer.abstractions": {
         "type": "Project"
