@@ -448,6 +448,7 @@
         <Project Path="tests\Headless.EntityFramework.Tests.Harness\Headless.EntityFramework.Tests.Harness.csproj" />
         <Project Path="tests\Headless.EntityFramework.Testing.Tests.Unit\Headless.EntityFramework.Testing.Tests.Unit.csproj" />
         <Project Path="tests\Headless.EntityFramework.Tests.Integration\Headless.EntityFramework.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.EntityFramework.Tests.Unit\Headless.EntityFramework.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Payments/">
         <Project Path="src\Headless.Payments.Paymob.CashIn\Headless.Payments.Paymob.CashIn.csproj" />
