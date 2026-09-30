@@ -20,10 +20,10 @@ public abstract class FencingOracleTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : ILeasesFixture
 {
     /// <summary>
-    /// The coarsest timestamp precision of the provider under test, in ticks. A stored lease duration within it of the
-    /// model's counts as equal; PostgreSQL stores microseconds.
+    /// The tolerance, in ticks, within which a stored lease duration counts as the model's. Exact: call validation
+    /// truncates every duration to whole microseconds, the finest resolution every provider stores.
     /// </summary>
-    protected virtual long PrecisionTicks => 10;
+    protected virtual long PrecisionTicks => 1;
 
     protected TFixture Fixture { get; } = fixture;
 

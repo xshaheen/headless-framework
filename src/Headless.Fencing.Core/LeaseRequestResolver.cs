@@ -58,8 +58,13 @@ internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOption
         return kind;
     }
 
-    /// <summary>Checks a grant or renewal duration against the configured bounds.</summary>
+    /// <summary>
+    /// Checks a grant or renewal duration against the configured bounds and returns it truncated to whole
+    /// microseconds, the finest resolution every provider stores, so a lease expires at the same offset from its
+    /// grant whichever provider holds it.
+    /// </summary>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="duration" /> is outside the bounds.</exception>
+    [MustUseReturnValue]
     public TimeSpan ValidateDuration(TimeSpan duration)
     {
         // Read on every call so a bound changed through options reload applies to the next grant.
@@ -75,7 +80,8 @@ internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOption
             );
         }
 
-        return duration;
+        // Checked before truncating, so a duration a tick past the maximum is refused rather than rounded into range.
+        return SqlPortable.Truncate(duration);
     }
 
     /// <summary>Checks a renewal's progress against the size limits, before anything is written.</summary>

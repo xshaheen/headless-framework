@@ -267,6 +267,23 @@ public sealed class LeaseRequestResolverTests : TestBase
     }
 
     [Fact]
+    public void should_truncate_a_duration_to_whole_microseconds()
+    {
+        // PostgreSQL stores microseconds and truncates a finer interval silently, while SQL Server and the in-memory
+        // store keep 100-nanosecond ticks; the differential oracle measured the drift as 1 to 9 ticks per grant.
+        var context = new FencingTestContext();
+
+        context
+            .Resolver.ValidateDuration(TimeSpan.FromMinutes(2) + TimeSpan.FromTicks(15))
+            .Should()
+            .Be(TimeSpan.FromMinutes(2) + TimeSpan.FromTicks(10));
+        context
+            .Resolver.ValidateDuration(TimeSpan.FromMinutes(2) + TimeSpan.FromTicks(9))
+            .Should()
+            .Be(TimeSpan.FromMinutes(2));
+    }
+
+    [Fact]
     public void should_reject_durations_outside_the_bounds()
     {
         var context = new FencingTestContext();
