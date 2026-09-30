@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using Headless.Abstractions;
+using Headless.Core;
 using Headless.Jobs.Base;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Exceptions;
@@ -43,6 +44,7 @@ internal sealed class JobsExecutionTaskHandler
     // so DI injection is safe. A null tenant on the job (system scope) or a null accessor here is a no-op.
     private readonly ICurrentTenant? _currentTenant;
     private readonly bool _propagateTenant;
+    private readonly TenantTelemetryOptions _telemetryOptions;
 
     public JobsExecutionTaskHandler(
         IServiceProvider serviceProvider,
@@ -55,10 +57,12 @@ internal sealed class JobsExecutionTaskHandler
         ILogger<JobsExecutionTaskHandler> logger,
         JobsRetryOptions? retryOptions = null,
         ICurrentTenant? currentTenant = null,
-        IOptions<JobsTenancyOptions>? tenancyOptions = null
+        IOptions<JobsTenancyOptions>? tenancyOptions = null,
+        IOptions<TenantTelemetryOptions>? telemetryOptions = null
     )
     {
         _propagateTenant = tenancyOptions?.Value.PropagateTenant ?? false;
+        _telemetryOptions = telemetryOptions?.Value ?? new TenantTelemetryOptions();
         _serviceProvider = serviceProvider;
         _timeProvider = timeProvider;
         _jobsInstrumentation = jobsInstrumentation;
@@ -883,7 +887,25 @@ internal sealed class JobsExecutionTaskHandler
             return null;
         }
 
-        return _currentTenant.Change(context.TenantId);
+        var tenantScope = _currentTenant.Change(context.TenantId);
+
+        // The callbacks log as the job's tenant, like the handler did under TenantRestoreExecuteMiddleware.
+        if (
+            context.TenantId is not { } tenantId
+            || TenantTelemetry.Enrich(_logger, _telemetryOptions, tenantId) is not { } telemetryScope
+        )
+        {
+            return tenantScope;
+        }
+
+        return DisposableFactory.Create(
+            (Tenant: tenantScope, Telemetry: telemetryScope),
+            static scopes =>
+            {
+                scopes.Telemetry.Dispose();
+                scopes.Tenant.Dispose();
+            }
+        );
     }
 
     private async ValueTask _ObserveJobExceptionAsync(

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using Headless.Abstractions;
 using Headless.Jobs;
 using Headless.Jobs.Base;
@@ -7,6 +8,7 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
 using Headless.Jobs.MultiTenancy;
 using Headless.MultiTenancy;
+using Headless.Testing.Helpers;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
 
@@ -191,6 +193,68 @@ public sealed class TenantRestoreExecuteMiddlewareTests : TestBase
             await act.Should().ThrowAsync<OperationCanceledException>();
             tenant.Id.Should().Be("outer");
         }
+    }
+
+    [Fact]
+    public async Task handler_runs_with_tenant_log_scope_and_span_tag_and_scope_is_removed_after()
+    {
+        var logger = new ScopeRecordingLogger<TenantRestoreExecuteMiddleware>();
+        var middleware = new TenantRestoreExecuteMiddleware(
+            new TestCurrentTenant(),
+            Options.Create(new JobsTenancyOptions { PropagateTenant = true }),
+            Options.Create(new TenantTelemetryOptions()),
+            logger
+        );
+        using var jobSpan = RecordedTestActivity.Start();
+        IReadOnlyList<KeyValuePair<string, object?>> scopeDuringHandler = [];
+        object? spanTenantDuringHandler = null;
+
+        await middleware.InvokeAsync(
+            _Context("t1"),
+            _ =>
+            {
+                scopeDuringHandler = logger.GetActiveScopeProperties();
+                spanTenantDuringHandler = Activity.Current?.GetTagItem("tenant.id");
+                return Task.CompletedTask;
+            },
+            AbortToken
+        );
+
+        scopeDuringHandler
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(new KeyValuePair<string, object?>("TenantId", "t1"));
+        spanTenantDuringHandler.Should().Be("t1");
+        logger.GetActiveScopeProperties().Should().BeEmpty();
+        jobSpan.Activity.GetTagItem("tenant.id").Should().Be("t1");
+    }
+
+    [Fact]
+    public async Task system_job_runs_without_tenant_log_scope_or_span_tag()
+    {
+        var logger = new ScopeRecordingLogger<TenantRestoreExecuteMiddleware>();
+        var middleware = new TenantRestoreExecuteMiddleware(
+            new TestCurrentTenant(),
+            Options.Create(new JobsTenancyOptions { PropagateTenant = true }),
+            Options.Create(new TenantTelemetryOptions()),
+            logger
+        );
+        using var jobSpan = RecordedTestActivity.Start();
+        IReadOnlyList<KeyValuePair<string, object?>> scopeDuringHandler = [];
+
+        await middleware.InvokeAsync(
+            _Context(tenantId: null),
+            _ =>
+            {
+                scopeDuringHandler = logger.GetActiveScopeProperties();
+                return Task.CompletedTask;
+            },
+            AbortToken
+        );
+
+        scopeDuringHandler.Should().BeEmpty();
+        jobSpan.Activity.GetTagItem("tenant.id").Should().BeNull();
     }
 
     private static TenantRestoreExecuteMiddleware _Create(ICurrentTenant tenant, bool propagate)
