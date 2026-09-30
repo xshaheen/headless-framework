@@ -368,6 +368,44 @@ startup). The shipped enum is `CommitProbeMode` (`Disabled` / `Warn` / `Strict`)
 explicit operator value and otherwise its own flat default. No gate derives its default from the host
 environment today.
 
+## Jobs (declaration and registration)
+
+### Job identity
+
+The durable `owner.name` string a `[Job]` class declares, for example `billing.close-day`. It is
+persisted with every run as the row's `Function`, so renaming it orphans existing rows; the first
+segment names the owning module. A job is always a class implementing `IJob` or `IJob<TArgs>`, and
+each argument type belongs to exactly one job, which is why scheduling addresses a job by its
+argument type (or by its class when it takes none) instead of by identity.
+
+### Jobs module
+
+The generated `JobsModule` of one assembly: every `[Job]` class and middleware declaration in it.
+Nothing registers implicitly. A host adds a module with `AddModule<T>()`, and a feature module
+contributes one through `services.ConfigureJobs(...)` from its own entry point without calling
+`AddHeadlessJobs`.
+
+### Host catalog
+
+The per-host set of registered jobs, built and frozen when that host's job registry is first
+resolved. Every module contribution counts regardless of whether it was added before or after
+`AddHeadlessJobs`; conflicts between modules, unknown tuning identities, and unmatched run-filter
+entries fail startup at that point. Hosts in one process may add different modules.
+
+### Tuning
+
+A host-side override of one declared job's deployment settings by identity (`Tune(identity, ...)`,
+then `Headless:Jobs:Jobs:{identity}` configuration). It changes concurrency, priority, failure
+policy, per-job options, and per-job middleware, never the identity, argument type, or cron
+schedule, which the `[Job]` declaration owns.
+
+### Run filter
+
+The subset of registered jobs one host claims and executes (`RunOnly`), given as exact identities
+or `owner.*` patterns. Filtered-out jobs stay registered: the host still schedules them, seeds
+their cron definitions, and shows them in the Dashboard, and another host runs them. *Avoid:*
+reading it as registration scope; a filter never makes a job unschedulable.
+
 ## Jobs (misfire recovery)
 
 ### Schedule watermark
@@ -532,7 +570,7 @@ tenant scope. It can only be created outside tenant context — an ambient tenan
 ### Cron fan-out
 
 The pattern for tenant-scoped recurring work: cron definitions and occurrences stay system-scope,
-and the cron function enumerates tenants in application code, scheduling one tenant-scoped time job
+and the cron job enumerates tenants in application code, scheduling one tenant-scoped time job
 per tenant. The framework ships an optional `ITenantDirectory` enumeration capability (implemented
 by all v1 tenant-catalog stores) that an app can call for this enumeration step, but builds no
 fan-out orchestration on top of it — the fan-out loop itself is still application code.

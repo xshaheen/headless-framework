@@ -786,11 +786,11 @@ using Headless.MultiTenancy; // ITenantDirectory — only when a tenant catalog 
 // permission cache) observe the right tenant automatically.
 public sealed record TenantReportRequest(string ReportKind);
 
-public sealed class GenerateTenantReport(IReportService reports)
+[Job("reports.tenant-report")]
+public sealed class GenerateTenantReportJob(IReportService reports) : IJob<TenantReportRequest>
 {
-    [JobFunction("GenerateTenantReport")]
-    public Task ExecuteAsync(JobFunctionContext<TenantReportRequest> context, CancellationToken ct) =>
-        reports.BuildAsync(context.Request.ReportKind, ct);
+    public async ValueTask ExecuteAsync(JobContext<TenantReportRequest> context, CancellationToken ct) =>
+        await reports.BuildAsync(context.Request.ReportKind, ct);
 }
 
 // A system-scope cron that fans out one tenant-scoped time job per tenant.
@@ -799,10 +799,10 @@ public sealed class GenerateTenantReport(IReportService reports)
 // configured via `.Catalog(...)`. An app that has not configured a catalog enumerates
 // tenants through its own means instead (a direct query against its own tenant table, an
 // app-owned directory service, etc.) — the loop below is identical either way.
-public sealed class NightlyReportFanOut(IJobScheduler scheduler, ITenantDirectory tenants)
+[Job("reports.nightly-fan-out", Cron = "0 0 2 * * *")]
+public sealed class NightlyReportFanOutJob(IJobScheduler scheduler, ITenantDirectory tenants) : IJob
 {
-    [JobFunction("NightlyReportFanOut", cronExpression: "0 0 2 * * *")]
-    public async Task ExecuteAsync(CancellationToken ct)
+    public async ValueTask ExecuteAsync(JobContext context, CancellationToken ct)
     {
         foreach (var tenant in await tenants.GetAllAsync(ct))
         {

@@ -9,7 +9,7 @@ severity: medium
 applies_when:
   - Implementing Jobs middleware registration in issue 305
   - Adding global or function-targeted middleware declarations
-  - Changing generated JobFunction descriptor identity
+  - Changing generated job descriptor identity
 tags: [jobs, middleware, source-generator, roslyn, metadata, incremental-generator]
 related_components: [Headless.Jobs.SourceGenerator, Headless.Jobs]
 ---
@@ -20,7 +20,7 @@ related_components: [Headless.Jobs.SourceGenerator, Headless.Jobs]
 
 Implement issue [#305](https://github.com/xshaheen/headless-framework/issues/305) with assembly-level middleware metadata discovered by the application source generator. Do not add an explicit generated registration-hook mechanism.
 
-`[JobFunction]` remains the sole handler authoring model. Function-targeted middleware refers to the durable function identity emitted in the generated `JobFunctionDescriptor`, coordinated with [#304](https://github.com/xshaheen/headless-framework/issues/304), rather than to a handler type.
+A job is declared as an `IJob` or `IJob<TArgs>` class carrying `[Job(identity)]`; method-level job declarations were removed. Function-targeted middleware refers to the durable job identity emitted in the generated `JobFunctionDescriptor`, coordinated with [#304](https://github.com/xshaheen/headless-framework/issues/304), rather than to a handler type.
 
 ## Evidence
 
@@ -38,7 +38,7 @@ The explicit-hook candidate is technically derivable from a consumer marker and 
 
 Middleware is declared as assembly metadata in the assembly that owns the middleware type. Referencing applications do not repeat those declarations. The application generator reads declarations from its current compilation and direct metadata references, normalizes them, then emits the application call chain.
 
-Global declarations have no function target. Function-targeted declarations carry the generated descriptor identity value. The prototype uses the `[JobFunction]` function name, matching the durable identity direction in #304; #305 must consume #304's final generated descriptor representation rather than introduce a parallel identity.
+Global declarations have no function target. Function-targeted declarations carry the generated descriptor identity value. The prototype used the job's durable function name, matching the durable identity direction in #304; #305 must consume #304's final generated descriptor representation rather than introduce a parallel identity.
 
 The discovery boundary is compile time. Middleware added after the application compilation is not discovered dynamically, and runtime plugin scanning is intentionally unsupported.
 

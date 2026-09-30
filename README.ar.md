@@ -486,7 +486,7 @@ Message bus موزّع بـ transactional outbox، وretries، وdelayed deliver
 |---------|-------|
 | [Headless.Jobs.Abstractions](src/Headless.Jobs.Abstractions/README.md) | الـ interfaces بتاعة الـ job scheduling |
 | [Headless.Jobs.Core](src/Headless.Jobs.Core/README.md) | الـ job engine: cron، وdelays، وretries، وmonitoring |
-| [Headless.Jobs.SourceGenerator](src/Headless.Jobs.SourceGenerator/README.md) | توليد كود وقت الـ compile للـ methods المعلّمة بـ `[JobFunction]` |
+| [Headless.Jobs.SourceGenerator](src/Headless.Jobs.SourceGenerator/README.md) | توليد كود وقت الـ compile للـ job classes المعلّمة بـ `[Job]` |
 | [Headless.Jobs.Dashboard](src/Headless.Jobs.Dashboard/README.md) | Web UI لمتابعة الـ jobs |
 | [Headless.Jobs.EntityFramework](src/Headless.Jobs.EntityFramework/README.md) | تخزين حالة الـ jobs على EF Core؛ بيستخدم `Headless.Caching.ICache` اختيارياً لـ caching الـ cron expressions |
 | [Headless.Jobs.EntityFramework.PostgreSql](src/Headless.Jobs.EntityFramework.PostgreSql/README.md) | Atomic claims في PostgreSQL بـ `FOR UPDATE SKIP LOCKED` |
