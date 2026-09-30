@@ -48,7 +48,7 @@ internal static class JobsTreeDeleteConflicts
 
         if (string.Equals(providerName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal))
         {
-            return RelationalTransientFaults.IsTransientSqlState(databaseException.SqlState)
+            return PostgreSqlTransientFaults.IsTransientSqlState(databaseException.SqlState)
                 || databaseException.SqlState is SqlErrorCodes.PostgreSql.ForeignKeyViolation;
         }
 
@@ -56,10 +56,10 @@ internal static class JobsTreeDeleteConflicts
         {
             // Every error in the batch counts: SqlClient reports several per exception, and the deadlock or the
             // foreign-key conflict is not always the first.
-            foreach (var number in RelationalTransientFaults.GetErrorNumbers(databaseException))
+            foreach (var number in SqlServerTransientFaults.GetErrorNumbers(databaseException))
             {
                 if (
-                    RelationalTransientFaults.IsTransientSqlServerNumber(number)
+                    SqlServerTransientFaults.IsTransientNumber(number)
                     || number is SqlErrorCodes.SqlServer.ConstraintViolation
                 )
                 {
