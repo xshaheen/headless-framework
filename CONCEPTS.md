@@ -501,6 +501,17 @@ guards, Jobs/Messaging propagation, and per-tenant Settings/Features/Permissions
 tenant claim carries it directly; identifier-based resolution must map to it before ambient context
 is set.
 
+### Tenant storage scope
+
+The physical namespace a tenant's blobs and cache entries occupy, derived from the canonical tenant
+id because files and cache entries carry no tenant column: a leading path segment (`acme/1.png`) or a
+per-tenant container (`{ContainerPrefix}acme`) for blobs, and the key scope `t:acme:` for caches.
+Tenant-scoped stores refuse to work without an ambient tenant; the storage scope bypass
+(`ITenantStorageScopeBypass`) is the explicit exit to physical, host-level addressing. Distinct from
+the tenant write guard, which protects rows and has its own bypass. *Avoid:* "tenant prefix" for the
+container-per-tenant layout, where the tenant is the container rather than a prefix. See
+[docs/llms/multi-tenancy.md](docs/llms/multi-tenancy.md#tenant-scoped-blobs-and-caches).
+
 ### Tenant catalog
 
 The opt-in read surface (`Headless.MultiTenancy.Abstractions`/`Headless.MultiTenancy`, issue #253)
