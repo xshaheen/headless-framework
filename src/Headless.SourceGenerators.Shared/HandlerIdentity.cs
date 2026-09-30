@@ -20,9 +20,7 @@ internal static class HandlerIdentity
     public static bool IsValid(string? identity)
     {
         if (
-            identity is null
-            || identity.Length == 0
-            || identity.Length > MaxLength
+            identity is not { Length: > 0 and <= MaxLength }
             || char.IsWhiteSpace(identity[0])
             || char.IsWhiteSpace(identity[identity.Length - 1])
         )

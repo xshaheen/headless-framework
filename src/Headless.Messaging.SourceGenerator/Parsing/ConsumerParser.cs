@@ -111,7 +111,9 @@ internal static class ConsumerParser
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToEquatableArray();
 
-        var consumer = diagnostics.Any(diagnostic => diagnostic.Descriptor.DefaultSeverity == DiagnosticSeverity.Error)
+        var consumer = diagnostics.Exists(diagnostic =>
+            diagnostic.Descriptor.DefaultSeverity == DiagnosticSeverity.Error
+        )
             ? null
             : new ConsumerModel(
                 typeName,

@@ -282,8 +282,14 @@ public sealed class ConsumerHostControlTests : TestBase
             .GetGroupConcurrentLimit(new ConsumerGroupKey(TestConsumers.InvoiceProjection, MessageLane.Bus));
 
         // then
-        consumers.Single(x => x.ConsumerIdentity == TestConsumers.InvoiceProjection).Concurrency.Should().Be(16);
-        consumers.Single(x => x.ConsumerIdentity == TestConsumers.Shipment).Concurrency.Should().Be(1);
+        consumers
+            .Single(x => string.Equals(x.ConsumerIdentity, TestConsumers.InvoiceProjection, StringComparison.Ordinal))
+            .Concurrency.Should()
+            .Be(16);
+        consumers
+            .Single(x => string.Equals(x.ConsumerIdentity, TestConsumers.Shipment, StringComparison.Ordinal))
+            .Concurrency.Should()
+            .Be(1);
         limit.Should().Be(16);
     }
 
@@ -333,7 +339,7 @@ public sealed class ConsumerHostControlTests : TestBase
             await bus.PublishAsync(new InvoiceIssued("INV-9"), cancellationToken: AbortToken);
         await publishInvoice.Should().NotThrowAsync();
         await bus.PublishAsync(new OrderShipped("ORD-9"), cancellationToken: AbortToken);
-        await _WaitUntilAsync(() => probe.Calls.Contains("orders ORD-9"));
+        await _WaitUntilAsync(() => probe.Calls.Contains("orders ORD-9", StringComparer.Ordinal));
 
         // then
         factory.Created.Select(x => x.Group).Should().OnlyContain(x => x == TestConsumers.Shipment);

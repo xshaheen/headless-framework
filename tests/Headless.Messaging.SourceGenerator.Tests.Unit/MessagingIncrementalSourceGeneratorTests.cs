@@ -400,7 +400,7 @@ public sealed class MessagingIncrementalSourceGeneratorTests
         // then
         GeneratorTestHelper
             .GeneratorDiagnostics(driver)
-            .Where(x => x.Id == "HM007")
+            .Where(x => string.Equals(x.Id, "HM007", StringComparison.Ordinal))
             .Select(x => x.GetMessage(CultureInfo.InvariantCulture))
             .Should()
             .SatisfyRespectively(
@@ -544,6 +544,8 @@ public sealed class MessagingIncrementalSourceGeneratorTests
     private static Diagnostic _Single(GeneratorDriver driver, string id) =>
         GeneratorTestHelper.GeneratorDiagnostics(driver).Should().ContainSingle(x => x.Id == id).Which;
 
+#pragma warning disable MA0045 // False positive: the tree was parsed from an in-memory string, so GetText returns its SourceText without I/O.
     private static string _Text(Diagnostic diagnostic) =>
         diagnostic.Location.SourceTree!.GetText().ToString(diagnostic.Location.SourceSpan);
+#pragma warning restore MA0045
 }

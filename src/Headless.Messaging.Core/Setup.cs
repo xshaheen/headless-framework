@@ -650,14 +650,11 @@ public static class SetupMessaging
                 _providerConfigs.Keys.Select(static type => type.Name).Order(StringComparer.Ordinal)
             );
 
-            return string.Create(
-                CultureInfo.InvariantCulture,
-                $"concurrency {_concurrency}, consumer identity '{_consumerIdentity}', handler id '{_resolvedHandlerId}', "
-                    + $"contract version '{_messageContractVersion}', inbox retention {_inboxRetention}, "
-                    + $"circuit-breaker override {(_circuitBreaker.HasOverride ? "set" : "none")}, "
-                    + $"every instance {_everyInstance}, failure policy {_failurePolicy?.Name ?? "none"}, "
-                    + $"provider settings [{providerSettings}]"
-            );
+            return $"concurrency {_concurrency}, consumer identity '{_consumerIdentity}', handler id '{_resolvedHandlerId}', "
+                + $"contract version '{_messageContractVersion}', inbox retention {_inboxRetention}, "
+                + $"circuit-breaker override {(_circuitBreaker.HasOverride ? "set" : "none")}, "
+                + $"every instance {_everyInstance}, failure policy {_failurePolicy?.Name ?? "none"}, "
+                + $"provider settings [{providerSettings}]";
         }
 
         public override int GetHashCode()

@@ -13,7 +13,7 @@ namespace Headless.Messaging.SourceGenerator.Emitting;
 /// only emit path.
 /// </summary>
 /// <remarks>
-/// Every type is written fully qualified, so the generated file never depends on a <c>using</c> and cannot be captured
+/// Every type is written fully qualified, so the generated file never depends on a <see langword="using"/> and cannot be captured
 /// by a namespace that shares a segment with the assembly name.
 /// </remarks>
 internal static class MessagingSourceEmitter

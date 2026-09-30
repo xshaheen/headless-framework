@@ -274,11 +274,8 @@ internal sealed record MessageContract(
     /// <summary>Renders the declaration the way it was written, so a conflict message shows both sides.</summary>
     public string Describe()
     {
-        return string.Create(
-            CultureInfo.InvariantCulture,
-            $"Message<{MessageType.Name}>(\"{Name}\", \"{Version}\") "
-                + $"[correlation {(DeclaredCorrelationSelector is null ? "none" : "set")}; "
-                + $"Bus: {Bus.Describe()}; Queue: {Queue.Describe()}]"
-        );
+        return $"Message<{MessageType.Name}>(\"{Name}\", \"{Version}\") "
+            + $"[correlation {(DeclaredCorrelationSelector is null ? "none" : "set")}; "
+            + $"Bus: {Bus.Describe()}; Queue: {Queue.Describe()}]";
     }
 }

@@ -33,7 +33,7 @@ internal sealed class JobsRunFilter
     public bool IsFiltered => _runnable is not null;
 
     /// <summary>Whether this host claims and executes <paramref name="function"/>.</summary>
-    public bool Allows(string function) => _runnable is null || _runnable.Contains(function);
+    public bool Allows(string function) => _runnable?.Contains(function) != false;
 
     /// <summary>
     /// Resolves <c>RunOnly</c> entries against the registered job identities. An entry is an exact identity or an

@@ -1945,7 +1945,7 @@ internal sealed class ConsumerRegister(
         public required string GroupName { get; init; }
 
         /// <summary>The lane-qualified circuit keys of the consumer identities this handle's clients deliver to.</summary>
-        public FrozenSet<string> CircuitKeys { get; init; } = FrozenSet<string>.Empty;
+        public FrozenSet<string> CircuitKeys { get; init; } = [];
         public ConcurrentBag<Task> ConsumerTasks { get; init; } = [];
 
         // Production reads the pause state through the private _isPaused field (see AddClientAsync); the public getter

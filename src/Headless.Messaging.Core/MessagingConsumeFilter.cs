@@ -22,7 +22,7 @@ internal sealed class MessagingConsumeFilter
     public bool IsFiltered => _consumed is not null;
 
     /// <summary>Whether this host starts a consumer client for the consumer with <paramref name="identity"/>.</summary>
-    public bool Allows(string identity) => _consumed is null || _consumed.Contains(identity);
+    public bool Allows(string identity) => _consumed?.Contains(identity) != false;
 
     /// <summary>
     /// Resolves <c>ConsumeOnly</c> entries against the registered consumer identities. An entry is an exact identity or

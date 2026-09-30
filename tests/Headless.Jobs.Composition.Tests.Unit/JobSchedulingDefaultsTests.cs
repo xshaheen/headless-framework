@@ -209,7 +209,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                 Enlistment = TransactionEnlistment.Required,
             },
             new() { [typeof(Request)] = new JobOptions { Retries = 6 } },
-            new() { [_Requestless.FunctionName] = new JobOptions { Retries = 8 } }
+            new(StringComparer.Ordinal) { [_Requestless.FunctionName] = new JobOptions { Retries = 8 } }
         );
         var (scheduler, time, cron) = _CreateScheduler(new FakeTimeProvider(), policies);
         await scheduler.ScheduleRecurringAsync(new Request(), "0 * * * * *", AbortToken);
@@ -273,7 +273,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             string.Equals(identity, "request", StringComparison.Ordinal) ? new() { [typeof(Request)] = required } : [],
             string.Equals(identity, "request", StringComparison.Ordinal)
                 ? []
-                : new()
+                : new(StringComparer.Ordinal)
                 {
                     [
                         string.Equals(identity, "typed-descriptor", global::System.StringComparison.Ordinal)
@@ -602,7 +602,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         var policies = new JobSchedulingPolicies(
             new JobOptions(),
             [],
-            new() { [canonical.FunctionName] = new JobOptions { Retries = 8 } }
+            new(StringComparer.Ordinal) { [canonical.FunctionName] = new JobOptions { Retries = 8 } }
         );
         policies
             .Resolve(
@@ -626,7 +626,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         var invalidDescriptor = new JobSchedulingPolicies(
             new JobOptions(),
             [],
-            new() { [_Requestless.FunctionName] = new JobOptions() }
+            new(StringComparer.Ordinal) { [_Requestless.FunctionName] = new JobOptions() }
         );
         var registry = JobFunctionRegistryBuilder.Build([], [], []);
         var validateRequest = () => invalidRequest.Validate(registry);

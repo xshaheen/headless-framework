@@ -863,7 +863,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 
     private static NpgsqlParameter[] _RunnableParameters(JobsRunFilter runFilter) =>
         runFilter.RunnableFunctions is { } runnable
-            ? [new NpgsqlParameter("runnableFunctions", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = runnable }]
+            ? [new NpgsqlParameter("runnableFunctions", runnable) { DataTypeName = "text[]" }]
             : [];
 
     private static string _ParameterName(string prefix, int index)

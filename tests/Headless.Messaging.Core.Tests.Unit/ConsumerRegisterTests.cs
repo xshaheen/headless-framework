@@ -764,7 +764,10 @@ public sealed class ConsumerRegisterTests : TestBase
         handles["0:shared"] = handle;
         var applyCircuitIntent = typeof(ConsumerRegister).GetMethod(
             "_ApplyCircuitIntentAsync",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            binder: null,
+            types: [typeof(string), typeof(bool), typeof(long)],
+            modifiers: null
         )!;
         await (ValueTask)applyCircuitIntent.Invoke(register, ["0:billing.a", true, 1L])!;
 

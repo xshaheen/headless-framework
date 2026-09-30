@@ -143,7 +143,8 @@ public abstract class JobsRunOnlyConformanceTests<TFixture>(TFixture fixture) : 
             claimed.Should().ContainSingle().Which.CronJobId.Should().Be(runnableDefinition.Id);
 
             var candidates = await store.GetEarliestCronDispatchCandidatesAsync(10, cancellationToken: ct);
-            candidates?.Candidates.Should().OnlyContain(x => x.FunctionName == _Runnable);
+            candidates.Should().NotBeNull();
+            candidates!.Candidates.Should().OnlyContain(x => x.FunctionName == _Runnable);
 
             var stored = (await store.GetAllCronJobOccurrencesAsync(x => x.Id == filteredOccurrence.Id, ct)).Single();
             stored.Status.Should().Be(JobStatus.Idle);

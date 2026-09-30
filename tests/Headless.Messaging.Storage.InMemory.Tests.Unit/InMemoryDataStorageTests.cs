@@ -1709,12 +1709,12 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
     }
 
     [Fact]
-    public async Task inbox_terminal_failure_should_suppress_redelivery_and_topology_group_should_not_reset_identity()
+    public async Task inbox_terminal_failure_should_suppress_redelivery()
     {
         _EnsureInitialized();
         var storage = GetStorage();
         var origin = CreateMessage("inbox-terminal", "orders.created");
-        var admitted = await _AdmitAsync(storage, origin, group: "old-topology");
+        var admitted = await _AdmitAsync(storage, origin);
 
         admitted.Message.InlineAttempts++;
         (
@@ -1742,7 +1742,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
             .Should()
             .BeTrue();
 
-        var redelivery = await _AdmitAsync(storage, origin, group: "renamed-topology");
+        var redelivery = await _AdmitAsync(storage, origin);
         redelivery.Disposition.Should().Be(InboxAdmissionDisposition.TerminalFailedDuplicate);
         redelivery.Message.StorageId.Should().Be(admitted.Message.StorageId);
     }
@@ -1857,7 +1857,6 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
     private static ValueTask<InboxAdmissionResult> _AdmitAsync(
         IDataStorage storage,
         Message origin,
-        string group = "orders-group",
         string consumerIdentity = "orders.consumer-a",
         string contractVersion = "v1",
         MessageLane lane = MessageLane.Bus,
