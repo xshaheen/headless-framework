@@ -561,6 +561,8 @@
       "headless.sql.core": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Nito.AsyncEx": "[5.1.2, )"
         }
@@ -569,6 +571,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.Sql.Core": "[1.0.0, )",

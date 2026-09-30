@@ -1109,9 +1109,13 @@
           "FluentValidation": "[12.1.1, )",
           "Headless.Checks": "[1.0.0, )",
           "Headless.Core": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.Fencing.Abstractions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Core": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
           "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
@@ -1486,6 +1490,8 @@
       "headless.sql.core": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Nito.AsyncEx": "[5.1.2, )"
         }
@@ -1507,6 +1513,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.Sql.Core": "[1.0.0, )",
