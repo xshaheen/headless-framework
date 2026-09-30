@@ -773,8 +773,9 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
     }
 
     // Found by the differential oracle: call validation accepted these, then PostgreSQL failed the statement on NUL
-    // (22021) and Npgsql's UTF-8 encoder refused an unpaired surrogate, while SQL Server stored the surrogate and handed
-    // a sweep a resource rewritten to U+FFFD, which names a different lease than the one it abandoned.
+    // (22021) and Npgsql's UTF-8 encoder refused an unpaired surrogate, while SqlClient sent the surrogate as U+FFFD, so
+    // SQL Server stored a different key (handed back to a sweep as a resource naming no lease the caller holds) and
+    // would merge any two keys that differ only in which lone surrogate they carry.
     public virtual async Task should_refuse_a_key_no_provider_stores_unchanged_before_any_write()
     {
         var (kind, resource) = (CreateKind(), CreateResource());

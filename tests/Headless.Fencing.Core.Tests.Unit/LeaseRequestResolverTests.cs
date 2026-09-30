@@ -36,10 +36,10 @@ public sealed class LeaseRequestResolverTests : TestBase
         act.Should().Throw<ArgumentException>();
     }
 
-    // PostgreSQL cannot store NUL; an unpaired surrogate is not Unicode, so Npgsql's UTF-8 encoder refuses it and SQL
-    // Server hands it back rewritten as U+FFFD. Found by the differential oracle (seeds 1, 12, and 20). The values are
-    // built in code: attribute arguments are stored as UTF-8, which would turn a lone surrogate into U+FFFD before the
-    // test ever ran.
+    // PostgreSQL cannot store NUL; an unpaired surrogate is not Unicode, so Npgsql's UTF-8 encoder refuses it and
+    // SqlClient sends it as U+FFFD, merging distinct keys. Found by the differential oracle (seeds 1, 12, and 20).
+    // The values are built in code: attribute arguments are stored as UTF-8, which would turn a lone surrogate into
+    // U+FFFD before the test ever ran.
     private static readonly string[] _Unportable =
     [
         "x\u0000y",

@@ -38,7 +38,8 @@ public static class SqlPortable
     /// <item>A NUL character: PostgreSQL text cannot hold U+0000 and fails the statement (22021).</item>
     /// <item>
     /// An unpaired UTF-16 surrogate: it is not valid Unicode, so Npgsql's UTF-8 encoder refuses it before sending, and
-    /// SQL Server stores it but returns it rewritten as U+FFFD, a different key from the one stored.
+    /// SqlClient replaces it with U+FFFD before sending, so SQL Server stores and matches a different key than the
+    /// caller's and every lone surrogate collapses into one: <c>"a\uD800"</c> and <c>"a\uDBFF"</c> are one key there.
     /// </item>
     /// </list>
     /// Case, accents, precomposed versus decomposed forms, surrogate pairs, and other control characters round-trip and
