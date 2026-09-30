@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using Headless.Checks;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transport;
@@ -20,13 +21,38 @@ internal sealed class MessageDelayedProcessor(ILogger<MessageDelayedProcessor> l
         Argument.IsNotNull(context);
 
         var storage = context.Provider.GetRequiredService<IDataStorage>();
+        // An outbox not initialized since startup is skipped until its initialization retry succeeds.
+        var secondaries =
+            context
+                .Provider.GetService<MessagingOutboxes>()
+                ?.Secondaries.Where(static outbox => outbox.IsInitialized)
+                .ToArray()
+            ?? [];
 
-        await _ProcessDelayedAsync(storage, context).ConfigureAwait(false);
+        if (secondaries.Length == 0)
+        {
+            await _ProcessDelayedAsync(storage, outboxStorage: null, context).ConfigureAwait(false);
+        }
+        else
+        {
+            // Concurrently, and each outbox absorbs its own failure, so a database that hangs until its command
+            // timeout never delays another database's due messages.
+            await Task.WhenAll(
+                    secondaries
+                        .Select(outbox => _ProcessDelayedAsync(outbox.Storage, outbox.Storage, context))
+                        .Prepend(_ProcessDelayedAsync(storage, outboxStorage: null, context))
+                )
+                .ConfigureAwait(false);
+        }
 
         await context.WaitAsync(_waitingInterval).ConfigureAwait(false);
     }
 
-    private async Task _ProcessDelayedAsync(IDataStorage connection, ProcessingContext context)
+    private async Task _ProcessDelayedAsync(
+        IDataStorage connection,
+        IDataStorage? outboxStorage,
+        ProcessingContext context
+    )
     {
         try
         {
@@ -41,6 +67,7 @@ internal sealed class MessageDelayedProcessor(ILogger<MessageDelayedProcessor> l
 
                 foreach (var message in messages)
                 {
+                    message.OutboxStorage = outboxStorage;
                     committedDispatcher.EnqueueCommittedDelayedMessage(message);
                 }
 
@@ -51,6 +78,7 @@ internal sealed class MessageDelayedProcessor(ILogger<MessageDelayedProcessor> l
             {
                 foreach (var message in messages)
                 {
+                    message.OutboxStorage = outboxStorage;
                     await dispatcher
                         .EnqueueToScheduler(message, message.ExpiresAt!.Value, transaction, context.CancellationToken)
                         .ConfigureAwait(false);

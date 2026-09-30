@@ -21,6 +21,13 @@ internal sealed class SqlServerStorageInitializer(
 ) : IStorageInitializer
 {
     /// <summary>
+    /// Creates only the published table, its indexes, and the table types it uses. Set for an additional outbox,
+    /// whose database holds published rows only: the inbox, its history, and its readiness state stay in the
+    /// primary storage's database.
+    /// </summary>
+    internal bool OutboxOnly { get; set; }
+
+    /// <summary>
     /// Returns the fully-qualified SQL Server table name for published outbox messages,
     /// in the form <c>schema.MessagingPublished</c>.
     /// </summary>
@@ -92,24 +99,28 @@ internal sealed class SqlServerStorageInitializer(
             // to them is an offline build over the full backlog that can far exceed the OLTP
             // CommandTimeout. Build each one as its own command under the DDL timeout, still holding the
             // init lock. ONLINE = ON is edition-dependent, so the builds stay offline.
-            foreach (var indexSql in _CreateHistoryIndexScripts(schema))
+            // An additional outbox has no inbox, so it has no history tables or readiness state either.
+            if (!OutboxOnly)
             {
+                foreach (var indexSql in _CreateHistoryIndexScripts(schema))
+                {
+                    await connection
+                        .ExecuteNonQueryAsync(
+                            indexSql,
+                            commandTimeout: _GetDdlCommandTimeout(),
+                            cancellationToken: cancellationToken
+                        )
+                        .ConfigureAwait(false);
+                }
+
                 await connection
                     .ExecuteNonQueryAsync(
-                        indexSql,
-                        commandTimeout: _GetDdlCommandTimeout(),
+                        _CreateInboxReadinessScript(schema),
+                        commandTimeout: messagingOptions.Value.CommandTimeout,
                         cancellationToken: cancellationToken
                     )
                     .ConfigureAwait(false);
             }
-
-            await connection
-                .ExecuteNonQueryAsync(
-                    _CreateInboxReadinessScript(schema),
-                    commandTimeout: messagingOptions.Value.CommandTimeout,
-                    cancellationToken: cancellationToken
-                )
-                .ConfigureAwait(false);
         }
         finally
         {
@@ -232,11 +243,6 @@ internal sealed class SqlServerStorageInitializer(
 
     private string _CreateDbTablesScript(string schema)
     {
-        // Constraint names are unique per schema, so the table name alone keeps them distinct; every
-        // existence probe below is scoped to its table because the same name exists in every schema.
-        const string receivedPrefix = "MessagingReceived";
-        const string publishedPrefix = "MessagingPublished";
-
         // Simplified SQL for Azure SQL Edge compatibility (no TEXTIMAGE_ON, simpler index options).
         // Each idempotent block is wrapped in BEGIN TRY ... BEGIN CATCH to absorb the narrow set of
         // duplicate-object/duplicate-key errors that fire only under a TOCTOU race between concurrent
@@ -245,8 +251,20 @@ internal sealed class SqlServerStorageInitializer(
         //   2759 — "CREATE SCHEMA failed due to previous errors." (how CREATE SCHEMA reports the 2714)
         //   1913 — index already exists (index creation races)
         //   2627 — "Violation of PRIMARY KEY constraint." (lock-row INSERT races)
+        // An additional outbox gets the schema, the table types, and its published table only; see OutboxOnly.
         // The caller holds the session init lock for this script, the history-index builds, and readiness.
-        var batchSql = string.Create(
+        return OutboxOnly
+            ? _CreateSchemaScript(schema) + _CreatePublishedTableScript()
+            : _CreateSchemaScript(schema)
+                + _CreateReceivedTableScript(schema)
+                + _CreatePublishedTableScript()
+                + _CreateInboxHistoryTablesScript(schema);
+    }
+
+    // The schema and the table-valued parameter types that both the inbox and published operations use.
+    private string _CreateSchemaScript(string schema)
+    {
+        return string.Create(
             CultureInfo.InvariantCulture,
             $"""
             BEGIN TRY
@@ -258,13 +276,6 @@ internal sealed class SqlServerStorageInitializer(
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 2759) THROW;
             END CATCH;
-
-            IF OBJECT_ID(N'{schema}.MessagingSchemaState',N'U') IS NOT NULL
-                EXEC(N'
-                    IF EXISTS (SELECT 1 FROM [{schema}].[MessagingSchemaState] WHERE [Component]=N''inbox'' AND [SchemaVersion] > 1)
-                        THROW 50003, N''Headless.Messaging inbox schema is newer than supported version 1. Upgrade the application before starting this binary.'', 1;
-                    DELETE FROM [{schema}].[MessagingSchemaState] WHERE [Component]=N''inbox'';
-                ');
 
             BEGIN TRY
                 IF TYPE_ID(N'{schema}.HeadlessMessagingIdList') IS NULL
@@ -292,6 +303,25 @@ internal sealed class SqlServerStorageInitializer(
             BEGIN CATCH
                 IF ERROR_NUMBER() <> 2714 THROW;
             END CATCH;
+
+            """
+        );
+    }
+
+    // The inbox version guard and the received table. Constraint names are unique per schema, so the table name alone keeps them distinct.
+    private string _CreateReceivedTableScript(string schema)
+    {
+        const string receivedPrefix = "MessagingReceived";
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
+            IF OBJECT_ID(N'{schema}.MessagingSchemaState',N'U') IS NOT NULL
+                EXEC(N'
+                    IF EXISTS (SELECT 1 FROM [{schema}].[MessagingSchemaState] WHERE [Component]=N''inbox'' AND [SchemaVersion] > 1)
+                        THROW 50003, N''Headless.Messaging inbox schema is newer than supported version 1. Upgrade the application before starting this binary.'', 1;
+                    DELETE FROM [{schema}].[MessagingSchemaState] WHERE [Component]=N''inbox'';
+                ');
 
             BEGIN TRY
                 IF OBJECT_ID(N'{GetReceivedTableName()}',N'U') IS NULL
@@ -457,6 +487,18 @@ internal sealed class SqlServerStorageInitializer(
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
             END CATCH;
 
+            """
+        );
+    }
+
+    // The published (outbox) table and its indexes.
+    private string _CreatePublishedTableScript()
+    {
+        const string publishedPrefix = "MessagingPublished";
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
             BEGIN TRY
                 IF OBJECT_ID(N'{GetPublishedTableName()}',N'U') IS NULL
                 BEGIN
@@ -525,6 +567,14 @@ internal sealed class SqlServerStorageInitializer(
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
             END CATCH;
 
+            """
+        );
+    }
+
+    // The inbox operation receipts, audit, and schema readiness tables.
+    private static string _CreateInboxHistoryTablesScript(string schema)
+    {
+        return $"""
             IF OBJECT_ID(N'{schema}.MessagingInboxOperationReceipts',N'U') IS NULL
             BEGIN
                 CREATE TABLE [{schema}].[MessagingInboxOperationReceipts](
@@ -581,9 +631,6 @@ internal sealed class SqlServerStorageInitializer(
                 );
             END;
 
-            """
-        );
-
-        return batchSql;
+            """;
     }
 }

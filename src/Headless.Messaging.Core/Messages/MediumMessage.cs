@@ -81,5 +81,12 @@ public class MediumMessage
     /// </summary>
     public long ProbeEpoch { get; set; }
 
+    /// <summary>
+    /// The additional outbox storage that holds this published row, or <see langword="null" /> for a row of the
+    /// primary storage. In-memory handoff state only: core stamps it where it writes or picks up a row from an
+    /// additional outbox, so every later state change reaches that row's own database.
+    /// </summary>
+    internal IDataStorage? OutboxStorage { get; set; }
+
     public string? ExceptionInfo { get; set; }
 }

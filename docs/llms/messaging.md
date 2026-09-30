@@ -49,6 +49,7 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 ## Agent Rules
 
 - **App install pattern**: install `Messaging.Core` + exactly one transport + exactly one storage. Bootstrap fails when zero or multiple storage providers are configured. Core brings shared/bus/queue abstractions transitively for applications.
+- **One outbox per database, not one storage per database**: when units of work run on several databases, keep one primary storage and add `setup.AddOutbox().UseEntityFramework<TContext>()` (or `UsePostgreSql(...)` / `UseSqlServer(...)`) for each other database. See [Additional outboxes](#additional-outboxes).
 - **Library contract pattern**: install `Messaging.Abstractions`, `Messaging.Bus.Abstractions`, or `Messaging.Queue.Abstractions` directly only when a library exposes consumers/envelopes or publisher interfaces without bootstrapping Core.
 - **Use `InMemory` + `InMemoryStorage` only for dev/testing**, never in production. Data is lost on restart.
 - **OpenTelemetry is native to `Messaging.Core`** (no satellite package). Subscribe traces/metrics with `AddMessagingInstrumentation()` on the `TracerProviderBuilder`/`MeterProviderBuilder`, and configure enrichers/suppression via `setup.Instrumentation` inside `AddHeadlessMessaging(...)`.
@@ -127,7 +128,7 @@ Two independent questions, answered by two different things. **Durability** — 
 
 - **Precedence (`DeliveryMode`)**: per-call `PublishOptions.DeliveryMode` / `QueueOptions.DeliveryMode`, then the per-type policy registered with `WithDeliveryMode(...)` on `setup.Bus.ForMessage<T>(...)` / `setup.Queue.ForMessage<T>(...)`, then `MessagingOptions.DefaultDeliveryMode` (`Durable`). `Direct` bypasses storage and rejects a per-call `Delay` or `ScheduledAt`, because scheduling requires storage.
 - **An enlisted publish consults none of that.** `OutboxOptions` carries no delivery mode, and the resolver fixes the mode to `Durable` before reading the per-type policy or the host default — durable capture is the mechanism the row joins the transaction through. This is deliberate: under the previous model a type pinned `Direct` with `WithDeliveryMode` made every coordinated publish of that type fail, because `Direct` and enlistment are contradictory. Delay and schedule still work, and `Direct` delivery combined with a coordination requirement throws ("Direct delivery cannot be coordinated with a unit of work; durable delivery is required to write inside its transaction") — a state only framework-internal callers can construct.
-- **Whether a storage can join a unit is the storage's own answer.** The relational storages join only an `IRelationalUnitOfWorkResource` whose transaction is live and on the same database, decided by the shared `RelationalDatabaseIdentity` check the Jobs store uses too (see [unit-of-work.md § Database identity](unit-of-work.md#database-identity-and-several-databases)). In-memory storage joins any active unit, including a resource-less one opened with `IUnitOfWorkFactory.BeginAsync()` (test hosts), through its buffered-promotion seam. A relational storage against a resource-less unit, a unit on another database, a completed transaction, or another provider's resource cannot join, and an enlisted publish throws naming the mismatch: `Publishing 'OrderPlaced' cannot join the active unit of work ({Mismatch}): {detail}. {advice}` — for example "the active unit of work exposes no relational resource for the messaging storage to write into. Begin the unit of work over a relational resource for the messaging database, or publish without coordination."
+- **Whether a storage can join a unit is the storage's own answer.** The relational storages join only an `IRelationalUnitOfWorkResource` whose transaction is live and on the same database, decided by the shared `RelationalDatabaseIdentity` check the Jobs store uses too (see [unit-of-work.md § Database identity](unit-of-work.md#database-identity-and-several-databases)). In-memory storage joins any active unit, including a resource-less one opened with `IUnitOfWorkFactory.BeginAsync()` (test hosts), through its buffered-promotion seam. With [additional outboxes](#additional-outboxes), `unit.Outbox` asks every outbox and writes to the one whose database matches the unit; a unit that matches none is refused with the `Database` mismatch. A relational storage against a resource-less unit, a unit on another database, a completed transaction, or another provider's resource cannot join, and an enlisted publish throws naming the mismatch: `Publishing 'OrderPlaced' cannot join the active unit of work ({Mismatch}): {detail}. {advice}` — for example "the active unit of work exposes no relational resource for the messaging storage to write into. Begin the unit of work over a relational resource for the messaging database, or publish without coordination."
 - **The refusal belongs to the enlisted surface only.** `IBus`/`IQueue` hand the publisher no unit at all, so there is nothing for a storage to reject: a durable autonomous publish always writes standalone, including inside a unit of work whose transaction the storage could have joined. The mismatch throw above is reachable only through `unit.Outbox`.
 - **There is no startup gate for enlistment**; the failure is always a per-call refusal. `IUnitOfWorkFactory` always exists (`AddUnitOfWork()` is idempotent and is called by `AddHeadlessMessaging`, `AddHeadlessJobs`, `AddHeadlessDbContextServices`, and the three `Headless.UnitOfWork.*` provider setups). The only startup validation in this area is unchanged: durable consumers still require `MessagingOptions.RequiredInboxCapability` (default `Transactional`) from the configured storage.
 - **Migration note — the "never publish outside a transaction" guardrail is gone.** A host that set `MessagingOptions.DefaultEnlistment = TransactionEnlistment.Required`, or registered a type `WithEnlistment(TransactionEnlistment.Required)`, used it to make an un-enlisted publish fail loudly. Both members are deleted, so that host gets a compile error, not a silent behavior change. Nothing replaces it as a host-wide setting: the guarantee is now structural per call site. Reading `unit.Outbox.PublishAsync(...)` proves enlistment at the line, and an `IBus.PublishAsync` in code that must be transactional is a review finding rather than a runtime throw. Where a build-time guard is wanted, ban the `IBus`/`IQueue` *types* in the transactional assembly rather than the package reference: the lane abstractions are on the compile surface of anything that references Messaging. With `Microsoft.CodeAnalysis.BannedApiAnalyzers` referenced, a `BannedSymbols.txt` added as an `AdditionalFiles` item in that project needs exactly these two lines:
@@ -320,6 +321,59 @@ Table names are not configurable; each provider creates its own fixed set inside
 | `messaging_schema_state` | `MessagingSchemaState` | Schema readiness versions |
 
 Columns, indexes, and constraints follow the same split: snake_case on PostgreSQL (`status_name`, `next_retry_at`, `idx_messaging_received_status_name_added`) and PascalCase on SQL Server (`StatusName`, `NextRetryAt`). Raw SQL against the PostgreSQL tables needs no identifier quoting except for the `"group"` column, whose name is a reserved word.
+
+### Additional outboxes
+
+A host has one primary storage. When units of work run on other databases too, for example one `DbContext` per
+module, register an additional outbox for each of those databases so a unit on it can publish atomically through
+`unit.Outbox`:
+
+```csharp
+services.AddHeadlessMessaging(setup =>
+{
+    setup.UseEntityFramework<OrdersDb>();              // primary: outbox, inbox, retry state, dashboard
+    setup.AddOutbox().UseEntityFramework<BillingDb>(); // additional: outbox rows and their relay only
+    setup.AddOutbox().UsePostgreSql(builder.Configuration.GetConnectionString("Shipping")!);
+});
+```
+
+- **Registration.** `AddOutbox()` returns an `OutboxStorageBuilder` that accepts only a storage:
+  `UseEntityFramework<TContext>()` from the EF storage packages, and `UsePostgreSql(...)` / `UseSqlServer(...)`
+  with the same connection-string, `IConfiguration`, and delegate overloads as the primary storage. Each outbox
+  keeps its own named provider options, validated on start. `AddOutbox()` without a storage, or a second storage
+  on one `AddOutbox()`, throws during `AddHeadlessMessaging`.
+- **Selection.** `unit.Outbox.PublishAsync` / `EnqueueAsync` writes to the primary storage when the unit's
+  database is the primary's, and otherwise to the additional outbox whose database matches, decided by the same
+  `RelationalDatabaseIdentity` check a single storage runs. A unit that matches no outbox is refused with the
+  usual `Database` mismatch. `IBus` / `IQueue` publishes are autonomous and always write to the primary storage.
+- **Startup validation.** The primary storage must be relational (PostgreSQL or SQL Server): an in-memory primary
+  joins every unit and would take the additional outboxes' publishes. Two outboxes, the primary included, that
+  resolve to the same database fail host startup with a `MessagingConfigurationException` naming both
+  registrations. Mixing providers is allowed, for example a SQL Server primary with a PostgreSQL outbox.
+- **Schema.** Each additional outbox creates only the published table, its indexes, and the table types it uses,
+  in the same `MessagingStorageOptions.Schema` as the primary. It has no received table, inbox history, or schema
+  readiness state. Its schema initialization runs at host startup after the primary's.
+- **Availability at startup.** Only the primary storage must be reachable for the host to start. The additional
+  outboxes are initialized concurrently, once each; one whose database is unreachable logs EventId 103 and the
+  host starts without it. A background processor then retries it with jittered backoff from 1 second up to
+  30 seconds (EventId 104 per failed retry, 105 once it is initialized). Until then its relay (retry, delayed,
+  and collector) skips it, and a `unit.Outbox` publish on its database first initializes it, sharing one attempt
+  with the retry, then writes; if the initialization fails, the publish throws and the unit rolls back. Its rows
+  are relayed only once it is initialized, so a relay can lag a recovered database by up to that backoff.
+  Dead-owner recovery and `IMessageRevoker` keep reaching it and report its failures as they do for any outage.
+  A misconfigured additional outbox, such as wrong credentials, therefore does not stop startup either: watch for
+  EventId 103.
+- **Relay.** Each outbox relays its own rows: retry pickup runs one published-retry quadrant per outbox and lane,
+  each with its own lock resource, backoff, and pickup-failure count, and the delayed-message claim runs for every
+  outbox concurrently. An unreachable outbox database backs off alone; the primary and the other outboxes keep
+  relaying. The collector expires published rows in every outbox, dead-owner recovery reclaims published rows in
+  every outbox, and `IMessageRevoker.RevokeAsync` finds a scheduled row in whichever outbox holds it.
+- **What stays on the primary.** The inbox, received-message retry state, consumer bookkeeping, the monitoring
+  API, and the dashboard read only the primary storage, so the dashboard does not list an additional outbox's
+  rows.
+- **Jobs.** Jobs keeps one store. To schedule a job atomically with a unit on an additional outbox's database,
+  publish a message through `unit.Outbox` and schedule the job from that message's consumer on the Jobs database.
+  The outbox row commits with the unit, and the consumer's inbox and `unit.Jobs` give the job the same guarantee.
 
 ## Headless.Messaging.Abstractions
 
@@ -760,10 +814,11 @@ Messaging keeps its lock provider under an **internal keyed-DI key** (`"headless
 - `messaging.publish-retry-queue-{version}` — Published-Queue pickup.
 - `messaging.receive-retry-bus-{version}` — Received-Bus pickup.
 - `messaging.receive-retry-queue-{version}` — Received-Queue pickup.
+- `messaging.publish-retry-{lane}-{version}-outbox-{key}` — Published pickup of an [additional outbox](#additional-outboxes), per lane. `{key}` is a 16-hex-digit hash of the outbox's provider, data source, and database, so each database's relay holds its own lease.
 
 Both names follow the literal pattern shown above. They are constructed internally by `Headless.Messaging.Core`; downstream consumers must not depend on the internal helper that builds them — register a real provider exclusively via `MessagingBuilder.UseDistributedLock(...)` and let messaging resolve its own keyed-DI slot.
 
-`{version}` comes from `MessagingOptions.Version` and is the **cross-process isolation key**. Two services that share a single lock store (e.g., both pointed at the same Redis) MUST set distinct `Version` values — otherwise matching quadrants collide on the same resources and starve each other. All four locks use `acquireTimeout: TimeSpan.Zero` (non-blocking try-once), a finite lease window equal to that quadrant's current polling interval, and `Monitoring = LockMonitoringMode.AutoExtend`; contention skips only that quadrant's pickup cycle.
+`{version}` comes from `MessagingOptions.Version` and is the **cross-process isolation key**. Two services that share a single lock store (e.g., both pointed at the same Redis) MUST set distinct `Version` values — otherwise matching quadrants collide on the same resources and starve each other. All retry locks use `acquireTimeout: TimeSpan.Zero` (non-blocking try-once), a finite lease window equal to that quadrant's current polling interval, and `Monitoring = LockMonitoringMode.AutoExtend`; contention skips only that quadrant's pickup cycle.
 
 **When `UseStorageLock = false`** (default): `IDistributedLock` is never called and distributed lock wiring is not required. Dead-owner recovery is unaffected — it runs independently of this lock (see [Dead-owner recovery](#dead-owner-recovery)).
 

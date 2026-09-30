@@ -82,6 +82,7 @@ internal sealed class MessageProcessingServer(
             provider.GetRequiredService<MessageNeedToRetryProcessor>(),
             provider.GetRequiredService<MessageDelayedProcessor>(),
             provider.GetRequiredService<CollectorProcessor>(),
+            provider.GetRequiredService<OutboxInitializationProcessor>(),
         ];
     }
 
