@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.DistributedLocks;
+using Headless.Hosting.Initialization.Schema;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -34,6 +35,9 @@ public sealed class PostgresCustomSchemaTests(PostgreSqlDistributedLockFixture f
         );
 
         await using var provider = services.BuildServiceProvider();
+
+        // What host startup runs: the schema runner creates the fence sequence before the first acquire.
+        await provider.GetRequiredService<SchemaRunner>().ApplyAsync(AbortToken);
         var locks = provider.GetRequiredService<IDistributedLock>();
 
         var handle = await locks.AcquireAsync(

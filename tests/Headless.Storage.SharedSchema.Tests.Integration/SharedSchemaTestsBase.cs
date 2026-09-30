@@ -118,8 +118,7 @@ public abstract class SharedSchemaTestsBase : TestBase
             messagingB.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken)
         );
 
-        // PostgreSQL creates the lock fence sequence on the first fenced acquire rather than at startup, so race
-        // that first acquire from both hosts too.
+        // A fenced acquire from each host proves startup created the lock fence sequence it reads.
         await Task.WhenAll(_AcquireFencedLockAsync(hostA), _AcquireFencedLockAsync(hostB));
 
         // then: every raw family's objects are in the shared schema, and Jobs has none yet

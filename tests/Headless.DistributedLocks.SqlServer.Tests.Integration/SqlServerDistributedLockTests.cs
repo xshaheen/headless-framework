@@ -2,6 +2,7 @@
 
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.SqlServer;
+using Headless.Hosting.Initialization.Schema;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,6 +18,9 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
     public async Task should_acquire_release_and_issue_monotonic_fencing_tokens()
     {
         await using var provider = _CreateProvider();
+
+        // What host startup runs: the schema runner creates this key prefix's fence sequence before the first acquire.
+        await provider.GetRequiredService<SchemaRunner>().ApplyAsync(AbortToken);
         var locks = provider.GetRequiredService<IDistributedLock>();
         var resource = Faker.Random.AlphaNumeric(12);
 

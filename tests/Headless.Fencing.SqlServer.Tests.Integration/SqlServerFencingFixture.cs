@@ -273,12 +273,17 @@ public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IA
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    /// <summary>Drops the lease table, the generation sequence, and then their schema, when they exist.</summary>
+    /// <summary>
+    /// Drops the lease table, the generation sequence, the schema runner's history, and then their schema, when they
+    /// exist. The history goes too: the runner trusts it, so a history that outlived the table would stop the table
+    /// being recreated.
+    /// </summary>
     public static string DropStorageSql(string schema)
     {
         return $"""
             IF OBJECT_ID(N'{schema}.FencingLeases', N'U') IS NOT NULL DROP TABLE [{schema}].[FencingLeases];
             IF OBJECT_ID(N'{schema}.FencingLeaseGenerations', N'SO') IS NOT NULL DROP SEQUENCE [{schema}].[FencingLeaseGenerations];
+            IF OBJECT_ID(N'{schema}.headless_schema_history', N'U') IS NOT NULL DROP TABLE [{schema}].[headless_schema_history];
             IF SCHEMA_ID(N'{schema}') IS NOT NULL EXEC(N'DROP SCHEMA [{schema}]');
             """;
     }
