@@ -23,7 +23,9 @@ namespace Tests.Helpers;
 public sealed class ConsumerModule<TConsumer> : IMessagingModule
     where TConsumer : class
 {
+#pragma warning disable CA1000, RCS1158 // False positive: implements IMessagingModule's static abstract member, which messaging calls through the TModule constraint, never through this generic type.
     public static void Register(MessagingCatalogBuilder catalog)
+#pragma warning restore CA1000, RCS1158
     {
         var attribute =
             typeof(TConsumer).GetCustomAttribute<MessageConsumerAttribute>()
