@@ -990,16 +990,30 @@ internal sealed partial class SqlServerDataStorage(
     /// </summary>
     public ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
         MessageLane lane,
+        IReadOnlyCollection<string>? consumerIdentities,
         CancellationToken cancellationToken = default
     )
     {
-        return _GetMessagesOfNeedRetryAsync(_receivedTable, lane, cancellationToken: cancellationToken);
+        return _GetMessagesOfNeedRetryAsync(
+            _receivedTable,
+            lane,
+            consumerIdentities: consumerIdentities,
+            cancellationToken: cancellationToken
+        );
     }
 
     public ValueTask<IEnumerable<MediumMessage>> GetReceivedInboxOrphansOfNeedRetryAsync(
         MessageLane lane,
+        IReadOnlyCollection<string>? consumerIdentities,
         CancellationToken cancellationToken = default
-    ) => _GetMessagesOfNeedRetryAsync(_receivedTable, lane, orphaned: true, cancellationToken: cancellationToken);
+    ) =>
+        _GetMessagesOfNeedRetryAsync(
+            _receivedTable,
+            lane,
+            orphaned: true,
+            consumerIdentities: consumerIdentities,
+            cancellationToken: cancellationToken
+        );
 
     /// <summary>
     /// Shortens the remaining lease on received messages owned by nodes in <paramref name="deadOwners"/>
@@ -1456,6 +1470,29 @@ internal sealed partial class SqlServerDataStorage(
     }
 
     /// <summary>
+    /// Builds the <c>@ConsumerIdentities</c> table-valued parameter backed by the
+    /// <c>HeadlessMessagingConsumerIdentityList</c> type, whose column carries the received table's binary collation so
+    /// the pickup predicate compares identities ordinally without a collation conflict.
+    /// </summary>
+    private SqlParameter _BuildConsumerIdentityListTvpParameter(IReadOnlyCollection<string> consumerIdentities)
+    {
+        var identitiesTable = new DataTable();
+        identitiesTable.Columns.Add("ConsumerIdentity", typeof(string));
+
+        // The column is the type's primary key, and IDataStorage is public, so a direct caller may pass duplicates.
+        foreach (var identity in consumerIdentities.Distinct(StringComparer.Ordinal))
+        {
+            identitiesTable.Rows.Add(identity);
+        }
+
+        return new SqlParameter("@ConsumerIdentities", SqlDbType.Structured)
+        {
+            TypeName = $"[{storageOptions.Value.Schema}].[HeadlessMessagingConsumerIdentityList]",
+            Value = identitiesTable,
+        };
+    }
+
+    /// <summary>
     /// Returns the monitoring API for querying message statistics and dashboard data against this SQL Server storage.
     /// </summary>
     public IMonitoringApi GetMonitoringApi()
@@ -1843,6 +1880,7 @@ internal sealed partial class SqlServerDataStorage(
         string tableName,
         MessageLane lane,
         bool orphaned = false,
+        IReadOnlyCollection<string>? consumerIdentities = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -1851,6 +1889,11 @@ internal sealed partial class SqlServerDataStorage(
         var orphanFilter = isReceivedTable
             ? (orphaned ? "AND IsInboxOrphaned=1" : "AND IsInboxOrphaned=0")
             : string.Empty;
+        // Empty for an unfiltered host, so it keeps claiming rows of every consumer identity.
+        var consumerFilter =
+            isReceivedTable && consumerIdentities is not null
+                ? "AND ConsumerIdentity IN (SELECT ConsumerIdentity FROM @ConsumerIdentities)"
+                : string.Empty;
         var attemptAssignment = isReceivedTable
             ? ",\n                AttemptId = CASE WHEN target.IsInboxRecord=1 THEN NEWID() ELSE NULL END"
             : string.Empty;
@@ -1887,6 +1930,7 @@ internal sealed partial class SqlServerDataStorage(
                   AND NextRetryAt IS NOT NULL AND NextRetryAt <= @Now
                   AND (LockedUntil IS NULL OR LockedUntil <= @ClaimNow)
                   {orphanFilter}
+                  {consumerFilter}
                   AND {_TerminalRowGuardSimple}
                 ORDER BY NextRetryAt, Id
             )
@@ -1904,7 +1948,7 @@ internal sealed partial class SqlServerDataStorage(
             messagingOptions.Value.RetryPolicy.DispatchTimeout
         );
 
-        object[] sqlParams =
+        List<object> sqlParams =
         [
             new SqlParameter(
                 "@BatchSize",
@@ -1918,6 +1962,10 @@ internal sealed partial class SqlServerDataStorage(
             new SqlParameter("@LeaseNanoseconds", SqlDbType.Int) { Value = leaseNanoseconds },
             _OwnerParameter("@Owner", hasLease: true),
         ];
+        if (consumerFilter.Length != 0)
+        {
+            sqlParams.Add(_BuildConsumerIdentityListTvpParameter(consumerIdentities!));
+        }
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -2011,7 +2059,7 @@ internal sealed partial class SqlServerDataStorage(
                 },
                 transaction: transaction,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams: sqlParams,
+                sqlParams: [.. sqlParams],
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);

@@ -72,8 +72,16 @@ public interface IDataStorage
     );
 
     /// <summary>Claims due known orphans using a separate capped batch per lane, minting fresh attempts in the existing generation.</summary>
+    /// <param name="lane">The lane whose orphans to claim.</param>
+    /// <param name="consumerIdentities">
+    /// The consumer identities the calling host consumes, or <see langword="null"/> to claim rows of every identity.
+    /// Applied inside the claim, before the batch limit, so a row outside the set is never leased; an empty set
+    /// claims nothing.
+    /// </param>
+    /// <param name="cancellationToken">The cancellation token.</param>
     ValueTask<IEnumerable<MediumMessage>> GetReceivedInboxOrphansOfNeedRetryAsync(
         MessageLane lane,
+        IReadOnlyCollection<string>? consumerIdentities,
         CancellationToken cancellationToken = default
     );
 
@@ -551,9 +559,22 @@ public interface IDataStorage
     /// attempt; that lease overwrites the pickup-grant value with a fresh
     /// <c>now + DispatchTimeout</c>.
     /// </para>
+    /// <para>
+    /// <b>Consumer filter:</b> a host started with <c>ConsumeOnly</c> has executors for only some consumer identities.
+    /// It passes those identities so it never leases another host's row: it could neither run nor classify one, and
+    /// would otherwise fail it as having no subscriber or defer it as an inbox orphan.
+    /// </para>
     /// </remarks>
+    /// <param name="lane">The lane whose due rows to claim.</param>
+    /// <param name="consumerIdentities">
+    /// The consumer identities the calling host consumes, or <see langword="null"/> to claim rows of every identity.
+    /// Applied inside the claim, before the batch limit, so a row outside the set is never leased; an empty set
+    /// claims nothing.
+    /// </param>
+    /// <param name="cancellationToken">The cancellation token.</param>
     ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
         MessageLane lane,
+        IReadOnlyCollection<string>? consumerIdentities,
         CancellationToken cancellationToken = default
     );
 

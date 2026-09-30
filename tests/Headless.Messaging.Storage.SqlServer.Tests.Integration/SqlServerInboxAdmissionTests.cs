@@ -170,6 +170,7 @@ public sealed class SqlServerInboxAdmissionTests(SqlServerTestFixture fixture, I
                     DROP TYPE [{schema}].[HeadlessMessagingIdList];
                     DROP TYPE [{schema}].[HeadlessMessagingOwnerList];
                     DROP TYPE [{schema}].[HeadlessMessagingPoisonMessageList];
+                    DROP TYPE [{schema}].[HeadlessMessagingConsumerIdentityList];
                     DROP SCHEMA [{schema}];
                     """,
                     cancellationToken: AbortToken

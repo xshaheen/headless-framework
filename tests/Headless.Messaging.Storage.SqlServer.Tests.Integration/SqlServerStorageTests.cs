@@ -1450,7 +1450,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         // when
         var picked = string.Equals(tableName, "MessagingPublished", StringComparison.Ordinal)
             ? await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)
-            : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken);
 
         // then
         picked.Should().NotContain(message => message.StorageId == id);
@@ -1516,7 +1516,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
 
         var picked = string.Equals(tableName, "MessagingPublished", StringComparison.Ordinal)
             ? await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)
-            : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken);
 
         picked.Select(message => message.StorageId).Should().Contain(healthyId).And.NotContain(poisonId);
 
@@ -2061,7 +2061,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     {
         var messages = published
             ? await storage.GetPublishedMessagesOfNeedRetryAsync(lane, AbortToken)
-            : await storage.GetReceivedMessagesOfNeedRetryAsync(lane, AbortToken);
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(lane, null, AbortToken);
         return messages.ToList();
     }
 

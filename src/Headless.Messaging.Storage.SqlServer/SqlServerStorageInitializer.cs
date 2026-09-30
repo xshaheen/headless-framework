@@ -39,8 +39,8 @@ internal sealed class SqlServerStorageInitializer(
     }
 
     /// <summary>
-    /// Creates the messaging schema, tables, indexes, and the <c>HeadlessMessagingIdList</c>
-    /// table-valued parameter type if they do not already exist. Concurrent initializers are serialized
+    /// Creates the messaging schema, tables, indexes, and the table-valued parameter types
+    /// (<c>HeadlessMessagingIdList</c> and its siblings) if they do not already exist. Concurrent initializers are serialized
     /// with a session-scoped <c>sp_getapplock</c>; each DDL block remains independently idempotent so a
     /// later initialization can repair a partially completed schema. History-table indexes are built as
     /// separate commands under <see cref="SqlServerOptions.DdlCommandTimeout"/> before inbox readiness is
@@ -277,6 +277,14 @@ internal sealed class SqlServerStorageInitializer(
             BEGIN TRY
                 IF TYPE_ID(N'{schema}.HeadlessMessagingOwnerList') IS NULL
                     CREATE TYPE [{schema}].[HeadlessMessagingOwnerList] AS TABLE ([Owner] [nvarchar]({options.Value.OwnerColumnMaxLength}) NOT NULL PRIMARY KEY);
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() <> 2714 THROW;
+            END CATCH;
+
+            BEGIN TRY
+                IF TYPE_ID(N'{schema}.HeadlessMessagingConsumerIdentityList') IS NULL
+                    CREATE TYPE [{schema}].[HeadlessMessagingConsumerIdentityList] AS TABLE ([ConsumerIdentity] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL PRIMARY KEY);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() <> 2714 THROW;

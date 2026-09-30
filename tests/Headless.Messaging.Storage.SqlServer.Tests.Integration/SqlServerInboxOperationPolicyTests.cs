@@ -291,7 +291,7 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
             .Be(InboxOperationOutcome.Applied);
         // Retry due times use the scheduling clock; only ownership decisions were under skew.
         clock.AdjustTime(DateTimeOffset.UtcNow);
-        var recovered = (await storage.GetReceivedInboxOrphansOfNeedRetryAsync(lane, AbortToken))
+        var recovered = (await storage.GetReceivedInboxOrphansOfNeedRetryAsync(lane, null, AbortToken))
             .Should()
             .ContainSingle()
             .Which;

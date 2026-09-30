@@ -73,10 +73,18 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         var storage = Substitute.For<IDataStorage>();
         storage
-            .GetReceivedInboxOrphansOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .GetReceivedInboxOrphansOfNeedRetryAsync(
+                Arg.Any<MessageLane>(),
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
         storage
-            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .GetReceivedMessagesOfNeedRetryAsync(
+                Arg.Any<MessageLane>(),
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
 
         var processor = _CreateProcessor("v1", useStorageLock: true);
@@ -106,7 +114,11 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         var storage = Substitute.For<IDataStorage>();
         storage
-            .GetReceivedInboxOrphansOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .GetReceivedInboxOrphansOfNeedRetryAsync(
+                Arg.Any<MessageLane>(),
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
         storage
             .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
@@ -122,7 +134,11 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         // then — received path must not be reached because the lock was already held
         await storage
             .DidNotReceive()
-            .GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, Arg.Any<CancellationToken>());
+            .GetReceivedMessagesOfNeedRetryAsync(
+                MessageLane.Bus,
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -147,13 +163,21 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         var storageBlocker = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var storage = Substitute.For<IDataStorage>();
         storage
-            .GetReceivedInboxOrphansOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .GetReceivedInboxOrphansOfNeedRetryAsync(
+                Arg.Any<MessageLane>(),
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
         storage
             .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
         storage
-            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .GetReceivedMessagesOfNeedRetryAsync(
+                Arg.Any<MessageLane>(),
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(_ =>
             {
                 lockAcquiredTcs.TrySetResult(trackingProvider.LastIssuedReceiveRetryLock!);
@@ -214,13 +238,21 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         var storage = Substitute.For<IDataStorage>();
         storage
-            .GetReceivedInboxOrphansOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .GetReceivedInboxOrphansOfNeedRetryAsync(
+                Arg.Any<MessageLane>(),
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
         storage
             .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
         storage
-            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .GetReceivedMessagesOfNeedRetryAsync(
+                Arg.Any<MessageLane>(),
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
 
         var processor = _CreateProcessor("v1", useStorageLock: true, lockProvider: lockProvider);
@@ -265,7 +297,11 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         var storage = Substitute.For<IDataStorage>();
         storage
-            .GetReceivedInboxOrphansOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .GetReceivedInboxOrphansOfNeedRetryAsync(
+                Arg.Any<MessageLane>(),
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
         var processor = _CreateProcessor("v1", useStorageLock: true, lockProvider: lockProvider, logger: logger);
         await using var context = _CreateContext(storage);
@@ -288,7 +324,11 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>());
         await storage
             .DidNotReceive()
-            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>());
+            .GetReceivedMessagesOfNeedRetryAsync(
+                Arg.Any<MessageLane>(),
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -323,13 +363,21 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         var storageBlocker = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var storage = Substitute.For<IDataStorage>();
         storage
-            .GetReceivedInboxOrphansOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .GetReceivedInboxOrphansOfNeedRetryAsync(
+                Arg.Any<MessageLane>(),
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
         storage
             .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
         storage
-            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .GetReceivedMessagesOfNeedRetryAsync(
+                Arg.Any<MessageLane>(),
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(_ =>
             {
                 receivedCallStarted.TrySetResult();
@@ -352,7 +400,11 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             captured.Should().Contain(e => e.Level == LogLevel.Warning && e.Id == 79);
             await storage
                 .Received(1)
-                .GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, Arg.Any<CancellationToken>());
+                .GetReceivedMessagesOfNeedRetryAsync(
+                    MessageLane.Bus,
+                    Arg.Any<IReadOnlyCollection<string>?>(),
+                    Arg.Any<CancellationToken>()
+                );
         });
     }
 
@@ -368,13 +420,21 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         var storage = Substitute.For<IDataStorage>();
         storage
-            .GetReceivedInboxOrphansOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .GetReceivedInboxOrphansOfNeedRetryAsync(
+                Arg.Any<MessageLane>(),
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
         storage
             .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
         storage
-            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .GetReceivedMessagesOfNeedRetryAsync(
+                Arg.Any<MessageLane>(),
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
 
         var processor = _CreateProcessor("v1", useStorageLock: true, lockProvider: alwaysGranted);
@@ -390,7 +450,11 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>());
         await storage
             .Received()
-            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>());
+            .GetReceivedMessagesOfNeedRetryAsync(
+                Arg.Any<MessageLane>(),
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -401,13 +465,21 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         var storage = Substitute.For<IDataStorage>();
         storage
-            .GetReceivedInboxOrphansOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .GetReceivedInboxOrphansOfNeedRetryAsync(
+                Arg.Any<MessageLane>(),
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
         storage
             .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
         storage
-            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .GetReceivedMessagesOfNeedRetryAsync(
+                Arg.Any<MessageLane>(),
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
 
         var processor = _CreateProcessor("v1", useStorageLock: false, lockProvider: mockProvider);
@@ -435,7 +507,11 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>());
         await storage
             .Received()
-            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>());
+            .GetReceivedMessagesOfNeedRetryAsync(
+                Arg.Any<MessageLane>(),
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -459,10 +535,18 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         var storage = Substitute.For<IDataStorage>();
         storage
-            .GetReceivedInboxOrphansOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .GetReceivedInboxOrphansOfNeedRetryAsync(
+                Arg.Any<MessageLane>(),
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
         storage
-            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .GetReceivedMessagesOfNeedRetryAsync(
+                Arg.Any<MessageLane>(),
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
         storage
             .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())

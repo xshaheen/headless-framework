@@ -66,7 +66,7 @@ public sealed class InMemoryInboxOperationPolicyTests : InboxOperationPolicyConf
         (await operations.HoldAsync(_Request(incarnation, StatusName.Scheduled), AbortToken))
             .Outcome.Should()
             .Be(InboxOperationOutcome.Applied);
-        var recovered = (await storage.GetReceivedInboxOrphansOfNeedRetryAsync(lane, AbortToken))
+        var recovered = (await storage.GetReceivedInboxOrphansOfNeedRetryAsync(lane, null, AbortToken))
             .Should()
             .ContainSingle()
             .Which;

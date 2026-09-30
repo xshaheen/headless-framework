@@ -1463,7 +1463,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         // when
         var picked = string.Equals(tableName, "messaging_published", StringComparison.Ordinal)
             ? await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)
-            : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken);
 
         // then
         picked.Should().NotContain(message => message.StorageId == id);
@@ -1529,7 +1529,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
 
         var picked = string.Equals(tableName, "messaging_published", StringComparison.Ordinal)
             ? await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)
-            : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken);
 
         picked.Select(message => message.StorageId).Should().Contain(healthyId).And.NotContain(poisonId);
 
@@ -1574,10 +1574,10 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
 
         var busClaimTask = string.Equals(tableName, "messaging_published", StringComparison.Ordinal)
             ? storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken).AsTask()
-            : storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken).AsTask();
+            : storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken).AsTask();
         var queueClaimTask = string.Equals(tableName, "messaging_published", StringComparison.Ordinal)
             ? storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Queue, AbortToken).AsTask()
-            : storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Queue, AbortToken).AsTask();
+            : storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Queue, null, AbortToken).AsTask();
 
         var claimed = await Task.WhenAll(busClaimTask, queueClaimTask);
 
@@ -1593,7 +1593,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
 
         var repairedClaim = string.Equals(tableName, "messaging_published", StringComparison.Ordinal)
             ? await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)
-            : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken);
         repairedClaim.Should().ContainSingle(message => message.StorageId == unknownAheadId);
     }
 

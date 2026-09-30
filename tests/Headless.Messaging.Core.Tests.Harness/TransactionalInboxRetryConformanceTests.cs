@@ -166,7 +166,7 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
         )
             .Should()
             .BeTrue();
-        var recovered = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).Single(
+        var recovered = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken)).Single(
             candidate => candidate.StorageId == message.StorageId
         );
         recovered.InboxAttemptFence!.AttemptId.Should().NotBe(message.InboxAttemptFence!.AttemptId);

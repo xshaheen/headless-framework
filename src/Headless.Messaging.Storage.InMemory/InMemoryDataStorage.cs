@@ -1227,26 +1227,40 @@ internal sealed partial class InMemoryDataStorage(
 
     public ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
         MessageLane lane,
+        IReadOnlyCollection<string>? consumerIdentities,
         CancellationToken cancellationToken = default
     )
     {
         lock (_receivedUpsertLock)
         {
             return ValueTask.FromResult<IEnumerable<MediumMessage>>(
-                _ClaimMessagesOfNeedRetry(ReceivedMessages, lane, orphaned: false, cancellationToken: cancellationToken)
+                _ClaimMessagesOfNeedRetry(
+                    ReceivedMessages,
+                    lane,
+                    orphaned: false,
+                    consumerIdentities: consumerIdentities,
+                    cancellationToken: cancellationToken
+                )
             );
         }
     }
 
     public ValueTask<IEnumerable<MediumMessage>> GetReceivedInboxOrphansOfNeedRetryAsync(
         MessageLane lane,
+        IReadOnlyCollection<string>? consumerIdentities,
         CancellationToken cancellationToken = default
     )
     {
         lock (_receivedUpsertLock)
         {
             return ValueTask.FromResult<IEnumerable<MediumMessage>>(
-                _ClaimMessagesOfNeedRetry(ReceivedMessages, lane, orphaned: true, cancellationToken: cancellationToken)
+                _ClaimMessagesOfNeedRetry(
+                    ReceivedMessages,
+                    lane,
+                    orphaned: true,
+                    consumerIdentities: consumerIdentities,
+                    cancellationToken: cancellationToken
+                )
             );
         }
     }
@@ -1393,6 +1407,7 @@ internal sealed partial class InMemoryDataStorage(
         ConcurrentDictionary<Guid, MemoryMessage> source,
         MessageLane lane,
         bool? orphaned = null,
+        IReadOnlyCollection<string>? consumerIdentities = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -1437,6 +1452,13 @@ internal sealed partial class InMemoryDataStorage(
             }
 
             if (!string.Equals(candidate.Version, version, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            // Skipped before the batch limit, as the relational providers filter inside their candidate query, so
+            // rows of consumers this host does not run neither consume a batch slot nor get leased.
+            if (consumerIdentities?.Contains(candidate.ConsumerIdentity, StringComparer.Ordinal) == false)
             {
                 continue;
             }

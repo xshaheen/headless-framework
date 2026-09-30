@@ -73,10 +73,14 @@ The transport should:
 
 ### `IConsumerClientFactory`
 
-`CreateAsync(groupName, groupConcurrent, cancellationToken)` is called twice in practice:
+`CreateAsync(subscriptionName, concurrency, lane, cancellationToken)` is called twice in practice:
 
 - once during startup/topology discovery with the host-stopping token
-- once for each live consumer thread with its linked consumer-group token
+- once for each live consumer thread with its linked per-client token
+
+`subscriptionName` depends on `lane`. On the Bus lane it is the consumer identity, and the client binds every message that identity consumes. On the Queue lane it is the message name, because a Queue message has one consumer.
+
+On the Bus lane, derive the broker-legal subscription name from the identity with `BusNameBuilder.Build(identity, rules)` and a provider-specific `BusNameRules` (maximum length, accepted characters, whether names must start and end with a letter or digit). An identity the broker accepts is used unchanged. Any other identity becomes a readable prefix plus `-` and a 12-character SHA-256 hash of the whole identity, so every process derives the same name and distinct identities never collide. Do not hash with `string.GetHashCode()`, which is randomized per process. See [Bus subscription names](../../llms/messaging.md#bus-subscription-names) for each provider's rules.
 
 The factory should therefore be safe to call repeatedly, and client construction should not start background receive loops too early.
 
@@ -99,10 +103,10 @@ When a provider SDK operation has no native cancellation parameter, await it thr
 
 ### `IConsumerClient.SubscribeAsync`
 
-The method receives the linked consumer-group token and must pass it through broker subscription and topology operations.
+The method receives the linked per-client token and must pass it through broker subscription and topology operations.
 Apply the same cancellation-aware wait rule to subscription operations that lack native cancellation.
 
-This should bind the current consumer group to the resolved message names produced by `FetchMessageNamesAsync(...)`.
+This should bind the client's subscription (the Bus consumer identity's subscription name, or the Queue message's destination) to the resolved message names produced by `FetchMessageNamesAsync(...)`.
 
 ### `IConsumerClient.ListeningAsync`
 
@@ -111,7 +115,7 @@ This method owns the long-running receive loop.
 For every delivery, the consumer client should:
 
 - build a `TransportMessage`
-- inject `Headers.Group` with the active group name
+- leave `Headers.ConsumerIdentity` alone: Core stamps it on receipt and overwrites any value the transport or publisher set
 - pass a broker-specific commit token to `OnMessageCallback(message, commitToken)`
 
 Do not swallow `OnMessageCallback` exceptions inside the transport. The framework decides whether to commit, reject, retry, or trip the circuit breaker.
@@ -175,7 +179,7 @@ It should also preserve optional headers such as:
 
 Additional rules:
 
-- `Headers.Group` is added on consume, not publish
+- `Headers.ConsumerIdentity` (`headless-msg-consumer-identity`) is stamped by Core on receipt, not on publish; transports must not set it
 - `Headers.TenantId` is enforced by a strict 4-case integrity policy in the core publish pipeline; transports must round-trip the value verbatim and never originate, rewrite, or strip it
 - the body should be treated as raw bytes unless the broker API forces encoding/decoding
 - exception details, credentials, and other secrets must not be leaked through headers or `BrokerAddress`
@@ -252,7 +256,7 @@ A provider is usually aligned with the framework when:
 
 - direct publishing works through `ITransport` without special-case code in core
 - destination provisioning is isolated to `FetchMessageNamesAsync(...)`
-- every consumed message reaches `OnMessageCallback(...)` with a valid `Headers.Group`
+- every consumed message reaches `OnMessageCallback(...)` without the transport setting `Headers.ConsumerIdentity`; Core stamps it
 - commit/reject behavior is broker-correct and symmetric with the callback token
 - pause/resume keeps the long-running listener alive; a provider may cancel an in-flight broker receive to reach its pause gate, but it must install fresh receive state before reopening the gate
 - health and broker failures surface through `OnLogCallback`

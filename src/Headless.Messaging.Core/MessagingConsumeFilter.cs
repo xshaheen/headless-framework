@@ -6,6 +6,11 @@ namespace Headless.Messaging;
 /// The registered consumers one host starts consumer clients for. A consumer outside the filter stays registered, so
 /// the host still publishes its messages and describes it, while another host without the filter consumes them.
 /// </summary>
+/// <remarks>
+/// The retry processor passes <see cref="ConsumedIdentities"/> to every received-row pickup, so a filtered host never
+/// leases a retry or orphan probe for a consumer it has no executor for. Without that, the host would mark another
+/// host's healthy inbox row as an orphan, or fail a non-inbox row terminally as having no subscriber.
+/// </remarks>
 internal sealed class MessagingConsumeFilter
 {
     /// <summary>The unfiltered host: every registered consumer consumes.</summary>
@@ -13,10 +18,17 @@ internal sealed class MessagingConsumeFilter
 
     private readonly FrozenSet<string>? _consumed;
 
-    private MessagingConsumeFilter(FrozenSet<string>? consumed)
+    private MessagingConsumeFilter(string[]? consumed)
     {
-        _consumed = consumed;
+        ConsumedIdentities = consumed;
+        _consumed = consumed?.ToFrozenSet(StringComparer.Ordinal);
     }
+
+    /// <summary>
+    /// The exact consumer identities this host consumes, in ordinal order, or <see langword="null"/> when the host
+    /// consumes every identity. Storage providers bind it as a received-row pickup predicate.
+    /// </summary>
+    public IReadOnlyCollection<string>? ConsumedIdentities { get; }
 
     /// <summary>Whether this host starts a consumer client for the consumer with <paramref name="identity"/>.</summary>
     public bool Allows(string identity) => _consumed?.Contains(identity) != false;
@@ -63,7 +75,7 @@ internal sealed class MessagingConsumeFilter
             );
         }
 
-        return new(consumed.ToFrozenSet(StringComparer.Ordinal));
+        return new([.. consumed.Order(StringComparer.Ordinal)]);
     }
 
     /// <summary>Checks one <c>ConsumeOnly</c> entry's shape when it is authored.</summary>

@@ -316,7 +316,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         );
 
         // when
-        var messages = (await _storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).ToList();
+        var messages = (await _storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken)).ToList();
 
         // then
         messages.Should().NotBeEmpty();

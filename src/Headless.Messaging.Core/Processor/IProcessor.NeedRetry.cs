@@ -34,6 +34,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
     private readonly MethodMatcherCache? _consumerResolver;
     private readonly IMessagingCapabilityModel? _capabilityModel;
     private readonly InboxMetricPolicy _inboxMetricPolicy;
+    private readonly ConsumerRegistry? _consumerRegistry;
     private readonly bool _adaptivePolling;
     private readonly double _circuitOpenRateThreshold;
     private readonly Dictionary<RetryQuadrantKey, RetryQuadrantState> _quadrants;
@@ -56,7 +57,8 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         ICircuitBreakerStateManager? circuitBreakerStateManager = null,
         MethodMatcherCache? consumerResolver = null,
         IMessagingCapabilityModel? capabilityModel = null,
-        InboxMetricPolicy? inboxMetricPolicy = null
+        InboxMetricPolicy? inboxMetricPolicy = null,
+        ConsumerRegistry? consumerRegistry = null
     )
     {
         _options = options;
@@ -69,6 +71,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         _consumerResolver = consumerResolver;
         _capabilityModel = capabilityModel;
         _inboxMetricPolicy = inboxMetricPolicy ?? new InboxMetricPolicy(IncludeTenantId: false);
+        _consumerRegistry = consumerRegistry;
 
         _adaptivePolling = retryOptions.Value.AdaptivePolling;
         _maxInterval = retryOptions.Value.MaxPollingInterval;
@@ -452,8 +455,11 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         ProcessingContext context
     )
     {
+        // Read per cycle rather than in the constructor: ConsumeOnly resolves when registrations drain, which the
+        // bootstrapper completes before this processor runs but after the container builds it.
+        var consumerIdentities = _consumerRegistry?.ConsumeFilter.ConsumedIdentities;
         var pickup = await _GetSafelyAsync(
-                token => connection.GetReceivedMessagesOfNeedRetryAsync(state.Key.Lane, token),
+                token => connection.GetReceivedMessagesOfNeedRetryAsync(state.Key.Lane, consumerIdentities, token),
                 state,
                 context.CancellationToken
             )
@@ -474,7 +480,8 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         try
         {
             var orphans = await _GetSafelyAsync(
-                    token => connection.GetReceivedInboxOrphansOfNeedRetryAsync(state.Key.Lane, token),
+                    token =>
+                        connection.GetReceivedInboxOrphansOfNeedRetryAsync(state.Key.Lane, consumerIdentities, token),
                     state,
                     context.CancellationToken
                 )
