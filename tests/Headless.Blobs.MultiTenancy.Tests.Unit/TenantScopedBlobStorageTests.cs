@@ -419,6 +419,8 @@ public sealed class TenantScopedBlobStorageTests : TestBase
     [InlineData(".hidden")]
     [InlineData("acme.hlmeta")]
     [InlineData("é")]
+    [InlineData("Acme")]
+    [InlineData("0190C7A2-7A5E-7B3C-9F2E-1D4C5B6A7E8F")]
     public async Task should_refuse_a_tenant_id_that_is_not_one_safe_path_segment(string tenantId)
     {
         // given
@@ -441,7 +443,7 @@ public sealed class TenantScopedBlobStorageTests : TestBase
     [Theory]
     [InlineData("0190c7a2-7a5e-7b3c-9f2e-1d4c5b6a7e8f")]
     [InlineData("42")]
-    [InlineData("Acme_Corp.eu")]
+    [InlineData("acme_corp.eu")]
     public async Task should_accept_common_tenant_id_shapes(string tenantId)
     {
         // given
