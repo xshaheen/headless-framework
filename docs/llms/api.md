@@ -501,7 +501,7 @@ builder.AddHeadless(configureServices: options =>
 });
 ```
 
-With HTTP tenancy configured, the request span also carries `tenant.id`, and log records written during the request carry a `TenantId` attribute. That attribute comes from a logging scope, which reaches OpenTelemetry because `AddHeadless()` sets `IncludeScopes = true` on the OpenTelemetry logger. If a custom `ConfigureLogging` callback sets `IncludeScopes = false`, log records lose the tenant. The names and switches live in `TenantTelemetryOptions`; see [Multi-tenancy observability](multi-tenancy.md#observability).
+With HTTP tenancy configured, the request span carries `tenant.id`, and so does every span started during the request. Every log record written during the request carries a `TenantId` attribute naming the tenant ambient when it was written. ServiceDefaults adds both through OpenTelemetry processors registered ahead of your `ConfigureLogging`/`ConfigureTracing` callbacks and the OTLP exporter, so every exporter sees them. The names and switches live in `TenantTelemetryOptions`; see [Multi-tenancy observability](multi-tenancy.md#observability).
 
 When API surfaces are registered, the default OpenTelemetry response enricher adds `headless.api.surface.name` to completed request spans. It uses the selected endpoint's configured name, `unknown` for unmatched requests, and `unclassified` for unmarked endpoints. Replacing `EnrichWithHttpResponse` replaces this default too; capture and invoke the existing delegate to preserve it.
 

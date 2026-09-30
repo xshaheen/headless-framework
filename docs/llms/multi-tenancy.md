@@ -64,7 +64,7 @@ app.UseAuthorization();
 - In HTTP apps, use `.Http(http => http.ResolveFromClaims())` and `app.UseHeadlessTenancy()` in the middleware pipeline.
 - For HTTP request boundaries, use `.Authorization(auth => auth.RequireTenant())`, add `TenantRequirement` to the app's `FallbackPolicy` or `DefaultPolicy`, mark intentional host-level endpoints with `[AllowMissingTenant]` or `.AllowMissingTenant()`, and use `[RequireTenant]` / `.RequireTenant()` to opt back in under broader allow-missing metadata.
 - Use `[SkipTenantResolution]` / `.SkipTenantResolution()` to opt an endpoint out of claim extraction entirely (not just authorization enforcement). The middleware skips `ICurrentTenant.Change(...)` — if no other resolver runs, `ICurrentTenant.IsAvailable` stays false. Apply when an endpoint is reached by principals that legitimately carry a tenant claim but must not have `ICurrentTenant` populated — for example, admin or cross-tenant endpoints where the claim would silently scope EF global filters to a single tenant. Combine with `.AllowMissingTenant()` when the endpoint also sits under a tenant-required policy.
-- Do not open your own `TenantId` logging scope or `tenant.id` span tag at the framework entry points; they already do it. See [Observability](#observability). Call `TenantTelemetry.Enrich(...)` only where your own code switches the tenant, such as a hand-written worker loop.
+- Do not add your own `TenantId` log attribute or `tenant.id` span tag; ServiceDefaults adds both wherever a tenant is ambient, including inside your own `ICurrentTenant.Change(...)` blocks. See [Observability](#observability).
 - The default claim type is `tenant_id`. Override it with `ResolveFromClaims(options => options.ClaimType = "...")` only when your identity system uses a different claim name.
 - Mint the tenant claim only on principals that are actually scoped to a tenant. Host-level, admin, service-account, or cross-tenant principal types should not carry the claim — `ICurrentTenant.IsAvailable` stays false for them by design.
 - When no tenant claim is present, the middleware intentionally skips `Change(null)`. This preserves the distinction between "never set" and "explicitly null".
@@ -906,54 +906,35 @@ SignalR hub invocations start new execution flows after the initial upgrade requ
 
 ## Observability
 
-Every tenancy entry point attaches the tenant id it establishes to logs and traces, with no registration needed:
+With `AddHeadless()` (ServiceDefaults) and OpenTelemetry on, logs and spans carry the tenant id with no registration:
 
-| Entry point | Where the tenant comes from |
-|---|---|
-| `UseHeadlessTenancy()` (`ResolveFromClaims`) | The tenant claim, on claim-only hosts |
-| `UseHeadlessTenantCatalogResolution()` | The catalog-resolved tenant |
-| Messaging consume (`PropagateTenant()`) and exhausted callbacks | The envelope's tenant header |
-| Jobs execution (`TenantRestoreExecuteMiddleware`) and failure callbacks | The job's persisted tenant |
+- **Logs.** Every log record written while a tenant is ambient carries the attribute `TenantId`. A ServiceDefaults log processor reads `ICurrentTenant` as each record is written, so the attribute is always the tenant that is ambient at that moment. A nested `ICurrentTenant.Change(...)` relabels the records inside it, a system scope (`Change(null)`) unlabels them, and a hand-written per-tenant loop, hosted service, or migration is labelled with no extra call. A record whose message template already has a `{TenantId}` placeholder keeps that value and gets no second attribute.
+- **Spans started under a tenant.** A ServiceDefaults span processor tags every span that starts while a tenant is ambient with `tenant.id`: database, outgoing HTTP, and your own spans.
+- **Spans that start before their tenant is known** are tagged where the tenant is resolved:
 
-For the duration of that work, each entry point:
+| Span | Tagged by | Where the tenant comes from |
+|---|---|---|
+| ASP.NET Core request span | `UseHeadlessTenancy()` (`ResolveFromClaims`) | The tenant claim, on claim-only hosts |
+| ASP.NET Core request span | `UseHeadlessTenantCatalogResolution()` | The catalog-resolved tenant, tagged before the claim check so a rejected request is still attributed |
+| Every messaging span (persist, publish, consume, subscriber invoke) | Messaging telemetry, when the span starts | The envelope's tenant header |
+| Job execution span | Jobs instrumentation, when the span starts | The job's persisted tenant |
 
-- opens one logging scope with the property `TenantId`. Every log record written inside it carries the property: the ServiceDefaults OpenTelemetry logger sets `IncludeScopes = true`, so it becomes the log record attribute `TenantId`. Console and JSON providers show it when their own `IncludeScopes` is on.
-- tags `Activity.Current` (the ASP.NET Core request span, the consume span, or the job span) with the attribute `tenant.id`. The tag stays on that span, which is exported after the entry point returns. Child spans (database, HTTP client) are not tagged; they share the tagged span's trace id.
+A request, message, or job with no tenant gets no attribute. Setting the tenant costs nothing: `ICurrentTenant.Change` writes no telemetry, and the processors only read the ambient tenant when a record or span is produced.
 
-The log scope is removed when the work ends. A request, message, or job with no tenant gets neither. A nested entry point that finds its tenant already ambient re-tags the current span but opens no second log scope. This happens on the messaging transactional-inbox path, where the executor switches the tenant before the consume middleware runs. `ICurrentTenant.Change` itself never logs or tags, so tight loops such as per-tenant migrations pay nothing.
+Only ServiceDefaults wires the processors. A host that builds its own OpenTelemetry pipeline gets the request, messaging, and job span tags, but not the log attribute or child-span tags. A logging provider other than OpenTelemetry (Serilog, console) gets no tenant attribute either; add an enricher there that reads `ICurrentTenant.Id`.
 
 ### Names
 
-- `tenant.id` (span and metric attribute): OpenTelemetry semantic conventions (checked at v1.44.0) register no general tenant attribute. Their only `tenant.id` is a field on Azure resource-log events, and the proposal for a tenant attribute ([semantic-conventions#162](https://github.com/open-telemetry/semantic-conventions/issues/162)) is still open. `tenant.id` follows the conventions' `namespace.attribute` shape and the `tenant.*` namespace that proposal discusses, so a registered attribute is likely to match it.
-- `TenantId` (log scope property): the same name as the `{TenantId}` placeholder in the framework's own log message templates, so one query finds both.
+- `tenant.id` (span attribute): OpenTelemetry semantic conventions (checked at v1.44.0) register no general tenant attribute. Their only `tenant.id` is a field on Azure resource-log events, and the proposal for a tenant attribute ([semantic-conventions#162](https://github.com/open-telemetry/semantic-conventions/issues/162)) is still open. `tenant.id` follows the conventions' `namespace.attribute` shape and the `tenant.*` namespace that proposal discusses, so a registered attribute is likely to match it.
+- `TenantId` (log attribute): the same name as the `{TenantId}` placeholder in the framework's own log message templates, so one query finds both.
 
-The framework's own messaging and job spans use the same attribute. Every messaging span (persist, publish, consume, subscriber invoke) whose message carries a tenant gets `tenant.id`, including publish spans, which no entry point reaches. Every job span for a tenant-scoped job gets it when the span starts. There is no separate `headless.messaging.tenant_id` or `headless.job.tenant_id`, and `EnrichTraces` is the one switch for all spans.
+There is no separate `headless.messaging.tenant_id` or `headless.job.tenant_id`; `EnrichTraces` is the one switch for all spans.
 
 ### Metrics
 
-The framework adds no tenant tag to its own meters. Tenancy and API packages own no meters, and the messaging inbox metrics keep their separate, off-by-default `MessagingInstrumentationOptions.IncludeTenantIdInMetricTags`, which names the dimension with `AttributeName` when enabled. To tag an application meter with the ambient tenant, call `TenantTelemetry.TryGetMetricTag`:
+The framework adds no tenant dimension to its meters by default. The messaging inbox metrics have an off-by-default `MessagingInstrumentationOptions.IncludeTenantIdInMetricTags`, which names the dimension with `AttributeName`. To tag an application meter, add `currentTenant.Id` under the same name yourself. Each distinct tenant id becomes its own time series, so do it only when the tenant count is bounded and your metrics backend can hold that cardinality; otherwise keep per-tenant analysis in logs and traces.
 
-```csharp
-public sealed class OrderMetrics(ICurrentTenant currentTenant, IOptions<TenantTelemetryOptions> telemetry)
-{
-    private static readonly Meter _Meter = new("MyApp.Orders");
-    private static readonly Counter<long> _Placed = _Meter.CreateCounter<long>("myapp.orders.placed");
-
-    public void OrderPlaced()
-    {
-        if (TenantTelemetry.TryGetMetricTag(currentTenant, telemetry.Value, out var tenantTag))
-        {
-            _Placed.Add(1, tenantTag);
-        }
-        else
-        {
-            _Placed.Add(1);
-        }
-    }
-}
-```
-
-Each distinct tenant id becomes its own time series. Tag a meter with the tenant only when the tenant count is bounded and your metrics backend can hold that cardinality. Otherwise, keep per-tenant analysis in logs and traces. Every operator with access to the telemetry store sees every tenant's ids. Route telemetry per tenant, or turn a channel off, when tenant ids must not be shared.
+Every operator with access to the telemetry store sees every tenant's ids. Route telemetry per tenant, or turn a channel off, when tenant ids must not be shared.
 
 ### Configuration
 
@@ -965,22 +946,20 @@ builder.AddHeadlessTenancy(tenancy =>
         .Http(http => http.ResolveFromClaims())
         .Telemetry(telemetry =>
         {
-            telemetry.AttributeName = "app.tenant.id"; // span and metric attribute
-            telemetry.LogScopePropertyName = "Tenant";
-            telemetry.EnrichMetrics = false; // TryGetMetricTag returns false
+            telemetry.AttributeName = "app.tenant.id"; // span attribute and inbox metric dimension
+            telemetry.LogAttributeName = "Tenant";
         })
 );
 ```
 
 | Option | Default | Effect |
 |---|---|---|
-| `EnrichLogs` | `true` | Opens the logging scope at each entry point |
-| `LogScopePropertyName` | `TenantId` | The scope property name |
-| `EnrichTraces` | `true` | Tags `Activity.Current` at each entry point, and the framework's messaging and job spans |
-| `EnrichMetrics` | `true` | Lets `TryGetMetricTag` return a tag |
-| `AttributeName` | `tenant.id` | The span and metric attribute name, including the messaging inbox metric dimension |
+| `EnrichLogs` | `true` | Adds the tenant attribute to log records written while a tenant is ambient |
+| `LogAttributeName` | `TenantId` | The log record attribute name |
+| `EnrichTraces` | `true` | Tags the request, messaging, and job spans, and every span started while a tenant is ambient |
+| `AttributeName` | `tenant.id` | The span attribute name, also the messaging inbox metric dimension |
 
-A blank name for an enabled channel fails options validation. Code that opens its own tenant scope outside these entry points can call `TenantTelemetry.Enrich(logger, options, tenantId)` right after `ICurrentTenant.Change(...)` and dispose the result with it.
+A blank `AttributeName`, or a blank `LogAttributeName` while `EnrichLogs` is on, fails options validation. To tag a span that starts before your own code knows its tenant, call `TenantTelemetry.TagActivity(activity, options, tenantId)`.
 
 ## Testing host wiring
 
@@ -1070,9 +1049,9 @@ None.
     - `HeadlessTenancyStartupValidator` — an `IHeadlessStartupValidator` that runs all registered tenancy validators before any hosted service starts; throws `HeadlessTenancyValidationException` (an `InvalidOperationException`) on any `Error` diagnostic.
     - `HeadlessTenancyValidationContext` — context record passed to validators: `Services` (the app `IServiceProvider`) + `Manifest`.
 - **Tenant telemetry** (on by default; see [Observability](#observability)):
-    - `TenantTelemetryOptions`: `EnrichLogs`/`LogScopePropertyName` (`TenantId`), `EnrichTraces`/`EnrichMetrics`/`AttributeName` (`tenant.id`). Resolved through `IOptions<T>`, so the defaults apply with no registration.
+    - `TenantTelemetryOptions`: `EnrichLogs`/`LogAttributeName` (`TenantId`), `EnrichTraces`/`AttributeName` (`tenant.id`). Resolved through `IOptions<T>`, so the defaults apply with no registration.
     - `HeadlessTenancyBuilder.Telemetry(Action<TenantTelemetryOptions> configure)`: configures the options with validation.
-    - `TenantTelemetry.Enrich(logger, options, tenantId)`: tags `Activity.Current` and returns the logging scope to dispose. `TagActivity` and `BeginLogScope` do one channel each. `TryGetMetricTag(currentTenant, options, out tag)` returns the attribute/tenant pair for application meters.
+    - `TenantTelemetry.TagActivity(activity, options, tenantId)`: tags a span that started before its tenant was ambient. Spans started under a tenant, and log records, are enriched by the ServiceDefaults processors.
 - **Tenant catalog** (opt-in; see [Tenant Catalog](#tenant-catalog) for the concepts and extension tiers):
     - `HeadlessTenancyBuilder.Catalog(Action<HeadlessTenancyCatalogSetupBuilder> configure)` — configures `TenantCatalogOptions`, registers exactly one storage provider (`UseInMemory`/`UseConfiguration`/`UseEntityFramework`, guarded — a second registration fails startup), and wires the catalog service and the `ICurrentTenantInfo` accessor.
     - `InMemoryTenantStore` / `UseInMemory(...)` — seeded, immutable snapshot store for tests and small apps; rejects duplicate normalized identifiers or ids at startup. Three overloads: `Action<InMemoryTenantStoreOptions>`, `Action<InMemoryTenantStoreOptions, IServiceProvider>`, and a raw `InMemoryTenantStoreOptions` instance — deliberately no `UseInMemory(IConfiguration)` overload, because `TenantInfo` has no parameterless constructor for the options binder to construct from. Bind an operator-managed tenant list from configuration with `UseConfiguration(...)` instead.
@@ -1154,7 +1133,7 @@ Custom validators implement `IHeadlessTenancyValidator` and register themselves 
 - Registers a singleton `TenantPostureManifest` via `services.AddSingleton(manifest)`.
 - Registers `HeadlessTenancyStartupValidator` as an `IHeadlessStartupValidator` (idempotent; safe to call multiple times).
 - Registers a default no-op scoped `ICurrentTenantInfo` (`NullCurrentTenantInfo`).
-- `Telemetry(...)` registers `TenantTelemetryOptions` with its validator (`ValidateOnStart`). Without it, the entry points read the defaults.
+- `Telemetry(...)` registers `TenantTelemetryOptions` with its validator (`ValidateOnStart`). Without it, the defaults apply.
 - `AddHeadlessTenancy` also invokes the caller's `configure` callback, which may register additional services from seam packages.
 - `Catalog(...)` registers `TenantCatalogOptions` (validated, `ValidateOnStart`), the selected storage provider's services, `ITenantCatalogService` (scoped, backed by `TenantCatalogService`), replaces the default `ICurrentTenantInfo` with the catalog-backed implementation, and registers `TenantCatalogPostureValidator`.
 

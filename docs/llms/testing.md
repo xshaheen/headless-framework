@@ -52,7 +52,6 @@ Core testing utilities and base classes for xUnit tests.
 - `TestCurrentUser` / `TestCurrentTenant` - Fake context implementations
 - `TenantIsolationHttpAssertions.ShouldAnswerNotFoundAcrossTenantsAsync(...)` - Asserts a cross-tenant request answers exactly like a missing id, over any `HttpClient`; see [Tenant isolation](#tenant-isolation)
 - `TenantWorld` - Tenants A and B over one `ICurrentTenant`, with `AsTenantA()`, `AsTenantB()`, `AsTenant(id)`, and `AsHost()` scopes and a static `CreatePrincipal(tenantId)`; see [Tenant isolation](#tenant-isolation)
-- `ScopeRecordingLogger<T>` - An `ILogger<T>` backed by a real scope provider; `GetActiveScopeProperties()` returns the scope properties active on the calling async flow, so a test can assert a scope is open inside an inner call and closed after it
 - `RecordedTestActivity.Start()` - Starts a fully recorded `Activity` on a private source and makes it `Activity.Current`, so a test can assert span tags without an OpenTelemetry pipeline; the listener samples only that source
 - `AddTestTimeProvider()` - Replaces the container's `TimeProvider` with a `FakeTimeProvider` and returns it
 - Assertion extensions for async operations
