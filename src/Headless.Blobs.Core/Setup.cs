@@ -31,6 +31,39 @@ public static class SetupBlobsCore
 
             return _AddBlobsCore(services, setup);
         }
+
+        /// <summary>
+        /// Wraps the default blob store and every named store with <paramref name="decoration"/>. The decoration is
+        /// applied after every provider and cross-cutting extension of <c>AddHeadlessBlobs</c>, so it sees the
+        /// finished store, whichever of the two calls runs first. Decorations apply in registration order; a later
+        /// one wraps an earlier one.
+        /// </summary>
+        /// <param name="decoration">The decoration to apply.</param>
+        /// <returns>The service collection for chaining.</returns>
+        /// <remarks>
+        /// Only stores registered through <c>AddHeadlessBlobs</c> are decorated. Registering the same
+        /// <see cref="BlobStorageDecoration"/> instance again is a no-op.
+        /// </remarks>
+        public IServiceCollection DecorateHeadlessBlobs(BlobStorageDecoration decoration)
+        {
+            Argument.IsNotNull(decoration);
+
+            if (services.Any(d => ReferenceEquals(d.ImplementationInstance, decoration)))
+            {
+                return services;
+            }
+
+            services.AddSingleton(decoration);
+
+            // When AddHeadlessBlobs already ran its stores are registered and are decorated now; otherwise
+            // AddHeadlessBlobs applies the decoration once its providers are registered.
+            if (_IsRegistered(services))
+            {
+                decoration.Apply(services);
+            }
+
+            return services;
+        }
     }
 
     private static IServiceCollection _AddBlobsCore(IServiceCollection services, HeadlessBlobsSetupBuilder setup)
@@ -43,7 +76,7 @@ public static class SetupBlobsCore
             );
         }
 
-        if (IsRegistered(services))
+        if (_IsRegistered(services))
         {
             throw new InvalidOperationException(
                 "AddHeadlessBlobs was already called on this service collection. Configure all blob stores "
@@ -74,13 +107,20 @@ public static class SetupBlobsCore
             action(services);
         }
 
-        SetupBlobsTenancy.ApplyTenantScoping(services);
+        foreach (
+            var decoration in services
+                .Select(static d => d.ImplementationInstance)
+                .OfType<BlobStorageDecoration>()
+                .ToList()
+        )
+        {
+            decoration.Apply(services);
+        }
 
         return services;
     }
 
-    /// <summary>Returns whether <c>AddHeadlessBlobs</c> already ran on <paramref name="services"/>.</summary>
-    internal static bool IsRegistered(IServiceCollection services)
+    private static bool _IsRegistered(IServiceCollection services)
     {
         return services.Any(static descriptor => descriptor.ServiceType == typeof(BlobsProviderRegistration));
     }

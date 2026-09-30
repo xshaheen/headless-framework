@@ -1,9 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Caching;
+using Headless.Hosting.DependencyInjection;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Tests;
 
@@ -65,35 +68,6 @@ public sealed class SetupTenantScopedCacheTests : TestBase
 
         // then
         await action.Should().ThrowAsync<MissingTenantContextException>();
-    }
-
-    [Fact]
-    public async Task should_use_the_shared_host_scope_when_the_bypass_is_active()
-    {
-        // given
-        await using var provider = _Build();
-        var (cache, tenant) = _Resolve(provider);
-        var bypass = provider.GetRequiredService<ITenantStorageScopeBypass>();
-
-        // when
-        using (bypass.BeginBypass())
-        {
-            await cache.UpsertAsync(_Key, new UserProfile("host"), expiration: null, AbortToken);
-        }
-
-        // then
-        var raw = await provider.GetRequiredService<ICache>().GetAsync<UserProfile>("t::user:1", AbortToken);
-        raw.Value.Should().Be(new UserProfile("host"));
-
-        using (tenant.Change("acme"))
-        {
-            (await cache.GetAsync(_Key, AbortToken)).HasValue.Should().BeFalse("a tenant never sees the host scope");
-
-            using (bypass.BeginBypass())
-            {
-                (await cache.GetAsync(_Key, AbortToken)).Value.Should().Be(new UserProfile("host"));
-            }
-        }
     }
 
     [Fact]
@@ -160,6 +134,7 @@ public sealed class SetupTenantScopedCacheTests : TestBase
     {
         // given
         var services = new ServiceCollection();
+        _AddTenantSource(services);
         services.AddTenantScopedCache<UserProfile>();
         services.AddHeadlessCaching(setup => setup.UseInMemory());
 
@@ -200,13 +175,46 @@ public sealed class SetupTenantScopedCacheTests : TestBase
         action.Should().Throw<InvalidOperationException>().WithMessage("*already registered*");
     }
 
+    [Fact]
+    public async Task should_fail_startup_when_no_tenant_source_is_registered()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+        builder.Services.AddTenantScopedCache<UserProfile>();
+
+        await using var provider = builder.Services.BuildServiceProvider();
+
+        // when
+        var act = async () =>
+        {
+            foreach (var service in provider.GetServices<IHostedService>().OfType<IHostedLifecycleService>())
+            {
+                await service.StartingAsync(AbortToken);
+            }
+        };
+
+        // then
+        (await act.Should().ThrowAsync<MissingRequiredServiceException>())
+            .Which.MissingServices.Should()
+            .ContainSingle(missing => missing.ServiceType == typeof(ICurrentTenant));
+    }
+
     private static ServiceProvider _Build()
     {
         var services = new ServiceCollection();
+        _AddTenantSource(services);
         services.AddHeadlessCaching(setup => setup.UseInMemory());
         services.AddTenantScopedCache<UserProfile>();
 
         return services.BuildServiceProvider();
+    }
+
+    /// <summary>The AsyncLocal-backed tenant a host's tenancy seam would register.</summary>
+    private static void _AddTenantSource(IServiceCollection services)
+    {
+        services.AddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
+        services.AddSingleton<ICurrentTenant, CurrentTenant>();
     }
 
     private static (ICache<UserProfile> Cache, ICurrentTenant Tenant) _Resolve(IServiceProvider provider)

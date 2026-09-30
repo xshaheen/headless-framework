@@ -19,6 +19,7 @@ Headless.Blobs.Azure
 Headless.Blobs.CloudflareR2
 Headless.Blobs.Core
 Headless.Blobs.FileSystem
+Headless.Blobs.MultiTenancy
 Headless.Blobs.Redis
 Headless.Blobs.SshNet
 Headless.Caching.Abstractions

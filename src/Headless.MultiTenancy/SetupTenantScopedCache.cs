@@ -1,9 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
 using Headless.Caching;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.MultiTenancy;
 
@@ -26,9 +24,9 @@ public static class SetupTenantScopedCache
         /// <remarks>
         /// <para>
         /// The scope is read on every operation. With no ambient tenant the operation throws
-        /// <see cref="MissingTenantContextException"/> instead of reading or writing a shared entry, unless
-        /// <see cref="ITenantStorageScopeBypass"/> is active, in which case it addresses the shared host scope
-        /// <c>t::{key}</c>. A tenant id containing <c>:</c> is refused with <see cref="InvalidOperationException"/>,
+        /// <see cref="MissingTenantContextException"/> instead of reading or writing a shared entry; cache values
+        /// every tenant shares through the unscoped <see cref="ICache"/>. A tenant id containing <c>:</c> is refused
+        /// with <see cref="InvalidOperationException"/>,
         /// because <c>t:a:b:x</c> could not tell tenant <c>a</c> with key <c>b:x</c> from tenant <c>a:b</c> with
         /// key <c>x</c>.
         /// </para>
@@ -38,7 +36,11 @@ public static class SetupTenantScopedCache
         /// invalidation, <c>ClearAsync</c>, and <c>FlushAsync</c> are not tenant-isolated; see
         /// <see cref="ScopedCache{T}"/>.
         /// </para>
-        /// <para>Calling this more than once for the same <typeparamref name="T"/> is a no-op.</para>
+        /// <para>
+        /// Calling this more than once for the same <typeparamref name="T"/> is a no-op. The host must register an
+        /// <see cref="ICurrentTenant"/>, as the HTTP tenancy seam and <c>AddHeadlessDbContextServices()</c> do;
+        /// startup fails otherwise.
+        /// </para>
         /// </remarks>
         public IServiceCollection AddTenantScopedCache<T>()
         {
@@ -59,28 +61,29 @@ public static class SetupTenantScopedCache
 
             services.AddSingleton<TenantScopedCacheRegistration<T>>();
 
-            // The AsyncLocal-backed defaults, replaced by any real tenancy registration; the same fallback
-            // Permissions, Messaging, and Jobs register.
-            services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
-            services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
-            services.TryAddSingleton<ITenantStorageScopeBypass>(TenantStorageScopeBypass.Instance);
-
             // A closed-generic registration wins over a provider's open-generic ICache<> whatever the order, so the
             // scoped wrapper cannot be shadowed by AddHeadlessCaching running later.
             services.AddSingleton<ICache<T>>(provider =>
             {
                 var currentTenant = provider.GetRequiredService<ICurrentTenant>();
-                var bypass = provider.GetRequiredService<ITenantStorageScopeBypass>();
 
                 return new ScopedCache<T>(
                     provider.GetRequiredService<ICache>(),
-                    () => TenantCacheScope.Resolve(currentTenant, bypass)
+                    () => TenantCacheScope.Resolve(currentTenant)
                 );
             });
 
             services.RequireRegisteredService<ICache>(
                 requiredBy: $"Tenant-scoped cache ICache<{typeof(T).Name}>",
                 remedy: "Call AddHeadlessCaching(...) with a provider (UseInMemory / UseRedis / UseHybrid)."
+            );
+
+            // Headless.MultiTenancy carries no ICurrentTenant implementation, and a fallback whose Id is always null
+            // would only turn a wiring mistake into a MissingTenantContextException on every call.
+            services.RequireRegisteredService<ICurrentTenant>(
+                requiredBy: $"Tenant-scoped cache ICache<{typeof(T).Name}>",
+                remedy: "Register a tenant source: AddHeadlessTenancy(t => t.Http(http => http.ResolveFromClaims())), "
+                    + "AddHeadlessDbContextServices(), or your own ICurrentTenant implementation."
             );
 
             return services;
@@ -91,24 +94,19 @@ public static class SetupTenantScopedCache
 /// <summary>Resolves the <see cref="ScopedCache{T}"/> scope for a tenant-scoped cache.</summary>
 internal static class TenantCacheScope
 {
-    /// <summary>The scope a bypassed operation uses; the same shape the permission grant cache uses with no tenant.</summary>
-    public const string HostScope = "t:";
+    /// <summary>The scope prefix; the same layout the permission grant cache uses.</summary>
+    private const string _ScopePrefix = "t:";
 
-    public static string Resolve(ICurrentTenant currentTenant, ITenantStorageScopeBypass bypass)
+    public static string Resolve(ICurrentTenant currentTenant)
     {
-        if (bypass.IsActive)
-        {
-            return HostScope;
-        }
-
         var tenantId = currentTenant.Id;
 
         if (string.IsNullOrWhiteSpace(tenantId))
         {
             throw new MissingTenantContextException(
                 "A tenant-scoped cache was used with no ambient tenant. Wrap the call in "
-                    + "ICurrentTenant.Change(tenantId), or use ITenantStorageScopeBypass.BeginBypass() for an "
-                    + "intentional host-level entry."
+                    + "ICurrentTenant.Change(tenantId), or cache values every tenant shares through the unscoped "
+                    + "ICache."
             );
         }
 
@@ -120,7 +118,7 @@ internal static class TenantCacheScope
             );
         }
 
-        return HostScope + tenantId;
+        return _ScopePrefix + tenantId;
     }
 }
 

@@ -377,17 +377,9 @@
         "type": "Project",
         "dependencies": {
           "Headless.Blobs.Abstractions": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
-          "Headless.MultiTenancy": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
-        }
-      },
-      "headless.caching.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Extensions": "[1.0.0, )"
         }
       },
       "headless.checks": {
@@ -444,19 +436,6 @@
           "Microsoft.Extensions.Hosting": "[10.0.12, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.12, )",
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.12, )"
-        }
-      },
-      "headless.multitenancy": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Caching.Abstractions": "[1.0.0, )",
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
-          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.12, )"
         }
       },
       "headless.multitenancy.abstractions": {

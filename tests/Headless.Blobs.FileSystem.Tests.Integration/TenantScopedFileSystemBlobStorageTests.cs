@@ -66,7 +66,7 @@ public sealed class TenantScopedFileSystemBlobStorageTests : BlobStorageTestsBas
     }
 
     [Fact]
-    public async Task should_reach_the_physical_location_only_through_the_bypass()
+    public async Task should_reach_the_physical_location_only_through_the_unscoped_store()
     {
         // given
         var provider = _Build(_Tenant);
@@ -75,15 +75,10 @@ public sealed class TenantScopedFileSystemBlobStorageTests : BlobStorageTestsBas
         await storage.UploadContentAsync(new BlobLocation(ContainerName, "1.txt"), "scoped", AbortToken);
 
         // when
-        string? physical;
-
-        using (provider.GetRequiredService<ITenantStorageScopeBypass>().BeginBypass())
-        {
-            physical = await storage.GetBlobContentAsync(
-                new BlobLocation(ContainerName, $"{_Tenant}/1.txt"),
-                AbortToken
-            );
-        }
+        var physical = await ((IScopedBlobStorage)storage).Unscoped.GetBlobContentAsync(
+            new BlobLocation(ContainerName, $"{_Tenant}/1.txt"),
+            AbortToken
+        );
 
         // then
         physical.Should().Be("scoped");

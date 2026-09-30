@@ -366,7 +366,7 @@ public sealed class TenantScopedBlobStorageTests : TestBase
 
     #endregion
 
-    #region Fail closed and bypass
+    #region Fail closed
 
     [Fact]
     public async Task should_refuse_the_operation_when_no_tenant_is_set()
@@ -397,47 +397,19 @@ public sealed class TenantScopedBlobStorageTests : TestBase
     }
 
     [Fact]
-    public async Task should_pass_the_location_through_unchanged_when_the_bypass_is_active()
+    public async Task should_expose_the_wrapped_store_as_unscoped()
     {
         // given
-        var (storage, tenant) = _Build();
-        var bypass = _provider!.GetRequiredService<ITenantStorageScopeBypass>();
+        var (storage, _) = _Build();
         _inner.ExistsAsync(_Avatar, AbortToken).Returns(true);
 
         // when
-        bool withoutTenant,
-            withTenant;
-
-        using (bypass.BeginBypass())
-        {
-            withoutTenant = await storage.ExistsAsync(_Avatar, AbortToken);
-
-            using (tenant.Change(_Tenant))
-            {
-                withTenant = await storage.ExistsAsync(_Avatar, AbortToken);
-            }
-        }
+        var unscoped = storage.Should().BeAssignableTo<IScopedBlobStorage>().Subject.Unscoped;
+        var exists = await unscoped.ExistsAsync(_Avatar, AbortToken);
 
         // then
-        withoutTenant.Should().BeTrue();
-        withTenant.Should().BeTrue();
-        await _inner.DidNotReceive().ExistsAsync(_ScopedAvatar, Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task should_scope_again_once_the_bypass_is_disposed()
-    {
-        // given
-        var (storage, tenant) = _Build();
-        var bypass = _provider!.GetRequiredService<ITenantStorageScopeBypass>();
-        bypass.BeginBypass().Dispose();
-
-        // when
-        var action = () => storage.ExistsAsync(_Avatar, AbortToken).AsTask();
-
-        // then
-        await action.Should().ThrowAsync<MissingTenantContextException>();
-        tenant.IsAvailable.Should().BeFalse();
+        unscoped.Should().BeSameAs(_inner);
+        exists.Should().BeTrue("the unscoped store needs no tenant and receives the location unchanged");
     }
 
     [Theory]

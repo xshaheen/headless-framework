@@ -366,11 +366,8 @@ public sealed class SignedUrlEndpointTests : TestBase
             (await app.DefaultStorage.ExistsAsync(_Report, AbortToken)).Should().BeFalse();
         }
 
-        using (app.App.Services.GetRequiredService<ITenantStorageScopeBypass>().BeginBypass())
-        {
-            var physical = new BlobLocation(_Report.Container, "acme/" + _Report.Path);
-            (await app.DefaultStorage.ExistsAsync(physical, AbortToken)).Should().BeTrue();
-        }
+        var physical = new BlobLocation(_Report.Container, "acme/" + _Report.Path);
+        (await _Unscoped(app.DefaultStorage).ExistsAsync(physical, AbortToken)).Should().BeTrue();
     }
 
     [Fact]
@@ -402,15 +399,15 @@ public sealed class SignedUrlEndpointTests : TestBase
             .Should()
             .Be("acme-report");
 
-        using (app.App.Services.GetRequiredService<ITenantStorageScopeBypass>().BeginBypass())
-        {
-            var keys = await app.DefaultStorage.GetBlobsListAsync(
-                new BlobQuery("DataProtection"),
-                cancellationToken: AbortToken
-            );
-            keys.Should().NotBeEmpty();
-            keys.Should().OnlyContain(key => !key.BlobKey.Contains('/'), "the key ring is not inside a tenant prefix");
-        }
+        var keys = await _Unscoped(app.DefaultStorage)
+            .GetBlobsListAsync(new BlobQuery("DataProtection"), cancellationToken: AbortToken);
+        keys.Should().NotBeEmpty();
+        keys.Should().OnlyContain(key => !key.BlobKey.Contains('/'), "the key ring is not inside a tenant prefix");
+    }
+
+    private static IBlobStorage _Unscoped(IBlobStorage storage)
+    {
+        return storage.Should().BeAssignableTo<IScopedBlobStorage>().Subject.Unscoped;
     }
 
     private static IPresignedUrlBlobStorage _Presigned(IBlobStorage storage)

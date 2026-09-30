@@ -479,8 +479,7 @@
         "dependencies": {
           "Azure.Extensions.AspNetCore.DataProtection.Blobs": "[1.5.4, )",
           "Headless.Blobs.Abstractions": "[1.0.0, )",
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )"
+          "Headless.Checks": "[1.0.0, )"
         }
       },
       "headless.blobs.abstractions": {
@@ -494,10 +493,8 @@
         "type": "Project",
         "dependencies": {
           "Headless.Blobs.Abstractions": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.MultiTenancy": "[1.0.0, )"
+          "Headless.Hosting": "[1.0.0, )"
         }
       },
       "headless.blobs.filesystem": {
@@ -507,6 +504,16 @@
           "Headless.Blobs.Core": "[1.0.0, )",
           "Headless.Core": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )"
+        }
+      },
+      "headless.blobs.multitenancy": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Blobs.Abstractions": "[1.0.0, )",
+          "Headless.Blobs.Core": "[1.0.0, )",
+          "Headless.Core": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.MultiTenancy": "[1.0.0, )"
         }
       },
       "headless.blobs.signedurlendpoint": {
@@ -578,7 +585,6 @@
         "dependencies": {
           "Headless.Caching.Abstractions": "[1.0.0, )",
           "Headless.Checks": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )"

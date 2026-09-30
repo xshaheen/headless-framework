@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,8 +26,6 @@ internal static class BlobSignedUrlEndpoint
         {
             return Results.NotFound();
         }
-
-        using var bypass = _BeginTenantScopeBypass(context.RequestServices);
 
         var download = await storage.OpenReadStreamAsync(grant.Location, context.RequestAborted);
 
@@ -68,8 +65,6 @@ internal static class BlobSignedUrlEndpoint
         {
             return Results.NotFound();
         }
-
-        using var bypass = _BeginTenantScopeBypass(context.RequestServices);
 
         var request = context.Request;
 
@@ -149,21 +144,16 @@ internal static class BlobSignedUrlEndpoint
         return path[(path.LastIndexOf('/') + 1)..];
     }
 
-    /// <summary>
-    /// A grant carries the physical location the store resolved when the URL was minted, already rewritten by
-    /// tenant-scoped storage, and its signature is the authorization. Scoping it again under whatever tenant the
-    /// request carries would prefix the tenant twice, or refuse an anonymous request outright.
-    /// </summary>
-    private static IDisposable? _BeginTenantScopeBypass(IServiceProvider services)
-    {
-        return services.GetService<ITenantStorageScopeBypass>()?.BeginBypass();
-    }
-
     private static IBlobStorage? _ResolveStorage(IServiceProvider services, string? store)
     {
-        return store is null
+        var storage = store is null
             ? services.GetService<IBlobStorage>()
             : services.GetService<IBlobStorageProvider>()?.GetStorageOrNull(store);
+
+        // A grant carries the physical location the store resolved when the URL was minted, already rewritten by a
+        // scoped store such as tenant scoping, and its signature is the authorization. Scoping it again under whatever
+        // tenant the request carries would prefix the tenant twice, or refuse an anonymous request outright.
+        return storage is IScopedBlobStorage scoped ? scoped.Unscoped : storage;
     }
 
     private static bool _IsSameMediaType(string? actual, string expected)

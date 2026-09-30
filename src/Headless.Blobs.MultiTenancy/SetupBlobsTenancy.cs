@@ -28,71 +28,6 @@ public static class SetupBlobsTenancy
 
         return builder;
     }
-
-    /// <summary>
-    /// Wraps every <see cref="IBlobStorage"/> registration with tenant scoping once both the tenancy seam and
-    /// <c>AddHeadlessBlobs</c> have run, whichever runs last. Scoping is applied after the blob setup's cross-cutting
-    /// extensions, so it is the outermost decorator and rewrites a location before any capability decorator (the
-    /// signed-URL endpoint) sees it.
-    /// </summary>
-    internal static void ApplyTenantScoping(IServiceCollection services)
-    {
-        var state = services
-            .Where(static d => d.ServiceType == typeof(TenantBlobScopingState))
-            .Select(static d => d.ImplementationInstance)
-            .OfType<TenantBlobScopingState>()
-            .FirstOrDefault();
-
-        if (state?.Applied != false)
-        {
-            return;
-        }
-
-        state.Applied = true;
-
-        if (services.TryDecorate<IBlobStorage>((inner, provider) => _Wrap(inner, store: null, provider)))
-        {
-            state.ScopedRegistrations++;
-        }
-
-        var storeNames = services
-            .Where(static d => d.IsKeyedService && d.ServiceType == typeof(IBlobStorage))
-            .Select(static d => d.ServiceKey)
-            .OfType<string>()
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-
-        // Keyed IPresignedUrlBlobStorage forwards resolve the keyed IBlobStorage, so they reach the scoped wrapper
-        // without being decorated themselves.
-        foreach (var name in storeNames)
-        {
-            if (services.TryDecorateKeyed<IBlobStorage>(name, (inner, provider) => _Wrap(inner, name, provider)))
-            {
-                state.ScopedRegistrations++;
-            }
-        }
-    }
-
-    private static IBlobStorage _Wrap(IBlobStorage inner, string? store, IServiceProvider provider)
-    {
-        var options = provider.GetRequiredService<IOptions<TenantBlobScopingOptions>>().Value;
-
-        if (store is not null && options.UnscopedStores.Contains(store))
-        {
-            return inner;
-        }
-
-        var scope = new TenantBlobScope(
-            options.Strategy,
-            options.ContainerPrefix,
-            provider.GetRequiredService<ICurrentTenant>(),
-            provider.GetRequiredService<ITenantStorageScopeBypass>()
-        );
-
-        return inner is IPresignedUrlBlobStorage
-            ? new TenantScopedPresignedBlobStorage(inner, scope)
-            : new TenantScopedBlobStorage(inner, scope);
-    }
 }
 
 /// <summary>Records tenant posture for Headless blob storage.</summary>
@@ -132,9 +67,11 @@ public sealed class HeadlessBlobsTenancyBuilder
     /// <returns>The same blob tenancy builder.</returns>
     /// <remarks>
     /// <para>
-    /// Fails closed: an operation with no ambient tenant throws <see cref="MissingTenantContextException"/> unless
-    /// <see cref="ITenantStorageScopeBypass"/> is active, in which case it passes through unchanged. A tenant id that
-    /// cannot be one storage segment is refused with <see cref="InvalidOperationException"/>.
+    /// Fails closed: an operation with no ambient tenant throws <see cref="MissingTenantContextException"/>, and a
+    /// tenant id that cannot be one storage segment is refused with <see cref="InvalidOperationException"/>. Blobs
+    /// every tenant shares belong in a named store listed in <see cref="TenantBlobScopingOptions.UnscopedStores"/>.
+    /// A scoped store implements <see cref="IScopedBlobStorage"/>, whose <see cref="IScopedBlobStorage.Unscoped"/>
+    /// addresses physical locations.
     /// </para>
     /// <para>
     /// The call order relative to <c>AddHeadlessBlobs</c> does not matter. Stores registered outside
@@ -153,11 +90,12 @@ public sealed class HeadlessBlobsTenancyBuilder
         // Messaging, and Jobs register.
         services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
         services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
-        services.TryAddSingleton<ITenantStorageScopeBypass>(TenantStorageScopeBypass.Instance);
 
         if (!services.Any(static d => d.ServiceType == typeof(TenantBlobScopingState)))
         {
-            services.AddSingleton(new TenantBlobScopingState());
+            var state = new TenantBlobScopingState(new BlobStorageDecoration(_Wrap));
+            services.AddSingleton(state);
+            services.DecorateHeadlessBlobs(state.Decoration);
         }
 
         services.TryAddEnumerable(
@@ -165,23 +103,34 @@ public sealed class HeadlessBlobsTenancyBuilder
         );
         _builder.RecordSeam(Seam, TenantPostureStatus.Guarded, ScopeByTenantCapability);
 
-        // When AddHeadlessBlobs already ran, its stores are registered and are scoped now; otherwise AddHeadlessBlobs
-        // applies the scoping itself once its providers are registered.
-        if (SetupBlobsCore.IsRegistered(services))
+        return this;
+    }
+
+    private static IBlobStorage _Wrap(IBlobStorage inner, string? store, IServiceProvider provider)
+    {
+        var options = provider.GetRequiredService<IOptions<TenantBlobScopingOptions>>().Value;
+
+        if (store is not null && options.UnscopedStores.Contains(store))
         {
-            SetupBlobsTenancy.ApplyTenantScoping(services);
+            return inner;
         }
 
-        return this;
+        var scope = new TenantBlobScope(
+            options.Strategy,
+            options.ContainerPrefix,
+            provider.GetRequiredService<ICurrentTenant>()
+        );
+
+        return inner is IPresignedUrlBlobStorage
+            ? new TenantScopedPresignedBlobStorage(inner, scope)
+            : new TenantScopedBlobStorage(inner, scope);
     }
 }
 
-/// <summary>Registration-time record of whether blob stores were wrapped with tenant scoping.</summary>
-internal sealed class TenantBlobScopingState
+/// <summary>Holds the decoration the blob seam registered, so startup validation can tell whether it wrapped a store.</summary>
+internal sealed class TenantBlobScopingState(BlobStorageDecoration decoration)
 {
-    public bool Applied { get; set; }
-
-    public int ScopedRegistrations { get; set; }
+    public BlobStorageDecoration Decoration { get; } = decoration;
 }
 
 /// <summary>
@@ -201,7 +150,7 @@ internal sealed class BlobsTenantScopingStartupValidator(TenantBlobScopingState 
                 ?.Capabilities.Contains(HeadlessBlobsTenancyBuilder.ScopeByTenantCapability, StringComparer.Ordinal)
             == true;
 
-        if (!recorded || state.ScopedRegistrations > 0)
+        if (!recorded || state.Decoration.DecoratedRegistrations > 0)
         {
             yield break;
         }

@@ -17,13 +17,15 @@ namespace Headless.Blobs;
 /// It wraps the store rather than scoping inside each provider so that one implementation covers every provider and
 /// every capability decorator (the signed-URL endpoint) underneath it.
 /// </remarks>
-internal class TenantScopedBlobStorage(IBlobStorage inner, TenantBlobScope scope) : IBlobStorage
+internal class TenantScopedBlobStorage(IBlobStorage inner, TenantBlobScope scope) : IScopedBlobStorage
 {
     private int _disposed;
 
     protected IBlobStorage Inner { get; } = inner;
 
     protected TenantBlobScope Scope { get; } = scope;
+
+    public IBlobStorage Unscoped => Inner;
 
     public bool RequiresContainerProvisioning => Inner.RequiresContainerProvisioning;
 
@@ -48,10 +50,7 @@ internal class TenantScopedBlobStorage(IBlobStorage inner, TenantBlobScope scope
     {
         Argument.IsNotNull(blobs);
 
-        if (Scope.Resolve(container) is not { } scoped)
-        {
-            return await Inner.BulkUploadAsync(container, blobs, cancellationToken).ConfigureAwait(false);
-        }
+        var scoped = Scope.Resolve(container);
 
         var results = new List<BlobBulkResult>(blobs.Count);
         var forwarded = new List<BlobUploadRequest>(blobs.Count);
@@ -93,10 +92,7 @@ internal class TenantScopedBlobStorage(IBlobStorage inner, TenantBlobScope scope
     {
         Argument.IsNotNull(paths);
 
-        if (Scope.Resolve(container) is not { } scoped)
-        {
-            return await Inner.BulkDeleteAsync(container, paths, cancellationToken).ConfigureAwait(false);
-        }
+        var scoped = Scope.Resolve(container);
 
         var results = new List<BlobBulkResult>(paths.Count);
         var forwarded = new List<string>(paths.Count);
@@ -163,10 +159,7 @@ internal class TenantScopedBlobStorage(IBlobStorage inner, TenantBlobScope scope
         CancellationToken cancellationToken = default
     )
     {
-        if (Scope.Resolve(location.Container) is not { } scoped)
-        {
-            return await Inner.OpenReadStreamAsync(location, cancellationToken).ConfigureAwait(false);
-        }
+        var scoped = Scope.Resolve(location.Container);
 
         var result = await Inner.OpenReadStreamAsync(scoped.Apply(location), cancellationToken).ConfigureAwait(false);
 
@@ -192,10 +185,7 @@ internal class TenantScopedBlobStorage(IBlobStorage inner, TenantBlobScope scope
         CancellationToken cancellationToken = default
     )
     {
-        if (Scope.Resolve(location.Container) is not { } scoped)
-        {
-            return await Inner.GetBlobInfoAsync(location, cancellationToken).ConfigureAwait(false);
-        }
+        var scoped = Scope.Resolve(location.Container);
 
         var info = await Inner.GetBlobInfoAsync(scoped.Apply(location), cancellationToken).ConfigureAwait(false);
 
@@ -210,10 +200,7 @@ internal class TenantScopedBlobStorage(IBlobStorage inner, TenantBlobScope scope
     {
         Argument.IsNotNull(query);
 
-        if (Scope.Resolve(query.Container) is not { } scoped)
-        {
-            return await Inner.ListAsync(query, cancellationToken).ConfigureAwait(false);
-        }
+        var scoped = Scope.Resolve(query.Container);
 
         var page = await Inner.ListAsync(scoped.Apply(query), cancellationToken).ConfigureAwait(false);
 
@@ -292,8 +279,7 @@ internal sealed class TenantScopedPresignedBlobStorage(IBlobStorage inner, Tenan
 internal sealed partial class TenantBlobScope(
     TenantBlobScopingStrategy strategy,
     string containerPrefix,
-    ICurrentTenant currentTenant,
-    ITenantStorageScopeBypass bypass
+    ICurrentTenant currentTenant
 )
 {
     /// <summary>The longest container name S3, R2, and Azure accept; longer names are truncated by their normalizers.</summary>
@@ -301,24 +287,16 @@ internal sealed partial class TenantBlobScope(
 
     private const int _MinContainerNameLength = 3;
 
-    /// <summary>
-    /// Resolves the scope for <paramref name="container"/>, or <see langword="null"/> when a bypass is active and the
-    /// operation must pass through unchanged.
-    /// </summary>
+    /// <summary>Resolves the physical container and key prefix for <paramref name="container"/>.</summary>
     /// <exception cref="ArgumentException"><paramref name="container"/> is not a valid container.</exception>
-    /// <exception cref="MissingTenantContextException">No bypass is active and no ambient tenant is set.</exception>
+    /// <exception cref="MissingTenantContextException">No ambient tenant is set.</exception>
     /// <exception cref="InvalidOperationException">The ambient tenant id cannot be used as a storage segment.</exception>
-    public ScopedContainer? Resolve(string container)
+    public ScopedContainer Resolve(string container)
     {
-        // Validate before the bypass check so an invalid container fails the same way scoped or not; under
-        // ContainerPerTenant the container never reaches a provider as a container, so nothing else would check it.
+        // Under ContainerPerTenant the container never reaches a provider as a container, so nothing else would
+        // validate it.
         Argument.IsNotNullOrWhiteSpace(container);
         PathValidation.ValidatePathSegment(container);
-
-        if (bypass.IsActive)
-        {
-            return null;
-        }
 
         var tenantId = currentTenant.Id;
 
@@ -326,8 +304,8 @@ internal sealed partial class TenantBlobScope(
         {
             throw new MissingTenantContextException(
                 "Tenant-scoped blob storage was used with no ambient tenant. Wrap the call in "
-                    + "ICurrentTenant.Change(tenantId), or use ITenantStorageScopeBypass.BeginBypass() for an "
-                    + "intentional host-level blob."
+                    + "ICurrentTenant.Change(tenantId), or keep host-level blobs in a store listed in "
+                    + "TenantBlobScopingOptions.UnscopedStores."
             );
         }
 
@@ -338,14 +316,14 @@ internal sealed partial class TenantBlobScope(
 
     public BlobLocation Apply(BlobLocation location)
     {
-        return Resolve(location.Container) is { } scoped ? scoped.Apply(location) : location;
+        return Resolve(location.Container).Apply(location);
     }
 
     public BlobQuery Apply(BlobQuery query)
     {
         Argument.IsNotNull(query);
 
-        return Resolve(query.Container) is { } scoped ? scoped.Apply(query) : query;
+        return Resolve(query.Container).Apply(query);
     }
 
     private static string _TenantSegment(string tenantId)
