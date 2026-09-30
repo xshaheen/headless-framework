@@ -13,11 +13,8 @@ builder.Services.AddDbContext<AppDbContext>(opt => opt.UseNpgsql(AppConstants.Db
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.Queue.ForMessage<KafkaMessage>(message =>
-        message
-            .Contract("sample.kafka.postgrsql")
-            .Consumer<KafkaMessageConsumer>(consumer => consumer.ConsumerIdentity("kafka-postgresql.message"))
-    );
+    setup.AddModule<Headless.Messaging.Kafka.PostgreSql.Demo.MessagingModule>();
+    setup.WithMessageNameMapping<KafkaMessage>("sample.kafka.postgrsql");
 
     //setup.UseEntityFramework<AppDbContext>();
     //docker run --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=mysecretpassword -d postgres

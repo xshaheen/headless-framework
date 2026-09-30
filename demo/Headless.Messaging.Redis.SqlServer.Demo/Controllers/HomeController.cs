@@ -29,6 +29,7 @@ public class Person
     }
 }
 
+[QueueConsumer("redis-sqlserver.person")]
 public sealed class PersonConsumer(ILogger<PersonConsumer> logger) : IConsume<Person>
 {
     public ValueTask ConsumeAsync(ConsumeContext<Person> context, CancellationToken cancellationToken)

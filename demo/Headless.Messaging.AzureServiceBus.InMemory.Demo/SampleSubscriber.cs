@@ -4,6 +4,7 @@ namespace Demo;
 
 public record SampleMessage(string Content);
 
+[BusConsumer("azure-service-bus.sample")]
 public sealed class SampleSubscriber : IConsume<SampleMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<SampleMessage> context, CancellationToken cancellationToken)

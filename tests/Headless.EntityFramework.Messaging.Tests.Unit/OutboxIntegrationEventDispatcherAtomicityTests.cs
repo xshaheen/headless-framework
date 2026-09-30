@@ -57,8 +57,8 @@ public sealed class OutboxIntegrationEventDispatcherAtomicityTests : TestBase
             {
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
-                setup.Bus.ForMessage<OutboxOrderPlaced>(message => message.Contract("order-placed"));
             });
+            services.ConfigureMessaging(messaging => messaging.Message<OutboxOrderPlaced>("order-placed"));
 
             services.AddHeadlessDbContextServices().AddIntegrationEventOutbox();
         });

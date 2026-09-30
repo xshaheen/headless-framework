@@ -7,6 +7,7 @@ using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Tests.Helpers;
 
 namespace Tests;
 
@@ -108,16 +109,12 @@ public static class ReceiveMiddlewareOutcomeConformance
             configureTransport(setup);
             configureStorage(setup);
             setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
-            setup.Options.DefaultGroupName = "conformance-accept-group";
             setup.Options.Version = "v1";
-
-            setup.Bus.ForMessage<ConformanceReceiveMessage>(message =>
-                message
-                    .Contract("conformance.receive.accept")
-                    .Consumer<ConformanceReceiveConsumer>(consumer =>
-                        consumer.ConsumerIdentity("tests.conformance.accept").Group("conformance-accept-group")
-                    )
-            );
+        });
+        services.ConfigureMessaging(messaging =>
+        {
+            messaging.Message<ConformanceReceiveMessage>("conformance.receive.accept");
+            messaging.AddModule<ConformanceAcceptReceiveModule>();
         });
 
         messagingBuilder.AddReceiveMiddleware<ConformanceAcceptReceiveMiddleware>();
@@ -178,16 +175,12 @@ public static class ReceiveMiddlewareOutcomeConformance
             configureTransport(setup);
             configureStorage(setup);
             setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
-            setup.Options.DefaultGroupName = "conformance-skip-group";
             setup.Options.Version = "v1";
-
-            setup.Bus.ForMessage<ConformanceReceiveMessage>(message =>
-                message
-                    .Contract("conformance.receive.skip")
-                    .Consumer<ConformanceReceiveConsumer>(consumer =>
-                        consumer.ConsumerIdentity("tests.conformance.skip").Group("conformance-skip-group")
-                    )
-            );
+        });
+        services.ConfigureMessaging(messaging =>
+        {
+            messaging.Message<ConformanceReceiveMessage>("conformance.receive.skip");
+            messaging.AddModule<ConformanceSkipReceiveModule>();
         });
 
         messagingBuilder.AddReceiveMiddleware<ConformanceSkipReceiveMiddleware>();
@@ -237,21 +230,17 @@ public static class ReceiveMiddlewareOutcomeConformance
             configureTransport(setup);
             configureStorage(setup);
             setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
-            setup.Options.DefaultGroupName = "conformance-reject-group";
             setup.Options.Version = "v1";
             setup.Options.RetryPolicy.OnExhausted = (_, _) =>
             {
                 onExhaustedTcs.TrySetResult(true);
                 return Task.CompletedTask;
             };
-
-            setup.Bus.ForMessage<ConformanceReceiveMessage>(message =>
-                message
-                    .Contract("conformance.receive.reject")
-                    .Consumer<ConformanceReceiveConsumer>(consumer =>
-                        consumer.ConsumerIdentity("tests.conformance.reject").Group("conformance-reject-group")
-                    )
-            );
+        });
+        services.ConfigureMessaging(messaging =>
+        {
+            messaging.Message<ConformanceReceiveMessage>("conformance.receive.reject");
+            messaging.AddModule<ConformanceRejectReceiveModule>();
         });
 
         messagingBuilder.AddReceiveMiddleware<ConformanceRejectReceiveMiddleware>();
@@ -311,16 +300,12 @@ public static class ReceiveMiddlewareOutcomeConformance
             configureTransport(setup);
             configureStorage(setup);
             setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
-            setup.Options.DefaultGroupName = "conformance-cancel-group";
             setup.Options.Version = "v1";
-
-            setup.Bus.ForMessage<ConformanceReceiveMessage>(message =>
-                message
-                    .Contract("conformance.receive.cancel")
-                    .Consumer<ConformanceReceiveConsumer>(consumer =>
-                        consumer.ConsumerIdentity("tests.conformance.cancel").Group("conformance-cancel-group")
-                    )
-            );
+        });
+        services.ConfigureMessaging(messaging =>
+        {
+            messaging.Message<ConformanceReceiveMessage>("conformance.receive.cancel");
+            messaging.AddModule<ConformanceCancelReceiveModule>();
         });
 
         messagingBuilder.AddReceiveMiddleware<ConformanceCancelReceiveMiddleware>();
@@ -347,4 +332,40 @@ public static class ReceiveMiddlewareOutcomeConformance
         stats.ReceivedSucceeded.Should().Be(0);
         stats.ReceivedFailed.Should().Be(0);
     }
+}
+
+public sealed class ConformanceAcceptReceiveModule : IMessagingModule
+{
+    public static void Register(MessagingCatalogBuilder catalog) =>
+        ConformanceReceiveModules.Register(catalog, "tests.conformance.accept");
+}
+
+public sealed class ConformanceSkipReceiveModule : IMessagingModule
+{
+    public static void Register(MessagingCatalogBuilder catalog) =>
+        ConformanceReceiveModules.Register(catalog, "tests.conformance.skip");
+}
+
+public sealed class ConformanceRejectReceiveModule : IMessagingModule
+{
+    public static void Register(MessagingCatalogBuilder catalog) =>
+        ConformanceReceiveModules.Register(catalog, "tests.conformance.reject");
+}
+
+public sealed class ConformanceCancelReceiveModule : IMessagingModule
+{
+    public static void Register(MessagingCatalogBuilder catalog) =>
+        ConformanceReceiveModules.Register(catalog, "tests.conformance.cancel");
+}
+
+// Each outcome runs in its own host under its own identity, so every outcome gets a module of its own.
+internal static class ConformanceReceiveModules
+{
+    public static void Register(MessagingCatalogBuilder catalog, string identity) =>
+        catalog.AddBusConsumer<ConformanceReceiveConsumer, ConformanceReceiveMessage>(
+            identity,
+            everyInstance: false,
+            policy: null,
+            TestConsumerDispatch.FromServices<ConformanceReceiveConsumer, ConformanceReceiveMessage>()
+        );
 }

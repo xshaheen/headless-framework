@@ -2,6 +2,7 @@ using Headless.Messaging;
 
 namespace Demo.Messages;
 
+[BusConsumer("rabbitmq-sqlserver.slow-processing")]
 public class XSlowProcessingReceiver(ILogger<XSlowProcessingReceiver> logger) : IConsume<TestMessage>
 {
     public async ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)

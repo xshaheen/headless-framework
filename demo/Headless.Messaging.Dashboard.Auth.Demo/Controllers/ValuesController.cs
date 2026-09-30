@@ -28,6 +28,7 @@ public sealed class ValuesController(IBus publisher) : Controller
     }
 }
 
+[BusConsumer("dashboard-auth.person")]
 public sealed class PersonConsumer(ILogger<PersonConsumer> logger) : IConsume<ValuesController.Person>
 {
     public ValueTask ConsumeAsync(ConsumeContext<ValuesController.Person> context, CancellationToken cancellationToken)

@@ -9,13 +9,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddLogging(l => l.AddConsole());
 
+builder.Services.ConfigureMessaging(messaging => messaging.Message<SampleMessage>("messaging.sample.tests"));
+
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.Bus.ForMessage<SampleMessage>(message =>
-        message
-            .Contract("messaging.sample.tests")
-            .Consumer<SampleSubscriber>(consumer => consumer.ConsumerIdentity("azure-service-bus.sample"))
-    );
+    setup.AddModule<Headless.Messaging.AzureServiceBus.InMemory.Demo.MessagingModule>();
     setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
     setup.UseInMemoryStorage();
     setup.UseAzureServiceBus(asb =>

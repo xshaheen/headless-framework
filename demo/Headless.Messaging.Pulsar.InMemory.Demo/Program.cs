@@ -8,10 +8,7 @@ var pulsarUri = builder.Configuration.GetValue("AppSettings:PulsarUri", "pulsar:
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.Bus.ForConsumersFromAssembly(
-        typeof(Program).Assembly,
-        static (_, consumer) => consumer.ConsumerIdentity("pulsar-demo.message")
-    );
+    setup.AddModule<Headless.Messaging.Pulsar.InMemory.Demo.MessagingModule>();
     setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
     setup.UseInMemoryStorage();
     setup.UsePulsar(pulsarUri);
