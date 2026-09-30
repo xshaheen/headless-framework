@@ -32,6 +32,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using OpenTelemetry;
 using OpenTelemetry.Instrumentation.AspNetCore;
@@ -350,6 +351,11 @@ public static class SetupApi
             {
                 logging.IncludeFormattedMessage = true;
                 logging.IncludeScopes = true;
+                // Added before the user hook and UseOtlpExporter so every exporter sees the tenant attribute.
+                logging.AddProcessor(sp => new TenantLogRecordProcessor(
+                    sp.GetRequiredService<ICurrentTenant>(),
+                    sp.GetRequiredService<IOptions<TenantTelemetryOptions>>().Value
+                ));
                 options.OpenTelemetry.ConfigureLogging?.Invoke(logging);
             });
 
@@ -420,7 +426,11 @@ public static class SetupApi
                         .AddSource(builder.Environment.ApplicationName)
                         .AddAspNetCoreInstrumentation()
                         .AddHttpClientInstrumentation()
-                        .AddSource(_HeadlessWildcardSourceName);
+                        .AddSource(_HeadlessWildcardSourceName)
+                        .AddProcessor(sp => new TenantActivityProcessor(
+                            sp.GetRequiredService<ICurrentTenant>(),
+                            sp.GetRequiredService<IOptions<TenantTelemetryOptions>>().Value
+                        ));
 
                     options.OpenTelemetry.ConfigureTracing?.Invoke(tracing);
                 });

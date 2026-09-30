@@ -27,7 +27,7 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
         await using var second = await locks.AcquireAsync(resource, cancellationToken: AbortToken);
 
         firstToken.Should().NotBeNull();
-        second.FencingToken.Should().BeGreaterThan(firstToken!.Value);
+        second.FencingToken!.Value.Should().BeGreaterThan(firstToken!.Value);
     }
 
     [Fact]

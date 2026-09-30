@@ -111,7 +111,7 @@ public static class UnitOfWorkFactorySqlServerExtensions
             Argument.IsNotNull(operation);
 
             return UnitOfWorkRunner.RunAsync(
-                connection.UnitOfWork(),
+                () => DbConnectionUnitOfWorkBinding.TryGetAsync(connection),
                 ct =>
                     BoundConnectionUnitOfWork.BeginAsync(
                         factory,
@@ -125,6 +125,7 @@ public static class UnitOfWorkFactorySqlServerExtensions
 
                     return true;
                 },
+                NoReplayUnitOfWorkExecutionStrategy.Instance,
                 UnitOfWorkRunner.LoggerFor(factory),
                 cancellationToken
             );
@@ -156,7 +157,7 @@ public static class UnitOfWorkFactorySqlServerExtensions
             Argument.IsNotNull(operation);
 
             return UnitOfWorkRunner.RunAsync(
-                connection.UnitOfWork(),
+                () => DbConnectionUnitOfWorkBinding.TryGetAsync(connection),
                 ct =>
                     BoundConnectionUnitOfWork.BeginAsync(
                         factory,
@@ -165,6 +166,7 @@ public static class UnitOfWorkFactorySqlServerExtensions
                         ct
                     ),
                 operation,
+                NoReplayUnitOfWorkExecutionStrategy.Instance,
                 UnitOfWorkRunner.LoggerFor(factory),
                 cancellationToken
             );

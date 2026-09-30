@@ -43,13 +43,15 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
 
     public HeadlessSqlServerFixture()
     {
-        // Per-project reuse label so each integration project reuses its OWN container instead of colliding on
-        // the shared `master` database under parallel module execution. See ReuseLabel for the keying rationale.
+        // Per-project, per-checkout reuse labels so each integration project in each checkout reuses its OWN container
+        // instead of colliding on the shared `master` database under parallel module execution or across worktrees.
+        // See ReuseLabel for the keying rationale.
         _container = new ContainerBuilder(_Image)
             .WithPortBinding(1433, assignRandomHostPort: true)
             .WithEnvironment("ACCEPT_EULA", "Y")
             .WithEnvironment("MSSQL_SA_PASSWORD", _Password)
             .WithLabel(ReuseLabel.Key, ReuseLabel.For(this))
+            .WithLabel(ReuseLabel.CheckoutKey, ReuseLabel.Checkout)
             .WithReuse(true)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("SQL Server is now ready"))
             .Build();

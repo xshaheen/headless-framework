@@ -166,7 +166,7 @@ internal static class MessagingMetrics
         MessagingInboxCapabilityTier tier,
         string provider,
         string? tenantId = null,
-        bool includeTenantId = false
+        string? tenantTagName = null
     )
     {
         var instrument = kind switch
@@ -193,9 +193,9 @@ internal static class MessagingMetrics
             { MessagingTags.InboxTier, tier.ToString("G") },
             { MessagingTags.InboxProvider, provider },
         };
-        if (includeTenantId && tenantId is not null)
+        if (tenantTagName is not null && tenantId is not null)
         {
-            tags.Add(MessagingTags.TenantId, tenantId);
+            tags.Add(tenantTagName, tenantId);
         }
 
         instrument.Add(1, tags);
@@ -476,4 +476,6 @@ internal enum InboxMetricOutcome
     Expired = 13,
 }
 
-internal sealed record InboxMetricPolicy(bool IncludeTenantId);
+/// <summary>How inbox measurements treat the tenant dimension, resolved once from the host configuration.</summary>
+/// <param name="TenantTagName">The tenant attribute to add to inbox measurements, or <see langword="null"/> to omit it.</param>
+internal sealed record InboxMetricPolicy(string? TenantTagName);

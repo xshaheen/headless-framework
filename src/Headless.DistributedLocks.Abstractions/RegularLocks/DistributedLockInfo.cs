@@ -26,7 +26,7 @@ public sealed record DistributedLockInfo
     /// backends whose fence is stored separately (for example Redis); the live token is delivered on
     /// the acquire handle's <see cref="IDistributedLease.FencingToken"/>.
     /// </remarks>
-    public long? FencingToken { get; init; }
+    public LockFencingToken? FencingToken { get; init; }
 
     /// <summary>Remaining time until the lock expires, or null if no expiration.</summary>
     public TimeSpan? TimeToLive { get; init; }

@@ -76,6 +76,7 @@ Headless.FluentValidation
 Headless.Generator.Primitives
 Headless.Generator.Primitives.Abstractions
 Headless.Hosting
+Headless.Http.Resilience
 Headless.Idempotency.Abstractions
 Headless.Idempotency.Caching
 Headless.Idempotency.Core

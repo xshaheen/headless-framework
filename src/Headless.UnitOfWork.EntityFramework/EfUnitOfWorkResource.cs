@@ -54,16 +54,21 @@ internal sealed class EfUnitOfWorkResource(DbContext db, IDbContextTransaction t
             return;
         }
 
-        if (IsTransactionCompleted)
+        try
         {
-            // The transaction already finished (a race with the caller, or a second rollback attempt); a
-            // dispose of a finished IDbContextTransaction is safe, a rollback of one is not.
-            await transaction.DisposeAsync().ConfigureAwait(false);
-
-            return;
+            // The transaction may already have finished (a race with the caller, or a second rollback attempt);
+            // a dispose of a finished IDbContextTransaction is safe, a rollback of one is not.
+            if (!IsTransactionCompleted)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            }
         }
-
-        await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-        await transaction.DisposeAsync().ConfigureAwait(false);
+        finally
+        {
+            // Always: the dispose is what clears the context's CurrentTransaction. A rollback that throws on a
+            // broken connection would otherwise leave the dead transaction on the context, and a replaying
+            // RunAsync would then refuse its next begin as "already has an active transaction".
+            await transaction.DisposeAsync().ConfigureAwait(false);
+        }
     }
 }

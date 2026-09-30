@@ -32,7 +32,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         // given
         var resource = Faker.Random.AlphaNumeric(10);
         var leaseId = Faker.Random.Guid().ToString();
-        var fencingToken = Faker.Random.Long(1);
+        var fencingToken = new LockFencingToken(Faker.Random.Long(1));
 
         // when
         await using var sut = _CreateLock(resource, leaseId, fencingToken: fencingToken);
@@ -494,7 +494,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         TimeSpan? timeWaitedForLock = null,
         bool releaseOnDispose = true,
         bool autoExtend = false,
-        long? fencingToken = null,
+        LockFencingToken? fencingToken = null,
         Action<string, string>? deregisterMonitor = null
     )
     {
