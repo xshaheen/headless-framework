@@ -99,10 +99,11 @@ Each provider returns one of three states per permission:
 
 ### Reacting to a change
 
-`PermissionManager` publishes `PermissionGrantChangedMessage` over `IBus` after a successful `SetAsync` or `DeleteAsync`. The message tells an instance that a copied grant decision is stale, so the instance can re-read instead of polling. Consume it like any other message:
+`PermissionManager` publishes `PermissionGrantChangedMessage` over `IBus` after a successful `SetAsync` or `DeleteAsync`. The message tells an instance that a copied grant decision is stale, so the instance can re-read instead of polling. The state it refreshes lives in each process, so consume it with an [every-instance consumer](messaging.md#every-instance-bus-delivery): every process receives every announcement instead of one replica taking the only copy. Delivery is at most once, so reload after a gap in the subscription too:
 
 ```csharp
-public sealed class ReloadRolePermissions(MyPolicyCache cache) : IConsume<PermissionGrantChangedMessage>
+[BusConsumer("app.reload-role-permissions", EveryInstance = true)]
+public sealed class ReloadRolePermissions(MyPolicyCache cache) : IConsume<PermissionGrantChangedMessage>, IOnSubscriptionEstablished
 {
     public async ValueTask ConsumeAsync(ConsumeContext<PermissionGrantChangedMessage> context, CancellationToken ct)
     {
@@ -118,6 +119,15 @@ public sealed class ReloadRolePermissions(MyPolicyCache cache) : IConsume<Permis
         }
 
         if (message.PermissionNames.Any(cache.Tracks))
+        {
+            await cache.ReloadAsync(ct);
+        }
+    }
+
+    // Announcements published while this process was not subscribed never arrive.
+    public async ValueTask OnSubscriptionEstablishedAsync(SubscriptionEstablishedContext context, CancellationToken ct)
+    {
+        if (context.IsReconnect)
         {
             await cache.ReloadAsync(ct);
         }

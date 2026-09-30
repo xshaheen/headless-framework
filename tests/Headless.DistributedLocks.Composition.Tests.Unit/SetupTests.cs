@@ -3,7 +3,6 @@
 using System.Collections.Concurrent;
 using Headless.DistributedLocks;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Runtime;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,7 +13,7 @@ namespace Tests;
 public sealed class SetupTests : TestBase
 {
     [Fact]
-    public void should_auto_register_lock_released_consumer_even_without_messaging()
+    public void should_contribute_only_an_inert_module_when_messaging_is_absent()
     {
         // given
         var services = new ServiceCollection();
@@ -24,38 +23,40 @@ public sealed class SetupTests : TestBase
         services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
-        // then
+        // then - the consumer is declared by the generated module and stays inert without messaging, so waiters fall
+        // back to polling
         provider.GetRequiredService<IDistributedLock>().Should().NotBeNull();
         provider.GetService<IBus>().Should().BeNull();
-        // Auto-registration is unconditional. The lock-release consumer descriptor is present even
-        // without messaging; without AddHeadlessMessaging it is inert (never drained / dispatched),
-        // so waiters fall back to polling.
-        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IConsume<DistributedLockReleased>));
-        _AssertInternalBusContribution(services);
+        services
+            .Should()
+            .Contain(static d =>
+                string.Equals(d.ServiceType.Name, "MessagingModuleContribution", StringComparison.Ordinal)
+            );
+        services.Should().NotContain(d => d.ServiceType == typeof(IConsume<DistributedLockReleased>));
     }
 
     [Fact]
-    public void should_register_lock_released_consumer_when_added_before_messaging()
+    public void should_register_an_every_instance_lock_released_consumer_when_added_before_messaging()
     {
         // given
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(Substitute.For<IBus>());
 
-        // when — register the lock provider BEFORE AddHeadlessMessaging.
+        // when
         services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
-        _AssertInternalBusContribution(services);
         services.AddHeadlessMessaging(_ => { });
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
-        provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
 
-        // then — the shared lock-release consumer is present in the consumer registry with the
-        // expected name, intent, and concurrency, with no explicit opt-in call.
+        // then - the release signal keeps its contract, and every process receives it because the waiters it wakes
+        // live in each process
         provider.GetRequiredService<IDistributedLock>().Should().NotBeNull();
-        var metadata = provider.GetRequiredService<IConsumerRegistry>().GetAll().Single();
-        metadata.ConsumerType.Should().Be<DistributedLock.LockReleasedConsumer>();
+        var metadata = _SingleLockReleasedConsumer(provider);
         metadata.MessageName.Should().Be("headless.locks.released");
+        metadata.MessageContractVersion.Should().Be("1");
+        metadata.ConsumerIdentity.Should().Be("headless.distributed-locks.release");
         metadata.Lane.Should().Be(MessageLane.Bus);
+        metadata.EveryInstance.Should().BeTrue();
         metadata.Concurrency.Should().Be(1);
     }
 
@@ -67,18 +68,14 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
         services.AddSingleton(Substitute.For<IBus>());
 
-        // when — the provider registers both lock and semaphore; they share one consumer via the
+        // when - the provider registers both lock and semaphore; they share one consumer via the
         // ICanReceiveLockReleased fan-out, so only a single registry entry must exist.
         services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
         services.AddHeadlessMessaging(_ => { });
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
-        provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
 
         // then
-        services
-            .Count(descriptor => descriptor.ServiceType == typeof(IConsume<DistributedLockReleased>))
-            .Should()
-            .Be(1);
+        _SingleLockReleasedConsumer(provider);
         provider.GetRequiredService<IConsumerRegistry>().GetAll().Should().ContainSingle();
     }
 
@@ -90,23 +87,12 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(_ => { });
 
-        // when — registering AFTER AddHeadlessMessaging still works; the captured registration is
-        // drained at messaging bootstrap, so registration order does not matter.
-        var act = () => services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
-        act.Should().NotThrow();
-        _AssertInternalBusContribution(services);
+        // when - the contribution is applied when messaging starts, so registration order does not matter
+        services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
-        provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
 
         // then
-        provider
-            .GetRequiredService<IConsumerRegistry>()
-            .GetAll()
-            .Should()
-            .ContainSingle(metadata =>
-                metadata.ConsumerType == typeof(DistributedLock.LockReleasedConsumer)
-                && metadata.Lane == MessageLane.Bus
-            );
+        _SingleLockReleasedConsumer(provider).EveryInstance.Should().BeTrue();
     }
 
     [Fact]
@@ -250,34 +236,15 @@ public sealed class SetupTests : TestBase
         }
     }
 
-    private static void _AssertInternalBusContribution(IServiceCollection services)
+    // Selecting candidates applies the recorded contributions to the registry, as the bootstrapper does at startup.
+    private static ConsumerMetadata _SingleLockReleasedConsumer(IServiceProvider provider)
     {
-        var contribution = services
-            .Single(descriptor =>
-                string.Equals(descriptor.ServiceType.Name, "MessageRegistration", StringComparison.Ordinal)
-            )
-            .ImplementationInstance;
-        contribution.Should().NotBeNull();
-        var contributionType = contribution!.GetType();
-
-        contributionType.IsPublic.Should().BeFalse();
-#pragma warning disable REFL009, REFL017 // The contribution type is intentionally internal; these names come from equivalent public contracts and are verified against the runtime type.
-        contributionType.GetProperty(nameof(PublishContext.Lane))!.GetValue(contribution).Should().Be(MessageLane.Bus);
-        contributionType
-            .GetProperty(nameof(ConsumerMetadata.MessageType))!
-            .GetValue(contribution)
+        provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
+        return provider
+            .GetRequiredService<IConsumerRegistry>()
+            .GetAll()
             .Should()
-            .Be(typeof(DistributedLockReleased));
-#pragma warning restore REFL009, REFL017
-        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(MessagingSetupBuilder));
-        services
-            .Should()
-            .NotContain(descriptor =>
-                string.Equals(
-                    descriptor.ServiceType.Name,
-                    "IMessagingRegistrationContributor",
-                    StringComparison.Ordinal
-                )
-            );
+            .ContainSingle(m => m.ConsumerType == typeof(DistributedLock.LockReleasedConsumer))
+            .Subject;
     }
 }
