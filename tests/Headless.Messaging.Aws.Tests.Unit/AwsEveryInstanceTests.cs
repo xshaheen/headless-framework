@@ -67,7 +67,7 @@ public sealed class AwsEveryInstanceTests : TestBase
         await act.Should()
             .ThrowAsync<MessagingConfigurationException>()
             .WithMessage($"*'{PriceCacheModule.Identity}'*every-instance*'Amazon SQS'*");
-        await clientFactory.DidNotReceiveWithAnyArgs().CreateAsync(default!, default);
+        await clientFactory.DidNotReceiveWithAnyArgs().CreateAsync(default!, AbortToken);
         effects.Should().Be(0);
     }
 

@@ -122,11 +122,17 @@ public sealed class AzureServiceBusEveryInstanceTests : TestBase
         await client.DisposeAsync();
 
         // then
-        await _admin.DidNotReceiveWithAnyArgs().SubscriptionExistsAsync(default!, default!, default);
-        await _admin.DidNotReceiveWithAnyArgs().CreateSubscriptionAsync(default(CreateSubscriptionOptions)!, default);
+        await _admin.DidNotReceiveWithAnyArgs().SubscriptionExistsAsync(default!, default!, AbortToken);
         await _admin
-            .DidNotReceiveWithAnyArgs()
-            .CreateSubscriptionAsync(default(CreateSubscriptionOptions)!, default(CreateRuleOptions)!, default);
+            .DidNotReceive()
+            .CreateSubscriptionAsync(Arg.Any<CreateSubscriptionOptions>(), Arg.Any<CancellationToken>());
+        await _admin
+            .DidNotReceive()
+            .CreateSubscriptionAsync(
+                Arg.Any<CreateSubscriptionOptions>(),
+                Arg.Any<CreateRuleOptions>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -159,7 +165,7 @@ public sealed class AzureServiceBusEveryInstanceTests : TestBase
                 Arg.Is<CreateRuleOptions>(rule => rule.Name == "RateChanged"),
                 Arg.Any<CancellationToken>()
             );
-        await _admin.DidNotReceiveWithAnyArgs().DeleteRuleAsync(default!, default!, default!, default);
+        await _admin.DidNotReceiveWithAnyArgs().DeleteRuleAsync(default!, default!, default!, AbortToken);
     }
 
     [Fact]
@@ -176,8 +182,12 @@ public sealed class AzureServiceBusEveryInstanceTests : TestBase
 
         // then
         await _admin
-            .DidNotReceiveWithAnyArgs()
-            .CreateSubscriptionAsync(default(CreateSubscriptionOptions)!, default(CreateRuleOptions)!, default);
+            .DidNotReceive()
+            .CreateSubscriptionAsync(
+                Arg.Any<CreateSubscriptionOptions>(),
+                Arg.Any<CreateRuleOptions>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -193,7 +203,7 @@ public sealed class AzureServiceBusEveryInstanceTests : TestBase
         await client.DisposeAsync();
 
         // then
-        await _admin.DidNotReceiveWithAnyArgs().DeleteSubscriptionAsync(default!, default!, default);
+        await _admin.DidNotReceiveWithAnyArgs().DeleteSubscriptionAsync(default!, default!, AbortToken);
 
         // when: the host disposes the container after the core stopped
         await factory.DisposeAsync();
@@ -235,7 +245,7 @@ public sealed class AzureServiceBusEveryInstanceTests : TestBase
 
         // then
         await act.Should().NotThrowAsync("Azure deletes an idle every-instance subscription on its own");
-        await _admin.ReceivedWithAnyArgs(2).DeleteSubscriptionAsync(default!, default!, default);
+        await _admin.ReceivedWithAnyArgs(2).DeleteSubscriptionAsync(default!, default!, AbortToken);
     }
 
     [Fact]
@@ -312,7 +322,7 @@ public sealed class AzureServiceBusEveryInstanceTests : TestBase
         );
 
         // then
-        await _admin.DidNotReceiveWithAnyArgs().SubscriptionExistsAsync(default!, default!, default);
+        await _admin.DidNotReceiveWithAnyArgs().SubscriptionExistsAsync(default!, default!, AbortToken);
     }
 
     [Theory]
