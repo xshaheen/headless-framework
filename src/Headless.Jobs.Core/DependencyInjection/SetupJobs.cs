@@ -303,9 +303,9 @@ public static class SetupJobs
     // Middleware identity strings mirror the source generator's `{assembly}:{fully-qualified-type}` shape so the frozen
     // registry orders the hand-registered tenancy middleware deterministically alongside generated declarations.
     private const string _TenancyScheduleMiddlewareIdentity =
-        "Headless.Jobs.Core:Headless.Jobs.MultiTenancy.TenantPropagationScheduleMiddleware";
+        JobsCatalogBuilder.FrameworkSource + ":Headless.Jobs.MultiTenancy.TenantPropagationScheduleMiddleware";
     private const string _TenancyExecuteMiddlewareIdentity =
-        "Headless.Jobs.Core:Headless.Jobs.MultiTenancy.TenantRestoreExecuteMiddleware";
+        JobsCatalogBuilder.FrameworkSource + ":Headless.Jobs.MultiTenancy.TenantRestoreExecuteMiddleware";
 
     // Hand-written dispatch: resolve the middleware from the bounded scope and no-op (call next) when it is absent, so
     // JobsManager's EmptyServiceProvider unit path and any host that never registered the middleware type stay a no-op.

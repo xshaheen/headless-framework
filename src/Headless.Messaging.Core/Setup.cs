@@ -372,14 +372,11 @@ public static class SetupMessaging
             contractVersions.TryAdd((registration.MessageType, registration.Lane), registration.ContractVersion);
         }
 
-        return catalog.Consumers.Select(consumer => new MessageRegistration(
-            consumer.MessageType,
-            consumer.Lane,
-            MessageName: null,
-            CorrelationSelector: null,
-            ProviderConfigs: new Dictionary<Type, object>(),
-            Consumers:
-            [
+        return catalog.Consumers.Select(consumer =>
+            MessageRegistration.ConsumerOnly(
+                consumer.MessageType,
+                consumer.Lane,
+                messageName: null,
                 new MessageConsumerRegistration(
                     consumer.ConsumerType,
                     consumer.Lane,
@@ -397,13 +394,12 @@ public static class SetupMessaging
                     FailurePolicy = consumer.Policy,
                     DeclaringModule = consumer.Source,
                 },
-            ],
-            ContractVersion: contractVersions.GetValueOrDefault(
-                (consumer.MessageType, consumer.Lane),
-                MessageOptions.InitialContractVersion
-            ),
-            DeclaresMessage: false
-        ));
+                contractVersions.GetValueOrDefault(
+                    (consumer.MessageType, consumer.Lane),
+                    MessageOptions.InitialContractVersion
+                )
+            )
+        );
     }
 
     /// <summary>

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Immutable;
-using System.Text;
 using Headless.Messaging.SourceGenerator.Models;
 using Headless.Messaging.SourceGenerator.Validation;
 using Headless.SourceGenerators;
@@ -126,7 +125,7 @@ internal static class MessagingRegistrationBuilder
                 .ThenBy(x => x.TypeName, StringComparer.Ordinal)
         )
         {
-            var baseName = _DispatcherName(consumer.DisplayName);
+            var baseName = HandlerSymbols.ToMemberName("Dispatch_", consumer.DisplayName);
             var name = baseName;
             for (var suffix = 2; !used.Add(name); suffix++)
             {
@@ -137,16 +136,5 @@ internal static class MessagingRegistrationBuilder
         }
 
         return registrations.ToEquatableArray();
-    }
-
-    private static string _DispatcherName(string displayName)
-    {
-        var builder = new StringBuilder("Dispatch_", displayName.Length + 9);
-        foreach (var character in displayName)
-        {
-            builder.Append(char.IsLetterOrDigit(character) ? character : '_');
-        }
-
-        return builder.ToString();
     }
 }

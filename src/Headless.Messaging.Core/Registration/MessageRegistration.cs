@@ -19,7 +19,30 @@ internal sealed record MessageRegistration(
     // False for consumer-only registrations (assembly scans and framework consumers). They carry no message-level
     // settings, so they may join the one declaring registration a message type is allowed per lane.
     bool DeclaresMessage = true
-);
+)
+{
+    /// <summary>
+    /// A registration that contributes one consumer and declares no message-level settings, so it can join the
+    /// registration that does declare the message.
+    /// </summary>
+    internal static MessageRegistration ConsumerOnly(
+        Type messageType,
+        MessageLane lane,
+        string? messageName,
+        MessageConsumerRegistration consumer,
+        string contractVersion
+    ) =>
+        new(
+            messageType,
+            lane,
+            messageName,
+            CorrelationSelector: null,
+            ProviderConfigs: new Dictionary<Type, object>(),
+            Consumers: [consumer],
+            ContractVersion: contractVersion,
+            DeclaresMessage: false
+        );
+}
 
 internal sealed record MessageConsumerRegistration(
     Type ConsumerType,

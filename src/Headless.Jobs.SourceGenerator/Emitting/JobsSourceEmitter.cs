@@ -4,7 +4,6 @@ using System.Globalization;
 using System.Text;
 using Headless.Jobs.SourceGenerator.Models;
 using Headless.SourceGenerators;
-using Microsoft.CodeAnalysis.CSharp;
 
 namespace Headless.Jobs.SourceGenerator.Emitting;
 
@@ -28,7 +27,7 @@ internal static class JobsSourceEmitter
         foreach (var job in jobs)
         {
             writer.AppendLine(
-                $"[assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute({_Literal(job.Identity)}, {_Literal(job.ContractVersion)})]"
+                $"[assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute({HandlerSource.Literal(job.Identity)}, {HandlerSource.Literal(job.ContractVersion)})]"
             );
         }
 
@@ -113,10 +112,10 @@ internal static class JobsSourceEmitter
         writer.AppendLine("RegisterDescriptors(catalog);");
         foreach (var entry in model.Middleware)
         {
-            var function = entry.Function is null ? "null" : _Literal(entry.Function);
+            var function = entry.Function is null ? "null" : HandlerSource.Literal(entry.Function);
             var registrationMethod = entry.IsSchedule ? "AddScheduleMiddleware" : "AddExecuteMiddleware";
             writer.AppendLine(
-                $"catalog.{registrationMethod}({_Literal(entry.Identity)}, {function}, {entry.Priority}, static (context, next, cancellationToken) => context.Services.GetRequiredService<{entry.TypeName}>().InvokeAsync(context, next, cancellationToken));"
+                $"catalog.{registrationMethod}({HandlerSource.Literal(entry.Identity)}, {function}, {entry.Priority}, static (context, next, cancellationToken) => context.Services.GetRequiredService<{entry.TypeName}>().InvokeAsync(context, next, cancellationToken));"
             );
         }
 
@@ -129,9 +128,9 @@ internal static class JobsSourceEmitter
         // additive for already-generated code.
         var registration = new StringBuilder()
             .Append("functions.Add(")
-            .Append(_Literal(job.Identity))
+            .Append(HandlerSource.Literal(job.Identity))
             .Append(", new JobFunctionRegistration { CronExpression = ")
-            .Append(_Literal(job.CronExpression ?? string.Empty))
+            .Append(HandlerSource.Literal(job.CronExpression ?? string.Empty))
             .Append(", Priority = (JobPriority)")
             .Append(job.Priority.ToString(CultureInfo.InvariantCulture))
             .Append(", Delegate = ")
@@ -144,7 +143,7 @@ internal static class JobsSourceEmitter
 
         if (job.TimeZone is not null)
         {
-            registration.Append(", TimeZoneId = ").Append(_Literal(job.TimeZone));
+            registration.Append(", TimeZoneId = ").Append(HandlerSource.Literal(job.TimeZone));
         }
 
         if (job.PolicyTypeName is not null)
@@ -211,25 +210,13 @@ internal static class JobsSourceEmitter
             jobInterface = "global::Headless.Jobs.Base.IJob";
         }
 
-        var create = $"ActivatorUtilities.CreateInstance<{job.TypeName}>(serviceProvider)";
-        switch (job.Disposal)
-        {
-            case JobDisposal.Async:
-                writer.AppendLine($"var job = {create};");
-                writer.AppendLine("await using (job.ConfigureAwait(false))");
-                writer.OpenBracket();
-                _WriteExecute(writer, jobInterface, contextExpression);
-                writer.CloseBracket();
-                break;
-            case JobDisposal.Sync:
-                writer.AppendLine($"using var job = {create};");
-                _WriteExecute(writer, jobInterface, contextExpression);
-                break;
-            default:
-                writer.AppendLine($"var job = {create};");
-                _WriteExecute(writer, jobInterface, contextExpression);
-                break;
-        }
+        writer.AppendHandlerInstance(
+            job.Disposal,
+            "job",
+            $"ActivatorUtilities.CreateInstance<{job.TypeName}>(serviceProvider)",
+            "job.ConfigureAwait(false)",
+            w => _WriteExecute(w, jobInterface, contextExpression)
+        );
 
         writer.CloseBracket();
     }
@@ -249,10 +236,10 @@ internal static class JobsSourceEmitter
             writer.AppendLine($"var descriptors = new Dictionary<string, JobFunctionDescriptor>({jobs.Count});");
             foreach (var job in jobs)
             {
-                var identity = _Literal(job.Identity);
+                var identity = HandlerSource.Literal(job.Identity);
                 var argsType = job.ArgsTypeName is null ? "null" : $"typeof({job.ArgsTypeName})";
                 writer.AppendLine(
-                    $"descriptors.Add({identity}, new JobFunctionDescriptor({identity}, {argsType}, {_Literal(job.CronExpression ?? string.Empty)}, (JobPriority){job.Priority.ToString(CultureInfo.InvariantCulture)}, {job.MaxConcurrency.ToString(CultureInfo.InvariantCulture)}, {_Literal(job.ContractVersion)}));"
+                    $"descriptors.Add({identity}, new JobFunctionDescriptor({identity}, {argsType}, {HandlerSource.Literal(job.CronExpression ?? string.Empty)}, (JobPriority){job.Priority.ToString(CultureInfo.InvariantCulture)}, {job.MaxConcurrency.ToString(CultureInfo.InvariantCulture)}, {HandlerSource.Literal(job.ContractVersion)}));"
                 );
             }
 
@@ -276,7 +263,7 @@ internal static class JobsSourceEmitter
             {
                 var typeName = job.ArgsTypeName;
                 writer.AppendLine(
-                    $"requestTypes.Add({_Literal(job.Identity)}, (typeof({typeName}).FullName, typeof({typeName})));"
+                    $"requestTypes.Add({HandlerSource.Literal(job.Identity)}, (typeof({typeName}).FullName, typeof({typeName})));"
                 );
             }
 
@@ -288,9 +275,6 @@ internal static class JobsSourceEmitter
 
     private static IEnumerable<JobModel> _OrderedByIdentity(EquatableArray<JobModel> jobs) =>
         jobs.OrderBy(job => job.Identity, StringComparer.Ordinal);
-
-    private static string _Literal(string? value) =>
-        value is null ? "null" : SymbolDisplay.FormatLiteral(value, quote: true);
 }
 
 #pragma warning restore MA0076

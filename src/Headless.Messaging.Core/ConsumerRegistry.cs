@@ -416,14 +416,8 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
         int? skipIndex = null
     )
     {
-        for (var index = 0; index < consumers.Count; index++)
+        foreach (var existing in _Others(consumers, skipIndex))
         {
-            if (index == skipIndex)
-            {
-                continue;
-            }
-
-            var existing = consumers[index];
             if (existing.Lane != candidate.Lane)
             {
                 continue;
@@ -447,15 +441,8 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
             }
         }
 
-        for (var index = 0; index < consumers.Count; index++)
+        foreach (var existing in _Others(consumers, skipIndex))
         {
-            if (index == skipIndex)
-            {
-                continue;
-            }
-
-            var existing = consumers[index];
-
             // Queue destinations are keyed by the message name, so a second consumer would compete for the same queue.
             // Consumers registered through ForMessage predate the rule and may still share a Queue message between
             // groups, so it binds only when an attribute-declared consumer takes part.
@@ -475,15 +462,8 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
             }
         }
 
-        for (var index = 0; index < consumers.Count; index++)
+        foreach (var existing in _Others(consumers, skipIndex))
         {
-            if (index == skipIndex)
-            {
-                continue;
-            }
-
-            var existing = consumers[index];
-
             // One identity may cover several messages, and the inbox keys rows by message name, so the durable route
             // is the identity plus the message name and its contract version on one lane.
             if (
@@ -503,6 +483,18 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
                         + $"'{candidate.MessageContractVersion}'. Existing consumer {_Describe(existing)} conflicts "
                         + $"with {_Describe(candidate)}."
                 );
+            }
+        }
+    }
+
+    /// <summary>Every registered consumer except the one at <paramref name="skipIndex"/>, the entry an update replaces.</summary>
+    private static IEnumerable<ConsumerMetadata> _Others(List<ConsumerMetadata> consumers, int? skipIndex)
+    {
+        for (var index = 0; index < consumers.Count; index++)
+        {
+            if (index != skipIndex)
+            {
+                yield return consumers[index];
             }
         }
     }

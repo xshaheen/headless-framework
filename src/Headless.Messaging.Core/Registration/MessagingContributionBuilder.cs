@@ -134,28 +134,22 @@ public sealed class MessagingContributionBuilder
         _sink.Services.TryAddScoped<TConsumer>();
         _sink.Services.TryAddScoped<IConsume<TMessage>>(sp => sp.GetRequiredService<TConsumer>());
         _sink.Register(
-            new MessageRegistration(
+            MessageRegistration.ConsumerOnly(
                 typeof(TMessage),
                 lane,
                 messageName,
-                CorrelationSelector: null,
-                ProviderConfigs: new Dictionary<Type, object>(),
-                Consumers:
-                [
-                    new MessageConsumerRegistration(
-                        typeof(TConsumer),
-                        lane,
-                        IsAssemblyScan: false,
-                        group,
-                        concurrency,
-                        HandlerId: null,
-                        ConsumerIdentity: consumerIdentity,
-                        CircuitBreakerOverride: null,
-                        ProviderConfigs: new Dictionary<Type, object>()
-                    ),
-                ],
-                ContractVersion: messageContractVersion,
-                DeclaresMessage: false
+                new MessageConsumerRegistration(
+                    typeof(TConsumer),
+                    lane,
+                    IsAssemblyScan: false,
+                    group,
+                    concurrency,
+                    HandlerId: null,
+                    ConsumerIdentity: consumerIdentity,
+                    CircuitBreakerOverride: null,
+                    ProviderConfigs: new Dictionary<Type, object>()
+                ),
+                messageContractVersion
             )
         );
 

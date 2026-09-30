@@ -793,9 +793,9 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
     private static async ValueTask _ResumeHandleAsync(ConsumerRegister register, object handle, long epoch)
     {
         var method = typeof(ConsumerRegister).GetMethod(
-            "_ResumeGroupAsync",
+            "_ApplyGroupIntentAsync",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
-        await (ValueTask)method.Invoke(register, [handle, epoch])!;
+        await (ValueTask)method.Invoke(register, [handle, false, epoch])!;
     }
 }

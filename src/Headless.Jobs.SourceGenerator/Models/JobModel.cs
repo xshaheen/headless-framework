@@ -20,7 +20,7 @@ internal sealed record JobModel(
     string TypeName,
     string InvokerName,
     string? ArgsTypeName,
-    JobDisposal Disposal,
+    HandlerDisposal Disposal,
     string Identity,
     string? CronExpression,
     string? TimeZone,
@@ -34,14 +34,6 @@ internal sealed record JobModel(
 )
 {
     public bool HasArgs => ArgsTypeName is not null;
-}
-
-/// <summary>Which dispose pattern the job class implements, decided at build time so the invoker stays typed.</summary>
-internal enum JobDisposal
-{
-    None,
-    Sync,
-    Async,
 }
 
 /// <summary>

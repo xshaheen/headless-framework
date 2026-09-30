@@ -47,8 +47,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                 JobParser.IsCandidate,
                 JobParser.Parse
             )
-            .Where(static result => result is not null)
-            .Select(static (result, _) => result!)
+            .WhereNotNull()
             .WithTrackingName(TrackingNames.Jobs);
 
         var scheduleMiddleware = context
@@ -73,7 +72,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             .Select(static (pair, _) => pair.Left.AddRange(pair.Right).ToEquatableArray());
 
         var assemblyName = context
-            .CompilationProvider.Select(static (compilation, _) => compilation.AssemblyName ?? string.Empty)
+            .CompilationProvider.SelectAssemblyName()
             .WithTrackingName(TrackingNames.AssemblyName);
 
         // Referenced descriptor metadata is read only when some assembly middleware targets a job by identity, so an

@@ -84,7 +84,11 @@ internal static class JobValidator
             );
         }
 
-        if (values.Priority is < 0 or > 3)
+        if (
+            values.Priority
+            is < SourceGeneratorConstants.NormalJobPriority
+                or > SourceGeneratorConstants.LongRunningJobPriority
+        )
         {
             diagnostics.Add(
                 DiagnosticInfo.Create(DiagnosticDescriptors.InvalidJobPriority, attributeLocation, values.Priority)
@@ -102,7 +106,12 @@ internal static class JobValidator
             );
         }
 
-        if (values.OnMissedRun is not null and not 0 and not 1)
+        if (
+            values.OnMissedRun
+            is not null
+                and not SourceGeneratorConstants.CoalesceMissedRunPolicy
+                and not SourceGeneratorConstants.SkipMissedRunPolicy
+        )
         {
             diagnostics.Add(
                 DiagnosticInfo.Create(
@@ -124,14 +133,19 @@ internal static class JobValidator
             );
         }
 
-        if (values.OnOverlap is not null and not 0 and not 1)
+        if (
+            values.OnOverlap
+            is not null
+                and not SourceGeneratorConstants.AllowOverlapPolicy
+                and not SourceGeneratorConstants.SkipOverlapPolicy
+        )
         {
             diagnostics.Add(
                 DiagnosticInfo.Create(DiagnosticDescriptors.InvalidOverlapPolicy, attributeLocation, values.OnOverlap)
             );
         }
 
-        if (values.Policy is { } policy && !_IsFailurePolicy(compilation, policy))
+        if (values.Policy is { } policy && !HandlerSymbols.IsFailurePolicy(compilation, policy))
         {
             diagnostics.Add(
                 DiagnosticInfo.Create(
@@ -142,19 +156,5 @@ internal static class JobValidator
                 )
             );
         }
-    }
-
-    /// <summary>
-    /// A policy is a constructible type implementing <c>IFailurePolicy</c>. The interface itself names no policy, so it
-    /// is rejected along with abstract and open generic types.
-    /// </summary>
-    private static bool _IsFailurePolicy(Compilation compilation, INamedTypeSymbol policy)
-    {
-        var failurePolicy = compilation.GetTypeByMetadataName(SourceGeneratorConstants.FailurePolicyMetadataName);
-        return failurePolicy is not null
-            && policy.TypeKind is TypeKind.Class or TypeKind.Struct
-            && !policy.IsAbstract
-            && !policy.IsUnboundGenericType
-            && policy.AllInterfaces.Contains(failurePolicy, SymbolEqualityComparer.Default);
     }
 }

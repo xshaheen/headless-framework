@@ -69,7 +69,7 @@ internal static class ConsumerValidator
             );
         }
 
-        if (policy is not null && !_IsFailurePolicy(compilation, policy))
+        if (policy is not null && !HandlerSymbols.IsFailurePolicy(compilation, policy))
         {
             diagnostics.Add(
                 DiagnosticInfo.Create(
@@ -114,18 +114,5 @@ internal static class ConsumerValidator
             default:
                 return false;
         }
-    }
-
-    /// <summary>
-    /// A policy is a constructible type implementing <c>IFailurePolicy</c>. The interface itself names no policy, so it
-    /// is rejected along with abstract and open generic types.
-    /// </summary>
-    private static bool _IsFailurePolicy(Compilation compilation, ITypeSymbol policy)
-    {
-        var failurePolicy = compilation.GetTypeByMetadataName(SourceGeneratorConstants.FailurePolicyMetadataName);
-        return failurePolicy is not null
-            && policy is INamedTypeSymbol { TypeKind: TypeKind.Class or TypeKind.Struct, IsAbstract: false } named
-            && !named.IsUnboundGenericType
-            && named.AllInterfaces.Contains(failurePolicy, SymbolEqualityComparer.Default);
     }
 }

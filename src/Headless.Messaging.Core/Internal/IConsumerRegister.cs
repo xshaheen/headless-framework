@@ -829,14 +829,7 @@ internal sealed class ConsumerRegister(
                 continue;
             }
 
-            if (pause)
-            {
-                await _PauseGroupAsync(handle, epoch).ConfigureAwait(false);
-            }
-            else
-            {
-                await _ResumeGroupAsync(handle, epoch).ConfigureAwait(false);
-            }
+            await _ApplyGroupIntentAsync(handle, pause, epoch).ConfigureAwait(false);
         }
     }
 
@@ -859,11 +852,6 @@ internal sealed class ConsumerRegister(
     private ValueTask _PauseGroupAsync(GroupHandle handle, long epoch)
     {
         return _ApplyGroupIntentAsync(handle, pause: true, epoch);
-    }
-
-    private ValueTask _ResumeGroupAsync(GroupHandle handle, long epoch)
-    {
-        return _ApplyGroupIntentAsync(handle, pause: false, epoch);
     }
 
     private async ValueTask _ApplyGroupIntentAsync(GroupHandle handle, bool pause, long epoch)

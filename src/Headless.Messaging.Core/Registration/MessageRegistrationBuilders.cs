@@ -75,15 +75,12 @@ internal abstract class MessageLaneRegistrationBuilder(MessageRegistrationSink s
                 new ServiceDescriptor(serviceType, sp => sp.GetRequiredService(consumerType), ServiceLifetime.Scoped)
             );
             Sink.Register(
-                new MessageRegistration(
+                MessageRegistration.ConsumerOnly(
                     messageType,
                     lane,
                     builder.MessageName,
-                    CorrelationSelector: null,
-                    ProviderConfigs: new Dictionary<Type, object>(),
-                    Consumers: [builder.Build()],
-                    ContractVersion: builder.ContractVersion,
-                    DeclaresMessage: false
+                    builder.Build(),
+                    builder.ContractVersion
                 )
             );
         }

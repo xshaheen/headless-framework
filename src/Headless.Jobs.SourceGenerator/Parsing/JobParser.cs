@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text;
 using Headless.Jobs.SourceGenerator.Models;
 using Headless.Jobs.SourceGenerator.Utilities;
 using Headless.Jobs.SourceGenerator.Validation;
@@ -58,9 +57,11 @@ internal static class JobParser
                 ? null
                 : new JobModel(
                     classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                    _InvokerName(classSymbol),
+                    // Jobs are top-level classes, so the namespace-qualified name keeps the invoker unique within the
+                    // assembly.
+                    HandlerSymbols.ToMemberName("Invoke_", classSymbol.ToDisplayString()),
                     argsTypeName,
-                    _GetDisposal(compilation, classSymbol),
+                    HandlerSymbols.GetDisposal(compilation, classSymbol),
                     values.Identity!,
                     values.CronExpression,
                     values.TimeZone,
@@ -106,38 +107,6 @@ internal static class JobParser
         implementsJob = (implementsPlain ? 1 : 0) + genericImplementations.Count == 1;
         return implementsJob && genericImplementations.Count == 1 ? genericImplementations[0].TypeArguments[0] : null;
     }
-
-    private static JobDisposal _GetDisposal(Compilation compilation, INamedTypeSymbol classSymbol)
-    {
-        if (_Implements(compilation, classSymbol, "System.IAsyncDisposable"))
-        {
-            return JobDisposal.Async;
-        }
-
-        return _Implements(compilation, classSymbol, "System.IDisposable") ? JobDisposal.Sync : JobDisposal.None;
-    }
-
-    private static bool _Implements(Compilation compilation, INamedTypeSymbol classSymbol, string metadataName)
-    {
-        var type = compilation.GetTypeByMetadataName(metadataName);
-        return type is not null && classSymbol.AllInterfaces.Contains(type, SymbolEqualityComparer.Default);
-    }
-
-    /// <summary>
-    /// Names the invoker after the class's full name. Jobs are top-level classes, so the namespace-qualified name is
-    /// unique within the assembly.
-    /// </summary>
-    private static string _InvokerName(INamedTypeSymbol classSymbol)
-    {
-        var name = classSymbol.ToDisplayString();
-        var builder = new StringBuilder("Invoke_", name.Length + 7);
-        foreach (var character in name)
-        {
-            builder.Append(char.IsLetterOrDigit(character) ? character : '_');
-        }
-
-        return builder.ToString();
-    }
 }
 
 /// <summary>The values of one <c>[Job]</c> attribute application, read without interpreting them.</summary>
@@ -160,9 +129,9 @@ internal sealed record JobAttributeValues(
             attribute.ConstructorArguments.Length > 0 ? attribute.ConstructorArguments[0].Value as string : null;
         string? cronExpression = null;
         string? timeZone = null;
-        var priority = 0; // JobPriority.Normal
+        var priority = SourceGeneratorConstants.NormalJobPriority;
         var maxConcurrency = 0;
-        var contractVersion = "1";
+        var contractVersion = SourceGeneratorConstants.InitialContractVersion;
         INamedTypeSymbol? policy = null;
 
         // The recovery knobs are read only when actually written. That distinguishes "unset" (fall through to the

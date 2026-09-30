@@ -64,11 +64,11 @@ public sealed class ConsumerRegisterTests : TestBase
         await (ValueTask)addClient.Invoke(handle, [client])!;
 
         var resumeGroup = typeof(ConsumerRegister).GetMethod(
-            "_ResumeGroupAsync",
+            "_ApplyGroupIntentAsync",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
 
-        var act = async () => await (ValueTask)resumeGroup.Invoke(register, [handle, 1L])!;
+        var act = async () => await (ValueTask)resumeGroup.Invoke(register, [handle, false, 1L])!;
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("resume failed");
     }
@@ -98,11 +98,11 @@ public sealed class ConsumerRegisterTests : TestBase
         ((IProcessingServerShutdown)register).Quiesce();
 
         var resumeGroup = typeof(ConsumerRegister).GetMethod(
-            "_ResumeGroupAsync",
+            "_ApplyGroupIntentAsync",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
 
-        await (ValueTask)resumeGroup.Invoke(register, [handle, 1L])!;
+        await (ValueTask)resumeGroup.Invoke(register, [handle, false, 1L])!;
 
         ((bool)handleType.GetProperty("IsPaused")!.GetValue(handle)!)
             .Should()
@@ -358,10 +358,10 @@ public sealed class ConsumerRegisterTests : TestBase
         // A recovery callback launched before the restart bump arrives after the replacement
         // handle applied epoch 7 and must not reopen transport.
         var resumeGroup = typeof(ConsumerRegister).GetMethod(
-            "_ResumeGroupAsync",
+            "_ApplyGroupIntentAsync",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
-        await (ValueTask)resumeGroup.Invoke(register, [handleObj, 6L])!;
+        await (ValueTask)resumeGroup.Invoke(register, [handleObj, false, 6L])!;
         readyClient.ResumeCount.Should().Be(0);
 
         await register.DisposeAsync();
@@ -1731,10 +1731,10 @@ public sealed class ConsumerRegisterTests : TestBase
     private static async ValueTask _InvokeResumeAsync(ConsumerRegister register, object handle, long epoch)
     {
         var method = typeof(ConsumerRegister).GetMethod(
-            "_ResumeGroupAsync",
+            "_ApplyGroupIntentAsync",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
-        await (ValueTask)method.Invoke(register, [handle, epoch])!;
+        await (ValueTask)method.Invoke(register, [handle, false, epoch])!;
     }
 
     private ServiceProvider _CreateProvider(

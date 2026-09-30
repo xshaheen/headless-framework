@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using Headless.Messaging.CircuitBreaker;
 
 namespace Headless.Messaging.Messages;
 
@@ -49,6 +50,12 @@ public sealed class ConsumerExecutorDescriptor
     /// </summary>
     internal string ResolvedConsumerIdentity =>
         string.IsNullOrWhiteSpace(ConsumerIdentity) ? GroupName : ConsumerIdentity;
+
+    /// <summary>
+    /// The circuit breaker key of this consumer's identity on its lane. Cached because every delivery reads it and the
+    /// descriptor never changes after registration; the benign publication race writes an equal string.
+    /// </summary>
+    internal string CircuitBreakerKey => field ??= CircuitBreakerKeys.For(Lane, ResolvedConsumerIdentity);
 
     /// <summary>The schema version of the message contract used to isolate inbox generations.</summary>
     public string? MessageContractVersion { get; init; }

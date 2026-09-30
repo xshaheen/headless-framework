@@ -281,13 +281,21 @@ internal sealed class ConsumeMiddlewarePipeline(
     )
     {
         var shared = _ResolveSharedMiddleware(provider, context, consumer.GroupName);
-        if (consumer.Middleware.Count == 0)
+        var tuned = consumer.Middleware;
+        if (tuned.Count == 0)
         {
             return shared;
         }
 
         // Middleware tuned onto one consumer runs innermost, after the global and per-message middleware.
-        return [.. shared, .. consumer.Middleware.Select(provider.GetRequiredService)];
+        var middleware = new object[shared.Length + tuned.Count];
+        shared.CopyTo(middleware, 0);
+        for (var index = 0; index < tuned.Count; index++)
+        {
+            middleware[shared.Length + index] = provider.GetRequiredService(tuned[index]);
+        }
+
+        return middleware;
     }
 
     private object[] _ResolveSharedMiddleware(IServiceProvider provider, ConsumeContext context, string? groupName)

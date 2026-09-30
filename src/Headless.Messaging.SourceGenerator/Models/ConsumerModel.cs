@@ -11,14 +11,6 @@ internal enum ConsumerLane
     Queue,
 }
 
-/// <summary>Which dispose pattern the consumer class implements, decided at build time so the dispatcher stays typed.</summary>
-internal enum ConsumerDisposal
-{
-    None,
-    Sync,
-    Async,
-}
-
 /// <summary>Everything the emitter needs about one consumer class, captured as values.</summary>
 /// <param name="TypeName">
 /// The fully qualified (<c>global::</c>) class name, so generated code cannot be captured by the namespace it is emitted
@@ -41,7 +33,7 @@ internal sealed record ConsumerModel(
     bool EveryInstance,
     string? PolicyTypeName,
     EquatableArray<string> MessageTypeNames,
-    ConsumerDisposal Disposal,
+    HandlerDisposal Disposal,
     bool HasLifecycle
 );
 

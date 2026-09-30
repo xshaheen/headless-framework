@@ -156,16 +156,16 @@ internal sealed class JobMiddlewarePipeline
 {
     internal static readonly JobMiddlewarePipeline Empty = new([], []);
 
-    private readonly JobScheduleMiddlewareRegistration[] _schedule;
-    private readonly JobExecuteMiddlewareRegistration[] _execute;
+    private readonly ApplicableMiddleware<JobScheduleMiddlewareRegistration> _schedule;
+    private readonly ApplicableMiddleware<JobExecuteMiddlewareRegistration> _execute;
 
     private JobMiddlewarePipeline(
         JobScheduleMiddlewareRegistration[] schedule,
         JobExecuteMiddlewareRegistration[] execute
     )
     {
-        _schedule = schedule;
-        _execute = execute;
+        _schedule = new(schedule);
+        _execute = new(execute);
     }
 
     internal static JobMiddlewarePipeline Create(
@@ -179,16 +179,13 @@ internal sealed class JobMiddlewarePipeline
         CancellationToken cancellationToken
     )
     {
+        var registrations = _schedule.For(context.Descriptor.FunctionName);
         var current = next;
-        for (var index = _schedule.Length - 1; index >= 0; index--)
+        for (var index = registrations.Length - 1; index >= 0; index--)
         {
-            var registration = _schedule[index];
+            var registration = registrations[index];
             var previous = current;
-            current = token =>
-                registration.Function is null
-                || string.Equals(registration.Function, context.Descriptor.FunctionName, StringComparison.Ordinal)
-                    ? registration.Dispatch(context, previous, token)
-                    : previous(token);
+            current = token => registration.Dispatch(context, previous, token);
         }
 
         return current(cancellationToken);
@@ -200,16 +197,13 @@ internal sealed class JobMiddlewarePipeline
         CancellationToken cancellationToken
     )
     {
+        var registrations = _execute.For(context.Descriptor.FunctionName);
         var current = next;
-        for (var index = _execute.Length - 1; index >= 0; index--)
+        for (var index = registrations.Length - 1; index >= 0; index--)
         {
-            var registration = _execute[index];
+            var registration = registrations[index];
             var previous = current;
-            current = token =>
-                registration.Function is null
-                || string.Equals(registration.Function, context.Descriptor.FunctionName, StringComparison.Ordinal)
-                    ? registration.Dispatch(context, previous, token)
-                    : previous(token);
+            current = token => registration.Dispatch(context, previous, token);
         }
 
         return current(cancellationToken);
@@ -218,11 +212,39 @@ internal sealed class JobMiddlewarePipeline
     private static T[] _Order<T>(IEnumerable<T> registrations)
         where T : IJobMiddlewareRegistration =>
         [.. registrations.OrderBy(x => x.Priority).ThenBy(x => x.Identity, StringComparer.Ordinal)];
+
+    /// <summary>
+    /// The ordered middleware that applies to each job, resolved once when the pipeline is built so a dispatch neither
+    /// filters nor wraps middleware limited to other jobs.
+    /// </summary>
+    private sealed class ApplicableMiddleware<T>(T[] ordered)
+        where T : IJobMiddlewareRegistration
+    {
+        // A job no middleware names gets only the global middleware, so only the named jobs need their own chain.
+        private readonly T[] _global = [.. ordered.Where(x => x.Function is null)];
+
+        private readonly FrozenDictionary<string, T[]> _byFunction = ordered
+            .Where(x => x.Function is not null)
+            .Select(x => x.Function!)
+            .Distinct(StringComparer.Ordinal)
+            .ToFrozenDictionary(
+                function => function,
+                function =>
+                    ordered
+                        .Where(x => x.Function is null || string.Equals(x.Function, function, StringComparison.Ordinal))
+                        .ToArray(),
+                StringComparer.Ordinal
+            );
+
+        public T[] For(string function) =>
+            _byFunction.TryGetValue(function, out var registrations) ? registrations : _global;
+    }
 }
 
 internal interface IJobMiddlewareRegistration
 {
     string Identity { get; }
+    string? Function { get; }
     int Priority { get; }
 }
 

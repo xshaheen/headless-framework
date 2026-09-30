@@ -22,7 +22,7 @@ internal static class CircuitBreakerKeys
 
     internal static string For(ConsumerExecutorDescriptor descriptor)
     {
-        return For(descriptor.Lane, descriptor.ResolvedConsumerIdentity);
+        return descriptor.CircuitBreakerKey;
     }
 
     internal static string For(MediumMessage message)

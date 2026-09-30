@@ -978,12 +978,12 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             : string.Empty;
 
     private static SqlParameter[] _RunnableParameters(JobsRunFilter runFilter) =>
-        runFilter.RunnableFunctions is { } runnable
+        runFilter.IsFiltered
             ?
             [
                 new SqlParameter("runnableFunctions", SqlDbType.NVarChar, -1)
                 {
-                    Value = JsonSerializer.Serialize(runnable),
+                    Value = SqlServerRunnableFunctionsJson.For(runFilter),
                 },
             ]
             : [];
@@ -1060,4 +1060,16 @@ internal static partial class SqlServerJobsClaimStrategyLoggerExtensions
         TimeSpan delay,
         Exception? exception
     );
+}
+
+/// <summary>
+/// The JSON form of a host's runnable functions, serialized once per filter: the filter never changes after the host
+/// starts, while every claim and sweep binds the list again.
+/// </summary>
+file static class SqlServerRunnableFunctionsJson
+{
+    private static readonly ConditionalWeakTable<JobsRunFilter, string> _Cache = [];
+
+    public static string For(JobsRunFilter runFilter) =>
+        _Cache.GetValue(runFilter, static filter => JsonSerializer.Serialize(filter.RunnableFunctions));
 }

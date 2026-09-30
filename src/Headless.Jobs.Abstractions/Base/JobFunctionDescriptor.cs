@@ -91,4 +91,22 @@ public sealed record JobFunctionDescriptor
 
     /// <summary>The maximum concurrent executions on one node; <c>0</c> means the global limit applies.</summary>
     public int MaxConcurrency { get; }
+
+    /// <summary>
+    /// Copies this descriptor with the given values replaced. Every copy goes through here so a new field is carried by
+    /// construction instead of being dropped by a caller that rebuilds the descriptor by hand.
+    /// </summary>
+    internal JobFunctionDescriptor With(
+        string? cronExpression = null,
+        JobPriority? priority = null,
+        int? maxConcurrency = null
+    ) =>
+        new(
+            FunctionName,
+            RequestType,
+            cronExpression ?? CronExpression,
+            priority ?? Priority,
+            maxConcurrency ?? MaxConcurrency,
+            ContractVersion
+        );
 }

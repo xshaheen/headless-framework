@@ -92,19 +92,14 @@ internal sealed class JobsRunFilter
             );
         }
 
-        var star = entry.IndexOf('*', StringComparison.Ordinal);
-        if (star < 0)
+        if (!entry.Contains('*', StringComparison.Ordinal))
         {
             return entry;
         }
 
         // Only the whole name segment may be a wildcard, so a pattern always names exactly one owner.
-        var owner = entry.EndsWith(".*", StringComparison.Ordinal) ? entry[..^2] : null;
-        if (
-            owner is not { Length: > 0 }
-            || owner.Contains('.', StringComparison.Ordinal)
-            || owner.Contains('*', StringComparison.Ordinal)
-        )
+        var owner = entry.EndsWith(".*", StringComparison.Ordinal) ? entry.AsSpan(0, entry.Length - 2) : [];
+        if (owner.IsEmpty || owner.IndexOfAny('.', '*') >= 0)
         {
             throw new ArgumentException(
                 $"RunOnly entry '{entry}' is not valid. A pattern must have the form 'owner.*', where the owner is the "

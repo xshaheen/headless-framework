@@ -44,8 +44,7 @@ public sealed class MessagingIncrementalSourceGenerator : IIncrementalGenerator
                 ConsumerParser.IsCandidate,
                 ConsumerParser.ParseBus
             )
-            .Where(static result => result is not null)
-            .Select(static (result, _) => result!)
+            .WhereNotNull()
             .WithTrackingName(TrackingNames.BusConsumers);
 
         var queueConsumers = context
@@ -54,12 +53,11 @@ public sealed class MessagingIncrementalSourceGenerator : IIncrementalGenerator
                 ConsumerParser.IsCandidate,
                 ConsumerParser.ParseQueue
             )
-            .Where(static result => result is not null)
-            .Select(static (result, _) => result!)
+            .WhereNotNull()
             .WithTrackingName(TrackingNames.QueueConsumers);
 
         var assemblyName = context
-            .CompilationProvider.Select(static (compilation, _) => compilation.AssemblyName ?? string.Empty)
+            .CompilationProvider.SelectAssemblyName()
             .WithTrackingName(TrackingNames.AssemblyName);
 
         var generation = busConsumers

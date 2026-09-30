@@ -24,14 +24,15 @@ public sealed class JobsCatalogBuilder
     /// <summary>The configuration section whose children tune jobs by identity.</summary>
     internal const string TuningConfigurationSection = "Headless:Jobs:Jobs";
 
-    private const string _FrameworkSource = "Headless.Jobs.Core";
+    /// <summary>The source of every entry the framework registers itself rather than through a generated module.</summary>
+    internal const string FrameworkSource = "Headless.Jobs.Core";
 
     private readonly List<(string Source, string Name, JobFunctionRegistration Registration)> _functions = [];
     private readonly List<(string Source, string Name, (string, Type) RequestType)> _requestTypes = [];
     private readonly List<(string Source, string Name, JobFunctionDescriptor Descriptor)> _descriptors = [];
     private readonly List<JobScheduleMiddlewareRegistration> _schedule = [];
     private readonly List<JobExecuteMiddlewareRegistration> _execute = [];
-    private string _source = _FrameworkSource;
+    private string _source = FrameworkSource;
 
     internal JobsCatalogBuilder() { }
 
@@ -108,7 +109,7 @@ public sealed class JobsCatalogBuilder
         }
         finally
         {
-            _source = _FrameworkSource;
+            _source = FrameworkSource;
         }
     }
 
@@ -161,22 +162,8 @@ public sealed class JobsCatalogBuilder
                 options[tuning.Identity] = tunedOptions;
             }
 
-            // The same middleware tuned twice onto one job still runs once.
-            foreach (var middleware in tuning.ScheduleMiddleware)
-            {
-                if (!schedule.Contains(middleware, MiddlewareKey.Schedule))
-                {
-                    schedule.Add(middleware);
-                }
-            }
-
-            foreach (var middleware in tuning.ExecuteMiddleware)
-            {
-                if (!execute.Contains(middleware, MiddlewareKey.Execute))
-                {
-                    execute.Add(middleware);
-                }
-            }
+            _AddMissingMiddleware(schedule, tuning.ScheduleMiddleware);
+            _AddMissingMiddleware(execute, tuning.ExecuteMiddleware);
         }
 
         if (configuration is not null)
@@ -295,14 +282,7 @@ public sealed class JobsCatalogBuilder
 
         if (descriptors.TryGetValue(identity, out var descriptor))
         {
-            descriptors[identity] = new(
-                descriptor.FunctionName,
-                descriptor.RequestType,
-                descriptor.CronExpression,
-                priority ?? descriptor.Priority,
-                maxConcurrency ?? descriptor.MaxConcurrency,
-                descriptor.ContractVersion
-            );
+            descriptors[identity] = descriptor.With(priority: priority, maxConcurrency: maxConcurrency);
         }
     }
 
@@ -337,9 +317,9 @@ public sealed class JobsCatalogBuilder
                     )
                 )
                 .Where(x => x.Sources.Length > 1)
-                .OrderBy(x => _TypeName(x.Type), StringComparer.Ordinal)
+                .OrderBy(x => JobFunctionRegistryBuilder.TypeDisplayName(x.Type), StringComparer.Ordinal)
                 .Select(x =>
-                    $"Argument type '{_TypeName(x.Type)}' is taken by jobs {string.Join(", ", x.Jobs.Select(job => $"'{job}'"))} in {_JoinSources(x.Sources)}."
+                    $"Argument type '{JobFunctionRegistryBuilder.TypeDisplayName(x.Type)}' is taken by jobs {string.Join(", ", x.Jobs.Select(job => $"'{job}'"))} in {_JoinSources(x.Sources)}."
                 )
         );
 
@@ -349,8 +329,10 @@ public sealed class JobsCatalogBuilder
                 .GroupBy(x => x.Registration.JobType!)
                 .Select(group => (Type: group.Key, Sources: _Sources(group.Select(x => x.Source))))
                 .Where(x => x.Sources.Length > 1)
-                .OrderBy(x => _TypeName(x.Type), StringComparer.Ordinal)
-                .Select(x => $"Job type '{_TypeName(x.Type)}' is registered by {_JoinSources(x.Sources)}.")
+                .OrderBy(x => JobFunctionRegistryBuilder.TypeDisplayName(x.Type), StringComparer.Ordinal)
+                .Select(x =>
+                    $"Job type '{JobFunctionRegistryBuilder.TypeDisplayName(x.Type)}' is registered by {_JoinSources(x.Sources)}."
+                )
         );
 
         if (conflicts.Count != 0)
@@ -366,24 +348,23 @@ public sealed class JobsCatalogBuilder
 
     private static string _JoinSources(string[] sources) => string.Join(" and ", sources.Select(x => $"'{x}'"));
 
-    private static string _TypeName(Type type) => type.FullName ?? type.Name;
-
-    private static class MiddlewareKey
+    /// <summary>
+    /// Appends each tuned middleware the list does not already hold for the same identity and job, in tuning order, so
+    /// the same middleware tuned twice onto one job still runs once.
+    /// </summary>
+    private static void _AddMissingMiddleware<T>(List<T> registered, IEnumerable<T> tuned)
+        where T : IJobMiddlewareRegistration
     {
-        public static readonly IEqualityComparer<JobScheduleMiddlewareRegistration> Schedule =
-            EqualityComparer<JobScheduleMiddlewareRegistration>.Create(
-                (left, right) =>
-                    string.Equals(left?.Identity, right?.Identity, StringComparison.Ordinal)
-                    && string.Equals(left?.Function, right?.Function, StringComparison.Ordinal),
-                x => HashCode.Combine(x.Identity, x.Function)
+        foreach (var middleware in tuned)
+        {
+            var exists = registered.Exists(existing =>
+                string.Equals(existing.Identity, middleware.Identity, StringComparison.Ordinal)
+                && string.Equals(existing.Function, middleware.Function, StringComparison.Ordinal)
             );
-
-        public static readonly IEqualityComparer<JobExecuteMiddlewareRegistration> Execute =
-            EqualityComparer<JobExecuteMiddlewareRegistration>.Create(
-                (left, right) =>
-                    string.Equals(left?.Identity, right?.Identity, StringComparison.Ordinal)
-                    && string.Equals(left?.Function, right?.Function, StringComparison.Ordinal),
-                x => HashCode.Combine(x.Identity, x.Function)
-            );
+            if (!exists)
+            {
+                registered.Add(middleware);
+            }
+        }
     }
 }

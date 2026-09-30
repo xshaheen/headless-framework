@@ -30,17 +30,21 @@ internal static class JobFunctionRegistryBuilder
             );
         }
         var generatedDescriptorNames = descriptors.Select(entry => entry.Key).ToHashSet(StringComparer.Ordinal);
+        // Keeps the first entry for a name and never throws: a duplicate name is rejected by the checks and the
+        // frozen-map build below, not by this lookup.
+        var requestTypesByName = new Dictionary<string, Type>(StringComparer.Ordinal);
+        foreach (var requestTypeEntry in requestTypes)
+        {
+            requestTypesByName.TryAdd(requestTypeEntry.Key, requestTypeEntry.Value.Item2);
+        }
+
         var effectiveDescriptors = descriptors
             .Concat(
                 functions
                     .Where(entry => !generatedDescriptorNames.Contains(entry.Key))
                     .Select(entry =>
                     {
-                        var requestType = requestTypes
-                            .FirstOrDefault(requestTypeEntry =>
-                                string.Equals(requestTypeEntry.Key, entry.Key, StringComparison.Ordinal)
-                            )
-                            .Value.Item2;
+                        var requestType = requestTypesByName.GetValueOrDefault(entry.Key);
                         var registration = entry.Value;
                         return new KeyValuePair<string, JobFunctionDescriptor>(
                             entry.Key,
@@ -82,7 +86,7 @@ internal static class JobFunctionRegistryBuilder
                     .Select(group => group.Key)
             )
             .Distinct()
-            .OrderBy(_TypeDisplayName, StringComparer.Ordinal)
+            .OrderBy(TypeDisplayName, StringComparer.Ordinal)
             .ToArray();
 
         var duplicateJobTypes = functions
@@ -90,7 +94,7 @@ internal static class JobFunctionRegistryBuilder
             .GroupBy(entry => entry.Value.JobType!)
             .Where(group => group.Skip(1).Any())
             .Select(group => group.Key)
-            .OrderBy(_TypeDisplayName, StringComparer.Ordinal)
+            .OrderBy(TypeDisplayName, StringComparer.Ordinal)
             .ToArray();
 
         if (duplicateFunctionNames.Length > 0 || duplicateRequestTypes.Length > 0 || duplicateJobTypes.Length > 0)
@@ -99,11 +103,11 @@ internal static class JobFunctionRegistryBuilder
                 .Select(name => $"Function name '{name}' is registered more than once.")
                 .Concat(
                     duplicateRequestTypes.Select(type =>
-                        $"Request type '{_TypeDisplayName(type)}' is mapped more than once."
+                        $"Request type '{TypeDisplayName(type)}' is mapped more than once."
                     )
                 )
                 .Concat(
-                    duplicateJobTypes.Select(type => $"Job type '{_TypeDisplayName(type)}' is mapped more than once.")
+                    duplicateJobTypes.Select(type => $"Job type '{TypeDisplayName(type)}' is mapped more than once.")
                 );
             throw new InvalidOperationException(
                 $"Job function registration conflicts were found:{Environment.NewLine}{string.Join(Environment.NewLine, conflicts)}"
@@ -172,14 +176,7 @@ internal static class JobFunctionRegistryBuilder
 
         return string.Equals(cronExpression, descriptor.CronExpression, StringComparison.Ordinal)
             ? descriptor
-            : new(
-                descriptor.FunctionName,
-                descriptor.RequestType,
-                cronExpression,
-                descriptor.Priority,
-                descriptor.MaxConcurrency,
-                descriptor.ContractVersion
-            );
+            : descriptor.With(cronExpression: cronExpression);
     }
 
     private static string _ResolveCronExpression(string cronExpression, IConfiguration configuration)
@@ -198,7 +195,8 @@ internal static class JobFunctionRegistryBuilder
         return cronExpression.StartsWith('%');
     }
 
-    private static string _TypeDisplayName(Type type)
+    /// <summary>How a registration conflict names a type.</summary>
+    internal static string TypeDisplayName(Type type)
     {
         return type.FullName ?? type.Name;
     }
@@ -227,9 +225,6 @@ internal sealed record JobFunctionRegistry(
     /// <summary>Retry, node-death, and enlistment overrides tuned per job identity.</summary>
     public FrozenDictionary<string, JobOptions> OptionsByFunction { get; init; } =
         FrozenDictionary<string, JobOptions>.Empty;
-
-    /// <summary>Whether this host claims and executes <paramref name="function"/>.</summary>
-    public bool IsRunnable(string function) => RunFilter.Allows(function);
 }
 
 /// <summary>

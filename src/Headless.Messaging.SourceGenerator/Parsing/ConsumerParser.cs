@@ -93,7 +93,11 @@ internal static class ConsumerParser
         var everyInstance = lane == ConsumerLane.Bus && values.EveryInstance;
         if (
             !everyInstance
-            && _Implements(compilation, classSymbol, SourceGeneratorConstants.SubscriptionHookMetadataName)
+            && HandlerSymbols.Implements(
+                compilation,
+                classSymbol,
+                SourceGeneratorConstants.SubscriptionHookMetadataName
+            )
         )
         {
             diagnostics.Add(
@@ -123,8 +127,12 @@ internal static class ConsumerParser
                 everyInstance,
                 values.Policy?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                 messageTypeNames,
-                _GetDisposal(compilation, classSymbol),
-                _Implements(compilation, classSymbol, SourceGeneratorConstants.ConsumerLifecycleMetadataName)
+                HandlerSymbols.GetDisposal(compilation, classSymbol),
+                HandlerSymbols.Implements(
+                    compilation,
+                    classSymbol,
+                    SourceGeneratorConstants.ConsumerLifecycleMetadataName
+                )
             );
 
         return new(
@@ -153,24 +161,6 @@ internal static class ConsumerParser
                 .AllInterfaces.Where(type => SymbolEqualityComparer.Default.Equals(type.OriginalDefinition, consume))
                 .Select(type => type.TypeArguments[0]),
         ];
-    }
-
-    private static ConsumerDisposal _GetDisposal(Compilation compilation, INamedTypeSymbol classSymbol)
-    {
-        if (_Implements(compilation, classSymbol, "System.IAsyncDisposable"))
-        {
-            return ConsumerDisposal.Async;
-        }
-
-        return _Implements(compilation, classSymbol, "System.IDisposable")
-            ? ConsumerDisposal.Sync
-            : ConsumerDisposal.None;
-    }
-
-    private static bool _Implements(Compilation compilation, INamedTypeSymbol classSymbol, string metadataName)
-    {
-        var type = compilation.GetTypeByMetadataName(metadataName);
-        return type is not null && classSymbol.AllInterfaces.Contains(type, SymbolEqualityComparer.Default);
     }
 
     /// <summary>The values of one consumer attribute application, read without interpreting them.</summary>

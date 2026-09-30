@@ -27,6 +27,11 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
     private ConcurrentDictionary<ConsumerIdentityKey, IReadOnlyList<ConsumerExecutorDescriptor>> _identityEntries =
         new();
 
+    private FrozenDictionary<InboxExecutorKey, ConsumerExecutorDescriptor> _inboxEntries = FrozenDictionary<
+        InboxExecutorKey,
+        ConsumerExecutorDescriptor
+    >.Empty;
+
     /// <summary>
     /// Get a dictionary of candidates.In the dictionary,
     /// the Key is the Group name, the Value for the current Group of candidates
@@ -102,9 +107,30 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
                 identityEntries.TryAdd(item.Key, item.ToList());
             }
 
+            // Persisted inbox identities must not use subscription wildcards or their group-level caches, so an inbox
+            // row finds its consumer by exact identity, contract version, and message name. Walking the lane entries in
+            // their own order and keeping the first descriptor per key picks the one a scan of them would.
+            var inboxEntries = new Dictionary<InboxExecutorKey, ConsumerExecutorDescriptor>();
+            foreach (var entry in laneEntries)
+            {
+                foreach (var candidate in entry.Value)
+                {
+                    inboxEntries.TryAdd(
+                        new InboxExecutorKey(
+                            candidate.ConsumerIdentity,
+                            candidate.MessageContractVersion,
+                            candidate.MessageName,
+                            entry.Key.Lane
+                        ),
+                        candidate
+                    );
+                }
+            }
+
             _entries = entries;
             _laneEntries = laneEntries;
             _identityEntries = identityEntries;
+            _inboxEntries = inboxEntries.ToFrozenDictionary();
             _groupConcurrent = groupConcurrent;
             _laneGroupConcurrent = laneGroupConcurrent;
         }
@@ -217,17 +243,10 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
     {
         _EnsureEntries();
 
-        // Persisted inbox identities must not use subscription wildcards or their group-level caches.
-        descriptor = _laneEntries
-            .Where(entry => entry.Key.Lane == lane)
-            .SelectMany(static entry => entry.Value)
-            .FirstOrDefault(candidate =>
-                string.Equals(candidate.ConsumerIdentity, consumerIdentity, StringComparison.Ordinal)
-                && string.Equals(candidate.MessageContractVersion, contractVersion, StringComparison.Ordinal)
-                && string.Equals(candidate.MessageName, contractIdentity, StringComparison.Ordinal)
-            );
-
-        return descriptor is not null;
+        return _inboxEntries.TryGetValue(
+            new InboxExecutorKey(consumerIdentity, contractVersion, contractIdentity, lane),
+            out descriptor
+        );
     }
 
     /// <summary>Discards the cached topology so the next access rebuilds it from the consumer selector.</summary>
@@ -243,6 +262,7 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
             _laneGroupConcurrent = new ConcurrentDictionary<ConsumerGroupKey, byte>();
             _identityEntries =
                 new ConcurrentDictionary<ConsumerIdentityKey, IReadOnlyList<ConsumerExecutorDescriptor>>();
+            _inboxEntries = FrozenDictionary<InboxExecutorKey, ConsumerExecutorDescriptor>.Empty;
         }
 
         selector.Invalidate();
@@ -252,3 +272,11 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
 internal readonly record struct ConsumerGroupKey(string GroupName, MessageLane Lane);
 
 internal readonly record struct ConsumerIdentityKey(string ConsumerIdentity, MessageLane Lane);
+
+/// <summary>The exact route an inbox row names; string parts compare ordinally, and a missing part matches only another.</summary>
+internal readonly record struct InboxExecutorKey(
+    string? ConsumerIdentity,
+    string? ContractVersion,
+    string MessageName,
+    MessageLane Lane
+);

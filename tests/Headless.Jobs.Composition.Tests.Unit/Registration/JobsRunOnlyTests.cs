@@ -143,7 +143,7 @@ public sealed class JobsRunOnlyTests : TestBase
         var store = provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
         var definitions = await store.GetCronJobsAsync(predicate: null, AbortToken);
         definitions.Select(x => x.Function).Should().Contain(TestJobs.BillingNightly);
-        provider.GetRequiredService<JobFunctionRegistry>().IsRunnable(TestJobs.BillingNightly).Should().BeFalse();
+        provider.GetRequiredService<JobFunctionRegistry>().RunFilter.Allows(TestJobs.BillingNightly).Should().BeFalse();
     }
 
     private static ServiceProvider _Provider(

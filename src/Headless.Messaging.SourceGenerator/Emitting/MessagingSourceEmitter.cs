@@ -2,7 +2,6 @@
 
 using Headless.Messaging.SourceGenerator.Models;
 using Headless.SourceGenerators;
-using Microsoft.CodeAnalysis.CSharp;
 
 namespace Headless.Messaging.SourceGenerator.Emitting;
 
@@ -72,8 +71,8 @@ internal static class MessagingSourceEmitter
             {
                 writer.AppendLine(
                     consumer.Lane == ConsumerLane.Bus
-                        ? $"catalog.AddBusConsumer<{consumer.TypeName}, {message}>({_Literal(consumer.Identity)}, everyInstance: {(consumer.EveryInstance ? "true" : "false")}, policy: {policy}, dispatch: {registration.DispatcherName});"
-                        : $"catalog.AddQueueConsumer<{consumer.TypeName}, {message}>({_Literal(consumer.Identity)}, policy: {policy}, dispatch: {registration.DispatcherName});"
+                        ? $"catalog.AddBusConsumer<{consumer.TypeName}, {message}>({HandlerSource.Literal(consumer.Identity)}, everyInstance: {(consumer.EveryInstance ? "true" : "false")}, policy: {policy}, dispatch: {registration.DispatcherName});"
+                        : $"catalog.AddQueueConsumer<{consumer.TypeName}, {message}>({HandlerSource.Literal(consumer.Identity)}, policy: {policy}, dispatch: {registration.DispatcherName});"
                 );
             }
         }
@@ -95,29 +94,14 @@ internal static class MessagingSourceEmitter
         );
         writer.OpenBracket();
 
-        var create =
-            $"global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<{consumer.TypeName}>(services)";
-        switch (consumer.Disposal)
-        {
-            case ConsumerDisposal.Async:
-                writer.AppendLine($"var consumer = {create};");
-                // The ConfigureAwait extension is called statically, because the generated file has no using directives.
-                writer.AppendLine(
-                    "await using (global::System.Threading.Tasks.TaskAsyncEnumerableExtensions.ConfigureAwait(consumer, false))"
-                );
-                writer.OpenBracket();
-                _WriteDelivery(writer, consumer);
-                writer.CloseBracket();
-                break;
-            case ConsumerDisposal.Sync:
-                writer.AppendLine($"using var consumer = {create};");
-                _WriteDelivery(writer, consumer);
-                break;
-            default:
-                writer.AppendLine($"var consumer = {create};");
-                _WriteDelivery(writer, consumer);
-                break;
-        }
+        writer.AppendHandlerInstance(
+            consumer.Disposal,
+            "consumer",
+            $"global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<{consumer.TypeName}>(services)",
+            // The ConfigureAwait extension is called statically, because the generated file has no using directives.
+            "global::System.Threading.Tasks.TaskAsyncEnumerableExtensions.ConfigureAwait(consumer, false)",
+            w => _WriteDelivery(w, consumer)
+        );
 
         writer.CloseBracket();
     }
@@ -173,13 +157,11 @@ internal static class MessagingSourceEmitter
         writer.AppendLine("default:");
         writer.IncreaseIndentation();
         writer.AppendLine(
-            $"throw new global::System.InvalidOperationException({_Literal($"Consumer {consumer.DisplayName} does not consume ")} + context.MessageType.FullName + \".\");"
+            $"throw new global::System.InvalidOperationException({HandlerSource.Literal($"Consumer {consumer.DisplayName} does not consume ")} + context.MessageType.FullName + \".\");"
         );
         writer.RemoveIndentations();
         writer.CloseBracket();
     }
-
-    private static string _Literal(string value) => SymbolDisplay.FormatLiteral(value, quote: true);
 }
 
 #pragma warning restore MA0076
