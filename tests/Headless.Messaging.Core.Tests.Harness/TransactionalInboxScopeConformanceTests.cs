@@ -16,6 +16,7 @@ using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Tests.Helpers;
 
 namespace Tests;
 
@@ -62,17 +63,14 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
                 setup.UseInMemory();
                 ConfigureStorage(setup);
                 setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.Transactional;
-                setup.Bus.ForMessage<InboxScopeMessage>(message =>
-                    message
-                        .Contract("tests.inbox-scope")
-                        .Consumer<InboxScopeConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.inbox-scope.consumer").Group("tests.inbox-scope")
-                        )
-                );
-                setup.Bus.ForMessage<InboxScopeOutput>(message => message.Contract("tests.inbox-scope.output"));
-                setup.Queue.ForMessage<InboxScopeOutput>(message => message.Contract("tests.inbox-scope.output"));
             })
             .AddBusConsumeMiddleware<InboxScopeMiddleware>();
+        services.ConfigureMessaging(messaging =>
+        {
+            messaging.Message<InboxScopeMessage>("tests.inbox-scope");
+            messaging.Message<InboxScopeOutput>("tests.inbox-scope.output");
+            messaging.AddModule<InboxScopeModule>();
+        });
 
         await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         var currentTenant = provider.GetRequiredService<ICurrentTenant>();
@@ -277,6 +275,17 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
             await next();
             state.ContextDisposedBeforeHandlerReturned = db.Disposed;
         }
+    }
+
+    public sealed class InboxScopeModule : IMessagingModule
+    {
+        public static void Register(MessagingCatalogBuilder catalog) =>
+            catalog.AddBusConsumer<InboxScopeConsumer, InboxScopeMessage>(
+                "tests.inbox-scope.consumer",
+                everyInstance: false,
+                policy: null,
+                TestConsumerDispatch.FromServices<InboxScopeConsumer, InboxScopeMessage>()
+            );
     }
 
     public sealed class InboxScopeConsumer(InboxScopeDbContext db, ExecutionState state) : IConsume<InboxScopeMessage>

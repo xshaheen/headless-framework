@@ -528,23 +528,24 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         services.AddHeadlessMessaging(setup =>
         {
             setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
-            setup.Bus.ForMessage<OrderShipped>(message =>
-            {
-                message.Contract("orders.shipped", "2");
-                if (includeJobs)
-                {
-                    message.Consumer<DeadlineConsumer>(consumer => consumer.ConsumerIdentity("tests.bridge.deadline"));
-                }
-            });
-            setup.Bus.ForMessage<OrderInvoiced>(message => message.Contract("orders.invoiced", "3"));
-            setup.Bus.ForMessage<ShipOrder>(message =>
-                message
-                    .Contract("orders.ship", "2")
-                    .Consumer<ShipOrderConsumer>(consumer => consumer.ConsumerIdentity("tests.bridge.ship"))
-            );
             setup.UseInMemory();
             setup.UsePostgreSql(fixture.ConnectionString);
         });
+        services.ConfigureMessaging(messaging =>
+        {
+            messaging.Message<OrderShipped>("orders.shipped", "2");
+            messaging.Message<OrderInvoiced>("orders.invoiced", "3");
+            messaging.Message<ShipOrder>("orders.ship", "2");
+            messaging.AddModule<ShipOrderModule>();
+            if (includeJobs)
+            {
+                messaging.AddModule<DeadlineConsumerModule>();
+            }
+        });
+
+        // The tests drive consumers through hand-built executor descriptors, which resolve the consumer type from DI.
+        services.AddScoped<ShipOrderConsumer>();
+        services.AddScoped<DeadlineConsumer>();
 
         services.AddSingleton<EmissionEvidence>();
         new MessagingBuilder(services).AddTenantPropagationServices();
@@ -733,6 +734,34 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         public ActivityTraceId SaveTrace { get; set; }
         public int LocalHandlerCalls { get; set; }
     }
+
+    private sealed class ShipOrderModule : IMessagingModule
+    {
+        public static void Register(MessagingCatalogBuilder catalog) =>
+            catalog.AddBusConsumer<ShipOrderConsumer, ShipOrder>(
+                "tests.bridge.ship",
+                everyInstance: false,
+                policy: null,
+                _Dispatch<ShipOrderConsumer, ShipOrder>()
+            );
+    }
+
+    private sealed class DeadlineConsumerModule : IMessagingModule
+    {
+        public static void Register(MessagingCatalogBuilder catalog) =>
+            catalog.AddBusConsumer<DeadlineConsumer, OrderShipped>(
+                "tests.bridge.deadline",
+                everyInstance: false,
+                policy: null,
+                _Dispatch<DeadlineConsumer, OrderShipped>()
+            );
+    }
+
+    private static MessageConsumerDispatch _Dispatch<TConsumer, TMessage>()
+        where TConsumer : class, IConsume<TMessage>
+        where TMessage : class =>
+        static (services, context, cancellationToken) =>
+            services.GetRequiredService<TConsumer>().ConsumeAsync((ConsumeContext<TMessage>)context, cancellationToken);
 
     private sealed class ShipOrderConsumer(BridgeTestDbContext db, EmissionEvidence evidence) : IConsume<ShipOrder>
     {

@@ -20,8 +20,10 @@ public sealed class AwsRoutingAffinitySetupTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseAws(options => options.Region = Amazon.RegionEndpoint.USEast1);
-            setup.Queue.ForMessage<AffinityContract>(message => message.Contract(destination).RequireRoutingAffinity());
         });
+        services.ConfigureMessaging(messaging =>
+            messaging.Message<AffinityContract>(destination).OnQueue(queue => queue.RequireRoutingAffinity())
+        );
         services.AddSingleton<IQueueTransport>(_ =>
         {
             effects++;
