@@ -43,7 +43,7 @@ public static class SetupBlobsCore
             );
         }
 
-        if (services.Any(static descriptor => descriptor.ServiceType == typeof(BlobsProviderRegistration)))
+        if (IsRegistered(services))
         {
             throw new InvalidOperationException(
                 "AddHeadlessBlobs was already called on this service collection. Configure all blob stores "
@@ -74,7 +74,15 @@ public static class SetupBlobsCore
             action(services);
         }
 
+        SetupBlobsTenancy.ApplyTenantScoping(services);
+
         return services;
+    }
+
+    /// <summary>Returns whether <c>AddHeadlessBlobs</c> already ran on <paramref name="services"/>.</summary>
+    internal static bool IsRegistered(IServiceCollection services)
+    {
+        return services.Any(static descriptor => descriptor.ServiceType == typeof(BlobsProviderRegistration));
     }
 
     private sealed record BlobsProviderRegistration;
