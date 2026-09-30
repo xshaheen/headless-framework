@@ -5,6 +5,7 @@ using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
+using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -145,6 +146,128 @@ public sealed class JobsRunOnlyTests : TestBase
         definitions.Select(x => x.Function).Should().Contain(TestJobs.BillingNightly);
         provider.GetRequiredService<JobFunctionRegistry>().RunFilter.Allows(TestJobs.BillingNightly).Should().BeFalse();
     }
+
+    [Fact]
+    public async Task should_never_claim_or_dispatch_a_filtered_cron_job()
+    {
+        // given
+        var clock = new FakeTimeProvider(new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        await using var provider = _Provider(clock, options => options.RunOnly("orders.*"));
+        var store = provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var runnableDefinition = _CronDefinition(TestJobs.OrdersShip);
+        var filteredDefinition = _CronDefinition(TestJobs.BillingCloseDay);
+        await store.InsertCronJobsAsync([runnableDefinition, filteredDefinition], AbortToken);
+        var overdue = clock.GetUtcNow().UtcDateTime.AddMinutes(-2);
+        var runnableOccurrence = _Occurrence(runnableDefinition.Id, overdue);
+        var filteredOccurrence = _Occurrence(filteredDefinition.Id, overdue);
+        await store.InsertCronJobOccurrencesAsync([runnableOccurrence, filteredOccurrence], AbortToken);
+
+        // when
+        var swept = await store.QueueTimedOutCronJobOccurrencesAsync(AbortToken).ToArrayAsync(AbortToken);
+        var instant = clock.GetUtcNow().UtcDateTime.AddMinutes(30);
+        var claimed = await store
+            .QueueCronJobOccurrencesAsync(
+                (instant, [_Dispatch(runnableDefinition), _Dispatch(filteredDefinition)]),
+                AbortToken
+            )
+            .ToArrayAsync(AbortToken);
+        var candidates = await store.GetEarliestCronDispatchCandidatesAsync(10, cancellationToken: AbortToken);
+
+        // then
+        swept.Select(x => x.Id).Should().Equal(runnableOccurrence.Id);
+        claimed.Should().ContainSingle().Which.CronJobId.Should().Be(runnableDefinition.Id);
+        candidates.Should().NotBeNull();
+        candidates.Candidates.Should().OnlyContain(x => x.FunctionName == TestJobs.OrdersShip);
+        var stored = (
+            await store.GetAllCronJobOccurrencesAsync(x => x.Id == filteredOccurrence.Id, AbortToken)
+        ).Single();
+        stored.Status.Should().Be(JobStatus.Idle);
+        stored.OwnerId.Should().BeNull();
+        stored.LockedUntil.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_never_peek_or_acquire_a_filtered_cron_occurrence_directly()
+    {
+        // given
+        var clock = new FakeTimeProvider(new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        await using var provider = _Provider(clock, options => options.RunOnly("orders.*"));
+        var store = provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var runnableDefinition = _CronDefinition(TestJobs.OrdersShip);
+        var filteredDefinition = _CronDefinition(TestJobs.BillingCloseDay);
+        await store.InsertCronJobsAsync([runnableDefinition, filteredDefinition], AbortToken);
+        var upcoming = clock.GetUtcNow().UtcDateTime.AddSeconds(30);
+        var runnableOccurrence = _Occurrence(runnableDefinition.Id, upcoming);
+        var filteredOccurrence = _Occurrence(filteredDefinition.Id, upcoming);
+        await store.InsertCronJobOccurrencesAsync([runnableOccurrence, filteredOccurrence], AbortToken);
+
+        // when
+        var peekedFiltered = await store.GetEarliestAvailableCronOccurrenceAsync([filteredDefinition.Id], AbortToken);
+        var peekedRunnable = await store.GetEarliestAvailableCronOccurrenceAsync([runnableDefinition.Id], AbortToken);
+        var acquired = await store.AcquireImmediateCronOccurrencesAsync(
+            [runnableOccurrence.Id, filteredOccurrence.Id],
+            AbortToken
+        );
+
+        // then
+        peekedFiltered.Should().BeNull();
+        peekedRunnable.Should().NotBeNull();
+        peekedRunnable.Id.Should().Be(runnableOccurrence.Id);
+        acquired.Select(x => x.Id).Should().Equal(runnableOccurrence.Id);
+        var stored = (
+            await store.GetAllCronJobOccurrencesAsync(x => x.Id == filteredOccurrence.Id, AbortToken)
+        ).Single();
+        stored.Status.Should().Be(JobStatus.Idle);
+        stored.OwnerId.Should().BeNull();
+        stored.LockedUntil.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_claim_every_cron_job_on_a_host_without_a_filter()
+    {
+        // given
+        var clock = new FakeTimeProvider(new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        await using var provider = _Provider(clock);
+        var store = provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var ordersDefinition = _CronDefinition(TestJobs.OrdersShip);
+        var billingDefinition = _CronDefinition(TestJobs.BillingCloseDay);
+        await store.InsertCronJobsAsync([ordersDefinition, billingDefinition], AbortToken);
+        var overdue = clock.GetUtcNow().UtcDateTime.AddMinutes(-2);
+        var ordersOccurrence = _Occurrence(ordersDefinition.Id, overdue);
+        var billingOccurrence = _Occurrence(billingDefinition.Id, overdue);
+        await store.InsertCronJobOccurrencesAsync([ordersOccurrence, billingOccurrence], AbortToken);
+
+        // when
+        var swept = await store.QueueTimedOutCronJobOccurrencesAsync(AbortToken).ToArrayAsync(AbortToken);
+
+        // then
+        swept.Select(x => x.Id).Should().BeEquivalentTo([ordersOccurrence.Id, billingOccurrence.Id]);
+    }
+
+    private static CronJobEntity _CronDefinition(string function) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            Function = function,
+            Expression = "0 0 * * * *",
+        };
+
+    private static CronJobOccurrenceEntity<CronJobEntity> _Occurrence(Guid cronJobId, DateTime executionTime) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            CronJobId = cronJobId,
+            ExecutionTime = executionTime,
+        };
+
+    private static JobManagerDispatchContext _Dispatch(CronJobEntity definition) =>
+        new(definition.Id)
+        {
+            FunctionName = definition.Function,
+            Expression = definition.Expression,
+            ScheduleRevision = definition.ScheduleRevision,
+            OnNodeDeath = NodeDeathPolicy.Retry,
+        };
 
     private static ServiceProvider _Provider(
         TimeProvider? clock = null,
