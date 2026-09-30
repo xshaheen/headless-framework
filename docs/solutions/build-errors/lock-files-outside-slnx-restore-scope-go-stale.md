@@ -79,5 +79,10 @@ Files: `tests/Headless.Messaging.PackageReference.Tests.Unit/Probes/BusOnlyCanno
   rm -rf tests/Headless.Messaging.PackageReference.Tests.Unit/Probes/*/obj
   CI=true make test-project TEST_PROJECT=tests/Headless.Messaging.PackageReference.Tests.Unit/Headless.Messaging.PackageReference.Tests.Unit.csproj
   ```
+  This still reproduces after `make test-project` gained `--no-restore`: the fence test builds each
+  probe in a child `dotnet build` process that restores on its own, so the outer flag does not reach
+  it. What the outer `--no-restore` does drop is locked-mode validation of the *test project's* own
+  lock file under `CI=true`; run `make restore-project PROJECT=<the test csproj>` for that.
+
   Also check `git status` after any local test run: a `packages.lock.json` it modified is the same drift that CI would reject.
 - **The same drift can land on `main` through two independently green PRs.** #973 added the `Headless.Checks` dependency to `Headless.UnitOfWork.Abstractions`. #971 was merged after it and added `tests/Headless.Features.Tests.Harness` and `tests/Headless.Settings.Tests.Harness`, whose lock files were generated before that dependency existed. Each PR passed CI on its own, and `main` then failed with the same NU1004 in `Lint · .NET analyzers` and `.NET · Build & unit tests (UTC)`. These projects are inside the slnx, so `make restore` does refresh them, but only on a branch rebased onto the merged result. After rebasing a branch that adds new lock-file projects, or after the base gains a new `ProjectReference`, run `make restore` and commit any lock file it changes.
