@@ -96,7 +96,7 @@ internal sealed class HeadlessRoutedPlacement : IDisposable
             );
         }
 
-        var placement = _FindResolvedPlacement(services, contextType, tenantId);
+        var placement = _FindResolvedPlacement(services, routing.CreateRequest(contextType, tenantId), contextType);
 
         return new HeadlessRoutedPlacement(
             contextType,
@@ -117,15 +117,18 @@ internal sealed class HeadlessRoutedPlacement : IDisposable
         );
 
     /// <summary>
-    /// The placement resolved for <paramref name="tenantId"/> before this constructor ran: the factory's pin for
-    /// the scope it created, else the placement the tenancy entry point preloaded for the ambient tenant.
+    /// The placement resolved for <paramref name="request"/> before this constructor ran: the factory's pin for
+    /// the scope it created, else the placement the tenancy entry point preloaded for the ambient tenant and the
+    /// context's data store.
     /// </summary>
     private static TenantDataPlacement _FindResolvedPlacement(
         IServiceProvider services,
-        Type contextType,
-        string tenantId
+        TenantDataPlacementRequest request,
+        Type contextType
     )
     {
+        var tenantId = request.TenantId;
+
         if (
             services.GetService<HeadlessTenantPlacementPin>() is { Placement: { } pinned } pin
             && string.Equals(pin.TenantId, tenantId, StringComparison.Ordinal)
@@ -134,7 +137,7 @@ internal sealed class HeadlessRoutedPlacement : IDisposable
             return pinned;
         }
 
-        if (TenantDataPlacementPreloader.TryGetPreloaded(tenantId, out var preloaded))
+        if (TenantDataPlacementPreloader.TryGetPreloaded(request, out var preloaded))
         {
             return preloaded ?? throw NoPlacement(tenantId, contextType);
         }
@@ -147,14 +150,6 @@ internal sealed class HeadlessRoutedPlacement : IDisposable
                 + "the ambient tenant yourself."
         );
     }
-
-    /// <summary>The fail-closed refusal for a tenant whose placement source has no entry for it.</summary>
-    public static InvalidOperationException NoPlacement(string tenantId, Type contextType) =>
-        new(
-            $"Tenant '{tenantId}' has no data placement, so the tenant-routed context '{contextType.Name}' cannot be "
-                + "created for it. Add the tenant's placement to the configured placement source; routed contexts "
-                + "never fall back to the shared database."
-        );
 
     /// <summary>
     /// Returns the pinned tenant id, or throws when the ambient tenant changed since the pin: the context's model

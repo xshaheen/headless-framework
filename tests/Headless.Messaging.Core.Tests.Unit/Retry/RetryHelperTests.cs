@@ -515,7 +515,7 @@ public sealed class RetryHelperTests : TestBase
         public PlacementResolver(CancellationToken cancelledBy) => _cancelledBy = cancelledBy;
 
         public Task<TenantDataPlacement?> ResolveAsync(
-            string tenantId,
+            TenantDataPlacementRequest request,
             CancellationToken cancellationToken = default
         ) =>
             _cancelledBy.IsCancellationRequested

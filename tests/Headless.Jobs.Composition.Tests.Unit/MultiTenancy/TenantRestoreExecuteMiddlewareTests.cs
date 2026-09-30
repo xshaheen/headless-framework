@@ -255,7 +255,7 @@ public sealed class TenantRestoreExecuteMiddlewareTests : TestBase
     private sealed class FixedPlacementResolver(TenantDataPlacement placement) : ITenantDataPlacementResolver
     {
         public Task<TenantDataPlacement?> ResolveAsync(
-            string tenantId,
+            TenantDataPlacementRequest request,
             CancellationToken cancellationToken = default
         ) => Task.FromResult<TenantDataPlacement?>(placement);
     }

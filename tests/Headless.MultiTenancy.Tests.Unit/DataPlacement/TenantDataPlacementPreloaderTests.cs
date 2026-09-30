@@ -201,11 +201,114 @@ public sealed class TenantDataPlacementPreloaderTests : TestBase
         resolver.Calls.Should().Be(1);
     }
 
+    [Fact]
+    public async Task should_preload_one_placement_per_routed_data_store()
+    {
+        // given: two routed contexts in different data stores, a resolver that places them differently
+        var resolver = new StoreAwareResolver();
+        var sut = new TenantDataPlacementPreloader([
+            new TenantDataRoutedContextRegistration(typeof(object)),
+            new TenantDataRoutedContextRegistration(typeof(string), "billing"),
+            new TenantDataRoutedContextRegistration(typeof(int), "billing"),
+        ]);
+        await using var services = _Services(resolver);
+        (bool Found, TenantDataPlacement? Placement) primary = default;
+        (bool Found, TenantDataPlacement? Placement) billing = default;
+        var unrouted = true;
+
+        // when
+        await sut.RunAsync(
+            services,
+            "acme",
+            () =>
+            {
+                primary.Found = TenantDataPlacementPreloader.TryGetPreloaded("acme", out primary.Placement);
+                billing.Found = TenantDataPlacementPreloader.TryGetPreloaded(
+                    new TenantDataPlacementRequest("acme", "billing"),
+                    out billing.Placement
+                );
+                unrouted = TenantDataPlacementPreloader.TryGetPreloaded(
+                    new TenantDataPlacementRequest("acme", "reports"),
+                    out _
+                );
+
+                return Task.CompletedTask;
+            },
+            AbortToken
+        );
+
+        // then: one resolution per distinct store, none for a store no context is routed under
+        resolver.Requests.Should().BeEquivalentTo([new TenantDataPlacementRequest("acme"), new("acme", "billing")]);
+        primary.Found.Should().BeTrue();
+        primary.Placement!.Schema.Should().Be("acme_default");
+        billing.Found.Should().BeTrue();
+        billing.Placement!.Schema.Should().Be("acme_billing");
+        unrouted.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_hold_a_fault_per_data_store()
+    {
+        // given: the billing store faults, the default store resolves
+        var resolver = new StoreAwareResolver { FaultingStore = "billing" };
+        var sut = new TenantDataPlacementPreloader([
+            new TenantDataRoutedContextRegistration(typeof(object)),
+            new TenantDataRoutedContextRegistration(typeof(string), "billing"),
+        ]);
+        await using var services = _Services(resolver);
+        Exception? billingFault = null;
+        var primaryFound = false;
+
+        // when
+        await sut.RunAsync(
+            services,
+            "acme",
+            () =>
+            {
+                primaryFound = TenantDataPlacementPreloader.TryGetPreloaded("acme", out _);
+                billingFault = Record.Exception(() =>
+                    TenantDataPlacementPreloader.TryGetPreloaded(
+                        new TenantDataPlacementRequest("acme", "billing"),
+                        out _
+                    )
+                );
+
+                return Task.CompletedTask;
+            },
+            AbortToken
+        );
+
+        // then
+        primaryFound.Should().BeTrue();
+        billingFault.Should().BeOfType<TimeoutException>();
+    }
+
     private static TenantDataPlacementPreloader _Create(bool routed) =>
         new(routed ? [new TenantDataRoutedContextRegistration(typeof(object))] : []);
 
     private static ServiceProvider _Services(ITenantDataPlacementResolver resolver) =>
         new ServiceCollection().AddSingleton(resolver).BuildServiceProvider();
+
+    private sealed class StoreAwareResolver : ITenantDataPlacementResolver
+    {
+        public List<TenantDataPlacementRequest> Requests { get; } = [];
+
+        public string? FaultingStore { get; init; }
+
+        public Task<TenantDataPlacement?> ResolveAsync(
+            TenantDataPlacementRequest request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Requests.Add(request);
+
+            return string.Equals(request.DataStore, FaultingStore, StringComparison.Ordinal)
+                ? Task.FromException<TenantDataPlacement?>(new TimeoutException("placement store down"))
+                : Task.FromResult<TenantDataPlacement?>(
+                    new TenantDataPlacement($"{request.TenantId}_{request.DataStore}", connectionString: null)
+                );
+        }
+    }
 
     private sealed class CountingResolver : ITenantDataPlacementResolver
     {
@@ -218,7 +321,10 @@ public sealed class TenantDataPlacementPreloaderTests : TestBase
 
         public int Calls { get; private set; }
 
-        public Task<TenantDataPlacement?> ResolveAsync(string tenantId, CancellationToken cancellationToken = default)
+        public Task<TenantDataPlacement?> ResolveAsync(
+            TenantDataPlacementRequest request,
+            CancellationToken cancellationToken = default
+        )
         {
             Calls++;
 

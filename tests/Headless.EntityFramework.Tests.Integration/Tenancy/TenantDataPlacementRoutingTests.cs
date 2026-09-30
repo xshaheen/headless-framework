@@ -586,7 +586,7 @@ public sealed class TenantDataPlacementRoutingTests(TenantPlacementDbContextTest
     private sealed class FaultingResolver(Exception fault) : ITenantDataPlacementResolver
     {
         public Task<TenantDataPlacement?> ResolveAsync(
-            string tenantId,
+            TenantDataPlacementRequest request,
             CancellationToken cancellationToken = default
         ) => Task.FromException<TenantDataPlacement?>(fault);
     }
