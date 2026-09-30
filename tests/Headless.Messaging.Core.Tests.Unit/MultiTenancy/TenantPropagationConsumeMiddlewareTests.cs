@@ -117,8 +117,8 @@ public sealed class TenantPropagationConsumeMiddlewareTests : TestBase
         var logger = new ScopeRecordingLogger<TenantPropagationConsumeMiddleware>();
         var middleware = new TenantPropagationConsumeMiddleware(
             new TestCurrentTenant(),
-            Options.Create(new TenantTelemetryOptions()),
-            logger
+            logger,
+            Options.Create(new TenantTelemetryOptions())
         );
         using var consumeSpan = RecordedTestActivity.Start();
         IReadOnlyList<KeyValuePair<string, object?>> scopeDuringNext = [];
@@ -153,8 +153,8 @@ public sealed class TenantPropagationConsumeMiddlewareTests : TestBase
         var logger = new ScopeRecordingLogger<TenantPropagationConsumeMiddleware>();
         var middleware = new TenantPropagationConsumeMiddleware(
             new TestCurrentTenant { Id = "acme" },
-            Options.Create(new TenantTelemetryOptions()),
-            logger
+            logger,
+            Options.Create(new TenantTelemetryOptions())
         );
         using var consumeSpan = RecordedTestActivity.Start();
         IReadOnlyList<KeyValuePair<string, object?>> scopeDuringNext = [];

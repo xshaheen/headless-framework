@@ -16,8 +16,8 @@ namespace Headless.Messaging.MultiTenancy;
 [PublicAPI]
 public sealed class TenantPropagationConsumeMiddleware(
     ICurrentTenant currentTenant,
-    IOptions<TenantTelemetryOptions>? telemetryOptions = null,
-    ILogger<TenantPropagationConsumeMiddleware>? logger = null
+    ILogger<TenantPropagationConsumeMiddleware>? logger = null,
+    IOptions<TenantTelemetryOptions>? telemetryOptions = null
 ) : IConsumeMiddleware<ConsumeContext>
 {
     /// <summary>Framework priority for tenant restoration middleware.</summary>

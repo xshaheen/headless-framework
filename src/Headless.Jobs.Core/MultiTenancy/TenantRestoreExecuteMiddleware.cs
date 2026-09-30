@@ -24,8 +24,8 @@ namespace Headless.Jobs.MultiTenancy;
 public sealed class TenantRestoreExecuteMiddleware(
     ICurrentTenant currentTenant,
     IOptions<JobsTenancyOptions> options,
-    IOptions<TenantTelemetryOptions>? telemetryOptions = null,
-    ILogger<TenantRestoreExecuteMiddleware>? logger = null
+    ILogger<TenantRestoreExecuteMiddleware>? logger = null,
+    IOptions<TenantTelemetryOptions>? telemetryOptions = null
 ) : IJobExecuteMiddleware
 {
     private static readonly TenantTelemetryOptions _DefaultTelemetryOptions = new();

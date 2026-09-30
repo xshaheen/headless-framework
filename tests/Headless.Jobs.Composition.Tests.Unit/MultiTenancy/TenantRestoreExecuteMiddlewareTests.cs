@@ -202,8 +202,8 @@ public sealed class TenantRestoreExecuteMiddlewareTests : TestBase
         var middleware = new TenantRestoreExecuteMiddleware(
             new TestCurrentTenant(),
             Options.Create(new JobsTenancyOptions { PropagateTenant = true }),
-            Options.Create(new TenantTelemetryOptions()),
-            logger
+            logger,
+            Options.Create(new TenantTelemetryOptions())
         );
         using var jobSpan = RecordedTestActivity.Start();
         IReadOnlyList<KeyValuePair<string, object?>> scopeDuringHandler = [];
@@ -237,8 +237,8 @@ public sealed class TenantRestoreExecuteMiddlewareTests : TestBase
         var middleware = new TenantRestoreExecuteMiddleware(
             new TestCurrentTenant(),
             Options.Create(new JobsTenancyOptions { PropagateTenant = true }),
-            Options.Create(new TenantTelemetryOptions()),
-            logger
+            logger,
+            Options.Create(new TenantTelemetryOptions())
         );
         using var jobSpan = RecordedTestActivity.Start();
         IReadOnlyList<KeyValuePair<string, object?>> scopeDuringHandler = [];
