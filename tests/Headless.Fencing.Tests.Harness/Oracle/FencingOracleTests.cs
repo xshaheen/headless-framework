@@ -25,6 +25,12 @@ public abstract class FencingOracleTests<TFixture>(TFixture fixture) : TestBase
     /// </summary>
     protected virtual long PrecisionTicks => 1;
 
+    /// <summary>
+    /// The real time waited before each operation that sets an expiry; longer than the coarsest database clock step
+    /// measured (about 12 milliseconds on Azure SQL Edge), so two leases never share an expiry by accident.
+    /// </summary>
+    protected virtual TimeSpan ClockSpacing => TimeSpan.FromMilliseconds(20);
+
     protected TFixture Fixture { get; } = fixture;
 
     /// <summary>Every edge-case key: case, accent composition, control characters, surrogates, the longest value.</summary>
@@ -49,7 +55,7 @@ public abstract class FencingOracleTests<TFixture>(TFixture fixture) : TestBase
             OracleSeeds.Resolve(),
             length: 40,
             edgeKeys,
-            OracleSeeds.PrecisionOverride ?? PrecisionTicks,
+            new FencingOracleTolerance(OracleSeeds.PrecisionOverride ?? PrecisionTicks, ClockSpacing),
             AbortToken
         );
 

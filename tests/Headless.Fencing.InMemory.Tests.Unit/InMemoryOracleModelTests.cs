@@ -39,7 +39,7 @@ public sealed class InMemoryOracleModelTests : TestBase
             OracleSeeds.Resolve(defaultCount: 200),
             length: 60,
             edgeKeys: true,
-            precisionTicks: 1,
+            FencingOracleTolerance.Exact,
             AbortToken
         );
 

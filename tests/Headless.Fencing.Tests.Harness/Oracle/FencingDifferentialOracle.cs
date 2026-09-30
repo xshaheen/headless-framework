@@ -73,6 +73,21 @@ public sealed record FencingOracleDivergence(
     }
 }
 
+/// <summary>How close a provider must come to the model.</summary>
+/// <param name="PrecisionTicks">
+/// The tolerance within which a stored lease duration counts as the model's; 1 compares exactly.
+/// </param>
+/// <param name="ClockSpacing">
+/// The real time the oracle waits before each operation that sets an expiry, longer than the database clock's
+/// resolution, so no two leases share an expiry the model would order by time. Azure SQL Edge 1.0.7 on arm64 advances
+/// <c>SYSUTCDATETIME()</c> in steps of about 12 milliseconds.
+/// </param>
+public sealed record FencingOracleTolerance(long PrecisionTicks, TimeSpan ClockSpacing)
+{
+    /// <summary>Exact durations and no spacing: for comparing in-memory stores, whose clocks share a resolution.</summary>
+    public static FencingOracleTolerance Exact { get; } = new(1, TimeSpan.Zero);
+}
+
 /// <summary>
 /// Runs generated histories against the in-memory model and a provider, step by step, and reports where they differ.
 /// </summary>
@@ -90,7 +105,7 @@ public static class FencingDifferentialOracle
         ILeasesFixture model,
         ILeasesFixture actual,
         FencingOracleHistory history,
-        long precisionTicks,
+        FencingOracleTolerance tolerance,
         CancellationToken cancellationToken
     )
     {
@@ -104,10 +119,25 @@ public static class FencingDifferentialOracle
 
         for (var step = 0; step < history.Ops.Count; step++)
         {
+            // A database clock coarser than the spacing would give two leases set in quick succession one expiry, and
+            // the sweep would then order them by tenant and resource instead of by when they were set: allowed by the
+            // contract, but a difference the model's finer clock cannot reproduce.
+            if (
+                tolerance.ClockSpacing > TimeSpan.Zero
+                && history.Ops[step]
+                    is FencingOracleOp.Grant
+                        or FencingOracleOp.Contend
+                        or FencingOracleOp.Renew
+                        or FencingOracleOp.EnlistedGrant
+            )
+            {
+                await Task.Delay(tolerance.ClockSpacing, cancellationToken).ConfigureAwait(false);
+            }
+
             var expected = await modelSession.ExecuteAsync(history.Ops[step], cancellationToken).ConfigureAwait(false);
             var observed = await actualSession.ExecuteAsync(history.Ops[step], cancellationToken).ConfigureAwait(false);
 
-            if (!expected.Matches(observed, precisionTicks))
+            if (!expected.Matches(observed, tolerance.PrecisionTicks))
             {
                 return (step, expected, observed);
             }
@@ -121,11 +151,11 @@ public static class FencingDifferentialOracle
         ILeasesFixture model,
         ILeasesFixture actual,
         FencingOracleHistory history,
-        long precisionTicks,
+        FencingOracleTolerance tolerance,
         CancellationToken cancellationToken
     )
     {
-        var first = await FindFirstDivergenceAsync(model, actual, history, precisionTicks, cancellationToken)
+        var first = await FindFirstDivergenceAsync(model, actual, history, tolerance, cancellationToken)
             .ConfigureAwait(false);
 
         if (first is not { } found)
@@ -137,11 +167,11 @@ public static class FencingDifferentialOracle
                 model,
                 actual,
                 history.With([.. history.Ops.Take(found.Step + 1)]),
-                precisionTicks,
+                tolerance,
                 cancellationToken
             )
             .ConfigureAwait(false);
-        var replay = await FindFirstDivergenceAsync(model, actual, minimal, precisionTicks, cancellationToken)
+        var replay = await FindFirstDivergenceAsync(model, actual, minimal, tolerance, cancellationToken)
             .ConfigureAwait(false);
 
         return new FencingOracleDivergence(
@@ -161,7 +191,7 @@ public static class FencingDifferentialOracle
         IEnumerable<int> seeds,
         int length,
         bool edgeKeys,
-        long precisionTicks,
+        FencingOracleTolerance tolerance,
         CancellationToken cancellationToken
     )
     {
@@ -172,7 +202,7 @@ public static class FencingDifferentialOracle
             var history = FencingOracleGenerator.Generate(seed, length, edgeKeys);
 
             if (
-                await CheckAsync(model, actual, history, precisionTicks, cancellationToken).ConfigureAwait(false) is
+                await CheckAsync(model, actual, history, tolerance, cancellationToken).ConfigureAwait(false) is
                 { } divergence
             )
             {
@@ -206,7 +236,7 @@ public static class FencingDifferentialOracle
         ILeasesFixture model,
         ILeasesFixture actual,
         FencingOracleHistory history,
-        long precisionTicks,
+        FencingOracleTolerance tolerance,
         CancellationToken cancellationToken
     )
     {
@@ -223,7 +253,7 @@ public static class FencingDifferentialOracle
                     model,
                     actual,
                     history.With(candidate),
-                    precisionTicks,
+                    tolerance,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
