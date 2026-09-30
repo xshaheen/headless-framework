@@ -67,7 +67,6 @@ public sealed class SubscribeExecutorCallbackPublishTests : TestBase
         {
             await using var unitOfWork = await unitOfWorkFactory.BeginAsync(
                 _ => ValueTask.FromResult<IUnitOfWorkResource>(new NonRelationalResource()),
-                options: null,
                 cancellationToken
             );
 

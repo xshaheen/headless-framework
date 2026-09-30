@@ -101,6 +101,52 @@ public sealed partial class SchemaRunner(
     }
 
     /// <summary>
+    /// Applies (<see cref="SchemaRunnerMode.Apply"/>) or verifies (<see cref="SchemaRunnerMode.Verify"/>) the
+    /// registered contributions, and throws when the history disagrees in a way the mode cannot accept: a changed
+    /// checksum in either mode, and a missing step in verify mode. <see cref="SchemaMismatchKind.Unknown"/> rows are
+    /// returned, never thrown: an older replica starting after a newer one applied a step is a normal rolling deploy.
+    /// </summary>
+    /// <param name="mode">Whether to apply missing steps or only compare.</param>
+    /// <param name="cancellationToken">Cancels the run.</param>
+    /// <returns>Every mismatch found, including the tolerated ones.</returns>
+    /// <exception cref="SchemaRunnerException">The run failed, or the history disagrees with the registered steps.</exception>
+    public async Task<IReadOnlyList<SchemaMismatch>> RunAsync(
+        SchemaRunnerMode mode,
+        CancellationToken cancellationToken = default
+    )
+    {
+        IReadOnlyList<SchemaMismatch> mismatches;
+        SchemaMismatchKind[] fatal;
+
+        if (mode == SchemaRunnerMode.Verify)
+        {
+            mismatches = await VerifyAsync(cancellationToken).ConfigureAwait(false);
+            fatal = [SchemaMismatchKind.Missing, SchemaMismatchKind.Checksum];
+        }
+        else
+        {
+            mismatches = (await ApplyAsync(cancellationToken).ConfigureAwait(false)).Mismatches;
+            fatal = [SchemaMismatchKind.Checksum];
+        }
+
+        var failures = mismatches.Where(m => fatal.Contains(m.Kind)).ToList();
+
+        if (failures.Count > 0)
+        {
+            throw new SchemaRunnerException(
+                $"Headless schema runner ({mode} mode): the database history disagrees with the registered steps: "
+                    + $"{string.Join("; ", failures)}. A missing step needs the exported deploy script or Apply mode; a "
+                    + "changed checksum means a released step was edited, so add a new step instead."
+            )
+            {
+                Mismatches = failures,
+            };
+        }
+
+        return mismatches;
+    }
+
+    /// <summary>
     /// Compares every registered contribution with its schema's history without writing. A missing history table
     /// reports every step as <see cref="SchemaMismatchKind.Missing"/>. Rows of features this host does not register
     /// are ignored, so hosts with different feature sets can share one schema.

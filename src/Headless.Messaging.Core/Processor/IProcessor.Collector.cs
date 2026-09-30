@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -49,6 +50,7 @@ internal sealed class CollectorProcessor : IProcessor
     public async Task ProcessAsync(ProcessingContext context)
     {
         context.ThrowIfStopping();
+        await _CollectAdditionalOutboxesAsync(context).ConfigureAwait(false);
         var storage = _serviceProvider.GetRequiredService<IDataStorage>();
         var cutoffs = await storage
             .GetInboxHistoryRetentionCutoffsAsync(context.CancellationToken)
@@ -102,6 +104,48 @@ internal sealed class CollectorProcessor : IProcessor
         } while (deletedInRound);
 
         await context.WaitAsync(_waitingInterval).ConfigureAwait(false);
+    }
+
+    // Additional outboxes hold only published rows, so only their expired published rows are swept. Each runs
+    // before the primary sweep and absorbs its own failure: one unreachable database must not stop the cleanup of
+    // the primary storage or of the other outboxes.
+    private async Task _CollectAdditionalOutboxesAsync(ProcessingContext context)
+    {
+        var secondaries = _serviceProvider.GetService<MessagingOutboxes>()?.Secondaries ?? [];
+
+        foreach (var outbox in secondaries)
+        {
+            if (!outbox.IsInitialized)
+            {
+                continue;
+            }
+
+            var category = $"{nameof(CleanupCategory.Published)} ({outbox.Name})";
+            try
+            {
+                var table = outbox.Initializer.GetPublishedTableName();
+                var time = _timeProvider.GetUtcNow();
+                int deletedCount;
+                do
+                {
+                    context.ThrowIfStopping();
+                    _logger.CollectingExpiredData(category);
+                    deletedCount = await outbox
+                        .Storage.DeleteExpiresAsync(table, time, _ItemBatch, context.CancellationToken)
+                        .ConfigureAwait(false);
+
+                    if (deletedCount != 0)
+                    {
+                        _logger.ExpiredItemsDeleted(deletedCount, category);
+                        await context.WaitAsync(_delay).ConfigureAwait(false);
+                    }
+                } while (deletedCount != 0);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.ExpiredDataDeleteFailed(ex, category, ex.Message);
+            }
+        }
     }
 
     private enum CleanupCategory

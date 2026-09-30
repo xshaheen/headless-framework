@@ -14,6 +14,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
+using Tests.Helpers;
 
 namespace Tests;
 
@@ -286,6 +287,42 @@ public sealed class BootstrapperTests : TestBase
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("processor boom");
         startedProcessor.DisposeCount.Should().BePositive();
         bootstrapper.IsStarted.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_start_without_an_additional_outbox_whose_database_is_down()
+    {
+        // given
+        var billing = AdditionalOutboxDoubles.CreateOutbox("billing", initialized: false);
+        var shipping = AdditionalOutboxDoubles.CreateOutbox("shipping", initialized: false);
+        shipping
+            .Initializer.InitializeAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException(new TimeoutException("shipping is down")));
+        var outboxes = AdditionalOutboxDoubles.CreateOutboxes(
+            AdditionalOutboxDoubles.CreateRelationalStorage("orders"),
+            billing,
+            shipping
+        );
+        var captured = new List<(LogLevel Level, EventId EventId)>();
+        await using var provider = _CreateProvider(
+            captureLog: captured,
+            extraSetup: services =>
+            {
+                services.RemoveAll<MessagingOutboxes>();
+                services.AddSingleton(outboxes);
+            }
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        // when
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        // then
+        bootstrapper.IsStarted.Should().BeTrue();
+        billing.IsInitialized.Should().BeTrue();
+        shipping.IsInitialized.Should().BeFalse();
+        captured.Should().Contain(e => e.Level == LogLevel.Error && e.EventId.Id == 103);
+        await ((IHostedService)bootstrapper).StopAsync(AbortToken);
     }
 
     [Fact]

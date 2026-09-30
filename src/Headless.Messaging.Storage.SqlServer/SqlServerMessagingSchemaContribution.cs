@@ -15,9 +15,11 @@ namespace Headless.Messaging.Storage.SqlServer;
 internal static class SqlServerMessagingSchemaContribution
 {
     public const string Feature = "Messaging";
+    public const string OutboxFeature = "MessagingOutbox";
     public const string TablesStepVersion = "1";
     public const string HistoryIndexesStepVersion = "2";
 
+    /// <summary>Creates the contribution of the primary storage: the inbox, its history, and the published table.</summary>
     public static SchemaContribution Create(SqlServerOptions options, MessagingStorageOptions storageOptions)
     {
         var schema = storageOptions.Schema;
@@ -33,7 +35,9 @@ internal static class SqlServerMessagingSchemaContribution
                 new SchemaStep(
                     TablesStepVersion,
                     "Create the table-valued parameter types and the published, received, inbox receipt, and inbox audit tables with their constraints and indexes.",
-                    _TablesSql(schema, options.OwnerColumnMaxLength)
+                    _TypesSql(schema, options.OwnerColumnMaxLength)
+                        + _InboxTablesSql(schema, options.OwnerColumnMaxLength)
+                        + _PublishedTableSql(schema, options.OwnerColumnMaxLength)
                 ),
                 new SchemaStep(
                     HistoryIndexesStepVersion,
@@ -44,16 +48,35 @@ internal static class SqlServerMessagingSchemaContribution
         );
     }
 
-    private static string _TablesSql(string schema, int ownerColumnMaxLength)
+    /// <summary>
+    /// Creates the contribution of an additional outbox, whose database holds published rows only: the inbox, its
+    /// history, and its readiness checks stay with the primary storage. It is its own feature because its steps differ
+    /// from the primary's, and an outbox database never holds both.
+    /// </summary>
+    public static SchemaContribution CreateOutbox(SqlServerOptions options, MessagingStorageOptions storageOptions)
     {
-        // Constraint names are unique per schema, so the table name alone keeps them distinct; every
-        // existence probe below is scoped to its table because the same name exists in every schema.
-        const string receivedPrefix = "MessagingReceived";
-        const string publishedPrefix = "MessagingPublished";
-        var received = SqlServerStorageTableNames.Received(schema);
-        var published = SqlServerStorageTableNames.Published(schema);
+        var schema = storageOptions.Schema;
+        var connectionString = options.ConnectionString;
 
-        // Simplified SQL for Azure SQL Edge compatibility (no TEXTIMAGE_ON, simpler index options).
+        return new SchemaContribution(
+            feature: OutboxFeature,
+            dialect: SqlServerSchemaDialect.Instance,
+            createConnection: () => new SqlConnection(connectionString),
+            schema: schema,
+            steps:
+            [
+                new SchemaStep(
+                    TablesStepVersion,
+                    "Create the table-valued parameter types and the published table with its indexes.",
+                    _TypesSql(schema, options.OwnerColumnMaxLength)
+                        + _PublishedTableSql(schema, options.OwnerColumnMaxLength)
+                ),
+            ]
+        );
+    }
+
+    private static string _TypesSql(string schema, int ownerColumnMaxLength)
+    {
         return string.Create(
             CultureInfo.InvariantCulture,
             $"""
@@ -69,6 +92,22 @@ internal static class SqlServerMessagingSchemaContribution
                     [ExceptionInfo] [nvarchar](max) NOT NULL
                 );
 
+            """
+        );
+    }
+
+    private static string _InboxTablesSql(string schema, int ownerColumnMaxLength)
+    {
+        // Constraint names are unique per schema, so the table name alone keeps them distinct; every
+        // existence probe below is scoped to its table because the same name exists in every schema.
+        const string receivedPrefix = "MessagingReceived";
+        var received = SqlServerStorageTableNames.Received(schema);
+
+        // Simplified SQL for Azure SQL Edge compatibility (no TEXTIMAGE_ON, simpler index options).
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
             IF OBJECT_ID(N'{received}',N'U') IS NULL
             BEGIN
                 CREATE TABLE {received}(
@@ -182,43 +221,6 @@ internal static class SqlServerMessagingSchemaContribution
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Owner_NotNull' AND object_id = OBJECT_ID(N'{received}'))
                 CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Owner_NotNull] ON {received} ([Owner] ASC) WHERE [Owner] IS NOT NULL;
 
-            IF OBJECT_ID(N'{published}',N'U') IS NULL
-            BEGIN
-                CREATE TABLE {published}(
-                    [Id] [uniqueidentifier] NOT NULL,
-                    [Version] [nvarchar](20) NOT NULL,
-                    [Name] [nvarchar](200) NOT NULL,
-                    [Content] [nvarchar](max) NULL,
-                    [IntentType] [smallint] NOT NULL,
-                    [Retries] [int] NOT NULL,
-                    [InlineAttempts] [int] NOT NULL CONSTRAINT [DF_{publishedPrefix}_InlineAttempts] DEFAULT 0,
-                    [Added] [datetimeoffset](7) NOT NULL,
-                    [ExpiresAt] [datetimeoffset](7) NULL,
-                    [NextRetryAt] [datetimeoffset](7) NULL,
-                    [LockedUntil] [datetimeoffset](7) NULL,
-                    [Owner] [nvarchar]({ownerColumnMaxLength}) NULL,
-                    [StatusName] [nvarchar](50) NOT NULL,
-                    [MessageId] [nvarchar](200) NOT NULL,
-                    CONSTRAINT [PK_{publishedPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC)
-                );
-            END;
-
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_Version_ExpiresAt_StatusName' AND object_id = OBJECT_ID(N'{published}'))
-                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_ExpiresAt_StatusName] ON {published} ([Version] ASC,[ExpiresAt] ASC,[StatusName] ASC);
-
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_ExpiresAt_StatusName' AND object_id = OBJECT_ID(N'{published}'))
-                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_ExpiresAt_StatusName] ON {published} ([ExpiresAt] ASC,[StatusName] ASC);
-
-            -- #508 — see the received-table note above; create the final dashboard timeline/statistics index.
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_StatusName_Added' AND object_id = OBJECT_ID(N'{published}'))
-                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_StatusName_Added] ON {published} ([StatusName] ASC, [Added] ASC);
-
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_Version_NextRetryAt' AND object_id = OBJECT_ID(N'{published}'))
-                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_NextRetryAt] ON {published} ([Version] ASC,[IntentType] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
-
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_Owner_NotNull' AND object_id = OBJECT_ID(N'{published}'))
-                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Owner_NotNull] ON {published} ([Owner] ASC) WHERE [Owner] IS NOT NULL;
-
             IF OBJECT_ID(N'{schema}.MessagingInboxOperationReceipts',N'U') IS NULL
             BEGIN
                 CREATE TABLE [{schema}].[MessagingInboxOperationReceipts](
@@ -277,6 +279,55 @@ internal static class SqlServerMessagingSchemaContribution
                OR COL_LENGTH(N'{schema}.MessagingInboxOperationReceipts',N'ExpectedDueAt') IS NULL
                OR COL_LENGTH(N'{schema}.MessagingInboxAudit',N'TargetKind') IS NULL
                 THROW 50004, N'Headless.Messaging inbox schema is incomplete: the lifecycle, retention or operation receipt contract is missing.', 1;
+            """
+        );
+    }
+
+    private static string _PublishedTableSql(string schema, int ownerColumnMaxLength)
+    {
+        const string publishedPrefix = "MessagingPublished";
+        var published = SqlServerStorageTableNames.Published(schema);
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
+            IF OBJECT_ID(N'{published}',N'U') IS NULL
+            BEGIN
+                CREATE TABLE {published}(
+                    [Id] [uniqueidentifier] NOT NULL,
+                    [Version] [nvarchar](20) NOT NULL,
+                    [Name] [nvarchar](200) NOT NULL,
+                    [Content] [nvarchar](max) NULL,
+                    [IntentType] [smallint] NOT NULL,
+                    [Retries] [int] NOT NULL,
+                    [InlineAttempts] [int] NOT NULL CONSTRAINT [DF_{publishedPrefix}_InlineAttempts] DEFAULT 0,
+                    [Added] [datetimeoffset](7) NOT NULL,
+                    [ExpiresAt] [datetimeoffset](7) NULL,
+                    [NextRetryAt] [datetimeoffset](7) NULL,
+                    [LockedUntil] [datetimeoffset](7) NULL,
+                    [Owner] [nvarchar]({ownerColumnMaxLength}) NULL,
+                    [StatusName] [nvarchar](50) NOT NULL,
+                    [MessageId] [nvarchar](200) NOT NULL,
+                    CONSTRAINT [PK_{publishedPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC)
+                );
+            END;
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_Version_ExpiresAt_StatusName' AND object_id = OBJECT_ID(N'{published}'))
+                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_ExpiresAt_StatusName] ON {published} ([Version] ASC,[ExpiresAt] ASC,[StatusName] ASC);
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_ExpiresAt_StatusName' AND object_id = OBJECT_ID(N'{published}'))
+                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_ExpiresAt_StatusName] ON {published} ([ExpiresAt] ASC,[StatusName] ASC);
+
+            -- #508 — see the received-table note above; create the final dashboard timeline/statistics index.
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_StatusName_Added' AND object_id = OBJECT_ID(N'{published}'))
+                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_StatusName_Added] ON {published} ([StatusName] ASC, [Added] ASC);
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_Version_NextRetryAt' AND object_id = OBJECT_ID(N'{published}'))
+                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_NextRetryAt] ON {published} ([Version] ASC,[IntentType] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_Owner_NotNull' AND object_id = OBJECT_ID(N'{published}'))
+                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Owner_NotNull] ON {published} ([Owner] ASC) WHERE [Owner] IS NOT NULL;
+
             """
         );
     }

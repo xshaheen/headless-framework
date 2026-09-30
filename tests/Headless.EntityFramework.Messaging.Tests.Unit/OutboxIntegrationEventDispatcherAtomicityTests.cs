@@ -90,11 +90,7 @@ public sealed class OutboxIntegrationEventDispatcherAtomicityTests : TestBase
         await using var scope = harness.ServiceProvider.CreateAsyncScope();
         var unitOfWork = await scope
             .ServiceProvider.GetRequiredService<IUnitOfWorkFactory>()
-            .BeginAsync(
-                _ => ValueTask.FromResult<IUnitOfWorkResource>(new NonRelationalResource()),
-                options: null,
-                AbortToken
-            );
+            .BeginAsync(_ => ValueTask.FromResult<IUnitOfWorkResource>(new NonRelationalResource()), AbortToken);
 
         // when — entities raised an integration event during the save, and the save then rolls back
         await using (unitOfWork)
@@ -130,11 +126,7 @@ public sealed class OutboxIntegrationEventDispatcherAtomicityTests : TestBase
         await using var scope = harness.ServiceProvider.CreateAsyncScope();
         var unitOfWork = await scope
             .ServiceProvider.GetRequiredService<IUnitOfWorkFactory>()
-            .BeginAsync(
-                _ => ValueTask.FromResult<IUnitOfWorkResource>(new NonRelationalResource()),
-                options: null,
-                AbortToken
-            );
+            .BeginAsync(_ => ValueTask.FromResult<IUnitOfWorkResource>(new NonRelationalResource()), AbortToken);
 
         // when
         await using (unitOfWork)

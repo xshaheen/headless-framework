@@ -828,4 +828,33 @@ internal static partial class LoggerExtensions
         Exception exception,
         string middlewareType
     );
+
+    [LoggerMessage(
+        EventId = 103,
+        EventName = "OutboxStorageInitFailed",
+        Level = LogLevel.Error,
+        Message = "Initializing additional outbox {OutboxName} failed. The host starts without it and retries in the background; its relay is paused until then."
+    )]
+    public static partial void OutboxStorageInitFailed(this ILogger logger, Exception exception, string outboxName);
+
+    [LoggerMessage(
+        EventId = 104,
+        EventName = "OutboxStorageInitRetryFailed",
+        Level = LogLevel.Warning,
+        Message = "Initializing additional outbox {OutboxName} failed again. Retrying in {RetryDelay}."
+    )]
+    public static partial void OutboxStorageInitRetryFailed(
+        this ILogger logger,
+        Exception exception,
+        string outboxName,
+        TimeSpan retryDelay
+    );
+
+    [LoggerMessage(
+        EventId = 105,
+        EventName = "OutboxStorageInitialized",
+        Level = LogLevel.Information,
+        Message = "Additional outbox {OutboxName} is initialized; its relay resumes."
+    )]
+    public static partial void OutboxStorageInitialized(this ILogger logger, string outboxName);
 }

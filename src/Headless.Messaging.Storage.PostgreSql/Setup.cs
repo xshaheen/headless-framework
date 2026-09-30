@@ -19,6 +19,11 @@ namespace Headless.Messaging;
 /// Extension methods for configuring PostgreSQL as the messaging storage backend.
 /// </summary>
 [PublicAPI]
+[SuppressMessage(
+    "Naming",
+    "CA1708:Identifiers should differ by more than case",
+    Justification = "C# 14 extension member blocks emit compiler-generated marker members differing only by case."
+)]
 public static class SetupPostgreSqlMessaging
 {
     extension(MessagingSetupBuilder setup)
@@ -93,6 +98,112 @@ public static class SetupPostgreSqlMessaging
                 services => services.Configure<PostgreSqlOptions, PostgreSqlOptionsValidator>(configure)
             );
         }
+    }
+
+    extension(OutboxStorageBuilder outbox)
+    {
+        /// <summary>Stores this additional outbox's published rows in a PostgreSQL database.</summary>
+        /// <param name="connectionString">The connection string of the outbox's database.</param>
+        /// <returns>The messaging setup builder, for chaining.</returns>
+        /// <exception cref="ArgumentException"><paramref name="connectionString"/> is null or whitespace.</exception>
+        /// <exception cref="InvalidOperationException">This outbox already has a storage.</exception>
+        public MessagingSetupBuilder UsePostgreSql(string connectionString)
+        {
+            Argument.IsNotNullOrWhiteSpace(connectionString);
+            return outbox.UsePostgreSql(options => options.ConnectionString = connectionString);
+        }
+
+        /// <summary>Stores this additional outbox's published rows in PostgreSQL, configured from a section.</summary>
+        /// <param name="configuration">Configuration containing <see cref="PostgreSqlOptions"/> values.</param>
+        /// <returns>The messaging setup builder, for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is null.</exception>
+        /// <exception cref="InvalidOperationException">This outbox already has a storage.</exception>
+        public MessagingSetupBuilder UsePostgreSql(IConfiguration configuration)
+        {
+            Argument.IsNotNull(configuration);
+            return AddPostgreSqlOutboxCore(
+                outbox,
+                "AddOutbox().UsePostgreSql(...)",
+                options => options.Bind(configuration)
+            );
+        }
+
+        /// <summary>Stores this additional outbox's published rows in PostgreSQL, configured by a delegate.</summary>
+        /// <param name="configure">Action that configures <see cref="PostgreSqlOptions"/>.</param>
+        /// <returns>The messaging setup builder, for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is null.</exception>
+        /// <exception cref="InvalidOperationException">This outbox already has a storage.</exception>
+        public MessagingSetupBuilder UsePostgreSql(Action<PostgreSqlOptions> configure)
+        {
+            Argument.IsNotNull(configure);
+            return AddPostgreSqlOutboxCore(
+                outbox,
+                "AddOutbox().UsePostgreSql(...)",
+                options => options.Configure(configure)
+            );
+        }
+
+        /// <summary>Stores this additional outbox's published rows in PostgreSQL, configured with resolved services.</summary>
+        /// <param name="configure">Action that configures <see cref="PostgreSqlOptions"/> using resolved services.</param>
+        /// <returns>The messaging setup builder, for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is null.</exception>
+        /// <exception cref="InvalidOperationException">This outbox already has a storage.</exception>
+        public MessagingSetupBuilder UsePostgreSql(Action<PostgreSqlOptions, IServiceProvider> configure)
+        {
+            Argument.IsNotNull(configure);
+            return AddPostgreSqlOutboxCore(
+                outbox,
+                "AddOutbox().UsePostgreSql(...)",
+                options => options.Configure<IServiceProvider>(configure)
+            );
+        }
+    }
+
+    /// <summary>
+    /// Registers an additional PostgreSQL outbox whose <see cref="PostgreSqlOptions"/> live under the builder's own
+    /// options name. The EF-context outbox reuses it with options read from the context.
+    /// </summary>
+    internal static MessagingSetupBuilder AddPostgreSqlOutboxCore(
+        OutboxStorageBuilder outbox,
+        string registrationName,
+        Action<OptionsBuilder<PostgreSqlOptions>> configureOptions
+    )
+    {
+        var optionsName = outbox.OptionsName;
+        var setup = outbox.UseStorage(
+            registrationName,
+            serviceProvider =>
+            {
+                var options = Options.Create(
+                    serviceProvider.GetRequiredService<IOptionsMonitor<PostgreSqlOptions>>().Get(optionsName)
+                );
+                var storageOptions = serviceProvider.GetRequiredService<IOptions<MessagingStorageOptions>>();
+                var tableNames = new PostgreSqlStorageTableNames(storageOptions);
+                // An additional outbox holds published rows only, and its schema is applied by its own runner so an
+                // unreachable outbox database never fails the host's startup.
+                var initializer = ActivatorUtilities.CreateInstance<OutboxSchemaInitializer>(
+                    serviceProvider,
+                    PostgreSqlMessagingSchemaContribution.CreateOutbox(options.Value, storageOptions.Value),
+                    tableNames
+                );
+                var storage = ActivatorUtilities.CreateInstance<PostgreSqlDataStorage>(
+                    serviceProvider,
+                    options,
+                    tableNames
+                );
+
+                return new MessagingOutbox(registrationName, storage, initializer);
+            }
+        );
+
+        // The schema is feature-owned and shared by every outbox, so an outbox on PostgreSQL validates it against
+        // PostgreSQL's rules even when the primary storage is another provider.
+        setup.Services.AddOptions<MessagingStorageOptions, PostgreSqlMessagingStorageOptionsValidator>();
+        var optionsBuilder = setup.Services.AddOptions<PostgreSqlOptions, PostgreSqlOptionsValidator>(optionsName);
+        configureOptions(optionsBuilder);
+        optionsBuilder.Configure(options => options.Version = setup.Options.Version);
+
+        return setup;
     }
 
     private static MessagingSetupBuilder _AddPostgreSqlStorageCore(

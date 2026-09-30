@@ -215,11 +215,7 @@ public sealed class UnitOfWorkRunnerTests : TestBase
                     var resource = new FakeUnitOfWorkResource { RollbackFault = RollbackFault };
                     Resources.Add(resource);
 
-                    return _factory.BeginAsync(
-                        _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-                        options: null,
-                        ct
-                    );
+                    return _factory.BeginAsync(_ => ValueTask.FromResult<IUnitOfWorkResource>(resource), ct);
                 },
                 operation,
                 strategy,

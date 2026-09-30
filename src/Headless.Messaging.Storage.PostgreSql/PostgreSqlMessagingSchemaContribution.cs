@@ -14,16 +14,41 @@ namespace Headless.Messaging.Storage.PostgreSql;
 internal static class PostgreSqlMessagingSchemaContribution
 {
     public const string Feature = "Messaging";
+    public const string OutboxFeature = "MessagingOutbox";
     public const string TablesStepVersion = "1";
     public const string PickupIndexesStepVersion = "2";
     public const string ContentSearchStepVersion = "3";
 
+    /// <summary>Creates the contribution of the primary storage: the inbox, its history, and the published table.</summary>
     public static SchemaContribution Create(PostgreSqlOptions options, MessagingStorageOptions storageOptions)
     {
+        return _Create(options, storageOptions, inbox: true);
+    }
+
+    /// <summary>
+    /// Creates the contribution of an additional outbox, whose database holds published rows only: the inbox, its
+    /// history, and its readiness checks stay with the primary storage. It is its own feature because its steps differ
+    /// from the primary's, and an outbox database never holds both.
+    /// </summary>
+    public static SchemaContribution CreateOutbox(PostgreSqlOptions options, MessagingStorageOptions storageOptions)
+    {
+        return _Create(options, storageOptions, inbox: false);
+    }
+
+    private static SchemaContribution _Create(
+        PostgreSqlOptions options,
+        MessagingStorageOptions storageOptions,
+        bool inbox
+    )
+    {
         var schema = storageOptions.Schema;
+        var tables = inbox
+            ? _InboxTablesSql(schema, options.OwnerColumnMaxLength)
+                + _PublishedTableSql(schema, options.OwnerColumnMaxLength)
+            : _PublishedTableSql(schema, options.OwnerColumnMaxLength);
 
         return new SchemaContribution(
-            feature: Feature,
+            feature: inbox ? Feature : OutboxFeature,
             dialect: PostgreSqlSchemaDialect.Instance,
             createConnection: options.CreateConnection,
             schema: schema,
@@ -31,27 +56,30 @@ internal static class PostgreSqlMessagingSchemaContribution
             [
                 new SchemaStep(
                     TablesStepVersion,
-                    "Create the published, received, inbox receipt, and inbox audit tables with their constraints and indexes.",
-                    _TablesSql(schema, options.OwnerColumnMaxLength)
+                    inbox
+                        ? "Create the published, received, inbox receipt, and inbox audit tables with their constraints and indexes."
+                        : "Create the published table and its indexes.",
+                    tables
                 ),
                 new SchemaStep(
                     PickupIndexesStepVersion,
-                    "Create the retry-pickup, owner, and history-selection indexes.",
-                    _PickupIndexesSql(schema)
+                    inbox
+                        ? "Create the retry-pickup, owner, and history-selection indexes."
+                        : "Create the published retry-pickup and owner indexes.",
+                    _PickupIndexesSql(schema, inbox)
                 ),
                 new SchemaStep(
                     ContentSearchStepVersion,
                     "Ensure pg_trgm when permitted and create the dashboard content trigram indexes when it is installed.",
-                    _ContentSearchSql(schema)
+                    _ContentSearchSql(schema, inbox)
                 ),
             ]
         );
     }
 
-    private static string _TablesSql(string schema, int ownerColumnMaxLength)
+    private static string _InboxTablesSql(string schema, int ownerColumnMaxLength)
     {
         var received = PostgreSqlStorageTableNames.Received(schema);
-        var published = PostgreSqlStorageTableNames.Published(schema);
 
         return string.Create(
             CultureInfo.InvariantCulture,
@@ -190,34 +218,6 @@ internal static class PostgreSqlMessagingSchemaContribution
             );
             CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_audit_incarnation_created" ON "{schema}"."messaging_inbox_audit" ("generation_incarnation_id","created_at");
 
-            CREATE TABLE IF NOT EXISTS {published}(
-                "id" UUID PRIMARY KEY NOT NULL,
-                "version" VARCHAR(20) NOT NULL,
-            	"name" VARCHAR(200) NOT NULL,
-            	"content" TEXT NULL,
-                "intent_type" SMALLINT NOT NULL,
-                "retries" INT NOT NULL,
-                "inline_attempts" INT NOT NULL DEFAULT 0,
-            	"added" TIMESTAMPTZ NOT NULL,
-                "expires_at" TIMESTAMPTZ NULL,
-                "next_retry_at" TIMESTAMPTZ NULL,
-                "locked_until" TIMESTAMPTZ NULL,
-                "owner" VARCHAR({ownerColumnMaxLength}) NULL,
-            	"status_name" VARCHAR(50) NOT NULL,
-                "message_id" VARCHAR(200) NOT NULL
-            );
-
-            CREATE INDEX IF NOT EXISTS "idx_messaging_published_expires_at_status_name" ON {published}("expires_at","status_name");
-            CREATE INDEX IF NOT EXISTS "idx_messaging_published_version_expires_at_status_name" ON {published} ("version","expires_at","status_name");
-            CREATE INDEX IF NOT EXISTS "idx_messaging_published_delayed" ON {published} ("status_name","expires_at") WHERE "status_name" = 'Delayed';
-            -- #509 — partial index for the Queued branch of ScheduleMessagesOfDelayedAsync's OR predicate
-            -- (WHERE "version"=$1 AND ("expires_at"<$2 AND "status_name"='Queued')). Leading with
-            -- ("version","expires_at") gives a version seek + expires_at range scan, which the planner can
-            -- bitmap-OR with the Delayed partial index above instead of sequentially scanning a large
-            -- Queued backlog (e.g. accumulated during broker downtime).
-            CREATE INDEX IF NOT EXISTS "idx_messaging_published_version_expires_at_queued" ON {published} ("version","expires_at") WHERE "status_name" = 'Queued';
-            -- #508 — see the received-table note above; create the final dashboard timeline/statistics index.
-            CREATE INDEX IF NOT EXISTS "idx_messaging_published_status_name_added" ON {published} ("status_name","added");
 
             -- CREATE TABLE IF NOT EXISTS skips a table that already exists in another shape (created by an
             -- older binary or by hand), so the inbox contract the runtime depends on is asserted here: a
@@ -258,7 +258,46 @@ internal static class PostgreSqlMessagingSchemaContribution
         );
     }
 
-    private static string _PickupIndexesSql(string schema)
+    private static string _PublishedTableSql(string schema, int ownerColumnMaxLength)
+    {
+        var published = PostgreSqlStorageTableNames.Published(schema);
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
+            CREATE TABLE IF NOT EXISTS {published}(
+                "id" UUID PRIMARY KEY NOT NULL,
+                "version" VARCHAR(20) NOT NULL,
+            	"name" VARCHAR(200) NOT NULL,
+            	"content" TEXT NULL,
+                "intent_type" SMALLINT NOT NULL,
+                "retries" INT NOT NULL,
+                "inline_attempts" INT NOT NULL DEFAULT 0,
+            	"added" TIMESTAMPTZ NOT NULL,
+                "expires_at" TIMESTAMPTZ NULL,
+                "next_retry_at" TIMESTAMPTZ NULL,
+                "locked_until" TIMESTAMPTZ NULL,
+                "owner" VARCHAR({ownerColumnMaxLength}) NULL,
+            	"status_name" VARCHAR(50) NOT NULL,
+                "message_id" VARCHAR(200) NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS "idx_messaging_published_expires_at_status_name" ON {published}("expires_at","status_name");
+            CREATE INDEX IF NOT EXISTS "idx_messaging_published_version_expires_at_status_name" ON {published} ("version","expires_at","status_name");
+            CREATE INDEX IF NOT EXISTS "idx_messaging_published_delayed" ON {published} ("status_name","expires_at") WHERE "status_name" = 'Delayed';
+            -- #509 — partial index for the Queued branch of ScheduleMessagesOfDelayedAsync's OR predicate
+            -- (WHERE "version"=$1 AND ("expires_at"<$2 AND "status_name"='Queued')). Leading with
+            -- ("version","expires_at") gives a version seek + expires_at range scan, which the planner can
+            -- bitmap-OR with the Delayed partial index above instead of sequentially scanning a large
+            -- Queued backlog (e.g. accumulated during broker downtime).
+            CREATE INDEX IF NOT EXISTS "idx_messaging_published_version_expires_at_queued" ON {published} ("version","expires_at") WHERE "status_name" = 'Queued';
+            -- #508 — see the received-table note above; create the final dashboard timeline/statistics index.
+            CREATE INDEX IF NOT EXISTS "idx_messaging_published_status_name_added" ON {published} ("status_name","added");
+            """
+        );
+    }
+
+    private static string _PickupIndexesSql(string schema, bool inbox)
     {
         var received = PostgreSqlStorageTableNames.Received(schema);
         var published = PostgreSqlStorageTableNames.Published(schema);
@@ -267,23 +306,35 @@ internal static class PostgreSqlMessagingSchemaContribution
         // reclaim, and the history indexes serve retention selection and audit-reference lookups. They are built
         // with a plain CREATE INDEX inside the step transaction: the runner applies a step once, when the tables
         // are fresh, so the brief write lock a non-concurrent build takes never meets a large backlog.
-        return $"""
-            CREATE INDEX IF NOT EXISTS "idx_messaging_received_version_next_retry_at" ON {received} ("version","intent_type","next_retry_at") INCLUDE ("retries","locked_until") WHERE "next_retry_at" IS NOT NULL;
+        var publishedSql = $"""
             CREATE INDEX IF NOT EXISTS "idx_messaging_published_version_next_retry_at" ON {published} ("version","intent_type","next_retry_at") INCLUDE ("retries","locked_until") WHERE "next_retry_at" IS NOT NULL;
-
-            CREATE INDEX IF NOT EXISTS "idx_messaging_received_owner_not_null" ON {received} ("owner") WHERE "owner" IS NOT NULL;
             CREATE INDEX IF NOT EXISTS "idx_messaging_published_owner_not_null" ON {published} ("owner") WHERE "owner" IS NOT NULL;
 
-            CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_receipts_type_created" ON "{schema}"."messaging_inbox_operation_receipts" ("operation_type","created_at");
-            CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_audit_type_created" ON "{schema}"."messaging_inbox_audit" ("operation_type","created_at");
-            CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_audit_operation" ON "{schema}"."messaging_inbox_audit" ("operation_id");
             """;
+
+        if (!inbox)
+        {
+            return publishedSql;
+        }
+
+        return publishedSql
+            + $"""
+                CREATE INDEX IF NOT EXISTS "idx_messaging_received_version_next_retry_at" ON {received} ("version","intent_type","next_retry_at") INCLUDE ("retries","locked_until") WHERE "next_retry_at" IS NOT NULL;
+                CREATE INDEX IF NOT EXISTS "idx_messaging_received_owner_not_null" ON {received} ("owner") WHERE "owner" IS NOT NULL;
+
+                CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_receipts_type_created" ON "{schema}"."messaging_inbox_operation_receipts" ("operation_type","created_at");
+                CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_audit_type_created" ON "{schema}"."messaging_inbox_audit" ("operation_type","created_at");
+                CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_audit_operation" ON "{schema}"."messaging_inbox_audit" ("operation_id");
+                """;
     }
 
-    private static string _ContentSearchSql(string schema)
+    private static string _ContentSearchSql(string schema, bool inbox)
     {
         var received = PostgreSqlStorageTableNames.Received(schema);
         var published = PostgreSqlStorageTableNames.Published(schema);
+        var receivedIndex = inbox
+            ? $"""CREATE INDEX IF NOT EXISTS "idx_messaging_received_content_trgm" ON {received} USING gin ("content" gin_trgm_ops);"""
+            : "";
 
         // #507 — CREATE EXTENSION needs superuser or an elevated role that managed PostgreSQL (RDS, Azure, Neon,
         // Supabase) withholds, and a self-hosted server may not ship the pg_trgm contrib package at all. The
@@ -305,7 +356,7 @@ internal static class PostgreSqlMessagingSchemaContribution
             DO $headless_trgm_indexes$
             BEGIN
                 IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm') THEN
-                    CREATE INDEX IF NOT EXISTS "idx_messaging_received_content_trgm" ON {received} USING gin ("content" gin_trgm_ops);
+                    {receivedIndex}
                     CREATE INDEX IF NOT EXISTS "idx_messaging_published_content_trgm" ON {published} USING gin ("content" gin_trgm_ops);
                 ELSE
                     RAISE WARNING 'pg_trgm is not installed; Headless.Messaging skipped the dashboard content trigram indexes. Messaging write and retry paths are unaffected.';

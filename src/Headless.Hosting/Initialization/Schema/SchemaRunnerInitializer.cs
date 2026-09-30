@@ -53,38 +53,11 @@ internal sealed partial class SchemaRunnerInitializer(
 
     public override async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        IReadOnlyList<SchemaMismatch> mismatches;
-        SchemaMismatchKind[] fatal;
-
-        if (options.Value.Mode == SchemaRunnerMode.Verify)
-        {
-            mismatches = await runner.VerifyAsync(cancellationToken).ConfigureAwait(false);
-            fatal = [SchemaMismatchKind.Missing, SchemaMismatchKind.Checksum];
-        }
-        else
-        {
-            mismatches = (await runner.ApplyAsync(cancellationToken).ConfigureAwait(false)).Mismatches;
-            fatal = [SchemaMismatchKind.Checksum];
-        }
+        var mismatches = await runner.RunAsync(options.Value.Mode, cancellationToken).ConfigureAwait(false);
 
         foreach (var unknown in mismatches.Where(m => m.Kind == SchemaMismatchKind.Unknown))
         {
             LogUnknownStep(_logger, unknown.Schema, unknown.Feature, unknown.Version);
-        }
-
-        var failures = mismatches.Where(m => fatal.Contains(m.Kind)).ToList();
-
-        if (failures.Count > 0)
-        {
-            throw new SchemaRunnerException(
-                $"Headless schema runner ({options.Value.Mode} mode): the database history disagrees with the "
-                    + $"registered steps: {string.Join("; ", failures)}. A missing step needs the exported deploy "
-                    + "script or Apply mode; a changed checksum means a shipped step was edited, so add a new step "
-                    + "instead."
-            )
-            {
-                Mismatches = failures,
-            };
         }
     }
 

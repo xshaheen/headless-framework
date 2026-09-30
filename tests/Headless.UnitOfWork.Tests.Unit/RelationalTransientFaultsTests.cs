@@ -64,7 +64,7 @@ public sealed class RelationalTransientFaultsTests : TestBase
     public void should_classify_a_sql_server_error_that_is_not_the_first_in_the_batch()
     {
         // SqlClient's Number is Errors[0].Number; a deadlock reported behind another error still counts.
-        var exception = new Microsoft.Data.SqlClient.SqlException(2627, 1205);
+        var exception = new Microsoft.Data.SqlClient.SqlException(2627, furtherNumbers: [1205]);
 
         RelationalTransientFaults.IsTransient(exception, CancellationToken.None).Should().BeTrue();
         SqlServerTransientFaults.GetErrorNumber(exception).Should().Be(2627);

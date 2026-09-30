@@ -40,6 +40,12 @@ public interface IUnitOfWorkReplayContext : IUnitOfWorkRunContext
     Task ArmCommitFaultAsync(CancellationToken cancellationToken);
 
     /// <summary>
+    /// Ends this attempt's database session from another connection, so the commit that follows is sent on a
+    /// connection the server already dropped and gets no answer.
+    /// </summary>
+    Task BreakConnectionAsync(CancellationToken cancellationToken);
+
+    /// <summary>
     /// Calls the same provider's <c>RunAsync</c> on this attempt's resource, which joins the attempt's unit instead
     /// of beginning another.
     /// </summary>

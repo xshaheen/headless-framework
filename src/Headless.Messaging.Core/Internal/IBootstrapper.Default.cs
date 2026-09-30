@@ -108,9 +108,17 @@ internal sealed class Bootstrapper(
                 _processors = resolvedProcessors;
             }
 
-            // The storage schema is not created here: a relational provider contributes its DDL to the Headless schema
-            // runner, which applies it in IHostedLifecycleService.StartingAsync, before any hosted service (this
-            // BackgroundService included) starts.
+            // The primary storage's schema is not created here: a relational provider contributes its DDL to the Headless
+            // schema runner, which applies it in IHostedLifecycleService.StartingAsync, before any hosted service (this
+            // BackgroundService included) starts. An invalid AddOutbox() registration fails here, before outbox work.
+            var secondaries = serviceProvider.GetService<MessagingOutboxes>()?.Secondaries ?? [];
+
+            // An additional outbox serves only units of work on its own database, and its schema is applied by its own
+            // runner: one module's database being down must not stop the host, so its failure is logged and the outbox
+            // initialization processor retries it.
+            await Task.WhenAll(secondaries.Select(outbox => _TryInitializeOutboxAsync(outbox, startupToken)))
+                .ConfigureAwait(false);
+
             if (_IsShutdownStarted())
             {
                 return;
@@ -176,6 +184,18 @@ internal sealed class Bootstrapper(
             }
 
             throw;
+        }
+    }
+
+    private async Task _TryInitializeOutboxAsync(MessagingOutbox outbox, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await outbox.EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            logger.OutboxStorageInitFailed(e, outbox.Name);
         }
     }
 
