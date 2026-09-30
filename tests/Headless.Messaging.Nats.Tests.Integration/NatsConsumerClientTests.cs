@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.Metrics;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Exceptions;
@@ -141,6 +142,158 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
             .Should()
             .Be(0);
         (await _CountConsumersAsync(js, NatsPhysicalAddress.Stream(MessageLane.Bus, streamName))).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_report_one_gap_and_count_every_drop_when_the_every_instance_channel_overflows()
+    {
+        // given - a one-slot subscription channel and a consumer stuck on its first message
+        var subject = $"overflow-{Guid.NewGuid():N}"[..30] + ".probe";
+        var identity = $"group-{Guid.NewGuid():N}"[..30];
+        var dropped = 0;
+        using var listener = _ListenToDroppedEveryInstanceDeliveries(
+            identity,
+            () => Interlocked.Increment(ref dropped)
+        );
+        var options = Options.Create(
+            new NatsMessagingOptions
+            {
+                Servers = fixture.ConnectionString,
+                StreamProvisioning = NatsStreamProvisioning.Disabled,
+                ConfigureConnection = opts => opts with { SubPendingChannelCapacity = 1 },
+            }
+        );
+        await using var client = new NatsConsumerClient(
+            identity,
+            0,
+            options,
+            _serviceProvider,
+            kind: ConsumerSubscriptionKind.EveryInstance
+        );
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var gaps = 0;
+        client.AttachCallbacks(onMessage: (_, _) => release.Task, onLog: _ => { });
+        client.AttachReestablishedCallback(_ =>
+        {
+            Interlocked.Increment(ref gaps);
+            return Task.CompletedTask;
+        });
+        await client.ConnectAsync(AbortToken);
+        await client.SubscribeAsync([subject], AbortToken);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
+
+        try
+        {
+            await client.WaitUntilReadyAsync(AbortToken);
+
+            // when - a burst far larger than the channel while the consumer is blocked
+            var connection = await fixture.GetConnectionAsync();
+            for (var i = 0; i < 50; i++)
+            {
+                await connection.PublishAsync(
+                    NatsPhysicalAddress.Subject(MessageLane.Bus, subject),
+                    new ReadOnlyMemory<byte>([1]),
+                    headers: _CreateHeaders(),
+                    serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
+                    cancellationToken: AbortToken
+                );
+            }
+
+            await connection.PingAsync(AbortToken);
+            await Task.Delay(NatsConsumerClient.DropSignalCoalesceWindow * 3, AbortToken);
+
+            // then - every drop is counted and the burst is reported to the consumer once
+            Volatile.Read(ref dropped).Should().BeGreaterThan(0);
+            Volatile.Read(ref gaps).Should().Be(1, "one burst of drops is one gap");
+        }
+        finally
+        {
+            release.TrySetResult();
+            await _StopListeningAsync(listening, cts);
+        }
+    }
+
+    [Fact]
+    public async Task should_fail_listening_for_a_rebuild_when_an_every_instance_subscription_ends()
+    {
+        // given
+        var subject = $"ended-{Guid.NewGuid():N}"[..30] + ".probe";
+        NatsConnection? connection = null;
+        var client = new NatsConsumerClient(
+            $"group-{Guid.NewGuid():N}"[..30],
+            0,
+            _CreateOptions(NatsStreamProvisioning.Disabled),
+            _serviceProvider,
+            connect: c =>
+            {
+                connection = c;
+                return c.ConnectAsync().AsTask();
+            },
+            kind: ConsumerSubscriptionKind.EveryInstance
+        );
+
+        try
+        {
+            client.AttachCallbacks(onMessage: (_, _) => Task.CompletedTask, onLog: _ => { });
+            await client.ConnectAsync(AbortToken);
+            await client.SubscribeAsync([subject], AbortToken);
+            var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), AbortToken).AsTask();
+            await client.WaitUntilReadyAsync(AbortToken);
+
+            // when - the connection underneath the client ends, completing its subscription channels
+            await connection!.DisposeAsync();
+
+            // then
+            var act = () => listening.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+            await act.Should().ThrowAsync<BrokerConnectionException>();
+        }
+        finally
+        {
+            await client.DisposeAsync();
+        }
+    }
+
+    private static MeterListener _ListenToDroppedEveryInstanceDeliveries(string identity, Action onDropped)
+    {
+        var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (
+                    string.Equals(instrument.Meter.Name, MessagingDiagnostics.SourceName, StringComparison.Ordinal)
+                    && string.Equals(instrument.Name, "messaging.every_instance.deliveries", StringComparison.Ordinal)
+                )
+                {
+                    l.EnableMeasurementEvents(instrument);
+                }
+            },
+        };
+        listener.SetMeasurementEventCallback<long>(
+            (_, _, tags, _) =>
+            {
+                var matchesIdentity = false;
+                var outcome = default(string);
+                foreach (var tag in tags)
+                {
+                    if (string.Equals(tag.Key, "messaging.consumer.group.name", StringComparison.Ordinal))
+                    {
+                        matchesIdentity = string.Equals(tag.Value as string, identity, StringComparison.Ordinal);
+                    }
+                    else if (string.Equals(tag.Key, "messaging.every_instance.outcome", StringComparison.Ordinal))
+                    {
+                        outcome = tag.Value as string;
+                    }
+                }
+
+                if (matchesIdentity && string.Equals(outcome, "dropped", StringComparison.Ordinal))
+                {
+                    onDropped();
+                }
+            }
+        );
+        listener.Start();
+        return listener;
     }
 
     private async Task<int> _CountConsumersAsync(NatsJSContext js, string streamName)

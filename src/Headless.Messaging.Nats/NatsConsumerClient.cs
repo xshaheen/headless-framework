@@ -56,6 +56,21 @@ internal sealed class NatsConsumerClient(
     private int _connectionLost;
     private int _disposed;
 
+    // The core subscriptions an every-instance client is listening on, so a drop reported by the connection can be
+    // attributed to them.
+    private INatsSub<ReadOnlyMemory<byte>>[] _everyInstanceSubscriptions = [];
+    private int _droppedSinceSignal;
+    private int _dropSignalScheduled;
+
+    /// <summary>
+    /// How long a burst of messages dropped on a full subscription channel is collected before the client reports one
+    /// gap for all of them, so a slow consumer yields one signal per burst rather than one per dropped message.
+    /// </summary>
+    internal static readonly TimeSpan DropSignalCoalesceWindow = TimeSpan.FromSeconds(1);
+
+    /// <summary>The <c>error.type</c> of an every-instance delivery the subscription channel dropped.</summary>
+    internal const string DroppedOverflowErrorType = "overflow";
+
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
 
     public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
@@ -75,10 +90,12 @@ internal sealed class NatsConsumerClient(
 
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
-        // Consumer connections disable client-side reconnect (MaxReconnectRetry = 0): a genuine connection
-        // failure surfaces out of the consume loop and terminates the listener, so the consumer register's
-        // health watchdog rebuilds it on a fresh connection instead of the NATS client silently retrying on a
-        // possibly-stale socket. The circuit breaker is per-message and never observes connection-level faults.
+        // MaxReconnectRetry = 0 does not disable reconnect: NATS.Net only enforces the limit when it is positive, so
+        // 0 (like the -1 default) retries without limit and the SDK re-sends every SUB on reconnect. A competing
+        // client's JetStream consumer is durable, so its consume loop resumes on the reconnected socket, and a loop
+        // that keeps failing trips MaxConsecutiveConsumeFailures and surfaces for a supervised rebuild. An
+        // every-instance client learns about the gap through ConnectionOpened below. The circuit breaker is
+        // per-message and never observes connection-level faults.
         var opts = _natsOptions.BuildNatsOpts() with
         {
             MaxReconnectRetry = 0,
@@ -91,6 +108,7 @@ internal sealed class NatsConsumerClient(
         {
             connection.ConnectionDisconnected += _OnConnectionDisconnectedAsync;
             connection.ConnectionOpened += _OnConnectionOpenedAsync;
+            connection.MessageDropped += _OnMessageDroppedAsync;
         }
 
         var connectTask = connect?.Invoke(connection) ?? connection.ConnectAsync().AsTask();
@@ -489,6 +507,8 @@ internal sealed class NatsConsumerClient(
                     );
                 }
 
+                Volatile.Write(ref _everyInstanceSubscriptions, [.. subscriptions]);
+
                 // The server handles a connection's protocol in order, so its PONG proves it registered every SUB
                 // above: a message published after readiness cannot miss this process.
                 await connection.PingAsync(cancellationToken).ConfigureAwait(false);
@@ -524,6 +544,8 @@ internal sealed class NatsConsumerClient(
         }
         finally
         {
+            Volatile.Write(ref _everyInstanceSubscriptions, []);
+
             foreach (var subscription in subscriptions)
             {
                 await _UnsubscribeQuietlyAsync(subscription).ConfigureAwait(false);
@@ -599,7 +621,8 @@ internal sealed class NatsConsumerClient(
 
     /// <summary>
     /// The Bus subjects an every-instance client subscribes to: the same subjects a competing client's JetStream
-    /// consumers filter on, so both kinds receive the same messages.
+    /// consumers filter on, so both kinds receive the same messages. A subject a '.&gt;' wildcard in the list already
+    /// covers is dropped, because two core subscriptions matching one publish deliver it twice to this process.
     /// </summary>
     internal static IReadOnlyList<string> BuildEveryInstanceSubjects(
         IEnumerable<string> messageNames,
@@ -613,7 +636,7 @@ internal sealed class NatsConsumerClient(
 
         return
         [
-            .. BuildConsumerSubjects(names, resolveShardedMessageNames(names))
+            .. _PruneOverlappingSubjects(BuildConsumerSubjects(names, resolveShardedMessageNames(names)))
                 .Select(subject => NatsPhysicalAddress.Subject(MessageLane.Bus, subject)),
         ];
     }
@@ -656,6 +679,78 @@ internal sealed class NatsConsumerClient(
                 {
                     LogType = MqLogType.ExceptionReceived,
                     Reason = $"Reporting a re-established NATS subscription failed: {ex}",
+                }
+            );
+        }
+    }
+
+    // A core subscription buffers deliveries in a bounded channel that drops the newest message once it is full, so a
+    // consumer slower than the publish rate silently misses invalidations. Each drop counts in the every-instance
+    // metric, and a burst of them is reported to the consumer once, like a reconnect, so it can discard state the
+    // missed messages would have changed.
+    private ValueTask _OnMessageDroppedAsync(object? sender, NatsMessageDroppedEventArgs args)
+    {
+        if (
+            Volatile.Read(ref _disposed) != 0
+            || !Array.Exists(
+                Volatile.Read(ref _everyInstanceSubscriptions),
+                subscription => ReferenceEquals(subscription, args.Subscription)
+            )
+        )
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        MessagingMetrics.RecordEveryInstanceDelivery(name, "dropped", DroppedOverflowErrorType);
+        Interlocked.Increment(ref _droppedSinceSignal);
+
+        if (Interlocked.CompareExchange(ref _dropSignalScheduled, 1, 0) == 0)
+        {
+            _SignalDroppedBurstAsync().Forget();
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    private async Task _SignalDroppedBurstAsync()
+    {
+        try
+        {
+            await Task.Delay(DropSignalCoalesceWindow, _timeProvider, CancellationToken.None).ConfigureAwait(false);
+
+            // Reopen the window before reading the count: a drop from here on schedules its own signal, which is at
+            // worst redundant, while a drop that lands after the count was read is still covered by this signal.
+            Volatile.Write(ref _dropSignalScheduled, 0);
+            var dropped = Interlocked.Exchange(ref _droppedSinceSignal, 0);
+
+            if (Volatile.Read(ref _disposed) != 0)
+            {
+                return;
+            }
+
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.AsyncErrorEvent,
+                    Reason = string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"NATS every-instance consumer '{name}' dropped {dropped} message(s) because its subscription channel was full; reporting the gap to the consumer."
+                    ),
+                }
+            );
+
+            if (Volatile.Read(ref _onReestablished) is { } onReestablished)
+            {
+                await onReestablished(CancellationToken.None).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ExceptionReceived,
+                    Reason = $"Reporting dropped NATS every-instance messages failed: {ex}",
                 }
             );
         }

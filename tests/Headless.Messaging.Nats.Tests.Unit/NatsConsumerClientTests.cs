@@ -175,6 +175,16 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
+    public void should_drop_every_instance_subjects_a_sharded_wildcard_already_covers()
+    {
+        // given - a sharded "orders" subscribes "orders.>", which also matches every "orders.created" publish
+        NatsConsumerClient
+            .BuildEveryInstanceSubjects(["orders", "orders.created"], names => names.ToHashSet(StringComparer.Ordinal))
+            .Should()
+            .Equal("headless.bus.orders", "headless.bus.orders.>");
+    }
+
+    [Fact]
     public void should_include_consumer_identity_for_bus_intent_when_build_durable_name()
     {
         NatsConsumerClient

@@ -256,7 +256,7 @@ A runtime subscription sets `RuntimeSubscriptionOptions.EveryInstance = true`.
 | Provider | Every-instance primitive | Left behind after a crash |
 | --- | --- | --- |
 | InMemory | A group per identity and instance id | Nothing |
-| NATS | Core subscription on the Bus subject, not a JetStream consumer | Nothing |
+| NATS | Core subscription on the Bus subject, not a JetStream consumer; a subject that a sharded identity's `name.>` wildcard already covers is not subscribed again, so one publish arrives once. The client reconnects on its own and reports the recovery with the reconnect signal. A consumer slower than the publish rate overflows the subscription's pending channel (`NatsOpts.SubPendingChannelCapacity`, 1024 by default), which drops the newest messages: each drop counts as `dropped` with `error.type` = `overflow`, and a burst of drops raises the reconnect signal once, after a one-second quiet window | Nothing |
 | RabbitMQ | Server-named exclusive, non-durable queue bound to the Bus exchange, on a connection of its own without automatic recovery | Nothing |
 | Redis | Group-less polled stream read from each stream's tail at subscribe time, then from the last id read | Nothing |
 | Pulsar | Non-durable, exclusive subscription starting at the latest message; Pulsar.Client reconnects on its own, and the transport reports each recovery within about a second | Nothing |
