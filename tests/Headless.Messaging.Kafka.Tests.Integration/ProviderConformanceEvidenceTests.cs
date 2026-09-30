@@ -75,7 +75,7 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
     [Fact]
     public async Task should_reject_bus_route_before_storage_or_broker_side_effects()
     {
-        var storageInitializeCalls = 0;
+        var storageResolveCalls = 0;
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessMessaging(options =>
@@ -91,7 +91,11 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
                 inboxCapability: MessagingInboxCapabilityTier.Transactional
             )
         );
-        services.AddSingleton<IStorageInitializer>(new RecordingStorageInitializer(() => storageInitializeCalls++));
+        services.AddSingleton<IStorageTableNames>(_ =>
+        {
+            storageResolveCalls++;
+            return new FixedStorageTableNames();
+        });
 
         await using var provider = services.BuildServiceProvider();
         var act = () => provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
@@ -99,7 +103,7 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
         await act.Should()
             .ThrowAsync<MessagingConfigurationException>()
             .WithMessage("*Kafka*does not support Bus*Supported lanes: Queue*setup.Queue.ForMessage*");
-        storageInitializeCalls.Should().Be(0);
+        storageResolveCalls.Should().Be(0);
     }
 
     private static TransportConformanceTestBinding _Bind(TransportConformanceScenario scenario, string method) =>
@@ -127,14 +131,8 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
 
     private sealed record KafkaBusContract;
 
-    private sealed class RecordingStorageInitializer(Action initialize) : IStorageInitializer
+    private sealed class FixedStorageTableNames : IStorageTableNames
     {
-        public Task InitializeAsync(CancellationToken cancellationToken = default)
-        {
-            initialize();
-            return Task.CompletedTask;
-        }
-
         public string GetPublishedTableName() => "published";
 
         public string GetReceivedTableName() => "received";

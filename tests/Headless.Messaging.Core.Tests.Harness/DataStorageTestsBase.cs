@@ -21,8 +21,14 @@ public abstract partial class DataStorageTestsBase : TestBase
     /// <summary>Gets the data storage instance for testing.</summary>
     protected abstract IDataStorage GetStorage();
 
-    /// <summary>Gets the storage initializer instance for testing.</summary>
-    protected abstract IStorageInitializer GetInitializer();
+    /// <summary>Gets the storage's table-name resolver for testing.</summary>
+    protected abstract IStorageTableNames GetTableNames();
+
+    /// <summary>
+    /// Applies the storage schema again. The fixture applies it once before the tests; the in-memory storage has no
+    /// schema, so the default does nothing.
+    /// </summary>
+    protected virtual Task ApplySchemaAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     /// <summary>Gets the serializer for creating message content.</summary>
     protected abstract ISerializer GetSerializer();
@@ -188,11 +194,8 @@ public abstract partial class DataStorageTestsBase : TestBase
 
     public virtual async Task should_initialize_schema()
     {
-        // given
-        var initializer = GetInitializer();
-
-        // when
-        var act = async () => await initializer.InitializeAsync(AbortToken);
+        // when: the fixture already applied the schema, so this pass must find every step recorded
+        var act = async () => await ApplySchemaAsync(AbortToken);
 
         // then
         await act.Should().NotThrowAsync();
@@ -201,11 +204,11 @@ public abstract partial class DataStorageTestsBase : TestBase
     public virtual Task should_get_table_names()
     {
         // given
-        var initializer = GetInitializer();
+        var tableNames = GetTableNames();
 
         // when
-        var publishedTable = initializer.GetPublishedTableName();
-        var receivedTable = initializer.GetReceivedTableName();
+        var publishedTable = tableNames.GetPublishedTableName();
+        var receivedTable = tableNames.GetReceivedTableName();
 
         // then
         publishedTable.Should().NotBeNullOrEmpty();
@@ -657,7 +660,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         duplicate.Message.StorageId.Should().Be(admitted.Message.StorageId);
         duplicate.Message.Content.Should().Be("not-json");
         await storage.DeleteExpiresAsync(
-            GetInitializer().GetReceivedTableName(),
+            GetTableNames().GetReceivedTableName(),
             DateTimeOffset.UtcNow,
             cancellationToken: AbortToken
         );
@@ -665,7 +668,7 @@ public abstract partial class DataStorageTestsBase : TestBase
 
         await ExpirePoisonInboxAsync(admitted.Message.StorageId, AbortToken);
         await storage.DeleteExpiresAsync(
-            GetInitializer().GetReceivedTableName(),
+            GetTableNames().GetReceivedTableName(),
             DateTimeOffset.UtcNow,
             cancellationToken: AbortToken
         );
@@ -1488,8 +1491,8 @@ public abstract partial class DataStorageTestsBase : TestBase
 
         // given
         var storage = GetStorage();
-        var initializer = GetInitializer();
-        var tableName = initializer.GetPublishedTableName();
+        var tableNames = GetTableNames();
+        var tableName = tableNames.GetPublishedTableName();
         var timeout = DateTimeOffset.UtcNow.AddMinutes(-10);
 
         // when
@@ -1509,7 +1512,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         // given — Failed rows with a future NextRetryAt are retry-scheduled, not terminal poison.
         // Expiration cleanup must only delete Failed/Succeeded rows once NextRetryAt is cleared.
         var storage = GetStorage();
-        var initializer = GetInitializer();
+        var tableNames = GetTableNames();
         var expiredAt = DateTimeOffset.UtcNow.AddMinutes(-10);
         var cleanupCutoff = DateTimeOffset.UtcNow.AddMinutes(-1);
         var nextRetryAt = DateTimeOffset.UtcNow.AddMinutes(10);
@@ -1547,13 +1550,13 @@ public abstract partial class DataStorageTestsBase : TestBase
 
         // when
         var deletedPublished = await storage.DeleteExpiresAsync(
-            initializer.GetPublishedTableName(),
+            tableNames.GetPublishedTableName(),
             cleanupCutoff,
             100,
             AbortToken
         );
         var deletedReceived = await storage.DeleteExpiresAsync(
-            initializer.GetReceivedTableName(),
+            tableNames.GetReceivedTableName(),
             cleanupCutoff,
             100,
             AbortToken

@@ -61,19 +61,14 @@ public sealed class SqlServerPooledIsolationTests(SqlServerTestFixture fixture) 
             var sqlOptions = Options.Create(
                 new SqlServerOptions { ConnectionString = connectionOptions.ConnectionString }
             );
-            var initializer = new SqlServerStorageInitializer(
-                NullLogger<SqlServerStorageInitializer>.Instance,
-                sqlOptions,
-                TestStorageOptions.For(),
-                messagingOptions
-            );
-            await initializer.InitializeAsync(AbortToken);
+            var tableNames = TestStorageOptions.TableNames();
+            await TestMessagingSchema.ApplyAsync(sqlOptions.Value, cancellationToken: AbortToken);
             var serializer = new JsonUtf8Serializer(messagingOptions);
             var storage = new SqlServerDataStorage(
                 messagingOptions,
                 sqlOptions,
                 TestStorageOptions.For(),
-                initializer,
+                tableNames,
                 serializer,
                 new SequentialGuidGenerator(SequentialGuidType.SqlServer),
                 TimeProvider.System,
@@ -145,7 +140,7 @@ public sealed class SqlServerPooledIsolationTests(SqlServerTestFixture fixture) 
                 await lockedTransaction.RollbackAsync(AbortToken);
             }
 
-            (await storage.DeleteExpiresAsync(initializer.GetPublishedTableName(), now, 10, AbortToken)).Should().Be(1);
+            (await storage.DeleteExpiresAsync(tableNames.GetPublishedTableName(), now, 10, AbortToken)).Should().Be(1);
             (await monitoring.GetPublishedMessageAsync(expiredId, AbortToken)).Should().BeNull();
             (await monitoring.GetPublishedMessageAsync(lockedId, AbortToken)).Should().NotBeNull();
 
@@ -160,7 +155,7 @@ public sealed class SqlServerPooledIsolationTests(SqlServerTestFixture fixture) 
                     )
                 );
             }
-            (await storage.DeleteExpiresAsync(initializer.GetReceivedTableName(), now, 10, AbortToken)).Should().Be(1);
+            (await storage.DeleteExpiresAsync(tableNames.GetReceivedTableName(), now, 10, AbortToken)).Should().Be(1);
             (await monitoring.GetReceivedMessageAsync(received.Message.StorageId, AbortToken)).Should().BeNull();
 
             await _AdmitOnPooledSessionAsync(storage, connectionOptions.ConnectionString, sessionId);

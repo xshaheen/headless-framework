@@ -50,7 +50,6 @@ public sealed class SqlServerSharedSchemaTests(SqlServerSharedSchemaFixture fixt
                 "MessagingInboxOperationReceipts",
                 "MessagingPublished",
                 "MessagingReceived",
-                "MessagingSchemaState",
             ],
             ["Permissions"] = ["PermissionDefinitions", "PermissionGrants", "PermissionGroupDefinitions"],
             ["Sequences"] = ["Sequences"],

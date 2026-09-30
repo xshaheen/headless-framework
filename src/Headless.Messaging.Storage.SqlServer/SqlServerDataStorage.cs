@@ -27,7 +27,7 @@ internal sealed partial class SqlServerDataStorage(
     IOptions<MessagingOptions> messagingOptions,
     IOptions<SqlServerOptions> options,
     IOptions<MessagingStorageOptions> storageOptions,
-    IStorageInitializer initializer,
+    IStorageTableNames tableNames,
     ISerializer serializer,
     [FromKeyedServices(SequentialGuidType.SqlServer)] IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
@@ -72,8 +72,8 @@ internal sealed partial class SqlServerDataStorage(
     /// </summary>
     private static readonly TimeSpan _QueuedMessageLookback = TimeSpan.FromMinutes(1);
 
-    private readonly string _publishedTable = initializer.GetPublishedTableName();
-    private readonly string _receivedTable = initializer.GetReceivedTableName();
+    private readonly string _publishedTable = tableNames.GetPublishedTableName();
+    private readonly string _receivedTable = tableNames.GetReceivedTableName();
 
     DeliveryCoordination IDeliveryCoordinationResolver.Resolve(IUnitOfWork unitOfWork)
     {
@@ -1435,7 +1435,7 @@ internal sealed partial class SqlServerDataStorage(
 
     /// <summary>
     /// Builds the <c>@Ids</c> table-valued parameter backed by the <c>HeadlessMessagingIdList</c> type
-    /// (provisioned by the storage initializer). Using a TVP keeps the SQL text and parameter shape
+    /// (provisioned by the messaging schema contribution). Using a TVP keeps the SQL text and parameter shape
     /// constant regardless of id count, so SQL Server reuses a single cached query plan — and it stays
     /// portable to older engines (table types need no OPENJSON / compatibility level 130).
     /// </summary>
@@ -1464,7 +1464,7 @@ internal sealed partial class SqlServerDataStorage(
             options,
             storageOptions,
             messagingOptions,
-            initializer,
+            tableNames,
             serializer,
             timeProvider
         );
@@ -2178,7 +2178,7 @@ internal sealed partial class SqlServerDataStorage(
 
     /// <summary>
     /// Builds the <c>@DeadOwners</c> table-valued parameter backed by the <c>HeadlessMessagingOwnerList</c> type
-    /// (provisioned by the storage initializer). The TVP keeps the reclaim plan stable across owner counts.
+    /// (provisioned by the messaging schema contribution). The TVP keeps the reclaim plan stable across owner counts.
     /// </summary>
     private SqlParameter _BuildOwnerListTvpParameter(IReadOnlyCollection<string> deadOwners)
     {

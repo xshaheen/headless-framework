@@ -3,7 +3,6 @@
 using Headless.Coordination;
 using Headless.DistributedLocks;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Persistence;
 using Headless.Messaging.Registration;
 using Headless.Messaging.Runtime;
 using Microsoft.Extensions.DependencyInjection;
@@ -99,7 +98,7 @@ internal sealed class Bootstrapper(
             _WarnIfNullNodeMembership();
             _WarnIfDispatchTimeoutMateriallyExceedsInitialGrace();
 
-            // Publish before storage initialization can block, so shutdown always reaches every
+            // Publish before any processor start can block, so shutdown always reaches every
             // processor. Resolution stays outside the lock: processor factories are third-party code
             // that can block or throw, and every other _bootstrapLock holder would wait behind them.
             var resolvedProcessors = serviceProvider.GetServices<IProcessingServer>().ToArray();
@@ -109,17 +108,9 @@ internal sealed class Bootstrapper(
                 _processors = resolvedProcessors;
             }
 
-            try
-            {
-                var storageInitializer = serviceProvider.GetRequiredService<IStorageInitializer>();
-                await storageInitializer.InitializeAsync(startupToken).ConfigureAwait(false);
-            }
-            catch (Exception e) when (e is not InvalidOperationException)
-            {
-                logger.StorageInitFailed(e);
-                throw;
-            }
-
+            // The storage schema is not created here: a relational provider contributes its DDL to the Headless schema
+            // runner, which applies it in IHostedLifecycleService.StartingAsync, before any hosted service (this
+            // BackgroundService included) starts.
             if (_IsShutdownStarted())
             {
                 return;

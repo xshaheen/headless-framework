@@ -66,7 +66,7 @@ public sealed class PostgreSqlDeliveryCoordinationTests(PostgreSqlTestFixture fi
         services.AddDbContext<CoordinationDbContext>(options => options.UseNpgsql(fixture.ConnectionString));
         services.Configure<PostgreSqlOptions>(x => x.ConnectionString = configuredConnectionString);
         services.Configure<MessagingOptions>(x => x.Version = "v1");
-        services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
+        services.AddTestMessagingSchema();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
         services.AddSingleton(TimeProvider.System);
 
@@ -78,7 +78,7 @@ public sealed class PostgreSqlDeliveryCoordinationTests(PostgreSqlTestFixture fi
             provider.GetRequiredService<IOptions<PostgreSqlOptions>>(),
             TestStorageOptions.For(),
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
-            provider.GetRequiredService<IStorageInitializer>(),
+            provider.GetRequiredService<IStorageTableNames>(),
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             TimeProvider.System,

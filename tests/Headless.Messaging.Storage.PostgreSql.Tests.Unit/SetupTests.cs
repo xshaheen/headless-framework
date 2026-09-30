@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using Headless.Hosting.Initialization;
+using Headless.Hosting.Initialization.Schema;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -32,7 +34,14 @@ public sealed class SetupTests : TestBase
         await using var provider = services.BuildServiceProvider();
 
         provider.GetRequiredService<MessageStorageMarkerService>().Name.Should().Be("PostgreSql");
-        provider.GetRequiredService<IStorageInitializer>().Should().BeOfType<PostgreSqlStorageInitializer>();
+        provider.GetRequiredService<IStorageTableNames>().Should().BeOfType<PostgreSqlStorageTableNames>();
+        // The provider runs no DDL itself: its tables reach the database as a schema-runner contribution.
+        provider
+            .GetRequiredService<SchemaRunner>()
+            .Contributions.Should()
+            .ContainSingle(c => c.Feature == PostgreSqlMessagingSchemaContribution.Feature)
+            .Which.Schema.Should()
+            .Be(HeadlessStorageDefaults.Schema);
         provider.GetRequiredService<IDataStorage>().Should().BeOfType<PostgreSqlDataStorage>();
 
         var options = provider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value;

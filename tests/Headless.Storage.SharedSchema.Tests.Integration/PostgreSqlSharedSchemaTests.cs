@@ -68,7 +68,6 @@ public sealed class PostgreSqlSharedSchemaTests(PostgreSqlSharedSchemaFixture fi
                 "messaging_inbox_operation_receipts",
                 "messaging_published",
                 "messaging_received",
-                "messaging_schema_state",
             ],
             ["Permissions"] = ["permission_definitions", "permission_grants", "permission_group_definitions"],
             ["Sequences"] = ["sequences"],

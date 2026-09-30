@@ -21,7 +21,7 @@ public sealed class PostgreSqlRetentionTests(PostgreSqlTestFixture fixture) : Te
     private readonly string _schema = $"retention_{Guid.NewGuid():N}";
     private string _table = null!;
     private IOptions<PostgreSqlOptions> _postgreSqlOptions = null!;
-    private IStorageInitializer _initializer = null!;
+    private IStorageTableNames _tableNames = null!;
     private IDataStorage _storage = null!;
 
     public override async ValueTask InitializeAsync()
@@ -29,25 +29,20 @@ public sealed class PostgreSqlRetentionTests(PostgreSqlTestFixture fixture) : Te
         await base.InitializeAsync();
         var messagingOptions = Options.Create(new MessagingOptions { Version = "v1" });
         _postgreSqlOptions = Options.Create(new PostgreSqlOptions { ConnectionString = fixture.ConnectionString });
-        _initializer = new PostgreSqlStorageInitializer(
-            NullLogger<PostgreSqlStorageInitializer>.Instance,
-            _postgreSqlOptions,
-            TestStorageOptions.For(_schema),
-            messagingOptions
-        );
-        _table = _initializer.GetReceivedTableName();
+        _tableNames = TestStorageOptions.TableNames(_schema);
+        _table = _tableNames.GetReceivedTableName();
         _storage = new PostgreSqlDataStorage(
             _postgreSqlOptions,
             TestStorageOptions.For(_schema),
             messagingOptions,
-            _initializer,
+            _tableNames,
             new JsonUtf8Serializer(messagingOptions),
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             TimeProvider.System,
             new NullNodeMembership(),
             NullLogger<PostgreSqlDataStorage>.Instance
         );
-        await _initializer.InitializeAsync(AbortToken);
+        await TestMessagingSchema.ApplyAsync(_postgreSqlOptions.Value, _schema, AbortToken);
     }
 
     protected override async ValueTask DisposeAsyncCore()
@@ -67,7 +62,6 @@ public sealed class PostgreSqlRetentionTests(PostgreSqlTestFixture fixture) : Te
         await connection.ExecuteAsync(
             new CommandDefinition(
                 $$"""
-                DROP INDEX IF EXISTS "{{_schema}}".idx_messaging_received_inbox_retention;
                 INSERT INTO {{_table}} ("id","version","name","content","retries","added","status_name","message_id",
                     "intent_type","is_inbox_record","generation_incarnation_id","lifecycle_id","contract_identity","contract_version","consumer_identity","effective_expires_at","expires_at")
                 SELECT id,'v1','retention.plan','{}',0,statement_timestamp(),'Succeeded',i::text,
@@ -81,9 +75,8 @@ public sealed class PostgreSqlRetentionTests(PostgreSqlTestFixture fixture) : Te
             )
         );
 
-        // Existing schemas must acquire the missing index, and initialization must remain repeatable.
-        await _initializer!.InitializeAsync(AbortToken);
-        await _initializer.InitializeAsync(AbortToken);
+        // Applying the schema again must be a no-op that leaves the retention index in place.
+        await TestMessagingSchema.ApplyAsync(_postgreSqlOptions.Value, _schema, AbortToken);
 
         // Capture the command executed by the provider so the plan assertion cannot drift from its SQL.
         using var capture = new RetentionCommandLogger();
@@ -98,7 +91,7 @@ public sealed class PostgreSqlRetentionTests(PostgreSqlTestFixture fixture) : Te
         {
             (
                 await _storage!.DeleteExpiresAsync(
-                    _initializer!.GetReceivedTableName(),
+                    _tableNames.GetReceivedTableName(),
                     DateTimeOffset.UtcNow,
                     3,
                     AbortToken
@@ -123,7 +116,7 @@ public sealed class PostgreSqlRetentionTests(PostgreSqlTestFixture fixture) : Te
             await transaction.RollbackAsync(AbortToken);
             (
                 await _storage.DeleteExpiresAsync(
-                    _initializer.GetReceivedTableName(),
+                    _tableNames.GetReceivedTableName(),
                     DateTimeOffset.UtcNow,
                     20,
                     AbortToken
@@ -133,7 +126,7 @@ public sealed class PostgreSqlRetentionTests(PostgreSqlTestFixture fixture) : Te
                 .Be(7);
             (
                 await _storage.DeleteExpiresAsync(
-                    _initializer.GetReceivedTableName(),
+                    _tableNames.GetReceivedTableName(),
                     DateTimeOffset.UtcNow,
                     20,
                     AbortToken

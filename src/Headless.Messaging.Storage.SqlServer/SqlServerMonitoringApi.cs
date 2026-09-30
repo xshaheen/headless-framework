@@ -21,7 +21,7 @@ internal sealed class SqlServerMonitoringApi(
     IOptions<SqlServerOptions> options,
     IOptions<MessagingStorageOptions> storageOptions,
     IOptions<MessagingOptions> messagingOptions,
-    IStorageInitializer initializer,
+    IStorageTableNames tableNames,
     ISerializer serializer,
     TimeProvider timeProvider
 ) : IMonitoringApi
@@ -29,8 +29,8 @@ internal sealed class SqlServerMonitoringApi(
     private readonly SqlServerOptions _options = Argument.IsNotNull(options.Value);
     private readonly MessagingStorageOptions _storageOptions = Argument.IsNotNull(storageOptions.Value);
     private readonly MessagingOptions _messagingOptions = messagingOptions.Value;
-    private readonly string _publishedTable = initializer.GetPublishedTableName();
-    private readonly string _receivedTable = initializer.GetReceivedTableName();
+    private readonly string _publishedTable = tableNames.GetPublishedTableName();
+    private readonly string _receivedTable = tableNames.GetReceivedTableName();
 
     /// <summary>
     /// Returns aggregate message counts broken down by status (succeeded, failed, delayed, pending retry)
@@ -519,7 +519,7 @@ internal sealed class SqlServerMonitoringApi(
             : "CAST(NULL AS nvarchar(max)) AS ExceptionInfo";
 
         // Pass the id set through the HeadlessMessagingIdList table-valued parameter (provisioned by the
-        // storage initializer and already used by SqlServerDataStorage). The SQL text and the @Ids shape
+        // messaging schema contribution and already used by SqlServerDataStorage). The SQL text and the @Ids shape
         // stay constant regardless of id count, so SQL Server reuses one cached query plan instead of
         // compiling a fresh plan per dynamic IN-list length — and it stays portable to older engines
         // (table types need no OPENJSON / compatibility level 130).

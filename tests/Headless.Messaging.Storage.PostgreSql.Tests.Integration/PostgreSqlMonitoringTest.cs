@@ -22,13 +22,13 @@ namespace Tests;
 public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : TestBase
 {
     private IDataStorage? _storage;
-    private IStorageInitializer? _initializer;
+    private IStorageTableNames? _tableNames;
 
     public override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
         _EnsureInitialized();
-        await _initializer!.InitializeAsync(AbortToken);
+        await TestMessagingSchema.ApplyAsync(fixture.ConnectionString, cancellationToken: AbortToken);
 
         // Clean tables before each test
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
@@ -609,7 +609,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
 
     private void _EnsureInitialized()
     {
-        if (_initializer is not null)
+        if (_tableNames is not null)
         {
             return;
         }
@@ -632,18 +632,13 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         var postgreSqlOptions = provider.GetRequiredService<IOptions<PostgreSqlOptions>>();
         var messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
 
-        _initializer = new PostgreSqlStorageInitializer(
-            NullLogger<PostgreSqlStorageInitializer>.Instance,
-            postgreSqlOptions,
-            TestStorageOptions.For(),
-            messagingOptions
-        );
+        _tableNames = TestStorageOptions.TableNames();
 
         _storage = new PostgreSqlDataStorage(
             postgreSqlOptions,
             TestStorageOptions.For(),
             messagingOptions,
-            _initializer,
+            _tableNames,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             TimeProvider.System,

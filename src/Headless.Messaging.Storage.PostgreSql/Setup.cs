@@ -10,6 +10,7 @@ using Headless.Messaging.Storage.PostgreSql;
 using Headless.Sql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Messaging;
@@ -124,7 +125,15 @@ public static class SetupPostgreSqlMessaging
             services.AddSingleton<PostgreSqlDataStorage>();
             services.AddSingleton<IDataStorage>(sp => sp.GetRequiredService<PostgreSqlDataStorage>());
             services.AddSingleton<IDeliveryCoordinationResolver>(sp => sp.GetRequiredService<PostgreSqlDataStorage>());
-            services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
+            services.AddSingleton<IStorageTableNames, PostgreSqlStorageTableNames>();
+            // The messaging tables are applied by the Headless schema runner from this contribution, before the
+            // messaging bootstrapper starts; the provider runs no DDL of its own.
+            services.AddHeadlessSchemaContribution(sp =>
+                PostgreSqlMessagingSchemaContribution.Create(
+                    sp.GetRequiredService<IOptions<PostgreSqlOptions>>().Value,
+                    sp.GetRequiredService<IOptions<MessagingStorageOptions>>().Value
+                )
+            );
         }
     }
 

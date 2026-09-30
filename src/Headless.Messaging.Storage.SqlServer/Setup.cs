@@ -10,6 +10,7 @@ using Headless.Messaging.Storage.SqlServer;
 using Headless.Sql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Messaging;
@@ -121,7 +122,15 @@ public static class SetupSqlServerMessaging
             services.AddSingleton<SqlServerDataStorage>();
             services.AddSingleton<IDataStorage>(sp => sp.GetRequiredService<SqlServerDataStorage>());
             services.AddSingleton<IDeliveryCoordinationResolver>(sp => sp.GetRequiredService<SqlServerDataStorage>());
-            services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
+            services.AddSingleton<IStorageTableNames, SqlServerStorageTableNames>();
+            // The messaging tables are applied by the Headless schema runner from this contribution, before the
+            // messaging bootstrapper starts; the provider runs no DDL of its own.
+            services.AddHeadlessSchemaContribution(sp =>
+                SqlServerMessagingSchemaContribution.Create(
+                    sp.GetRequiredService<IOptions<SqlServerOptions>>().Value,
+                    sp.GetRequiredService<IOptions<MessagingStorageOptions>>().Value
+                )
+            );
         }
     }
 

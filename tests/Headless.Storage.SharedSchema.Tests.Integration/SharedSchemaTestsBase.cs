@@ -5,6 +5,7 @@ using Headless.Caching;
 using Headless.Coordination;
 using Headless.DistributedLocks;
 using Headless.Hosting.Initialization;
+using Headless.Hosting.Initialization.Schema;
 using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;
 using Headless.Messaging;
@@ -110,12 +111,12 @@ public abstract class SharedSchemaTestsBase : TestBase
         await using var messagingA = _BuildMessaging(connectionString);
         await using var messagingB = _BuildMessaging(connectionString);
 
-        // when: both hosts and both messaging initializers race the empty database at once
+        // when: both hosts and both messaging schema runners race the empty database at once
         await Task.WhenAll(
             hostA.StartAsync(AbortToken),
             hostB.StartAsync(AbortToken),
-            messagingA.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken),
-            messagingB.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken)
+            messagingA.GetRequiredService<SchemaRunner>().ApplyAsync(AbortToken),
+            messagingB.GetRequiredService<SchemaRunner>().ApplyAsync(AbortToken)
         );
 
         // A fenced acquire from each host proves startup created the lock fence sequence it reads.
@@ -143,7 +144,7 @@ public abstract class SharedSchemaTestsBase : TestBase
 
         await using var messagingC = _BuildMessaging(connectionString);
         await hostC.StartAsync(AbortToken);
-        await messagingC.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await messagingC.GetRequiredService<SchemaRunner>().ApplyAsync(AbortToken);
         await _AcquireFencedLockAsync(hostC);
 
         // then: the restart created nothing

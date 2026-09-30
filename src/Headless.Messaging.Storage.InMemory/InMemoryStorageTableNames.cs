@@ -4,7 +4,7 @@ using Headless.Messaging.Persistence;
 
 namespace Headless.Messaging.Storage.InMemory;
 
-internal sealed class InMemoryStorageInitializer : IStorageInitializer
+internal sealed class InMemoryStorageTableNames : IStorageTableNames
 {
     public string GetPublishedTableName()
     {
@@ -14,10 +14,5 @@ internal sealed class InMemoryStorageInitializer : IStorageInitializer
     public string GetReceivedTableName()
     {
         return nameof(InMemoryDataStorage.ReceivedMessages);
-    }
-
-    public Task InitializeAsync(CancellationToken cancellationToken = default)
-    {
-        return Task.CompletedTask;
     }
 }

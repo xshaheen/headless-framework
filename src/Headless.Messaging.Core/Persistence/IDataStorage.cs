@@ -459,7 +459,7 @@ public interface IDataStorage
     /// <summary>
     /// Deletes expired message rows from the specified table in bounded batches.
     /// </summary>
-    /// <param name="table">The physical table name to clean (use <c>IStorageInitializer.GetPublishedTableName()</c> or <c>GetReceivedTableName()</c>).</param>
+    /// <param name="table">The physical table name to clean (use <c>IStorageTableNames.GetPublishedTableName()</c> or <c>GetReceivedTableName()</c>).</param>
     /// <param name="timeout">Rows whose <c>ExpiresAt</c> is earlier than this UTC timestamp are eligible for deletion.</param>
     /// <param name="batchCount">Maximum number of rows to delete in a single statement (default 1000).</param>
     /// <param name="cancellationToken">The cancellation token.</param>

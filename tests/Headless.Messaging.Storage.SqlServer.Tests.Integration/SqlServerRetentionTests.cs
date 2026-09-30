@@ -4,6 +4,7 @@ using System.Xml.Linq;
 using Dapper;
 using Headless.Abstractions;
 using Headless.Coordination;
+using Headless.Hosting.Initialization.Schema;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
@@ -22,7 +23,7 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
     private readonly string _schema = $"retention_{Guid.NewGuid():N}";
     private string _table = null!;
     private IOptions<SqlServerOptions> _sqlServerOptions = null!;
-    private IStorageInitializer _initializer = null!;
+    private IStorageTableNames _tableNames = null!;
     private IDataStorage _storage = null!;
 
     public override async ValueTask InitializeAsync()
@@ -30,45 +31,27 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
         await base.InitializeAsync();
         var messagingOptions = Options.Create(new MessagingOptions { Version = "v1" });
         _sqlServerOptions = Options.Create(new SqlServerOptions { ConnectionString = fixture.ConnectionString });
-        _initializer = new SqlServerStorageInitializer(
-            NullLogger<SqlServerStorageInitializer>.Instance,
-            _sqlServerOptions,
-            TestStorageOptions.For(_schema),
-            messagingOptions
-        );
-        _table = _initializer.GetReceivedTableName();
+        _tableNames = TestStorageOptions.TableNames(_schema);
+        _table = _tableNames.GetReceivedTableName();
         _storage = new SqlServerDataStorage(
             messagingOptions,
             _sqlServerOptions,
             TestStorageOptions.For(_schema),
-            _initializer,
+            _tableNames,
             new JsonUtf8Serializer(messagingOptions),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             new NullNodeMembership(),
             NullLogger<SqlServerDataStorage>.Instance
         );
-        await _initializer.InitializeAsync(AbortToken);
+        await TestMessagingSchema.ApplyAsync(_sqlServerOptions.Value, _schema, AbortToken);
     }
 
     protected override async ValueTask DisposeAsyncCore()
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.ExecuteAsync(
-            new CommandDefinition(
-                $"""
-                DROP TABLE IF EXISTS [{_schema}].MessagingInboxAudit;
-                DROP TABLE IF EXISTS [{_schema}].MessagingInboxOperationReceipts;
-                DROP TABLE IF EXISTS [{_schema}].MessagingSchemaState;
-                DROP TABLE IF EXISTS [{_schema}].MessagingPublished;
-                DROP TABLE IF EXISTS [{_schema}].MessagingReceived;
-                DROP TYPE IF EXISTS [{_schema}].HeadlessMessagingIdList;
-                DROP TYPE IF EXISTS [{_schema}].HeadlessMessagingOwnerList;
-                DROP TYPE IF EXISTS [{_schema}].HeadlessMessagingPoisonMessageList;
-                DROP SCHEMA IF EXISTS [{_schema}];
-                """,
-                cancellationToken: AbortToken
-            )
+            new CommandDefinition(TestMessagingSchema.DropSql(_schema), cancellationToken: AbortToken)
         );
         await base.DisposeAsyncCore();
     }
@@ -99,7 +82,7 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
             )
         );
 
-        (await _storage!.DeleteExpiresAsync(_initializer.GetReceivedTableName(), DateTimeOffset.UtcNow, 3, AbortToken))
+        (await _storage!.DeleteExpiresAsync(_tableNames.GetReceivedTableName(), DateTimeOffset.UtcNow, 3, AbortToken))
             .Should()
             .Be(3);
         // Replay the exact executed batch with actual-plan reporting; an outer transaction rolls the replay back.
@@ -126,9 +109,16 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
         // The plan cache prefixes parameter declarations; SqlCommand supplies those separately.
         sql = sql[sql.IndexOf("SET NOCOUNT ON;", StringComparison.Ordinal)..];
         var baseline = await _ReadCleanupPlanAsync(connection, sql);
-        // Existing schemas must acquire the missing index, and initialization must remain repeatable.
-        await _initializer.InitializeAsync(AbortToken);
-        await _initializer.InitializeAsync(AbortToken);
+        // The runner never re-runs a recorded step, so forget the Messaging steps to have the tables step recreate the
+        // dropped index through its IF NOT EXISTS guards; a second apply must then be a no-op.
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                $"DELETE FROM [{_schema}].[{SchemaRunner.HistoryTableName}] WHERE [Feature]=N'Messaging';",
+                cancellationToken: AbortToken
+            )
+        );
+        await TestMessagingSchema.ApplyAsync(_sqlServerOptions.Value, _schema, AbortToken);
+        await TestMessagingSchema.ApplyAsync(_sqlServerOptions.Value, _schema, AbortToken);
         var plan = await _ReadCleanupPlanAsync(connection, sql);
         Logger.LogInformation("Baseline cleanup plan: {Plan}", baseline);
         Logger.LogInformation("Indexed cleanup plan: {Plan}", plan);
@@ -153,11 +143,11 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
         indexedRows.Should().BeLessThan(100);
         indexedRows.Should().BeLessThan(baselineRows / 10);
 
-        (await _storage.DeleteExpiresAsync(_initializer.GetReceivedTableName(), DateTimeOffset.UtcNow, 20, AbortToken))
+        (await _storage.DeleteExpiresAsync(_tableNames.GetReceivedTableName(), DateTimeOffset.UtcNow, 20, AbortToken))
             .Should()
             .Be(7);
 
-        (await _storage.DeleteExpiresAsync(_initializer.GetReceivedTableName(), DateTimeOffset.UtcNow, 20, AbortToken))
+        (await _storage.DeleteExpiresAsync(_tableNames.GetReceivedTableName(), DateTimeOffset.UtcNow, 20, AbortToken))
             .Should()
             .Be(0);
     }

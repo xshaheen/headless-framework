@@ -21,15 +21,15 @@ namespace Headless.Messaging.Storage.PostgreSql;
 internal sealed class PostgreSqlMonitoringApi(
     IOptions<PostgreSqlOptions> options,
     IOptions<MessagingOptions> messagingOptions,
-    IStorageInitializer initializer,
+    IStorageTableNames tableNames,
     ISerializer serializer,
     TimeProvider timeProvider
 ) : IMonitoringApi
 {
     private readonly PostgreSqlOptions _options = Argument.IsNotNull(options.Value);
     private readonly MessagingOptions _messagingOptions = messagingOptions.Value;
-    private readonly string _publishedTable = initializer.GetPublishedTableName();
-    private readonly string _receivedTable = initializer.GetReceivedTableName();
+    private readonly string _publishedTable = tableNames.GetPublishedTableName();
+    private readonly string _receivedTable = tableNames.GetReceivedTableName();
 
     /// <summary>Returns a single published message by its storage identifier, or <see langword="null"/> if not found.</summary>
     public async ValueTask<MediumMessage?> GetPublishedMessageAsync(

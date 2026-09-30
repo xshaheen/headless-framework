@@ -48,7 +48,7 @@ public static class SetupInMemoryStorage
             services.AddSingleton<InMemoryDataStorage>();
             services.AddSingleton<IDataStorage>(sp => sp.GetRequiredService<InMemoryDataStorage>());
             services.AddSingleton<IDeliveryCoordinationResolver>(sp => sp.GetRequiredService<InMemoryDataStorage>());
-            services.AddSingleton<IStorageInitializer, InMemoryStorageInitializer>();
+            services.AddSingleton<IStorageTableNames, InMemoryStorageTableNames>();
         }
     }
 }

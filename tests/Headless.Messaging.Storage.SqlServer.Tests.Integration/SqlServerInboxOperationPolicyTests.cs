@@ -23,7 +23,7 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
     public async Task should_apply_configured_timeout_to_blocked_history_queries(bool receipts)
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         provider.GetRequiredService<IOptions<MessagingOptions>>().Value.CommandTimeout = TimeSpan.FromSeconds(1);
         var storage = provider.GetRequiredService<IDataStorage>();
         var schema = provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema;
@@ -62,7 +62,7 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
     public async Task should_use_database_history_clock_and_exact_cutoff(int skewDays)
     {
         await using var provider = _CreateProvider(new FakeTimeProvider(DateTimeOffset.UtcNow.AddDays(skewDays)));
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var schema = provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema;
         await storage.GetInboxOperationsApi().HoldAsync(_Request(Guid.NewGuid(), StatusName.Succeeded), AbortToken);
@@ -89,13 +89,12 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
     }
 
     [Fact]
-    public async Task should_initialize_and_repair_history_indexes_on_reentry()
+    public async Task should_create_history_indexes_and_keep_them_on_reentry()
     {
         await using var provider = _CreateProvider();
-        var initializer = provider.GetRequiredService<IStorageInitializer>();
         var schema = provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema;
-        await initializer.InitializeAsync(AbortToken);
-        await initializer.InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         await using var count = new SqlCommand(
@@ -110,18 +109,6 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
         count.Parameters.Add(new SqlParameter("@Audits", "IX_MessagingInboxAudit_Type_CreatedAt"));
         count.Parameters.Add(new SqlParameter("@Operation", "IX_MessagingInboxAudit_Operation"));
         (await count.ExecuteScalarAsync(AbortToken)).Should().Be(3);
-        await using var drop = new SqlCommand(
-            $"""
-            DROP INDEX [IX_MessagingInboxOperationReceipts_Type_CreatedAt] ON [{schema}].[MessagingInboxOperationReceipts];
-            DROP INDEX [IX_MessagingInboxAudit_Type_CreatedAt] ON [{schema}].[MessagingInboxAudit];
-            DROP INDEX [IX_MessagingInboxAudit_Operation] ON [{schema}].[MessagingInboxAudit];
-            """,
-            connection
-        );
-        await drop.ExecuteNonQueryAsync(AbortToken);
-        await initializer.InitializeAsync(AbortToken);
-        await initializer.InitializeAsync(AbortToken);
-        (await count.ExecuteScalarAsync(AbortToken)).Should().Be(3);
     }
 
     [Theory]
@@ -130,7 +117,7 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
     public async Task should_serialize_receipt_deletion_with_operation_replay(bool conflict)
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var schema = provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema;
         var request = _Request(Guid.NewGuid(), StatusName.Succeeded);
@@ -245,7 +232,7 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
 
     protected override async Task ExpireGenerationAsync(ServiceProvider provider, Guid storageId)
     {
-        var table = provider.GetRequiredService<IStorageInitializer>().GetReceivedTableName();
+        var table = provider.GetRequiredService<IStorageTableNames>().GetReceivedTableName();
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
@@ -263,8 +250,8 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow.AddDays(30));
         await using var provider = _CreateProvider(clock);
-        var initializer = provider.GetRequiredService<IStorageInitializer>();
-        await initializer.InitializeAsync(AbortToken);
+        var tableNames = provider.GetRequiredService<IStorageTableNames>();
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var message = await _AdmitAsync(storage, lane);
         await _LeaseAsync(storage, message);
@@ -278,7 +265,7 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
 
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
-        var table = initializer.GetReceivedTableName();
+        var table = tableNames.GetReceivedTableName();
         await using var expire = new SqlCommand(
             $"UPDATE {table} SET [LockedUntil]=DATEADD(second,-1,SYSUTCDATETIME()),[NextRetryAt]=DATEADD(second,-1,SYSUTCDATETIME()) WHERE [Id]=@Id;",
             connection
@@ -313,13 +300,13 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
     public async Task should_serialize_blocked_recovery_claim_and_orphan_purge(MessageLane lane)
     {
         await using var provider = _CreateProvider();
-        var initializer = provider.GetRequiredService<IStorageInitializer>();
-        await initializer.InitializeAsync(AbortToken);
+        var tableNames = provider.GetRequiredService<IStorageTableNames>();
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var message = await _AdmitAsync(storage, lane);
         await _LeaseAsync(storage, message);
         (await storage.DeferReceivedInboxOrphanAsync(message, AbortToken)).Should().BeTrue();
-        var table = initializer.GetReceivedTableName();
+        var table = tableNames.GetReceivedTableName();
         await using var blocker = new SqlConnection(fixture.ConnectionString);
         await blocker.OpenAsync(AbortToken);
         await using var transaction = (SqlTransaction)await blocker.BeginTransactionAsync(AbortToken);

@@ -241,7 +241,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
 
         if (sharedStorage is null)
         {
-            await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+            await provider.ApplyMessagingSchemaAsync(AbortToken);
         }
 
         return (provider, storage);

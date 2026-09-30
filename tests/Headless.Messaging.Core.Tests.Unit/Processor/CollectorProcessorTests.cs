@@ -200,13 +200,13 @@ public sealed class CollectorProcessorTests : TestBase
 
     private static ServiceProvider _CreateProvider(IDataStorage storage, TimeProvider clock)
     {
-        var initializer = Substitute.For<IStorageInitializer>();
-        initializer.GetPublishedTableName().Returns("published");
-        initializer.GetReceivedTableName().Returns("received");
+        var tableNames = Substitute.For<IStorageTableNames>();
+        tableNames.GetPublishedTableName().Returns("published");
+        tableNames.GetReceivedTableName().Returns("received");
         return new ServiceCollection()
             .AddSingleton(storage)
             .AddSingleton(clock)
-            .AddSingleton(initializer)
+            .AddSingleton(tableNames)
             .BuildServiceProvider();
     }
 

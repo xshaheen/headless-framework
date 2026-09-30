@@ -24,7 +24,7 @@ public abstract class ScheduledDeliveryOperationConformanceTests : TestBase
     public async Task should_list_only_pending_scheduled_deliveries_and_filter_by_storage_ids()
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var operations = storage.GetScheduledDeliveryOperationsApi();
         var clock = provider.GetRequiredService<TimeProvider>();
@@ -75,7 +75,7 @@ public abstract class ScheduledDeliveryOperationConformanceTests : TestBase
     public async Task should_apply_revoke_delete_row_and_record_receipt_and_audit()
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var operations = storage.GetScheduledDeliveryOperationsApi();
         var clock = provider.GetRequiredService<TimeProvider>();
@@ -129,7 +129,7 @@ public abstract class ScheduledDeliveryOperationConformanceTests : TestBase
     public async Task should_return_active_when_revoking_row_with_reserved_attempt()
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var operations = storage.GetScheduledDeliveryOperationsApi();
         var clock = provider.GetRequiredService<TimeProvider>();
@@ -159,7 +159,7 @@ public abstract class ScheduledDeliveryOperationConformanceTests : TestBase
     public async Task should_apply_dispatch_now_on_unleased_delayed_row()
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var operations = storage.GetScheduledDeliveryOperationsApi();
         var clock = provider.GetRequiredService<TimeProvider>();
@@ -203,7 +203,7 @@ public abstract class ScheduledDeliveryOperationConformanceTests : TestBase
     public async Task should_return_active_when_dispatching_now_on_leased_row()
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var operations = storage.GetScheduledDeliveryOperationsApi();
         var clock = provider.GetRequiredService<TimeProvider>();
@@ -240,7 +240,7 @@ public abstract class ScheduledDeliveryOperationConformanceTests : TestBase
     public async Task should_record_operation_conflict_when_same_operation_id_has_different_request()
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var operations = storage.GetScheduledDeliveryOperationsApi();
         var clock = provider.GetRequiredService<TimeProvider>();
@@ -283,7 +283,7 @@ public abstract class ScheduledDeliveryOperationConformanceTests : TestBase
     public async Task should_record_state_conflict_on_due_instant_mismatch()
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var operations = storage.GetScheduledDeliveryOperationsApi();
         var clock = provider.GetRequiredService<TimeProvider>();
@@ -316,7 +316,7 @@ public abstract class ScheduledDeliveryOperationConformanceTests : TestBase
     public async Task should_round_trip_sub_millisecond_due_instant_through_listing_to_fenced_action()
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var operations = storage.GetScheduledDeliveryOperationsApi();
         var clock = provider.GetRequiredService<TimeProvider>();
@@ -350,7 +350,7 @@ public abstract class ScheduledDeliveryOperationConformanceTests : TestBase
     public async Task should_outlive_row_and_delete_scheduled_audits_before_receipts_at_retention_cutoffs()
     {
         await using var provider = _CreateProvider(CreateHistoryClock());
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var operations = storage.GetScheduledDeliveryOperationsApi();
         var clock = provider.GetRequiredService<TimeProvider>();
@@ -416,7 +416,7 @@ public abstract class ScheduledDeliveryOperationConformanceTests : TestBase
     public async Task should_allow_exactly_one_action_when_concurrent_revoke_and_dispatch_now_race()
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var operations = storage.GetScheduledDeliveryOperationsApi();
         var clock = provider.GetRequiredService<TimeProvider>();

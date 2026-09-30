@@ -546,7 +546,7 @@ public static partial class JobsCoordinationFixtureExtensions
         CancellationToken cancellationToken
     )
     {
-        var table = services.GetRequiredService<IStorageInitializer>().GetPublishedTableName();
+        var table = services.GetRequiredService<IStorageTableNames>().GetPublishedTableName();
         return _CountAsync(fixture, $"SELECT COUNT(*) FROM {table};", cancellationToken);
     }
 

@@ -20,7 +20,7 @@ public abstract class InboxStorageConformanceTests : TestBase
     public async Task should_defer_orphan_and_release_ownership_without_consuming_failure_retries(MessageLane lane)
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var envelope = _CreateMessage(lane);
         var winner = (await _AdmitAsync(storage, envelope)).Message;
@@ -54,7 +54,7 @@ public abstract class InboxStorageConformanceTests : TestBase
     public async Task should_require_every_fence_component_for_orphan_deferral_and_confirmation(MessageLane lane)
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var envelope = _CreateMessage(lane);
         var message = (await _AdmitAsync(storage, envelope)).Message;
@@ -118,7 +118,7 @@ public abstract class InboxStorageConformanceTests : TestBase
             options.RetryBatchSize = 1;
             options.OrphanProbeBatchSize = 2;
         });
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var orphanIds = new List<Guid>();
         Guid ordinaryId = default;
@@ -183,7 +183,7 @@ public abstract class InboxStorageConformanceTests : TestBase
     public async Task should_require_complete_inbox_fence_for_release_and_deferral(string operation, MessageLane lane)
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var envelope = _CreateMessage(lane);
         var winner = (await _AdmitAsync(storage, envelope)).Message;
@@ -254,7 +254,7 @@ public abstract class InboxStorageConformanceTests : TestBase
     public async Task should_require_complete_inbox_fence_before_reserving_attempt(MessageLane lane, string field)
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var envelope = _CreateMessage(lane);
         var message = (await _AdmitAsync(storage, envelope)).Message;
@@ -289,7 +289,7 @@ public abstract class InboxStorageConformanceTests : TestBase
     )
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var envelope = _CreateMessage(lane);
         var message = (await _AdmitAsync(storage, envelope)).Message;
@@ -435,7 +435,7 @@ public abstract class InboxStorageConformanceTests : TestBase
     public async Task should_accept_identity_length_boundaries_and_normalize_blank_tenants(MessageLane lane)
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var message = _CreateMessage(lane);
         message.Origin.Headers[Headers.MessageId] = new string('i', MessageOptions.MessageIdMaxLength);

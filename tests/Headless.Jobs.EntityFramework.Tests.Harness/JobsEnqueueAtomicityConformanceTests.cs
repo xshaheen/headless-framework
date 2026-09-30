@@ -545,11 +545,6 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, cancellationToken);
         await fixture.CreateProbeTableAsync(cancellationToken);
 
-        if (includeMessaging)
-        {
-            await host.Services.GetRequiredService<IStorageInitializer>().InitializeAsync(cancellationToken);
-        }
-
         await host.StartAsync(cancellationToken);
 
         return host;

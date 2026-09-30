@@ -45,7 +45,6 @@ public abstract class JobsApplicationConfigurationConformanceTests<TFixture>(TFi
 
         using var host = builder.Build();
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync<ApplicationContext>(host, AbortToken);
-        await host.Services.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
         await host.StartAsync(AbortToken);
 
         try

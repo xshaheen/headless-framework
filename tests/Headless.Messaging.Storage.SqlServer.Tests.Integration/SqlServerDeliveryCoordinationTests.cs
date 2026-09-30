@@ -66,7 +66,7 @@ public sealed class SqlServerDeliveryCoordinationTests(SqlServerTestFixture fixt
         services.AddDbContext<CoordinationDbContext>(options => options.UseSqlServer(fixture.ConnectionString));
         services.Configure<SqlServerOptions>(x => x.ConnectionString = configuredConnectionString);
         services.Configure<MessagingOptions>(x => x.Version = "v1");
-        services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
+        services.AddTestMessagingSchema();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
 
         await using var provider = services.BuildServiceProvider();
@@ -77,7 +77,7 @@ public sealed class SqlServerDeliveryCoordinationTests(SqlServerTestFixture fixt
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
             provider.GetRequiredService<IOptions<SqlServerOptions>>(),
             TestStorageOptions.For(),
-            provider.GetRequiredService<IStorageInitializer>(),
+            provider.GetRequiredService<IStorageTableNames>(),
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,

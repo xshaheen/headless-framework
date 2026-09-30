@@ -534,13 +534,8 @@ public sealed class MessagingLaneSplitTests : TestBase
         }
     }
 
-    private sealed class NoOpStorageInitializer : IStorageInitializer
+    private sealed class FixedStorageTableNames : IStorageTableNames
     {
-        public Task InitializeAsync(CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
-
         public string GetPublishedTableName()
         {
             return "published";
@@ -572,7 +567,7 @@ public sealed class MessagingLaneSplitTests : TestBase
         services.AddSingleton<IMessageMetadataRegistry>(new MessageMetadataRegistry([]));
         services.AddSingleton<IMessagingCapabilityModel>(model);
         services.AddSingleton<IMessageCapabilityGate>(model);
-        services.AddSingleton<IStorageInitializer, NoOpStorageInitializer>();
+        services.AddSingleton<IStorageTableNames, FixedStorageTableNames>();
     }
 
     private sealed class QueueOnlyMessagingExtension : IMessagesOptionsExtension
@@ -589,7 +584,7 @@ public sealed class MessagingLaneSplitTests : TestBase
                 )
             );
             services.AddMessagingProviderCapabilities(_StorageCapabilities());
-            services.AddSingleton<IStorageInitializer, NoOpStorageInitializer>();
+            services.AddSingleton<IStorageTableNames, FixedStorageTableNames>();
             services.AddSingleton<IQueueTransport, CapturingQueueTransport>();
         }
     }
@@ -608,7 +603,7 @@ public sealed class MessagingLaneSplitTests : TestBase
                 )
             );
             services.AddMessagingProviderCapabilities(_StorageCapabilities());
-            services.AddSingleton<IStorageInitializer, NoOpStorageInitializer>();
+            services.AddSingleton<IStorageTableNames, FixedStorageTableNames>();
             services.AddSingleton<IBusTransport, CapturingBusTransport>();
         }
     }

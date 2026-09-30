@@ -56,7 +56,7 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
         });
         await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         var storage = provider.GetRequiredService<IDataStorage>();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         await using (var setupScope = provider.CreateAsyncScope())
         {
             var db = setupScope.ServiceProvider.GetRequiredService<InboxRetryDbContext>();
@@ -231,7 +231,7 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
         });
         await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         var storage = provider.GetRequiredService<IDataStorage>();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         await using (var setupScope = provider.CreateAsyncScope())
         {
             var db = setupScope.ServiceProvider.GetRequiredService<InboxRetryDbContext>();

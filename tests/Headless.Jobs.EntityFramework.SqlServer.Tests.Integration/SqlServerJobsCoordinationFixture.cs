@@ -65,12 +65,14 @@ public sealed class SqlServerJobsCoordinationFixture
         + _MappedSchemaResetSql
         + "DROP TABLE IF EXISTS [headless].[MessagingInboxAudit];"
         + "DROP TABLE IF EXISTS [headless].[MessagingInboxOperationReceipts];"
-        + "DROP TABLE IF EXISTS [headless].[MessagingSchemaState];"
         + "DROP TABLE IF EXISTS [headless].[MessagingPublished];"
         + "DROP TABLE IF EXISTS [headless].[MessagingReceived];"
         + "IF TYPE_ID(N'headless.HeadlessMessagingIdList') IS NOT NULL DROP TYPE [headless].[HeadlessMessagingIdList];"
         + "IF TYPE_ID(N'headless.HeadlessMessagingOwnerList') IS NOT NULL DROP TYPE [headless].[HeadlessMessagingOwnerList];"
         + "IF TYPE_ID(N'headless.HeadlessMessagingPoisonMessageList') IS NOT NULL DROP TYPE [headless].[HeadlessMessagingPoisonMessageList];"
+        // The schema runner trusts its history, so the history goes with the messaging tables; the steps of every
+        // other feature recorded there are idempotent and simply run again on the next start.
+        + "DROP TABLE IF EXISTS [headless].[headless_schema_history];"
         + "DROP TABLE IF EXISTS [jobs_probe];"
         + "DROP TABLE IF EXISTS [coordination_liveness];"
         + "DROP TABLE IF EXISTS [coordination_descriptor];"

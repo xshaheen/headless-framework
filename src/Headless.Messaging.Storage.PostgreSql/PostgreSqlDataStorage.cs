@@ -27,7 +27,7 @@ internal sealed partial class PostgreSqlDataStorage(
     IOptions<PostgreSqlOptions> postgreSqlOptions,
     IOptions<MessagingStorageOptions> storageOptions,
     IOptions<MessagingOptions> messagingOptions,
-    IStorageInitializer initializer,
+    IStorageTableNames tableNames,
     ISerializer serializer,
     // PostgreSQL stores message ids as native uuid (big-endian byte sort) -> Version7 keeps the PK sequential.
     [FromKeyedServices(SequentialGuidType.Version7)] IGuidGenerator guidGenerator,
@@ -74,8 +74,8 @@ internal sealed partial class PostgreSqlDataStorage(
     /// </summary>
     private static readonly TimeSpan _QueuedMessageLookback = TimeSpan.FromMinutes(1);
 
-    private readonly string _publishedTable = initializer.GetPublishedTableName();
-    private readonly string _receivedTable = initializer.GetReceivedTableName();
+    private readonly string _publishedTable = tableNames.GetPublishedTableName();
+    private readonly string _receivedTable = tableNames.GetReceivedTableName();
 
     DeliveryCoordination IDeliveryCoordinationResolver.Resolve(IUnitOfWork unitOfWork)
     {
@@ -114,7 +114,7 @@ internal sealed partial class PostgreSqlDataStorage(
     /// </summary>
     public IMonitoringApi GetMonitoringApi()
     {
-        return new PostgreSqlMonitoringApi(postgreSqlOptions, messagingOptions, initializer, serializer, timeProvider);
+        return new PostgreSqlMonitoringApi(postgreSqlOptions, messagingOptions, tableNames, serializer, timeProvider);
     }
 
     public IInboxOperationsApi GetInboxOperationsApi() => this;
@@ -1572,7 +1572,7 @@ internal sealed partial class PostgreSqlDataStorage(
     )
     {
         // Atomic upsert via INSERT ... ON CONFLICT ON CONSTRAINT against the partial unique index
-        // (MessageId, COALESCE("group", '')) created by PostgreSqlStorageInitializer. The COALESCE
+        // (MessageId, COALESCE("group", '')) created by PostgreSqlMessagingSchemaContribution. The COALESCE
         // expression collapses NULL groups to the empty string so NULL-Group rows participate in
         // the uniqueness check (a plain ("message_id","group") unique constraint treats NULLs as
         // distinct, which would let two concurrent broker redeliveries of a no-group message both

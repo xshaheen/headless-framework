@@ -43,12 +43,12 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
             x.Version = "v1";
             x.UseStorageLock = true;
         });
-        services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
+        services.AddTestMessagingSchema();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
 
         var provider = services.BuildServiceProvider();
-        var initializer = provider.GetRequiredService<IStorageInitializer>();
-        await initializer.InitializeAsync();
+        var tableNames = provider.GetRequiredService<IStorageTableNames>();
+        await provider.ApplyMessagingSchemaAsync();
 
         // Other classes in this collection share the `headless` schema and not all reset on teardown,
         // so start each monitoring test from an empty table to keep the counts exact.
@@ -64,7 +64,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
             provider.GetRequiredService<IOptions<SqlServerOptions>>(),
             TestStorageOptions.For(),
-            initializer,
+            tableNames,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             _timeProvider,

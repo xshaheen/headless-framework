@@ -37,7 +37,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
     public override Task should_isolate_replay_lifecycles_after_root_purge(MessageLane lane, long rootGeneration) =>
         base.should_isolate_replay_lifecycles_after_root_purge(lane, rootGeneration);
 
-    private InMemoryStorageInitializer? _initializer;
+    private InMemoryStorageTableNames? _tableNames;
     private InMemoryDataStorage? _storage;
     private ISerializer? _serializer;
     private FakeTimeProvider? _fakeTimeProvider;
@@ -88,10 +88,10 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
     }
 
     /// <inheritdoc />
-    protected override IStorageInitializer GetInitializer()
+    protected override IStorageTableNames GetTableNames()
     {
         _EnsureInitialized();
-        return _initializer!;
+        return _tableNames!;
     }
 
     /// <inheritdoc />
@@ -196,7 +196,6 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         await base.InitializeAsync();
 
         _EnsureInitialized();
-        await _initializer!.InitializeAsync(AbortToken);
     }
 
     [Fact]
@@ -505,7 +504,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
 
     private void _EnsureInitialized()
     {
-        if (_initializer is not null)
+        if (_tableNames is not null)
         {
             return;
         }
@@ -532,7 +531,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         _messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
         _serializer = provider.GetRequiredService<ISerializer>();
 
-        _initializer = new InMemoryStorageInitializer();
+        _tableNames = new InMemoryStorageTableNames();
         _storage = new InMemoryDataStorage(
             _messagingOptions,
             _serializer,
@@ -1824,7 +1823,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         _fakeTimeProvider!.Advance(TimeSpan.FromDays(3));
         (
             await storage.DeleteExpiresAsync(
-                _initializer!.GetReceivedTableName(),
+                _tableNames!.GetReceivedTableName(),
                 _fakeTimeProvider.GetUtcNow(),
                 cancellationToken: AbortToken
             )
@@ -1839,7 +1838,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         release.Outcome.Should().Be(InboxOperationOutcome.Applied);
         (
             await storage.DeleteExpiresAsync(
-                _initializer.GetReceivedTableName(),
+                _tableNames.GetReceivedTableName(),
                 _fakeTimeProvider.GetUtcNow(),
                 cancellationToken: AbortToken
             )

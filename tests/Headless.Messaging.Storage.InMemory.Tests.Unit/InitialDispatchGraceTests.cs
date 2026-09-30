@@ -36,7 +36,6 @@ public sealed class InitialDispatchGraceTests : TestBase
     public async Task should_exclude_freshly_stored_published_message_during_initial_dispatch_grace()
     {
         var (storage, fakeClock) = _BuildStorageWithFakeClock();
-        await new InMemoryStorageInitializer().InitializeAsync(AbortToken);
 
         // given — store a fresh published message; NextRetryAt is now + 30s.
         var stored = await storage.StoreMessageAsync(
@@ -63,7 +62,6 @@ public sealed class InitialDispatchGraceTests : TestBase
     public async Task should_exclude_freshly_stored_received_message_during_initial_dispatch_grace()
     {
         var (storage, fakeClock) = _BuildStorageWithFakeClock();
-        await new InMemoryStorageInitializer().InitializeAsync(AbortToken);
 
         // given — store a fresh received message; NextRetryAt is now + 30s.
         var stored = await storage.StoreReceivedMessageAsync(
