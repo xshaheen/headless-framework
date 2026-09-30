@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
 using Headless.Jobs.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -11,13 +12,25 @@ namespace Headless.Jobs.Configurations;
 
 internal static class JobsKeyedModelConfiguration
 {
-    private static readonly string[] _RequiredKeyedUniqueIndexes =
-    [
-        "UX_TimeJobs_KeyGeneration_Tenant",
-        "UX_TimeJobs_KeyGeneration_System",
-        "UX_TimeJobs_CurrentKey_Tenant",
-        "UX_TimeJobs_CurrentKey_System",
-    ];
+    // Named after the default time-job table rather than its final mapping: a consumer mapping may rename the table
+    // after these are built, and the keyed-operation validator must still find exactly the names written here.
+    private static string _Table(StorageNamingStyle style) =>
+        JobsStorageNaming.Table(style, JobsStorageNaming.TimeJobs);
+
+    private static string _KeyGenerationTenantIndex(StorageNamingStyle style) =>
+        JobsStorageNaming.Name(style, "UX", _Table(style), "KeyGeneration", "Tenant");
+
+    private static string _KeyGenerationSystemIndex(StorageNamingStyle style) =>
+        JobsStorageNaming.Name(style, "UX", _Table(style), "KeyGeneration", "System");
+
+    private static string _CurrentKeyTenantIndex(StorageNamingStyle style) =>
+        JobsStorageNaming.Name(style, "UX", _Table(style), "CurrentKey", "Tenant");
+
+    private static string _CurrentKeySystemIndex(StorageNamingStyle style) =>
+        JobsStorageNaming.Name(style, "UX", _Table(style), "CurrentKey", "System");
+
+    private static string _KeyedMetadataCheck(StorageNamingStyle style) =>
+        JobsStorageNaming.Name(style, "CK", _Table(style), "KeyedMetadata");
 
     internal static void ValidateOrdinalScope<TTimeJob>(DbContext context)
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
@@ -30,9 +43,18 @@ internal static class JobsKeyedModelConfiguration
         // Collations are omitted from EF's runtime model; inspect the finalized model used to generate the schema.
         var model = context.GetService<IDesignTimeModel>().Model;
         var entity = model.FindEntityType(typeof(TTimeJob))!;
+        var style = JobsStorageNaming.StyleOf(context);
+        var tableName = entity.GetTableName()!;
+        string[] requiredUniqueIndexes =
+        [
+            _KeyGenerationTenantIndex(style),
+            _KeyGenerationSystemIndex(style),
+            _CurrentKeyTenantIndex(style),
+            _CurrentKeySystemIndex(style),
+        ];
         if (
-            entity.FindCheckConstraint("CK_TimeJobs_KeyedMetadata") is null
-            || _RequiredKeyedUniqueIndexes.Any(name =>
+            entity.FindCheckConstraint(_KeyedMetadataCheck(style)) is null
+            || requiredUniqueIndexes.Any(name =>
                 entity.FindIndex(name) is not { IsUnique: true } index || index.GetFilter() is null
             )
         )
@@ -43,7 +65,7 @@ internal static class JobsKeyedModelConfiguration
             );
         }
 
-        var table = StoreObjectIdentifier.Table(entity.GetTableName()!, entity.GetSchema());
+        var table = StoreObjectIdentifier.Table(tableName, entity.GetSchema());
         foreach (
             var name in new[]
             {
@@ -72,17 +94,19 @@ internal static class JobsKeyedModelConfiguration
             .GetService<IRelationalTypeMappingSource>()
             .FindMapping(typeof(bool))!
             .GenerateSqlLiteral(value: true);
-        Configure(builder.Entity<TTimeJob>(), sql.DelimitIdentifier, trueLiteral);
+        Configure(builder.Entity<TTimeJob>(), JobsStorageNaming.StyleOf(context), sql.DelimitIdentifier, trueLiteral);
     }
 
     internal static void Configure<TTimeJob>(
         EntityTypeBuilder<TTimeJob> builder,
+        StorageNamingStyle style,
         Func<string, string> quote,
         string trueLiteral
     )
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {
-        var table = StoreObjectIdentifier.Table(builder.Metadata.GetTableName()!, builder.Metadata.GetSchema());
+        var tableName = builder.Metadata.GetTableName()!;
+        var table = StoreObjectIdentifier.Table(tableName, builder.Metadata.GetSchema());
         string column(string property) => quote(builder.Metadata.FindProperty(property)!.GetColumnName(table)!);
         var key = column(nameof(TimeJobEntity.BusinessKey));
         var tenant = column(nameof(TimeJobEntity.TenantId));
@@ -103,7 +127,7 @@ internal static class JobsKeyedModelConfiguration
                     row.BusinessKey,
                     row.Generation,
                 },
-                "UX_TimeJobs_KeyGeneration_Tenant"
+                _KeyGenerationTenantIndex(style)
             )
             .IsUnique()
             .HasFilter(tenantFilter);
@@ -115,7 +139,7 @@ internal static class JobsKeyedModelConfiguration
                     row.BusinessKey,
                     row.Generation,
                 },
-                "UX_TimeJobs_KeyGeneration_System"
+                _KeyGenerationSystemIndex(style)
             )
             .IsUnique()
             .HasFilter(systemFilter);
@@ -127,17 +151,17 @@ internal static class JobsKeyedModelConfiguration
                     row.Function,
                     row.BusinessKey,
                 },
-                "UX_TimeJobs_CurrentKey_Tenant"
+                _CurrentKeyTenantIndex(style)
             )
             .IsUnique()
             .HasFilter($"{tenantFilter} AND {current} = {trueLiteral}");
         builder
-            .HasIndex(row => new { row.Function, row.BusinessKey }, "UX_TimeJobs_CurrentKey_System")
+            .HasIndex(row => new { row.Function, row.BusinessKey }, _CurrentKeySystemIndex(style))
             .IsUnique()
             .HasFilter($"{systemFilter} AND {current} = {trueLiteral}");
         builder.ToTable(mapping =>
             mapping.HasCheckConstraint(
-                "CK_TimeJobs_KeyedMetadata",
+                _KeyedMetadataCheck(style),
                 $"({key} IS NULL AND {fingerprint} IS NULL AND {algorithm} IS NULL AND {generation} IS NULL AND {current} IS NULL) OR "
                     + $"({key} IS NOT NULL AND {key} <> '' AND {fingerprint} IS NOT NULL AND {fingerprint} <> '' AND {algorithm} IS NOT NULL AND {algorithm} <> '' AND {generation} IS NOT NULL AND {generation} > 0 AND {current} IS NOT NULL AND {parent} IS NULL AND {condition} IS NULL)"
             )

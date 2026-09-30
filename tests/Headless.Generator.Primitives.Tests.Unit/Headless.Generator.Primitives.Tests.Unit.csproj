@@ -18,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Generator.Primitives.Abstractions\Headless.Generator.Primitives.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Generator.Primitives\Headless.Generator.Primitives.csproj" />
+    <ProjectReference Include="..\Headless.SourceGenerators.Tests.Harness\Headless.SourceGenerators.Tests.Harness.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Compile Remove="Snapshots\**" />

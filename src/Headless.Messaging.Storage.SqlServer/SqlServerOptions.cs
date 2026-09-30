@@ -23,7 +23,7 @@ public sealed class SqlServerOptions
 
     /// <summary>
     /// Gets or sets the command timeout applied to schema-initialization DDL that can scale with table
-    /// size — the history-table index builds (<c>InboxOperationReceipts</c>, <c>InboxAudit</c>) and the
+    /// size — the history-table index builds (<c>MessagingInboxOperationReceipts</c>, <c>MessagingInboxAudit</c>) and the
     /// <c>sp_getapplock</c> wait that serializes initializers across replicas.
     /// <para>
     /// History tables already exist and grow without bound on upgraded schemas, so adding an index to them

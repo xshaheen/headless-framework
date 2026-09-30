@@ -214,7 +214,7 @@ public sealed class Argon2idSecretHashAlgorithmTests : TestBase
         {
             if (string.Equals(algorithm, SecretHashAlgorithms.Pbkdf2Sha256, StringComparison.Ordinal))
             {
-                setup.UsePbkdf2Sha256((Pbkdf2Sha256HashOptions o) => o.Iterations = 1_000);
+                setup.UsePbkdf2Sha256(o => o.Iterations = 1_000);
             }
             else
             {

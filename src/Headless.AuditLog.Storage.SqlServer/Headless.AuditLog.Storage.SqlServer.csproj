@@ -14,5 +14,6 @@
     <ProjectReference Include="..\Headless.AuditLog.Core\Headless.AuditLog.Core.csproj" />
     <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
     <ProjectReference Include="..\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
+    <ProjectReference Include="..\Headless.Sql.SqlServer\Headless.Sql.SqlServer.csproj" />
   </ItemGroup>
 </Project>

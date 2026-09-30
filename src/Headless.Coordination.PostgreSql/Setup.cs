@@ -4,6 +4,7 @@ using FluentValidation;
 using Headless.Checks;
 using Headless.Constants;
 using Headless.Coordination.PostgreSql;
+using Headless.Sql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -20,6 +21,22 @@ public static class SetupPostgreSqlCoordination
 {
     extension(HeadlessCoordinationSetupBuilder setup)
     {
+        /// <summary>
+        /// Configures PostgreSQL storage with the connection registered by <c>AddPostgreSqlSql</c>, so one
+        /// connection string serves every feature that shares the database.
+        /// </summary>
+        /// <returns>The setup builder for chaining.</returns>
+        /// <remarks>
+        /// Options resolution throws <see cref="InvalidOperationException"/> when <c>AddPostgreSqlSql</c> was not
+        /// called or registered another provider's connection.
+        /// </remarks>
+        public HeadlessCoordinationSetupBuilder UsePostgreSql()
+        {
+            return setup.UsePostgreSql(
+                (options, services) => options.ConnectionString = services.GetPostgreSqlConnectionString()
+            );
+        }
+
         /// <summary>
         /// Selects PostgreSQL as the coordination backing store using the supplied connection string.
         /// </summary>

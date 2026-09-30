@@ -74,7 +74,9 @@ internal sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) 
             state.Entry = new LockEntry(leaseId, _GetExpiration(ttl));
             state.FencingToken++;
 
-            return ValueTask.FromResult(new DistributedLockAcquireResult(Acquired: true, state.FencingToken));
+            return ValueTask.FromResult(
+                new DistributedLockAcquireResult(Acquired: true, new LockFencingToken(state.FencingToken))
+            );
         }
     }
 

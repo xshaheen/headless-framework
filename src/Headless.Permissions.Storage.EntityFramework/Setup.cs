@@ -64,6 +64,11 @@ public static class SetupPermissionsEntityFramework
                 typeof(IPermissionDefinitionRecordRepository),
                 typeof(EfPermissionDefinitionRecordRepository<>).MakeGenericType(dbContextType)
             );
+            services.RequireSingletonService(
+                typeof(IDbContextFactory<>).MakeGenericType(dbContextType),
+                requiredBy: "Headless permissions EF storage",
+                remedy: "Register it with AddDbContextFactory<TContext>() or AddPooledDbContextFactory<TContext>() at the default singleton lifetime; the store is a singleton and would keep one scoped or transient factory for the life of the host."
+            );
             services.AddStartupValidator(typeof(PermissionsEntityStartupValidator<>).MakeGenericType(dbContextType));
         }
     }
@@ -71,16 +76,26 @@ public static class SetupPermissionsEntityFramework
     // EF dispatches to whatever DB the consumer wired up, so the validator uses the most
     // permissive identifier pattern (SqlServer, a superset of PostgreSQL's character set) and
     // the larger length cap (SqlServer). The underlying DB surfaces type/length issues at
-    // migration time.
+    // migration time, except derived key and index names, which PostgreSQL truncates instead
+    // of rejecting, so those are bounded here.
     private sealed class EntityFrameworkPermissionsStorageOptionsValidator
         : AbstractValidator<PermissionsStorageOptions>
     {
         public EntityFrameworkPermissionsStorageOptionsValidator()
         {
             RuleFor(x => x.Schema).IsValidCrossProviderIdentifier();
-            RuleFor(x => x.PermissionGrantsTableName).IsValidCrossProviderIdentifier();
-            RuleFor(x => x.PermissionDefinitionsTableName).IsValidCrossProviderIdentifier();
-            RuleFor(x => x.PermissionGroupDefinitionsTableName).IsValidCrossProviderIdentifier();
+            RuleFor(x => x.PermissionGrantsTableName)
+                .IsValidCrossProviderIdentifier()
+                .FitsDerivedPostgreSqlNames(PermissionsStorageNames.GrantsIndexes)
+                .When(x => x.PermissionGrantsTableName is not null);
+            RuleFor(x => x.PermissionDefinitionsTableName)
+                .IsValidCrossProviderIdentifier()
+                .FitsDerivedPostgreSqlNames(PermissionsStorageNames.DefinitionsIndexes)
+                .When(x => x.PermissionDefinitionsTableName is not null);
+            RuleFor(x => x.PermissionGroupDefinitionsTableName)
+                .IsValidCrossProviderIdentifier()
+                .FitsDerivedPostgreSqlNames(PermissionsStorageNames.GroupsIndexes)
+                .When(x => x.PermissionGroupDefinitionsTableName is not null);
         }
     }
 }

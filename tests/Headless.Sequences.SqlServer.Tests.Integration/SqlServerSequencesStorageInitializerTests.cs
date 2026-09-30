@@ -107,9 +107,9 @@ public sealed class SqlServerSequencesStorageInitializerTests(SqlServerSequences
                 WHERE i.object_id = OBJECT_ID(@table) AND i.is_primary_key = 1 AND i.type_desc = 'CLUSTERED'
                   AND c.collation_name = 'Latin1_General_100_BIN2'
                   AND (
-                      (ic.key_ordinal = 1 AND c.name = 'tenant_id')
-                      OR (ic.key_ordinal = 2 AND c.name = 'name')
-                      OR (ic.key_ordinal = 3 AND c.name = 'partition')
+                      (ic.key_ordinal = 1 AND c.name = 'TenantId')
+                      OR (ic.key_ordinal = 2 AND c.name = 'Name')
+                      OR (ic.key_ordinal = 3 AND c.name = 'Partition')
                   )
                 """,
                 AbortToken,

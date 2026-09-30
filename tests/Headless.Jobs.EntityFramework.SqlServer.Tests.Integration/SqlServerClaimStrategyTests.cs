@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Reflection;
 using Headless.Abstractions;
 using Headless.Coordination;
+using Headless.Hosting.Initialization;
 using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
@@ -382,7 +383,7 @@ public sealed class SqlServerClaimStrategyTests(SqlServerJobsCoordinationFixture
             await connection.OpenAsync(ct);
             await using var command = connection.CreateCommand();
             command.CommandText =
-                $"CREATE TRIGGER [jobs].[fail_descendant_claim] ON {fixture.QualifiedTimeJobsTable} AFTER UPDATE AS "
+                $"CREATE TRIGGER [headless].[fail_descendant_claim] ON {fixture.QualifiedTimeJobsTable} AFTER UPDATE AS "
                 + "IF EXISTS (SELECT 1 FROM inserted WHERE [Function] = 'fail-child' AND [OwnerId] IS NOT NULL) "
                 + "THROW 51000, 'forced descendant failure', 1;";
             await command.ExecuteNonQueryAsync(ct);
@@ -824,11 +825,13 @@ internal sealed class SqlServerNativeClaimsFixture(string connectionString) : IJ
 {
     public string ConnectionString { get; } = connectionString;
 
-    public string QualifiedTimeJobsTable => "[jobs].[TimeJobs]";
+    public StorageNamingStyle NamingStyle => StorageNamingStyle.PascalCase;
 
-    public string QualifiedCronJobsTable => "[jobs].[CronJobs]";
+    public string QualifiedTimeJobsTable => "[headless].[TimeJobs]";
 
-    public string QualifiedCronJobOccurrencesTable => "[jobs].[CronJobOccurrences]";
+    public string QualifiedCronJobsTable => "[headless].[CronJobs]";
+
+    public string QualifiedCronJobOccurrencesTable => "[headless].[CronJobOccurrences]";
 
     public string QualifyTable(string schema, string table) => $"[{schema}].[{table}]";
 

@@ -1,13 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Http.Resilience;
 using Headless.Sms.Vodafone;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Polly;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Sms;
@@ -111,21 +111,9 @@ public static class SetupVodafone
     }
 
     /// <summary>
-    /// The Vodafone HttpClient name doubles as the resilience-pipeline key, so each named instance gets its
-    /// own client registration (and pipeline) suffixed with the instance name.
-    /// </summary>
-    internal static string GetHttpClientName(string? name)
-    {
-        return name is null ? HttpClientName : $"{HttpClientName}:{name}";
-    }
-
-    /// <summary>
-    /// Registers the Vodafone Egypt SMS sender. <paramref name="name"/> <see langword="null"/> registers the default
-    /// (unkeyed) sender; a non-null name registers a keyed sender (plus keyed bulk forward), named options,
-    /// and a per-name HttpClient with its own resilience pipeline. Every factory reads the options snapshot
-    /// for its own name (<c>IOptionsMonitor.Get(name)</c>) so keyed settings never bleed across instances —
-    /// keyed DI does not cascade the key to ctor dependencies, and a keyed sender must not read
-    /// <c>CurrentValue</c> (which binds the default).
+    /// Registers the Vodafone SMS sender through the shared HTTP provider path: options, a per-instance HttpClient whose
+    /// pipeline is derived from the declared <see cref="OutboundEffect.Unsafe"/> effect, and the default or keyed
+    /// sender with its bulk forward.
     /// </summary>
     internal static void AddVodafoneSmsCore(
         IServiceCollection services,
@@ -135,50 +123,23 @@ public static class SetupVodafone
         Action<HttpStandardResilienceOptions>? configureResilience
     )
     {
-        configureOptions(services, name);
-
-        var httpClientName = GetHttpClientName(name);
-
-        var httpClientBuilder = configureClient is null
-            ? services.AddHttpClient(httpClientName)
-            : services.AddHttpClient(httpClientName, configureClient);
-
-        // SMS sends are not idempotent: don't auto-retry by default to avoid duplicate messages.
-        // Consumers can opt back in via configureResilience (ideally with a provider idempotency key).
-        httpClientBuilder.AddStandardResilienceHandler(options =>
-        {
-            options.Retry.ShouldHandle = static _ => PredicateResult.False();
-            configureResilience?.Invoke(options);
-        });
-
-        if (name is null)
-        {
-            services.AddSingleton<ISmsSender>(static sp => new VodafoneSmsSender(
-                sp.GetRequiredService<IHttpClientFactory>(),
-                HttpClientName,
-                sp.GetRequiredService<IOptionsMonitor<VodafoneSmsOptions>>(),
-                optionsName: null,
-                sp.GetRequiredService<ILogger<VodafoneSmsSender>>()
-            ));
-            services.AddSingleton<IBulkSmsSender>(static sp => (IBulkSmsSender)sp.GetRequiredService<ISmsSender>());
-
-            return;
-        }
-
-        services.AddKeyedSingleton<ISmsSender>(
+        // SMS sends are not idempotent: a retried send can deliver twice.
+        HttpSmsProviderRegistration.AddHttpSmsProvider(
+            services,
             name,
-            (sp, _) =>
+            HttpClientName,
+            configureOptions,
+            static (sp, httpClientName, optionsName) =>
                 new VodafoneSmsSender(
                     sp.GetRequiredService<IHttpClientFactory>(),
                     httpClientName,
                     sp.GetRequiredService<IOptionsMonitor<VodafoneSmsOptions>>(),
-                    name,
+                    optionsName,
                     sp.GetRequiredService<ILogger<VodafoneSmsSender>>()
-                )
-        );
-        services.AddKeyedSingleton<IBulkSmsSender>(
-            name,
-            (sp, _) => (IBulkSmsSender)sp.GetRequiredKeyedService<ISmsSender>(name)
+                ),
+            OutboundEffect.Unsafe,
+            configureClient,
+            configureResilience
         );
     }
 }

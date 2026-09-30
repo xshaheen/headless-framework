@@ -1,5 +1,6 @@
 using Headless.AuditLog;
 using Headless.EntityFramework;
+using Headless.Hosting.Initialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -39,7 +40,10 @@ public class AuditTestDbContext(
             b.Property(e => e.Id).ValueGeneratedOnAdd();
             b.HasOne(e => e.Order).WithMany().HasForeignKey(e => e.GeneratedOrderId);
         });
-        modelBuilder.AddHeadlessAuditLog(auditLogStorage.Value);
+        modelBuilder.AddHeadlessAuditLog(
+            auditLogStorage.Value,
+            HeadlessStorageNaming.ForProvider(Database.ProviderName)
+        );
 
         // SQLite doesn't support ValueGeneratedOnAdd on composite-key columns (no sequence support).
         // Override to use a single-column PK so SQLite ROWID auto-increment works.

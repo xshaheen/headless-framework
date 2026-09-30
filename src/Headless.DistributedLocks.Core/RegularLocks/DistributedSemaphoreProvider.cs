@@ -458,7 +458,7 @@ internal sealed class DistributedSemaphoreProvider(
     private DisposableSemaphoreSlot _CreateSlot(
         string resource,
         string leaseId,
-        long? fencingToken,
+        LockFencingToken? fencingToken,
         TimeSpan leaseDuration,
         TimeSpan timeWaitedForLock,
         bool releaseOnDispose,

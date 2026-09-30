@@ -50,13 +50,13 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         var initializer = provider.GetRequiredService<IStorageInitializer>();
         await initializer.InitializeAsync();
 
-        // Other classes in this collection share the `messaging` schema and not all reset on teardown,
+        // Other classes in this collection share the `headless` schema and not all reset on teardown,
         // so start each monitoring test from an empty table to keep the counts exact.
         await using (var resetConnection = new SqlConnection(fixture.ConnectionString))
         {
             await resetConnection.OpenAsync();
             await resetConnection.ExecuteAsync(
-                "TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received;"
+                "TRUNCATE TABLE headless.MessagingPublished; TRUNCATE TABLE headless.MessagingReceived;"
             );
         }
 
@@ -80,7 +80,9 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync();
-        await connection.ExecuteAsync("TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received;");
+        await connection.ExecuteAsync(
+            "TRUNCATE TABLE headless.MessagingPublished; TRUNCATE TABLE headless.MessagingReceived;"
+        );
         await base.DisposeAsyncCore();
     }
 
@@ -461,7 +463,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         await using (var connection = new SqlConnection(fixture.ConnectionString))
         {
             await connection.ExecuteAsync(
-                "UPDATE messaging.published SET Content = @Content WHERE Id = @Id",
+                "UPDATE headless.MessagingPublished SET Content = @Content WHERE Id = @Id",
                 new { Content = "not-a-message-envelope", Id = malformedPublished.StorageId }
             );
         }
@@ -499,8 +501,8 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
     }
 
     [Theory]
-    [InlineData(MessageType.Publish, "Published")]
-    [InlineData(MessageType.Subscribe, "Received")]
+    [InlineData(MessageType.Publish, "MessagingPublished")]
+    [InlineData(MessageType.Subscribe, "MessagingReceived")]
     public async Task should_return_bounded_deterministic_unknown_lane_diagnostics_without_mutation(
         MessageType messageType,
         string tableName
@@ -518,7 +520,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         await _InsertDiagnosticRowAsync(connection, tableName, newestId, rawLane: 71, now.AddMinutes(-1));
         var before = (
             await connection.QueryAsync<(Guid Id, short RawLane, string Name, string StatusName, string Content)>(
-                $"SELECT Id, IntentType, Name, StatusName, Content FROM messaging.{tableName} ORDER BY Added, Id"
+                $"SELECT Id, IntentType, Name, StatusName, Content FROM headless.{tableName} ORDER BY Added, Id"
             )
         ).ToList();
 
@@ -562,15 +564,15 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
 
         var after = (
             await connection.QueryAsync<(Guid Id, short RawLane, string Name, string StatusName, string Content)>(
-                $"SELECT Id, IntentType, Name, StatusName, Content FROM messaging.{tableName} ORDER BY Added, Id"
+                $"SELECT Id, IntentType, Name, StatusName, Content FROM headless.{tableName} ORDER BY Added, Id"
             )
         ).ToList();
         after.Should().BeEquivalentTo(before, options => options.WithStrictOrdering());
     }
 
     [Theory]
-    [InlineData(MessageType.Publish, "Published")]
-    [InlineData(MessageType.Subscribe, "Received")]
+    [InlineData(MessageType.Publish, "MessagingPublished")]
+    [InlineData(MessageType.Subscribe, "MessagingReceived")]
     public async Task should_hide_malformed_unknown_lane_from_ordinary_monitoring_reads(
         MessageType messageType,
         string tableName
@@ -705,15 +707,15 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         DateTimeOffset added
     )
     {
-        var receivedColumns = string.Equals(tableName, "Received", StringComparison.Ordinal)
+        var receivedColumns = string.Equals(tableName, "MessagingReceived", StringComparison.Ordinal)
             ? ", [Group], ExceptionInfo"
             : string.Empty;
-        var receivedValues = string.Equals(tableName, "Received", StringComparison.Ordinal)
+        var receivedValues = string.Equals(tableName, "MessagingReceived", StringComparison.Ordinal)
             ? ", 'diagnostic-group', NULL"
             : string.Empty;
         return connection.ExecuteAsync(
             $"""
-            INSERT INTO messaging.{tableName}
+            INSERT INTO headless.{tableName}
                 (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId{receivedColumns})
             VALUES
                 (@Id, 'v1', @Name, @Content, @IntentType, 0, @Added, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId{receivedValues});

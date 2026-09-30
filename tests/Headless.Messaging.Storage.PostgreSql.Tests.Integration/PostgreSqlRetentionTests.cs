@@ -67,9 +67,9 @@ public sealed class PostgreSqlRetentionTests(PostgreSqlTestFixture fixture) : Te
         await connection.ExecuteAsync(
             new CommandDefinition(
                 $$"""
-                DROP INDEX IF EXISTS "{{_schema}}".idx_received_inbox_retention;
-                INSERT INTO {{_table}} ("Id","Version","Name","Content","Retries","Added","StatusName","MessageId",
-                    "IntentType","IsInboxRecord","GenerationIncarnationId","LifecycleId","ContractIdentity","ContractVersion","ConsumerIdentity","EffectiveExpiresAt","ExpiresAt")
+                DROP INDEX IF EXISTS "{{_schema}}".idx_messaging_received_inbox_retention;
+                INSERT INTO {{_table}} ("id","version","name","content","retries","added","status_name","message_id",
+                    "intent_type","is_inbox_record","generation_incarnation_id","lifecycle_id","contract_identity","contract_version","consumer_identity","effective_expires_at","expires_at")
                 SELECT id,'v1','retention.plan','{}',0,statement_timestamp(),'Succeeded',i::text,
                     0,i%2=0,id,id,'retention.plan','v1','retention.plan',
                     statement_timestamp() + CASE WHEN i<=10 THEN INTERVAL '-1 day' ELSE INTERVAL '1 day' END,
@@ -118,7 +118,7 @@ public sealed class PostgreSqlRetentionTests(PostgreSqlTestFixture fixture) : Te
             explain.Parameters.Add(new NpgsqlParameter<int> { TypedValue = 3 });
             var plan = (string)(await explain.ExecuteScalarAsync(AbortToken))!;
             Logger.LogInformation("PostgreSQL cleanup plan: {Plan}", plan);
-            plan.Should().Contain("idx_received_inbox_retention");
+            plan.Should().Contain("idx_messaging_received_inbox_retention");
             plan.Should().NotContain("\"Node Type\": \"Seq Scan\"");
             await transaction.RollbackAsync(AbortToken);
             (
@@ -145,8 +145,8 @@ public sealed class PostgreSqlRetentionTests(PostgreSqlTestFixture fixture) : Te
                 new CommandDefinition(
                     $"""
                     SELECT (SELECT COUNT(*) FROM {_table}),
-                        (SELECT COUNT(*) FROM "{_schema}".inbox_operation_receipts),
-                        (SELECT COUNT(*) FROM "{_schema}".inbox_audit);
+                        (SELECT COUNT(*) FROM "{_schema}".messaging_inbox_operation_receipts),
+                        (SELECT COUNT(*) FROM "{_schema}".messaging_inbox_audit);
                     """,
                     cancellationToken: AbortToken
                 )

@@ -641,12 +641,11 @@ public abstract class JobsRecoveryConformanceTests<TFixture>(TFixture fixture) :
             .ContainSingle("a losing racer must not materialize a second run for the same backlog");
     }
 
-    private static DateTime _RecoveryInstant((DateTime ReconciledThroughUtc, DateTime NextDueUtc) seeded) =>
-        seeded.NextDueUtc.AddHours(2);
+    private static DateTime _RecoveryInstant(CronSchedulePosition seeded) => seeded.NextDueUtc.AddHours(2);
 
     private static CronRecoveryRequest _Request(
         Guid cronJobId,
-        (DateTime ReconciledThroughUtc, DateTime NextDueUtc) seeded,
+        CronSchedulePosition seeded,
         MissedRunPolicy policy,
         DateTime[]? missedInstants = null
     ) =>

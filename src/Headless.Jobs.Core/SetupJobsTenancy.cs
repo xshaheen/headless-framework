@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Jobs.Models;
@@ -113,7 +114,9 @@ public sealed class HeadlessJobsTenancyBuilder
 
     // Sentinel — the PostConfigure contribution must register at most once per flag, so repeated builder calls
     // (or a repeated .Jobs(...) registration) do not stack duplicate callbacks.
-    private void _RegisterSentinelOnce<TSentinel>(Action<JobsTenancyOptions> postConfigure)
+    private void _RegisterSentinelOnce<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TSentinel
+    >(Action<JobsTenancyOptions> postConfigure)
         where TSentinel : class
     {
         if (_builder.Services.Any(descriptor => descriptor.ServiceType == typeof(TSentinel)))

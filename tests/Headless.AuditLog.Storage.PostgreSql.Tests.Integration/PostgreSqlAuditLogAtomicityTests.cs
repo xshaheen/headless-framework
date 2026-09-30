@@ -163,7 +163,7 @@ public sealed class PostgreSqlAuditLogAtomicityTests(PostgreSqlAuditLogFixture f
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand(
-            $"""SELECT COUNT(*) FROM "{_Schema}"."audit_log" WHERE "Action" = @action;""",
+            $"""SELECT COUNT(*) FROM "{_Schema}"."audit_log_entries" WHERE "action" = @action;""",
             connection
         );
         command.Parameters.AddWithValue(nameof(action), action);

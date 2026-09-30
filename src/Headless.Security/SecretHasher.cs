@@ -50,7 +50,10 @@ internal sealed class SecretHasher : ISecretHasher
         if (secret.Length > options.MaxSecretLength)
         {
             throw new ArgumentException(
-                $"The secret is longer than the configured maximum of {options.MaxSecretLength} characters.",
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"The secret is longer than the configured maximum of {options.MaxSecretLength} characters."
+                ),
                 nameof(secret)
             );
         }
@@ -120,7 +123,7 @@ internal sealed class SecretHasher : ISecretHasher
         var upgrade =
             !string.Equals(stored.Id, _selectedAlgorithmId, StringComparison.Ordinal) || algorithm.NeedsRehash(stored);
 
-        return new SecretVerification(true, upgrade ? _GetSelectedAlgorithm().Hash(secret) : null);
+        return new SecretVerification(Succeeded: true, upgrade ? _GetSelectedAlgorithm().Hash(secret) : null);
     }
 
     private ISecretHashAlgorithm _GetSelectedAlgorithm()

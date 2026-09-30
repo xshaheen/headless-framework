@@ -17,7 +17,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 [![English](https://img.shields.io/badge/lang-English-2563EB?style=flat-square)](README.md)
 
-168 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
+186 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
 
 [ليه Headless](#ليه-headless) &bull; [ابدأ في 60 ثانية](#ابدأ-في-60-ثانية) &bull; [Setup واحد لكل المجالات](#setup-واحد-لكل-المجالات) &bull; [إيه اللي في الصندوق](#إيه-اللي-في-الصندوق) &bull; [فهرس الحزم](#فهرس-الحزم)
 
@@ -53,9 +53,9 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 أي service أو repository أو handler بياخد `ICache` مش هيتأثر بالتعديل دا. ونفس الكلام على `IBlobStorage` بين S3 و Azure و Cloudflare R2 و FileSystem و Redis و SFTP، وعلى `IEmailSender` بين SES و Azure Communication Services و SMTP، وعلى الـ messaging بين 8 transports.
 
-**هتركّب 3 packages، مش 168.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching.Core` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها حاجة واحدة بس، هي `Headless.Extensions`.
+**هتركّب 3 packages، مش 186.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching.Core` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها حاجة واحدة بس، هي `Headless.Extensions`.
 
-**الـ tests مش محتاجة Docker عشان تبقى سريعة.** الـ caching والـ distributed locks والـ messaging فيهم in-memory providers؛ والـ emails والـ SMS والـ push notifications فيهم dev providers مش بتبعت حاجة؛ والـ blob storage بيشتغل على الـ file system المحلي. يعني الـ unit tests بتجرّب نفس الـ contract الحقيقي من غير containers. ولما تحتاج الـ backend الحقيقي، `Headless.Testing.Testcontainers` بتجهّزلك الـ fixtures. الـ repo نفسه ماشي على التقسيمة دي: 130 مشروع unit tests و 60 مشروع integration tests.
+**الـ tests مش محتاجة Docker عشان تبقى سريعة.** الـ caching والـ distributed locks والـ messaging فيهم in-memory providers؛ والـ emails والـ SMS والـ push notifications فيهم dev providers مش بتبعت حاجة؛ والـ blob storage بيشتغل على الـ file system المحلي. يعني الـ unit tests بتجرّب نفس الـ contract الحقيقي من غير containers. ولما تحتاج الـ backend الحقيقي، `Headless.Testing.Testcontainers` بتجهّزلك الـ fixtures. الـ repo نفسه ماشي على التقسيمة دي: 122 مشروع unit tests و 63 مشروع integration tests.
 
 **الحاجات الصعبة متكتوبة خلاص.** الـ background jobs بتعمل claim للشغل بشكل atomic عن طريق `FOR UPDATE SKIP LOCKED` في PostgreSQL و `UPDLOCK, READPAST, ROWLOCK` في SQL Server. والـ messaging بتكتب في transactional outbox جوه نفس الـ save بتاع EF Core. والـ distributed locks بتستخدم advisory locks في PostgreSQL و application locks في SQL Server، مش `SET NX` مرتجل. والـ node membership بتقرا الـ liveness من ساعة الـ server، مش من ساعة الـ node نفسها. كل نقطة من دول مكان بتضيع فيه messages أو بيتنفّذ فيه job مرتين بسبب implementation شكله سليم وهو مش سليم.
 
@@ -168,7 +168,7 @@ builder.Services.AddHeadlessBlobs(blobs =>
 
 ### خطوات أبعد
 
-في [`docs/llms/index.md`](docs/llms/index.md) هتلاقي خدمة كاملة شغالة: upload متحقَّق منه، وكتابة في الـ blob storage، وقراية عن طريق read-through cache، وجدولة background job. وفي [`demo/`](demo/) فيه 20 مثال تقدر تشغّلهم.
+[`docs/llms/index.md`](docs/llms/index.md) بيوجّه كل task للـ domain guide اللي بتملك الـ setup والـ runtime behavior وحدود الـ provider بتوعها. وفي [`demo/`](demo/) أمثلة تقدر تشغّلها.
 
 ## Setup واحد لكل المجالات
 
@@ -192,6 +192,8 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Distributed locks | `AddHeadlessDistributedLocks` | `UseInMemory`، `UseRedis`، `UsePostgreSql`، `UseSqlServer` |
 | Node membership | `AddHeadlessCoordination` | `UseRedis`، `UsePostgreSql`، `UseSqlServer` |
 | Sequences | `AddHeadlessSequences` | `UsePostgreSql`، `UseSqlServer` |
+| Fencing (durable leases) | `AddHeadlessFencing` | `UsePostgreSql`، `UseSqlServer`، `UseInMemory` |
+| Idempotency | `AddHeadlessIdempotency` | `UsePostgreSql`، `UseSqlServer`، `UseInMemory`، `UseCache` |
 | Feature flags | `AddHeadlessFeatures` | `UseEntityFramework<TContext>`، `UsePostgreSql`، `UseSqlServer` |
 | Dynamic settings | `AddHeadlessSettings` | `UseEntityFramework<TContext>`، `UsePostgreSql`، `UseSqlServer` |
 | Permissions | `AddHeadlessPermissions` | `UseEntityFramework<TContext>`، `UsePostgreSql`، `UseSqlServer` |
@@ -212,7 +214,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | **API host** | Setup بسطر واحد عن طريق `AddHeadless()`: Problem Details، وOpenTelemetry، وOpenAPI، وhealth checks، وcompression، وforwarded headers، وHSTS، وvalidation وقت الـ startup. وتكامل مع Minimal API و MVC، وfilters للـ FluentValidation، وHTTP idempotency بأسلوب Stripe. |
 | **Data** | Conventions للـ EF Core، وglobal filters، وsoft deletes، وbase types للـ DDD، وseed data. وconnection factories خام لـ PostgreSQL و SQL Server و SQLite. وCouchbase. ودعم geospatial عن طريق NetTopologySuite. |
 | **State & storage** | Caching (memory، وRedis، وhybrid L1/L2، وtagging، وحماية من الـ stampede). وblob storage على 6 backends. وdynamic settings وfeature flags وpermissions وaudit log، كل واحدة بـ 3 storage providers. |
-| **Distributed runtime** | Messaging بـ transactional outbox وretries وdelayed delivery فوق 8 transports. وbackground jobs بـ cron وretries وregistration بيتولّد وقت الـ compile. وdistributed locks. وnode membership وliveness. وunit of work scoped بيصرّف شغل الـ outbox والـ jobs بشكل atomic عند الـ commit. |
+| **Distributed runtime** | Messaging بـ transactional outbox وretries وdelayed delivery فوق 8 transports. وbackground jobs بـ cron وretries وregistration بيتولّد وقت الـ compile. وdistributed locks، وfenced leases بترفض الـ write بتاع holder قديم، وidempotent admission دائم بيرجّع الـ result المتخزّن عند الـ retry. وattempt limiting لـ OTP وreset الـ password والـ PIN. وnode membership وliveness. وunit of work صريح بيعمل commit لرسايل الـ outbox والـ durable jobs مع الـ transaction ويبعتهم بعد الـ commit. |
 | **Integrations** | Emails، وSMS، وpush notifications، وCAPTCHA، وimage processing، واستخراج نصوص من الـ media، ومدفوعات Paymob، وresumable uploads عن طريق TUS، وsitemaps، وslugs، وبناء الـ URLs. |
 | **Multi-tenancy** | الـ tenant context بيسري في الـ HTTP resolution، وفي الـ query filters بتاعة EF Core، وفي cache الـ permissions، وفي headers الـ messaging، ومعاه tenant catalog اختياري. |
 | **Testing** | Base classes للـ xUnit v3، وbuilders بـ Bogus، وfixtures فوق `WebApplicationFactory` مع reset للـ database، وfixtures للـ Testcontainers، وtest harness للـ messaging بيتحقق من الـ published والـ consumed والـ faulted. |
@@ -289,7 +291,7 @@ packages الـ providers دي packages عادية على NuGet. عشان تضي
 </div>
 
 <details dir="rtl" align="right">
-<summary><strong>كل الـ 168 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
+<summary><strong>كل الـ 186 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
 
 ### API & Web
 
@@ -316,7 +318,8 @@ Building blocks مشتركة عبر الـ framework: domain primitives، وbase
 | [Headless.Extensions](src/Headless.Extensions/README.md) | Extension methods وcollections وIO وthreading وreflection helpers |
 | [Headless.Core](src/Headless.Core/README.md) | Building blocks للـ Domain-Driven Design |
 | [Headless.Security.Abstractions](src/Headless.Security.Abstractions/README.md) | الـ contracts والـ options بتاعة الـ security |
-| [Headless.Security](src/Headless.Security/README.md) | تشفير الـ strings والـ hashing |
+| [Headless.Security](src/Headless.Security/README.md) | تشفير الـ strings، وlookup hashing، وsecret hashing (PBKDF2) |
+| [Headless.Security.Argon2](src/Headless.Security.Argon2/README.md) | Secret hashing بـ Argon2id، وهو الـ algorithm الافتراضي لـ `ISecretHasher` |
 | [Headless.Checks](src/Headless.Checks/README.md) | Guard clauses وvalidation للـ arguments |
 | [Headless.Domain](src/Headless.Domain/README.md) | Entities وevents بتاعة الـ domain |
 | [Headless.Domain.LocalEventBus](src/Headless.Domain.LocalEventBus/README.md) | `ILocalEventBus` لنشر الـ domain events جوه نفس الـ process |
@@ -558,6 +561,14 @@ Firebase Cloud Messaging خلف abstraction واضحة، ومعاه dev provider
 | [Headless.DistributedLocks.Redis](src/Headless.DistributedLocks.Redis/README.md) | Locking على Redis |
 | [Headless.DistributedLocks.SqlServer](src/Headless.DistributedLocks.SqlServer/README.md) | Locking بـ application locks في SQL Server |
 
+### Rate Limiting
+
+حدود مظبوطة لعدد المحاولات لكل رقم تليفون، أو email، أو IP address، أو كارت، مشتركة بين كل الـ replicas.
+
+| Package | الوصف |
+|---------|-------|
+| [Headless.RateLimiting](src/Headless.RateLimiting/README.md) | Attempt limiter بـ fixed window فوق `ICache`، ومفاتيح الـ subject متخزّنة pseudonymised |
+
 ### Coordination
 
 Cluster membership وliveness tracking: اعرف مين من الـ nodes شغّال في deployment موزّع.
@@ -582,14 +593,39 @@ Cluster membership وliveness tracking: اعرف مين من الـ nodes شغّ
 | [Headless.Sequences.PostgreSql](src/Headless.Sequences.PostgreSql/README.md) | Counters في PostgreSQL بـ upsert-increment واحد |
 | [Headless.Sequences.SqlServer](src/Headless.Sequences.SqlServer/README.md) | Counters في SQL Server بـ upsert محمي بـ range lock |
 
+### Fencing
+
+Leases دائمة بين الـ processes بتوقف الـ writes بتاعة attempt قديم أو zombie عند الـ database. سلّم `(resource, generation)` بتاع الـ lease لأي executor: جوه الـ process، أو message consumer، أو job، أو process خارجي، وارفض الـ write بتاعه أول ما grant أحدث ياخد مكانه.
+
+| Package | الوصف |
+|---------|-------|
+| [Headless.Fencing.Abstractions](src/Headless.Fencing.Abstractions/README.md) | `IFencedLeases` و`FencedLease` والـ accessor `unit.Leases` |
+| [Headless.Fencing.Core](src/Headless.Fencing.Core/README.md) | الـ registration، وتحديد الـ key، والـ sweep بتاع الـ leases اللي انتهت |
+| [Headless.Fencing.InMemory](src/Headless.Fencing.InMemory/README.md) | Leases جوه الـ process للـ tests وللـ hosts اللي شغالة بـ instance واحدة |
+| [Headless.Fencing.PostgreSql](src/Headless.Fencing.PostgreSql/README.md) | Leases في PostgreSQL بـ sweep بيستخدم `SKIP LOCKED` |
+| [Headless.Fencing.SqlServer](src/Headless.Fencing.SqlServer/README.md) | Leases في SQL Server بـ sweep بيستخدم `READPAST` |
+
+### Idempotency
+
+Idempotent admission دائم ومتقسّم حسب الـ tenant: اقبل الـ key مرة واحدة بين الـ processes، ورجّع الـ result المتخزّن بتاعه عند الـ retry، ومن غير ما يعتمد على TTL أي cache في الـ relational providers. كل record شايل الـ lease والـ generation بتوعه.
+
+| Package | الوصف |
+|---------|-------|
+| [Headless.Idempotency.Abstractions](src/Headless.Idempotency.Abstractions/README.md) | `IIdempotentOperations` و`IdempotentAdmission` والـ accessor `unit.Idempotency` |
+| [Headless.Idempotency.Core](src/Headless.Idempotency.Core/README.md) | الـ registration، وorchestration للـ admission، والـ purge بعد مدة الـ retention |
+| [Headless.Idempotency.Caching](src/Headless.Idempotency.Caching/README.md) | Records الـ idempotency في cache مشترك (Redis) للـ autonomous calls بين الـ replicas من غير SQL |
+| [Headless.Idempotency.InMemory](src/Headless.Idempotency.InMemory/README.md) | Records جوه الـ process للـ tests وللـ hosts اللي شغالة بـ instance واحدة |
+| [Headless.Idempotency.PostgreSql](src/Headless.Idempotency.PostgreSql/README.md) | Records الـ idempotency في PostgreSQL |
+| [Headless.Idempotency.SqlServer](src/Headless.Idempotency.SqlServer/README.md) | Records الـ idempotency في SQL Server |
+
 ### Unit of Work
 
-Unit of work صريح وscoped: تبدأه في السطر اللي تختاره، وتعمل شغل الـ business، وتكمّله. شغل الـ outbox والـ durable jobs المنضمّين جواه بيتصرّف بشكل atomic عند الـ commit ويتلغي عند الـ rollback.
+Unit of work صريح: تبدأه من singleton factory في السطر اللي تختاره، وتعمل شغل الـ business، وتكمّله. الرسايل اللي بتتنشر عن طريق `unit.Outbox` والـ durable jobs اللي بتتجدول جواه بيتعملهم commit مع الـ transaction، ويتبعتوا بعد الـ commit، ويتلغوا عند الـ rollback.
 
 | Package | الوصف |
 |---------|-------|
 | [Headless.UnitOfWork.Abstractions](src/Headless.UnitOfWork.Abstractions/README.md) | الـ contracts بتاعة الـ unit of work: `IUnitOfWorkFactory` (singleton)، `IUnitOfWork`، `IUnitOfWorkResource`، `IUnitOfWorkFeature`، `TransactionEnlistment` (من غير dependencies) |
-| [Headless.UnitOfWork](src/Headless.UnitOfWork/README.md) | الـ manager والـ engine وتسجيل `AddUnitOfWork()` |
+| [Headless.UnitOfWork](src/Headless.UnitOfWork/README.md) | الـ singleton factory والـ engine وتسجيل `AddUnitOfWork()` |
 | [Headless.UnitOfWork.EntityFramework](src/Headless.UnitOfWork.EntityFramework/README.md) | Provider للـ EF Core: `BeginAsync(db)` / `Enlist(db, tx)` / `RunAsync(db, ...)` |
 | [Headless.UnitOfWork.PostgreSql](src/Headless.UnitOfWork.PostgreSql/README.md) | Provider لـ `NpgsqlConnection` بالـ ADO الخام، بنفس الشكل |
 | [Headless.UnitOfWork.SqlServer](src/Headless.UnitOfWork.SqlServer/README.md) | Provider لـ `SqlConnection` بالـ ADO الخام، بنفس الشكل |
@@ -676,6 +712,7 @@ Base classes وbuilders وfixtures وتكامل Testcontainers لـ integration 
 | [Headless.Generator.Primitives](src/Headless.Generator.Primitives/README.md) | Source generator للـ primitive types |
 | [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | الـ abstractions بتاعة الـ generator |
 | [Headless.Hosting](src/Headless.Hosting/README.md) | أدوات للـ .NET hosting |
+| [Headless.Http.Resilience](src/Headless.Http.Resilience/README.md) | الـ side-effect classes المعلنة للـ outbound HTTP calls |
 | [Headless.NetTopologySuite](src/Headless.NetTopologySuite/README.md) | أدوات geospatial |
 | [Headless.Primitives](src/Headless.Primitives/README.md) | Value objects، والـ result pattern، وpaging models، وdomain primitives |
 | [Headless.Redis](src/Headless.Redis/README.md) | أدوات لـ Redis |

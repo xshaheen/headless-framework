@@ -21,7 +21,7 @@ Install only the packages that match your job. `Services` depends on both `CashI
 
 Register via:
 - `services.AddPaymobCashIn(options => ...)` — for payment collection.
-- `services.AddPaymobCashOut(options => ...)` — for disbursements.
+- `services.AddPaymobCashOut(configuration.GetSection("Paymob:CashOut"))` — for disbursements.
 - `services.AddPaymobServices()` — registers `IPaymobCashInService`, `ICashOutService`, and `IPaymobCashInFeesCalculator` from the Services package (call it after the two broker registrations above).
 
 ## Agent Rules
@@ -80,7 +80,7 @@ Paymob Accept integration for cash-in (payment collection) operations.
 
 `IPaymobCashInBroker` is registered as scoped (not singleton) because it takes a typed `HttpClient`. `IPaymobCashInAuthenticator` is singleton and holds the cached auth token; the broker calls the authenticator on each request. Options changes invalidate the cached token automatically via `IOptionsMonitor<PaymobCashInOptions>`.
 
-The package adds `AddStandardResilienceHandler()` to the named HTTP client automatically. Pass `configureResilience` to `AddPaymobCashIn(...)` to override the resilience policy (e.g., adjust timeouts for wallet redirects).
+The named HTTP client's resilience pipeline is derived from the declared `OutboundEffect.Unsafe` effect (`Headless.Http.Resilience`): order, payment-key, intention, refund, and void POSTs are never retried automatically, because Paymob exposes no idempotency key for them and a retried POST can create a duplicate order or refund twice. Order and transaction inquiries (GET) keep the standard retry. `merchant_order_id` and `special_reference` are caller-chosen body fields, not a retry-deduplication contract. The derived pipeline removes host-wide resilience handlers (for example `AddHeadless()` service defaults) from this client first, so the no-retry rule holds in any host. `configureResilience` runs after the derived defaults (e.g., to adjust timeouts for wallet redirects); setting `Retry.ShouldHandle` there is the explicit opt-in to retrying POSTs.
 
 `PaymobCashInOptions.ToString()` is overridden to redact `ApiKey`, `Hmac`, and `SecretKey` (printed as `***`), so logging or diagnostics that stringify the options never leak the secrets.
 
@@ -214,7 +214,7 @@ public IActionResult HandleCallback([FromBody] CashInCallbackTransaction transac
 
 - Registers `IPaymobCashInAuthenticator` as singleton
 - Registers `IPaymobCashInBroker` as scoped with typed `HttpClient`
-- Adds named `HttpClient` (`"Headless:PaymobCashIn"`) with standard resilience handler
+- Adds named `HttpClient` (`"Headless:PaymobCashIn"`) with a resilience pipeline derived from the declared `Unsafe` effect: no automatic retry on POST, standard retry on GET
 
 ---
 
@@ -254,6 +254,8 @@ The CashOut authentication uses OAuth2 password grant, unlike CashIn's proprieta
 
 `ApiBaseUrl` requires HTTPS for external hosts. HTTP is accepted only for loopback development/test servers, and URLs containing userinfo are rejected, so OAuth credentials cannot be configured for remote plaintext transport.
 
+The named HTTP client's resilience pipeline is derived from the declared `OutboundEffect.Unsafe` effect. `/disburse` carries no idempotency key or client reference, so a retried payout POST can pay out twice: POSTs are never retried automatically, while budget and transaction inquiry (GET) keep the standard retry. The derived pipeline removes host-wide resilience handlers (for example `AddHeadless()` service defaults) from this client first, so the rule holds in any host. `configureResilience` runs after the derived defaults; setting `Retry.ShouldHandle` there is the explicit opt-in to retrying POSTs.
+
 ### Install
 
 ```bash
@@ -265,14 +267,8 @@ dotnet add package Headless.Payments.Paymob.CashOut
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddPaymobCashOut(options =>
-{
-    options.ApiBaseUrl = "https://disbursement.paymob.com/api/";
-    options.UserName = builder.Configuration["Paymob:CashOut:UserName"]!;
-    options.Password = builder.Configuration["Paymob:CashOut:Password"]!;
-    options.ClientId = builder.Configuration["Paymob:CashOut:ClientId"]!;
-    options.ClientSecret = builder.Configuration["Paymob:CashOut:ClientSecret"]!;
-});
+// PaymobCashOutOptions credentials are init-only, so bind them from configuration.
+builder.Services.AddPaymobCashOut(builder.Configuration.GetSection("Paymob:CashOut"));
 ```
 
 Disburse to a mobile wallet:
@@ -348,7 +344,7 @@ var result = await broker.DisburseAsync(request, cancellationToken);
 
 - Registers `IPaymobCashOutAuthenticator` as singleton
 - Registers `IPaymobCashOutBroker` as scoped with typed `HttpClient`
-- Adds named `HttpClient` (`"Headless:PaymobCashOut"`) with standard resilience handler
+- Adds named `HttpClient` (`"Headless:PaymobCashOut"`) with a resilience pipeline derived from the declared `Unsafe` effect: no automatic retry on POST, standard retry on GET
 
 ---
 
@@ -399,14 +395,7 @@ builder.Services.AddPaymobCashIn(options =>
     options.SecretKey = builder.Configuration["Paymob:CashIn:SecretKey"]!;
 });
 
-builder.Services.AddPaymobCashOut(options =>
-{
-    options.ApiBaseUrl = builder.Configuration["Paymob:CashOut:ApiBaseUrl"]!;
-    options.UserName = builder.Configuration["Paymob:CashOut:UserName"]!;
-    options.Password = builder.Configuration["Paymob:CashOut:Password"]!;
-    options.ClientId = builder.Configuration["Paymob:CashOut:ClientId"]!;
-    options.ClientSecret = builder.Configuration["Paymob:CashOut:ClientSecret"]!;
-});
+builder.Services.AddPaymobCashOut(builder.Configuration.GetSection("Paymob:CashOut"));
 
 // Register the service layer (IPaymobCashInService, ICashOutService, IPaymobCashInFeesCalculator)
 builder.Services.AddPaymobServices();
@@ -472,7 +461,7 @@ public sealed class PayoutService(ICashOutService cashOut)
 
         if (!result.Succeeded)
         {
-            throw new InvalidOperationException(result.Error.Message);
+            throw new InvalidOperationException(result.Error.Description);
         }
     }
 }

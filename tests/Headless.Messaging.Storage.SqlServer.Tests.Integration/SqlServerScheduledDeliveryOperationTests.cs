@@ -20,8 +20,8 @@ public sealed class SqlServerScheduledDeliveryOperationTests(SqlServerTestFixtur
         await connection.OpenAsync(AbortToken);
         await using var command = new SqlCommand(
             $"""
-            UPDATE [{schema}].[InboxOperationReceipts] SET [CreatedAt]=DATEADD(second,-@Age,[CreatedAt]);
-            UPDATE [{schema}].[InboxAudit] SET [CreatedAt]=DATEADD(second,-@Age,[CreatedAt]);
+            UPDATE [{schema}].[MessagingInboxOperationReceipts] SET [CreatedAt]=DATEADD(second,-@Age,[CreatedAt]);
+            UPDATE [{schema}].[MessagingInboxAudit] SET [CreatedAt]=DATEADD(second,-@Age,[CreatedAt]);
             """,
             connection
         );
