@@ -23,6 +23,16 @@ public sealed class RabbitMqMessageBuilderExtensionsTests
 
     private sealed record TestMessage(string TenantId);
 
+    [Fact]
+    public void should_store_consumer_config_when_tuning_a_declared_consumer()
+    {
+        var tuning = new ConsumerTuningBuilder("tests.rabbitmq.tuned");
+
+        tuning.UseRabbitMq(rabbit => rabbit.PrefetchCount(20));
+
+        tuning.Build().ProviderConfigs.Values.Single().Should().BeEquivalentTo(new RabbitMqConsumerConfig(20));
+    }
+
     private sealed class TestConsumer : IConsume<TestMessage>
     {
         public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)

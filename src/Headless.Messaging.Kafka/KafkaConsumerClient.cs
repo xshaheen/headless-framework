@@ -11,6 +11,13 @@ namespace Headless.Messaging.Kafka;
 
 internal sealed class KafkaConsumerClient : IConsumerClient
 {
+    // Kafka does not restrict group.id, so the group takes the topic naming rules (up to 249 of [a-zA-Z0-9._-]): a Queue
+    // message name, which is already a legal topic, becomes its consumer group unchanged on every host.
+    private static readonly BusNameRules _GroupIdRules = new(
+        maxLength: 249,
+        isAllowed: static c => c is '.' or '_' or '-'
+    );
+
     private readonly string _groupId;
     private readonly Lock _lock = new();
     private readonly KafkaMessagingOptions _kafkaOptions;
@@ -32,7 +39,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     private int _disposed;
 
     public KafkaConsumerClient(
-        string groupId,
+        string subscriptionName,
         byte groupConcurrent,
         IOptions<KafkaMessagingOptions> options,
         IServiceProvider serviceProvider,
@@ -41,7 +48,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         Func<AdminClientConfig, IAdminClient>? adminClientFactory = null
     )
     {
-        _groupId = groupId;
+        _groupId = GroupId(subscriptionName);
         _kafkaOptions = Argument.IsNotNull(options.Value);
         if (groupConcurrent > 1)
         {
@@ -54,6 +61,9 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         _consumerFactory = consumerFactory ?? _BuildConsumer;
         _adminClientFactory = adminClientFactory ?? _BuildAdminClient;
     }
+
+    /// <summary>Returns the consumer group of a Queue subscription, which is named after its message.</summary>
+    internal static string GroupId(string subscriptionName) => BusNameBuilder.Build(subscriptionName, _GroupIdRules);
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
 

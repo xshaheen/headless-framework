@@ -69,7 +69,7 @@ internal sealed class PulsarProviderConformanceDriver(PulsarFixture fixture) : T
         return fixture.CreateLaneSessionAsync(
             endpoint.Lane,
             endpoint.LogicalName,
-            endpoint.SubscriberGroup,
+            endpoint.SubscriptionName,
             cancellationToken
         );
     }

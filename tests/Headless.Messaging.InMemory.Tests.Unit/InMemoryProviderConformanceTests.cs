@@ -15,9 +15,9 @@ public sealed class InMemoryProviderConformanceTests : TestBase
         TransportRoutingAffinityConformance.AssertAsync(_CreateDriver(), AbortToken);
 
     [Fact]
-    public Task should_deliver_one_bus_copy_per_group_while_replicas_compete()
+    public Task should_deliver_one_bus_copy_per_consumer_identity_while_replicas_compete()
     {
-        return TransportProviderConformance.AssertBusSubscriberGroupsAsync(_CreateDriver(), AbortToken);
+        return TransportProviderConformance.AssertBusConsumerIdentitiesAsync(_CreateDriver(), AbortToken);
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public sealed class InMemoryProviderConformanceTests : TestBase
                 MessageLane.Queue => new InMemoryQueueTransport(queue, NullLogger<InMemoryQueueTransport>.Instance),
                 _ => throw new ArgumentOutOfRangeException(nameof(endpoint), endpoint.Lane, null),
             };
-            var consumer = new InMemoryConsumerClient(queue, endpoint.SubscriberGroup, 1, endpoint.Lane);
+            var consumer = new InMemoryConsumerClient(queue, endpoint.SubscriptionName, 1, endpoint.Lane);
 #pragma warning restore CA2000
             await consumer.SubscribeAsync([endpoint.LogicalName], cancellationToken);
 

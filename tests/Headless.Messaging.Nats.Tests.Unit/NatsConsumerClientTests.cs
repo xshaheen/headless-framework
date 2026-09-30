@@ -160,12 +160,42 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void should_include_group_for_bus_intent_when_build_durable_name()
+    public void should_include_consumer_identity_for_bus_intent_when_build_durable_name()
     {
         NatsConsumerClient
             .BuildDurableName("payments", "orders.created", MessageLane.Bus)
             .Should()
-            .StartWith("bus-payments-orders_created_");
+            .StartWith("bus-payments-orders-created-");
+    }
+
+    [Fact]
+    public void should_build_valid_stable_durable_name_when_consumer_identity_contains_dots()
+    {
+        var name = NatsConsumerClient.BuildDurableName("billing.invoice-projection", "orders.created", MessageLane.Bus);
+
+        name.Should().StartWith("bus-billing-invoice-projection-orders-created-");
+        name.Should().HaveLength("bus-billing-invoice-projection-orders-created-".Length + 12);
+        name.IndexOfAny([' ', '.', '*', '>', '/', '\\']).Should().Be(-1);
+        NatsConsumerClient
+            .BuildDurableName("billing.invoice-projection", "orders.created", MessageLane.Bus)
+            .Should()
+            .Be(name);
+        NatsConsumerClient
+            .BuildDurableName("billing-invoice-projection", "orders.created", MessageLane.Bus)
+            .Should()
+            .NotBe(name, "a dotted and a dashed identity must not share one durable consumer");
+    }
+
+    [Fact]
+    public void should_bound_durable_name_to_nats_limit_when_identity_and_subject_are_long()
+    {
+        var identity = "billing." + new string('a', 190);
+        var subject = "orders." + new string('x', 60);
+
+        var name = NatsConsumerClient.BuildDurableName(identity, subject, MessageLane.Bus);
+
+        name.Should().HaveLength(255);
+        name.Should().StartWith("bus-billing-aaa");
     }
 
     [Fact]

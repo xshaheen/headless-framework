@@ -39,6 +39,20 @@ public sealed class KafkaMessageBuilderExtensionsTests
         config.Should().BeEquivalentTo(new KafkaConsumerConfig(IsolationLevel.ReadCommitted));
     }
 
+    [Fact]
+    public void should_store_consumer_config_when_tuning_a_declared_consumer()
+    {
+        var tuning = new ConsumerTuningBuilder("tests.kafka.tuned");
+
+        tuning.UseKafka(kafka => kafka.WithIsolationLevel(IsolationLevel.ReadCommitted));
+
+        tuning
+            .Build()
+            .ProviderConfigs.Values.Single()
+            .Should()
+            .BeEquivalentTo(new KafkaConsumerConfig(IsolationLevel.ReadCommitted));
+    }
+
     private sealed record TestMessage(string TenantId);
 
     private sealed class TestConsumer : IConsume<TestMessage>

@@ -89,6 +89,21 @@ public static class NatsMessageBuilderExtensions
         return builder;
     }
 
+    /// <summary>
+    /// Configures NATS JetStream consumer options for the declared consumer a <c>Tune</c> call targets.
+    /// </summary>
+    /// <param name="builder">The consumer tuning builder.</param>
+    /// <param name="configure">A delegate that configures the NATS JetStream consumer options.</param>
+    /// <returns>The same <paramref name="builder"/> for chaining.</returns>
+    public static ConsumerTuningBuilder UseNats(
+        this ConsumerTuningBuilder builder,
+        Action<NatsConsumerConfigBuilder> configure
+    )
+    {
+        _SetConsumerConfig(builder, configure);
+        return builder;
+    }
+
     private static void _SetConsumerConfig(
         IConsumerProviderConfigBuilder builder,
         Action<NatsConsumerConfigBuilder> configure

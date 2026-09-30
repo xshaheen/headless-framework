@@ -114,4 +114,60 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         // then - reaches connection setup instead of rejecting the framework-local group name.
         await act.Should().ThrowAsync<BrokerConnectionException>();
     }
+
+    [Fact]
+    public async Task should_accept_bus_consumer_identity_longer_than_subscription_limit()
+    {
+        // given
+        var loggerFactory = Substitute.For<ILoggerFactory>();
+        loggerFactory.CreateLogger(Arg.Any<string>()).Returns(Substitute.For<ILogger>());
+
+        var options = Options.Create(
+            new AzureServiceBusMessagingOptions { ConnectionString = "InvalidConnectionString" }
+        );
+        var serviceProvider = new ServiceCollection().BuildServiceProvider();
+
+        await using var pool = new AzureServiceBusClientPool(NullLogger<AzureServiceBusClientPool>.Instance, options);
+        var factory = new AzureServiceBusConsumerClientFactory(loggerFactory, options, serviceProvider, pool);
+        var identity = "billing." + new string('a', 112);
+
+        // when
+        var act = async () => await factory.CreateAsync(identity, 5, MessageLane.Bus);
+
+        // then - the identity maps to a valid subscription name, so creation reaches connection setup.
+        await act.Should().ThrowAsync<BrokerConnectionException>();
+    }
+
+    [Fact]
+    public void should_keep_bus_consumer_identity_as_subscription_name_when_within_limits()
+    {
+        AzureServiceBusConsumerClientFactory
+            .BusSubscriptionName("billing.invoice-projection")
+            .Should()
+            .Be("billing.invoice-projection");
+    }
+
+    [Fact]
+    public void should_shorten_long_bus_consumer_identity_to_stable_valid_subscription_name()
+    {
+        var identity = "billing." + new string('a', 112);
+
+        var name = AzureServiceBusConsumerClientFactory.BusSubscriptionName(identity);
+
+        identity.Should().HaveLength(120);
+        name.Should().HaveLength(50);
+        name.Should().MatchRegex("^[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9]$");
+        name.Should().StartWith("billing.aaa");
+        AzureServiceBusConsumerClientFactory.BusSubscriptionName(identity).Should().Be(name);
+        var act = () => AzureServiceBusConsumerClient.CheckValidSubscriptionName(name);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void should_start_and_end_subscription_name_with_alphanumeric()
+    {
+        var name = AzureServiceBusConsumerClientFactory.BusSubscriptionName("_billing.invoice_");
+
+        name.Should().MatchRegex("^billing\\.invoice-[0-9a-f]{12}$");
+    }
 }

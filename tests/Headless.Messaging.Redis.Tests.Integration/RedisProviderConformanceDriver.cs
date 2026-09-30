@@ -20,7 +20,7 @@ internal sealed class RedisProviderConformanceDriver(RedisMessagingFixture fixtu
         return fixture.CreateSessionAsync(
             endpoint.Lane,
             endpoint.LogicalName,
-            endpoint.SubscriberGroup,
+            endpoint.SubscriptionName,
             cancellationToken,
             ownsStream: string.Equals(endpoint.Replica, "replica-1", StringComparison.Ordinal)
         );

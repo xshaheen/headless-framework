@@ -12,7 +12,7 @@ namespace Headless.Messaging.RabbitMq;
 internal sealed class RabbitMqConsumerClient : IConsumerClient
 {
     private readonly SemaphoreSlim _semaphore = new(1, 1);
-    private readonly string _groupName;
+    private readonly string _subscriptionName;
     private readonly byte _groupConcurrent;
     private readonly IConnectionChannelPool _connectionChannelPool;
     private readonly IServiceProvider _serviceProvider;
@@ -31,7 +31,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     private int _disposed;
 
     public RabbitMqConsumerClient(
-        string groupName,
+        string subscriptionName,
         byte groupConcurrent,
         IConnectionChannelPool connectionChannelPool,
         IOptions<RabbitMqMessagingOptions> options,
@@ -41,9 +41,11 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         Func<RabbitMqConsumerLifecycleCheckpoint, ValueTask>? lifecycleCheckpointAsync = null
     )
     {
-        RabbitMqValidation.ValidateQueueName(groupName);
+        // The subscription name is a consumer identity or a message name, not a queue name; the queue name derived from
+        // it is validated when it is built.
+        Argument.IsNotNullOrWhiteSpace(subscriptionName);
 
-        _groupName = groupName;
+        _subscriptionName = subscriptionName;
         _groupConcurrent = groupConcurrent;
         _connectionChannelPool = connectionChannelPool;
         _serviceProvider = serviceProvider;
@@ -55,7 +57,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         _lifecycleCheckpointAsync = lifecycleCheckpointAsync;
         if (lane == MessageLane.Bus)
         {
-            _ = RabbitMqPhysicalAddress.Queue(lane, groupName, groupName);
+            _ = RabbitMqPhysicalAddress.Queue(lane, subscriptionName, subscriptionName);
         }
     }
 
@@ -333,7 +335,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
                 _channel = channel;
 
-                var busQueue = RabbitMqPhysicalAddress.Queue(MessageLane.Bus, _groupName, _groupName);
+                var busQueue = RabbitMqPhysicalAddress.Queue(MessageLane.Bus, _subscriptionName, _subscriptionName);
                 if (_lane == MessageLane.Bus && !_queueNames.Contains(busQueue, StringComparer.Ordinal))
                 {
                     await _DeclareQueueAsync(busQueue, cancellationToken).ConfigureAwait(false);
@@ -462,12 +464,12 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
     private string _GetQueueName(string messageName)
     {
-        return GetQueueName(_groupName, messageName, _lane);
+        return GetQueueName(_subscriptionName, messageName, _lane);
     }
 
-    internal static string GetQueueName(string groupName, string messageName, MessageLane lane)
+    internal static string GetQueueName(string subscriptionName, string messageName, MessageLane lane)
     {
-        return RabbitMqPhysicalAddress.Queue(lane, groupName, messageName);
+        return RabbitMqPhysicalAddress.Queue(lane, subscriptionName, messageName);
     }
 
     private async Task _DeclareQueueAsync(string queueName, CancellationToken cancellationToken)

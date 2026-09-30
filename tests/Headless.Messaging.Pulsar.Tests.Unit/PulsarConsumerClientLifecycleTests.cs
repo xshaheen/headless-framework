@@ -17,7 +17,7 @@ public sealed class PulsarConsumerClientLifecycleTests : TestBase
         await using var client = new PulsarConsumerClient(
             Options.Create(new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" }),
             client: null!,
-            groupName: "lifecycle-test",
+            subscriptionName: "lifecycle-test",
             groupConcurrent: 0
         );
         var receiveLock = _GetField<Lock>(client, "_receiveLock");

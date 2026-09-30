@@ -155,7 +155,11 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
 
         if (ownsEntity)
         {
-            var options = new CreateSubscriptionOptions(topicName, group)
+            // The factory maps the consumer identity to its subscription name, so pre-provision under that name.
+            var options = new CreateSubscriptionOptions(
+                topicName,
+                AzureServiceBusConsumerClientFactory.BusSubscriptionName(group)
+            )
             {
                 LockDuration = TimeSpan.FromSeconds(5),
                 MaxDeliveryCount = 10,

@@ -12,7 +12,7 @@ namespace Headless.Messaging.Pulsar;
 internal sealed class PulsarConsumerClient(
     IOptions<PulsarMessagingOptions> options,
     PulsarClient client,
-    string groupName,
+    string subscriptionName,
     byte groupConcurrent,
     MessageLane lane = MessageLane.Bus,
     TimeProvider? timeProvider = null,
@@ -57,7 +57,7 @@ internal sealed class PulsarConsumerClient(
         var subscribeTask = client
             .NewConsumer()
             .Topics(topics.Select(topic => PulsarPhysicalAddress.Topic(lane, topic)))
-            .SubscriptionName(GetSubscriptionName(groupName, lane))
+            .SubscriptionName(GetSubscriptionName(subscriptionName, lane))
             .ConsumerName(serviceName)
             .SubscriptionType(SubscriptionType.Shared)
             .NegativeAckRedeliveryDelay(_pulsarOptions.NegativeAckRedeliveryDelay)
@@ -103,9 +103,9 @@ internal sealed class PulsarConsumerClient(
         }
     }
 
-    internal static string GetSubscriptionName(string groupName, MessageLane lane)
+    internal static string GetSubscriptionName(string subscriptionName, MessageLane lane)
     {
-        return PulsarPhysicalAddress.Subscription(lane, groupName);
+        return PulsarPhysicalAddress.Subscription(lane, subscriptionName);
     }
 
     public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)

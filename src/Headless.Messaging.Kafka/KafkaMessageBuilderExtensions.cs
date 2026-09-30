@@ -46,6 +46,21 @@ public static class KafkaMessageBuilderExtensions
         return builder;
     }
 
+    /// <summary>
+    /// Configures Kafka consumer options for the declared consumer a <c>Tune</c> call targets.
+    /// </summary>
+    /// <param name="builder">The consumer tuning builder.</param>
+    /// <param name="configure">A delegate that configures the Kafka consumer options.</param>
+    /// <returns>The same <paramref name="builder"/> for chaining.</returns>
+    public static ConsumerTuningBuilder UseKafka(
+        this ConsumerTuningBuilder builder,
+        Action<KafkaConsumerConfigBuilder> configure
+    )
+    {
+        _SetConsumerConfig(builder, configure);
+        return builder;
+    }
+
     private static void _SetConsumerConfig(
         IConsumerProviderConfigBuilder builder,
         Action<KafkaConsumerConfigBuilder> configure

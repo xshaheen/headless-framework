@@ -255,9 +255,9 @@ internal sealed class NatsConsumerClient(
         return _BuildSubjects(messageNames, shardedMessageNames);
     }
 
-    internal static string BuildDurableName(string groupName, string subject, MessageLane lane)
+    internal static string BuildDurableName(string subscriptionName, string subject, MessageLane lane)
     {
-        return NatsPhysicalAddress.Durable(lane, groupName, subject);
+        return NatsPhysicalAddress.Durable(lane, subscriptionName, subject);
     }
 
     internal static IReadOnlyList<string> BuildConsumerSubjects(
@@ -351,12 +351,12 @@ internal sealed class NatsConsumerClient(
         foreach (var streamGroup in streamGroups)
         {
             var streamName = NatsPhysicalAddress.Stream(lane, streamGroup.Key);
-            var groupName = name;
+            var subscriptionName = name;
             var shardedMessageNames = _ResolveShardedMessageNames(streamGroup);
 
             foreach (var logicalSubject in BuildConsumerSubjects(streamGroup, shardedMessageNames))
             {
-                var durableName = BuildDurableName(groupName, logicalSubject, lane);
+                var durableName = BuildDurableName(subscriptionName, logicalSubject, lane);
                 var subject = NatsPhysicalAddress.Subject(lane, logicalSubject);
                 var deliverPolicy =
                     lane == MessageLane.Queue ? ConsumerConfigDeliverPolicy.All : ConsumerConfigDeliverPolicy.New;

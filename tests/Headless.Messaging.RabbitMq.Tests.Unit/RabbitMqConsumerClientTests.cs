@@ -261,9 +261,18 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void should_use_group_queue_for_bus_intent()
+    public void should_use_consumer_identity_queue_for_bus_intent()
     {
         RabbitMqConsumerClient.GetQueueName("workers", "orders.created", MessageLane.Bus).Should().Be("bus.workers");
+    }
+
+    [Fact]
+    public void should_keep_consumer_identity_unchanged_when_it_is_a_valid_queue_name()
+    {
+        RabbitMqConsumerClient
+            .GetQueueName("billing.invoice-projection", "orders.created", MessageLane.Bus)
+            .Should()
+            .Be("bus.billing.invoice-projection");
     }
 
     [Fact]

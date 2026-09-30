@@ -70,5 +70,15 @@ public sealed class NatsMessageBuilderExtensionsTests
         act.Should().Throw<InvalidOperationException>().WithMessage("*SubjectShard*");
     }
 
+    [Fact]
+    public void should_store_consumer_config_when_tuning_a_declared_consumer()
+    {
+        var tuning = new ConsumerTuningBuilder("tests.nats.tuned");
+
+        tuning.UseNats(nats => nats.Sharded());
+
+        tuning.Build().ProviderConfigs.Values.Single().Should().BeEquivalentTo(new NatsConsumerConfig(IsSharded: true));
+    }
+
     private sealed record TestMessage(string TenantId);
 }

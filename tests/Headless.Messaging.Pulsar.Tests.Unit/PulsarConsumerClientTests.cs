@@ -20,9 +20,27 @@ public sealed class PulsarConsumerClientTests : TestBase
     );
 
     [Fact]
-    public void should_use_group_for_bus_intent_when_get_subscription_name()
+    public void should_use_consumer_identity_for_bus_intent_when_get_subscription_name()
     {
         PulsarConsumerClient.GetSubscriptionName("payments", MessageLane.Bus).Should().Be("headless-bus-payments");
+    }
+
+    [Fact]
+    public void should_keep_dotted_consumer_identity_readable_when_get_bus_subscription_name()
+    {
+        PulsarConsumerClient
+            .GetSubscriptionName("billing.invoice-projection", MessageLane.Bus)
+            .Should()
+            .Be("headless-bus-billing.invoice-projection");
+    }
+
+    [Fact]
+    public void should_normalize_consumer_identity_outside_strict_subscription_charset_when_get_bus_subscription_name()
+    {
+        var name = PulsarConsumerClient.GetSubscriptionName("billing/invoice projection", MessageLane.Bus);
+
+        name.Should().MatchRegex("^headless-bus-billing-invoice-projection-[0-9a-f]{12}$");
+        PulsarConsumerClient.GetSubscriptionName("billing/invoice projection", MessageLane.Bus).Should().Be(name);
     }
 
     [Fact]

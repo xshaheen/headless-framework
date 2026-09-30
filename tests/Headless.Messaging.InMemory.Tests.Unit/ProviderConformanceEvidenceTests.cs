@@ -54,12 +54,16 @@ public sealed class ProviderConformanceEvidenceTests : TestBase
                 nameof(InMemoryConsumerClientTests.should_stop_listening_on_cancellation)
             ),
             _Bind(
-                TransportConformanceScenario.BusSubscriberGroupFanOut,
-                nameof(InMemoryProviderConformanceTests.should_deliver_one_bus_copy_per_group_while_replicas_compete)
+                TransportConformanceScenario.BusConsumerIdentityFanOut,
+                nameof(
+                    InMemoryProviderConformanceTests.should_deliver_one_bus_copy_per_consumer_identity_while_replicas_compete
+                )
             ),
             _Bind(
                 TransportConformanceScenario.BusReplicaCompetition,
-                nameof(InMemoryProviderConformanceTests.should_deliver_one_bus_copy_per_group_while_replicas_compete)
+                nameof(
+                    InMemoryProviderConformanceTests.should_deliver_one_bus_copy_per_consumer_identity_while_replicas_compete
+                )
             ),
             _Bind(
                 TransportConformanceScenario.QueueOwnership,

@@ -54,8 +54,8 @@ public sealed class RedisConsumerConformanceTests(RedisMessagingFixture fixture)
         base.should_bound_shutdown_while_handler_is_active();
 
     [Fact]
-    public Task should_deliver_one_bus_copy_per_group_while_replicas_compete() =>
-        TransportProviderConformance.AssertBusSubscriberGroupsAsync(
+    public Task should_deliver_one_bus_copy_per_consumer_identity_while_replicas_compete() =>
+        TransportProviderConformance.AssertBusConsumerIdentitiesAsync(
             new RedisProviderConformanceDriver(fixture),
             AbortToken
         );

@@ -9,11 +9,17 @@ using MessagingHeaders = Headless.Messaging.Headers;
 namespace Tests;
 
 /// <summary>Logical endpoint requested from a provider-specific conformance driver.</summary>
+/// <param name="Lane">The lane the endpoint consumes.</param>
+/// <param name="LogicalName">The message name.</param>
+/// <param name="SubscriptionName">
+/// What the consumer subscribes as: its consumer identity on the Bus lane, or the message name on the Queue lane.
+/// </param>
+/// <param name="Replica">Which process the session stands for.</param>
 [PublicAPI]
 public sealed record TransportConformanceEndpoint(
     MessageLane Lane,
     string LogicalName,
-    string SubscriberGroup,
+    string SubscriptionName,
     string Replica
 );
 
@@ -117,48 +123,58 @@ public abstract class TransportProviderConformanceDriver
 [PublicAPI]
 public static class TransportProviderConformance
 {
-    public static async Task AssertBusSubscriberGroupsAsync(
+    /// <summary>
+    /// Two replicas registering one Bus consumer identity compete for one copy, and every distinct identity gets its
+    /// own copy. The second identity is longer than any broker's subscription name limit and contains characters some
+    /// brokers reject, so each provider must map it to a valid, stable name that its replicas share.
+    /// </summary>
+    public static async Task AssertBusConsumerIdentitiesAsync(
         TransportProviderConformanceDriver driver,
         CancellationToken cancellationToken
     )
     {
         var logicalName = $"conformance-{Guid.NewGuid():N}";
-        var firstGroup = new ConcurrentBag<TransportConformanceDelivery>();
-        var secondGroup = new ConcurrentBag<TransportConformanceDelivery>();
+        var run = Guid.NewGuid().ToString("N");
+        var shortIdentity = $"conformance.{run}-a";
+        var longIdentity = $"conformance.{run}-b.".PadRight(120, 'x');
+        var shortDeliveries = new ConcurrentBag<TransportConformanceDelivery>();
+        var longDeliveries = new ConcurrentBag<TransportConformanceDelivery>();
 
-        await using var firstA = await driver.CreateSessionAsync(
-            new TransportConformanceEndpoint(MessageLane.Bus, logicalName, "group-a", "replica-1"),
+        await using var shortFirst = await driver.CreateSessionAsync(
+            new TransportConformanceEndpoint(MessageLane.Bus, logicalName, shortIdentity, "replica-1"),
             cancellationToken: cancellationToken
         );
-        await using var firstB = await driver.CreateSessionAsync(
-            new TransportConformanceEndpoint(MessageLane.Bus, logicalName, "group-a", "replica-2"),
+        await using var shortSecond = await driver.CreateSessionAsync(
+            new TransportConformanceEndpoint(MessageLane.Bus, logicalName, shortIdentity, "replica-2"),
             cancellationToken
         );
-        await using var secondA = await driver.CreateSessionAsync(
-            new TransportConformanceEndpoint(MessageLane.Bus, logicalName, "group-b", "replica-1"),
+        await using var longFirst = await driver.CreateSessionAsync(
+            new TransportConformanceEndpoint(MessageLane.Bus, logicalName, longIdentity, "replica-1"),
             cancellationToken
         );
-        await using var secondB = await driver.CreateSessionAsync(
-            new TransportConformanceEndpoint(MessageLane.Bus, logicalName, "group-b", "replica-2"),
+        await using var longSecond = await driver.CreateSessionAsync(
+            new TransportConformanceEndpoint(MessageLane.Bus, logicalName, longIdentity, "replica-2"),
             cancellationToken
         );
 
         await Task.WhenAll(
-            _StartAndCommitAsync(firstA, firstGroup, cancellationToken),
-            _StartAndCommitAsync(firstB, firstGroup, cancellationToken),
-            _StartAndCommitAsync(secondA, secondGroup, cancellationToken),
-            _StartAndCommitAsync(secondB, secondGroup, cancellationToken)
+            _StartAndCommitAsync(shortFirst, shortDeliveries, cancellationToken),
+            _StartAndCommitAsync(shortSecond, shortDeliveries, cancellationToken),
+            _StartAndCommitAsync(longFirst, longDeliveries, cancellationToken),
+            _StartAndCommitAsync(longSecond, longDeliveries, cancellationToken)
         );
 
-        var result = await firstA.PublishAsync(_CreateMessage(MessageLane.Bus, logicalName), cancellationToken);
+        var result = await shortFirst.PublishAsync(_CreateMessage(MessageLane.Bus, logicalName), cancellationToken);
         result.Succeeded.Should().BeTrue();
 
-        await _WaitForCountAsync(firstGroup, 1, cancellationToken);
-        await _WaitForCountAsync(secondGroup, 1, cancellationToken);
+        await _WaitForCountAsync(shortDeliveries, 1, cancellationToken);
+        await _WaitForCountAsync(longDeliveries, 1, cancellationToken);
         await Task.Delay(_NegativeObservationWindow(driver), cancellationToken);
 
-        firstGroup.Should().ContainSingle("replicas inside the first logical subscriber group must compete");
-        secondGroup.Should().ContainSingle("replicas inside the second logical subscriber group must compete");
+        shortDeliveries.Should().ContainSingle("replicas of one consumer identity must compete for one copy");
+        longDeliveries
+            .Should()
+            .ContainSingle("replicas of a shortened consumer identity must share one subscription and compete");
     }
 
     public static async Task AssertQueueOwnershipAsync(
@@ -199,7 +215,7 @@ public static class TransportProviderConformance
         var busDeliveries = new ConcurrentBag<TransportConformanceDelivery>();
         var queueDeliveries = new ConcurrentBag<TransportConformanceDelivery>();
         await using var bus = await driver.CreateSessionAsync(
-            new TransportConformanceEndpoint(MessageLane.Bus, logicalName, "group-a", "replica-1"),
+            new TransportConformanceEndpoint(MessageLane.Bus, logicalName, "conformance.lane-isolation", "replica-1"),
             cancellationToken
         );
         await using var queue = await driver.CreateSessionAsync(
@@ -222,7 +238,7 @@ public static class TransportProviderConformance
         await _WaitForCountAsync(queueDeliveries, 1, cancellationToken);
         await Task.Delay(_NegativeObservationWindow(driver), cancellationToken);
 
-        busDeliveries.Should().ContainSingle("the Queue send cannot cross-deliver into the Bus group");
+        busDeliveries.Should().ContainSingle("the Queue send cannot cross-deliver into the Bus subscription");
         queueDeliveries.Should().ContainSingle();
     }
 

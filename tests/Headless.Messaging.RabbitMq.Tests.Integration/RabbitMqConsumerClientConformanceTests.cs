@@ -67,9 +67,9 @@ public sealed class RabbitMqConsumerClientConformanceTests(RabbitMqFixture fixtu
     }
 
     [Fact]
-    public Task should_fan_out_one_bus_copy_per_group_while_replicas_compete()
+    public Task should_fan_out_one_bus_copy_per_consumer_identity_while_replicas_compete()
     {
-        return TransportProviderConformance.AssertBusSubscriberGroupsAsync(
+        return TransportProviderConformance.AssertBusConsumerIdentitiesAsync(
             new RabbitMqProviderConformanceDriver(fixture),
             AbortToken
         );

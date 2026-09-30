@@ -67,9 +67,9 @@ public sealed class AzureServiceBusConsumerClientHarnessTests(AzureServiceBusFix
     }
 
     [Fact]
-    public Task should_deliver_one_bus_copy_per_group_while_replicas_compete()
+    public Task should_deliver_one_bus_copy_per_consumer_identity_while_replicas_compete()
     {
-        return TransportProviderConformance.AssertBusSubscriberGroupsAsync(
+        return TransportProviderConformance.AssertBusConsumerIdentitiesAsync(
             new AzureServiceBusProviderConformanceDriver(fixture),
             AbortToken
         );

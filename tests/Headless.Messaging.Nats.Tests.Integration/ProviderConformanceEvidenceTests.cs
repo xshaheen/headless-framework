@@ -57,12 +57,12 @@ public sealed class ProviderConformanceEvidenceTests(NatsFixture fixture) : Test
                 nameof(NatsConsumerClientTests.should_shutdown_idle_consumer_within_bound)
             ),
             _Bind(
-                TransportConformanceScenario.BusSubscriberGroupFanOut,
-                nameof(NatsConsumerClientTests.should_fan_out_one_bus_copy_per_group_while_replicas_compete)
+                TransportConformanceScenario.BusConsumerIdentityFanOut,
+                nameof(NatsConsumerClientTests.should_fan_out_one_bus_copy_per_consumer_identity_while_replicas_compete)
             ),
             _Bind(
                 TransportConformanceScenario.BusReplicaCompetition,
-                nameof(NatsConsumerClientTests.should_fan_out_one_bus_copy_per_group_while_replicas_compete)
+                nameof(NatsConsumerClientTests.should_fan_out_one_bus_copy_per_consumer_identity_while_replicas_compete)
             ),
             _Bind(
                 TransportConformanceScenario.QueueOwnership,

@@ -22,7 +22,7 @@ internal sealed class RabbitMqProviderConformanceDriver(RabbitMqFixture fixture)
             endpoint.Lane,
             _exchangeName,
             endpoint.LogicalName,
-            endpoint.SubscriberGroup,
+            endpoint.SubscriptionName,
             cancellationToken
         );
     }

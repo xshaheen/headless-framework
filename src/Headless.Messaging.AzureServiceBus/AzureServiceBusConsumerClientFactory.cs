@@ -14,6 +14,17 @@ internal sealed class AzureServiceBusConsumerClientFactory(
     IAzureServiceBusClientPool clientPool
 ) : IConsumerClientFactory
 {
+    // Azure Resource Manager naming rules for Service Bus subscriptions: 1-50 letters, digits, '.', '-', or '_',
+    // starting and ending with a letter or digit.
+    private static readonly BusNameRules _SubscriptionRules = new(
+        maxLength: 50,
+        isAllowed: static c => c is '.' or '-' or '_',
+        alphanumericBoundaries: true
+    );
+
+    /// <summary>Returns the topic subscription a Bus consumer identity reads through.</summary>
+    internal static string BusSubscriptionName(string identity) => BusNameBuilder.Build(identity, _SubscriptionRules);
+
     public async Task<IConsumerClient> CreateAsync(
         string subscriptionName,
         byte concurrency,
@@ -21,10 +32,11 @@ internal sealed class AzureServiceBusConsumerClientFactory(
         CancellationToken cancellationToken = default
     )
     {
-        // Bus subscription names are Azure subscriptions. Queue subscription names are framework-local
+        // A Bus consumer identity becomes an Azure subscription name. Queue subscription names are framework-local
         // handler selectors; their broker entity names are validated on SubscribeAsync.
         if (lane == MessageLane.Bus)
         {
+            subscriptionName = BusSubscriptionName(subscriptionName);
             AzureServiceBusConsumerClient.CheckValidSubscriptionName(subscriptionName);
         }
 

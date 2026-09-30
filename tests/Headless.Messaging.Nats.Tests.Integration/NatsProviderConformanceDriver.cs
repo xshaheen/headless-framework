@@ -22,7 +22,7 @@ internal sealed class NatsProviderConformanceDriver(NatsFixture fixture) : Trans
             endpoint.Lane,
             _streamName,
             endpoint.LogicalName,
-            endpoint.SubscriberGroup,
+            endpoint.SubscriptionName,
             cancellationToken
         );
     }

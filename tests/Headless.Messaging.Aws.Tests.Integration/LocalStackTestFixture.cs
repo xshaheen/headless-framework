@@ -104,7 +104,10 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
                 lane == MessageLane.Queue
                     ? brokerDestinations.Single()
                     : (
-                        await cleanupClient.GetQueueUrlAsync(AwsPhysicalAddress.BusGroupQueue(group), cancellationToken)
+                        await cleanupClient.GetQueueUrlAsync(
+                            AwsPhysicalAddress.BusSubscriptionQueue(group),
+                            cancellationToken
+                        )
                     ).QueueUrl;
             if (ownsQueue)
             {

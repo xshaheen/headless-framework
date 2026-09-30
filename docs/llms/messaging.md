@@ -163,16 +163,33 @@ Two unit-of-work behaviors are documented, not defects. `IUnitOfWork.OnCompleted
 
 | Provider | Bus | Queue | Same-name lane isolation | Producer hatch | Consumer hatch |
 | --- | --- | --- | --- | --- | --- |
-| AWS | SNS topic to one SQS queue per subscriber group | Direct SQS destination | Yes | `MessageGroupId(...)` | None |
+| AWS | SNS topic to one SQS queue per consumer identity | Direct SQS destination | Yes | `MessageGroupId(...)` | None |
 | Azure Service Bus | Topic/subscription | Queue | Yes | `PartitionKey(...)` | None |
-| InMemory | One copy per group | One owned copy | Yes | None | None |
+| InMemory | One copy per consumer identity | One owned copy | Yes | None | None |
 | Kafka | No | Consumer group | Not applicable; Queue-only | `PartitionBy(...)` | `WithIsolationLevel(...)` |
 | NATS | Interest-retained lane stream | Work-queue-retained lane stream | Yes | `SubjectShard(...)` | `Sharded()` |
-| Pulsar | Lane topic + group subscription | Lane topic + owned subscription | Yes | None | None |
+| Pulsar | Lane topic + identity subscription | Lane topic + owned subscription | Yes | None | None |
 | RabbitMQ | Lane topic exchange | Lane direct exchange | Yes | None | `PrefetchCount(...)` |
-| Redis | Lane Redis Stream + group | Lane Redis Stream + owned group | Yes | None | None |
+| Redis | Lane Redis Stream + identity consumer group | Lane Redis Stream + owned group | Yes | None | None |
 
-The shipped immutable descriptors are the runtime authority, not this table or raw DI shape. The dashboard `/api/meta` projection exposes those descriptors and their lanes. Executable provider conformance tests prove group fan-out, replica competition, Queue ownership, and same-name isolation at each provider's supported tier. Kafka is intentionally Queue-only and rejects Bus registration during bootstrap before provider or storage side effects.
+The shipped immutable descriptors are the runtime authority, not this table or raw DI shape. The dashboard `/api/meta` projection exposes those descriptors and their lanes. Executable provider conformance tests prove consumer-identity fan-out, replica competition, Queue ownership, and same-name isolation at each provider's supported tier. Kafka is intentionally Queue-only and rejects Bus registration during bootstrap before provider or storage side effects.
+
+### Bus subscription names
+
+On the Bus lane a consumer identity is the broker subscription name. Every provider derives it through one shared rule: an identity the broker accepts is used unchanged, and any other identity becomes a readable prefix, with rejected characters replaced by `-`, followed by `-` and the first 12 hex characters of the identity's SHA-256. The name is the same in every process, so replicas that register one identity share one subscription, and two identities that normalize to the same prefix still get different names. Queue destinations stay keyed by the message name; on Kafka the Queue consumer group is the message name, derived by the same rule.
+
+| Provider | Bus subscription | Limit and characters kept | Namespace isolation |
+| --- | --- | --- | --- |
+| AWS | SQS queue `bus-{identity}` (an identity ending `.fifo` gets a FIFO queue) | 80 characters including `bus-` and `.fifo`; letters, digits, `-`, `_` | Account and region |
+| Azure Service Bus | Subscription `{identity}` on the Bus topic | 50 characters; letters, digits, `.`, `-`, `_`; starts and ends with a letter or digit | Namespace and `TopicPath` |
+| InMemory | `{identity}`, unchanged | None | The process |
+| Kafka (Queue only) | Consumer group `{message-name}` | 249 characters; letters, digits, `.`, `-`, `_` (the topic rules) | Topic names, through `MessageNamePrefix` |
+| NATS | Durable `bus-{identity}-{subject}` per subject | 255 characters; printable ASCII except `.`, `*`, `>`, `/`, `\` | Account; streams follow the message names |
+| Pulsar | Subscription `headless-bus-{identity}` on each topic | 255 characters; letters, digits, `-`, `=`, `:`, `.`, `_` | Tenant and namespace in the topic name |
+| RabbitMQ | Queue `bus.{identity}` | 255 characters; letters, digits, `.`, `-`, `_` | Virtual host |
+| Redis | Consumer group `{identity}` on each stream | No limit; printable ASCII without spaces | Stream keys follow the message names; database or ACL |
+
+Broker-backed providers keep names ASCII and replace whitespace and control characters even where the broker allows them. When `GroupNamePrefix` is set, it prefixes the identity before the name is derived. Separate systems or environments on one broker are isolated by the broker's namespace in the last column.
 
 **Routing affinity:** register the logical destination, optionally require support with `RequireRoutingAffinity()`, and supply one `RoutingAffinityKey` on publish/enqueue options. Required-route checks run before startup clients/processors; per-call validation runs before persistence and transport effects. Inert option snapshots establish local support, not remote broker-topology proof. Unknown keyed overrides are rejected even if the provider could auto-create an unkeyed destination.
 
@@ -212,13 +229,13 @@ Stored keyed outbox rows are revalidated against the current frozen destination 
 
 | Provider | Topology | Conformance boundary | Operational requirement |
 | --- | --- | --- | --- |
-| AWS | Bus subscriber groups own distinct SQS queues subscribed to SNS; Queue sends directly to SQS | LocalStack fan-out, competition, isolation, policy shape, and malformed deletion | Grant the scoped runtime and provisioning actions below |
+| AWS | Bus consumer identities own distinct SQS queues subscribed to SNS; Queue sends directly to SQS | LocalStack fan-out, competition, isolation, policy shape, and malformed deletion | Grant the scoped runtime and provisioning actions below |
 | Azure Service Bus | Native topics/subscriptions for Bus and queues for Queue | Credential-gated real namespace conformance | Supply a namespace with the required permissions and session configuration |
 | InMemory | Process-local channels | Shared in-process conformance | Restart loses all state |
 | Kafka | Queue-only topics and consumer groups | Ownership, startup rejection, and bounded poison-offset advancement | Bus configuration is invalid; configure partitions for the workload |
-| NATS | Lane-qualified subjects, streams, retention, and durables | Group/replica isolation and malformed terminal ACK | Grant stream and consumer provisioning permissions |
-| Pulsar | Lane-qualified topics and Bus subscriptions | Group/replica isolation and malformed terminal ACK | Grant topic and subscription creation permissions |
-| RabbitMQ | Lane-qualified exchanges, routing keys, and owned queues | Group/replica isolation and malformed terminal reject | Grant exchange and queue provisioning permissions |
+| NATS | Lane-qualified subjects, streams, retention, and durables | Identity/replica isolation and malformed terminal ACK | Grant stream and consumer provisioning permissions |
+| Pulsar | Lane-qualified topics and Bus subscriptions | Identity/replica isolation and malformed terminal ACK | Grant topic and subscription creation permissions |
+| RabbitMQ | Lane-qualified exchanges, routing keys, and owned queues | Identity/replica isolation and malformed terminal reject | Grant exchange and queue provisioning permissions |
 | Redis | Lane-qualified Streams for both lanes | Routing, ownership, settlement, and poison handling | Configure retained stream storage and consumer groups |
 
 #### AWS least-privilege handoff
@@ -249,7 +266,7 @@ Omit an unused cancellation token, or pass `default` or `cancellationToken: defa
 - Dashboard and monitoring JSON expose `lane`, `requestedDeliveryMode`, `resolvedDeliveryMode`, and the nullable `isCoordinated`. Storage uses the `IntentType` column and the `headless-intent` header with `Bus = 0` and `Queue = 1`.
 - `Delay` and `ScheduledAt` are mutually exclusive one-shot schedules. Both require storage, so they work on every durable publish, enlisted or not, and `Direct` is rejected before side effects. `ScheduledAt` accepts past instants and normalizes eligibility to UTC microseconds. Dispatch is best-effort after that not-before instant, with no upper latency bound. The relative-delay header travels with the message; transports do not interpret it. Absolute-only schedules omit that header.
 - Keep `PublishReceipt.StorageId` to revoke a schedule through `IMessageRevoker.RevokeAsync` after the publishing transaction commits. Token cancellation cancels the current request; it does not revoke an accepted message. `Revoked` means deletion won before reservation, `NotFound` means no matching row in the configured storage version, and `AttemptReserved` means dispatch, terminal, or retry state prevented deletion. The last outcome is not proof of delivery. Unscheduled rows with initial-dispatch grace are also ineligible. A claim alone does not prevent revocation. Deletion retains no audit record and has no tenant filter; applications must authorize access to handles. Providers without `IMessageRevocationStorage` throw a provider-naming `NotSupportedException`.
-- Redis uses Streams for both lanes. AWS Bus subscriber groups, RabbitMQ, NATS JetStream, and Pulsar use the physical topologies above.
+- Redis uses Streams for both lanes. AWS Bus consumer identities, RabbitMQ, NATS JetStream, and Pulsar use the physical topologies above.
 
 Messaging provides not-before delivery, revocable until reservation. Keyed identity, replace, reschedule, tenant scoping, and transactional business deadlines belong to Jobs. See [Enlisted Enqueue (Atomic Enqueue)](jobs.md#enlisted-enqueue-atomic-enqueue), which commits an order, a message, and a reminder job together.
 
@@ -1335,7 +1352,7 @@ setup.Queue.ForMessage<OrderPlaced>(message =>
 );
 ```
 
-AWS declares immutable Bus and Queue capabilities with independent SNS/SQS topology. Bus uses `bus-{logical-name}` SNS topics and one `bus-{subscriber-group}` SQS queue per logical group; Queue sends directly to `queue-{logical-name}`.
+AWS declares immutable Bus and Queue capabilities with independent SNS/SQS topology. Bus uses `bus-{logical-name}` SNS topics and one `bus-{consumer-identity}` SQS queue per consumer identity; Queue sends directly to `queue-{logical-name}`.
 
 ### Configuration
 
@@ -1474,7 +1491,8 @@ Registers in-memory storage and monitoring services. State is lost when the proc
 - `setup.UseKafka(...)`.
 - Kafka topic auto-creation support.
 - Producer hatch: `UseKafka(kafka => kafka.PartitionBy(message => ...))`.
-- Consumer hatch: `consumer.UseKafka(kafka => kafka.WithIsolationLevel(IsolationLevel.ReadCommitted))`.
+- Consumer hatch: `consumer.UseKafka(kafka => kafka.WithIsolationLevel(IsolationLevel.ReadCommitted))`, or `Tune(identity, c => c.UseKafka(...))` for a declared consumer.
+- A Queue consumer's `group.id` is its message name, so every host consuming that message joins one group.
 - Consumer startup honors host cancellation while creating topics and subscriptions.
 
 ### Design constraints
@@ -1534,7 +1552,7 @@ Connection-specific failures (`NatsConnectionFailedException`, `NatsJSConnection
 
 Commit uses JetStream double acknowledgement and waits for the broker's settlement confirmation before returning. This keeps immediate consumer replacement from racing an unconfirmed `ACK` and redelivering an already-successful message.
 
-Bus publishes to `headless.bus.{logical-name}` with interest-retained streams and `bus-{subscriber-group}-{logical-name}` durables. Queue publishes to `headless.queue.{logical-name}` with work-queue-retained streams and the shared `queue-{logical-name}` durable. `StreamOptions` may tune storage, replicas, and limits but cannot replace provider-owned stream names, subjects, or retention.
+Bus publishes to `headless.bus.{logical-name}` with interest-retained streams and `bus-{consumer-identity}-{logical-name}` durables. Queue publishes to `headless.queue.{logical-name}` with work-queue-retained streams and the shared `queue-{logical-name}` durable. `StreamOptions` may tune storage, replicas, and limits but cannot replace provider-owned stream names, subjects, or retention.
 
 `NatsMessagingOptions.StreamProvisioning` decides what consumer startup does about that stream. `Verify` (the default) creates a missing stream but throws with the divergent fields rather than writing to one that already exists; `Reconcile` updates fields JetStream accepts in place, reports immutable divergence instead of sending an update the server rejects, and `Disabled` neither creates nor modifies. The default changed because the old flag's `true` silently overwrote the storage class, replicas, and limits of a stream provisioned with the NATS CLI, Terraform, or a Kubernetes operator on every startup.
 
@@ -1583,7 +1601,7 @@ Registers NATS connection pool, transports, consumer factory, and stream initial
 
 ### Design constraints
 
-Bus topics insert `headless-bus-` before the local topic name and use one lane-qualified subscription per logical subscriber group. Queue topics insert `headless-queue-` and use one owned `headless-queue` subscription per physical topic. Replicas within a subscription compete; distinct Bus groups each receive one copy. Malformed transport envelopes are terminally acknowledged so they cannot create negative-ack redelivery storms.
+Bus topics insert `headless-bus-` before the local topic name and use one lane-qualified `headless-bus-{consumer-identity}` subscription per consumer identity. Queue topics insert `headless-queue-` and use one owned `headless-queue` subscription per physical topic. Replicas within a subscription compete; distinct Bus consumer identities each receive one copy. Malformed transport envelopes are terminally acknowledged so they cannot create negative-ack redelivery storms.
 
 ### Install
 
@@ -1626,7 +1644,7 @@ Registers Pulsar connection factory, transports, and consumer client factory.
 
 ### Design constraints
 
-RabbitMQ exposes consumer-side QoS through `PrefetchCount(...)`. For base exchange `myapp.events`, Bus uses the `myapp.events.bus` topic exchange, `bus.{logical-name}` routing keys, and `bus.{subscriber-group}` queues; Queue uses the `myapp.events.queue` direct exchange, `queue.{logical-name}` routing keys, and `queue.{logical-name}` queues. When `PublishConfirms` is enabled, publish completion awaits the broker acknowledgement or negative acknowledgement. Malformed transport envelopes are terminally rejected without requeue while ordinary handler rejection remains retryable.
+RabbitMQ exposes consumer-side QoS through `PrefetchCount(...)`. For base exchange `myapp.events`, Bus uses the `myapp.events.bus` topic exchange, `bus.{logical-name}` routing keys, and `bus.{consumer-identity}` queues; Queue uses the `myapp.events.queue` direct exchange, `queue.{logical-name}` routing keys, and `queue.{logical-name}` queues. When `PublishConfirms` is enabled, publish completion awaits the broker acknowledgement or negative acknowledgement. Malformed transport envelopes are terminally rejected without requeue while ordinary handler rejection remains retryable.
 
 ### Install
 
@@ -1669,7 +1687,7 @@ Registers RabbitMQ connection/channel pool, bus/queue transport, consumer client
 ### API and behavior
 
 - `setup.UseRedis(...)`.
-- One Bus copy per logical subscriber group, with replicas competing inside the group.
+- One Bus copy per consumer identity, with replicas of the identity competing inside its consumer group.
 - One Queue copy owned by competing destination replicas.
 - Lane-qualified stream keys, acknowledgements, pending-entry claim, and terminal poison handling.
 - Streams consumer startup honors host cancellation through connection, provisioning, and subscription.
@@ -1714,7 +1732,7 @@ Roslyn incremental source generator that registers `[BusConsumer]` and `[QueueCo
 
 - **Keys**: a consumer is keyed by its lane, identity, message name, and contract version, so one identity can cover several messages. On the Bus lane one identity is one subscription: the host starts one consumer client for it that binds all its messages. On the Queue lane the host starts one client per message.
 - **Cross-module conflicts fail startup and name both sources**: one identity on two consumer classes in the same lane, and a second Queue consumer for one message. An identical declaration contributed twice registers once.
-- **`Tune(identity, c => ...)`** on the `AddHeadlessMessaging` setup or on `services.ConfigureMessaging(...)` changes a registered consumer's deployment settings on this host: `Concurrency(n)`, `FailurePolicy<TPolicy>()`, and `UseMiddleware<TMiddleware>()`. Tuned middleware implements `IConsumeMiddleware<ConsumeContext>`, runs only for that consumer, runs inside the global and per-message middleware, and is resolved from the delivery scope (registered as scoped when it is not already registered). A consumer that handles several messages takes the settings for each of them. An identity that no registered consumer declares fails startup.
+- **`Tune(identity, c => ...)`** on the `AddHeadlessMessaging` setup or on `services.ConfigureMessaging(...)` changes a registered consumer's deployment settings on this host: `Concurrency(n)`, `FailurePolicy<TPolicy>()`, `UseMiddleware<TMiddleware>()`, and the provider consumer hatches `UseKafka(...)`, `UseNats(...)`, and `UseRabbitMq(...)`. Tuned middleware implements `IConsumeMiddleware<ConsumeContext>`, runs only for that consumer, runs inside the global and per-message middleware, and is resolved from the delivery scope (registered as scoped when it is not already registered). A consumer that handles several messages takes the settings for each of them. An identity that no registered consumer declares fails startup.
 - **Configuration**: `Headless:Messaging:Consumers:{identity}:Concurrency` (1 to 255) applies after every `Tune` call. An unknown identity, an unknown setting, or an invalid value fails startup.
 - **`ConsumeOnly("orders.*", "billing.invoice-projection")`** on the `AddHeadlessMessaging` setup limits which consumers this host starts clients for. An entry is an exact identity or an `owner.*` pattern that matches the first identity segment. Consumers outside the filter stay registered, so the host still publishes their messages; another host consumes them. An entry that matches no registered consumer fails startup.
 

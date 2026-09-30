@@ -221,7 +221,7 @@ public sealed class TransportConformanceManifestTests : TestBase
         Enum.GetValues<TransportConformanceScenario>()
             .Should()
             .Contain([
-                TransportConformanceScenario.BusSubscriberGroupFanOut,
+                TransportConformanceScenario.BusConsumerIdentityFanOut,
                 TransportConformanceScenario.BusReplicaCompetition,
                 TransportConformanceScenario.QueueOwnership,
                 TransportConformanceScenario.SameNameLaneIsolation,
