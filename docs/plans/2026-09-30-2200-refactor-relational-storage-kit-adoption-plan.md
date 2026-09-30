@@ -60,7 +60,7 @@ Every relational feature ships a PostgreSQL package and a SQL Server package tha
 
 ## Implementation Units
 
-Each unit is one stacked PR. The first bases on `main`; the rest stack on the schema runner branch and retarget to `main` once #1037 merges.
+U1 merged as #1040. The schema runner, U2, and U3 ship together in #1037; later units build on that branch.
 
 | Unit | Scope | Kit additions |
 | --- | --- | --- |
