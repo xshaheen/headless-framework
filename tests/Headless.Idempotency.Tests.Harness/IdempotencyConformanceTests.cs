@@ -421,7 +421,7 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
         (await Fixture.ReadRecordAsync(HostKey(key), AbortToken))!.Generation.Should().Be(hostScope.Generation);
     }
 
-    public virtual async Task should_refuse_keys_with_surrounding_whitespace_before_any_write()
+    public virtual async Task should_refuse_keys_no_provider_stores_unchanged_before_any_write()
     {
         var key = CreateKey();
         await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
@@ -431,9 +431,11 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
 
         // SQL Server compares nvarchar with trailing spaces padded away, so "k " would land on the record of "k" (a
         // read of "k " there even returns it), and a padded admission would report the unpadded key in flight.
-        foreach (var padded in (string[])[key + " ", " " + key, key + "\t"])
+        // PostgreSQL fails the statement on NUL, and SqlClient sends an unpaired surrogate as U+FFFD, so SQL Server
+        // would merge keys that differ only in which lone surrogate they carry.
+        foreach (var unportable in (string[])[key + " ", " " + key, key + "\t", key + "\0", key + (char)0xD800])
         {
-            var admit = async () => await AdmitAsync(host, padded);
+            var admit = async () => await AdmitAsync(host, unportable);
 
             await admit.Should().ThrowAsync<ArgumentException>();
         }

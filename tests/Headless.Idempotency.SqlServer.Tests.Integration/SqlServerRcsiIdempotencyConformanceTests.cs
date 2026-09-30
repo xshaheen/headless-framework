@@ -61,9 +61,9 @@ public sealed class SqlServerRcsiIdempotencyConformanceTests(SqlServerRcsiIdempo
     }
 
     [Fact]
-    public override Task should_refuse_keys_with_surrounding_whitespace_before_any_write()
+    public override Task should_refuse_keys_no_provider_stores_unchanged_before_any_write()
     {
-        return base.should_refuse_keys_with_surrounding_whitespace_before_any_write();
+        return base.should_refuse_keys_no_provider_stores_unchanged_before_any_write();
     }
 
     [Fact]

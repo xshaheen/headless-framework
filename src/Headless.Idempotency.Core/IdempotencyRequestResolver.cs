@@ -15,15 +15,9 @@ internal sealed class IdempotencyRequestResolver(
     IOptionsMonitor<IdempotentOperationsOptions> options
 )
 {
-    // SQL Server pads nvarchar values with trailing spaces before comparing them, under every collation and in
-    // primary-key uniqueness, so "a" and "a " would share one record there while PostgreSQL keeps them apart. Refusing
-    // surrounding whitespace keeps key parts ordinal on every provider.
-    private const string _MergeReason =
-        " must not start or end with whitespace: some providers ignore trailing spaces when comparing keys, which "
-        + "would merge two records.";
-    private const string _ContractWhitespaceMessage = "An idempotency contract" + _MergeReason;
-    private const string _KeyWhitespaceMessage = "An idempotency key" + _MergeReason;
-    private const string _TenantIdWhitespaceMessage = "An idempotency tenant id" + _MergeReason;
+    // Every key part must be text every provider stores, compares, and returns unchanged, whichever provider this
+    // host uses: a key one provider merges (trailing spaces on SQL Server), rejects (NUL on PostgreSQL), or rewrites
+    // (an unpaired surrogate on SQL Server) would make the providers disagree about which record a call names.
 
     /// <summary>Validates an admission's arguments and the current tenant, and returns the record key.</summary>
     /// <exception cref="ArgumentException">The key, fingerprint, contract, or current tenant id is invalid.</exception>
@@ -117,7 +111,7 @@ internal sealed class IdempotencyRequestResolver(
     {
         Argument.IsNotNullOrWhiteSpace(contract, paramName: paramName);
         Argument.HasMaxLength(contract, IdempotencyFieldLimits.ContractMaxLength, paramName: paramName);
-        Argument.HasNoSurroundingWhiteSpace(contract, _ContractWhitespaceMessage, paramName);
+        Argument.IsPortableKey(contract, paramName: paramName);
     }
 
     /// <summary>Validates a recovery point's name, state, and contract tag.</summary>
@@ -126,6 +120,7 @@ internal sealed class IdempotencyRequestResolver(
     {
         Argument.IsNotNullOrWhiteSpace(point);
         Argument.HasMaxLength(point, IdempotencyFieldLimits.RecoveryPointMaxLength);
+        Argument.IsPortableKey(point);
         ValidateContract(contract, nameof(contract));
 
         if (state.Length > IdempotencyFieldLimits.RecoveryStateMaxLength)
@@ -177,7 +172,7 @@ internal sealed class IdempotencyRequestResolver(
     {
         Argument.IsNotNullOrWhiteSpace(key, paramName: paramName);
         Argument.HasMaxLength(key, IdempotencyFieldLimits.KeyMaxLength, paramName: paramName);
-        Argument.HasNoSurroundingWhiteSpace(key, _KeyWhitespaceMessage, paramName);
+        Argument.IsPortableKey(key, paramName: paramName);
     }
 
     private static string _NormalizeTenantId(string? tenantId, string what, string paramName)
@@ -206,7 +201,7 @@ internal sealed class IdempotencyRequestResolver(
             );
         }
 
-        Argument.HasNoSurroundingWhiteSpace(tenantId, _TenantIdWhitespaceMessage, paramName);
+        Argument.IsPortableKey(tenantId, paramName: paramName);
 
         return tenantId;
     }
