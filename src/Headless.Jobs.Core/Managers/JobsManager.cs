@@ -692,8 +692,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         if (serviceScopeFactory is null)
         {
-            await JobMiddlewareRegistry
-                .DispatchScheduleAsync(
+            await _functionRegistry
+                .Middleware.DispatchScheduleAsync(
                     new(descriptor, entity, EmptyServiceProvider.Instance),
                     terminal,
                     cancellationToken
@@ -703,8 +703,12 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         else
         {
             await using var scope = serviceScopeFactory.CreateAsyncScope();
-            await JobMiddlewareRegistry
-                .DispatchScheduleAsync(new(descriptor, entity, scope.ServiceProvider), terminal, cancellationToken)
+            await _functionRegistry
+                .Middleware.DispatchScheduleAsync(
+                    new(descriptor, entity, scope.ServiceProvider),
+                    terminal,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
         }
 

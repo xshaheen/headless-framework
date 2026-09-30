@@ -71,8 +71,8 @@ public sealed class JobsDistributedLockGuardTests : TestBase
 
         await using var sp = services.BuildServiceProvider();
 
-        // Drive the seed guard directly — no StartAsync, so the test stays isolated from the global
-        // JobFunctionProvider static state. A rename breaks the build, not at runtime.
+        // Drive the seed guard directly, without StartAsync, so the test controls the registry it seeds from. A rename
+        // breaks the build, not at runtime.
         var hostedService = new JobsInitializationHostedService(
             sp,
             functionRegistry ?? _EmptyRegistry,

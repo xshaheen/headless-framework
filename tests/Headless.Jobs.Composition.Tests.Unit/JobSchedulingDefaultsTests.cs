@@ -209,7 +209,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                 Enlistment = TransactionEnlistment.Required,
             },
             new() { [typeof(Request)] = new JobOptions { Retries = 6 } },
-            new() { [_Requestless] = new JobOptions { Retries = 8 } }
+            new() { [_Requestless.FunctionName] = new JobOptions { Retries = 8 } }
         );
         var (scheduler, time, cron) = _CreateScheduler(new FakeTimeProvider(), policies);
         await scheduler.ScheduleRecurringAsync(new Request(), "0 * * * * *", AbortToken);
@@ -277,8 +277,8 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                 {
                     [
                         string.Equals(identity, "typed-descriptor", global::System.StringComparison.Ordinal)
-                            ? _Typed
-                            : _Requestless
+                            ? _Typed.FunctionName
+                            : _Requestless.FunctionName
                     ] = required,
                 }
         );
@@ -331,7 +331,11 @@ public sealed class JobSchedulingDefaultsTests : TestBase
     {
         const string cronExpression = "0 */5 * * * *";
         await using var host = _CreateHost(
-            options => options.ConfigureJob(_Requestless, job => job.WithEnlistment(TransactionEnlistment.Required)),
+            options =>
+                options.Tune(
+                    _Requestless.FunctionName,
+                    tune => tune.Options(job => job.WithEnlistment(TransactionEnlistment.Required))
+                ),
             requestlessCronExpression: cronExpression
         );
         var seeder = new JobsInitializationHostedService(
@@ -359,7 +363,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             options
                 .ConfigureDefaults(job => job.WithRetries(3))
                 .ConfigureJob<Request>(job => job.WithRetries(5))
-                .ConfigureJob(_Requestless, job => job.WithRetries(8))
+                .Tune(_Requestless.FunctionName, tune => tune.Options(job => job.WithRetries(8)))
                 .Should()
                 .BeSameAs(options);
         });
@@ -384,15 +388,15 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                 retained = job;
                 job.WithRetries(5);
             });
-            options.ConfigureJob(_Requestless, job => job.WithRetries(99));
-            options.ConfigureJob(_Requestless, job => job.WithRetries(8));
+            options.Tune(_Requestless.FunctionName, tune => tune.Options(job => job.WithRetries(99)));
+            options.Tune(_Requestless.FunctionName, tune => tune.Options(job => job.WithRetries(8)));
             retained!.WithRetries(100);
             intervals[0] = 100;
         });
         callbackCount.Should().Be(1);
         captured!.ConfigureDefaults(job => job.WithRetries(100).WithRetryIntervals(100));
         captured.ConfigureJob<Request>(job => job.WithRetries(100));
-        captured.ConfigureJob(_Requestless, job => job.WithRetries(100));
+        captured.Tune(_Requestless.FunctionName, tune => tune.Options(job => job.WithRetries(100)));
         retained!.WithRetryIntervals(100);
 
         var scheduler = provider.GetRequiredService<IJobScheduler>();
@@ -467,7 +471,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             {
                 "defaults" => callback => options.ConfigureDefaults(callback),
                 "request" => callback => options.ConfigureJob<Request>(callback),
-                _ => callback => options.ConfigureJob(_Requestless, callback),
+                _ => callback => options.Tune(_Requestless.FunctionName, tune => tune.Options(callback)),
             };
             configure(job => job.WithRetries(7));
             Action<JobOptionsBuilder>[] invalid =
@@ -500,7 +504,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             {
                 "defaults" => () => options.ConfigureDefaults((JobOptions)null!),
                 "request" => () => options.ConfigureJob<Request>((JobOptions)null!),
-                _ => () => options.ConfigureJob(_Requestless, (JobOptions)null!),
+                _ => () => options.Tune(_Requestless.FunctionName, tune => tune.Options((JobOptions)null!)),
             };
             nullOptions.Should().Throw<ArgumentNullException>();
         });
@@ -528,14 +532,11 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                     options.ConfigureJob<string>(job => job.WithRetries(1));
                     break;
                 case "unknown-descriptor":
-                    options.ConfigureJob(
-                        new JobFunctionDescriptor("unknown", null, "", JobPriority.Normal, 0),
-                        job => job.WithRetries(1)
-                    );
+                    options.Tune("tests.unknown", tune => tune.Options(job => job.WithRetries(1)));
                     break;
                 default:
                     options.ConfigureJob<Request>(job => job.WithRetries(1));
-                    options.ConfigureJob(_Typed, job => job.WithRetries(2));
+                    options.Tune(_Typed.FunctionName, tune => tune.Options(job => job.WithRetries(2)));
                     break;
             }
         });
@@ -550,7 +551,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         services.AddHeadlessJobs(options =>
         {
             var called = false;
-            var configure = () => options.ConfigureJob(null!, _ => called = true);
+            var configure = () => options.Tune(null!, _ => called = true);
             configure.Should().Throw<ArgumentNullException>();
             called.Should().BeFalse();
         });
@@ -601,7 +602,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         var policies = new JobSchedulingPolicies(
             new JobOptions(),
             [],
-            new() { [canonical] = new JobOptions { Retries = 8 } }
+            new() { [canonical.FunctionName] = new JobOptions { Retries = 8 } }
         );
         policies
             .Resolve(
@@ -625,7 +626,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         var invalidDescriptor = new JobSchedulingPolicies(
             new JobOptions(),
             [],
-            new() { [_Requestless] = new JobOptions() }
+            new() { [_Requestless.FunctionName] = new JobOptions() }
         );
         var registry = JobFunctionRegistryBuilder.Build([], [], []);
         var validateRequest = () => invalidRequest.Validate(registry);
@@ -703,34 +704,64 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         services.AddHeadlessJobs(options =>
         {
             options.DisableBackgroundServices();
+            if (string.IsNullOrEmpty(requestlessCronExpression))
+            {
+                options.AddModule<DefaultsModule>();
+            }
+            else
+            {
+                options.AddModule<CronDefaultsModule>();
+            }
+
             configure(options);
         });
-        var descriptors = new[] { _Typed, _Requestless };
-        services.AddSingleton(
-            JobFunctionRegistryBuilder.Build(
-                descriptors
-                    .Select(descriptor => new KeyValuePair<string, JobFunctionRegistration>(
-                        descriptor.FunctionName,
-                        new()
-                        {
-                            CronExpression = ReferenceEquals(descriptor, _Requestless) ? requestlessCronExpression : "",
-                            Priority = JobPriority.Normal,
-                            MaxConcurrency = 0,
-                            Delegate = (_, _, _) => Task.CompletedTask,
-                            JobType = ReferenceEquals(descriptor, _Requestless) ? typeof(RequestlessJob) : null,
-                        }
-                    ))
-                    .ToArray(),
-                [],
-                descriptors
-                    .Select(descriptor => new KeyValuePair<string, JobFunctionDescriptor>(
-                        descriptor.FunctionName,
-                        descriptor
-                    ))
-                    .ToArray()
+        return services.BuildServiceProvider();
+    }
+
+    private static void _Register(JobsCatalogBuilder catalog, string requestlessCronExpression)
+    {
+        var descriptors = new[]
+        {
+            _Typed,
+            new JobFunctionDescriptor(
+                _Requestless.FunctionName,
+                null,
+                requestlessCronExpression,
+                _Requestless.Priority,
+                _Requestless.MaxConcurrency
+            ),
+        };
+        catalog.AddFunctions(
+            descriptors.ToDictionary(
+                descriptor => descriptor.FunctionName,
+                descriptor => new JobFunctionRegistration
+                {
+                    CronExpression = descriptor.CronExpression,
+                    Priority = JobPriority.Normal,
+                    MaxConcurrency = 0,
+                    Delegate = (_, _, _) => Task.CompletedTask,
+                    JobType = descriptor.RequestType is null ? typeof(RequestlessJob) : null,
+                },
+                StringComparer.Ordinal
             )
         );
-        return services.BuildServiceProvider();
+        catalog.AddDescriptors(descriptors.ToDictionary(descriptor => descriptor.FunctionName, StringComparer.Ordinal));
+    }
+
+    private sealed class DefaultsModule : IJobsModule
+    {
+        private DefaultsModule() { }
+
+        static void IJobsModule.Register(JobsCatalogBuilder catalog) =>
+            _Register(catalog, requestlessCronExpression: "");
+    }
+
+    private sealed class CronDefaultsModule : IJobsModule
+    {
+        private CronDefaultsModule() { }
+
+        static void IJobsModule.Register(JobsCatalogBuilder catalog) =>
+            _Register(catalog, requestlessCronExpression: "0 */5 * * * *");
     }
 
     private static (

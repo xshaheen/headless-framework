@@ -104,7 +104,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
 
     private static (IJobScheduler Facade, JobChain Chain) _ChainFacade(Sut sut, string? requiredNode)
     {
-        var registry = JobFunctionProvider.CreateHostRegistry(configuration: null);
+        var registry = _BuildRegistry();
         var builder = JobChain.Start<RoutingJob>(
             DateTimeOffset.UtcNow.AddHours(1),
             new JobOptions { Enlistment = _Enlistment(requiredNode, "root") }

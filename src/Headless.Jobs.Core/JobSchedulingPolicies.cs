@@ -11,24 +11,24 @@ internal sealed class JobSchedulingPolicies
     internal static readonly JobSchedulingPolicies Empty = new(new JobOptions(), [], []);
     private readonly JobOptions _defaults;
     private readonly Dictionary<Type, JobOptions> _byRequest;
-    private readonly Dictionary<JobFunctionDescriptor, JobOptions> _byDescriptor;
     private readonly Dictionary<string, JobOptions> _byFunction;
 
     internal JobSchedulingPolicies(
         JobOptions defaults,
         Dictionary<Type, JobOptions> byRequest,
-        Dictionary<JobFunctionDescriptor, JobOptions> byDescriptor
+        Dictionary<string, JobOptions> byFunction
     )
     {
         _defaults = Snapshot(defaults);
         _byRequest = byRequest.ToDictionary(pair => pair.Key, pair => Snapshot(pair.Value));
-        _byDescriptor = byDescriptor.ToDictionary(pair => pair.Key, pair => Snapshot(pair.Value));
-        _byFunction = _byDescriptor.ToDictionary(
-            pair => pair.Key.FunctionName,
-            pair => pair.Value,
-            StringComparer.Ordinal
-        );
+        _byFunction = byFunction.ToDictionary(pair => pair.Key, pair => Snapshot(pair.Value), StringComparer.Ordinal);
     }
+
+    /// <summary>
+    /// Combines the host's defaults and request-type overrides with the per-job options tuned into the host's registry.
+    /// </summary>
+    internal JobSchedulingPolicies WithFunctionOptions(IReadOnlyDictionary<string, JobOptions> byFunction) =>
+        new(_defaults, _byRequest, byFunction.ToDictionary(StringComparer.Ordinal));
 
     internal void Validate(JobFunctionRegistry registry)
     {
@@ -41,21 +41,16 @@ internal sealed class JobSchedulingPolicies
                 );
             }
         }
-        foreach (var descriptor in _byDescriptor.Keys)
+        foreach (var function in _byFunction.Keys)
         {
-            if (
-                registry.CanonicalDescriptors.GetValueOrDefault(descriptor.FunctionName) != descriptor
-                || !registry.Descriptors.ContainsKey(descriptor.FunctionName)
-            )
+            if (!registry.Descriptors.TryGetValue(function, out var descriptor))
             {
-                throw new InvalidOperationException(
-                    $"Configured job '{descriptor.FunctionName}' is not a canonical generated descriptor in this host."
-                );
+                throw new InvalidOperationException($"Configured job '{function}' is not registered in this host.");
             }
             if (descriptor.RequestType is { } requestType && _byRequest.ContainsKey(requestType))
             {
                 throw new InvalidOperationException(
-                    $"Job '{descriptor.FunctionName}' is configured by both descriptor and request type. Choose one identity."
+                    $"Job '{function}' is configured by both Tune options and ConfigureJob<{requestType.Name}>. Choose one."
                 );
             }
         }

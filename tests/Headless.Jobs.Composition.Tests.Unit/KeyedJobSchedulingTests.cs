@@ -289,9 +289,8 @@ public sealed class KeyedJobSchedulingTests : TestBase
     [Fact]
     public async Task schedule_policy_changes_preserve_captured_policy_after_the_pipeline()
     {
-        JobFunctionProvider.ResetForTests(discoveryComplete: false);
         var retryPolicy = 2;
-        JobMiddlewareRegistry.RegisterSchedule(
+        var middleware = new JobScheduleMiddlewareRegistration(
             "keyed-policy",
             "deadline",
             0,
@@ -303,7 +302,6 @@ public sealed class KeyedJobSchedulingTests : TestBase
                 return next(cancellationToken);
             }
         );
-        try
         {
             var descriptor = new JobFunctionDescriptor("deadline", null, "", JobPriority.Normal, 0);
             var services = _Services();
@@ -324,7 +322,10 @@ public sealed class KeyedJobSchedulingTests : TestBase
                     ],
                     [],
                     [new KeyValuePair<string, JobFunctionDescriptor>("deadline", descriptor)]
-                )
+                ) with
+                {
+                    Middleware = JobMiddlewarePipeline.Create([middleware], []),
+                }
             );
             await using var provider = services.BuildServiceProvider();
             var scheduler = provider.GetRequiredService<IJobScheduler>();
@@ -347,10 +348,6 @@ public sealed class KeyedJobSchedulingTests : TestBase
             observed.IntentFingerprint.Should().Be(persisted.IntentFingerprint);
             observed.FingerprintAlgorithm.Should().Be("v1");
             observed.Generation.Should().Be(created.Generation);
-        }
-        finally
-        {
-            JobFunctionProvider.ResetForTests();
         }
     }
 

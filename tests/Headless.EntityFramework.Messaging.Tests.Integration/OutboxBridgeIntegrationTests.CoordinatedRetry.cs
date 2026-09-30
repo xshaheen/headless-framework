@@ -109,9 +109,8 @@ public sealed partial class OutboxBridgeIntegrationTests
             var unitOfWork =
                 db.UnitOfWork()
                 ?? throw new InvalidOperationException("The save pipeline must have bound a unit to the context.");
-            await unitOfWork.Jobs.ScheduleKeyedAsync(
+            await unitOfWork.Jobs.ScheduleKeyedAsync<DeadlineJob>(
                 new JobKey(evidence.Key),
-                DeadlineRegistration.Descriptor,
                 evidence.Due,
                 new JobOptions { Enlistment = TransactionEnlistment.Required },
                 cancellationToken

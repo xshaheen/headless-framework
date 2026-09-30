@@ -18,25 +18,6 @@ public sealed class JobsTenancyRegistrationTests : TestBase
 {
     private static readonly JobFunctionDescriptor _Descriptor = new("any-fn", null, "", JobPriority.Normal, 0);
 
-    public JobsTenancyRegistrationTests() => JobFunctionProvider.ResetForTests(discoveryComplete: false);
-
-    protected override ValueTask DisposeAsyncCore()
-    {
-        JobFunctionProvider.ResetForTests();
-        return base.DisposeAsyncCore();
-    }
-
-    [Fact]
-    public void the_tenancy_registration_is_reserved_once_per_generation_and_reset_rearms_it()
-    {
-        JobMiddlewareRegistry.TryReserveTenancyRegistration().Should().BeTrue();
-        JobMiddlewareRegistry.TryReserveTenancyRegistration().Should().BeFalse();
-
-        JobFunctionProvider.ResetForTests(discoveryComplete: false);
-
-        JobMiddlewareRegistry.TryReserveTenancyRegistration().Should().BeTrue();
-    }
-
     [Fact]
     public async Task add_headless_jobs_registers_and_dispatches_the_schedule_tenancy_middleware()
     {
@@ -49,12 +30,13 @@ public sealed class JobsTenancyRegistrationTests : TestBase
     }
 
     [Fact]
-    public async Task a_second_add_headless_jobs_after_freeze_does_not_throw_and_the_second_host_still_dispatches()
+    public async Task a_second_host_in_the_process_builds_its_own_registry_and_still_dispatches()
     {
         await using var firstHost = _BuildHost();
+        _ = firstHost.GetRequiredService<JobFunctionRegistry>();
 
-        // The registry is frozen; the second host takes the ExistingCatalog path. It must not throw, and its per-host DI
-        // must still resolve and dispatch the tenancy middleware against the shared frozen registry.
+        // Each host freezes its own catalog, so a second host built after the first froze still carries the tenancy
+        // middleware and dispatches it.
         ServiceProvider secondHost = null!;
         var buildSecond = () => secondHost = _BuildHost();
         buildSecond.Should().NotThrow();
@@ -75,15 +57,17 @@ public sealed class JobsTenancyRegistrationTests : TestBase
         await using var emptyServices = new ServiceCollection().BuildServiceProvider();
         var nextCalled = false;
 
-        await JobMiddlewareRegistry.DispatchScheduleAsync(
-            new JobScheduleContext(_Descriptor, _TimeJob(tenantId: "   "), emptyServices),
-            _ =>
-            {
-                nextCalled = true;
-                return Task.CompletedTask;
-            },
-            AbortToken
-        );
+        await provider
+            .GetRequiredService<JobFunctionRegistry>()
+            .Middleware.DispatchScheduleAsync(
+                new JobScheduleContext(_Descriptor, _TimeJob(tenantId: "   "), emptyServices),
+                _ =>
+                {
+                    nextCalled = true;
+                    return Task.CompletedTask;
+                },
+                AbortToken
+            );
 
         nextCalled.Should().BeTrue();
     }
@@ -103,7 +87,8 @@ public sealed class JobsTenancyRegistrationTests : TestBase
         var scheduleNext = false;
         var executeNext = false;
 
-        await JobMiddlewareRegistry.DispatchScheduleAsync(
+        var middleware = provider.GetRequiredService<JobFunctionRegistry>().Middleware;
+        await middleware.DispatchScheduleAsync(
             new JobScheduleContext(_Descriptor, _TimeJob(tenantId: null), provider),
             _ =>
             {
@@ -113,7 +98,7 @@ public sealed class JobsTenancyRegistrationTests : TestBase
             AbortToken
         );
 
-        await JobMiddlewareRegistry.DispatchExecuteAsync(
+        await middleware.DispatchExecuteAsync(
             new JobExecuteContext(
                 _Descriptor,
                 new JobExecutionState { FunctionName = _Descriptor.FunctionName },
@@ -135,11 +120,13 @@ public sealed class JobsTenancyRegistrationTests : TestBase
 
     private static Task _DispatchScheduleAsync(IServiceProvider provider, TimeJobEntity job)
     {
-        return JobMiddlewareRegistry.DispatchScheduleAsync(
-            new JobScheduleContext(_Descriptor, job, provider),
-            _ => Task.CompletedTask,
-            AbortToken
-        );
+        return provider
+            .GetRequiredService<JobFunctionRegistry>()
+            .Middleware.DispatchScheduleAsync(
+                new JobScheduleContext(_Descriptor, job, provider),
+                _ => Task.CompletedTask,
+                AbortToken
+            );
     }
 
     private static ServiceProvider _BuildHost()

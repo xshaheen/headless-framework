@@ -672,17 +672,17 @@ public sealed class JobsIncrementalSourceGeneratorTests
         generated
             .Should()
             .Contain(
-                "JobMiddlewareRegistry.RegisterSchedule(\"Jobs.SourceGenerator.Tests:ScheduleMiddleware\", \"invoice.create\", 0"
+                "catalog.AddScheduleMiddleware(\"Jobs.SourceGenerator.Tests:ScheduleMiddleware\", \"invoice.create\", 0"
             );
         generated
             .Should()
             .Contain(
-                "JobMiddlewareRegistry.RegisterExecute(\"Jobs.SourceGenerator.Tests:ExecuteMiddleware\", \"invoice.create\", 0"
+                "catalog.AddExecuteMiddleware(\"Jobs.SourceGenerator.Tests:ExecuteMiddleware\", \"invoice.create\", 0"
             );
         generated
             .Should()
             .NotContain(
-                "JobMiddlewareRegistry.RegisterExecute(\"Jobs.SourceGenerator.Tests:ExecuteMiddleware\", \"invoice.other\""
+                "catalog.AddExecuteMiddleware(\"Jobs.SourceGenerator.Tests:ExecuteMiddleware\", \"invoice.other\""
             );
     }
 
@@ -731,7 +731,7 @@ public sealed class JobsIncrementalSourceGeneratorTests
             .SourceText.ToString()
             .Should()
             .Contain(
-                "JobMiddlewareRegistry.RegisterExecute(\"Jobs.SourceGenerator.Tests:ExternalMiddleware\", \"producer.run\", 0"
+                "catalog.AddExecuteMiddleware(\"Jobs.SourceGenerator.Tests:ExternalMiddleware\", \"producer.run\", 0"
             );
     }
 
@@ -914,7 +914,10 @@ public sealed class JobsIncrementalSourceGeneratorTests
         [
             .. _GeneratedSource(driver)
                 .Split('\n')
-                .Where(line => line.Contains("JobMiddlewareRegistry.Register", StringComparison.Ordinal))
+                .Where(line =>
+                    line.Contains("Middleware(", StringComparison.Ordinal)
+                    && line.Contains("catalog.Add", StringComparison.Ordinal)
+                )
                 .Select(line => line.Trim()),
         ];
     }

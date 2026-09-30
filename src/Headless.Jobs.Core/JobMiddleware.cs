@@ -148,97 +148,41 @@ public sealed class JobExecuteContext(
     public IServiceProvider Services { get; } = services;
 }
 
-/// <summary>Frozen generated callback registry for Jobs middleware dispatch.</summary>
-[System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-public static class JobMiddlewareRegistry
+/// <summary>
+/// One host's frozen middleware chain, ordered by priority and then by stable middleware identity. Built once with the
+/// host's job registry, so two hosts in one process never share or reorder each other's middleware.
+/// </summary>
+internal sealed class JobMiddlewarePipeline
 {
-    private static bool _frozen;
-    private static int _tenancyMiddlewareReserved;
-    private static readonly List<ScheduleRegistration> _ScheduleRegistrations = [];
-    private static readonly List<ExecuteRegistration> _ExecuteRegistrations = [];
-    private static ScheduleRegistration[] _schedule = [];
-    private static ExecuteRegistration[] _execute = [];
+    internal static readonly JobMiddlewarePipeline Empty = new([], []);
 
-    /// <summary>
-    /// Reserves the one-shot, process-global insertion of the framework tenancy middleware pair. Returns
-    /// <see langword="true"/> for the first caller of the current registry generation; later callers (overlapping host
-    /// configuration, a post-freeze ExistingCatalog host) get <see langword="false"/> so the middleware is never
-    /// inserted — and therefore dispatched — twice. Reset alongside the generated registrations by
-    /// <see cref="ResetUnderProviderLock"/> so unit tests that rebuild the catalog re-register cleanly.
-    /// </summary>
-    internal static bool TryReserveTenancyRegistration() =>
-        Interlocked.Exchange(ref _tenancyMiddlewareReserved, 1) == 0;
+    private readonly JobScheduleMiddlewareRegistration[] _schedule;
+    private readonly JobExecuteMiddlewareRegistration[] _execute;
 
-    /// <summary>Registers generated schedule dispatch before <see cref="JobFunctionProvider.Build"/>.</summary>
-    /// <exception cref="InvalidOperationException">Jobs discovery has completed or the catalog is frozen.</exception>
-    public static void RegisterSchedule(
-        string identity,
-        string? function,
-        int priority,
-        JobScheduleMiddlewareDispatch dispatch
+    private JobMiddlewarePipeline(
+        JobScheduleMiddlewareRegistration[] schedule,
+        JobExecuteMiddlewareRegistration[] execute
     )
     {
-        JobFunctionProvider.RegisterMiddleware(() =>
-            _ScheduleRegistrations.Add(new(identity, function, priority, dispatch))
-        );
+        _schedule = schedule;
+        _execute = execute;
     }
 
-    /// <summary>Registers generated execute dispatch before <see cref="JobFunctionProvider.Build"/>.</summary>
-    /// <exception cref="InvalidOperationException">Jobs discovery has completed or the catalog is frozen.</exception>
-    public static void RegisterExecute(
-        string identity,
-        string? function,
-        int priority,
-        JobExecuteMiddlewareDispatch dispatch
-    )
-    {
-        JobFunctionProvider.RegisterMiddleware(() =>
-            _ExecuteRegistrations.Add(new(identity, function, priority, dispatch))
-        );
-    }
+    internal static JobMiddlewarePipeline Create(
+        IEnumerable<JobScheduleMiddlewareRegistration> schedule,
+        IEnumerable<JobExecuteMiddlewareRegistration> execute
+    ) => new(_Order(schedule), _Order(execute));
 
-    internal static Task DispatchScheduleAsync(
-        JobScheduleContext context,
-        JobScheduleNext next,
-        CancellationToken cancellationToken
-    ) => _DispatchSchedule(context, next, cancellationToken);
-
-    internal static Task DispatchExecuteAsync(
-        JobExecuteContext context,
-        JobExecuteNext next,
-        CancellationToken cancellationToken
-    ) => _DispatchExecute(context, next, cancellationToken);
-
-    internal static void FreezeUnderProviderLock()
-    {
-        _schedule = _Order(_ScheduleRegistrations);
-        _execute = _Order(_ExecuteRegistrations);
-        _frozen = true;
-    }
-
-    // The generated registrations are process-global. Unit tests that exercise alternate generated chains reset this
-    // state inside the non-parallel Jobs helper collection, keeping the production API frozen after startup.
-    internal static void ResetUnderProviderLock()
-    {
-        _frozen = false;
-        _tenancyMiddlewareReserved = 0;
-        _ScheduleRegistrations.Clear();
-        _ExecuteRegistrations.Clear();
-        _schedule = [];
-        _execute = [];
-    }
-
-    private static Task _DispatchSchedule(
+    internal Task DispatchScheduleAsync(
         JobScheduleContext context,
         JobScheduleNext next,
         CancellationToken cancellationToken
     )
     {
-        var registrations = _frozen ? _schedule : _Order(_ScheduleRegistrations);
         var current = next;
-        for (var index = registrations.Length - 1; index >= 0; index--)
+        for (var index = _schedule.Length - 1; index >= 0; index--)
         {
-            var registration = registrations[index];
+            var registration = _schedule[index];
             var previous = current;
             current = token =>
                 registration.Function is null
@@ -250,17 +194,16 @@ public static class JobMiddlewareRegistry
         return current(cancellationToken);
     }
 
-    private static Task _DispatchExecute(
+    internal Task DispatchExecuteAsync(
         JobExecuteContext context,
         JobExecuteNext next,
         CancellationToken cancellationToken
     )
     {
-        var registrations = _frozen ? _execute : _Order(_ExecuteRegistrations);
         var current = next;
-        for (var index = registrations.Length - 1; index >= 0; index--)
+        for (var index = _execute.Length - 1; index >= 0; index--)
         {
-            var registration = registrations[index];
+            var registration = _execute[index];
             var previous = current;
             current = token =>
                 registration.Function is null
@@ -273,26 +216,26 @@ public static class JobMiddlewareRegistry
     }
 
     private static T[] _Order<T>(IEnumerable<T> registrations)
-        where T : IRegistration =>
+        where T : IJobMiddlewareRegistration =>
         [.. registrations.OrderBy(x => x.Priority).ThenBy(x => x.Identity, StringComparer.Ordinal)];
-
-    private interface IRegistration
-    {
-        string Identity { get; }
-        int Priority { get; }
-    }
-
-    private sealed record ScheduleRegistration(
-        string Identity,
-        string? Function,
-        int Priority,
-        JobScheduleMiddlewareDispatch Dispatch
-    ) : IRegistration;
-
-    private sealed record ExecuteRegistration(
-        string Identity,
-        string? Function,
-        int Priority,
-        JobExecuteMiddlewareDispatch Dispatch
-    ) : IRegistration;
 }
+
+internal interface IJobMiddlewareRegistration
+{
+    string Identity { get; }
+    int Priority { get; }
+}
+
+internal sealed record JobScheduleMiddlewareRegistration(
+    string Identity,
+    string? Function,
+    int Priority,
+    JobScheduleMiddlewareDispatch Dispatch
+) : IJobMiddlewareRegistration;
+
+internal sealed record JobExecuteMiddlewareRegistration(
+    string Identity,
+    string? Function,
+    int Priority,
+    JobExecuteMiddlewareDispatch Dispatch
+) : IJobMiddlewareRegistration;

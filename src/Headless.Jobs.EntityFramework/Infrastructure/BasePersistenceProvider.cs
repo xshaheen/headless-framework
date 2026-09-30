@@ -24,7 +24,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     SchedulerOptionsBuilder optionsBuilder,
     ICache? cache,
     IJobsClaimStrategy<TTimeJob, TCronJob> claimStrategy,
-    ILogger logger
+    ILogger logger,
+    JobsRunFilter? runFilter = null
 )
     where TDbContext : DbContext
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
@@ -33,6 +34,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     protected IDbContextFactory<TDbContext> DbContextFactory { get; } = dbContextFactory;
 
     protected ILogger Logger { get; } = logger;
+
+    // Which functions this host claims. Applied to every root claim, acquire, and next-occurrence read, never to an
+    // in-tree descendant, which runs with the root that claimed it.
+    protected JobsRunFilter RunFilter { get; } = runFilter ?? JobsRunFilter.All;
 
     // Pickup-lease deadline window: every acquire stamps LockedUntil = now + LeaseDuration.
     protected TimeSpan LeaseDuration { get; } = optionsBuilder.LeaseDuration;
@@ -230,6 +235,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .AsNoTracking()
             .Where(x => x.ExecutionTime != null)
             .Where(x => x.ExecutionTime >= oneSecondAgo) // Ignore old jobs (fallback handles them)
+            .WhereRunnable(RunFilter)
             .WhereCanAcquireUsingDatabaseClock(owner)
             // A timed descendant surfaces here as its own candidate (excluded from the in-tree walk); the
             // parent gate keeps it out of the peek until its parent reached its matching terminal state.
@@ -928,6 +934,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var affected = await dbContext
             .Set<TTimeJob>()
             .Where(x => ((IEnumerable<Guid>)ids).Contains(x.Id))
+            .WhereRunnable(RunFilter)
             .WhereCanAcquireUsingDatabaseClock(owner)
             // Gate the immediate-acquire path too — a timed descendant is claimable only once its parent
             // reached its matching terminal state. Roots (ParentId == null) pass trivially.
@@ -1975,7 +1982,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var selectable = dbContext
             .Set<TCronJob>()
             .AsNoTracking()
-            .Where(x => !x.IsPaused && x.FingerprintRetryAfterUtc == null);
+            .Where(x => !x.IsPaused && x.FingerprintRetryAfterUtc == null)
+            .WhereDefinitionRunnable(RunFilter);
 
         if (after is { } cursor)
         {
@@ -2698,6 +2706,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Where(x => ids.Length == 0 || ((IEnumerable<Guid>)ids).Contains(x.CronJobId))
             .Where(x => !x.CronJob.IsPaused)
             .Where(x => x.ExecutionTime >= mainSchedulerThreshold) // Only items within the 1-second main scheduler window
+            .WhereRunnable(RunFilter)
             .WhereCanAcquireUsingDatabaseClock(owner)
             .OrderBy(x => x.ExecutionTime)
             .Select(MappingExtensions.ForLatestQueuedCronJobOccurrence<CronJobOccurrenceEntity<TCronJob>, TCronJob>())

@@ -18,14 +18,6 @@ namespace Tests;
 [Collection<JobsHelperCollection>]
 public sealed class GeneratedJobInvocationTests : TestBase
 {
-    public GeneratedJobInvocationTests() => JobFunctionProvider.ResetForTests(discoveryComplete: false);
-
-    protected override ValueTask DisposeAsyncCore()
-    {
-        JobFunctionProvider.ResetForTests();
-        return base.DisposeAsyncCore();
-    }
-
     [Fact]
     public async Task should_enqueue_a_job_by_its_argument_type_and_run_it_with_the_stored_argument()
     {

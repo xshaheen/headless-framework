@@ -19,27 +19,27 @@ namespace Jobs.SourceGenerator.Tests
     {
         private JobsModule() { }
 
-        static void global::Headless.Jobs.IJobsModule.Register()
+        static void global::Headless.Jobs.IJobsModule.Register(global::Headless.Jobs.JobsCatalogBuilder catalog)
         {
             var functions = new Dictionary<string, JobFunctionRegistration>(1);
             functions.Add("middleware.local", new JobFunctionRegistration { CronExpression = "", Priority = (JobPriority)0, Delegate = Invoke_Demo_Middleware_MiddlewareJob, MaxConcurrency = 0, JobType = typeof(global::Demo.Middleware.MiddlewareJob) });
-            JobFunctionProvider.RegisterFunctions(functions, 1);
-            RegisterRequestTypes();
-            RegisterDescriptors();
-            JobMiddlewareRegistry.RegisterSchedule("Jobs.SourceGenerator.Tests:Demo.Middleware.GlobalSchedule", null, 5, static (context, next, cancellationToken) => context.Services.GetRequiredService<global::Demo.Middleware.GlobalSchedule>().InvokeAsync(context, next, cancellationToken));
-            JobMiddlewareRegistry.RegisterExecute("Jobs.SourceGenerator.Tests:Demo.Middleware.GlobalExecute", null, 0, static (context, next, cancellationToken) => context.Services.GetRequiredService<global::Demo.Middleware.GlobalExecute>().InvokeAsync(context, next, cancellationToken));
-            JobMiddlewareRegistry.RegisterExecute("Jobs.SourceGenerator.Tests:Demo.Middleware.LocalExecute", "middleware.local", 1, static (context, next, cancellationToken) => context.Services.GetRequiredService<global::Demo.Middleware.LocalExecute>().InvokeAsync(context, next, cancellationToken));
-            JobMiddlewareRegistry.RegisterExecute("Jobs.SourceGenerator.Tests:Demo.Middleware.GlobalExecute", "producer.run", -5, static (context, next, cancellationToken) => context.Services.GetRequiredService<global::Demo.Middleware.GlobalExecute>().InvokeAsync(context, next, cancellationToken));
+            catalog.AddFunctions(functions);
+            RegisterRequestTypes(catalog);
+            RegisterDescriptors(catalog);
+            catalog.AddScheduleMiddleware("Jobs.SourceGenerator.Tests:Demo.Middleware.GlobalSchedule", null, 5, static (context, next, cancellationToken) => context.Services.GetRequiredService<global::Demo.Middleware.GlobalSchedule>().InvokeAsync(context, next, cancellationToken));
+            catalog.AddExecuteMiddleware("Jobs.SourceGenerator.Tests:Demo.Middleware.GlobalExecute", null, 0, static (context, next, cancellationToken) => context.Services.GetRequiredService<global::Demo.Middleware.GlobalExecute>().InvokeAsync(context, next, cancellationToken));
+            catalog.AddExecuteMiddleware("Jobs.SourceGenerator.Tests:Demo.Middleware.LocalExecute", "middleware.local", 1, static (context, next, cancellationToken) => context.Services.GetRequiredService<global::Demo.Middleware.LocalExecute>().InvokeAsync(context, next, cancellationToken));
+            catalog.AddExecuteMiddleware("Jobs.SourceGenerator.Tests:Demo.Middleware.GlobalExecute", "producer.run", -5, static (context, next, cancellationToken) => context.Services.GetRequiredService<global::Demo.Middleware.GlobalExecute>().InvokeAsync(context, next, cancellationToken));
         }
 
-        private static void RegisterDescriptors()
+        private static void RegisterDescriptors(global::Headless.Jobs.JobsCatalogBuilder catalog)
         {
             var descriptors = new Dictionary<string, JobFunctionDescriptor>(1);
             descriptors.Add("middleware.local", new JobFunctionDescriptor("middleware.local", null, "", (JobPriority)0, 0, "1"));
-            JobFunctionProvider.RegisterDescriptors(descriptors, 1);
+            catalog.AddDescriptors(descriptors);
         }
 
-        private static void RegisterRequestTypes()
+        private static void RegisterRequestTypes(global::Headless.Jobs.JobsCatalogBuilder catalog)
         {
         }
 

@@ -28,16 +28,6 @@ public sealed class SetupJobsTenancyTests : TestBase
         typeof(JobsTenancyOptions).GetProperty(propertyName)!.GetSetMethod().Should().BeNull();
     }
 
-    // AddHeadlessJobs (used by the real-host propagation test) freezes the process-global discovery registry;
-    // re-arm it around each test so nothing leaks into the sibling Jobs tests in this collection.
-    public SetupJobsTenancyTests() => JobFunctionProvider.ResetForTests(discoveryComplete: false);
-
-    protected override ValueTask DisposeAsyncCore()
-    {
-        JobFunctionProvider.ResetForTests();
-        return base.DisposeAsyncCore();
-    }
-
     [Fact]
     public void propagate_tenant_records_propagating_posture_and_enables_the_option()
     {

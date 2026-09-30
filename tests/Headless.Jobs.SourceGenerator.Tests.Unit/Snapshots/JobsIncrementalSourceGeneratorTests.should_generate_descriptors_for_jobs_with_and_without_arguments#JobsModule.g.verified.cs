@@ -20,29 +20,29 @@ namespace Jobs.SourceGenerator.Tests
     {
         private JobsModule() { }
 
-        static void global::Headless.Jobs.IJobsModule.Register()
+        static void global::Headless.Jobs.IJobsModule.Register(global::Headless.Jobs.JobsCatalogBuilder catalog)
         {
             var functions = new Dictionary<string, JobFunctionRegistration>(2);
             functions.Add("invoice.cleanup", new JobFunctionRegistration { CronExpression = "", Priority = (JobPriority)0, Delegate = Invoke_Demo_CleanupJob, MaxConcurrency = 0, JobType = typeof(global::Demo.CleanupJob) });
             functions.Add("invoice.create", new JobFunctionRegistration { CronExpression = "0 */5 * * * *", Priority = (JobPriority)1, Delegate = Invoke_Demo_CreateInvoiceJob, MaxConcurrency = 3, JobType = typeof(global::Demo.CreateInvoiceJob) });
-            JobFunctionProvider.RegisterFunctions(functions, 2);
-            RegisterRequestTypes();
-            RegisterDescriptors();
+            catalog.AddFunctions(functions);
+            RegisterRequestTypes(catalog);
+            RegisterDescriptors(catalog);
         }
 
-        private static void RegisterDescriptors()
+        private static void RegisterDescriptors(global::Headless.Jobs.JobsCatalogBuilder catalog)
         {
             var descriptors = new Dictionary<string, JobFunctionDescriptor>(2);
             descriptors.Add("invoice.cleanup", new JobFunctionDescriptor("invoice.cleanup", null, "", (JobPriority)0, 0, "1"));
             descriptors.Add("invoice.create", new JobFunctionDescriptor("invoice.create", typeof(global::Demo.CreateInvoice), "0 */5 * * * *", (JobPriority)1, 3, "schema-v2"));
-            JobFunctionProvider.RegisterDescriptors(descriptors, 2);
+            catalog.AddDescriptors(descriptors);
         }
 
-        private static void RegisterRequestTypes()
+        private static void RegisterRequestTypes(global::Headless.Jobs.JobsCatalogBuilder catalog)
         {
             var requestTypes = new Dictionary<string, (string, Type)>(1);
             requestTypes.Add("invoice.create", (typeof(global::Demo.CreateInvoice).FullName, typeof(global::Demo.CreateInvoice)));
-            JobFunctionProvider.RegisterRequestType(requestTypes, 1);
+            catalog.AddRequestTypes(requestTypes);
         }
 
         private static async Task Invoke_Demo_CleanupJob(IServiceProvider serviceProvider, global::Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken)

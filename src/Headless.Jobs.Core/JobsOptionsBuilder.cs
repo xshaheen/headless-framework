@@ -24,29 +24,74 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     where TCronJob : CronJobEntity, new()
 {
     private readonly JobsExecutionContext _tickerExecutionContext;
+    private readonly List<string> _runOnly = [];
     private JobOptions _jobDefaults = new();
     private readonly Dictionary<Type, JobOptions> _jobOptionsByRequest = [];
-    private readonly Dictionary<JobFunctionDescriptor, JobOptions> _jobOptionsByDescriptor = [];
 
     /// <summary>
     /// Adds one assembly's generated job functions and middleware, for example
-    /// <c>AddModule&lt;Billing.JobsModule&gt;()</c>. Call it inside the <c>AddHeadlessJobs</c> callback once for every
-    /// assembly the host runs jobs or middleware from, including the host's own assembly.
+    /// <c>AddModule&lt;Billing.JobsModule&gt;()</c>. Add every assembly the host runs jobs or middleware from, including
+    /// the host's own assembly. Adding a module more than once is harmless.
     /// </summary>
     /// <remarks>
-    /// The job catalog is process-wide and frozen when the first host completes its <c>AddHeadlessJobs</c> callback.
-    /// Adding a module that an earlier host already added is a no-op, so every host may list the same modules; adding
-    /// one no earlier host added fails, because it can no longer join the frozen catalog.
+    /// Modules register into this host's catalog when its job registry is built, so a module can also arrive through
+    /// <c>services.ConfigureJobs(...)</c> before or after this call. Each host builds its own catalog, so hosts in one
+    /// process may add different modules.
     /// </remarks>
     /// <typeparam name="TModule">The generated <see cref="IJobsModule"/> of the assembly.</typeparam>
     /// <returns>This builder, for chaining.</returns>
-    /// <exception cref="InvalidOperationException">
-    /// The module was not already registered and the process-wide catalog is closed.
-    /// </exception>
     public JobsOptionsBuilder<TTimeJob, TCronJob> AddModule<TModule>()
         where TModule : IJobsModule
     {
-        JobFunctionProvider.RegisterModule(typeof(TModule), static () => TModule.Register());
+        Services.AddJobsModuleContribution<TModule>();
+        return this;
+    }
+
+    /// <summary>
+    /// Tunes the deployment settings of one declared job on this host, for example
+    /// <c>Tune("billing.close-day", job =&gt; job.Concurrency(2))</c>. Equivalent to the same call on
+    /// <c>services.ConfigureJobs(...)</c>.
+    /// </summary>
+    /// <remarks>
+    /// The identity is checked when the host's job registry is built: an identity no registered module declares fails
+    /// startup. <c>Headless:Jobs:Jobs:{identity}</c> configuration (<c>Concurrency</c>, <c>Priority</c>) applies after
+    /// every <c>Tune</c> call. <paramref name="configure"/> runs once, synchronously, during this call.
+    /// </remarks>
+    /// <param name="identity">The job's <c>[Job]</c> identity.</param>
+    /// <param name="configure">Changes the job's deployment settings.</param>
+    /// <returns>This builder, for chaining.</returns>
+    /// <exception cref="ArgumentException"><paramref name="identity"/> is empty or whitespace.</exception>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> Tune(
+        string identity,
+        [InstantHandle] Action<JobTuningBuilder> configure
+    )
+    {
+        Services.AddJobTuning(identity, configure);
+        return this;
+    }
+
+    /// <summary>
+    /// Limits which registered jobs this host claims and executes. Each entry is an exact job identity, such as
+    /// <c>billing.close-day</c>, or an <c>owner.*</c> pattern, such as <c>orders.*</c>, that matches every job whose
+    /// identity starts with that owner segment. Calls accumulate.
+    /// </summary>
+    /// <remarks>
+    /// Jobs outside the filter stay registered: this host can still schedule them, seeds their cron definitions, and
+    /// shows them in the dashboard, and another host without the filter runs them. Without any <c>RunOnly</c> call the
+    /// host runs every job. An entry that matches no registered job fails startup.
+    /// </remarks>
+    /// <param name="identities">Exact job identities or <c>owner.*</c> patterns.</param>
+    /// <returns>This builder, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="identities"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="identities"/> is empty, or an entry is blank or misplaces <c>*</c>.
+    /// </exception>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> RunOnly(params string[] identities)
+    {
+        Argument.IsNotNullOrEmpty(identities);
+        var validated = identities.Select(JobsRunFilter.ValidateEntry).ToArray();
+        _runOnly.AddRange(validated);
         return this;
     }
 
@@ -93,35 +138,10 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
         return ConfigureJob<TRequest>(builder.Build());
     }
 
-    /// <summary>Overrides host defaults for one canonical generated job descriptor.</summary>
-    public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureJob(JobFunctionDescriptor descriptor, JobOptions options)
-    {
-        Argument.IsNotNull(descriptor);
-        _jobOptionsByDescriptor[descriptor] = JobSchedulingPolicies.Snapshot(options);
-        return this;
-    }
+    internal JobSchedulingPolicies FreezeSchedulingPolicies() => new(_jobDefaults, _jobOptionsByRequest, []);
 
-    /// <summary>Authors policy overrides for one canonical generated job descriptor.</summary>
-    /// <remarks>Invokes the callback once synchronously with a fresh builder, then validates and snapshots its options. Asynchronous callbacks are not supported.</remarks>
-    /// <param name="descriptor">The canonical generated descriptor to configure.</param>
-    /// <param name="configure">Authors startup policy settings; invocation metadata is not accepted.</param>
-    /// <returns>This builder for method chaining.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="descriptor"/> or <paramref name="configure"/> is null.</exception>
-    /// <exception cref="ArgumentException">The authored policy contains invalid settings or invocation metadata.</exception>
-    public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureJob(
-        JobFunctionDescriptor descriptor,
-        Action<JobOptionsBuilder> configure
-    )
-    {
-        Argument.IsNotNull(descriptor);
-        Argument.IsNotNull(configure);
-        var builder = new JobOptionsBuilder();
-        configure(builder);
-        return ConfigureJob(descriptor, builder.Build());
-    }
-
-    internal JobSchedulingPolicies FreezeSchedulingPolicies() =>
-        new(_jobDefaults, _jobOptionsByRequest, _jobOptionsByDescriptor);
+    /// <summary>The <c>RunOnly</c> entries authored so far, snapshotted when <c>AddHeadlessJobs</c> returns.</summary>
+    internal string[] FreezeRunOnly() => [.. _runOnly];
 
     /// <summary>Scheduler options instance, exposed so Core-layer extensions can toggle internal flags.</summary>
     internal SchedulerOptionsBuilder SchedulerOptions { get; }

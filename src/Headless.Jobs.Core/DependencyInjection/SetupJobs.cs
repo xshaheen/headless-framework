@@ -58,9 +58,10 @@ public static class SetupJobs
     /// Registers the Jobs subsystem with application-specific time and cron job entity types: managers,
     /// the <c>IJobScheduler</c> facade, background services (unless disabled), the in-memory persistence
     /// default (replaced by durable providers such as <c>UseEntityFramework</c>), and the per-host
-    /// <see cref="JobsRequestSerializationOptions"/> singleton. The <paramref name="optionsBuilder"/>
-    /// callback also completes job-function discovery: every generated module must be added inside it with
-    /// <c>AddModule</c>, after which the host's function registry is frozen.
+    /// <see cref="JobsRequestSerializationOptions"/> singleton. Generated modules added inside
+    /// <paramref name="optionsBuilder"/> with <c>AddModule</c>, or contributed with <c>services.ConfigureJobs(...)</c>
+    /// before or after this call, register into this host's own catalog, which freezes when the host's job registry is
+    /// first resolved.
     /// </summary>
     /// <typeparam name="TTimeJob">The application's concrete time job entity type.</typeparam>
     /// <typeparam name="TCronJob">The application's concrete cron job entity type.</typeparam>
@@ -84,26 +85,15 @@ public static class SetupJobs
             schedulerOptionsBuilder,
             services
         );
-        var discoveryParticipant = JobFunctionProvider.BeginDiscovery();
-        try
-        {
-            optionsBuilder?.Invoke(optionInstance);
-            // Modules contributed with ConfigureJobs so far join the catalog before this call closes it.
-            JobsContributionExtensions.DrainContributions(services);
-            _RegisterTenancyMiddleware(discoveryParticipant);
-        }
-        catch (Exception exception)
-        {
-            JobFunctionProvider.AbandonDiscovery(discoveryParticipant, exception);
-            throw;
-        }
-
-        JobFunctionProvider.CompleteDiscovery(discoveryParticipant);
+        optionsBuilder?.Invoke(optionInstance);
         var schedulingPolicies = optionInstance.FreezeSchedulingPolicies();
+        var runOnly = optionInstance.FreezeRunOnly();
         services.AddSingleton(provider =>
         {
-            schedulingPolicies.Validate(provider.GetRequiredService<JobFunctionRegistry>());
-            return schedulingPolicies;
+            var registry = provider.GetRequiredService<JobFunctionRegistry>();
+            var policies = schedulingPolicies.WithFunctionOptions(registry.OptionsByFunction);
+            policies.Validate(registry);
+            return policies;
         });
 
         // The pickup lease is stamped as LockedUntil = now + LeaseDuration; a non-positive duration would write a
@@ -212,8 +202,7 @@ public static class SetupJobs
         services.AddSingleton<IJobsNotificationHubSender, NoOpJobsNotificationHubSender>();
         services.TryAddSingleton(TimeProvider.System);
 
-        // Per-host tenancy DI (see _AddTenancyServices): runs on EVERY call so a second host built after the process-
-        // global middleware registry froze still resolves and dispatches the tenancy middleware.
+        // Per-host tenancy DI (see _AddTenancyServices).
         _AddTenancyServices(services);
 
         // Jobs-scoped distributed lock. The Core-layer UseDistributedLock extension stashed a single deferred keyed
@@ -276,13 +265,18 @@ public static class SetupJobs
 
         services.AddSingleton<IJobFunctionConcurrencyGate, JobFunctionConcurrencyGate>();
         services.AddSingleton<IJobsInstrumentation, LoggerInstrumentation>();
-        services.TryAddSingleton<JobFunctionRegistry>(provider =>
-        {
-            // Building the host's registry is where every contribution must have landed, including any recorded
-            // after this call returned.
-            JobsContributionExtensions.EnsureContributionsRegistered(provider.GetServices<JobsModuleContribution>());
-            return JobFunctionProvider.CreateHostRegistry(provider.GetService<IConfiguration>());
-        });
+        // The host's catalog is built and frozen here, when the registry is first resolved, rather than when this call
+        // returns: a ConfigureJobs contribution recorded after AddHeadlessJobs must still count, and building per
+        // provider keeps every host's modules, tuning, and filter out of process-wide state.
+        services.TryAddSingleton(provider =>
+            _BuildRegistry(
+                provider.GetServices<JobsModuleContribution>(),
+                provider.GetServices<JobsTuningContribution>(),
+                runOnly,
+                provider.GetService<IConfiguration>()
+            )
+        );
+        services.TryAddSingleton(provider => provider.GetRequiredService<JobFunctionRegistry>().RunFilter);
 
         optionInstance.ExternalProviderConfigServiceAction?.Invoke(services);
         optionInstance.DashboardServiceAction?.Invoke(services, requestSerializationOptions);
@@ -349,26 +343,39 @@ public static class SetupJobs
         await middleware.InvokeAsync(context, next, cancellationToken).ConfigureAwait(false);
     };
 
-    // Process-global one-shot: only the fresh-discovery participant that wins the reservation inserts the tenancy
-    // middleware pair into the frozen-once registry, so overlapping host configuration and post-freeze ExistingCatalog
-    // hosts never double-insert (which would dispatch tenancy twice). A post-freeze call skips silently — never throws.
-    private static void _RegisterTenancyMiddleware(JobFunctionProvider.DiscoveryParticipation participation)
+    private static JobFunctionRegistry _BuildRegistry(
+        IEnumerable<JobsModuleContribution> modules,
+        IEnumerable<JobsTuningContribution> tunings,
+        IReadOnlyCollection<string> runOnly,
+        IConfiguration? configuration
+    )
     {
-        if (
-            participation != JobFunctionProvider.DiscoveryParticipation.Participant
-            || !JobMiddlewareRegistry.TryReserveTenancyRegistration()
-        )
+        var catalog = new JobsCatalogBuilder();
+        var added = new HashSet<Type>();
+        foreach (var module in modules)
         {
-            return;
+            // A module contributed by several entry points, or by both a contribution and the host, registers once.
+            if (added.Add(module.ModuleType))
+            {
+                catalog.AddModule(module.ModuleType, module.Register);
+            }
         }
 
-        JobMiddlewareRegistry.RegisterSchedule(
+        _AddTenancyMiddleware(catalog);
+
+        return catalog.Build(tunings.Select(x => x.Tuning), runOnly, configuration);
+    }
+
+    // Every host's catalog carries the framework tenancy middleware pair exactly once.
+    private static void _AddTenancyMiddleware(JobsCatalogBuilder catalog)
+    {
+        catalog.AddScheduleMiddleware(
             _TenancyScheduleMiddlewareIdentity,
             function: null,
             JobMiddlewarePriority.Tenancy,
             _TenancyScheduleDispatch
         );
-        JobMiddlewareRegistry.RegisterExecute(
+        catalog.AddExecuteMiddleware(
             _TenancyExecuteMiddlewareIdentity,
             function: null,
             JobMiddlewarePriority.Tenancy,

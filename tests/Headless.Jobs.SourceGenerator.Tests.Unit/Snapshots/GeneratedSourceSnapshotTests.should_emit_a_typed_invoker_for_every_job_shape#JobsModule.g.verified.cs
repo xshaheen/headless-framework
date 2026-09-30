@@ -23,7 +23,7 @@ namespace Jobs.SourceGenerator.Tests
     {
         private JobsModule() { }
 
-        static void global::Headless.Jobs.IJobsModule.Register()
+        static void global::Headless.Jobs.IJobsModule.Register(global::Headless.Jobs.JobsCatalogBuilder catalog)
         {
             var functions = new Dictionary<string, JobFunctionRegistration>(5);
             functions.Add("shapes.async-disposable", new JobFunctionRegistration { CronExpression = "", Priority = (JobPriority)0, Delegate = Invoke_Demo_Shapes_AsyncDisposableJob, MaxConcurrency = 0, JobType = typeof(global::Demo.Shapes.AsyncDisposableJob) });
@@ -31,12 +31,12 @@ namespace Jobs.SourceGenerator.Tests
             functions.Add("shapes.explicit", new JobFunctionRegistration { CronExpression = "", Priority = (JobPriority)0, Delegate = Invoke_Demo_Shapes_ExplicitJob, MaxConcurrency = 0, JobType = typeof(global::Demo.Shapes.ExplicitJob) });
             functions.Add("shapes.plain", new JobFunctionRegistration { CronExpression = "", Priority = (JobPriority)0, Delegate = Invoke_Demo_Shapes_CloseDay, MaxConcurrency = 0, JobType = typeof(global::Demo.Shapes.CloseDay) });
             functions.Add("shapes.typed", new JobFunctionRegistration { CronExpression = "", Priority = (JobPriority)0, Delegate = Invoke_Demo_Shapes_SendInvoice, MaxConcurrency = 0, JobType = typeof(global::Demo.Shapes.SendInvoice) });
-            JobFunctionProvider.RegisterFunctions(functions, 5);
-            RegisterRequestTypes();
-            RegisterDescriptors();
+            catalog.AddFunctions(functions);
+            RegisterRequestTypes(catalog);
+            RegisterDescriptors(catalog);
         }
 
-        private static void RegisterDescriptors()
+        private static void RegisterDescriptors(global::Headless.Jobs.JobsCatalogBuilder catalog)
         {
             var descriptors = new Dictionary<string, JobFunctionDescriptor>(5);
             descriptors.Add("shapes.async-disposable", new JobFunctionDescriptor("shapes.async-disposable", null, "", (JobPriority)0, 0, "1"));
@@ -44,14 +44,14 @@ namespace Jobs.SourceGenerator.Tests
             descriptors.Add("shapes.explicit", new JobFunctionDescriptor("shapes.explicit", null, "", (JobPriority)0, 0, "1"));
             descriptors.Add("shapes.plain", new JobFunctionDescriptor("shapes.plain", null, "", (JobPriority)0, 0, "1"));
             descriptors.Add("shapes.typed", new JobFunctionDescriptor("shapes.typed", typeof(global::Demo.Shapes.InvoiceArgs), "", (JobPriority)0, 0, "1"));
-            JobFunctionProvider.RegisterDescriptors(descriptors, 5);
+            catalog.AddDescriptors(descriptors);
         }
 
-        private static void RegisterRequestTypes()
+        private static void RegisterRequestTypes(global::Headless.Jobs.JobsCatalogBuilder catalog)
         {
             var requestTypes = new Dictionary<string, (string, Type)>(1);
             requestTypes.Add("shapes.typed", (typeof(global::Demo.Shapes.InvoiceArgs).FullName, typeof(global::Demo.Shapes.InvoiceArgs)));
-            JobFunctionProvider.RegisterRequestType(requestTypes, 1);
+            catalog.AddRequestTypes(requestTypes);
         }
 
         private static async Task Invoke_Demo_Shapes_AsyncDisposableJob(IServiceProvider serviceProvider, global::Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken)

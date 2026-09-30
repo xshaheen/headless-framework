@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 
@@ -8,6 +9,36 @@ namespace Microsoft.EntityFrameworkCore;
 
 public static class HeadlessJobsQueryExtensions
 {
+    /// <summary>
+    /// Keeps only rows whose function this host runs. A no-op on an unfiltered host, so its queries keep claiming rows
+    /// of every function, including ones it has not registered.
+    /// </summary>
+    internal static IQueryable<TTimeJob> WhereRunnable<TTimeJob>(this IQueryable<TTimeJob> q, JobsRunFilter filter)
+        where TTimeJob : TimeJobEntity<TTimeJob>
+    {
+        return filter.RunnableFunctions is { } runnable ? q.Where(e => runnable.Contains(e.Function)) : q;
+    }
+
+    /// <inheritdoc cref="WhereRunnable{TTimeJob}(IQueryable{TTimeJob},JobsRunFilter)"/>
+    internal static IQueryable<CronJobOccurrenceEntity<TCronJob>> WhereRunnable<TCronJob>(
+        this IQueryable<CronJobOccurrenceEntity<TCronJob>> q,
+        JobsRunFilter filter
+    )
+        where TCronJob : CronJobEntity
+    {
+        return filter.RunnableFunctions is { } runnable ? q.Where(e => runnable.Contains(e.Function)) : q;
+    }
+
+    /// <summary>Keeps only cron definitions whose function this host runs.</summary>
+    internal static IQueryable<TCronJob> WhereDefinitionRunnable<TCronJob>(
+        this IQueryable<TCronJob> q,
+        JobsRunFilter filter
+    )
+        where TCronJob : CronJobEntity
+    {
+        return filter.RunnableFunctions is { } runnable ? q.Where(e => runnable.Contains(e.Function)) : q;
+    }
+
     /// <summary>
     /// Selects acquirable non-terminal rows using the caller-supplied clock. EF runtime claim paths use the internal
     /// database-clock variant; this overload remains available for deterministic query composition.

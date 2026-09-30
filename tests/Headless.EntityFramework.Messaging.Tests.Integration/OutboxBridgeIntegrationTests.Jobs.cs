@@ -173,11 +173,11 @@ public sealed partial class OutboxBridgeIntegrationTests
 
     private void _RegisterJobs(IServiceCollection services)
     {
-        _ = DeadlineRegistration.Descriptor;
         services.AddHeadlessCoordination(setup => setup.UsePostgreSql(fixture.ConnectionString));
         services.AddHeadlessJobs(options =>
         {
             options.DisableBackgroundServices();
+            options.AddModule<DeadlineModule>();
             options.UseEntityFramework(ef =>
                 ef.UseJobsDbContext<JobsDbContext>(db => db.UseNpgsql(fixture.ConnectionString))
             );
@@ -332,13 +332,18 @@ public sealed partial class OutboxBridgeIntegrationTests
             1,
             "4"
         );
+    }
 
-        static DeadlineRegistration()
+    private sealed class DeadlineModule : IJobsModule
+    {
+        private DeadlineModule() { }
+
+        static void IJobsModule.Register(JobsCatalogBuilder catalog)
         {
-            JobFunctionProvider.RegisterFunctions(
+            catalog.AddFunctions(
                 new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
                 {
-                    [Descriptor.FunctionName] = new()
+                    [DeadlineRegistration.Descriptor.FunctionName] = new()
                     {
                         CronExpression = string.Empty,
                         Priority = JobPriority.Normal,
@@ -348,10 +353,10 @@ public sealed partial class OutboxBridgeIntegrationTests
                     },
                 }
             );
-            JobFunctionProvider.RegisterDescriptors(
+            catalog.AddDescriptors(
                 new Dictionary<string, JobFunctionDescriptor>(StringComparer.Ordinal)
                 {
-                    [Descriptor.FunctionName] = Descriptor,
+                    [DeadlineRegistration.Descriptor.FunctionName] = DeadlineRegistration.Descriptor,
                 }
             );
         }

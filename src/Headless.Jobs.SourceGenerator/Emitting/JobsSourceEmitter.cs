@@ -93,7 +93,9 @@ internal static class JobsSourceEmitter
 
     private static void _WriteRegister(SourceCodeBuilder writer, JobsRegistrationModel model, List<JobModel> jobs)
     {
-        writer.AppendLine("static void global::Headless.Jobs.IJobsModule.Register()");
+        writer.AppendLine(
+            "static void global::Headless.Jobs.IJobsModule.Register(global::Headless.Jobs.JobsCatalogBuilder catalog)"
+        );
         writer.OpenBracket();
 
         if (jobs.Count > 0)
@@ -104,17 +106,17 @@ internal static class JobsSourceEmitter
                 _WriteJobRegistration(writer, job);
             }
 
-            writer.AppendLine($"JobFunctionProvider.RegisterFunctions(functions, {jobs.Count});");
+            writer.AppendLine("catalog.AddFunctions(functions);");
         }
 
-        writer.AppendLine("RegisterRequestTypes();");
-        writer.AppendLine("RegisterDescriptors();");
+        writer.AppendLine("RegisterRequestTypes(catalog);");
+        writer.AppendLine("RegisterDescriptors(catalog);");
         foreach (var entry in model.Middleware)
         {
             var function = entry.Function is null ? "null" : _Literal(entry.Function);
-            var registrationMethod = entry.IsSchedule ? "RegisterSchedule" : "RegisterExecute";
+            var registrationMethod = entry.IsSchedule ? "AddScheduleMiddleware" : "AddExecuteMiddleware";
             writer.AppendLine(
-                $"JobMiddlewareRegistry.{registrationMethod}({_Literal(entry.Identity)}, {function}, {entry.Priority}, static (context, next, cancellationToken) => context.Services.GetRequiredService<{entry.TypeName}>().InvokeAsync(context, next, cancellationToken));"
+                $"catalog.{registrationMethod}({_Literal(entry.Identity)}, {function}, {entry.Priority}, static (context, next, cancellationToken) => context.Services.GetRequiredService<{entry.TypeName}>().InvokeAsync(context, next, cancellationToken));"
             );
         }
 
@@ -239,7 +241,7 @@ internal static class JobsSourceEmitter
 
     private static void _WriteDescriptorRegistration(SourceCodeBuilder writer, List<JobModel> jobs)
     {
-        writer.AppendLine("private static void RegisterDescriptors()");
+        writer.AppendLine("private static void RegisterDescriptors(global::Headless.Jobs.JobsCatalogBuilder catalog)");
         writer.OpenBracket();
 
         if (jobs.Count > 0)
@@ -254,7 +256,7 @@ internal static class JobsSourceEmitter
                 );
             }
 
-            writer.AppendLine($"JobFunctionProvider.RegisterDescriptors(descriptors, {jobs.Count});");
+            writer.AppendLine("catalog.AddDescriptors(descriptors);");
         }
 
         writer.CloseBracket();
@@ -264,7 +266,7 @@ internal static class JobsSourceEmitter
     {
         var typedJobs = jobs.Where(job => job.HasArgs).ToList();
 
-        writer.AppendLine("private static void RegisterRequestTypes()");
+        writer.AppendLine("private static void RegisterRequestTypes(global::Headless.Jobs.JobsCatalogBuilder catalog)");
         writer.OpenBracket();
 
         if (typedJobs.Count > 0)
@@ -278,7 +280,7 @@ internal static class JobsSourceEmitter
                 );
             }
 
-            writer.AppendLine($"JobFunctionProvider.RegisterRequestType(requestTypes, {typedJobs.Count});");
+            writer.AppendLine("catalog.AddRequestTypes(requestTypes);");
         }
 
         writer.CloseBracket();

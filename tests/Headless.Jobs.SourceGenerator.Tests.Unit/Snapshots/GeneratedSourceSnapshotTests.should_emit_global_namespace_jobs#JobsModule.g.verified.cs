@@ -19,23 +19,23 @@ namespace Jobs.SourceGenerator.Tests
     {
         private JobsModule() { }
 
-        static void global::Headless.Jobs.IJobsModule.Register()
+        static void global::Headless.Jobs.IJobsModule.Register(global::Headless.Jobs.JobsCatalogBuilder catalog)
         {
             var functions = new Dictionary<string, JobFunctionRegistration>(1);
             functions.Add("global.run", new JobFunctionRegistration { CronExpression = "", Priority = (JobPriority)0, Delegate = Invoke_GlobalJob, MaxConcurrency = 0, JobType = typeof(global::GlobalJob) });
-            JobFunctionProvider.RegisterFunctions(functions, 1);
-            RegisterRequestTypes();
-            RegisterDescriptors();
+            catalog.AddFunctions(functions);
+            RegisterRequestTypes(catalog);
+            RegisterDescriptors(catalog);
         }
 
-        private static void RegisterDescriptors()
+        private static void RegisterDescriptors(global::Headless.Jobs.JobsCatalogBuilder catalog)
         {
             var descriptors = new Dictionary<string, JobFunctionDescriptor>(1);
             descriptors.Add("global.run", new JobFunctionDescriptor("global.run", null, "", (JobPriority)0, 0, "1"));
-            JobFunctionProvider.RegisterDescriptors(descriptors, 1);
+            catalog.AddDescriptors(descriptors);
         }
 
-        private static void RegisterRequestTypes()
+        private static void RegisterRequestTypes(global::Headless.Jobs.JobsCatalogBuilder catalog)
         {
         }
 

@@ -13,7 +13,7 @@ public sealed partial class JobsLoggerMessageEventIdTests
     private static readonly Assembly[] _JobsAssemblies =
     [
         typeof(JobAttribute).Assembly,
-        typeof(JobFunctionProvider).Assembly,
+        typeof(JobsCatalogBuilder).Assembly,
         typeof(SetupJobsDashboard).Assembly,
         typeof(SetupJobsEntityFramework).Assembly,
         typeof(SetupPostgreSqlJobsEntityFramework).Assembly,

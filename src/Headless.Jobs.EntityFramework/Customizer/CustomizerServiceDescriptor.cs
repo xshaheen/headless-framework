@@ -227,7 +227,8 @@ internal static class ServiceBuilder
                 provider.GetRequiredService<SchedulerOptionsBuilder>(),
                 provider.GetService<ICache>(),
                 provider.GetRequiredService<IJobsClaimStrategy<TTimeJob, TCronJob>>(),
-                provider.GetRequiredService<ILogger<JobsEfCorePersistenceProvider<TContext, TTimeJob, TCronJob>>>()
+                provider.GetRequiredService<ILogger<JobsEfCorePersistenceProvider<TContext, TTimeJob, TCronJob>>>(),
+                provider.GetService<JobsRunFilter>()
             )
         );
     }

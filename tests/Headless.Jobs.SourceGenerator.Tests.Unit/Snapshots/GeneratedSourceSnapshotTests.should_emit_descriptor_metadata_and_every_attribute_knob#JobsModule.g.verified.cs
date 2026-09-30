@@ -20,25 +20,25 @@ namespace Jobs.SourceGenerator.Tests
     {
         private JobsModule() { }
 
-        static void global::Headless.Jobs.IJobsModule.Register()
+        static void global::Headless.Jobs.IJobsModule.Register(global::Headless.Jobs.JobsCatalogBuilder catalog)
         {
             var functions = new Dictionary<string, JobFunctionRegistration>(2);
             functions.Add("knobs.all", new JobFunctionRegistration { CronExpression = "*/5 * * * * *", Priority = (JobPriority)3, Delegate = Invoke_Demo_Knobs_AllKnobs, MaxConcurrency = 4, JobType = typeof(global::Demo.Knobs.AllKnobs), TimeZoneId = "Africa/Cairo", FailurePolicy = typeof(global::Demo.Knobs.PaymentsPolicy), OnMissedRun = (MissedRunPolicy)1, MissedRunGraceSeconds = 90, OnOverlap = (CronOverlapPolicy)1 });
             functions.Add("knobs.defaults", new JobFunctionRegistration { CronExpression = "", Priority = (JobPriority)0, Delegate = Invoke_Demo_Knobs_Defaults, MaxConcurrency = 0, JobType = typeof(global::Demo.Knobs.Defaults) });
-            JobFunctionProvider.RegisterFunctions(functions, 2);
-            RegisterRequestTypes();
-            RegisterDescriptors();
+            catalog.AddFunctions(functions);
+            RegisterRequestTypes(catalog);
+            RegisterDescriptors(catalog);
         }
 
-        private static void RegisterDescriptors()
+        private static void RegisterDescriptors(global::Headless.Jobs.JobsCatalogBuilder catalog)
         {
             var descriptors = new Dictionary<string, JobFunctionDescriptor>(2);
             descriptors.Add("knobs.all", new JobFunctionDescriptor("knobs.all", null, "*/5 * * * * *", (JobPriority)3, 4, "v7"));
             descriptors.Add("knobs.defaults", new JobFunctionDescriptor("knobs.defaults", null, "", (JobPriority)0, 0, "1"));
-            JobFunctionProvider.RegisterDescriptors(descriptors, 2);
+            catalog.AddDescriptors(descriptors);
         }
 
-        private static void RegisterRequestTypes()
+        private static void RegisterRequestTypes(global::Headless.Jobs.JobsCatalogBuilder catalog)
         {
         }
 

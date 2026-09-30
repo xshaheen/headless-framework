@@ -269,7 +269,11 @@ public sealed class GeneratedSourceSnapshotTests
         diagnostics.Should().NotContain(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         var generated = driver.GetRunResult().GeneratedTrees.Single().ToString();
         generated.Should().Contain("public sealed class JobsModule : global::Headless.Jobs.IJobsModule");
-        generated.Should().Contain("static void global::Headless.Jobs.IJobsModule.Register()");
+        generated
+            .Should()
+            .Contain(
+                "static void global::Headless.Jobs.IJobsModule.Register(global::Headless.Jobs.JobsCatalogBuilder catalog)"
+            );
         generated.Should().NotContain("ModuleInitializer");
         generated.Should().NotContain("AppJobs");
     }

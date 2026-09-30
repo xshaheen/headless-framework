@@ -173,7 +173,6 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
     [Theory]
     [InlineData("ConfigureDefaults", "")]
     [InlineData("ConfigureJob<Request>", "")]
-    [InlineData("ConfigureJob", "descriptor, ")]
     public void configuration_forms_preserve_record_and_callback_binding_and_exact_fluent_type(
         string verb,
         string prefix
@@ -230,7 +229,6 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
     [Theory]
     [InlineData("ConfigureDefaults", "")]
     [InlineData("ConfigureJob<Request>", "")]
-    [InlineData("ConfigureJob", "descriptor, ")]
     public void untyped_configuration_null_and_default_are_ambiguous_between_record_and_callback(
         string verb,
         string prefix
@@ -292,10 +290,10 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
                 JobsOptionsBuilder<TimeJobEntity, CronJobEntity> result = jobs
                     .ConfigureDefaults(p => p.WithRetries(3).WithEnlistment(TransactionEnlistment.Required))
                     .ConfigureJob<Request>(p => p.WithNodeDeathPolicy(Headless.Jobs.Enums.NodeDeathPolicy.MarkFailed))
-                    .ConfigureJob(descriptor, p => p.WithRetryIntervals(2, 5))
+                    .Tune("orders.ship", job => job.Options(p => p.WithRetryIntervals(2, 5)))
                     .ConfigureDefaults(new JobOptions { Retries = 3 })
                     .ConfigureJob<Request>(new JobOptions { Retries = 5 })
-                    .ConfigureJob(descriptor, new JobOptions { Retries = 0 });
+                    .Tune("orders.ship", job => job.Options(new JobOptions { Retries = 0 }));
                 """
             ),
             core: true

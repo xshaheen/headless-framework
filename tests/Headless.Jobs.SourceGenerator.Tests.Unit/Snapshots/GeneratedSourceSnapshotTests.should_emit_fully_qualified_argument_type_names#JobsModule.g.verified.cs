@@ -20,30 +20,30 @@ namespace Jobs.SourceGenerator.Tests
     {
         private JobsModule() { }
 
-        static void global::Headless.Jobs.IJobsModule.Register()
+        static void global::Headless.Jobs.IJobsModule.Register(global::Headless.Jobs.JobsCatalogBuilder catalog)
         {
             var functions = new Dictionary<string, JobFunctionRegistration>(2);
             functions.Add("billing.run", new JobFunctionRegistration { CronExpression = "%Jobs:Billing:Cron", Priority = (JobPriority)0, Delegate = Invoke_Billing_BillingJob, MaxConcurrency = 0, JobType = typeof(global::Billing.BillingJob) });
             functions.Add("root.payload", new JobFunctionRegistration { CronExpression = "", Priority = (JobPriority)0, Delegate = Invoke_Jobs_SourceGenerator_Tests_RootJob, MaxConcurrency = 0, JobType = typeof(global::Jobs.SourceGenerator.Tests.RootJob) });
-            JobFunctionProvider.RegisterFunctions(functions, 2);
-            RegisterRequestTypes();
-            RegisterDescriptors();
+            catalog.AddFunctions(functions);
+            RegisterRequestTypes(catalog);
+            RegisterDescriptors(catalog);
         }
 
-        private static void RegisterDescriptors()
+        private static void RegisterDescriptors(global::Headless.Jobs.JobsCatalogBuilder catalog)
         {
             var descriptors = new Dictionary<string, JobFunctionDescriptor>(2);
             descriptors.Add("billing.run", new JobFunctionDescriptor("billing.run", typeof(global::Billing.Payload), "%Jobs:Billing:Cron", (JobPriority)0, 0, "1"));
             descriptors.Add("root.payload", new JobFunctionDescriptor("root.payload", typeof(global::Jobs.SourceGenerator.Tests.Payload), "", (JobPriority)0, 0, "1"));
-            JobFunctionProvider.RegisterDescriptors(descriptors, 2);
+            catalog.AddDescriptors(descriptors);
         }
 
-        private static void RegisterRequestTypes()
+        private static void RegisterRequestTypes(global::Headless.Jobs.JobsCatalogBuilder catalog)
         {
             var requestTypes = new Dictionary<string, (string, Type)>(2);
             requestTypes.Add("billing.run", (typeof(global::Billing.Payload).FullName, typeof(global::Billing.Payload)));
             requestTypes.Add("root.payload", (typeof(global::Jobs.SourceGenerator.Tests.Payload).FullName, typeof(global::Jobs.SourceGenerator.Tests.Payload)));
-            JobFunctionProvider.RegisterRequestType(requestTypes, 2);
+            catalog.AddRequestTypes(requestTypes);
         }
 
         private static async Task Invoke_Billing_BillingJob(IServiceProvider serviceProvider, global::Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken)

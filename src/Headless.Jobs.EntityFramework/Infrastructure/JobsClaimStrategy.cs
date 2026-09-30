@@ -186,13 +186,18 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
     TimeProvider timeProvider,
     IGuidGenerator guidGenerator,
     IJobsOwnerIdentity ownerIdentity,
-    SchedulerOptionsBuilder optionsBuilder
+    SchedulerOptionsBuilder optionsBuilder,
+    JobsRunFilter? runFilter = null
 ) : IJobsClaimStrategy<TTimeJob, TCronJob>
     where TDbContext : DbContext
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
     private readonly TimeSpan _leaseDuration = optionsBuilder.LeaseDuration;
+
+    // Gates every root claim, including the direct claim whose candidates a filtered peek already chose, so a claim
+    // never depends on its caller having filtered.
+    private readonly JobsRunFilter _runFilter = runFilter ?? JobsRunFilter.All;
 
     // The maximum number of nodes on a root-to-leaf path the tree claim leases (root = depth 1). A timed
     // descendant is a boundary — not descended into, claimed independently.
@@ -234,7 +239,10 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             // fails the loser's re-evaluated claimability arms.
             var claimedIds = await _ClaimTimeJobTreeAsync(
                     context,
-                    q => q.Where(x => x.UpdatedAt == expectedUpdatedAt).WhereCanAcquireUsingDatabaseClock(owner),
+                    q =>
+                        q.Where(x => x.UpdatedAt == expectedUpdatedAt)
+                            .WhereRunnable(_runFilter)
+                            .WhereCanAcquireUsingDatabaseClock(owner),
                     rootId,
                     owner,
                     cancellationToken
@@ -289,6 +297,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         var timeJobsToUpdate = await context
             .AsNoTracking()
             .Where(x => x.ExecutionTime != null)
+            .WhereRunnable(_runFilter)
             .WhereCanFallbackClaimUsingDatabaseClock()
             .Where(x => x.ExecutionTime <= DateTime.UtcNow.AddSeconds(-1))
             // The fallback selects timed rows directly (ExecutionTime != null), so a timed descendant is
@@ -320,6 +329,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     context,
                     q =>
                         q.Where(x => x.UpdatedAt <= expectedUpdatedAt)
+                            .WhereRunnable(_runFilter)
                             .WhereCanFallbackClaimUsingDatabaseClock()
                             .WhereClaimableUnderParentTerminalGate(context),
                     rootId,
@@ -371,6 +381,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         var cronJobsToUpdate = await context
             .AsNoTracking()
             .Where(x => !x.CronJob.IsPaused)
+            .WhereRunnable(_runFilter)
             .WhereCanFallbackClaimUsingDatabaseClock()
             .Where(x => x.ExecutionTime <= DateTime.UtcNow.AddSeconds(-1))
             .OrderBy(x => x.ExecutionTime)
@@ -387,6 +398,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 
             var affected = await context
                 .Where(x => x.Id == cronJobOccurrence.Id && x.UpdatedAt == cronJobOccurrence.UpdatedAt)
+                .WhereRunnable(_runFilter)
                 .WhereCanFallbackClaimUsingDatabaseClock()
                 .ExecuteUpdateAsync(
                     setter =>
@@ -479,6 +491,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             var definitionAccepted = await dbContext
                 .Set<TCronJob>()
                 .Where(x => x.Id == item.Id && !x.IsPaused && x.ScheduleRevision == item.ScheduleRevision)
+                .WhereDefinitionRunnable(_runFilter)
                 .ExecuteUpdateAsync(
                     setter => setter.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
                     cancellationToken
