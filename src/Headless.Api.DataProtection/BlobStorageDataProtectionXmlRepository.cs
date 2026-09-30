@@ -2,6 +2,7 @@
 
 using System.Xml;
 using System.Xml.Linq;
+using Headless.Abstractions;
 using Headless.Blobs;
 using Headless.Checks;
 using Headless.Threading;
@@ -111,6 +112,8 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
 
     private async Task<IReadOnlyCollection<XElement>> _GetAllElementsAsync()
     {
+        using var bypass = _BeginHostScope();
+
         _logger.LogLoadingElements();
 
         var elements = new List<XElement>();
@@ -260,6 +263,8 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
 
     private async Task _StoreElementAsync(XElement element, BlobLocation location)
     {
+        using var bypass = _BeginHostScope();
+
         _logger.LogSavingElement(location.Path);
 
         try
@@ -312,6 +317,8 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     {
         var location = new BlobLocation(ContainerName, WriteProbeBlobName);
 
+        using var bypass = _BeginHostScope();
+
         _logger.LogSavingElement(location.Path);
 
         try
@@ -348,6 +355,16 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
 
             _ = await repository._storage.DeleteAsync(location, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// The key ring is one host-level secret shared by every tenant. When the store is tenant-scoped
+    /// (<c>tenancy.Blobs(b => b.ScopeByTenant())</c>), the first key read or write would otherwise land inside
+    /// whichever tenant's request touched data protection first, or fail outright on a request with no tenant.
+    /// </summary>
+    private static IDisposable _BeginHostScope()
+    {
+        return TenantStorageScopeBypass.Instance.BeginBypass();
     }
 
     /// <summary>

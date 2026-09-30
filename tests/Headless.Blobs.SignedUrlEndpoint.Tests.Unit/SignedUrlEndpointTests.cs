@@ -373,6 +373,46 @@ public sealed class SignedUrlEndpointTests : TestBase
         }
     }
 
+    [Fact]
+    public async Task should_keep_the_key_ring_at_host_level_when_it_is_persisted_to_a_tenant_scoped_store()
+    {
+        // given: the first data-protection use happens inside a tenant request, while minting a URL
+        await using var app = await SignedUrlTestApp.StartAsync(
+            AbortToken,
+            persistKeysToBlobStorage: true,
+            scopeBlobsByTenant: true
+        );
+        var tenant = app.App.Services.GetRequiredService<ICurrentTenant>();
+        Uri url;
+
+        using (tenant.Change("acme"))
+        {
+            await _UploadAsync(app.DefaultStorage, _Report, "acme-report");
+            url = await _Presigned(app.DefaultStorage)
+                .GetPresignedDownloadUrlAsync(_Report, TimeSpan.FromMinutes(15), AbortToken);
+        }
+
+        using var client = app.CreateClient();
+
+        // when: an anonymous request, with no tenant, must unprotect the token with the same ring
+        using var response = await client.GetAsync(url, AbortToken);
+
+        // then
+        (await response.Content.ReadAsStringAsync(AbortToken))
+            .Should()
+            .Be("acme-report");
+
+        using (app.App.Services.GetRequiredService<ITenantStorageScopeBypass>().BeginBypass())
+        {
+            var keys = await app.DefaultStorage.GetBlobsListAsync(
+                new BlobQuery("DataProtection"),
+                cancellationToken: AbortToken
+            );
+            keys.Should().NotBeEmpty();
+            keys.Should().OnlyContain(key => !key.BlobKey.Contains('/'), "the key ring is not inside a tenant prefix");
+        }
+    }
+
     private static IPresignedUrlBlobStorage _Presigned(IBlobStorage storage)
     {
         return storage.Should().BeAssignableTo<IPresignedUrlBlobStorage>().Subject;
