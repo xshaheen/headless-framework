@@ -307,6 +307,14 @@ public static class JobFunctionProvider
         }
     }
 
+    internal static bool IsModuleRegistered(Type moduleType)
+    {
+        lock (_Sync)
+        {
+            return _RegisteredModules.Contains(moduleType);
+        }
+    }
+
     internal static void RegisterMiddleware(Action registration)
     {
         lock (_Sync)

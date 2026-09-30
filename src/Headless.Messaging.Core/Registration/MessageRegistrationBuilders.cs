@@ -48,9 +48,9 @@ public interface IQueueRegistrationBuilder
     );
 }
 
-internal abstract class MessageLaneRegistrationBuilder(MessagingSetupBuilder setup, MessageLane lane)
+internal abstract class MessageLaneRegistrationBuilder(MessageRegistrationSink sink, MessageLane lane)
 {
-    protected MessagingSetupBuilder Setup { get; } = setup;
+    protected MessageRegistrationSink Sink { get; } = sink;
 
     protected void ScanAssembly(
         Assembly assembly,
@@ -69,12 +69,12 @@ internal abstract class MessageLaneRegistrationBuilder(MessagingSetupBuilder set
                 continue;
             }
 
-            Setup.Services.TryAdd(new ServiceDescriptor(consumerType, consumerType, ServiceLifetime.Scoped));
+            Sink.Services.TryAdd(new ServiceDescriptor(consumerType, consumerType, ServiceLifetime.Scoped));
             var serviceType = typeof(IConsume<>).MakeGenericType(messageType);
-            Setup.Services.TryAdd(
+            Sink.Services.TryAdd(
                 new ServiceDescriptor(serviceType, sp => sp.GetRequiredService(consumerType), ServiceLifetime.Scoped)
             );
-            Setup.RegisterMessageRegistration(
+            Sink.Register(
                 new MessageRegistration(
                     messageType,
                     lane,
@@ -82,7 +82,8 @@ internal abstract class MessageLaneRegistrationBuilder(MessagingSetupBuilder set
                     CorrelationSelector: null,
                     ProviderConfigs: new Dictionary<Type, object>(),
                     Consumers: [builder.Build()],
-                    ContractVersion: builder.ContractVersion
+                    ContractVersion: builder.ContractVersion,
+                    DeclaresMessage: false
                 )
             );
         }
@@ -100,17 +101,17 @@ internal abstract class MessageLaneRegistrationBuilder(MessagingSetupBuilder set
             );
 }
 
-internal sealed class BusRegistrationBuilder(MessagingSetupBuilder setup)
-    : MessageLaneRegistrationBuilder(setup, MessageLane.Bus),
+internal sealed class BusRegistrationBuilder(MessageRegistrationSink sink)
+    : MessageLaneRegistrationBuilder(sink, MessageLane.Bus),
         IBusRegistrationBuilder
 {
     public IBusRegistrationBuilder ForMessage<TMessage>(Action<IBusMessageBuilder<TMessage>> configure)
         where TMessage : class
     {
         Argument.IsNotNull(configure);
-        var builder = new BusMessageBuilder<TMessage>(Setup.Services);
+        var builder = new BusMessageBuilder<TMessage>(Sink.Services);
         configure(builder);
-        Setup.RegisterMessageRegistration(builder.Build());
+        Sink.Register(builder.Build());
         return this;
     }
 
@@ -129,17 +130,17 @@ internal sealed class BusRegistrationBuilder(MessagingSetupBuilder setup)
     ) => ForConsumersFromAssembly(typeof(TMarker).Assembly, configure);
 }
 
-internal sealed class QueueRegistrationBuilder(MessagingSetupBuilder setup)
-    : MessageLaneRegistrationBuilder(setup, MessageLane.Queue),
+internal sealed class QueueRegistrationBuilder(MessageRegistrationSink sink)
+    : MessageLaneRegistrationBuilder(sink, MessageLane.Queue),
         IQueueRegistrationBuilder
 {
     public IQueueRegistrationBuilder ForMessage<TMessage>(Action<IQueueMessageBuilder<TMessage>> configure)
         where TMessage : class
     {
         Argument.IsNotNull(configure);
-        var builder = new QueueMessageBuilder<TMessage>(Setup.Services);
+        var builder = new QueueMessageBuilder<TMessage>(Sink.Services);
         configure(builder);
-        Setup.RegisterMessageRegistration(builder.Build());
+        Sink.Register(builder.Build());
         return this;
     }
 
@@ -158,19 +159,56 @@ internal sealed class QueueRegistrationBuilder(MessagingSetupBuilder setup)
     ) => ForConsumersFromAssembly(typeof(TMarker).Assembly, configure);
 }
 
-internal sealed record FrameworkConsumerRegistrationContribution(
-    MessageLane Lane,
-    Type MessageType,
-    Type ConsumerType,
-    string? MessageName,
-    string? Group,
-    byte Concurrency,
-    string ConsumerIdentity,
-    string MessageContractVersion
-);
+/// <summary>
+/// The one place message registrations enter a service collection, shared by the <c>AddHeadlessMessaging</c> setup
+/// callback and every <c>ConfigureMessaging</c> contribution. Each registration is recorded as an immutable
+/// <see cref="MessageRegistration"/> descriptor that bootstrap drains in registration order, so a contribution counts
+/// whether it was added before or after <c>AddHeadlessMessaging</c>.
+/// </summary>
+internal sealed class MessageRegistrationSink(IServiceCollection services, ConsumerRegistry registry)
+{
+    public IServiceCollection Services { get; } = services;
+
+    public ConsumerRegistry Registry { get; } = registry;
+
+    public void Register(MessageRegistration registration)
+    {
+        Argument.IsNotNull(registration);
+
+        // Message-level metadata (correlation, provider configuration, delivery mode) has one owner per lane, so two
+        // declaring registrations would silently compete. Consumer-only registrations carry none and may join it.
+        var duplicateDeclaration =
+            registration.DeclaresMessage
+            && Services.Any(descriptor =>
+                descriptor.ServiceType == typeof(MessageRegistration)
+                && descriptor.ImplementationInstance is MessageRegistration existing
+                && existing.DeclaresMessage
+                && existing.MessageType == registration.MessageType
+                && existing.Lane == registration.Lane
+            );
+        if (duplicateDeclaration)
+        {
+            throw new InvalidOperationException(
+                $"Message type {registration.MessageType.Name} is registered more than once on lane {registration.Lane}. "
+                    + "Register each message type once per lane and configure all consumers in that registration."
+            );
+        }
+
+        Services.AddSingleton(registration);
+
+        if (registration.MessageName is { } messageName)
+        {
+            Registry.RegisterMessageName(registration.MessageType, registration.Lane, messageName);
+        }
+    }
+}
 
 internal static class FrameworkConsumerRegistrationExtensions
 {
+    /// <summary>
+    /// Contributes one framework-owned consumer through the same deferred path as <c>ConfigureMessaging</c>, so it
+    /// registers whether the host calls <c>AddHeadlessMessaging</c> before or after the owning package's setup.
+    /// </summary>
     public static void AddFrameworkConsumerRegistration<TMessage, TConsumer>(
         this IServiceCollection services,
         MessageLane lane,
@@ -183,34 +221,14 @@ internal static class FrameworkConsumerRegistrationExtensions
         where TMessage : class
         where TConsumer : class, IConsume<TMessage>
     {
-        Argument.IsNotNullOrWhiteSpace(consumerIdentity);
-        MessagingOptions.ValidateContractVersion(messageContractVersion);
-
-        if (
-            services.Any(descriptor =>
-                descriptor.ServiceType == typeof(FrameworkConsumerRegistrationContribution)
-                && descriptor.ImplementationInstance is FrameworkConsumerRegistrationContribution contribution
-                && contribution.Lane == lane
-                && contribution.MessageType == typeof(TMessage)
-                && contribution.ConsumerType == typeof(TConsumer)
-            )
-        )
-        {
-            return;
-        }
-
-        services.TryAddScoped<TConsumer>();
-        services.TryAddScoped<IConsume<TMessage>>(sp => sp.GetRequiredService<TConsumer>());
-        services.AddSingleton(
-            new FrameworkConsumerRegistrationContribution(
+        services.ConfigureMessaging(messaging =>
+            messaging.AddConsumerContribution<TMessage, TConsumer>(
                 lane,
-                typeof(TMessage),
-                typeof(TConsumer),
+                consumerIdentity,
+                messageContractVersion,
                 messageName,
                 group,
-                concurrency,
-                consumerIdentity,
-                messageContractVersion
+                concurrency
             )
         );
     }

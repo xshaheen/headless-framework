@@ -15,7 +15,10 @@ internal sealed record MessageRegistration(
     bool RequiresRoutingAffinity = false,
     // Only an explicit ForMessage<T> registration carries a policy; assembly-scan and framework contributions leave
     // it null so a publish for their type falls through to the host default.
-    DeliveryMode? DeliveryMode = null
+    DeliveryMode? DeliveryMode = null,
+    // False for consumer-only registrations (assembly scans and framework consumers). They carry no message-level
+    // settings, so they may join the one declaring registration a message type is allowed per lane.
+    bool DeclaresMessage = true
 );
 
 internal sealed record MessageConsumerRegistration(

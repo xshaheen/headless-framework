@@ -88,6 +88,8 @@ public static class SetupJobs
         try
         {
             optionsBuilder?.Invoke(optionInstance);
+            // Modules contributed with ConfigureJobs so far join the catalog before this call closes it.
+            JobsContributionExtensions.DrainContributions(services);
             _RegisterTenancyMiddleware(discoveryParticipant);
         }
         catch (Exception exception)
@@ -275,8 +277,12 @@ public static class SetupJobs
         services.AddSingleton<IJobFunctionConcurrencyGate, JobFunctionConcurrencyGate>();
         services.AddSingleton<IJobsInstrumentation, LoggerInstrumentation>();
         services.TryAddSingleton<JobFunctionRegistry>(provider =>
-            JobFunctionProvider.CreateHostRegistry(provider.GetService<IConfiguration>())
-        );
+        {
+            // Building the host's registry is where every contribution must have landed, including any recorded
+            // after this call returned.
+            JobsContributionExtensions.EnsureContributionsRegistered(provider.GetServices<JobsModuleContribution>());
+            return JobFunctionProvider.CreateHostRegistry(provider.GetService<IConfiguration>());
+        });
 
         optionInstance.ExternalProviderConfigServiceAction?.Invoke(services);
         optionInstance.DashboardServiceAction?.Invoke(services, requestSerializationOptions);

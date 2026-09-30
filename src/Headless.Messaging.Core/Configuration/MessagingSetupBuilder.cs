@@ -33,8 +33,9 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
         Services = services;
         Options = options;
         Registry = registry;
-        Bus = new BusRegistrationBuilder(this);
-        Queue = new QueueRegistrationBuilder(this);
+        var sink = new MessageRegistrationSink(services, registry);
+        Bus = new BusRegistrationBuilder(sink);
+        Queue = new QueueRegistrationBuilder(sink);
     }
 
     /// <summary>
@@ -102,41 +103,6 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     internal ConsumerCircuitBreakerRegistry CircuitBreakerRegistry { get; } = new();
 
     internal IList<IMessagesOptionsExtension> Extensions { get; } = [];
-
-    internal void RegisterMessageRegistration(MessageRegistration registration)
-    {
-        Argument.IsNotNull(registration);
-
-        var duplicateExplicitRegistration =
-            !_IsAssemblyScanRegistration(registration)
-            && Services.Any(descriptor =>
-                descriptor.ServiceType == typeof(MessageRegistration)
-                && descriptor.ImplementationInstance is MessageRegistration existing
-                && !_IsAssemblyScanRegistration(existing)
-                && existing.MessageType == registration.MessageType
-                && existing.Lane == registration.Lane
-            );
-        if (duplicateExplicitRegistration)
-        {
-            throw new InvalidOperationException(
-                $"Message type {registration.MessageType.Name} is registered more than once on lane {registration.Lane}. "
-                    + "Register each message type once per lane and configure all consumers in that registration."
-            );
-        }
-
-        Services.AddSingleton(registration);
-
-        if (registration.MessageName is { } messageName)
-        {
-            Registry.RegisterMessageName(registration.MessageType, registration.Lane, messageName);
-        }
-    }
-
-    private static bool _IsAssemblyScanRegistration(MessageRegistration registration)
-    {
-        return registration.Consumers.Count > 0
-            && registration.Consumers.All(static consumer => consumer.IsAssemblyScan);
-    }
 
     /// <summary>
     /// Registers a messaging options extension executed when configuring messaging services.

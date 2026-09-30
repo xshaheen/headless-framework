@@ -253,11 +253,7 @@ public sealed class HybridCacheInvalidationConsumerRegistrationTests : TestBase
     {
         var contribution = services
             .Single(descriptor =>
-                string.Equals(
-                    descriptor.ServiceType.Name,
-                    "FrameworkConsumerRegistrationContribution",
-                    StringComparison.Ordinal
-                )
+                string.Equals(descriptor.ServiceType.Name, "MessageRegistration", StringComparison.Ordinal)
             )
             .ImplementationInstance;
         contribution.Should().NotBeNull();

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Coordination;
@@ -73,8 +74,8 @@ public static class SetupMessaging
     {
         Argument.IsNotNull(configure);
 
-        // Found-or-created so setup-time extensions share one registry instance.
-        var registry = _GetOrAddConsumerRegistry(services);
+        // Found-or-created so ConfigureMessaging contributions and setup-time extensions share one registry instance.
+        var registry = GetOrAddConsumerRegistry(services);
         var options = new MessagingOptions();
         var setup = new MessagingSetupBuilder(services, options, registry);
 
@@ -83,7 +84,7 @@ public static class SetupMessaging
         return _RegisterCoreMessagingServices(services, setup);
     }
 
-    private static ConsumerRegistry _GetOrAddConsumerRegistry(IServiceCollection services)
+    internal static ConsumerRegistry GetOrAddConsumerRegistry(IServiceCollection services)
     {
         if (
             services.FirstOrDefault(static d => d.ServiceType == typeof(ConsumerRegistry))?.ImplementationInstance
@@ -276,9 +277,10 @@ public static class SetupMessaging
     }
 
     /// <summary>
-    /// Drains the deferred <see cref="MessageRegistration"/> singletons captured by lane-owned registration into the
-    /// consumer registry. Order-independent: the registrations are resolved from the built provider, so it works whether
-    /// the registration / <c>Add…</c> call ran before or after <see cref="AddHeadlessMessaging"/>. Idempotent — the
+    /// Drains the deferred <see cref="MessageRegistration"/> descriptors, in registration order, into the consumer
+    /// registry. Order-independent: the descriptors are resolved from the built provider, so a
+    /// <see cref="MessagingContributionExtensions.ConfigureMessaging"/> contribution counts whether it ran before or
+    /// after <see cref="AddHeadlessMessaging"/>. Idempotent — the
     /// first caller (Bootstrapper startup or the consumer selector) wins; subsequent calls are no-ops.
     /// </summary>
     /// <remarks>
@@ -306,41 +308,9 @@ public static class SetupMessaging
             return;
         }
 
+        // Every source records MessageRegistration descriptors: the AddHeadlessMessaging callback, ConfigureMessaging
+        // contributions, and framework consumers. The container returns them in registration order.
         var registrations = provider.GetServices<MessageRegistration>().ToList();
-        var frameworkContributions = provider.GetServices<FrameworkConsumerRegistrationContribution>().ToArray();
-
-        foreach (var contribution in frameworkContributions)
-        {
-            if (contribution.MessageName is { } messageName)
-            {
-                registry.RegisterMessageName(contribution.MessageType, contribution.Lane, messageName);
-            }
-        }
-
-        registrations.AddRange(
-            frameworkContributions.Select(static contribution => new MessageRegistration(
-                contribution.MessageType,
-                contribution.Lane,
-                contribution.MessageName,
-                CorrelationSelector: null,
-                ProviderConfigs: new Dictionary<Type, object>(),
-                Consumers:
-                [
-                    new MessageConsumerRegistration(
-                        contribution.ConsumerType,
-                        contribution.Lane,
-                        IsAssemblyScan: false,
-                        contribution.Group,
-                        contribution.Concurrency,
-                        HandlerId: null,
-                        ConsumerIdentity: contribution.ConsumerIdentity,
-                        CircuitBreakerOverride: null,
-                        ProviderConfigs: new Dictionary<Type, object>()
-                    ),
-                ],
-                ContractVersion: contribution.MessageContractVersion
-            ))
-        );
 
         // Nothing was captured — mark drained without touching the circuit-breaker
         // registry, which is only registered once AddHeadlessMessaging's core wiring has run.
@@ -448,8 +418,9 @@ public static class SetupMessaging
                         throw new InvalidOperationException(
                             $"Consumer {resolved.ConsumerType.FullName ?? resolved.ConsumerType.Name} is registered "
                                 + $"more than once for message name '{resolved.MessageName}' "
-                                + $"(group '{resolved.Group}', intent {resolved.Lane}) with conflicting settings. "
-                                + "Register the consumer once, or make every registration identical."
+                                + $"(group '{resolved.Group}', intent {resolved.Lane}) with conflicting settings: "
+                                + $"the first registration has {existing.Describe()}; a later one has "
+                                + $"{settings.Describe()}. Register the consumer once, or make every registration identical."
                         );
                     }
 
@@ -539,6 +510,23 @@ public static class SetupMessaging
         public override bool Equals(object? obj)
         {
             return obj is ConsumerRegistrationSettings other && Equals(other);
+        }
+
+        // Names every compared setting so a conflict message shows both sides without the reader diffing sources.
+        public string Describe()
+        {
+            var providerSettings = string.Join(
+                ", ",
+                _providerConfigs.Keys.Select(static type => type.Name).Order(StringComparer.Ordinal)
+            );
+
+            return string.Create(
+                CultureInfo.InvariantCulture,
+                $"concurrency {_concurrency}, consumer identity '{_consumerIdentity}', handler id '{_resolvedHandlerId}', "
+                    + $"contract version '{_messageContractVersion}', inbox retention {_inboxRetention}, "
+                    + $"circuit-breaker override {(_circuitBreaker.HasOverride ? "set" : "none")}, "
+                    + $"provider settings [{providerSettings}]"
+            );
         }
 
         public override int GetHashCode()
