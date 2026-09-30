@@ -3,6 +3,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using Headless.Blobs;
+using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
@@ -305,6 +306,71 @@ public sealed class SignedUrlEndpointTests : TestBase
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.LengthRequired);
+    }
+
+    [Fact]
+    public async Task should_serve_a_tenant_scoped_blob_to_an_anonymous_request_when_the_store_is_tenant_scoped()
+    {
+        // given: the URL is minted under the tenant, and the anonymous request that redeems it carries no tenant
+        await using var app = await SignedUrlTestApp.StartAsync(AbortToken, scopeBlobsByTenant: true);
+        var tenant = app.App.Services.GetRequiredService<ICurrentTenant>();
+        Uri url;
+
+        using (tenant.Change("acme"))
+        {
+            await _UploadAsync(app.DefaultStorage, _Report, "acme-report");
+            url = await _Presigned(app.DefaultStorage)
+                .GetPresignedDownloadUrlAsync(_Report, TimeSpan.FromMinutes(15), AbortToken);
+        }
+
+        using var client = app.CreateClient();
+
+        // when
+        using var response = await client.GetAsync(url, AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync(AbortToken)).Should().Be("acme-report");
+    }
+
+    [Fact]
+    public async Task should_land_a_signed_upload_under_the_minting_tenant_when_the_store_is_tenant_scoped()
+    {
+        // given
+        await using var app = await SignedUrlTestApp.StartAsync(AbortToken, scopeBlobsByTenant: true);
+        var tenant = app.App.Services.GetRequiredService<ICurrentTenant>();
+        Uri url;
+
+        using (tenant.Change("acme"))
+        {
+            url = await _Presigned(app.DefaultStorage)
+                .GetPresignedUploadUrlAsync(_Report, TimeSpan.FromMinutes(15), cancellationToken: AbortToken);
+        }
+
+        using var client = app.CreateClient();
+        using var body = new StringContent("uploaded");
+
+        // when
+        using var response = await client.PutAsync(url, body, AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using (tenant.Change("acme"))
+        {
+            (await app.DefaultStorage.GetBlobContentAsync(_Report, AbortToken)).Should().Be("uploaded");
+        }
+
+        using (tenant.Change("globex"))
+        {
+            (await app.DefaultStorage.ExistsAsync(_Report, AbortToken)).Should().BeFalse();
+        }
+
+        using (app.App.Services.GetRequiredService<ITenantStorageScopeBypass>().BeginBypass())
+        {
+            var physical = new BlobLocation(_Report.Container, "acme/" + _Report.Path);
+            (await app.DefaultStorage.ExistsAsync(physical, AbortToken)).Should().BeTrue();
+        }
     }
 
     private static IPresignedUrlBlobStorage _Presigned(IBlobStorage storage)
