@@ -3,7 +3,6 @@
 using Headless.Messaging;
 using Headless.Messaging.AzureServiceBus;
 using Headless.Messaging.Registration;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
@@ -12,11 +11,11 @@ public sealed class AzureServiceBusMessageBuilderExtensionsTests
     [Fact]
     public void should_store_partition_key_header_contribution()
     {
-        var builder = new BusMessageBuilder<TestMessage>(new ServiceCollection());
+        var builder = new MessageContractBuilder<TestMessage>("tests.asb.message", "v1");
 
-        builder.UseAzureServiceBus(asb => asb.PartitionKey(static message => message.TenantId));
+        builder.OnBus(bus => bus.UseAzureServiceBus(asb => asb.PartitionKey(static message => message.TenantId)));
         var contribution = (
-            (IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single()
+            (IProviderHeaderContributions)builder.Build().Bus.ProviderConfigs.Values.Single()
         ).HeaderContributions.Single();
 
         contribution.HeaderName.Should().Be(AzureServiceBusMessagingHeaders.PartitionKey);
@@ -26,11 +25,11 @@ public sealed class AzureServiceBusMessageBuilderExtensionsTests
     [Fact]
     public void should_reject_partition_key_longer_than_service_bus_limit()
     {
-        var builder = new BusMessageBuilder<TestMessage>(new ServiceCollection());
+        var builder = new MessageContractBuilder<TestMessage>("tests.asb.message", "v1");
 
-        builder.UseAzureServiceBus(asb => asb.PartitionKey(static _ => new string('x', 129)));
+        builder.OnBus(bus => bus.UseAzureServiceBus(asb => asb.PartitionKey(static _ => new string('x', 129))));
         var contribution = (
-            (IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single()
+            (IProviderHeaderContributions)builder.Build().Bus.ProviderConfigs.Values.Single()
         ).HeaderContributions.Single();
 
         var act = () => contribution.Selector(new TestMessage("tenant-a"));
