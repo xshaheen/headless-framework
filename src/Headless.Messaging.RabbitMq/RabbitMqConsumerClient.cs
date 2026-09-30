@@ -148,7 +148,6 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         var consumer = new RabbitMqBasicConsumer(
             _channel!,
             _groupConcurrent,
-            _groupName,
             OnMessageCallback!,
             OnLogCallback!,
             _rabbitMqOptions.CustomHeadersBuilder,

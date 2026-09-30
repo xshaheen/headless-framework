@@ -60,7 +60,6 @@ internal sealed partial class PostgreSqlDataStorage
 
     public async ValueTask<InboxAdmissionResult> AdmitReceivedMessageAsync(
         string name,
-        string group,
         string consumerIdentity,
         string contractVersion,
         MediumMessage message,
@@ -85,12 +84,12 @@ internal sealed partial class PostgreSqlDataStorage
         var insertSql = $"""
             WITH clock AS (SELECT statement_timestamp() AS now)
             INSERT INTO {_receivedTable}(
-                "id","version","name","group","content","intent_type","retries","inline_attempts",
+                "id","version","name","content","intent_type","retries","inline_attempts",
                 "added","expires_at","next_retry_at","locked_until","owner","status_name","message_id","exception_info",
                 "tenant_present","tenant_id","contract_identity","contract_version","consumer_identity","generation",
                 "generation_incarnation_id","lifecycle_id","attempt_id","is_inbox_orphaned","is_current_generation","is_inbox_record","inbox_retention_seconds"
             )
-            SELECT @Id,@Version,@Name,@Group,@Content,@IntentType,0,0,
+            SELECT @Id,@Version,@Name,@Content,@IntentType,0,0,
                 clock.now,NULL,clock.now + (@InitialDispatchGraceSeconds * INTERVAL '1 second'),NULL,NULL,@StatusName,@MessageId,NULL,
                 @TenantPresent,@TenantId,@ContractIdentity,@ContractVersion,@ConsumerIdentity,@Generation,
                 @GenerationIncarnationId,@GenerationIncarnationId,NULL,FALSE,TRUE,TRUE,@InboxRetentionSeconds
@@ -106,7 +105,6 @@ internal sealed partial class PostgreSqlDataStorage
             new NpgsqlParameter("@Id", storageId),
             new NpgsqlParameter("@Version", messagingOptions.Value.Version),
             new NpgsqlParameter("@Name", name),
-            new NpgsqlParameter("@Group", NpgsqlDbType.Varchar) { Value = group ?? (object)DBNull.Value },
             new NpgsqlParameter("@Content", content),
             new NpgsqlParameter("@IntentType", NpgsqlDbType.Smallint) { Value = intentType },
             new NpgsqlParameter(

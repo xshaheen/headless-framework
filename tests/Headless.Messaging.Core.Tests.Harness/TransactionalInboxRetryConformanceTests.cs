@@ -69,13 +69,12 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
             {
                 [Headers.MessageId] = id.ToString(),
                 [Headers.MessageName] = "tests.inbox-retry",
-                [Headers.Group] = "tests.inbox-retry",
+                [Headers.ConsumerIdentity] = "tests.inbox-retry.consumer",
             },
             id
         );
         ValueTask<InboxAdmissionResult> admit() =>
             storage.AdmitReceivedMessageAsync(
-                "tests.inbox-retry",
                 "tests.inbox-retry",
                 "tests.inbox-retry.consumer",
                 "v1",
@@ -244,13 +243,12 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
             {
                 [Headers.MessageId] = id.ToString(),
                 [Headers.MessageName] = "tests.inbox-drain",
-                [Headers.Group] = "tests.inbox-drain",
+                [Headers.ConsumerIdentity] = "tests.inbox-drain.consumer",
             },
             id
         );
         ValueTask<InboxAdmissionResult> admit() =>
             storage.AdmitReceivedMessageAsync(
-                "tests.inbox-drain",
                 "tests.inbox-drain",
                 "tests.inbox-drain.consumer",
                 "v1",

@@ -15,17 +15,17 @@ internal sealed class AzureServiceBusConsumerClientFactory(
 ) : IConsumerClientFactory
 {
     public async Task<IConsumerClient> CreateAsync(
-        string groupName,
-        byte groupConcurrent,
+        string subscriptionName,
+        byte concurrency,
         MessageLane lane,
         CancellationToken cancellationToken = default
     )
     {
-        // Bus groups are Azure subscriptions. Queue groups are framework-local
+        // Bus subscription names are Azure subscriptions. Queue subscription names are framework-local
         // handler selectors; their broker entity names are validated on SubscribeAsync.
         if (lane == MessageLane.Bus)
         {
-            AzureServiceBusConsumerClient.CheckValidSubscriptionName(groupName);
+            AzureServiceBusConsumerClient.CheckValidSubscriptionName(subscriptionName);
         }
 
         AzureServiceBusConsumerClient? client = null;
@@ -34,8 +34,8 @@ internal sealed class AzureServiceBusConsumerClientFactory(
         {
             client = new AzureServiceBusConsumerClient(
                 loggerFactory.CreateLogger<AzureServiceBusConsumerClient>(),
-                groupName,
-                groupConcurrent,
+                subscriptionName,
+                concurrency,
                 asbOptions,
                 serviceProvider,
                 clientPool,

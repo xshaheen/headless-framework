@@ -21,8 +21,8 @@ internal sealed class KafkaConsumerClientFactory(
 ) : IConsumerClientFactory
 {
     public Task<IConsumerClient> CreateAsync(
-        string groupName,
-        byte groupConcurrent,
+        string subscriptionName,
+        byte concurrency,
         MessageLane lane,
         CancellationToken cancellationToken = default
     )
@@ -38,12 +38,12 @@ internal sealed class KafkaConsumerClientFactory(
 
         // Resolve outside the broker try/catch so config errors surface as InvalidOperationException,
         // not as a BrokerConnectionException.
-        var config = consumerRegistry?.ResolveConsumerConfig<KafkaConsumerConfig>(groupName, lane);
+        var config = consumerRegistry?.ResolveConsumerConfig<KafkaConsumerConfig>(subscriptionName, lane);
 
         try
         {
             return Task.FromResult<IConsumerClient>(
-                new KafkaConsumerClient(groupName, groupConcurrent, kafkaOptions, serviceProvider, config)
+                new KafkaConsumerClient(subscriptionName, concurrency, kafkaOptions, serviceProvider, config)
             );
         }
         catch (Exception e) when (e is not OperationCanceledException)

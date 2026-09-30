@@ -19,7 +19,6 @@ namespace Headless.Messaging.RabbitMq;
 internal sealed class RabbitMqBasicConsumer(
     IChannel channel,
     byte concurrent,
-    string groupName,
     Func<TransportMessage, object?, Task> msgCallback,
     Action<LogMessageEventArgs> logCallback,
     Func<BasicDeliverEventArgs, IServiceProvider, List<KeyValuePair<string, string>>>? customHeadersBuilder,
@@ -107,8 +106,6 @@ internal sealed class RabbitMqBasicConsumer(
                     }
                 }
             }
-
-            headers[Headers.Group] = groupName;
         }
         catch (Exception ex)
         {

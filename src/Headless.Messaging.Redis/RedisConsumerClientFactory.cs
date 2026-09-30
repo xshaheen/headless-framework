@@ -15,8 +15,8 @@ internal sealed class RedisConsumerClientFactory(
 ) : IConsumerClientFactory
 {
     public Task<IConsumerClient> CreateAsync(
-        string groupName,
-        byte groupConcurrent,
+        string subscriptionName,
+        byte concurrency,
         MessageLane lane,
         CancellationToken cancellationToken = default
     )
@@ -29,8 +29,8 @@ internal sealed class RedisConsumerClientFactory(
         }
 
         var client = new RedisConsumerClient(
-            groupName,
-            groupConcurrent,
+            subscriptionName,
+            concurrency,
             redis,
             redisOptions,
             logger,

@@ -470,18 +470,18 @@ public sealed class ConsumerCircuitBreakerRegistryTests : TestBase
     }
 
     [Fact]
-    public void register_throws_when_group_already_registered()
+    public void register_throws_when_consumer_already_registered()
     {
         var registry = new ConsumerCircuitBreakerRegistry();
         registry.Register("my-group", new ConsumerCircuitBreakerOptions { FailureThreshold = 3 });
 
         var act = () => registry.Register("my-group", new ConsumerCircuitBreakerOptions { FailureThreshold = 7 });
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*already registered for group 'my-group'*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*already registered for consumer 'my-group'*");
     }
 
     [Fact]
-    public void register_allows_different_groups()
+    public void register_allows_different_consumers()
     {
         var registry = new ConsumerCircuitBreakerRegistry();
 

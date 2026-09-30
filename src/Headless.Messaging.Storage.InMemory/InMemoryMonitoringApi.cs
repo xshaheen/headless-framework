@@ -249,10 +249,11 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                 expression = expression.Where(x => x.Name.Equals(query.Name, StringComparison.OrdinalIgnoreCase));
             }
 
-            if (!string.IsNullOrEmpty(query.Group))
+            // Identities compare ordinally, matching the binary collation the SQL providers store them under.
+            if (!string.IsNullOrEmpty(query.ConsumerIdentity))
             {
                 expression = expression.Where(x =>
-                    x.Group?.Equals(query.Group, StringComparison.OrdinalIgnoreCase) == true
+                    string.Equals(x.ConsumerIdentity, query.ConsumerIdentity, StringComparison.Ordinal)
                 );
             }
 
@@ -278,7 +279,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                     return new MessageView
                     {
                         Added = x.Added,
-                        Group = x.Group,
+                        ConsumerIdentity = x.ConsumerIdentity,
                         StorageId = x.StorageId,
                         MessageId = x.Origin.Id,
                         Version = "N/A",

@@ -399,7 +399,6 @@ public abstract class InboxStorageConformanceTests : TestBase
         var error = await Record.ExceptionAsync(async () =>
             await storage.AdmitReceivedMessageAsync(
                 string.Equals(parameter, "name", StringComparison.Ordinal) ? value! : "orders.created",
-                "group",
                 string.Equals(parameter, "consumerIdentity", StringComparison.Ordinal) ? value! : "orders.consumer",
                 string.Equals(parameter, "contractVersion", StringComparison.Ordinal) ? value! : "v1",
                 message,
@@ -445,7 +444,6 @@ public abstract class InboxStorageConformanceTests : TestBase
         ValueTask<InboxAdmissionResult> admit() =>
             storage.AdmitReceivedMessageAsync(
                 name,
-                "group",
                 consumer,
                 version,
                 message,
@@ -491,7 +489,7 @@ public abstract class InboxStorageConformanceTests : TestBase
                 {
                     [Headers.MessageId] = Guid.NewGuid().ToString(),
                     [Headers.MessageName] = "orders.created",
-                    [Headers.Group] = "group",
+                    [Headers.ConsumerIdentity] = "orders.consumer",
                 },
                 "payload"
             ),
@@ -504,7 +502,6 @@ public abstract class InboxStorageConformanceTests : TestBase
     ) =>
         storage.AdmitReceivedMessageAsync(
             "orders.created",
-            "group",
             "orders.consumer",
             "v1",
             message,

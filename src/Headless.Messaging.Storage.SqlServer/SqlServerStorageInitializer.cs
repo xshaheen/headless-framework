@@ -300,11 +300,6 @@ internal sealed class SqlServerStorageInitializer(
                         [Id] [uniqueidentifier] NOT NULL,
                         [Version] [nvarchar](20) NOT NULL,
                         [Name] [nvarchar](200) NOT NULL,
-                        [Group] [nvarchar](200) NULL,
-                        -- #19 — PERSISTED ISNULL collapses a NULL [Group] to '' so the unique index below
-                        -- converges NULL-group redeliveries to one row, matching the PostgreSQL
-                        -- COALESCE("Group", '') index (a plain nullable [Group] treats each NULL as distinct).
-                        [GroupCoalesced] AS ISNULL([Group], N'') PERSISTED,
                         [Content] [nvarchar](max) NULL,
                         [IntentType] [smallint] NOT NULL,
                         [Retries] [int] NOT NULL,
@@ -387,9 +382,9 @@ internal sealed class SqlServerStorageInitializer(
             END CATCH;
 
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_NonInboxTransportIdentity' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
-                    EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_NonInboxTransportIdentity]
-                        ON {GetReceivedTableName()} ([Version],[MessageId],[GroupCoalesced],[IntentType]) WHERE [IsInboxRecord]=0');
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_NonInboxConsumerIdentity' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                    EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_NonInboxConsumerIdentity]
+                        ON {GetReceivedTableName()} ([Version],[MessageId],[ConsumerIdentity],[IntentType]) WHERE [IsInboxRecord]=0');
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;

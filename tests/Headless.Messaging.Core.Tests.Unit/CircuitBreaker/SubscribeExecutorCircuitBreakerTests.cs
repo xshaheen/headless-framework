@@ -22,8 +22,11 @@ namespace Tests.CircuitBreaker;
 public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
 {
     private const string _MessageName = "cb.test.messageName";
-    private const string _GroupName = "cb.test.group";
-    private const string _CircuitBreakerGroupName = "0:cb.test.group";
+    private const string _ConsumerIdentity = "cb.test.consumer";
+
+    // The circuit follows the consumer identity the delivery carries, not the subscription its client consumes.
+    private const string _SubscriptionName = "cb.test.subscription";
+    private const string _CircuitKey = "0:cb.test.consumer";
 
     private static readonly IServiceProvider _EmptyScope = new ServiceCollection().BuildServiceProvider();
 
@@ -37,7 +40,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         {
             [Headers.MessageId] = Guid.NewGuid().ToString(),
             [Headers.MessageName] = _MessageName,
-            [Headers.Group] = _GroupName,
+            [Headers.ConsumerIdentity] = _ConsumerIdentity,
         };
 
         return new MediumMessage
@@ -67,7 +70,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             ImplTypeInfo = typeof(CbTestConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,
             MessageName = _MessageName,
-            GroupName = _GroupName,
+            GroupName = _SubscriptionName,
             Parameters = consumeMethod
                 .GetParameters()
                 .Select(p => new ParameterDescriptor
@@ -201,7 +204,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), AbortToken);
 
         // then
-        await cbMock.Received(1).ReportFailureAsync(_CircuitBreakerGroupName, original, Arg.Any<CancellationToken>());
+        await cbMock.Received(1).ReportFailureAsync(_CircuitKey, original, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -220,7 +223,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), AbortToken);
 
         // then
-        await cbMock.Received(1).ReportSuccessAsync(_CircuitBreakerGroupName, CancellationToken.None);
+        await cbMock.Received(1).ReportSuccessAsync(_CircuitKey, CancellationToken.None);
     }
 
     [Fact]
@@ -244,7 +247,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await cbMock
             .Received(1)
             .ReportFailureAsync(
-                _CircuitBreakerGroupName,
+                _CircuitKey,
                 Arg.Is<Exception>(e => e is HttpRequestException),
                 Arg.Any<CancellationToken>()
             );
@@ -304,7 +307,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), AbortToken);
 
         // then
-        cbMock.Received(1).ReleaseHalfOpenProbe(_CircuitBreakerGroupName, 57L);
+        cbMock.Received(1).ReleaseHalfOpenProbe(_CircuitKey, 57L);
         await cbMock.DidNotReceiveWithAnyArgs().ReportSuccessAsync(default!, AbortToken);
         await cbMock.DidNotReceiveWithAnyArgs().ReportFailureAsync(default!, default!, AbortToken);
     }
@@ -350,7 +353,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), AbortToken);
 
         // then
-        cbMock.Received(1).ReleaseHalfOpenProbe(_CircuitBreakerGroupName, 0L);
+        cbMock.Received(1).ReleaseHalfOpenProbe(_CircuitKey, 0L);
         await cbMock.DidNotReceiveWithAnyArgs().ReportSuccessAsync(default!, AbortToken);
         await cbMock.DidNotReceiveWithAnyArgs().ReportFailureAsync(default!, default!, AbortToken);
     }
@@ -383,7 +386,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             );
-        await cbMock.Received(1).ReportSuccessAsync(_CircuitBreakerGroupName, CancellationToken.None);
+        await cbMock.Received(1).ReportSuccessAsync(_CircuitKey, CancellationToken.None);
     }
 }
 

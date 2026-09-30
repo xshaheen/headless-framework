@@ -29,7 +29,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         {
             [Headers.MessageId] = Guid.NewGuid().ToString(),
             [Headers.MessageName] = "test.messageName",
-            [Headers.Group] = "test-group",
+            [Headers.ConsumerIdentity] = "tests.subscribe-retry",
         };
 
         return new MediumMessage
@@ -129,7 +129,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     }
 
     [Fact]
-    public async Task persisted_inbox_retry_should_resolve_by_stable_identity_after_group_refactor()
+    public async Task persisted_inbox_retry_should_resolve_by_inbox_key_not_by_the_identity_header()
     {
         var storage = Substitute.For<IDataStorage>();
         var invoker = Substitute.For<ISubscribeInvoker>();
@@ -142,7 +142,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             new MessagingOptions { RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly }
         );
         var message = _CreateMediumMessage();
-        message.Origin.Headers[Headers.Group] = "obsolete-group";
+        message.Origin.Headers[Headers.ConsumerIdentity] = "obsolete.consumer";
         message.InboxKey = new InboxKey(
             TenantId: null,
             message.Origin.Id,
@@ -159,7 +159,9 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         await invoker
             .Received(1)
             .InvokeAsync(
-                Arg.Is<ConsumerContext>(context => context.ConsumerDescriptor.GroupName == "test-group"),
+                Arg.Is<ConsumerContext>(context =>
+                    context.ConsumerDescriptor.ConsumerIdentity == "tests.subscribe-retry"
+                ),
                 Arg.Any<CancellationToken>()
             );
     }

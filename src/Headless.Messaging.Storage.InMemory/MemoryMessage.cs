@@ -9,7 +9,7 @@ internal sealed class MemoryMessage : MediumMessage
 {
     public required string Name { get; init; }
 
-    public string Group { get; init; } = null!;
+    public string ConsumerIdentity { get; init; } = null!;
 
     public StatusName StatusName { get; set; }
 

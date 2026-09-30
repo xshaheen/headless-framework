@@ -6,13 +6,13 @@ using FluentValidation;
 namespace Headless.Messaging.CircuitBreaker;
 
 /// <summary>
-/// Stores per-consumer-group circuit breaker overrides registered via
+/// Stores per-consumer circuit breaker overrides registered via
 /// <c>IConsumerBuilderBase&lt;T&gt;.WithCircuitBreaker()</c>.
 /// </summary>
 /// <remarks>
 /// This registry is an internal singleton. Both the consumer builder (at startup) and the
 /// <see cref="ICircuitBreakerStateManager"/> (at runtime) reference the same instance so
-/// per-group overrides are always visible without modifying <c>ConsumerMetadata</c>.
+/// per-consumer overrides are always visible without modifying <c>ConsumerMetadata</c>.
 /// </remarks>
 internal sealed class ConsumerCircuitBreakerRegistry
 {
@@ -20,65 +20,65 @@ internal sealed class ConsumerCircuitBreakerRegistry
     private readonly ConcurrentDictionary<string, ConsumerCircuitBreakerOptions> _options = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// Registers circuit breaker options for the specified consumer group.
+    /// Registers circuit breaker options for the specified consumer.
     /// </summary>
-    /// <param name="groupName">The consumer group name (must not be null or whitespace).</param>
-    /// <param name="options">The circuit breaker overrides to associate with the group.</param>
+    /// <param name="consumerKey">The consumer name (must not be null or whitespace).</param>
+    /// <param name="options">The circuit breaker overrides to associate with the consumer.</param>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when a circuit breaker override for <paramref name="groupName"/> is already registered.
+    /// Thrown when a circuit breaker override for <paramref name="consumerKey"/> is already registered.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Thrown when <paramref name="options"/> contains invalid values.
     /// </exception>
-    internal void Register(string groupName, ConsumerCircuitBreakerOptions options)
+    internal void Register(string consumerKey, ConsumerCircuitBreakerOptions options)
     {
 #pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         _Validator.ValidateAndThrow(options);
 #pragma warning restore MA0045
 
-        if (!_options.TryAdd(groupName, options))
+        if (!_options.TryAdd(consumerKey, options))
         {
             throw new InvalidOperationException(
-                $"Circuit breaker already registered for group '{groupName}'. "
-                    + "Each consumer group can only have one circuit breaker override. "
-                    + "Check that you haven't configured the same group via both "
+                $"Circuit breaker already registered for consumer '{consumerKey}'. "
+                    + "Each consumer can only have one circuit breaker override. "
+                    + "Check that you haven't configured the same consumer via both "
                     + "ForMessage<T>().Bus.Consumer<TConsumer>(...)/Queue.Consumer<TConsumer>(...) registrations."
             );
         }
     }
 
     /// <summary>
-    /// Registers or updates circuit breaker options for the specified consumer group.
-    /// Used internally by builders that defer registration until the final group name is known.
+    /// Registers or updates circuit breaker options for the specified consumer.
+    /// Used internally by builders that defer registration until the final consumer name is known.
     /// </summary>
-    internal void RegisterOrUpdate(string groupName, ConsumerCircuitBreakerOptions options)
+    internal void RegisterOrUpdate(string consumerKey, ConsumerCircuitBreakerOptions options)
     {
 #pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         _Validator.ValidateAndThrow(options);
 #pragma warning restore MA0045
-        _options[groupName] = options;
+        _options[consumerKey] = options;
     }
 
     /// <summary>
-    /// Removes a previously registered override for the specified consumer group, if any.
+    /// Removes a previously registered override for the specified consumer, if any.
     /// </summary>
-    internal void Remove(string groupName)
+    internal void Remove(string consumerKey)
     {
-        _options.TryRemove(groupName, out _);
+        _options.TryRemove(consumerKey, out _);
     }
 
     /// <summary>
-    /// Attempts to retrieve circuit breaker overrides for the specified consumer group.
+    /// Attempts to retrieve circuit breaker overrides for the specified consumer.
     /// </summary>
-    /// <param name="groupName">The consumer group name.</param>
+    /// <param name="consumerKey">The consumer name.</param>
     /// <param name="options">
     /// The registered options, or <see langword="null"/> if no overrides are configured.
     /// </param>
     /// <returns>
-    /// <see langword="true"/> if overrides exist for the group; otherwise <see langword="false"/>.
+    /// <see langword="true"/> if overrides exist for the consumer; otherwise <see langword="false"/>.
     /// </returns>
-    internal bool TryGet(string groupName, out ConsumerCircuitBreakerOptions? options)
+    internal bool TryGet(string consumerKey, out ConsumerCircuitBreakerOptions? options)
     {
-        return _options.TryGetValue(groupName, out options);
+        return _options.TryGetValue(consumerKey, out options);
     }
 }

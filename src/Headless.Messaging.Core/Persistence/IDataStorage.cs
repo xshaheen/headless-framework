@@ -49,7 +49,6 @@ public interface IDataStorage
     /// </summary>
     async ValueTask<InboxAdmissionResult> AdmitReceivedMessageAsync(
         string name,
-        string group,
         string consumerIdentity,
         string contractVersion,
         MediumMessage message,
@@ -58,7 +57,8 @@ public interface IDataStorage
         CancellationToken cancellationToken = default
     )
     {
-        var stored = await StoreReceivedMessageAsync(name, group, message, cancellationToken).ConfigureAwait(false);
+        var stored = await StoreReceivedMessageAsync(name, consumerIdentity, message, cancellationToken)
+            .ConfigureAwait(false);
         return new InboxAdmissionResult(InboxAdmissionDisposition.Winner, stored);
     }
 
@@ -381,14 +381,14 @@ public interface IDataStorage
     /// and replay messages that caused unhandled exceptions.
     /// </summary>
     /// <param name="name">The message name (topic or queue name) as received from the broker.</param>
-    /// <param name="group">The consumer group that received the message.</param>
+    /// <param name="consumerIdentity">The identity of the consumer the message was delivered to; received rows are unique per message ID and consumer identity.</param>
     /// <param name="message">The failed received message envelope, including serialized content and delivery intent.</param>
     /// <param name="exceptionInfo">Optional serialized exception details to persist alongside the failed row.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns><see langword="true"/> when the row was stored; <see langword="false"/> when storage was skipped or failed.</returns>
     ValueTask<bool> StoreReceivedExceptionMessageAsync(
         string name,
-        string group,
+        string consumerIdentity,
         MediumMessage message,
         string? exceptionInfo = null,
         CancellationToken cancellationToken = default
@@ -398,14 +398,14 @@ public interface IDataStorage
     /// Stores a failed received message using raw serialized content when no <c>MediumMessage</c> envelope is available.
     /// </summary>
     /// <param name="name">The message name (topic or queue name) as received from the broker.</param>
-    /// <param name="group">The consumer group that received the message.</param>
+    /// <param name="consumerIdentity">The identity of the consumer the message was delivered to; received rows are unique per message ID and consumer identity.</param>
     /// <param name="content">The raw serialized message body.</param>
     /// <param name="exceptionInfo">Optional serialized exception details to persist alongside the failed row.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns><see langword="true"/> when the row was stored; <see langword="false"/> when storage was skipped or failed.</returns>
     ValueTask<bool> StoreReceivedExceptionMessageAsync(
         string name,
-        string group,
+        string consumerIdentity,
         string content,
         string? exceptionInfo = null,
         CancellationToken cancellationToken = default
@@ -415,13 +415,13 @@ public interface IDataStorage
     /// Persists an inbound message envelope to the received table and returns the stored row with its assigned <c>StorageId</c>.
     /// </summary>
     /// <param name="name">The message name (topic or queue name) as received from the broker.</param>
-    /// <param name="group">The consumer group that received the message.</param>
+    /// <param name="consumerIdentity">The identity of the consumer the message was delivered to; received rows are unique per message ID and consumer identity.</param>
     /// <param name="message">The received message envelope to persist.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The stored envelope with <c>StorageId</c> populated by the storage provider.</returns>
     ValueTask<MediumMessage> StoreReceivedMessageAsync(
         string name,
-        string group,
+        string consumerIdentity,
         MediumMessage message,
         CancellationToken cancellationToken = default
     );
@@ -431,20 +431,20 @@ public interface IDataStorage
     /// <c>MediumMessage</c> envelope before delegating to the primary overload.
     /// </summary>
     /// <param name="name">The message name (topic or queue name) as received from the broker.</param>
-    /// <param name="group">The consumer group that received the message.</param>
+    /// <param name="consumerIdentity">The identity of the consumer the message was delivered to; received rows are unique per message ID and consumer identity.</param>
     /// <param name="content">The raw message to wrap and persist.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The stored envelope with <c>StorageId</c> populated by the storage provider.</returns>
     ValueTask<MediumMessage> StoreReceivedMessageAsync(
         string name,
-        string group,
+        string consumerIdentity,
         Message content,
         CancellationToken cancellationToken = default
     )
     {
         return StoreReceivedMessageAsync(
             name,
-            group,
+            consumerIdentity,
             new MediumMessage
             {
                 StorageId = Guid.Empty,

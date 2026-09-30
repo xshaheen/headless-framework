@@ -227,7 +227,7 @@ internal sealed class RedisConsumerClient(
                 TransportMessage message;
                 try
                 {
-                    message = RedisMessage.Create(entry, groupId);
+                    message = RedisMessage.Create(entry);
                 }
                 catch (Exception ex)
                 {

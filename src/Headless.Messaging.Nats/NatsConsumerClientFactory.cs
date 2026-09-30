@@ -12,13 +12,13 @@ internal sealed class NatsConsumerClientFactory(
 ) : IConsumerClientFactory
 {
     public async Task<IConsumerClient> CreateAsync(
-        string groupName,
-        byte groupConcurrent,
+        string subscriptionName,
+        byte concurrency,
         MessageLane lane,
         CancellationToken cancellationToken = default
     )
     {
-        var client = new NatsConsumerClient(groupName, groupConcurrent, natsOptions, serviceProvider, lane: lane);
+        var client = new NatsConsumerClient(subscriptionName, concurrency, natsOptions, serviceProvider, lane: lane);
         try
         {
             await client.ConnectAsync(cancellationToken).ConfigureAwait(false);

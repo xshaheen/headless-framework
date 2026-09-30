@@ -39,14 +39,17 @@ public sealed class MessageExtensionTest
     }
 
     [Fact]
-    public void get_group_test()
+    public void get_consumer_identity_test()
     {
-        var group = Guid.NewGuid().ToString();
-        var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.Group] = group };
+        var consumerIdentity = Guid.NewGuid().ToString();
+        var header = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.ConsumerIdentity] = consumerIdentity,
+        };
         var message = new Message(header, null);
 
-        message.GetGroup().Should().NotBeNull();
-        message.GetGroup().Should().Be(group);
+        message.GetConsumerIdentity().Should().NotBeNull();
+        message.GetConsumerIdentity().Should().Be(consumerIdentity);
     }
 
     [Fact]

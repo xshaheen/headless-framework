@@ -319,7 +319,7 @@ Table names are not configurable; each provider creates its own fixed set inside
 | `messaging_inbox_audit` | `MessagingInboxAudit` | Operator and cleanup audit |
 | `messaging_schema_state` | `MessagingSchemaState` | Schema readiness versions |
 
-Columns, indexes, and constraints follow the same split: snake_case on PostgreSQL (`status_name`, `next_retry_at`, `idx_messaging_received_status_name_added`) and PascalCase on SQL Server (`StatusName`, `NextRetryAt`). Raw SQL against the PostgreSQL tables needs no identifier quoting except for the `"group"` column, whose name is a reserved word.
+Columns, indexes, and constraints follow the same split: snake_case on PostgreSQL (`status_name`, `next_retry_at`, `idx_messaging_received_status_name_added`) and PascalCase on SQL Server (`StatusName`, `NextRetryAt`). Raw SQL against the PostgreSQL tables needs no identifier quoting. A received row belongs to one consumer: both providers key it by message ID plus `consumer_identity` / `ConsumerIdentity`, so a message delivered to two consumers keeps one row per consumer, and the dashboard filters received rows by that identity.
 
 ## Headless.Messaging.Abstractions
 
@@ -526,7 +526,7 @@ Storage providers may also implement `IGracefulLeaseReleaseStorage`. Core detect
 
 The four `IDataStorage` state-transition methods — `ChangePublishStateAsync`, `ChangePublishRetryStateAsync`, `ChangeReceiveStateAsync`, `ChangeReceiveRetryStateAsync` — take a `MessageContentWrite` declaring whether the transition also rewrites the persisted envelope. `MessageContentWrite.Preserve`, the default on the two non-retry methods, skips re-serializing `MediumMessage.Origin` and omits the content column from the update, because a status transition does not change the envelope. `MessageContentWrite.Refresh` re-serializes `Origin`, writes it to the row, and refreshes `MediumMessage.Content` so the caller's copy keeps matching the row. A caller that mutated `Origin` before the write — the failure paths, which stamp the exception type onto the headers — must pass `Refresh`, or the mutation never reaches storage. Implementors owe the invariant `persisted Content == Serialize(Origin)` in both directions: `Preserve` must leave the stored envelope byte-identical even when the caller's copy has since drifted, and a provider that keeps the envelope as anything other than serialized bytes must update every representation of it on `Refresh`.
 
-The public consumer startup contracts accept trailing optional cancellation tokens: both `IConsumerClientFactory.CreateAsync(...)` overload shapes, `IConsumerClient.FetchMessageNamesAsync(...)`, and `IConsumerClient.SubscribeAsync(...)`. Core passes the host-stopping token to metadata startup and a linked group token to worker creation and subscription. Implementations must let `OperationCanceledException` escape unchanged.
+`IConsumerClientFactory.CreateAsync(subscriptionName, concurrency, lane, ...)` receives the consumer identity on the Bus lane and the message name on the Queue lane. Transports do not stamp the consumer on received envelopes; Core stamps `headless-msg-consumer-identity` once it routes the delivery. The public consumer startup contracts accept trailing optional cancellation tokens: `IConsumerClientFactory.CreateAsync(...)`, `IConsumerClient.FetchMessageNamesAsync(...)`, and `IConsumerClient.SubscribeAsync(...)`. Core passes the host-stopping token to metadata startup and a linked group token to worker creation and subscription. Implementations must let `OperationCanceledException` escape unchanged.
 
 The blessed cross-package SPI (the contracts that storage providers, transports, and dashboards resolve or implement) lives in the public `Headless.Messaging.Runtime` namespace: `IProcessingServer` (implement to attach a long-running unit to the bootstrap sequence) and `IConsumerServiceSelector` / `MethodMatcherCache` (inspect the resolved consumer topology). The `TransportNaming` (`WildcardToRegex`, `Normalize`) and `RuntimeTypeInspection` (`IsComplexType`, `DeclaresFieldOfType`) helpers in the same namespace are `internal` and shared with the first-party transports via `InternalsVisibleTo` — they are not part of the NuGet contract. These types were previously exposed under `Headless.Messaging.Internal`; that namespace now holds only genuine implementation detail. The monitoring status is a typed enum — `StatusName` (in `Headless.Messaging.Monitoring`, next to `MessageView`/`MessageQuery`) — so `MessageView.StatusName` and the `MessageQuery.StatusName` filter are compile-time safe. Storage providers persist and compare the enum member names verbatim as strings, so the SQL column contract is unchanged, and the dashboard serializes the status by name to keep the SPA wire shape stable.
 
@@ -915,9 +915,9 @@ messaging.AddPublishMiddlewareFor<CorrelationPublishMiddleware, OrderPlaced>(Mes
 
 ### Receive Middleware
 
-Receive middleware intercepts the raw transport envelope (`ReceiveContext.Headers`, `ReceiveContext.Body`) before payload deserialization. It runs per delivery with the consumer identity known (`MessageType`, `ConsumerContractVersion`, `MessageName`, `GroupName`, `Lane`).
+Receive middleware intercepts the raw transport envelope (`ReceiveContext.Headers`, `ReceiveContext.Body`) before payload deserialization. It runs per delivery with the consumer identity known (`MessageType`, `ConsumerContractVersion`, `MessageName`, `ConsumerIdentity`, `Lane`).
 
-- **Context views & copy-on-write:** `context.Headers` and `context.Body` provide read-only views of the current envelope as subsequent components will see it. Calling `context.SetHeader(key, value)`, `context.RemoveHeader(key)`, or `context.ReplaceBody(bytes)` performs copy-on-write modification. Identity headers (`headless-msg-id`, `headless-msg-name`, `headless-msg-group`) and `headless-exception` cannot be modified.
+- **Context views & copy-on-write:** `context.Headers` and `context.Body` provide read-only views of the current envelope as subsequent components will see it. Calling `context.SetHeader(key, value)`, `context.RemoveHeader(key)`, or `context.ReplaceBody(bytes)` performs copy-on-write modification. Identity headers (`headless-msg-id`, `headless-msg-name`, `headless-msg-consumer-identity`) and `headless-exception` cannot be modified.
 - **Outcomes:** Middleware controls execution via `next()`, `context.Skip(reason)`, or `context.Reject(reason, cause)`.
 - **Outcome ownership:** `ConsumerRegister` owns all transport settlement, storage writes, and circuit-breaker signals:
   - `Accept`: `next()` completes; persists admitted message, commits transport, dispatches to consumer.
@@ -994,15 +994,15 @@ Message ordering guarantees depend on the transport provider and configuration:
 
 ## Circuit Breaker
 
-Per-consumer-group circuit breaker that pauses transport consumption when a dependency is unhealthy, preventing message-retry storms.
+Per-consumer circuit breaker that pauses transport consumption when a dependency is unhealthy, preventing message-retry storms. A circuit belongs to one consumer identity on one lane: it opens on that consumer's failures and pauses every client that delivers to it.
 
 **State machine:** Closed → Open (pause transport) → HalfOpen (probe) → Closed (resume) or Open (re-trip).
 
 Open duration escalates exponentially on repeated trips and resets after consecutive successful close cycles.
 
-Persisted received retries share the same lane-qualified probe generation as transport delivery. Open rows are durably deferred to the current circuit generation's next-probe boundary; in HalfOpen, one row or transport delivery owns the probe, while sibling claims retain their exact leases for normal store-authoritative expiry without blocking healthy pickup. Healthy groups in the same claimed batch dispatch before circuit dispositions, so an open group cannot monopolize retry pickup.
+Persisted received retries share the same lane-qualified probe generation as transport delivery. Open rows are durably deferred to the current circuit generation's next-probe boundary; in HalfOpen, one row or transport delivery owns the probe, while sibling claims retain their exact leases for normal store-authoritative expiry without blocking healthy pickup. Healthy consumers in the same claimed batch dispatch before circuit dispositions, so an open consumer cannot monopolize retry pickup.
 
-Pause and resume work carries a monotonic circuit epoch, and a consumer-group handle applies intents
+Pause and resume work carries a monotonic circuit epoch, and each consumer client handle applies intents
 in epoch order. A resume launched before `ForceOpenAsync`, another Open transition, or a restart
 pre-pause cannot reopen a newer Open generation. Force-open therefore leaves the transport paused
 even when recovery was already in flight.
@@ -1012,7 +1012,7 @@ even when recovery was already in flight.
 ```csharp
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    // Global circuit breaker (applies to all consumer groups)
+    // Global circuit breaker (applies to all consumers)
     setup.Options.CircuitBreaker.FailureThreshold = 5; // consecutive transient failures to trip
     setup.Options.CircuitBreaker.OpenDuration = TimeSpan.FromSeconds(30); // initial open duration
     setup.Options.CircuitBreaker.MaxOpenDuration = TimeSpan.FromSeconds(240); // cap after escalation
@@ -1064,8 +1064,8 @@ Default `CircuitBreakerDefaults.IsTransient` covers: `TimeoutException`, `HttpRe
 
 ### Observability
 
-- **OTel counter**: `messaging.circuit_breaker.trips` (tagged by group)
-- **OTel histogram**: `messaging.circuit_breaker.open_duration` (tagged by group)
+- **OTel counter**: `messaging.circuit_breaker.trips` (tagged `messaging.consumer.group.name` with the lane-qualified consumer identity)
+- **OTel histogram**: `messaging.circuit_breaker.open_duration` (same tag)
 - State transitions logged at Warning level
 
 ### Programmatic Control
@@ -1075,24 +1075,24 @@ Inject `ICircuitBreakerMonitor` for runtime observation and manual recovery:
 ```csharp
 var monitor = app.Services.GetRequiredService<ICircuitBreakerMonitor>();
 
-// Enumerate registered group names (available before any messages are processed)
-IReadOnlySet<string> groups = monitor.KnownGroups;
+// Enumerate the lane-qualified circuit keys of registered consumers (available before any messages are processed)
+IReadOnlySet<string> consumers = monitor.KnownConsumers;
 
 // Check state
-var states = monitor.GetAllStates(); // all groups with current state
-var isOpen = monitor.IsOpen(MessageLane.Bus, "payments");
-var state = monitor.GetState(MessageLane.Bus, "payments"); // Closed, Open, HalfOpen, or null if unregistered
+var states = monitor.GetAllStates(); // every consumer circuit with its current state
+var isOpen = monitor.IsOpen(MessageLane.Bus, "payments.handler");
+var state = monitor.GetState(MessageLane.Bus, "payments.handler"); // Closed, Open, HalfOpen, or null if unregistered
 
 // Rich snapshot with escalation and timing details
-CircuitBreakerSnapshot? snapshot = monitor.GetSnapshot(MessageLane.Bus, "payments");
+CircuitBreakerSnapshot? snapshot = monitor.GetSnapshot(MessageLane.Bus, "payments.handler");
 
 // snapshot.State, snapshot.EscalationLevel, snapshot.ConsecutiveFailures,
 // snapshot.FailureThreshold, snapshot.OpenedAt, snapshot.EstimatedRemainingOpenDuration,
 // snapshot.EffectiveOpenDuration
 
 // Manual recovery (operator/agent action)
-var wasReset = await monitor.ResetAsync(MessageLane.Bus, "payments"); // true if reset performed
-var wasOpened = await monitor.ForceOpenAsync(MessageLane.Bus, "payments"); // true if force-opened
+var wasReset = await monitor.ResetAsync(MessageLane.Bus, "payments.handler"); // true if reset performed
+var wasOpened = await monitor.ForceOpenAsync(MessageLane.Bus, "payments.handler"); // true if force-opened
 ```
 
 Inject `IRetryProcessorMonitor` for adaptive retry backpressure inspection and reset:
@@ -1235,7 +1235,7 @@ Spans and metrics for messaging publish, persist, consume, and subscriber-invoke
 
 - The Meter/ActivitySource is named `Headless.Messaging` — exposed as the `public const string MessagingDiagnostics.SourceName`.
 - Typed `AddMessagingInstrumentation()` extensions on both `TracerProviderBuilder` (namespace `OpenTelemetry.Trace`) and `MeterProviderBuilder` (namespace `OpenTelemetry.Metrics`) — thin `AddSource`/`AddMeter` wrappers over the const. Subscribing by name is equally supported.
-- Instrument names + standard dimensions follow the OpenTelemetry messaging **semconv** (`messaging.publish.messages`, `messaging.consume.duration`, dims `messaging.operation` / `messaging.system` / `messaging.consumer.group` / `error.type` / `messaging.subscriber` / `messaging.persistence.type`); framework-specific span attributes are bespoke `headless.messaging.*`.
+- Instrument names + standard dimensions follow the OpenTelemetry messaging **semconv** (`messaging.publish.messages`, `messaging.consume.duration`, dims `messaging.operation` / `messaging.system` / `messaging.consumer.group.name` (valued with the consumer identity) / `error.type` / `messaging.subscriber` / `messaging.persistence.type`); framework-specific span attributes are bespoke `headless.messaging.*`.
 - Inbox lifecycle counters are `messaging.inbox.duplicates`, `.attempts`, `.recoveries`, `.terminal`, `.replays`, `.retention`, and `.capabilities`. Their fixed labels are registered consumer identity, lane, finite outcome, tier, and provider; tenant is present only with the explicit cardinality opt-in.
 - W3C `traceparent` + baggage are injected on publish headers and extracted on consume — **always on whenever any messaging telemetry is enabled**, no toggle. A metrics-only service (meter subscribed, no trace listener) — or a sampled-out publish — **relays** the incoming/ambient parent context verbatim onto outgoing messages instead of dropping it, so trace continuity survives non-tracing hops; a consumed message's context flows to publishes made from its handler even without a span. A fully unobserved host (no listeners at all) pays nothing and forwards nothing. The framework never fabricates a root: relay happens only when a parent actually exists. The app's OpenTelemetry setup must assign `Propagators.DefaultTextMapPropagator` (the standard `AddOpenTelemetry().WithTracing()` does this).
 - `IActivityTagEnricher` extension point, invoked **synchronously at span start** (`void Enrich(Activity activity, in MessagingEnrichmentContext context)`), with per-enricher exception isolation.
@@ -1283,9 +1283,9 @@ All instruments register on the `Headless.Messaging` meter. Names and standard d
 | `messaging.publish.messages` | Counter | `messaging.operation`, `messaging.system` |
 | `messaging.publish.errors` | Counter | `messaging.operation`, `messaging.system`, `error.type` |
 | `messaging.publish.duration` | Histogram (ms) | `messaging.operation`, `messaging.system` |
-| `messaging.consume.messages` | Counter | `messaging.operation`, `messaging.system`, `messaging.consumer.group` |
-| `messaging.consume.errors` | Counter | `messaging.operation`, `messaging.system`, `error.type`, `messaging.consumer.group` |
-| `messaging.consume.duration` | Histogram (ms) | `messaging.operation`, `messaging.system`, `messaging.consumer.group` |
+| `messaging.consume.messages` | Counter | `messaging.operation`, `messaging.system`, `messaging.consumer.group.name` |
+| `messaging.consume.errors` | Counter | `messaging.operation`, `messaging.system`, `error.type`, `messaging.consumer.group.name` |
+| `messaging.consume.duration` | Histogram (ms) | `messaging.operation`, `messaging.system`, `messaging.consumer.group.name` |
 | `messaging.subscriber.invocations` | Counter | `messaging.subscriber`, `messaging.operation` |
 | `messaging.subscriber.errors` | Counter | `messaging.subscriber`, `messaging.operation`, `error.type` |
 | `messaging.subscriber.duration` | Histogram (ms) | `messaging.subscriber`, `messaging.operation` |

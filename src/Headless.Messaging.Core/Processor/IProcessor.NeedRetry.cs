@@ -535,13 +535,13 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                     {
                         _RecordInboxRecovery(message, InboxMetricOutcome.Routable);
                     }
-                    message.Origin.Headers[Headers.Group] = descriptor.GroupName;
+                    message.Origin.Headers[Headers.ConsumerIdentity] = descriptor.ResolvedConsumerIdentity;
                 }
 
-                var group = message.Origin.GetGroup();
-                var decision = group is null
+                var consumerIdentity = message.Origin.GetConsumerIdentity();
+                var decision = consumerIdentity is null
                     ? CircuitRetryDecision.Closed
-                    : _GetCircuitRetryDecision(state.Key.Lane, group);
+                    : _GetCircuitRetryDecision(state.Key.Lane, consumerIdentity);
                 if (decision.Kind is CircuitRetryDecisionKind.Closed)
                 {
                     healthy.Add(message);
@@ -551,9 +551,9 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                 skippedCircuitOpen++;
                 if (_logger.IsEnabled(LogLevel.Debug))
                 {
-                    _logger.RetrySkippedBecauseCircuitOpen(message.StorageId, LogSanitizer.Sanitize(group));
+                    _logger.RetrySkippedBecauseCircuitOpen(message.StorageId, LogSanitizer.Sanitize(consumerIdentity));
                 }
-                circuitWork.Add(new CircuitRetryWork(message, group!, decision));
+                circuitWork.Add(new CircuitRetryWork(message, consumerIdentity!, decision));
             }
         }
         catch
@@ -579,7 +579,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                 {
                     new HalfOpenProbeHandle(
                         _circuitBreakerStateManager,
-                        CircuitBreakerGroupKeys.For(state.Key.Lane, work.Group),
+                        CircuitBreakerKeys.For(state.Key.Lane, work.ConsumerIdentity),
                         work
                     ).ReleaseUnlessTransferred();
                 }
@@ -593,7 +593,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
             .Where(static work => work.Decision.Kind is CircuitRetryDecisionKind.ProbeAcquired)
             .Select(work => new HalfOpenProbeHandle(
                 _circuitBreakerStateManager,
-                CircuitBreakerGroupKeys.For(state.Key.Lane, work.Group),
+                CircuitBreakerKeys.For(state.Key.Lane, work.ConsumerIdentity),
                 work
             ))
             .ToList();
@@ -1021,20 +1021,20 @@ internal static partial class RetryProcessorLog
     [LoggerMessage(
         EventId = 3109,
         Level = LogLevel.Debug,
-        Message = "Skipping retry for message {StorageId} — circuit open for group {Group}"
+        Message = "Skipping retry for message {StorageId} — circuit open for consumer {Consumer}"
     )]
-    public static partial void RetrySkippedBecauseCircuitOpen(this ILogger logger, Guid storageId, string? group);
+    public static partial void RetrySkippedBecauseCircuitOpen(this ILogger logger, Guid storageId, string? consumer);
 
     [LoggerMessage(
         EventId = 3119,
         Level = LogLevel.Warning,
-        Message = "Circuit retry disposition failed for message {StorageId} in group {Group}; retaining the claimed lease"
+        Message = "Circuit retry disposition failed for message {StorageId} for consumer {Consumer}; retaining the claimed lease"
     )]
     public static partial void CircuitRetryDispositionFailed(
         this ILogger logger,
         Exception exception,
         Guid storageId,
-        string? group
+        string? consumer
     );
 
     [LoggerMessage(
@@ -1047,19 +1047,19 @@ internal static partial class RetryProcessorLog
     [LoggerMessage(
         EventId = 3121,
         Level = LogLevel.Warning,
-        Message = "Circuit retry deferral was rejected by the store fence for message {StorageId} in group {Group} (stale generation, lapsed lease, or terminal row); the claim is retained until its lease expires"
+        Message = "Circuit retry deferral was rejected by the store fence for message {StorageId} for consumer {Consumer} (stale generation, lapsed lease, or terminal row); the claim is retained until its lease expires"
     )]
-    public static partial void CircuitRetryDeferralRejected(this ILogger logger, Guid storageId, string? group);
+    public static partial void CircuitRetryDeferralRejected(this ILogger logger, Guid storageId, string? consumer);
 
     [LoggerMessage(
         EventId = 3122,
         Level = LogLevel.Warning,
-        Message = "No ICircuitBreakerStateManager is registered; circuit-open retry claims (first: message {StorageId} in group {Group}) are retained until lease expiry instead of being deferred or probed"
+        Message = "No ICircuitBreakerStateManager is registered; circuit-open retry claims (first: message {StorageId} for consumer {Consumer}) are retained until lease expiry instead of being deferred or probed"
     )]
     public static partial void CircuitRetryRetainedWithoutStateManager(
         this ILogger logger,
         Guid storageId,
-        string? group
+        string? consumer
     );
 
     [LoggerMessage(EventId = 3110, Level = LogLevel.Warning, Message = "Get messages from storage failed. Retrying...")]

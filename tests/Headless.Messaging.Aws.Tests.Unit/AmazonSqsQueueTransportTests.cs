@@ -295,7 +295,7 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
             {
                 [Headers.MessageName] = "order.created.fifo",
                 [Headers.MessageId] = "message-1",
-                [Headers.Group] = "tenant-a",
+                [Headers.RoutingAffinityKey] = "tenant-a",
             },
             body: "test"u8.ToArray()
         );
@@ -347,7 +347,6 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
             {
                 [Headers.MessageName] = "order.created.fifo",
                 [Headers.MessageId] = "message-1",
-                [Headers.Group] = "tenant-a",
                 [AwsMessagingHeaders.MessageGroupId] = "tenant-b",
             },
             body: "test"u8.ToArray()

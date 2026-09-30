@@ -279,7 +279,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
         activity.SetTag("messaging.operation.type", "receive");
         activity.SetTag("messaging.client.id", message.GetExecutionInstanceId());
         activity.SetTag("messaging.destination.name", message.Name);
-        activity.SetTag("messaging.consumer.group.name", message.GetGroup());
+        activity.SetTag(MessagingMetrics.TagConsumerGroupName, message.GetConsumerIdentity());
         _SetServerTags(activity, broker);
         activity.AddEvent(
             new ActivityEvent("message.consume.start", DateTimeOffset.FromUnixTimeMilliseconds(startTimestampMs))
@@ -321,7 +321,7 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
             )
         );
 
-        MessagingMetrics.RecordConsume(message.Name, broker.Name, message.GetGroup(), elapsedMs);
+        MessagingMetrics.RecordConsume(message.Name, broker.Name, message.GetConsumerIdentity(), elapsedMs);
         MessagingMetrics.RecordPersistence(message.Name, elapsedMs, isPublish: false);
 
         activity?.Stop();
@@ -334,7 +334,12 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
         Exception exception
     )
     {
-        MessagingMetrics.RecordConsumeError(message.Name, broker.Name, exception.GetType().Name, message.GetGroup());
+        MessagingMetrics.RecordConsumeError(
+            message.Name,
+            broker.Name,
+            exception.GetType().Name,
+            message.GetConsumerIdentity()
+        );
 
         if (activity is null)
         {

@@ -566,16 +566,12 @@ public static class SetupMessaging
         ConsumerCircuitBreakerOptions? circuitBreakerOverride
     )
     {
-        if (
-            circuitBreakerRegistry is null
-            || circuitBreakerOverride is null
-            || string.IsNullOrWhiteSpace(resolved.Group)
-        )
+        if (circuitBreakerRegistry is null || circuitBreakerOverride is null)
         {
             return;
         }
 
-        circuitBreakerRegistry.Register(CircuitBreakerGroupKeys.For(resolved), circuitBreakerOverride);
+        circuitBreakerRegistry.Register(CircuitBreakerKeys.For(resolved), circuitBreakerOverride);
     }
 
     private readonly record struct ConsumerRegistrationKey(

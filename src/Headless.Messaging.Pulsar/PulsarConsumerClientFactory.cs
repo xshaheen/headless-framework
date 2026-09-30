@@ -29,8 +29,8 @@ internal sealed class PulsarConsumerClientFactory : IConsumerClientFactory
     }
 
     public async Task<IConsumerClient> CreateAsync(
-        string groupName,
-        byte groupConcurrent,
+        string subscriptionName,
+        byte concurrency,
         MessageLane lane,
         CancellationToken cancellationToken = default
     )
@@ -38,7 +38,7 @@ internal sealed class PulsarConsumerClientFactory : IConsumerClientFactory
         try
         {
             var client = await _connection.RentClientAsync(cancellationToken).ConfigureAwait(false);
-            var consumerClient = new PulsarConsumerClient(_pulsarOptions, client, groupName, groupConcurrent, lane);
+            var consumerClient = new PulsarConsumerClient(_pulsarOptions, client, subscriptionName, concurrency, lane);
             return consumerClient;
         }
         catch (Exception e) when (e is not OperationCanceledException)

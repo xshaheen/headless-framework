@@ -41,11 +41,11 @@ public sealed class PostgreSqlDeduplicationTest(PostgreSqlTestFixture fixture) :
     }
 
     [Fact]
-    public async Task should_prevent_duplicate_messages_with_same_message_id_and_group()
+    public async Task should_prevent_duplicate_messages_with_same_message_id_and_consumer_identity()
     {
         var cancellationToken = AbortToken;
         var messageId = Guid.NewGuid().ToString();
-        const string group = "test-consumer-group";
+        const string consumerIdentity = "billing.invoice-projection";
         const string name = "test.topic";
 
         var message1 = new Message(
@@ -67,11 +67,11 @@ public sealed class PostgreSqlDeduplicationTest(PostgreSqlTestFixture fixture) :
         );
 
         // Store first message
-        var stored1 = await _storage.StoreReceivedMessageAsync(name, group, message1, cancellationToken);
+        var stored1 = await _storage.StoreReceivedMessageAsync(name, consumerIdentity, message1, cancellationToken);
         stored1.Should().NotBeNull();
 
         // Store duplicate message - should update, not insert
-        var stored2 = await _storage.StoreReceivedMessageAsync(name, group, message2, cancellationToken);
+        var stored2 = await _storage.StoreReceivedMessageAsync(name, consumerIdentity, message2, cancellationToken);
         stored2.Should().NotBeNull();
 
         // ON CONFLICT should update existing row, verifying deduplication works
@@ -80,12 +80,12 @@ public sealed class PostgreSqlDeduplicationTest(PostgreSqlTestFixture fixture) :
     }
 
     [Fact]
-    public async Task should_allow_same_message_id_with_different_groups()
+    public async Task should_allow_same_message_id_with_different_consumer_identities()
     {
         var cancellationToken = AbortToken;
         var messageId = Guid.NewGuid().ToString();
-        const string group1 = "consumer-group-1";
-        const string group2 = "consumer-group-2";
+        const string consumerIdentity1 = "billing.invoice-projection";
+        const string consumerIdentity2 = "orders.fulfillment";
         const string name = "test.topic";
 
         var message1 = new Message(
@@ -94,7 +94,7 @@ public sealed class PostgreSqlDeduplicationTest(PostgreSqlTestFixture fixture) :
                 [Headers.MessageId] = messageId,
                 [Headers.MessageName] = name,
             },
-            new { Data = "Group 1" }
+            new { Data = "Consumer 1" }
         );
 
         var message2 = new Message(
@@ -103,12 +103,12 @@ public sealed class PostgreSqlDeduplicationTest(PostgreSqlTestFixture fixture) :
                 [Headers.MessageId] = messageId,
                 [Headers.MessageName] = name,
             },
-            new { Data = "Group 2" }
+            new { Data = "Consumer 2" }
         );
 
-        // Store same message ID to different groups
-        var stored1 = await _storage.StoreReceivedMessageAsync(name, group1, message1, cancellationToken);
-        var stored2 = await _storage.StoreReceivedMessageAsync(name, group2, message2, cancellationToken);
+        // Store the same message ID for two consumers
+        var stored1 = await _storage.StoreReceivedMessageAsync(name, consumerIdentity1, message1, cancellationToken);
+        var stored2 = await _storage.StoreReceivedMessageAsync(name, consumerIdentity2, message2, cancellationToken);
 
         // Should create two separate records
         stored1.Should().NotBeNull();

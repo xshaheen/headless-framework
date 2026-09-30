@@ -60,8 +60,8 @@
           @update:model-value="debouncedLoad"
         />
         <v-text-field
-          v-model="groupFilter"
-          label="Filter by group"
+          v-model="consumerFilter"
+          label="Filter by consumer"
           prepend-inner-icon="mdi-group"
           clearable
           class="filter-field"
@@ -168,7 +168,7 @@
               <th>Storage ID</th>
               <th>Message ID</th>
               <th>Name</th>
-              <th>Group</th>
+              <th>Consumer</th>
               <th>Lane</th>
               <th>Requested</th>
               <th>Resolved</th>
@@ -187,7 +187,7 @@
               </td>
               <td class="text-caption">{{ msg.messageId }}</td>
               <td>{{ msg.name }}</td>
-              <td>{{ msg.group }}</td>
+              <td>{{ msg.consumerIdentity }}</td>
               <td>
                 <v-chip size="x-small" color="info" variant="tonal">{{ msg.lane }}</v-chip>
               </td>
@@ -267,7 +267,7 @@ interface ReceivedMessage {
   storageId: string
   messageId: string
   name: string
-  group: string
+  consumerIdentity: string
   added: string
   expiresAt: string
   retries: number
@@ -364,7 +364,7 @@ const activeStatus = ref('Succeeded')
 const laneOptions: readonly MessageLane[] = ['Bus', 'Queue']
 const laneFilter = ref<MessageLane | null>(null)
 const nameFilter = ref('')
-const groupFilter = ref('')
+const consumerFilter = ref('')
 const contentFilter = ref('')
 const isLoading = ref(false)
 const messages = ref<ReceivedMessage[]>([])
@@ -411,7 +411,7 @@ async function loadMessages(page?: number, pageSize?: number) {
     })
     if (laneFilter.value) params.set('lane', laneFilter.value)
     if (nameFilter.value) params.set('name', nameFilter.value)
-    if (groupFilter.value) params.set('group', groupFilter.value)
+    if (consumerFilter.value) params.set('consumerIdentity', consumerFilter.value)
     if (contentFilter.value) params.set('content', contentFilter.value)
 
     const inboxRequest = canLoadInbox

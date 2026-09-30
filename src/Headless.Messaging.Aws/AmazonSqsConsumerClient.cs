@@ -235,10 +235,7 @@ internal sealed class AmazonSqsConsumerClient(
                 return;
             }
 
-            var message = new TransportMessage(header, body != null ? Encoding.UTF8.GetBytes(body) : null)
-            {
-                Headers = { [Headers.Group] = groupId },
-            };
+            var message = new TransportMessage(header, body != null ? Encoding.UTF8.GetBytes(body) : null);
 
             await OnMessageCallback!(message, new InflightSqsMessage(queueUrl, receiptHandle)).ConfigureAwait(false);
         }

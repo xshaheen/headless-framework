@@ -259,8 +259,8 @@ public sealed class ConsumerRegisterTests : TestBase
                 return true;
             });
         mockCb.AbortHalfOpenProbeAsync(handleName).Returns(ValueTask.CompletedTask);
-        mockCb.RemoveGroupAsync(Arg.Any<string>()).Returns(ValueTask.CompletedTask);
-        mockCb.RegisterKnownGroups(Arg.Any<IEnumerable<string>>());
+        mockCb.RemoveConsumerAsync(Arg.Any<string>()).Returns(ValueTask.CompletedTask);
+        mockCb.RegisterKnownConsumers(Arg.Any<IEnumerable<string>>());
 
         await using var provider = _CreateProvider(mockCb);
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
@@ -474,7 +474,6 @@ public sealed class ConsumerRegisterTests : TestBase
             {
                 [Headers.MessageId] = "inbox-delivery",
                 [Headers.MessageName] = "ready-messageName",
-                [Headers.Group] = "ready-group",
             },
             new BootstrapReadyMessage()
         );
@@ -540,7 +539,6 @@ public sealed class ConsumerRegisterTests : TestBase
             {
                 [Headers.MessageId] = "contract-mismatch",
                 [Headers.MessageName] = "ready-messageName",
-                [Headers.Group] = "ready-group",
                 [Headers.ContractVersion] = "1",
             },
             "{}"u8.ToArray()
@@ -740,6 +738,46 @@ public sealed class ConsumerRegisterTests : TestBase
     }
 
     [Fact]
+    public async Task shared_client_resumes_only_when_no_other_consumer_circuit_is_open()
+    {
+        // given — one client delivers to two identities, and the second identity's circuit is still Open
+        var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
+        circuitBreaker.GetState("0:billing.b").Returns(CircuitBreakerState.Open);
+        var register = _CreateRegister();
+        typeof(ConsumerRegister)
+            .GetField(
+                "_circuitBreakerStateManager",
+                BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+            )!
+            .SetValue(register, circuitBreaker);
+        var client = Substitute.For<IConsumerClient>();
+        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handle = _CreateHandle(handleType);
+        handleType
+            .GetProperty("CircuitKeys")!
+            .SetValue(handle, new[] { "0:billing.a", "0:billing.b" }.ToFrozenSet(StringComparer.Ordinal));
+        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
+        var handles = (IDictionary)
+            typeof(ConsumerRegister)
+                .GetField("_groupHandles", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
+                .GetValue(register)!;
+        handles["0:shared"] = handle;
+        var applyCircuitIntent = typeof(ConsumerRegister).GetMethod(
+            "_ApplyCircuitIntentAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        )!;
+        await (ValueTask)applyCircuitIntent.Invoke(register, ["0:billing.a", true, 1L])!;
+
+        // when — the first identity recovers
+        await (ValueTask)applyCircuitIntent.Invoke(register, ["0:billing.a", false, 2L])!;
+
+        // then — the client stays paused for the identity that is still tripped
+        await client.Received(1).PauseAsync(Arg.Any<CancellationToken>());
+        await client.DidNotReceive().ResumeAsync(Arg.Any<CancellationToken>());
+        _GetIsPaused(handleType, handle).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task equal_epoch_pause_is_reapplied()
     {
         var register = _CreateRegister();
@@ -817,9 +855,9 @@ public sealed class ConsumerRegisterTests : TestBase
     {
         var logs = new List<(LogLevel Level, EventId EventId)>();
         var mockCircuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
-        mockCircuitBreaker.TryAcquireHalfOpenProbe("0:ready-group").Returns(4L);
+        mockCircuitBreaker.TryAcquireHalfOpenProbe("0:tests.consumer-register.open-admission").Returns(4L);
         mockCircuitBreaker
-            .TryGetOpenEpoch("0:ready-group", out Arg.Any<long>())
+            .TryGetOpenEpoch("0:tests.consumer-register.open-admission", out Arg.Any<long>())
             .Returns(callInfo =>
             {
                 callInfo[1] = 7L;
@@ -855,7 +893,6 @@ public sealed class ConsumerRegisterTests : TestBase
             {
                 [Headers.MessageId] = "open-admission-latency",
                 [Headers.MessageName] = "ready-messageName",
-                [Headers.Group] = "ready-group",
             },
             new BootstrapReadyMessage()
         );
@@ -876,9 +913,9 @@ public sealed class ConsumerRegisterTests : TestBase
     {
         var logs = new List<(LogLevel Level, EventId EventId)>();
         var mockCircuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
-        mockCircuitBreaker.TryAcquireHalfOpenProbe("0:ready-group").Returns(4L);
+        mockCircuitBreaker.TryAcquireHalfOpenProbe("0:tests.consumer-register.open-admission").Returns(4L);
         mockCircuitBreaker
-            .TryGetOpenEpoch("0:ready-group", out Arg.Any<long>())
+            .TryGetOpenEpoch("0:tests.consumer-register.open-admission", out Arg.Any<long>())
             .Returns(callInfo =>
             {
                 callInfo[1] = 7L;
@@ -918,14 +955,13 @@ public sealed class ConsumerRegisterTests : TestBase
         await using var client = new InboxConsumerClient();
         var serializer = provider.GetRequiredService<Headless.Messaging.Serialization.ISerializer>();
         var dispatcher = provider.GetRequiredService<IDispatcher>();
-        _AttachInboxProcessor(provider, register, client, dispatcher, serializer);
+        _AttachInboxProcessor(provider, register, client, dispatcher, serializer, clientHandle: handle);
 
         var origin = new Message(
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 [Headers.MessageId] = "open-admission-after-pause",
                 [Headers.MessageName] = "ready-messageName",
-                [Headers.Group] = "ready-group",
             },
             new BootstrapReadyMessage()
         );
@@ -976,7 +1012,12 @@ public sealed class ConsumerRegisterTests : TestBase
 
         public List<MediumMessage> ReceivedRows { get; } = [];
 
-        public List<(string Name, string Group, string ConsumerIdentity)> Admissions { get; } = [];
+        public List<(
+            string Name,
+            string ConsumerIdentity,
+            string ContractVersion,
+            MediumMessage Message
+        )> Admissions { get; } = [];
 
         public List<Message> DispatchedOrigins { get; } = [];
 
@@ -1025,10 +1066,10 @@ public sealed class ConsumerRegisterTests : TestBase
                     name,
                     nameof(Headless.Messaging.Persistence.IDataStorage.AdmitReceivedMessageAsync),
                     StringComparison.Ordinal
-                ) && args is { Length: >= 3 }
+                ) && args is { Length: >= 4 }
             )
             {
-                Admissions.Add(((string)args[0]!, (string)args[1]!, (string)args[2]!));
+                Admissions.Add(((string)args[0]!, (string)args[1]!, (string)args[2]!, (MediumMessage)args[3]!));
             }
 
             var result = targetMethod!.Invoke(Inner, args);
@@ -1090,7 +1131,8 @@ public sealed class ConsumerRegisterTests : TestBase
         byte[] body,
         Action<MessagingOptions>? configureOptions = null,
         Func<FailedInfo, CancellationToken, Task>? onExhausted = null,
-        ICircuitBreakerStateManager? circuitBreaker = null
+        ICircuitBreakerStateManager? circuitBreaker = null,
+        IReadOnlyDictionary<string, string?>? publisherHeaders = null
     )
     {
         await using var client = new InboxConsumerClient();
@@ -1188,15 +1230,17 @@ public sealed class ConsumerRegisterTests : TestBase
         );
         _AttachInboxProcessor(provider, register, client, dispatcher, serializer, storage);
 
-        var transport = new TransportMessage(
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                [Headers.MessageId] = messageId,
-                [Headers.MessageName] = "ready-messageName",
-                [Headers.Group] = "ready-group",
-            },
-            body
-        );
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = messageId,
+            [Headers.MessageName] = "ready-messageName",
+        };
+        foreach (var (key, value) in publisherHeaders ?? new Dictionary<string, string?>(StringComparer.Ordinal))
+        {
+            headers[key] = value;
+        }
+
+        var transport = new TransportMessage(headers, body);
 
         await client.OnMessageCallback!(transport, null);
 
@@ -1223,6 +1267,110 @@ public sealed class ConsumerRegisterTests : TestBase
                 Arg.Any<CancellationToken>()
             );
         run.Storage.Admissions.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task startup_keys_circuits_by_consumer_identity_and_pauses_its_clients_on_open()
+    {
+        // given — a consumer whose subscription name differs from its identity
+        await using var provider = _CreateProvider(
+            configureMessaging: setup =>
+                setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
+                    message
+                        .Contract("ready-messageName")
+                        .Consumer<BootstrapReadyConsumer>(consumer =>
+                            consumer.StableContract("tests.consumer-register.circuit-identity").Group("ready-group")
+                        )
+                ),
+            configureServices: services => services.AddSingleton<BootstrapReadyConsumer>()
+        );
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        var monitor = provider.GetRequiredService<ICircuitBreakerMonitor>();
+        using var hostCts = new CancellationTokenSource();
+
+        await register.StartAsync(hostCts.Token);
+
+        try
+        {
+            // then — the circuit is registered under the identity, and the subscription name has none
+            monitor
+                .GetState(MessageLane.Bus, "tests.consumer-register.circuit-identity")
+                .Should()
+                .Be(CircuitBreakerState.Closed);
+            monitor.GetState(MessageLane.Bus, "ready-group").Should().BeNull();
+            monitor.KnownConsumers.Should().Equal($"{MessageLane.Bus:D}:tests.consumer-register.circuit-identity");
+
+            // when — the identity's circuit opens
+            (await monitor.ForceOpenAsync(MessageLane.Bus, "tests.consumer-register.circuit-identity", AbortToken))
+                .Should()
+                .BeTrue();
+
+            // then — the clients delivering to that identity are paused
+            var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+            var handles = (IDictionary)
+                typeof(ConsumerRegister)
+                    .GetField(
+                        "_groupHandles",
+                        BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+                    )!
+                    .GetValue(register)!;
+            handles
+                .Values.Cast<object>()
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Match(handle => _GetIsPaused(handleType, handle));
+            monitor
+                .GetState(MessageLane.Bus, "tests.consumer-register.circuit-identity")
+                .Should()
+                .Be(CircuitBreakerState.Open);
+        }
+        finally
+        {
+            await register.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task receive_admits_under_the_consumer_identity_and_stamps_it_over_a_publisher_value()
+    {
+        // given — the publisher tries to claim another consumer's identity
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "receive-identity",
+            "{}"u8.ToArray(),
+            publisherHeaders: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.ConsumerIdentity] = "someone.else",
+            }
+        );
+
+        // then — storage keys the row by the routed consumer's identity, not the client's subscription name
+        var admission = run.Storage.Admissions.Should().ContainSingle().Subject;
+        admission.ConsumerIdentity.Should().Be("tests.consumer-register.receive-ring");
+        admission.Message.Origin.GetConsumerIdentity().Should().Be("tests.consumer-register.receive-ring");
+    }
+
+    [Fact]
+    public async Task receive_keys_the_circuit_by_consumer_identity_not_subscription()
+    {
+        // given
+        var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
+        circuitBreaker.TryAcquireHalfOpenProbe(Arg.Any<string>()).Returns(1L);
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "receive-circuit-key",
+            "{}"u8.ToArray(),
+            circuitBreaker: circuitBreaker
+        );
+
+        // then
+        circuitBreaker
+            .Received(1)
+            .TryAcquireHalfOpenProbe($"{MessageLane.Bus:D}:tests.consumer-register.receive-ring");
+        circuitBreaker.DidNotReceive().TryAcquireHalfOpenProbe($"{MessageLane.Bus:D}:ready-group");
     }
 
     [Fact]
@@ -1631,9 +1779,11 @@ public sealed class ConsumerRegisterTests : TestBase
         IConsumerClient client,
         IDispatcher dispatcher,
         Headless.Messaging.Serialization.ISerializer serializer,
-        Headless.Messaging.Persistence.IDataStorage? storage = null
+        Headless.Messaging.Persistence.IDataStorage? storage = null,
+        object? clientHandle = null
     )
     {
+        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
         typeof(ConsumerRegister)
             .GetMethod(
                 "_RegisterMessageProcessor",
@@ -1643,13 +1793,22 @@ public sealed class ConsumerRegisterTests : TestBase
                 [
                     typeof(IConsumerClient),
                     typeof(string),
-                    typeof(string),
+                    handleType,
                     typeof(MessageLane),
                     typeof(CancellationToken),
                 ],
                 modifiers: null
             )!
-            .Invoke(register, [client, "ready-group", "0:ready-group", MessageLane.Bus, CancellationToken.None]);
+            .Invoke(
+                register,
+                [
+                    client,
+                    "ready-group",
+                    clientHandle ?? _CreateHandle(handleType),
+                    MessageLane.Bus,
+                    CancellationToken.None,
+                ]
+            );
 
         foreach (
             var (fieldName, value) in new (string FieldName, object Value)[]

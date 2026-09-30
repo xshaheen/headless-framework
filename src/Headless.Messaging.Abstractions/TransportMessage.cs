@@ -19,7 +19,7 @@ namespace Headless.Messaging;
 /// Initializes a new instance of the <see cref="TransportMessage"/> struct with the specified headers and body.
 /// </remarks>
 /// <param name="headers">
-/// A dictionary of message metadata headers (MessageId, MessageName, Group, etc.).
+/// A dictionary of message metadata headers (MessageId, MessageName, ConsumerIdentity, etc.).
 /// </param>
 /// <param name="body">
 /// The raw message body as bytes. This is typically a UTF-8 encoded JSON string.
@@ -32,7 +32,7 @@ public readonly struct TransportMessage(IDictionary<string, string?> headers, Re
 {
     /// <summary>
     /// Gets the metadata headers of this message.
-    /// Headers contain system information such as message ID, name, group, and custom application data.
+    /// Headers contain system information such as message ID, name, consumer identity, and custom application data.
     /// </summary>
     public IDictionary<string, string?> Headers { get; } = Argument.IsNotNull(headers);
 
@@ -61,14 +61,15 @@ public readonly struct TransportMessage(IDictionary<string, string?> headers, Re
         Headers.TryGetValue(Messaging.Headers.RoutingAffinityKey, out var key) ? key : null;
 
     /// <summary>
-    /// Attempts to retrieve the consumer group name from the message headers.
+    /// Attempts to retrieve the identity of the consumer that received this message.
     /// </summary>
     /// <returns>
-    /// The consumer group name if present, or null if the <see cref="Messaging.Headers.Group"/> header is not set.
+    /// The consumer identity if present, or null if the <see cref="Messaging.Headers.ConsumerIdentity"/> header is not
+    /// set.
     /// </returns>
-    public string? GetGroup()
+    public string? GetConsumerIdentity()
     {
-        return Headers.TryGetValue(Messaging.Headers.Group, out var value) ? value : null;
+        return Headers.TryGetValue(Messaging.Headers.ConsumerIdentity, out var value) ? value : null;
     }
 
     /// <summary>

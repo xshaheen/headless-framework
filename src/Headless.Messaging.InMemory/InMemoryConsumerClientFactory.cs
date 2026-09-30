@@ -10,21 +10,21 @@ namespace Headless.Messaging.InMemory;
 internal sealed class InMemoryConsumerClientFactory(MemoryQueue queue) : IConsumerClientFactory
 {
     /// <summary>
-    /// Creates a new consumer client for the specified group.
+    /// Creates a new consumer client for the specified subscription.
     /// </summary>
-    /// <param name="groupName">The consumer group name</param>
-    /// <param name="groupConcurrent">The concurrency level for the group</param>
+    /// <param name="subscriptionName">The consumer identity on the Bus lane, or the message name on the Queue lane</param>
+    /// <param name="concurrency">The concurrency level for the subscription</param>
     /// <returns>A task that returns the created consumer client</returns>
     public Task<IConsumerClient> CreateAsync(
-        string groupName,
-        byte groupConcurrent,
+        string subscriptionName,
+        byte concurrency,
         MessageLane lane,
         CancellationToken cancellationToken = default
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var client = new InMemoryConsumerClient(queue, groupName, groupConcurrent, lane);
+        var client = new InMemoryConsumerClient(queue, subscriptionName, concurrency, lane);
         return Task.FromResult<IConsumerClient>(client);
     }
 }

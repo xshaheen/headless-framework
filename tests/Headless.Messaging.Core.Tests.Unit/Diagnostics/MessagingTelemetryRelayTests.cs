@@ -367,7 +367,7 @@ public sealed class MessagingTelemetryRelayTests : TestBase
         {
             [Headers.MessageId] = Guid.NewGuid().ToString(),
             [Headers.MessageName] = name,
-            [Headers.Group] = "workers",
+            [Headers.ConsumerIdentity] = "workers",
             [Headers.CorrelationId] = "corr-1",
             [Headers.ExecutionInstanceId] = "host-1",
         };
@@ -389,7 +389,7 @@ public sealed class MessagingTelemetryRelayTests : TestBase
         {
             [Headers.MessageId] = Guid.NewGuid().ToString(),
             [Headers.MessageName] = name,
-            [Headers.Group] = "workers",
+            [Headers.ConsumerIdentity] = "workers",
         };
 
         if (extraHeaders is not null)

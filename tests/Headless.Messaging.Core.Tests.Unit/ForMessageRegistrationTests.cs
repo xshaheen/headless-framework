@@ -1234,7 +1234,10 @@ public sealed class ForMessageRegistrationTests : TestBase
         // then
         provider.GetDrainedConsumerRegistry();
         var circuitBreakers = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
-        circuitBreakers.TryGet($"{MessageLane.Bus:D}:orders", out var options).Should().BeTrue();
+        circuitBreakers
+            .TryGet($"{MessageLane.Bus:D}:tests.registration.orders-primary", out var options)
+            .Should()
+            .BeTrue();
         options!.FailureThreshold.Should().Be(3);
     }
 
@@ -1267,7 +1270,10 @@ public sealed class ForMessageRegistrationTests : TestBase
         // then
         provider.GetDrainedConsumerRegistry();
         var circuitBreakers = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
-        circuitBreakers.TryGet($"{MessageLane.Queue:D}:orders", out var options).Should().BeTrue();
+        circuitBreakers
+            .TryGet($"{MessageLane.Queue:D}:tests.registration.orders-primary", out var options)
+            .Should()
+            .BeTrue();
         options!.FailureThreshold.Should().Be(3);
     }
 

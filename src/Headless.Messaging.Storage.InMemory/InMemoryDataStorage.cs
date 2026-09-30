@@ -34,14 +34,14 @@ internal sealed partial class InMemoryDataStorage(
 
     public ConcurrentDictionary<Guid, MemoryMessage> ReceivedMessages { get; } = new();
 
-    // Secondary index keyed on the SQL-providers' upsert identity (Version, MessageId, Group?, MessageLane).
+    // Secondary index keyed on the SQL-providers' upsert identity (Version, MessageId, ConsumerIdentity, MessageLane).
     // Maps to the primary row id in <see cref="ReceivedMessages"/>. The lookup that backs
     // StoreReceivedExceptionMessageAsync is then O(1) via TryGetValue instead of an O(N) scan
     // over the whole received-message map. Updated in lockstep with every code path that inserts
     // into or removes from ReceivedMessages. ValueTuple's default equality uses ordinal string
     // equality for each component, matching the SQL providers' BINARY-collation key semantics.
     private readonly ConcurrentDictionary<
-        (string Version, string MessageId, string? Group, MessageLane Lane),
+        (string Version, string MessageId, string ConsumerIdentity, MessageLane Lane),
         Guid
     > _receivedIdentityIndex = new();
 
@@ -54,7 +54,7 @@ internal sealed partial class InMemoryDataStorage(
     // Serializes the lookup-then-insert/update paths in BOTH StoreReceivedExceptionMessageAsync
     // and StoreReceivedMessageAsync so two concurrent broker redeliveries (or two concurrent first
     // arrivals via the consume path) cannot both decide "not found" and race to insert duplicate
-    // rows for the same (Version, MessageId, Group) tuple. Renamed from _receivedExceptionUpsertLock
+    // rows for the same (Version, MessageId, ConsumerIdentity) tuple. Renamed from _receivedExceptionUpsertLock
     // when the consume path adopted the same check-then-insert pattern.
     private readonly Lock _receivedUpsertLock = new();
 
@@ -542,7 +542,6 @@ internal sealed partial class InMemoryDataStorage(
 
     public ValueTask<InboxAdmissionResult> AdmitReceivedMessageAsync(
         string name,
-        string group,
         string consumerIdentity,
         string contractVersion,
         MediumMessage message,
@@ -602,7 +601,7 @@ internal sealed partial class InMemoryDataStorage(
                 Content = serializer.Serialize(message.Origin),
                 Lane = message.Lane,
                 Name = name,
-                Group = group,
+                ConsumerIdentity = consumerIdentity,
                 Version = messagingOptions.Value.Version,
                 Added = now,
                 NextRetryAt = now.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
@@ -780,7 +779,7 @@ internal sealed partial class InMemoryDataStorage(
 
     public ValueTask<bool> StoreReceivedExceptionMessageAsync(
         string name,
-        string group,
+        string consumerIdentity,
         string content,
         string? exceptionInfo = null,
         CancellationToken cancellationToken = default
@@ -792,7 +791,7 @@ internal sealed partial class InMemoryDataStorage(
 
         return StoreReceivedExceptionMessageAsync(
             name,
-            group,
+            consumerIdentity,
             new MediumMessage
             {
                 StorageId = Guid.Empty,
@@ -807,7 +806,7 @@ internal sealed partial class InMemoryDataStorage(
 
     public ValueTask<bool> StoreReceivedExceptionMessageAsync(
         string name,
-        string group,
+        string consumerIdentity,
         MediumMessage message,
         string? exceptionInfo = null,
         CancellationToken cancellationToken = default
@@ -821,9 +820,9 @@ internal sealed partial class InMemoryDataStorage(
         var now = timeProvider.GetUtcNow();
         var expiresAt = now.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter);
         var retries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
-        var indexKey = (version, messageId, (string?)group, message.Lane);
+        var indexKey = (version, messageId, consumerIdentity, message.Lane);
 
-        // Upsert on (Version, MessageId, Group) — mirrors the SQL providers' MERGE / ON CONFLICT
+        // Upsert on (Version, MessageId, ConsumerIdentity) — mirrors the SQL providers' MERGE / ON CONFLICT
         // semantics so broker redelivery doesn't accumulate duplicate rows. The terminal-row guard
         // also matches: a Succeeded/Failed entry with no scheduled retry is left alone so a
         // previously-succeeded row isn't overwritten back to Failed by a redelivery-then-deserialize-fail.
@@ -880,7 +879,7 @@ internal sealed partial class InMemoryDataStorage(
             ReceivedMessages[id] = new MemoryMessage
             {
                 StorageId = id,
-                Group = group,
+                ConsumerIdentity = consumerIdentity,
                 Origin = _CloneOrigin(message.Origin),
                 Name = name,
                 Content = content,
@@ -903,7 +902,7 @@ internal sealed partial class InMemoryDataStorage(
 
     public ValueTask<MediumMessage> StoreReceivedMessageAsync(
         string name,
-        string group,
+        string consumerIdentity,
         MediumMessage message,
         CancellationToken cancellationToken = default
     )
@@ -923,15 +922,23 @@ internal sealed partial class InMemoryDataStorage(
 
         if (!hasMessageId)
         {
-            var inserted = _InsertNewReceivedRow(name, group, message, serialized, added, initialNextRetryAt, version);
+            var inserted = _InsertNewReceivedRow(
+                name,
+                consumerIdentity,
+                message,
+                serialized,
+                added,
+                initialNextRetryAt,
+                version
+            );
             return ValueTask.FromResult(inserted);
         }
 
-        var indexKey = (version, messageId!, (string?)group, message.Lane);
+        var indexKey = (version, messageId!, consumerIdentity, message.Lane);
 
         // Extend the same lock + check-then-insert/update pattern from
         // StoreReceivedExceptionMessageAsync to the non-exception path. Without it, two concurrent
-        // StoreReceivedMessageAsync calls with the same (Version, MessageId, Group) tuple both
+        // StoreReceivedMessageAsync calls with the same (Version, MessageId, ConsumerIdentity) tuple both
         // allocated distinct StorageIds, both wrote into ReceivedMessages, and both overwrote the
         // index slot last-writer-wins. _ClaimMessagesOfNeedRetry then returned BOTH rows, running
         // the consume executor twice. SQL providers enforce uniqueness via the DB constraint;
@@ -971,8 +978,8 @@ internal sealed partial class InMemoryDataStorage(
 
                 // Non-terminal, unleased existing row: refresh in place with the latest payload + reset to
                 // the freshly-stored Scheduled state, mirroring the SQL providers' MERGE WHEN
-                // MATCHED UPDATE branch. Name/Group/Version are init-only on MemoryMessage; the
-                // identity is keyed on (Version, MessageId, Group) so those values are pinned at
+                // MATCHED UPDATE branch. Name/ConsumerIdentity/Version are init-only on MemoryMessage; the
+                // identity is keyed on (Version, MessageId, ConsumerIdentity) so those values are pinned at
                 // insert time and never need refreshing across redeliveries of the same identity.
                 //
                 // #10 — gate the ENTIRE update under the active-lease check, matching the SQL
@@ -1011,7 +1018,15 @@ internal sealed partial class InMemoryDataStorage(
                 return ValueTask.FromResult(_ToSnapshot(existing));
             }
 
-            var inserted = _InsertNewReceivedRow(name, group, message, serialized, added, initialNextRetryAt, version);
+            var inserted = _InsertNewReceivedRow(
+                name,
+                consumerIdentity,
+                message,
+                serialized,
+                added,
+                initialNextRetryAt,
+                version
+            );
             _receivedIdentityIndex[indexKey] = inserted.StorageId;
             return ValueTask.FromResult(inserted);
         }
@@ -1043,14 +1058,14 @@ internal sealed partial class InMemoryDataStorage(
 
     public ValueTask<MediumMessage> StoreReceivedMessageAsync(
         string name,
-        string group,
+        string consumerIdentity,
         Message message,
         CancellationToken cancellationToken = default
     )
     {
         return StoreReceivedMessageAsync(
             name,
-            group,
+            consumerIdentity,
             new MediumMessage
             {
                 StorageId = Guid.Empty,
@@ -1064,7 +1079,7 @@ internal sealed partial class InMemoryDataStorage(
 
     private MediumMessage _InsertNewReceivedRow(
         string name,
-        string group,
+        string consumerIdentity,
         MediumMessage message,
         string serialized,
         DateTimeOffset added,
@@ -1079,7 +1094,7 @@ internal sealed partial class InMemoryDataStorage(
             StorageId = mdMessage.StorageId,
             Origin = _CloneOrigin(mdMessage.Origin),
             Lane = mdMessage.Lane,
-            Group = group,
+            ConsumerIdentity = consumerIdentity,
             Name = name,
             Content = mdMessage.Content,
             Retries = mdMessage.Retries,

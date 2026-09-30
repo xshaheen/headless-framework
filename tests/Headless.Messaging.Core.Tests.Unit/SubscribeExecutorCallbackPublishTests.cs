@@ -211,7 +211,7 @@ public sealed class SubscribeExecutorCallbackPublishTests : TestBase
         {
             [Headers.MessageId] = Guid.NewGuid().ToString(),
             [Headers.MessageName] = "test.messageName",
-            [Headers.Group] = "test-group",
+            [Headers.ConsumerIdentity] = "tests.subscribe-callback",
         };
 
         return new MediumMessage

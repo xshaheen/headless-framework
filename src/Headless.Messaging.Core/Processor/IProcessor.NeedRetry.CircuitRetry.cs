@@ -50,7 +50,7 @@ internal sealed partial class MessageNeedToRetryProcessor
             _logger.CircuitRetryDispositionFailed(
                 ex,
                 probe.Work.Message.StorageId,
-                LogSanitizer.Sanitize(probe.Work.Group)
+                LogSanitizer.Sanitize(probe.Work.ConsumerIdentity)
             );
         }
 
@@ -62,16 +62,16 @@ internal sealed partial class MessageNeedToRetryProcessor
         return transferred;
     }
 
-    private CircuitRetryDecision _GetCircuitRetryDecision(MessageLane lane, string group)
+    private CircuitRetryDecision _GetCircuitRetryDecision(MessageLane lane, string consumerIdentity)
     {
         if (_circuitBreakerStateManager is not null)
         {
-            return _circuitBreakerStateManager.GetRetryDecision(lane, group);
+            return _circuitBreakerStateManager.GetRetryDecision(lane, consumerIdentity);
         }
 
         // A read-only monitor cannot reserve the shared probe generation. Conservatively retain
         // an open claim rather than recreating the old clear-without-deferral hot loop.
-        return _circuitBreakerMonitor?.IsOpen(CircuitBreakerGroupKeys.For(lane, group)) == true
+        return _circuitBreakerMonitor?.IsOpen(CircuitBreakerKeys.For(lane, consumerIdentity)) == true
             ? new CircuitRetryDecision(CircuitRetryDecisionKind.Retain, NextProbeAt: null, ProbeOutcome: null)
             : CircuitRetryDecision.Closed;
     }
@@ -116,7 +116,10 @@ internal sealed partial class MessageNeedToRetryProcessor
                     {
                         // The row keeps its stale owner and past NextRetryAt, so the next poll reclaims
                         // it — the churn this path exists to prevent.
-                        _logger.CircuitRetryDeferralRejected(work.Message.StorageId, LogSanitizer.Sanitize(work.Group));
+                        _logger.CircuitRetryDeferralRejected(
+                            work.Message.StorageId,
+                            LogSanitizer.Sanitize(work.ConsumerIdentity)
+                        );
                         deferralRejectionLogged = true;
                     }
                     break;
@@ -125,7 +128,7 @@ internal sealed partial class MessageNeedToRetryProcessor
                     {
                         _logger.CircuitRetryRetainedWithoutStateManager(
                             work.Message.StorageId,
-                            LogSanitizer.Sanitize(work.Group)
+                            LogSanitizer.Sanitize(work.ConsumerIdentity)
                         );
                     }
                     break;
@@ -139,7 +142,11 @@ internal sealed partial class MessageNeedToRetryProcessor
         {
             // An exception, cancellation, or unknown provider outcome leaves this exact lease in
             // place. In particular, do not route it through the generic abandoned-claim releaser.
-            _logger.CircuitRetryDispositionFailed(ex, work.Message.StorageId, LogSanitizer.Sanitize(work.Group));
+            _logger.CircuitRetryDispositionFailed(
+                ex,
+                work.Message.StorageId,
+                LogSanitizer.Sanitize(work.ConsumerIdentity)
+            );
         }
 
         return deferralRejectionLogged;
@@ -180,7 +187,11 @@ internal sealed partial class MessageNeedToRetryProcessor
         return deferred ? CircuitDeferralOutcome.Deferred : CircuitDeferralOutcome.FenceRejected;
     }
 
-    private readonly record struct CircuitRetryWork(MediumMessage Message, string Group, CircuitRetryDecision Decision);
+    private readonly record struct CircuitRetryWork(
+        MediumMessage Message,
+        string ConsumerIdentity,
+        CircuitRetryDecision Decision
+    );
 
     /// <summary>Distinguishes why a circuit-open claim's deferral write did or did not land.</summary>
     private enum CircuitDeferralOutcome

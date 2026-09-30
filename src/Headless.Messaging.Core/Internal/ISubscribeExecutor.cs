@@ -115,22 +115,23 @@ internal sealed class SubscribeExecutor(
                     inboxKey.Lane,
                     out descriptor
                 )
-                : selector.TryGetMessageNameExecutor(
-                    message.Origin.Name,
-                    message.Origin.GetGroup()!,
-                    message.Lane,
-                    out descriptor
-                );
+                : message.Origin.GetConsumerIdentity() is { } consumerIdentity
+                    && selector.TryGetConsumerIdentityExecutor(
+                        message.Origin.Name,
+                        consumerIdentity,
+                        message.Lane,
+                        out descriptor
+                    );
             if (!found)
             {
                 var safeName = LogSanitizer.Sanitize(message.Origin.Name);
-                var safeGroup = LogSanitizer.Sanitize(message.Origin.GetGroup());
+                var safeConsumer = LogSanitizer.Sanitize(message.Origin.GetConsumerIdentity());
 
-                logger.SubscriberNotFound(safeName, safeGroup);
+                logger.SubscriberNotFound(safeName, safeConsumer);
 
                 var exception = new SubscriberNotFoundException(
-                    $"Message (Name:{safeName},Group:{safeGroup}) can not be found subscriber."
-                        + $"{Environment.NewLine} Ensure the subscriber method is decorated with [Subscribe] and the consumer group matches."
+                    $"Message (Name:{safeName},Consumer:{safeConsumer}) can not be found subscriber."
+                        + $"{Environment.NewLine} Ensure a consumer with this identity is registered for the message."
                 );
 
                 // No subscriber.invoke span exists on the not-found path (BeforeSubscriberInvoke never ran), so
@@ -222,7 +223,11 @@ internal sealed class SubscribeExecutor(
 
         try
         {
-            logger.ConsumerExecuting(descriptor.ImplTypeInfo.Name, descriptor.MethodInfo.Name, descriptor.GroupName);
+            logger.ConsumerExecuting(
+                descriptor.ImplTypeInfo.Name,
+                descriptor.MethodInfo.Name,
+                descriptor.ResolvedConsumerIdentity
+            );
 
             var sp = Stopwatch.StartNew();
 
@@ -285,7 +290,7 @@ internal sealed class SubscribeExecutor(
                 logger.ConsumerExecuted(
                     descriptor.ImplTypeInfo.Name,
                     descriptor.MethodInfo.Name,
-                    descriptor.GroupName,
+                    descriptor.ResolvedConsumerIdentity,
                     sp.Elapsed.TotalMilliseconds,
                     executionInstanceId
                 );
@@ -385,8 +390,8 @@ internal sealed class SubscribeExecutor(
     {
         if (circuitBreakerStateManager is not null)
         {
-            var circuitBreakerGroup = CircuitBreakerGroupKeys.For(message);
-            await circuitBreakerStateManager.ReportSuccessAsync(circuitBreakerGroup).ConfigureAwait(false);
+            var circuitKey = CircuitBreakerKeys.For(message);
+            await circuitBreakerStateManager.ReportSuccessAsync(circuitKey).ConfigureAwait(false);
         }
     }
 
@@ -617,9 +622,9 @@ internal sealed class SubscribeExecutor(
         {
             var reportedException = ex is SubscriberExecutionFailedException { InnerException: { } inner } ? inner : ex;
 
-            var circuitBreakerGroup = CircuitBreakerGroupKeys.For(message);
+            var circuitKey = CircuitBreakerKeys.For(message);
             await circuitBreakerStateManager
-                .ReportFailureAsync(circuitBreakerGroup, reportedException, cancellationToken)
+                .ReportFailureAsync(circuitKey, reportedException, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -633,7 +638,7 @@ internal sealed class SubscribeExecutor(
             return;
         }
 
-        circuitBreakerStateManager.ReleaseHalfOpenProbe(CircuitBreakerGroupKeys.For(message), message.ProbeEpoch);
+        circuitBreakerStateManager.ReleaseHalfOpenProbe(CircuitBreakerKeys.For(message), message.ProbeEpoch);
     }
 
     private async Task<bool> _LeaseAsync(MediumMessage message, CancellationToken cancellationToken)

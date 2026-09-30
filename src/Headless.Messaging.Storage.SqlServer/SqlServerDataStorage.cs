@@ -670,7 +670,7 @@ internal sealed partial class SqlServerDataStorage(
     /// <returns><see langword="true"/> if a new row was inserted or an existing non-terminal row was updated.</returns>
     public async ValueTask<bool> StoreReceivedExceptionMessageAsync(
         string name,
-        string group,
+        string consumerIdentity,
         string content,
         string? exceptionInfo = null,
         CancellationToken cancellationToken = default
@@ -679,7 +679,7 @@ internal sealed partial class SqlServerDataStorage(
         var origin = serializer.Deserialize(content)!;
         return await StoreReceivedExceptionMessageAsync(
                 name,
-                group,
+                consumerIdentity,
                 new MediumMessage
                 {
                     StorageId = Guid.Empty,
@@ -701,7 +701,7 @@ internal sealed partial class SqlServerDataStorage(
     /// <returns><see langword="true"/> if a new row was inserted or an existing non-terminal row was updated.</returns>
     public async ValueTask<bool> StoreReceivedExceptionMessageAsync(
         string name,
-        string group,
+        string consumerIdentity,
         MediumMessage message,
         string? exceptionInfo = null,
         CancellationToken cancellationToken = default
@@ -711,7 +711,7 @@ internal sealed partial class SqlServerDataStorage(
         [
             new SqlParameter("@Id", guidGenerator.Create()),
             new SqlParameter("@Name", name),
-            new SqlParameter("@Group", SqlDbType.NVarChar, 200) { Value = (object?)group ?? DBNull.Value },
+            new SqlParameter("@ConsumerIdentity", SqlDbType.NVarChar, 200) { Value = consumerIdentity },
             new SqlParameter(
                 "@Content",
                 string.IsNullOrEmpty(message.Content) ? serializer.Serialize(message.Origin) : message.Content
@@ -750,7 +750,7 @@ internal sealed partial class SqlServerDataStorage(
     /// <returns>The stored <c>MediumMessage</c> with its generated <c>StorageId</c> and timestamps populated.</returns>
     public async ValueTask<MediumMessage> StoreReceivedMessageAsync(
         string name,
-        string group,
+        string consumerIdentity,
         MediumMessage message,
         CancellationToken cancellationToken = default
     )
@@ -775,7 +775,7 @@ internal sealed partial class SqlServerDataStorage(
         [
             new SqlParameter("@Id", mediumMessage.StorageId),
             new SqlParameter("@Name", name),
-            new SqlParameter("@Group", SqlDbType.NVarChar, 200) { Value = (object?)group ?? DBNull.Value },
+            new SqlParameter("@ConsumerIdentity", SqlDbType.NVarChar, 200) { Value = consumerIdentity },
             new SqlParameter("@Content", mediumMessage.Content),
             new SqlParameter("@IntentType", SqlDbType.SmallInt)
             {
@@ -822,14 +822,14 @@ internal sealed partial class SqlServerDataStorage(
     /// <returns>The stored <c>MediumMessage</c> with its generated <c>StorageId</c> and timestamps populated.</returns>
     public ValueTask<MediumMessage> StoreReceivedMessageAsync(
         string name,
-        string group,
+        string consumerIdentity,
         Message message,
         CancellationToken cancellationToken = default
     )
     {
         return StoreReceivedMessageAsync(
             name,
-            group,
+            consumerIdentity,
             new MediumMessage
             {
                 StorageId = Guid.Empty,
@@ -1668,8 +1668,8 @@ internal sealed partial class SqlServerDataStorage(
             DECLARE @LeaseNow datetime2(7) = SYSUTCDATETIME();
 
             MERGE {_receivedTable} WITH (HOLDLOCK) AS target
-            USING (SELECT @Version AS Version, @MessageId AS MessageId, @Group AS [Group], @IntentType AS IntentType) AS source
-            ON target.IsInboxRecord = 0 AND target.Version = source.Version AND target.MessageId = source.MessageId AND (target.[Group] = source.[Group] OR (target.[Group] IS NULL AND source.[Group] IS NULL)) AND target.IntentType = source.IntentType
+            USING (SELECT @Version AS Version, @MessageId AS MessageId, @ConsumerIdentity AS ConsumerIdentity, @IntentType AS IntentType) AS source
+            ON target.IsInboxRecord = 0 AND target.Version = source.Version AND target.MessageId = source.MessageId AND target.ConsumerIdentity = source.ConsumerIdentity AND target.IntentType = source.IntentType
             WHEN MATCHED
                 AND NOT (target.StatusName IN ('{nameof(StatusName.Succeeded)}','{nameof(
                     StatusName.Failed
@@ -1678,8 +1678,8 @@ internal sealed partial class SqlServerDataStorage(
             THEN
                 UPDATE SET StatusName = @StatusName, ExpiresAt = @ExpiresAt, NextRetryAt = @NextRetryAt, LockedUntil = @LockedUntil, Owner = @Owner, Content = @Content, ExceptionInfo = @ExceptionInfo
             WHEN NOT MATCHED THEN
-                INSERT ([Id],[Version],[Name],[Group],[Content],[IntentType],[Retries],[InlineAttempts],[Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[Owner],[StatusName],[MessageId],[ExceptionInfo])
-                VALUES (@Id,@Version,@Name,@Group,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId,@ExceptionInfo)
+                INSERT ([Id],[Version],[Name],[ConsumerIdentity],[Content],[IntentType],[Retries],[InlineAttempts],[Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[Owner],[StatusName],[MessageId],[ExceptionInfo])
+                VALUES (@Id,@Version,@Name,@ConsumerIdentity,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId,@ExceptionInfo)
             OUTPUT inserted.[Id];
             """;
 

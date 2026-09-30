@@ -381,7 +381,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_add_group_header_to_delivered_message()
+    public async Task should_not_stamp_consumer_identity_on_delivered_message()
     {
         // given
         await _client.SubscribeAsync(["test-messageName"], AbortToken);
@@ -415,7 +415,8 @@ public sealed class InMemoryConsumerClientTests : TestBase
         await cts.CancelAsync();
 
         // then
-        receivedMessage.GetGroup().Should().Be("test-group");
+        // The messaging core stamps the identity once the delivery is routed to a consumer.
+        receivedMessage.GetConsumerIdentity().Should().BeNull();
     }
 
     // -------------------------------------------------------------------------

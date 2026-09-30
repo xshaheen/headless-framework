@@ -155,14 +155,13 @@ public abstract partial class DataStorageTestsBase : TestBase
     protected ControlledNodeMembership NodeMembership { get; } = new();
 
     /// <summary>
-    /// Counts persisted received-message rows matching the supplied <paramref name="messageId"/>
-    /// (and optionally <paramref name="group"/>). Provider-specific because the row visibility
-    /// after a concurrent upsert storm needs a direct count query — the public monitoring API
-    /// does not filter by MessageId.
+    /// Counts persisted received-message rows matching the supplied <paramref name="messageId"/> and
+    /// <paramref name="consumerIdentity"/>. Provider-specific because the row visibility after a concurrent upsert
+    /// storm needs a direct count query — the public monitoring API does not filter by MessageId.
     /// </summary>
     protected abstract Task<int> CountReceivedMessagesByIdentityAsync(
         string messageId,
-        string? group,
+        string consumerIdentity,
         CancellationToken cancellationToken
     );
 
@@ -222,7 +221,6 @@ public abstract partial class DataStorageTestsBase : TestBase
         ValueTask<InboxAdmissionResult> admit() =>
             storage.AdmitReceivedMessageAsync(
                 "orders.created",
-                "orders-topology-a",
                 "orders.consumer",
                 "v1",
                 new MediumMessage
@@ -498,11 +496,11 @@ public abstract partial class DataStorageTestsBase : TestBase
         await oversizedTenantAct.Should().ThrowAsync<ArgumentException>();
     }
 
-    public virtual async Task should_suppress_terminal_inbox_redelivery_independent_of_topology_group()
+    public virtual async Task should_suppress_terminal_inbox_redelivery()
     {
         var storage = GetStorage();
         var origin = CreateMessage($"inbox-terminal-{Guid.NewGuid():N}", "orders.created");
-        var admitted = await _AdmitInboxAsync(storage, origin, group: "old-topology");
+        var admitted = await _AdmitInboxAsync(storage, origin);
 
         admitted.Message.InlineAttempts++;
         (
@@ -530,7 +528,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .Should()
             .BeTrue();
 
-        var redelivery = await _AdmitInboxAsync(storage, origin, group: "renamed-topology");
+        var redelivery = await _AdmitInboxAsync(storage, origin);
 
         redelivery.Disposition.Should().Be(InboxAdmissionDisposition.TerminalFailedDuplicate);
         redelivery.Message.StorageId.Should().Be(admitted.Message.StorageId);
@@ -615,7 +613,6 @@ public abstract partial class DataStorageTestsBase : TestBase
         var retention = TimeSpan.FromMinutes(17);
         var admitted = await storage.AdmitReceivedMessageAsync(
             origin.Name,
-            "orders-group",
             "orders.consumer-a",
             "v1",
             new MediumMessage
@@ -806,7 +803,6 @@ public abstract partial class DataStorageTestsBase : TestBase
     private static ValueTask<InboxAdmissionResult> _AdmitInboxAsync(
         IDataStorage storage,
         Message origin,
-        string group = "orders-group",
         string consumerIdentity = "orders.consumer-a",
         string contractVersion = "v1",
         MessageLane lane = MessageLane.Bus,
@@ -815,7 +811,6 @@ public abstract partial class DataStorageTestsBase : TestBase
     {
         return storage.AdmitReceivedMessageAsync(
             origin.Name,
-            group,
             consumerIdentity,
             contractVersion,
             new MediumMessage
@@ -1052,10 +1047,10 @@ public abstract partial class DataStorageTestsBase : TestBase
         var storage = GetStorage();
         var message = CreateMessage();
         const string messageName = "test-received-message";
-        const string group = "test-group";
+        const string consumerIdentity = "test-group";
 
         // when
-        var result = await storage.StoreReceivedMessageAsync(messageName, group, message, AbortToken);
+        var result = await storage.StoreReceivedMessageAsync(messageName, consumerIdentity, message, AbortToken);
 
         // then
         result.Should().NotBeNull();
@@ -1071,12 +1066,12 @@ public abstract partial class DataStorageTestsBase : TestBase
         var bus = CreateMessage(messageId);
         var queue = CreateMessage(messageId);
         const string messageName = "test-received-message";
-        const string group = "test-group";
+        const string consumerIdentity = "test-group";
 
         // when
         await storage.StoreReceivedMessageAsync(
             messageName,
-            group,
+            consumerIdentity,
             new MediumMessage
             {
                 StorageId = Guid.Empty,
@@ -1088,7 +1083,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         );
         await storage.StoreReceivedMessageAsync(
             messageName,
-            group,
+            consumerIdentity,
             new MediumMessage
             {
                 StorageId = Guid.Empty,
@@ -1100,8 +1095,44 @@ public abstract partial class DataStorageTestsBase : TestBase
         );
 
         // then
-        var rowCount = await CountReceivedMessagesByIdentityAsync(messageId, group, AbortToken);
+        var rowCount = await CountReceivedMessagesByIdentityAsync(messageId, consumerIdentity, AbortToken);
         rowCount.Should().Be(2);
+    }
+
+    public virtual async Task should_filter_received_messages_by_consumer_identity()
+    {
+        // given — one message delivered to two consumers, plus an unrelated consumer's row under the same name
+        var storage = GetStorage();
+        var messageName = $"identity-filter-{Guid.NewGuid():N}";
+        var shared = CreateMessage($"identity-filter-shared-{Guid.NewGuid():N}", messageName);
+        await storage.StoreReceivedMessageAsync(messageName, "billing.invoice-projection", shared, AbortToken);
+        await storage.StoreReceivedMessageAsync(messageName, "orders.fulfillment", shared, AbortToken);
+        await storage.StoreReceivedMessageAsync(
+            messageName,
+            "orders.fulfillment",
+            CreateMessage(messageName: messageName),
+            AbortToken
+        );
+
+        // when
+        var page = await storage
+            .GetMonitoringApi()
+            .GetMessagesAsync(
+                new MessageQuery
+                {
+                    MessageType = MessageType.Subscribe,
+                    Name = messageName,
+                    ConsumerIdentity = "billing.invoice-projection",
+                    CurrentPage = 0,
+                    PageSize = 20,
+                },
+                AbortToken
+            );
+
+        // then
+        var row = page.Items.Should().ContainSingle().Subject;
+        row.ConsumerIdentity.Should().Be("billing.invoice-projection");
+        row.MessageId.Should().Be(shared.Id);
     }
 
     public virtual async Task should_store_received_exception_message()
@@ -1110,7 +1141,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         var storage = GetStorage();
         var serializer = GetSerializer();
         const string messageName = "exception-message";
-        const string group = "test-group";
+        const string consumerIdentity = "test-group";
         // StoreReceivedExceptionMessageAsync expects serialized Message JSON with headers, not raw text
         var message = CreateMessage();
         var content = serializer.Serialize(message);
@@ -1119,7 +1150,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         var act = async () =>
             await storage.StoreReceivedExceptionMessageAsync(
                 messageName,
-                group,
+                consumerIdentity,
                 content,
                 cancellationToken: AbortToken
             );
@@ -3406,7 +3437,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         var serializer = GetSerializer();
         var message = CreateMessage($"storm-{Guid.NewGuid():N}");
         var content = serializer.Serialize(message);
-        const string group = "storm-group";
+        const string consumerIdentity = "storm-group";
         const int concurrency = 64;
 
         using var startGate = new ManualResetEventSlim(false);
@@ -3420,7 +3451,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                     startGate.Wait(AbortToken);
                     var ok = await storage.StoreReceivedExceptionMessageAsync(
                         "redelivery-storm",
-                        group,
+                        consumerIdentity,
                         content,
                         $"writer-{index}",
                         AbortToken
@@ -3453,7 +3484,7 @@ public abstract partial class DataStorageTestsBase : TestBase
 
         var followUp = await storage.StoreReceivedExceptionMessageAsync(
             "redelivery-storm",
-            group,
+            consumerIdentity,
             content,
             "post-storm",
             AbortToken
@@ -3461,20 +3492,13 @@ public abstract partial class DataStorageTestsBase : TestBase
         followUp.Should().BeFalse("the row is terminal — no further upserts should succeed");
     }
 
-    public virtual async Task should_handle_concurrent_first_insert_storm_with_null_and_non_null_group()
+    public virtual async Task should_handle_concurrent_first_insert_storm_per_consumer_identity()
     {
-        // Guards against the F8-redux duplicate-row bug on the
-        // StoreReceivedExceptionMessageAsync path. Two parallel storms exercise both halves of the
-        // upsert identity:
-        //   - NULL Group: a plain ("MessageId","Group") unique index treats NULLs as distinct, so
-        //     the previous SELECT-FOR-UPDATE-then-INSERT pattern let two concurrent first-inserts
-        //     both fall through and produce duplicate rows. PostgreSQL must rely on a NULL-safe
-        //     conflict target (COALESCE("Group", '')); SqlServer's MERGE already handles this
-        //     case in its ON clause.
-        //   - non-NULL Group: the standard unique-constraint path. A regression would either
-        //     produce duplicates (no constraint at all) or surface a raw 23505 sqlstate /
-        //     2627 unique-violation to the caller. We assert exactly one row converges and no
-        //     exception escapes.
+        // Guards against the duplicate-row bug on the StoreReceivedExceptionMessageAsync path: a
+        // SELECT-then-INSERT pattern lets concurrent first-inserts both fall through. Each storm must
+        // converge on exactly one row for its (message ID, consumer identity) key without surfacing a raw
+        // 23505 sqlstate / 2627 unique-violation, and a second consumer identity receiving the same message
+        // ID keeps its own row.
         // Pre-warm the thread pool so a CI box with low default min-threads does not starve the
         // workers and produce a false "lock starvation" timeout.
         ThreadPool.SetMinThreads(
@@ -3485,15 +3509,15 @@ public abstract partial class DataStorageTestsBase : TestBase
         var storage = GetStorage();
         var serializer = GetSerializer();
         const int concurrency = 32;
+        var messageId = $"first-insert-storm-{Guid.NewGuid():N}";
 
-        await runFirstInsertStormAsync(group: null);
-        await runFirstInsertStormAsync(group: "g1");
+        await runFirstInsertStormAsync("billing.invoice-projection");
+        await runFirstInsertStormAsync("orders.fulfillment");
 
         return;
 
-        async Task runFirstInsertStormAsync(string? group)
+        async Task runFirstInsertStormAsync(string consumerIdentity)
         {
-            var messageId = $"first-insert-storm-{group ?? "null"}-{Guid.NewGuid():N}";
             var message = CreateMessage(messageId);
             var content = serializer.Serialize(message);
 
@@ -3509,12 +3533,9 @@ public abstract partial class DataStorageTestsBase : TestBase
                         try
                         {
                             startGate.Wait(AbortToken);
-                            // group! tolerates the InMemory provider's non-nullable string group
-                            // parameter while still exercising the SQL providers' COALESCE/MERGE
-                            // NULL-equivalent upsert key on the database side.
                             var ok = await storage.StoreReceivedExceptionMessageAsync(
                                 "first-insert-storm",
-                                group!,
+                                consumerIdentity,
                                 content,
                                 $"writer-{index}",
                                 AbortToken
@@ -3537,27 +3558,33 @@ public abstract partial class DataStorageTestsBase : TestBase
                 .Should()
                 .BeSameAs(
                     stormCompletion,
-                    $"storm with group={group ?? "<null>"} must finish well under 30s — lock starvation or deadlock suspected"
+                    $"storm for consumer={consumerIdentity} must finish well under 30s — lock starvation or deadlock suspected"
                 );
 
             exceptions
                 .Should()
                 .BeEmpty(
-                    $"no concurrent insert should surface a unique-violation or sqlstate 23505 to the caller (group={group ?? "<null>"})"
+                    $"no concurrent insert should surface a unique-violation or sqlstate 23505 to the caller (consumer={consumerIdentity})"
                 );
-            results.Count(x => x).Should().Be(1, $"exactly one writer must insert the row (group={group ?? "<null>"})");
+            results
+                .Count(x => x)
+                .Should()
+                .Be(1, $"exactly one writer must insert the row (consumer={consumerIdentity})");
             results
                 .Count(x => !x)
                 .Should()
                 .Be(
                     concurrency - 1,
-                    $"all losing writers must observe the existing terminal row (group={group ?? "<null>"})"
+                    $"all losing writers must observe the existing terminal row (consumer={consumerIdentity})"
                 );
 
-            var rowCount = await CountReceivedMessagesByIdentityAsync(messageId, group, AbortToken);
+            var rowCount = await CountReceivedMessagesByIdentityAsync(messageId, consumerIdentity, AbortToken);
             rowCount
                 .Should()
-                .Be(1, $"the concurrent storm must converge to exactly one persisted row (group={group ?? "<null>"})");
+                .Be(
+                    1,
+                    $"the concurrent storm must converge to exactly one persisted row (consumer={consumerIdentity})"
+                );
         }
     }
 
@@ -3566,7 +3593,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         // StoreReceivedMessageAsync (the non-exception path) must also serialize
         // through the same identity check that StoreReceivedExceptionMessageAsync uses. Previously
         // the InMemory provider's non-exception path performed an unconditional insert + index
-        // overwrite, so two concurrent calls with the same (Version, MessageId, Group) produced
+        // overwrite, so two concurrent calls with the same (Version, MessageId, ConsumerIdentity) produced
         // duplicate rows that both showed up in GetReceivedMessagesOfNeedRetryAsync — running the
         // consume executor twice. The SQL providers enforce uniqueness via the DB constraint;
         // this test exercises the InMemory parity path as well as the PG/SqlServer DB paths.
@@ -3578,14 +3605,15 @@ public abstract partial class DataStorageTestsBase : TestBase
         var storage = GetStorage();
         const int concurrency = 32;
 
-        await runStoreReceivedStormAsync(group: null);
-        await runStoreReceivedStormAsync(group: "consume-group");
+        var messageId = $"store-received-storm-{Guid.NewGuid():N}";
+
+        await runStoreReceivedStormAsync("billing.invoice-projection");
+        await runStoreReceivedStormAsync("orders.fulfillment");
 
         return;
 
-        async Task runStoreReceivedStormAsync(string? group)
+        async Task runStoreReceivedStormAsync(string consumerIdentity)
         {
-            var messageId = $"store-received-storm-{group ?? "null"}-{Guid.NewGuid():N}";
             var sharedMessage = CreateMessage(messageId);
 
             using var startGate = new ManualResetEventSlim(initialState: false);
@@ -3601,7 +3629,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                             startGate.Wait(AbortToken);
                             await storage.StoreReceivedMessageAsync(
                                 "store-received-storm",
-                                group!,
+                                consumerIdentity,
                                 sharedMessage,
                                 AbortToken
                             );
@@ -3622,19 +3650,22 @@ public abstract partial class DataStorageTestsBase : TestBase
                 .Should()
                 .BeSameAs(
                     stormCompletion,
-                    $"storm with group={group ?? "<null>"} must finish well under 30s — lock starvation or deadlock suspected"
+                    $"storm for consumer={consumerIdentity} must finish well under 30s — lock starvation or deadlock suspected"
                 );
 
             exceptions
                 .Should()
                 .BeEmpty(
-                    $"no concurrent insert should surface a unique-violation or sqlstate 23505 to the caller (group={group ?? "<null>"})"
+                    $"no concurrent insert should surface a unique-violation or sqlstate 23505 to the caller (consumer={consumerIdentity})"
                 );
 
-            var rowCount = await CountReceivedMessagesByIdentityAsync(messageId, group, AbortToken);
+            var rowCount = await CountReceivedMessagesByIdentityAsync(messageId, consumerIdentity, AbortToken);
             rowCount
                 .Should()
-                .Be(1, $"the concurrent storm must converge to exactly one persisted row (group={group ?? "<null>"})");
+                .Be(
+                    1,
+                    $"the concurrent storm must converge to exactly one persisted row (consumer={consumerIdentity})"
+                );
         }
     }
 
@@ -3980,10 +4011,10 @@ public abstract partial class DataStorageTestsBase : TestBase
         }
     }
 
-    private async Task<MediumMessage> _StoreFailedReceivedMessageAsync(string name, string group)
+    private async Task<MediumMessage> _StoreFailedReceivedMessageAsync(string name, string consumerIdentity)
     {
         var storage = GetStorage();
-        var stored = await storage.StoreReceivedMessageAsync(name, group, CreateMessage(), AbortToken);
+        var stored = await storage.StoreReceivedMessageAsync(name, consumerIdentity, CreateMessage(), AbortToken);
 
         await storage.ChangeReceiveStateAsync(
             stored,

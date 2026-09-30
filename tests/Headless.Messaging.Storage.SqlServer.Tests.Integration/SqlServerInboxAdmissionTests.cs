@@ -181,7 +181,6 @@ public sealed class SqlServerInboxAdmissionTests(SqlServerTestFixture fixture, I
     private static ValueTask<InboxAdmissionResult> _AdmitAsync(IDataStorage storage, string messageId) =>
         storage.AdmitReceivedMessageAsync(
             "orders.created",
-            "orders-group",
             "orders.consumer",
             "v1",
             new MediumMessage

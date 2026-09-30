@@ -3,7 +3,7 @@
 namespace Headless.Messaging.CircuitBreaker;
 
 /// <summary>
-/// Represents the state of a circuit breaker for a messaging consumer group.
+/// Represents the state of a circuit breaker for a messaging consumer.
 /// </summary>
 [PublicAPI]
 public enum CircuitBreakerState

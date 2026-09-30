@@ -219,7 +219,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
 
             // then — message received with correct body
             transportMsg.Body.ToArray().Should().BeEquivalentTo(body);
-            transportMsg.Headers[MessagingHeaders.Group].Should().Be("test-group");
+            transportMsg.Headers.Should().NotContainKey(MessagingHeaders.ConsumerIdentity);
 
             // commit should not throw
             await client.CommitAsync(natsMsg, AbortToken);

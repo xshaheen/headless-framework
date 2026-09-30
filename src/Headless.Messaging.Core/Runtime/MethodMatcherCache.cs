@@ -24,6 +24,9 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
 
     private ConcurrentDictionary<ConsumerGroupKey, byte> _laneGroupConcurrent = new();
 
+    private ConcurrentDictionary<ConsumerIdentityKey, IReadOnlyList<ConsumerExecutorDescriptor>> _identityEntries =
+        new();
+
     /// <summary>
     /// Get a dictionary of candidates.In the dictionary,
     /// the Key is the Group name, the Value for the current Group of candidates
@@ -88,8 +91,20 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
                 laneGroupConcurrent.TryAdd(item.Key, maxConcurrency);
             }
 
+            // Persisted non-inbox rows carry the consumer identity, not the subscription they arrived on, so a retry
+            // finds its consumer by identity.
+            var identityEntries =
+                new ConcurrentDictionary<ConsumerIdentityKey, IReadOnlyList<ConsumerExecutorDescriptor>>();
+            foreach (
+                var item in executorCollection.GroupBy(x => new ConsumerIdentityKey(x.ResolvedConsumerIdentity, x.Lane))
+            )
+            {
+                identityEntries.TryAdd(item.Key, item.ToList());
+            }
+
             _entries = entries;
             _laneEntries = laneEntries;
+            _identityEntries = identityEntries;
             _groupConcurrent = groupConcurrent;
             _laneGroupConcurrent = laneGroupConcurrent;
         }
@@ -173,6 +188,25 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
         return false;
     }
 
+    internal bool TryGetConsumerIdentityExecutor(
+        string messageName,
+        string consumerIdentity,
+        MessageLane lane,
+        [NotNullWhen(true)] out ConsumerExecutorDescriptor? descriptor
+    )
+    {
+        descriptor = null;
+        _EnsureEntries();
+
+        if (_identityEntries.TryGetValue(new ConsumerIdentityKey(consumerIdentity, lane), out var candidates))
+        {
+            descriptor = selector.SelectBestCandidate(messageName, candidates);
+            return descriptor is not null;
+        }
+
+        return false;
+    }
+
     internal bool TryGetInboxExecutor(
         string consumerIdentity,
         string contractIdentity,
@@ -207,6 +241,8 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
             _laneEntries = new ConcurrentDictionary<ConsumerGroupKey, IReadOnlyList<ConsumerExecutorDescriptor>>();
             _groupConcurrent = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
             _laneGroupConcurrent = new ConcurrentDictionary<ConsumerGroupKey, byte>();
+            _identityEntries =
+                new ConcurrentDictionary<ConsumerIdentityKey, IReadOnlyList<ConsumerExecutorDescriptor>>();
         }
 
         selector.Invalidate();
@@ -214,3 +250,5 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
 }
 
 internal readonly record struct ConsumerGroupKey(string GroupName, MessageLane Lane);
+
+internal readonly record struct ConsumerIdentityKey(string ConsumerIdentity, MessageLane Lane);

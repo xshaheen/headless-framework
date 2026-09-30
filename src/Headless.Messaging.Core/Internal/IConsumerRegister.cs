@@ -490,7 +490,10 @@ internal sealed class ConsumerRegister(
         if (removeCircuitState && _circuitBreakerStateManager is not null)
         {
             await Task.WhenAll(
-                    handles.Select(handle => _circuitBreakerStateManager.RemoveGroupAsync(handle.GroupName).AsTask())
+                    handles
+                        .SelectMany(static handle => handle.CircuitKeys)
+                        .Distinct(StringComparer.Ordinal)
+                        .Select(circuitKey => _circuitBreakerStateManager.RemoveConsumerAsync(circuitKey).AsTask())
                 )
                 .ConfigureAwait(false);
         }
@@ -541,8 +544,15 @@ internal sealed class ConsumerRegister(
         var groupingMatches = _selector.GetCandidatesMethodsOfLaneGroupNameGrouped();
         List<Task>? startupTasks = null;
 
-        // Arm the OTel cardinality guard so unrecognized group names are rejected.
-        _circuitBreakerStateManager?.RegisterKnownGroups(groupingMatches.Keys.Select(_CreateHandleName));
+        // Circuits belong to consumer identities, not to the subscriptions their clients consume, so an identity whose
+        // messages arrive through several clients trips once and pauses all of them. Arming the known set also stops
+        // unrecognized keys from reaching the OTel cardinality.
+        _circuitBreakerStateManager?.RegisterKnownConsumers(
+            groupingMatches
+                .Values.SelectMany(static x => x)
+                .Select(CircuitBreakerKeys.For)
+                .Distinct(StringComparer.Ordinal)
+        );
 
         foreach (var matchGroup in groupingMatches)
         {
@@ -575,26 +585,33 @@ internal sealed class ConsumerRegister(
                 Logger = _logger,
                 Cts = groupCts,
                 GroupName = handleName,
+                CircuitKeys = matchGroup.Value.Select(CircuitBreakerKeys.For).ToFrozenSet(StringComparer.Ordinal),
             };
 
             _groupHandles[handleName] = handle;
-            _circuitBreakerStateManager?.RegisterGroupCallbacks(
-                handleName,
-                onPause: epoch => _PauseGroupAsync(handle, epoch),
-                onResume: epoch => _ResumeGroupAsync(handle, epoch)
-            );
 
-            // Normalize HalfOpen → Open: the aborted probe is invalid on rebuilt transport clients.
-            // This is a no-op during initial startup (no groups are in HalfOpen then).
             if (_circuitBreakerStateManager is not null)
             {
-                await _circuitBreakerStateManager.AbortHalfOpenProbeAsync(handleName).ConfigureAwait(false);
-
-                // If the circuit is Open (or was just re-normalized from HalfOpen),
-                // pre-pause the new handle so newly created clients get paused via AddClientAsync.
-                if (_circuitBreakerStateManager.TryGetOpenEpoch(handleName, out var openEpoch))
+                foreach (var circuitKey in handle.CircuitKeys)
                 {
-                    await _PauseGroupAsync(handle, openEpoch).ConfigureAwait(false);
+                    // Re-registering on restart replaces the previous generation's callbacks; they resolve the handles
+                    // at call time, so they always reach the current clients.
+                    _circuitBreakerStateManager.RegisterConsumerCallbacks(
+                        circuitKey,
+                        onPause: epoch => _ApplyCircuitIntentAsync(circuitKey, pause: true, epoch),
+                        onResume: epoch => _ApplyCircuitIntentAsync(circuitKey, pause: false, epoch)
+                    );
+
+                    // Normalize HalfOpen → Open: the aborted probe is invalid on rebuilt transport clients.
+                    // This is a no-op during initial startup (no circuits are in HalfOpen then).
+                    await _circuitBreakerStateManager.AbortHalfOpenProbeAsync(circuitKey).ConfigureAwait(false);
+
+                    // If the circuit is Open (or was just re-normalized from HalfOpen),
+                    // pre-pause the new handle so newly created clients get paused via AddClientAsync.
+                    if (_circuitBreakerStateManager.TryGetOpenEpoch(circuitKey, out var openEpoch))
+                    {
+                        await _PauseGroupAsync(handle, openEpoch).ConfigureAwait(false);
+                    }
                 }
             }
 
@@ -619,7 +636,7 @@ internal sealed class ConsumerRegister(
 
                                 _serverAddress = innerClient.BrokerAddress;
 
-                                _RegisterMessageProcessor(innerClient, groupName, handleName, lane, groupCts.Token);
+                                _RegisterMessageProcessor(innerClient, groupName, handle, lane, groupCts.Token);
 
                                 await innerClient.SubscribeAsync(messageNames, groupCts.Token).ConfigureAwait(false);
                                 await _AwaitConsumerReadyThenListenAsync(innerClient, startupReady, groupCts.Token)
@@ -670,9 +687,10 @@ internal sealed class ConsumerRegister(
         return _consumerClientFactory.CreateAsync(groupName, groupConcurrent, lane, cancellationToken);
     }
 
+    // Names the clients of one subscription on one lane; circuits are keyed by consumer identity instead.
     private static string _CreateHandleName(ConsumerGroupKey groupKey)
     {
-        return CircuitBreakerGroupKeys.For(groupKey.Lane, groupKey.GroupName);
+        return string.Create(CultureInfo.InvariantCulture, $"{(short)groupKey.Lane}:{groupKey.GroupName}");
     }
 
     private async Task _AwaitConsumerReadyThenListenAsync(
@@ -790,6 +808,52 @@ internal sealed class ConsumerRegister(
         {
             await _RestartCoreAsync().ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Applies a circuit's pause or resume to every client that consumes the circuit's identity. A client shared by
+    /// several identities resumes only once none of its other circuits is still Open, so one identity recovering never
+    /// releases deliveries of another that is still tripped.
+    /// </summary>
+    private async ValueTask _ApplyCircuitIntentAsync(string circuitKey, bool pause, long epoch)
+    {
+        foreach (var handle in _groupHandles.Values)
+        {
+            if (!handle.CircuitKeys.Contains(circuitKey))
+            {
+                continue;
+            }
+
+            if (!pause && _IsAnotherCircuitOpen(handle, circuitKey))
+            {
+                continue;
+            }
+
+            if (pause)
+            {
+                await _PauseGroupAsync(handle, epoch).ConfigureAwait(false);
+            }
+            else
+            {
+                await _ResumeGroupAsync(handle, epoch).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private bool _IsAnotherCircuitOpen(GroupHandle handle, string circuitKey)
+    {
+        foreach (var other in handle.CircuitKeys)
+        {
+            if (
+                !string.Equals(other, circuitKey, StringComparison.Ordinal)
+                && _circuitBreakerStateManager?.GetState(other) is CircuitBreakerState.Open
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private ValueTask _PauseGroupAsync(GroupHandle handle, long epoch)
@@ -920,7 +984,7 @@ internal sealed class ConsumerRegister(
     private void _RegisterMessageProcessor(
         IConsumerClient client,
         string group,
-        string handleName,
+        GroupHandle clientHandle,
         MessageLane lane,
         CancellationToken hostShutdownToken
     )
@@ -946,11 +1010,28 @@ internal sealed class ConsumerRegister(
             var receiveRejectIsPolicy = false;
             var receiveOutcomeCancelled = false;
 
+            // Resolved once up front: the consumer identity keys the circuit, the stored row, the metrics, and the
+            // header every later stage reads. A delivery no consumer claims has no identity and no circuit, so its
+            // poison row is labelled with the subscription it arrived on.
+            string? circuitKey = null;
+
             try
             {
-                if (_circuitBreakerStateManager is not null)
+                var name = transportMessage.Name;
+                var canFindSubscriber = _selector.TryGetMessageNameExecutor(name, group, lane, out var executor);
+                var consumerIdentity = executor?.ResolvedConsumerIdentity ?? group;
+
+                // Replaces whatever the publisher sent, so the header always names the consumer that received it.
+                transportMessage.Headers[Headers.ConsumerIdentity] = consumerIdentity;
+
+                if (executor is not null)
                 {
-                    probeEpoch = _circuitBreakerStateManager.TryAcquireHalfOpenProbe(handleName);
+                    circuitKey = CircuitBreakerKeys.For(executor);
+                }
+
+                if (_circuitBreakerStateManager is not null && circuitKey is not null)
+                {
+                    probeEpoch = _circuitBreakerStateManager.TryAcquireHalfOpenProbe(circuitKey);
 
                     if (probeEpoch is null)
                     {
@@ -961,24 +1042,21 @@ internal sealed class ConsumerRegister(
                     }
 
                     admissionEpoch = probeEpoch.Value;
-                    if (_circuitBreakerStateManager.TryGetOpenEpoch(handleName, out var openEpoch))
+                    if (_circuitBreakerStateManager.TryGetOpenEpoch(circuitKey, out var openEpoch))
                     {
-                        var handle = _groupHandles.TryGetValue(handleName, out var currentHandle)
-                            ? currentHandle
-                            : null;
-                        var safeGroupName = LogSanitizer.Sanitize(handleName);
-                        if (handle?.IsPauseAppliedForEpoch(openEpoch) == true)
+                        var safeCircuitKey = LogSanitizer.Sanitize(circuitKey);
+                        if (clientHandle.IsPauseAppliedForEpoch(openEpoch))
                         {
                             if (_logger.IsEnabled(LogLevel.Warning))
                             {
-                                _logger.DeliveryAdmittedWhileOpenAfterPause(safeGroupName);
+                                _logger.DeliveryAdmittedWhileOpenAfterPause(safeCircuitKey);
                             }
                         }
                         else
                         {
                             if (_logger.IsEnabled(LogLevel.Debug))
                             {
-                                _logger.DeliveryAdmittedDuringPauseLatency(safeGroupName);
+                                _logger.DeliveryAdmittedDuringPauseLatency(safeCircuitKey);
                             }
                         }
                     }
@@ -993,12 +1071,8 @@ internal sealed class ConsumerRegister(
 
                 traceHandle = _TracingBefore(transportMessage, lane, _serverAddress);
 
-                var name = transportMessage.Name;
-
                 Message message;
                 Exception? dispatchBypassException = null;
-
-                var canFindSubscriber = _selector.TryGetMessageNameExecutor(name, group, lane, out var executor);
                 string? exceptionInfo = null;
 
                 try
@@ -1006,9 +1080,9 @@ internal sealed class ConsumerRegister(
                     if (!canFindSubscriber)
                     {
                         var safeName = LogSanitizer.Sanitize(name);
-                        var safeGroup = LogSanitizer.Sanitize(group);
+                        var safeSubscription = LogSanitizer.Sanitize(group);
                         var error =
-                            $"Message can not be found subscriber. Name:{safeName}, Group:{safeGroup}. {Environment.NewLine} Ensure the subscriber method is decorated with [Subscribe] and the consumer group matches.";
+                            $"Message can not be found subscriber. Name:{safeName}, Subscription:{safeSubscription}. {Environment.NewLine} Ensure a consumer is registered for the message on this subscription.";
                         var ex = new SubscriberNotFoundException(error);
 
                         _TracingError(traceHandle, transportMessage, client.BrokerAddress, ex);
@@ -1047,7 +1121,7 @@ internal sealed class ConsumerRegister(
                                 receiveOutcome.MiddlewareType!,
                                 LogSanitizer.Sanitize(transportMessage.Id),
                                 LogSanitizer.Sanitize(name),
-                                LogSanitizer.Sanitize(group),
+                                LogSanitizer.Sanitize(consumerIdentity),
                                 lane.ToString(),
                                 LogSanitizer.Sanitize(receiveOutcome.OutcomeReason)
                             );
@@ -1074,7 +1148,7 @@ internal sealed class ConsumerRegister(
                             _logger.ReceiveOutcomeCancelled(
                                 LogSanitizer.Sanitize(transportMessage.Id),
                                 LogSanitizer.Sanitize(name),
-                                LogSanitizer.Sanitize(group)
+                                LogSanitizer.Sanitize(consumerIdentity)
                             );
                         }
                         throw receiveOutcome.Exception!;
@@ -1098,7 +1172,7 @@ internal sealed class ConsumerRegister(
                                 receiveOutcome.MiddlewareType!,
                                 LogSanitizer.Sanitize(transportMessage.Id),
                                 LogSanitizer.Sanitize(name),
-                                LogSanitizer.Sanitize(group),
+                                LogSanitizer.Sanitize(consumerIdentity),
                                 lane.ToString(),
                                 LogSanitizer.Sanitize(
                                     receiveOutcome.OutcomeReason ?? dispatchBypassException.ExpandMessage()
@@ -1141,7 +1215,11 @@ internal sealed class ConsumerRegister(
 
                 if (message.HasException())
                 {
-                    if (dispatchBypassException is not null && _circuitBreakerStateManager is not null)
+                    if (
+                        dispatchBypassException is not null
+                        && _circuitBreakerStateManager is not null
+                        && circuitKey is not null
+                    )
                     {
                         // An explicit Reject() (or its Stage A equivalents routed as policy) is a
                         // policy decision on attacker-controllable input, not a subscriber failure:
@@ -1151,7 +1229,7 @@ internal sealed class ConsumerRegister(
                         if (!receiveRejectIsPolicy)
                         {
                             await _circuitBreakerStateManager
-                                .ReportFailureAsync(handleName, dispatchBypassException, CancellationToken.None)
+                                .ReportFailureAsync(circuitKey, dispatchBypassException, CancellationToken.None)
                                 .ConfigureAwait(false);
 
                             probeOutcomeTransferred = true;
@@ -1165,7 +1243,7 @@ internal sealed class ConsumerRegister(
                     var stored = await _storage
                         .StoreReceivedExceptionMessageAsync(
                             name,
-                            group,
+                            consumerIdentity,
                             new MediumMessage
                             {
                                 StorageId = Guid.Empty,
@@ -1252,10 +1330,10 @@ internal sealed class ConsumerRegister(
                 }
                 else
                 {
-                    var consumerIdentity = executor!.ConsumerIdentity;
-                    var messageContractVersion = executor.MessageContractVersion;
+                    var messageContractVersion = executor!.MessageContractVersion;
                     if (
-                        string.IsNullOrWhiteSpace(consumerIdentity) || string.IsNullOrWhiteSpace(messageContractVersion)
+                        string.IsNullOrWhiteSpace(executor.ConsumerIdentity)
+                        || string.IsNullOrWhiteSpace(messageContractVersion)
                     )
                     {
                         // Runtime subscriptions are intentionally process-local and have no durable identity.
@@ -1264,7 +1342,7 @@ internal sealed class ConsumerRegister(
                         var runtimeMessage = await _storage
                             .StoreReceivedMessageAsync(
                                 name,
-                                group,
+                                consumerIdentity,
                                 new MediumMessage
                                 {
                                     StorageId = Guid.Empty,
@@ -1296,7 +1374,6 @@ internal sealed class ConsumerRegister(
                     var admission = await _storage
                         .AdmitReceivedMessageAsync(
                             name,
-                            group,
                             consumerIdentity,
                             message.Headers[Headers.ContractVersion]!,
                             new MediumMessage
@@ -1383,9 +1460,9 @@ internal sealed class ConsumerRegister(
             }
             finally
             {
-                if (probeEpoch is not null && !probeOutcomeTransferred)
+                if (probeEpoch is not null && !probeOutcomeTransferred && circuitKey is not null)
                 {
-                    _circuitBreakerStateManager?.ReleaseHalfOpenProbe(handleName, admissionEpoch);
+                    _circuitBreakerStateManager?.ReleaseHalfOpenProbe(circuitKey, admissionEpoch);
                 }
             }
         }
@@ -1514,7 +1591,7 @@ internal sealed class ConsumerRegister(
         var context = new ReceiveContext(
             transportMessage.Id,
             transportMessage.Name,
-            group,
+            executor.ResolvedConsumerIdentity,
             lane,
             messageType,
             executor.MessageContractVersion,
@@ -1866,6 +1943,9 @@ internal sealed class ConsumerRegister(
         public required ILogger Logger { get; init; }
         public required CancellationTokenSource Cts { get; init; }
         public required string GroupName { get; init; }
+
+        /// <summary>The lane-qualified circuit keys of the consumer identities this handle's clients deliver to.</summary>
+        public FrozenSet<string> CircuitKeys { get; init; } = FrozenSet<string>.Empty;
         public ConcurrentBag<Task> ConsumerTasks { get; init; } = [];
 
         // Production reads the pause state through the private _isPaused field (see AddClientAsync); the public getter

@@ -83,7 +83,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         await base.DisposeAsyncCore().ConfigureAwait(false);
     }
 
-    private static MediumMessage _CreateMessage(string? group)
+    private static MediumMessage _CreateMessage(string? consumerIdentity)
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -91,9 +91,9 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             [Headers.MessageName] = "integration.test.messageName",
         };
 
-        if (group is not null)
+        if (consumerIdentity is not null)
         {
-            headers[Headers.Group] = group;
+            headers[Headers.ConsumerIdentity] = consumerIdentity;
         }
 
         return new MediumMessage
@@ -146,7 +146,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         var pauseCalled = false;
         await using var sut = _CreateStateManager(failureThreshold: 3);
 
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             group,
             onPause: async epoch =>
             {
@@ -201,7 +201,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             timeProvider: timeProvider
         );
 
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             group,
             onPause: epoch =>
             {
@@ -263,12 +263,12 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
 
         await using var stateManager = _CreateStateManager(failureThreshold: 1);
 
-        stateManager.RegisterGroupCallbacks(
+        stateManager.RegisterConsumerCallbacks(
             openCircuitGroup,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch => ValueTask.CompletedTask
         );
-        stateManager.RegisterGroupCallbacks(
+        stateManager.RegisterConsumerCallbacks(
             healthyCircuitGroup,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch => ValueTask.CompletedTask
@@ -332,7 +332,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             timeProvider: timeProvider
         );
 
-        stateManager.RegisterGroupCallbacks(
+        stateManager.RegisterConsumerCallbacks(
             circuitGroup,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch =>
@@ -402,8 +402,8 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
     {
         // given
         const string group = "integration.group.shared";
-        var busKey = CircuitBreakerGroupKeys.For(MessageLane.Bus, group);
-        var queueKey = CircuitBreakerGroupKeys.For(MessageLane.Queue, group);
+        var busKey = CircuitBreakerKeys.For(MessageLane.Bus, group);
+        var queueKey = CircuitBreakerKeys.For(MessageLane.Queue, group);
         var busPaused = false;
         var queuePaused = false;
         var queueResumed = false;
@@ -415,8 +415,8 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             timeProvider: timeProvider
         );
 
-        sut.RegisterKnownGroups([busKey, queueKey]);
-        sut.RegisterGroupCallbacks(
+        sut.RegisterKnownConsumers([busKey, queueKey]);
+        sut.RegisterConsumerCallbacks(
             busKey,
             onPause: epoch =>
             {
@@ -429,7 +429,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
                 return ValueTask.CompletedTask;
             }
         );
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             queueKey,
             onPause: epoch =>
             {
@@ -483,7 +483,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         var client = Substitute.For<IConsumerClient>();
         var handle = await _CreateHandleAsync(group, client);
 
-        stateManager.RegisterGroupCallbacks(
+        stateManager.RegisterConsumerCallbacks(
             circuitGroup,
             onPause: epoch => _PauseHandleAsync(register, handle, epoch),
             onResume: async epoch =>
@@ -529,7 +529,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         var client = Substitute.For<IConsumerClient>();
         var handle = await _CreateHandleAsync(group, client);
 
-        stateManager.RegisterGroupCallbacks(
+        stateManager.RegisterConsumerCallbacks(
             circuitGroup,
             onPause: epoch => _PauseHandleAsync(register, handle, epoch),
             onResume: async epoch =>
@@ -574,7 +574,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         var client = Substitute.For<IConsumerClient>();
         var handle = await _CreateHandleAsync(group, client);
 
-        stateManager.RegisterGroupCallbacks(
+        stateManager.RegisterConsumerCallbacks(
             circuitGroup,
             onPause: epoch => _PauseHandleAsync(register, handle, epoch),
             onResume: async epoch =>
@@ -624,7 +624,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         var replacementHandle = await _CreateHandleAsync(group, replacementClient);
         var legacyHandle = await _CreateHandleAsync(group, legacyClient);
 
-        stateManager.RegisterGroupCallbacks(
+        stateManager.RegisterConsumerCallbacks(
             circuitGroup,
             onPause: epoch => _PauseHandleAsync(register, replacementHandle, epoch),
             onResume: async epoch =>
@@ -678,7 +678,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             .Returns(_ => ValueTask.FromException(new InvalidOperationException("resume failed")));
         var handle = await _CreateHandleAsync(group, client);
 
-        stateManager.RegisterGroupCallbacks(
+        stateManager.RegisterConsumerCallbacks(
             circuitGroup,
             onPause: async epoch =>
             {
@@ -716,7 +716,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         var replacementClient = Substitute.For<IConsumerClient>();
         var replacementHandle = await _CreateHandleAsync(group, replacementClient);
 
-        stateManager.RegisterGroupCallbacks(
+        stateManager.RegisterConsumerCallbacks(
             circuitGroup,
             onPause: epoch => _PauseHandleAsync(register, replacementHandle, epoch),
             onResume: _ => ValueTask.CompletedTask

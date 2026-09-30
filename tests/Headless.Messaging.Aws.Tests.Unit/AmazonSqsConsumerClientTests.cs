@@ -1412,8 +1412,8 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
 
         // then
         capturedMessage.Should().NotBeNull();
-        capturedMessage!.Value.Headers.Should().ContainKey(Headers.Group);
-        capturedMessage.Value.Headers[Headers.Group].Should().Be("my-consumer-group");
+        // The consumer identity is stamped by the messaging core once the delivery is routed, never by the transport.
+        capturedMessage!.Value.Headers.Should().NotContainKey(Headers.ConsumerIdentity);
         capturedMessage.Value.Headers.Should().ContainKey("headless-msg-id");
         capturedMessage.Value.Headers["headless-msg-id"].Should().Be("msg-123");
         capturedMessage.Value.Headers.Should().ContainKey("headless-msg-name");

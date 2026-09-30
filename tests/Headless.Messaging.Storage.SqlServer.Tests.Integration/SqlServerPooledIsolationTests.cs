@@ -201,7 +201,6 @@ public sealed class SqlServerPooledIsolationTests(SqlServerTestFixture fixture) 
     {
         var admitted = await storage.AdmitReceivedMessageAsync(
             "isolation.message",
-            "isolation-group",
             "isolation.consumer",
             "1",
             new MediumMessage

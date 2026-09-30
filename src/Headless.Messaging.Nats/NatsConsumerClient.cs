@@ -783,8 +783,6 @@ internal sealed class NatsConsumerClient(
                     headers[key] = values.Count > 0 ? values[0] : null;
                 }
             }
-
-            headers[Headers.Group] = name;
         }
         catch (Exception ex)
         {

@@ -13,7 +13,7 @@ namespace Headless.Messaging;
 /// OpenTelemetry metric instruments for messaging operations, registered against
 /// <see cref="MessagingDiagnostics.Meter"/>. Instrument names and standard dimensions follow the OpenTelemetry
 /// messaging semantic conventions verbatim (<c>messaging.publish.messages</c>, <c>messaging.consume.duration</c>,
-/// dims <c>messaging.operation</c> / <c>messaging.system</c> / <c>messaging.consumer.group</c> /
+/// dims <c>messaging.operation</c> / <c>messaging.system</c> / <c>messaging.consumer.group.name</c> /
 /// <c>error.type</c>); see docs/solutions/conventions/opentelemetry-instrumentation-conventions.md.
 /// </summary>
 /// <remarks>
@@ -50,7 +50,10 @@ internal static class MessagingMetrics
 
     internal const string TagOperation = "messaging.operation";
     internal const string TagSystem = "messaging.system";
-    internal const string TagConsumerGroup = "messaging.consumer.group";
+
+    // The semantic-convention name for the consumer group; its value is the consumer identity, which is what a broker
+    // subscription is named after.
+    internal const string TagConsumerGroupName = "messaging.consumer.group.name";
     internal const string TagErrorType = "error.type";
     internal const string TagSubscriber = "messaging.subscriber";
     internal const string TagPersistenceType = "messaging.persistence.type";
@@ -269,11 +272,11 @@ internal static class MessagingMetrics
     internal static void RecordConsume(
         string operation,
         string brokerName,
-        string? consumerGroup = null,
+        string? consumerIdentity = null,
         long? elapsedMs = null
     )
     {
-        var group = consumerGroup ?? "";
+        var identity = consumerIdentity ?? "";
 
         if (_MessagesConsumed.Enabled)
         {
@@ -283,7 +286,7 @@ internal static class MessagingMetrics
                 {
                     { TagOperation, operation },
                     { TagSystem, brokerName },
-                    { TagConsumerGroup, group },
+                    { TagConsumerGroupName, identity },
                 }
             );
         }
@@ -296,7 +299,7 @@ internal static class MessagingMetrics
                 {
                     { TagOperation, operation },
                     { TagSystem, brokerName },
-                    { TagConsumerGroup, group },
+                    { TagConsumerGroupName, identity },
                 }
             );
         }
@@ -306,7 +309,7 @@ internal static class MessagingMetrics
         string operation,
         string brokerName,
         string errorType,
-        string? consumerGroup = null
+        string? consumerIdentity = null
     )
     {
         if (!_ConsumeErrors.Enabled)
@@ -321,7 +324,7 @@ internal static class MessagingMetrics
                 { TagOperation, operation },
                 { TagSystem, brokerName },
                 { TagErrorType, errorType },
-                { TagConsumerGroup, consumerGroup ?? "" },
+                { TagConsumerGroupName, consumerIdentity ?? "" },
             }
         );
     }

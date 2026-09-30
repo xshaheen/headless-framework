@@ -224,8 +224,6 @@ internal sealed class PulsarConsumerClient(
                             headers.Add(header.Key, header.Value);
                         }
 
-                        headers[Headers.Group] = groupName;
-
                         message = transportMessageFactory is null
                             ? new TransportMessage(headers, currentMessage.Data)
                             : transportMessageFactory(headers, currentMessage.Data);

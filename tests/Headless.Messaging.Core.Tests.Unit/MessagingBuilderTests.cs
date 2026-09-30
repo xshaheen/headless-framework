@@ -226,7 +226,7 @@ public sealed class MessagingBuilderTests
     }
 
     [Fact]
-    public void with_circuit_breaker_uses_final_group_name()
+    public void with_circuit_breaker_keys_the_override_by_consumer_identity()
     {
         // given
         var services = new ServiceCollection();
@@ -250,7 +250,10 @@ public sealed class MessagingBuilderTests
         var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
 
         // then
-        cbRegistry.TryGet(_CircuitKey(MessageLane.Bus, "final-group"), out var opts).Should().BeTrue();
+        cbRegistry
+            .TryGet(_CircuitKey(MessageLane.Bus, "tests.messaging-builder.orders"), out var opts)
+            .Should()
+            .BeTrue();
         opts!.FailureThreshold.Should().Be(3);
     }
 }

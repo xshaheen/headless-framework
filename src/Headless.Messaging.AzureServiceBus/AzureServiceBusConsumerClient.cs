@@ -570,15 +570,13 @@ internal sealed class AzureServiceBusConsumerClient(
 
     #region private methods
 
-    private Dictionary<string, string?> _ConvertHeaders(ServiceBusReceivedMessage message)
+    private static Dictionary<string, string?> _ConvertHeaders(ServiceBusReceivedMessage message)
     {
         var headers = message.ApplicationProperties.ToDictionary(
             x => x.Key,
             y => y.Value?.ToString(),
             StringComparer.Ordinal
         );
-
-        headers[Headers.Group] = subscriptionName;
 
         return headers;
     }

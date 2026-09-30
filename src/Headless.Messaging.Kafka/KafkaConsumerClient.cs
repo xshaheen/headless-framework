@@ -520,8 +520,6 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 var val = header.GetValueBytes();
                 headers[header.Key] = val != null ? Encoding.UTF8.GetString(val) : null;
             }
-
-            headers[Headers.Group] = _groupId;
         }
         catch (Exception ex)
         {

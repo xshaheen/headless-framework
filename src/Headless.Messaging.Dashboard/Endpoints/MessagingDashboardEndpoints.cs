@@ -456,7 +456,7 @@ public static partial class MessagingDashboardEndpoints
                 StorageId = message.StorageId.ToString("D"),
                 MessageId = message.Origin.Id,
                 message.Origin.Name,
-                Group = message.Origin.GetGroup(),
+                ConsumerIdentity = message.Origin.GetConsumerIdentity(),
                 Lane = message.Lane.ToString("G"),
                 RequestedDeliveryMode = delivery.RequestedDeliveryMode?.ToString("G"),
                 ResolvedDeliveryMode = delivery.ResolvedDeliveryMode?.ToString("G"),
@@ -811,7 +811,7 @@ public static partial class MessagingDashboardEndpoints
         string status,
         IServiceProvider sp,
         string? name = null,
-        string? group = null,
+        string? consumerIdentity = null,
         string? content = null,
         MessageLane? lane = null,
         int perPage = 20,
@@ -834,7 +834,7 @@ public static partial class MessagingDashboardEndpoints
         var queryDto = new MessageQuery
         {
             MessageType = MessageType.Subscribe,
-            Group = group ?? string.Empty,
+            ConsumerIdentity = consumerIdentity ?? string.Empty,
             Name = name ?? string.Empty,
             Content = content ?? string.Empty,
             Lane = lane,
@@ -852,19 +852,27 @@ public static partial class MessagingDashboardEndpoints
         try
         {
             var cache = sp.GetRequiredService<MethodMatcherCache>();
-            var subscribers = cache.GetCandidatesMethodsOfGroupNameGrouped();
+
+            // Listed by consumer identity, the key received rows and circuits use, rather than by the subscription
+            // a client consumes.
+            var consumers = cache
+                .GetCandidatesMethodsOfGroupNameGrouped()
+                .Values.SelectMany(static descriptors => descriptors)
+                .GroupBy(static descriptor => descriptor.ResolvedConsumerIdentity, StringComparer.Ordinal)
+                .OrderBy(static consumer => consumer.Key, StringComparer.Ordinal);
 
             var result = new List<WarpResult>();
 
-            foreach (var subscriber in subscribers)
+            foreach (var consumer in consumers)
             {
-                var inner = new WarpResult { Group = subscriber.Key, Values = [] };
-                foreach (var descriptor in subscriber.Value)
+                var inner = new WarpResult { ConsumerIdentity = consumer.Key, Values = [] };
+                foreach (var descriptor in consumer)
                 {
                     inner.Values.Add(
                         new WarpResult.SubInfo
                         {
                             MessageName = descriptor.MessageName,
+                            Lane = descriptor.Lane.ToString("G"),
                             ImplName = descriptor.ImplTypeInfo.Name,
                             MethodEscaped = HtmlHelper.MethodEscaped(descriptor.MethodInfo),
                         }
@@ -888,7 +896,7 @@ public static partial class MessagingDashboardEndpoints
         {
             StorageId = message.StorageId.ToString("D"),
             message.MessageId,
-            message.Group,
+            message.ConsumerIdentity,
             message.Name,
             Lane = message.Lane.ToString("G"),
             RequestedDeliveryMode = message.RequestedDeliveryMode?.ToString("G"),
@@ -1198,13 +1206,15 @@ internal sealed class WarpResult
 {
     public int ChildCount => Values.Count;
 
-    public required string Group { get; set; }
+    public required string ConsumerIdentity { get; set; }
 
     public required List<SubInfo> Values { get; set; }
 
     internal sealed class SubInfo
     {
         public required string MessageName { get; set; }
+
+        public required string Lane { get; set; }
 
         public required string ImplName { get; set; }
 

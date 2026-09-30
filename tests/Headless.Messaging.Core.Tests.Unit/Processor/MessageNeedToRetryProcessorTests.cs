@@ -24,18 +24,18 @@ namespace Tests.Processor;
 
 public sealed class MessageNeedToRetryProcessorTests : TestBase
 {
-    private const string _Group = "test-group";
+    private const string _ConsumerIdentity = "test-consumer";
 
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static string _CircuitKey(string group)
+    private static string _CircuitKey(string consumerIdentity)
     {
-        return $"{MessageLane.Bus:D}:{group}";
+        return $"{MessageLane.Bus:D}:{consumerIdentity}";
     }
 
-    private static MediumMessage _CreateMessage(string? group = _Group)
+    private static MediumMessage _CreateMessage(string? consumerIdentity = _ConsumerIdentity)
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -43,9 +43,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             [Headers.MessageName] = "test.messageName",
         };
 
-        if (group is not null)
+        if (consumerIdentity is not null)
         {
-            headers[Headers.Group] = group;
+            headers[Headers.ConsumerIdentity] = consumerIdentity;
         }
 
         return new MediumMessage
@@ -359,16 +359,16 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task process_async_skips_messages_when_circuit_is_open_for_group()
+    public async Task process_async_skips_messages_when_circuit_is_open_for_consumer()
     {
         // given
         var (sut, dispatcher, cb) = _Create();
-        var msg1 = _CreateMessage("group-a");
-        var msg2 = _CreateMessage("group-b");
-        var msg3 = _CreateMessage("group-a");
+        var msg1 = _CreateMessage("consumer-a");
+        var msg2 = _CreateMessage("consumer-b");
+        var msg3 = _CreateMessage("consumer-a");
 
-        cb.IsOpen(_CircuitKey("group-a")).Returns(true);
-        cb.IsOpen(_CircuitKey("group-b")).Returns(false);
+        cb.IsOpen(_CircuitKey("consumer-a")).Returns(true);
+        cb.IsOpen(_CircuitKey("consumer-b")).Returns(false);
 
         var dataStorage = Substitute.For<IDataStorage>();
         _SetupReceivedMessages(dataStorage, msg1, msg2, msg3);
@@ -381,7 +381,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // when
         await sut.ProcessAsync(context);
 
-        // then — only group-b message enqueued
+        // then — only consumer-b message enqueued
         await dispatcher.Received(1).EnqueueToExecute(msg2, null, Arg.Any<CancellationToken>());
         await dispatcher.DidNotReceive().EnqueueToExecute(msg1, null, Arg.Any<CancellationToken>());
         await dispatcher.DidNotReceive().EnqueueToExecute(msg3, null, Arg.Any<CancellationToken>());
@@ -392,7 +392,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     [InlineData(true)]
     public async Task should_release_unhanded_claims_when_orphan_classification_fails(bool canceled)
     {
-        var circuit = _CreateMessage("open-group");
+        var circuit = _CreateMessage("open-consumer");
         var first = _CreateMessage();
         var second = _CreateMessage();
         foreach (var message in new[] { circuit, first, second })
@@ -411,7 +411,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                     : ValueTask.FromException<bool>(new InvalidOperationException("classification failed"))
             );
         var (sut, dispatcher, monitor) = _Create(baseIntervalSeconds: 0, adaptivePolling: false);
-        monitor.IsOpen(_CircuitKey("open-group")).Returns(true);
+        monitor.IsOpen(_CircuitKey("open-consumer")).Returns(true);
         await using var context = _CreateContext(
             new ServiceCollection().AddSingleton(storage).BuildServiceProvider(),
             cancellationToken: AbortToken
@@ -445,7 +445,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         bool mismatchedVersion
     )
     {
-        var message = _CreateMessage("obsolete-group");
+        var message = _CreateMessage("obsolete-consumer");
         message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(1);
         message.Owner = "node-a";
         message.InboxKey = new InboxKey(
@@ -495,7 +495,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         bool orphanProbe
     )
     {
-        var message = _CreateMessage("obsolete-group");
+        var message = _CreateMessage("obsolete-consumer");
         message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(1);
         message.Owner = "node-a";
         message.InboxKey = new InboxKey(
@@ -545,7 +545,10 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
 
-        message.Origin.GetGroup().Should().Be(accepted ? "renamed-group" : "obsolete-group");
+        message
+            .Origin.GetConsumerIdentity()
+            .Should()
+            .Be(accepted ? "tests.retry.stable-consumer" : "obsolete-consumer");
         await storage.Received(1).ConfirmReceivedInboxRoutableAsync(message, CancellationToken.None);
         await dispatcher.Received(accepted ? 1 : 0).EnqueueToExecute(message, null, Arg.Any<CancellationToken>());
     }
@@ -560,7 +563,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     {
         // The meter is process-global; a per-test consumer identity isolates measurements from parallel tests.
         var consumerIdentity = $"tests.retry.routable-metric.{Guid.NewGuid():N}";
-        var message = _CreateMessage("obsolete-group");
+        var message = _CreateMessage("obsolete-consumer");
         message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(1);
         message.Owner = "node-a";
         message.IsInboxOrphaned = wasOrphaned;
@@ -677,7 +680,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var remaining = TimeSpan.FromSeconds(37);
         var nextProbeAt = now.Add(remaining);
         var lockedUntil = now.AddMinutes(5);
-        var message = _CreateMessage("open-group");
+        var message = _CreateMessage("open-consumer");
         message.Owner = "node-a";
         message.LockedUntil = lockedUntil;
         message.InboxAttemptFence = new InboxAttemptFence(
@@ -689,7 +692,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             message.Owner,
             lockedUntil
         );
-        var healthy = _CreateMessage("healthy-group");
+        var healthy = _CreateMessage("healthy-consumer");
 
         var storage = Substitute.For<IDataStorage, ICircuitRetryDeferralStorage>();
         var deferralStorage = (ICircuitRetryDeferralStorage)storage;
@@ -700,9 +703,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var stateManager = Substitute.For<ICircuitBreakerStateManager>();
         stateManager
-            .GetRetryDecision(MessageLane.Bus, "open-group")
+            .GetRetryDecision(MessageLane.Bus, "open-consumer")
             .Returns(new CircuitRetryDecision(CircuitRetryDecisionKind.Defer, nextProbeAt, null));
-        stateManager.GetRetryDecision(MessageLane.Bus, "healthy-group").Returns(CircuitRetryDecision.Closed);
+        stateManager.GetRetryDecision(MessageLane.Bus, "healthy-consumer").Returns(CircuitRetryDecision.Closed);
         var dispatcher = Substitute.For<IDispatcher>();
         dispatcher
             .EnqueueToExecute(healthy, null, Arg.Any<CancellationToken>())
@@ -751,10 +754,10 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task failed_circuit_deferral_retains_claim_and_does_not_delay_healthy_dispatch()
     {
         var lockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
-        var open = _CreateMessage("open-group");
+        var open = _CreateMessage("open-consumer");
         open.Owner = "node-a";
         open.LockedUntil = lockedUntil;
-        var healthy = _CreateMessage("healthy-group");
+        var healthy = _CreateMessage("healthy-consumer");
 
         var storage = Substitute.For<IDataStorage, ICircuitRetryDeferralStorage, IGracefulLeaseReleaseStorage>();
         var deferralStorage = (ICircuitRetryDeferralStorage)storage;
@@ -771,11 +774,11 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var stateManager = Substitute.For<ICircuitBreakerStateManager>();
         stateManager
-            .GetRetryDecision(MessageLane.Bus, "open-group")
+            .GetRetryDecision(MessageLane.Bus, "open-consumer")
             .Returns(
                 new CircuitRetryDecision(CircuitRetryDecisionKind.Defer, DateTimeOffset.UtcNow.AddMinutes(1), null)
             );
-        stateManager.GetRetryDecision(MessageLane.Bus, "healthy-group").Returns(CircuitRetryDecision.Closed);
+        stateManager.GetRetryDecision(MessageLane.Bus, "healthy-consumer").Returns(CircuitRetryDecision.Closed);
         var dispatcher = Substitute.For<IDispatcher>();
         var sut = new MessageNeedToRetryProcessor(
             Options.Create(new MessagingOptions()),
@@ -819,13 +822,13 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     {
         var outcomeKind = (CircuitRetryProbeOutcomeKind)outcomeValue;
         var nextProbeAt = DateTimeOffset.UtcNow.AddMinutes(2);
-        var message = _CreateMessage("probe-group");
+        var message = _CreateMessage("probe-consumer");
         message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
         var storage = Substitute.For<IDataStorage, ICircuitRetryDeferralStorage, IGracefulLeaseReleaseStorage>();
         _SetupReceivedMessages(storage, message);
         var stateManager = Substitute.For<ICircuitBreakerStateManager>();
         stateManager
-            .GetRetryDecision(MessageLane.Bus, "probe-group")
+            .GetRetryDecision(MessageLane.Bus, "probe-consumer")
             .Returns(
                 new CircuitRetryDecision(
                     CircuitRetryDecisionKind.ProbePending,
@@ -857,7 +860,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     [Fact]
     public async Task cancellation_while_probe_is_pending_retains_claim()
     {
-        var message = _CreateMessage("probe-group");
+        var message = _CreateMessage("probe-consumer");
         message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
         var storage = Substitute.For<IDataStorage, ICircuitRetryDeferralStorage, IGracefulLeaseReleaseStorage>();
         _SetupReceivedMessages(storage, message);
@@ -867,7 +870,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var classified = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var stateManager = Substitute.For<ICircuitBreakerStateManager>();
         stateManager
-            .GetRetryDecision(MessageLane.Bus, "probe-group")
+            .GetRetryDecision(MessageLane.Bus, "probe-consumer")
             .Returns(_ =>
             {
                 classified.TrySetResult();
@@ -896,13 +899,13 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     [Fact]
     public async Task abandoned_acquired_probe_releases_shared_probe_slot()
     {
-        var message = _CreateMessage("probe-group");
+        var message = _CreateMessage("probe-consumer");
         message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
         var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
         _SetupReceivedMessages(storage, message);
         var stateManager = Substitute.For<ICircuitBreakerStateManager>();
         stateManager
-            .GetRetryDecision(MessageLane.Bus, "probe-group")
+            .GetRetryDecision(MessageLane.Bus, "probe-consumer")
             .Returns(new CircuitRetryDecision(CircuitRetryDecisionKind.ProbeAcquired, null, null, 91L));
         var dispatcher = Substitute.For<IDispatcher, IRetryDispatcher>();
         ((IRetryDispatcher)dispatcher)
@@ -916,21 +919,21 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
 
-        stateManager.Received(1).ReleaseHalfOpenProbe(CircuitBreakerGroupKeys.For(MessageLane.Bus, "probe-group"), 91L);
+        stateManager.Received(1).ReleaseHalfOpenProbe(CircuitBreakerKeys.For(MessageLane.Bus, "probe-consumer"), 91L);
     }
 
     [Fact]
     public async Task cancellation_during_healthy_dispatch_releases_preclassified_probe_slot()
     {
-        var healthy = _CreateMessage("healthy-group");
-        var probe = _CreateMessage("probe-group");
+        var healthy = _CreateMessage("healthy-consumer");
+        var probe = _CreateMessage("probe-consumer");
         var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
         _SetupReceivedMessages(storage, healthy, probe);
         using var cts = new CancellationTokenSource();
         var stateManager = Substitute.For<ICircuitBreakerStateManager>();
-        stateManager.GetRetryDecision(MessageLane.Bus, "healthy-group").Returns(CircuitRetryDecision.Closed);
+        stateManager.GetRetryDecision(MessageLane.Bus, "healthy-consumer").Returns(CircuitRetryDecision.Closed);
         stateManager
-            .GetRetryDecision(MessageLane.Bus, "probe-group")
+            .GetRetryDecision(MessageLane.Bus, "probe-consumer")
             .Returns(_ =>
             {
 #pragma warning disable MA0045 // Cancellation must complete inside this synchronous classification callback before dispatch resumes.
@@ -948,7 +951,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         Func<Task> act = () => _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
-        stateManager.Received(1).ReleaseHalfOpenProbe(CircuitBreakerGroupKeys.For(MessageLane.Bus, "probe-group"), 73L);
+        stateManager.Received(1).ReleaseHalfOpenProbe(CircuitBreakerKeys.For(MessageLane.Bus, "probe-consumer"), 73L);
         await dispatcher
             .DidNotReceive()
             .EnqueueToExecute(
@@ -961,7 +964,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     [Fact]
     public async Task pending_probe_with_no_outcome_retains_exact_claim_without_blocking_next_healthy_pickup()
     {
-        var message = _CreateMessage("probe-group");
+        var message = _CreateMessage("probe-consumer");
         message.Owner = "node-a";
         message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
         var storage = Substitute.For<IDataStorage, ICircuitRetryDeferralStorage, IGracefulLeaseReleaseStorage>();
@@ -971,9 +974,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         );
         var stateManager = Substitute.For<ICircuitBreakerStateManager>();
         stateManager
-            .GetRetryDecision(MessageLane.Bus, "probe-group")
+            .GetRetryDecision(MessageLane.Bus, "probe-consumer")
             .Returns(new CircuitRetryDecision(CircuitRetryDecisionKind.ProbePending, null, outcome.Task));
-        stateManager.GetRetryDecision(MessageLane.Bus, "healthy-group").Returns(CircuitRetryDecision.Closed);
+        stateManager.GetRetryDecision(MessageLane.Bus, "healthy-consumer").Returns(CircuitRetryDecision.Closed);
         var dispatcher = Substitute.For<IDispatcher>();
         var sut = _CreateCircuitAwareProcessor(stateManager, dispatcher);
         await using var context = _CreateContext(
@@ -999,7 +1002,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<CancellationToken>()
             );
 
-        var healthy = _CreateMessage("healthy-group");
+        var healthy = _CreateMessage("healthy-consumer");
         _SetupReceivedMessages(storage, healthy);
         await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus).WaitAsync(AbortToken);
 
@@ -1010,10 +1013,10 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task should_defer_open_claim_while_retaining_pending_probe_claim()
     {
         var now = DateTimeOffset.UtcNow;
-        var pending = _CreateMessage("probe-group");
+        var pending = _CreateMessage("probe-consumer");
         pending.Owner = "node-a";
         pending.LockedUntil = now.AddMinutes(5);
-        var deferred = _CreateMessage("open-group");
+        var deferred = _CreateMessage("open-consumer");
         deferred.Owner = "node-a";
         deferred.LockedUntil = now.AddMinutes(5);
         var storage = Substitute.For<IDataStorage, ICircuitRetryDeferralStorage, IGracefulLeaseReleaseStorage>();
@@ -1026,10 +1029,10 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         );
         var stateManager = Substitute.For<ICircuitBreakerStateManager>();
         stateManager
-            .GetRetryDecision(MessageLane.Bus, "probe-group")
+            .GetRetryDecision(MessageLane.Bus, "probe-consumer")
             .Returns(new CircuitRetryDecision(CircuitRetryDecisionKind.ProbePending, null, outcome.Task));
         stateManager
-            .GetRetryDecision(MessageLane.Bus, "open-group")
+            .GetRetryDecision(MessageLane.Bus, "open-consumer")
             .Returns(new CircuitRetryDecision(CircuitRetryDecisionKind.Defer, now.AddMinutes(1), null));
         var sut = _CreateCircuitAwareProcessor(stateManager);
         await using var context = _CreateContext(
@@ -1058,10 +1061,10 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task should_retain_lease_when_only_monitor_available_and_circuit_open()
     {
         var (sut, dispatcher, cb) = _Create(baseIntervalSeconds: 0, adaptivePolling: false);
-        var open = _CreateMessage("group-a");
+        var open = _CreateMessage("consumer-a");
         open.Owner = "node-a";
         open.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
-        cb.IsOpen(_CircuitKey("group-a")).Returns(true);
+        cb.IsOpen(_CircuitKey("consumer-a")).Returns(true);
         var storage = Substitute.For<IDataStorage, ICircuitRetryDeferralStorage, IGracefulLeaseReleaseStorage>();
         _SetupReceivedMessages(storage, open);
         await using var context = _CreateContext(
@@ -1091,7 +1094,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     {
         var captured = new List<(LogLevel Level, int Id)>();
         var cb = Substitute.For<ICircuitBreakerMonitor>();
-        cb.IsOpen(_CircuitKey("group-a")).Returns(true);
+        cb.IsOpen(_CircuitKey("consumer-a")).Returns(true);
         var sut = new MessageNeedToRetryProcessor(
             Options.Create(new MessagingOptions()),
             Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.Zero, AdaptivePolling = false }),
@@ -1101,7 +1104,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             cb
         );
         var storage = Substitute.For<IDataStorage>();
-        _SetupReceivedMessages(storage, _CreateMessage("group-a"), _CreateMessage("group-a"));
+        _SetupReceivedMessages(storage, _CreateMessage("consumer-a"), _CreateMessage("consumer-a"));
         await using var context = _CreateContext(
             new ServiceCollection().AddSingleton(storage).BuildServiceProvider(),
             cancellationToken: AbortToken
@@ -1116,13 +1119,13 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     [Fact]
     public async Task should_hand_probe_release_to_dispatcher_when_probe_row_is_transferred()
     {
-        var message = _CreateMessage("probe-group");
+        var message = _CreateMessage("probe-consumer");
         message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
         var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
         _SetupReceivedMessages(storage, message);
         var stateManager = Substitute.For<ICircuitBreakerStateManager>();
         stateManager
-            .GetRetryDecision(MessageLane.Bus, "probe-group")
+            .GetRetryDecision(MessageLane.Bus, "probe-consumer")
             .Returns(new CircuitRetryDecision(CircuitRetryDecisionKind.ProbeAcquired, null, null, 97L));
         Action? onAbandoned = null;
         var dispatcher = Substitute.For<IDispatcher, IRetryDispatcher>();
@@ -1148,19 +1151,19 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         onAbandoned!();
         onAbandoned();
 
-        stateManager.Received(1).ReleaseHalfOpenProbe(CircuitBreakerGroupKeys.For(MessageLane.Bus, "probe-group"), 97L);
+        stateManager.Received(1).ReleaseHalfOpenProbe(CircuitBreakerKeys.For(MessageLane.Bus, "probe-consumer"), 97L);
     }
 
     [Fact]
     public async Task unsupported_deferral_provider_warns_once_and_retains_claim()
     {
-        var message = _CreateMessage("open-group");
+        var message = _CreateMessage("open-consumer");
         message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
         var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
         _SetupReceivedMessages(storage, message);
         var stateManager = Substitute.For<ICircuitBreakerStateManager>();
         stateManager
-            .GetRetryDecision(MessageLane.Bus, "open-group")
+            .GetRetryDecision(MessageLane.Bus, "open-consumer")
             .Returns(
                 new CircuitRetryDecision(CircuitRetryDecisionKind.Defer, DateTimeOffset.UtcNow.AddMinutes(1), null)
             );
@@ -1208,8 +1211,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             lockProvider
         );
 
-        var msg1 = _CreateMessage("group-a");
-        var msg2 = _CreateMessage("group-b");
+        var msg1 = _CreateMessage("consumer-a");
+        var msg2 = _CreateMessage("consumer-b");
         _SetupReceivedMessages(dataStorage, msg1, msg2);
         await using var context = _CreateContext(
             new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider(),
@@ -1225,13 +1228,13 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     }
 
     [Fact]
-    public async Task process_async_enqueues_message_when_group_is_null()
+    public async Task process_async_enqueues_message_when_consumer_identity_is_null()
     {
         // given
         var (sut, dispatcher, cb) = _Create();
-        var msg = _CreateMessage(group: null);
+        var msg = _CreateMessage(consumerIdentity: null);
 
-        cb.IsOpen(Arg.Any<string>()).Returns(true); // all groups "open"
+        cb.IsOpen(Arg.Any<string>()).Returns(true); // every circuit "open"
 
         var dataStorage = Substitute.For<IDataStorage>();
         _SetupReceivedMessages(dataStorage, msg);
@@ -1259,16 +1262,16 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var baseInterval = TimeSpan.FromSeconds(1);
 
-        cb.IsOpen(_CircuitKey("open-group")).Returns(true);
-        cb.IsOpen(_CircuitKey("healthy-group")).Returns(false);
+        cb.IsOpen(_CircuitKey("open-consumer")).Returns(true);
+        cb.IsOpen(_CircuitKey("healthy-consumer")).Returns(false);
 
         var messages = new[]
         {
-            _CreateMessage("open-group"),
-            _CreateMessage("open-group"),
-            _CreateMessage("open-group"),
-            _CreateMessage("open-group"),
-            _CreateMessage("healthy-group"),
+            _CreateMessage("open-consumer"),
+            _CreateMessage("open-consumer"),
+            _CreateMessage("open-consumer"),
+            _CreateMessage("open-consumer"),
+            _CreateMessage("healthy-consumer"),
         };
 
         var dataStorage = Substitute.For<IDataStorage>();
@@ -1288,7 +1291,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         await dispatcher
             .Received(1)
             .EnqueueToExecute(
-                Arg.Is<MediumMessage>(m => m.Origin.GetGroup() == "healthy-group"),
+                Arg.Is<MediumMessage>(m => m.Origin.GetConsumerIdentity() == "healthy-consumer"),
                 null,
                 Arg.Any<CancellationToken>()
             );
@@ -1338,9 +1341,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // given
         var (sut, dispatcher, cb) = _Create(baseIntervalSeconds: 1, adaptivePolling: false);
 
-        cb.IsOpen(_CircuitKey("open-group")).Returns(true);
+        cb.IsOpen(_CircuitKey("open-consumer")).Returns(true);
 
-        var messages = Enumerable.Range(0, 10).Select(_ => _CreateMessage("open-group")).ToArray();
+        var messages = Enumerable.Range(0, 10).Select(_ => _CreateMessage("open-consumer")).ToArray();
 
         var dataStorage = Substitute.For<IDataStorage>();
         _SetupReceivedMessages(dataStorage, messages);
@@ -1373,10 +1376,10 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             maxPollingIntervalSeconds: 2,
             circuitOpenRateThreshold: 0.5
         );
-        cb.IsOpen(_CircuitKey("open-group")).Returns(true);
+        cb.IsOpen(_CircuitKey("open-consumer")).Returns(true);
 
         var dataStorage = Substitute.For<IDataStorage>();
-        _SetupReceivedMessages(dataStorage, _CreateMessage("open-group"));
+        _SetupReceivedMessages(dataStorage, _CreateMessage("open-consumer"));
         await using var context = _CreateContext(
             new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider(),
             cancellationToken: AbortToken
@@ -1413,20 +1416,20 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         );
 
         // Cycle 1: High transient rate → doubles interval
-        cb.IsOpen(_CircuitKey("open-group")).Returns(true);
-        cb.IsOpen(_CircuitKey("healthy-group")).Returns(false);
+        cb.IsOpen(_CircuitKey("open-consumer")).Returns(true);
+        cb.IsOpen(_CircuitKey("healthy-consumer")).Returns(false);
         _SetupReceivedMessages(
             dataStorage,
-            _CreateMessage("open-group"),
-            _CreateMessage("open-group"),
-            _CreateMessage("open-group"),
-            _CreateMessage("healthy-group")
+            _CreateMessage("open-consumer"),
+            _CreateMessage("open-consumer"),
+            _CreateMessage("open-consumer"),
+            _CreateMessage("healthy-consumer")
         );
         await sut.ProcessAsync(context);
 
         // Cycle 2-3: All healthy (no open circuits) → 2 consecutive healthy cycles
-        cb.IsOpen(_CircuitKey("open-group")).Returns(false);
-        _SetupReceivedMessages(dataStorage, _CreateMessage("healthy-group"), _CreateMessage("healthy-group"));
+        cb.IsOpen(_CircuitKey("open-consumer")).Returns(false);
+        _SetupReceivedMessages(dataStorage, _CreateMessage("healthy-consumer"), _CreateMessage("healthy-consumer"));
         await sut.ProcessAsync(context);
         await sut.ProcessAsync(context);
 
@@ -1513,15 +1516,15 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     {
         // given — rate between 0.5 and threshold (0.8): e.g., 6 skipped out of 10 = 60%
         var (sut, dispatcher, cb) = _Create(baseIntervalSeconds: 1, circuitOpenRateThreshold: 0.8);
-        cb.IsOpen(_CircuitKey("open-group")).Returns(true);
-        cb.IsOpen(_CircuitKey("healthy-group")).Returns(false);
+        cb.IsOpen(_CircuitKey("open-consumer")).Returns(true);
+        cb.IsOpen(_CircuitKey("healthy-consumer")).Returns(false);
 
         var dataStorage = Substitute.For<IDataStorage>();
         // 6 open + 4 healthy = 60% transient rate → mid-range
         var messages = Enumerable
             .Range(0, 6)
-            .Select(_ => _CreateMessage("open-group"))
-            .Concat(Enumerable.Range(0, 4).Select(_ => _CreateMessage("healthy-group")))
+            .Select(_ => _CreateMessage("open-consumer"))
+            .Concat(Enumerable.Range(0, 4).Select(_ => _CreateMessage("healthy-consumer")))
             .ToArray();
         _SetupReceivedMessages(dataStorage, messages);
         await using var context = _CreateContext(
@@ -1536,7 +1539,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         await dispatcher
             .Received(4)
             .EnqueueToExecute(
-                Arg.Is<MediumMessage>(m => m.Origin.GetGroup() == "healthy-group"),
+                Arg.Is<MediumMessage>(m => m.Origin.GetConsumerIdentity() == "healthy-consumer"),
                 null,
                 Arg.Any<CancellationToken>()
             );

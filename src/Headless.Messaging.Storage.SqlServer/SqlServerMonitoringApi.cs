@@ -109,7 +109,7 @@ internal sealed class SqlServerMonitoringApi(
 
     /// <summary>
     /// Returns a paginated list of messages from either the published or received table,
-    /// filtered by the criteria in <paramref name="query"/> (status, name, group, content substring, intent type).
+    /// filtered by the criteria in <paramref name="query"/> (status, name, consumer identity, content substring, intent type).
     /// </summary>
     public async ValueTask<IndexPage<MessageView>> GetMessagesAsync(
         MessageQuery query,
@@ -119,8 +119,8 @@ internal sealed class SqlServerMonitoringApi(
         var tableName = query.MessageType == MessageType.Publish ? _publishedTable : _receivedTable;
         var selectColumns =
             query.MessageType == MessageType.Publish
-                ? "[Id],[MessageId],[Version],[Name],CAST(NULL AS nvarchar(200)) AS [Group],[Content],[IntentType],[Retries],[Added],[ExpiresAt],[StatusName],[NextRetryAt],[LockedUntil]"
-                : "[Id],[MessageId],[Version],[Name],[Group],[Content],[IntentType],[Retries],[Added],[ExpiresAt],[StatusName],[NextRetryAt],[LockedUntil]";
+                ? "[Id],[MessageId],[Version],[Name],CAST(NULL AS nvarchar(200)) AS [ConsumerIdentity],[Content],[IntentType],[Retries],[Added],[ExpiresAt],[StatusName],[NextRetryAt],[LockedUntil]"
+                : "[Id],[MessageId],[Version],[Name],[ConsumerIdentity],[Content],[IntentType],[Retries],[Added],[ExpiresAt],[StatusName],[NextRetryAt],[LockedUntil]";
         var where = " AND [IntentType] IN (0, 1)";
         if (query.StatusName is not null)
         {
@@ -132,9 +132,10 @@ internal sealed class SqlServerMonitoringApi(
             where += " AND [Name]=@Name";
         }
 
-        if (!string.IsNullOrEmpty(query.Group))
+        // Only received rows belong to a consumer; the published table has no identity column to filter on.
+        if (query.MessageType == MessageType.Subscribe && !string.IsNullOrEmpty(query.ConsumerIdentity))
         {
-            where += " AND [Group]=@Group";
+            where += " AND [ConsumerIdentity]=@ConsumerIdentity";
         }
 
         if (!string.IsNullOrEmpty(query.Content))
@@ -161,7 +162,7 @@ internal sealed class SqlServerMonitoringApi(
         object[] countSqlParams =
         [
             new SqlParameter("@StatusName", query.StatusName?.ToString("G") ?? string.Empty),
-            new SqlParameter("@Group", query.Group ?? string.Empty),
+            new SqlParameter("@ConsumerIdentity", query.ConsumerIdentity ?? string.Empty),
             new SqlParameter("@Name", query.Name ?? string.Empty),
             new SqlParameter("@Content", $"%{_EscapeLike(query.Content)}%"),
             new SqlParameter("@IntentType", SqlDbType.SmallInt)
@@ -173,7 +174,7 @@ internal sealed class SqlServerMonitoringApi(
         object[] pageSqlParams =
         [
             new SqlParameter("@StatusName", query.StatusName?.ToString("G") ?? string.Empty),
-            new SqlParameter("@Group", query.Group ?? string.Empty),
+            new SqlParameter("@ConsumerIdentity", query.ConsumerIdentity ?? string.Empty),
             new SqlParameter("@Name", query.Name ?? string.Empty),
             new SqlParameter("@Content", $"%{_EscapeLike(query.Content)}%"),
             new SqlParameter("@IntentType", SqlDbType.SmallInt)
@@ -216,7 +217,7 @@ internal sealed class SqlServerMonitoringApi(
                             MessageId = reader.GetString(index++),
                             Version = reader.GetString(index++),
                             Name = reader.GetString(index++),
-                            Group = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
+                            ConsumerIdentity = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
                                 ? null
                                 : reader.GetString(index - 1),
                             Content = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)

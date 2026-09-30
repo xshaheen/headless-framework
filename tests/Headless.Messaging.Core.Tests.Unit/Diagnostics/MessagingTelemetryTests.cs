@@ -200,7 +200,7 @@ public sealed class MessagingTelemetryTests : TestBase
         consumeErrorTags
             .Select(tag => tag.Key)
             .Should()
-            .Contain(["messaging.operation", "messaging.system", "error.type", "messaging.consumer.group"]);
+            .Contain(["messaging.operation", "messaging.system", "error.type", "messaging.consumer.group.name"]);
     }
 
     [Fact]
@@ -473,7 +473,7 @@ public sealed class MessagingTelemetryTests : TestBase
         {
             [Headers.MessageId] = Guid.NewGuid().ToString(),
             [Headers.MessageName] = name,
-            [Headers.Group] = "workers",
+            [Headers.ConsumerIdentity] = "workers",
             [Headers.CorrelationId] = "corr-1",
             [Headers.ExecutionInstanceId] = "host-1",
         };
@@ -495,7 +495,7 @@ public sealed class MessagingTelemetryTests : TestBase
         {
             [Headers.MessageId] = Guid.NewGuid().ToString(),
             [Headers.MessageName] = name,
-            [Headers.Group] = "workers",
+            [Headers.ConsumerIdentity] = "workers",
         };
 
         return new Message(headers, value: null);

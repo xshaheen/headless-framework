@@ -12,7 +12,7 @@ public class StatisticsView
     /// <summary>Gets or sets the number of active messaging server instances observed in storage.</summary>
     public int Servers { get; set; }
 
-    /// <summary>Gets or sets the total number of registered consumer subscriptions across all groups.</summary>
+    /// <summary>Gets or sets the total number of registered consumer subscriptions across all consumers.</summary>
     public int Subscribers { get; set; }
 
     /// <summary>Gets or sets the total number of published messages that reached the <c>Succeeded</c> terminal state.</summary>

@@ -13,8 +13,8 @@ internal sealed class AmazonSqsConsumerClientFactory(
 ) : IConsumerClientFactory
 {
     public Task<IConsumerClient> CreateAsync(
-        string groupName,
-        byte groupConcurrent,
+        string subscriptionName,
+        byte concurrency,
         MessageLane lane,
         CancellationToken cancellationToken = default
     )
@@ -23,7 +23,7 @@ internal sealed class AmazonSqsConsumerClientFactory(
 
         try
         {
-            var client = new AmazonSqsConsumerClient(groupName, groupConcurrent, amazonSqsOptions, logger, lane);
+            var client = new AmazonSqsConsumerClient(subscriptionName, concurrency, amazonSqsOptions, logger, lane);
             return Task.FromResult<IConsumerClient>(client);
         }
         catch (Exception e) when (e is not OperationCanceledException)

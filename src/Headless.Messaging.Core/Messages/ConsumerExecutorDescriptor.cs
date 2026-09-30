@@ -42,6 +42,14 @@ public sealed class ConsumerExecutorDescriptor
     /// <summary>The operator-stable identity used to route persisted inbox recovery.</summary>
     public string? ConsumerIdentity { get; init; }
 
+    /// <summary>
+    /// The identity that keys this consumer's received rows, circuit breaker, metrics, and the
+    /// <see cref="Headers.ConsumerIdentity"/> header: its declared identity, or the subscription name for a runtime
+    /// subscription, which declares none.
+    /// </summary>
+    internal string ResolvedConsumerIdentity =>
+        string.IsNullOrWhiteSpace(ConsumerIdentity) ? GroupName : ConsumerIdentity;
+
     /// <summary>The schema version of the message contract used to isolate inbox generations.</summary>
     public string? MessageContractVersion { get; init; }
 

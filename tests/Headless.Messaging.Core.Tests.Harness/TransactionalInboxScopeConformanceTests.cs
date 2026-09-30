@@ -96,7 +96,7 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
             {
                 [Headers.MessageId] = state.Id.ToString(),
                 [Headers.MessageName] = descriptor.MessageName,
-                [Headers.Group] = descriptor.GroupName,
+                [Headers.ConsumerIdentity] = descriptor.ConsumerIdentity,
                 [Headers.TenantId] = "envelope-tenant",
             },
             new InboxScopeMessage(state.Id)
@@ -104,7 +104,6 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
         ValueTask<InboxAdmissionResult> admit() =>
             storage.AdmitReceivedMessageAsync(
                 descriptor.MessageName,
-                descriptor.GroupName,
                 descriptor.ConsumerIdentity!,
                 descriptor.MessageContractVersion!,
                 new MediumMessage
