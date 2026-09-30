@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Headless.Http.Effects;
 
 namespace Headless.Payments.Paymob.CashIn.Models;
 
@@ -14,6 +15,11 @@ namespace Headless.Payments.Paymob.CashIn.Models;
 /// and test servers, and user information is rejected.
 /// </remarks>
 [PublicAPI]
+// Order, payment-key, intention, refund, and void POSTs carry no idempotency header. merchant_order_id and
+// special_reference are caller-chosen body fields, not a retry-deduplication contract, so a retried POST can create a
+// duplicate order or refund twice. Order and transaction inquiry (GET) stay retryable.
+[OutboundEffect(OutboundEffect.Unsafe)]
+[GenerateClientSetup("AddPaymobCashIn", "Headless:PaymobCashIn", "PaymobCashInOptionsValidator")]
 public sealed record PaymobCashInOptions
 {
     /// <summary>

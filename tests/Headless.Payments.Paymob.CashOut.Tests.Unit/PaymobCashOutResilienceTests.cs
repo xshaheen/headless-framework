@@ -45,7 +45,7 @@ public sealed class PaymobCashOutResilienceTests(PaymobCashOutFixture fixture)
 
         var attempts = fixture.Server.FindLogEntries(Request.Create().WithPath("/disburse").UsingPost()).ToList();
 
-        attempts.Should().HaveCount(1, "a timed-out or failed payout POST must not be retried automatically");
+        attempts.Should().ContainSingle("a timed-out or failed payout POST must not be retried automatically");
     }
 
     [Fact]
