@@ -139,7 +139,7 @@ The script is deterministic for a given set of registrations, so it can be commi
 Rules that change how you operate a database:
 
 - **The runner trusts its history.** Dropping a feature's table by hand does not make the next start recreate it. Delete that feature's rows from `headless_schema_history` too, or drop the whole schema.
-- **Never edit a shipped step.** A changed step fails startup with a checksum mismatch naming the feature and version. Features evolve their schema by adding a new step.
+- **Never edit a released step.** A changed step fails startup with a checksum mismatch naming the feature and version. Features evolve a released schema by adding a new step. Until a release ships the step, change it in place: no database runs it, so an upgrade step would be migration code for a schema nobody has.
 - **Configuration that shapes DDL is part of the checksum.** Changing AuditLog's `JsonColumnType` after its table exists fails startup instead of being silently ignored.
 - **Features with configurable object names keep one history per name.** `Sequences` with the default table records `Sequences/1`; with `TableName = "counters"` it records `Sequences:counters/1`, so two hosts naming the table differently in one schema never collide.
 - **`InitializeOnStartup = false`** on a feature keeps its steps out of `Apply` mode. `Verify` mode and `ExportScript` still include them.

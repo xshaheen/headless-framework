@@ -24,7 +24,7 @@ related_components:
   - Headless.Sql.SqlServer
 applies_when:
   - Adding or changing a raw PostgreSQL or SQL Server storage provider's tables, indexes, or sequences
-  - Changing a feature's DDL after it shipped
+  - Changing a feature's DDL after it was released
   - Writing a test fixture that resets a feature's tables
   - Diagnosing a startup failure that names a schema step, a checksum, or headless_schema_history
 ---
