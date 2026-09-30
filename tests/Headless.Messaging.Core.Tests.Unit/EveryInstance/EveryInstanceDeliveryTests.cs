@@ -30,15 +30,16 @@ public sealed class EveryInstanceDeliveryTests : TestBase
         var factory = new RecordingFactory();
         await using var provider = _BuildHost(
             factory,
-            configure: services => services.ConfigureMessaging(m => m.AddModule<PriceCacheModule>()),
+            configure: services =>
+                services.ConfigureMessaging(m =>
+                {
+                    m.AddModule<PriceCacheModule>();
+                    m.Message<StockChanged>("tests.stock-changed");
+                }),
             configureMessaging: setup =>
             {
                 setup.Options.ConsumerThreadCount = 3;
-                setup.Bus.ForMessage<StockChanged>(message =>
-                    message
-                        .Contract("tests.stock-changed")
-                        .Consumer<StockProjection>(c => c.StableContract("tests.stock"))
-                );
+                setup.AddConsumer<StockProjection>();
             }
         );
 
@@ -675,6 +676,7 @@ public sealed class PriceCache(EveryInstanceProbe probe) : IConsume<PriceChanged
     }
 }
 
+[BusConsumer("tests.stock")]
 public sealed class StockProjection : IConsume<StockChanged>
 {
     public ValueTask ConsumeAsync(ConsumeContext<StockChanged> context, CancellationToken cancellationToken) =>

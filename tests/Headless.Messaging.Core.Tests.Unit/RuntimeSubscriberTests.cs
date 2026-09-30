@@ -50,7 +50,6 @@ public sealed class RuntimeSubscriberTests : TestBase
         await using var provider = _CreateProvider();
         var runtimeSubscriber = provider.GetRequiredService<IRuntimeSubscriber>();
         var conventions = provider.GetRequiredService<IOptions<MessagingOptions>>().Value.Conventions;
-        conventions.UseApplicationId("messaging-tests");
         conventions.UseVersion("v1");
 
         var handler = provider.GetRequiredService<NamedRuntimeHandler>();
@@ -236,7 +235,6 @@ public sealed class RuntimeSubscriberTests : TestBase
             options.UseProcessLocalInMemoryStorage();
             options.UseConventions(c =>
             {
-                c.UseApplicationId("messaging-tests");
                 c.UseVersion("v1");
             });
         });

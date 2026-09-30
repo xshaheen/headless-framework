@@ -689,7 +689,6 @@ public sealed class BootstrapperTests : TestBase
             setup.UseProcessLocalInMemoryStorage();
             setup.UseConventions(c =>
             {
-                c.UseApplicationId("bootstrap-tests");
                 c.UseVersion("v1");
             });
         });

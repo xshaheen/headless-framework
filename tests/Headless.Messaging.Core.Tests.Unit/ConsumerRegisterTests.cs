@@ -1166,7 +1166,6 @@ public sealed class ConsumerRegisterTests : TestBase
             setup.UseProcessLocalInMemoryStorage();
             setup.UseConventions(c =>
             {
-                c.UseApplicationId("messaging-tests");
                 c.UseVersion("v1");
             });
             setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
@@ -1756,7 +1755,6 @@ public sealed class ConsumerRegisterTests : TestBase
             setup.UseProcessLocalInMemoryStorage();
             setup.UseConventions(c =>
             {
-                c.UseApplicationId("messaging-tests");
                 c.UseVersion("v1");
             });
 

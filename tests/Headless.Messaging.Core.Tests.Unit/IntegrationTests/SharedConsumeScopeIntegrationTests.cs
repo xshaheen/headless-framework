@@ -89,7 +89,6 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
                 options.UseProcessLocalInMemoryStorage();
                 options.UseConventions(c =>
                 {
-                    c.UseApplicationId("shared-scope-tests");
                     c.UseVersion("v1");
                 });
             })

@@ -259,10 +259,9 @@ public sealed class UnitOfWorkOutboxTests : TestBase
         // Registered before AddHeadlessMessaging so it wins the TryAddSingleton: the committed-dispatch hand-off
         // is what distinguishes "buffered on the unit" from "written and dispatched immediately".
         services.AddSingleton<IDispatcher>(dispatcher);
+        services.ConfigureMessaging(messaging => messaging.Message<Placed>("tests.unit-of-work-outbox.placed"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<Placed>(message => message.Contract("tests.unit-of-work-outbox.placed"));
-            setup.Queue.ForMessage<Placed>(message => message.Contract("tests.unit-of-work-outbox.placed"));
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
         });

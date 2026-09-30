@@ -5,6 +5,7 @@ using Headless.Messaging;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Runtime;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -18,15 +19,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<InvokerTestConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-invoker.primary")
-                    )
-            );
+            setup.AddConsumer<InvokerTestConsumer>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -34,7 +30,7 @@ public sealed class SubscribeInvokerTests : TestBase
 
         var message = new InvokerTestMessage("test-123");
         var mediumMessage = _CreateMediumMessage(message, "test.messageName");
-        var descriptor = _CreateDescriptor<InvokerTestMessage>();
+        var descriptor = _SelectDescriptor(provider);
         var context = new ConsumerContext(descriptor, mediumMessage);
 
         // when
@@ -51,15 +47,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<InvokerTestConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-invoker.primary")
-                    )
-            );
+            setup.AddConsumer<InvokerTestConsumer>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -67,7 +58,7 @@ public sealed class SubscribeInvokerTests : TestBase
 
         var message = new InvokerTestMessage("test-456");
         var mediumMessage = _CreateMediumMessage(message, "test.messageName");
-        var descriptor = _CreateDescriptor<InvokerTestMessage>();
+        var descriptor = _SelectDescriptor(provider);
         var context = new ConsumerContext(descriptor, mediumMessage);
 
         // when
@@ -85,15 +76,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<InvokerTestConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-invoker.primary")
-                    )
-            );
+            setup.AddConsumer<InvokerTestConsumer>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -110,7 +96,7 @@ public sealed class SubscribeInvokerTests : TestBase
             causationId: "parent-message",
             contractVersion: "2"
         );
-        var descriptor = _CreateDescriptor<InvokerTestMessage>();
+        var descriptor = _SelectDescriptor(provider);
         var context = new ConsumerContext(descriptor, mediumMessage);
 
         // when
@@ -133,15 +119,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<InvokerTestConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-invoker.primary")
-                    )
-            );
+            setup.AddConsumer<InvokerTestConsumer>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -163,7 +144,7 @@ public sealed class SubscribeInvokerTests : TestBase
             Added = DateTimeOffset.UtcNow,
         };
 
-        var descriptor = _CreateDescriptor<InvokerTestMessage>();
+        var descriptor = _SelectDescriptor(provider);
         var context = new ConsumerContext(descriptor, mediumMessage);
 
         // when
@@ -179,15 +160,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<InvokerTestConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-invoker.unsupported-type")
-                    )
-            );
+            setup.AddConsumer<InvokerTestConsumer>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -209,7 +185,7 @@ public sealed class SubscribeInvokerTests : TestBase
             Added = DateTimeOffset.UtcNow,
         };
 
-        var descriptor = _CreateDescriptor<InvokerTestMessage>();
+        var descriptor = _SelectDescriptor(provider);
         var context = new ConsumerContext(descriptor, mediumMessage);
 
         // when
@@ -227,15 +203,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<InvokerTestConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-invoker.corrupt-json")
-                    )
-            );
+            setup.AddConsumer<InvokerTestConsumer>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -257,7 +228,7 @@ public sealed class SubscribeInvokerTests : TestBase
             Added = DateTimeOffset.UtcNow,
         };
 
-        var descriptor = _CreateDescriptor<InvokerTestMessage>();
+        var descriptor = _SelectDescriptor(provider);
         var context = new ConsumerContext(descriptor, mediumMessage);
 
         // when
@@ -273,15 +244,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<InvokerTestConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-invoker.primary")
-                    )
-            );
+            setup.AddConsumer<InvokerTestConsumer>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -325,15 +291,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<CancellableConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-invoker.cancellable")
-                    )
-            );
+            setup.AddConsumer<CancellableConsumer>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -341,7 +302,7 @@ public sealed class SubscribeInvokerTests : TestBase
 
         var message = new InvokerTestMessage("test");
         var mediumMessage = _CreateMediumMessage(message, "test.messageName");
-        var descriptor = _CreateDescriptor<InvokerTestMessage, CancellableConsumer>();
+        var descriptor = _SelectDescriptor(provider);
         var context = new ConsumerContext(descriptor, mediumMessage);
 
         using var cts = new CancellationTokenSource();
@@ -360,15 +321,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<InvokerTestConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-invoker.primary")
-                    )
-            );
+            setup.AddConsumer<InvokerTestConsumer>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -376,7 +332,7 @@ public sealed class SubscribeInvokerTests : TestBase
 
         var message = new InvokerTestMessage("test");
         var mediumMessage = _CreateMediumMessage(message, "test.messageName", correlationId: null);
-        var descriptor = _CreateDescriptor<InvokerTestMessage>();
+        var descriptor = _SelectDescriptor(provider);
         var context = new ConsumerContext(descriptor, mediumMessage);
 
         // when
@@ -394,15 +350,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<ResponseHeaderConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-invoker.response-header")
-                    )
-            );
+            setup.AddConsumer<ResponseHeaderConsumer>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -413,7 +364,7 @@ public sealed class SubscribeInvokerTests : TestBase
             "test.messageName",
             callbackName: "callbacks.messageName"
         );
-        var descriptor = _CreateDescriptor<InvokerTestMessage, ResponseHeaderConsumer>();
+        var descriptor = _SelectDescriptor(provider);
         var context = new ConsumerContext(descriptor, mediumMessage);
 
         // when
@@ -431,15 +382,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<ResponseBodyConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-invoker.response-body")
-                    )
-            );
+            setup.AddConsumer<ResponseBodyConsumer>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -450,7 +396,7 @@ public sealed class SubscribeInvokerTests : TestBase
             "test.messageName",
             callbackName: "callbacks.messageName"
         );
-        var descriptor = _CreateDescriptor<InvokerTestMessage, ResponseBodyConsumer>();
+        var descriptor = _SelectDescriptor(provider);
         var context = new ConsumerContext(descriptor, mediumMessage);
 
         // when
@@ -468,15 +414,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<ResponseHeaderConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-invoker.response-header")
-                    )
-            );
+            setup.AddConsumer<ResponseHeaderConsumer>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -487,7 +428,7 @@ public sealed class SubscribeInvokerTests : TestBase
             "test.messageName",
             callbackName: "callbacks.messageName"
         );
-        var descriptor = _CreateDescriptor<InvokerTestMessage, ResponseHeaderConsumer>();
+        var descriptor = _SelectDescriptor(provider);
         var context = new ConsumerContext(descriptor, mediumMessage);
 
         // when
@@ -505,22 +446,17 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<ResponseBodyConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-invoker.response-body")
-                    )
-            );
+            setup.AddConsumer<ResponseBodyConsumer>();
         });
 
         await using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var mediumMessage = _CreateMediumMessage(new InvokerTestMessage("callback"), "test.messageName");
-        var descriptor = _CreateDescriptor<InvokerTestMessage, ResponseBodyConsumer>();
+        var descriptor = _SelectDescriptor(provider);
         var context = new ConsumerContext(descriptor, mediumMessage);
 
         // when
@@ -538,15 +474,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<ResponseBodyAndHeaderConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-invoker.response-body-header")
-                    )
-            );
+            setup.AddConsumer<ResponseBodyAndHeaderConsumer>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -557,7 +488,7 @@ public sealed class SubscribeInvokerTests : TestBase
             "test.messageName",
             callbackName: "callbacks.messageName"
         );
-        var descriptor = _CreateDescriptor<InvokerTestMessage, ResponseBodyAndHeaderConsumer>();
+        var descriptor = _SelectDescriptor(provider);
         var context = new ConsumerContext(descriptor, mediumMessage);
 
         // when
@@ -576,15 +507,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<RewriteCallbackConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-invoker.rewrite-callback")
-                    )
-            );
+            setup.AddConsumer<RewriteCallbackConsumer>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -595,7 +521,7 @@ public sealed class SubscribeInvokerTests : TestBase
             "test.messageName",
             callbackName: "callbacks.original"
         );
-        var descriptor = _CreateDescriptor<InvokerTestMessage, RewriteCallbackConsumer>();
+        var descriptor = _SelectDescriptor(provider);
         var context = new ConsumerContext(descriptor, mediumMessage);
 
         // when
@@ -612,15 +538,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<RemoveCallbackConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-invoker.remove-callback")
-                    )
-            );
+            setup.AddConsumer<RemoveCallbackConsumer>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -631,7 +552,7 @@ public sealed class SubscribeInvokerTests : TestBase
             "test.messageName",
             callbackName: "callbacks.original"
         );
-        var descriptor = _CreateDescriptor<InvokerTestMessage, RemoveCallbackConsumer>();
+        var descriptor = _SelectDescriptor(provider);
         var context = new ConsumerContext(descriptor, mediumMessage);
 
         // when
@@ -648,15 +569,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<NextCallbackConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-invoker.next-callback")
-                    )
-            );
+            setup.AddConsumer<NextCallbackConsumer>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -667,7 +583,7 @@ public sealed class SubscribeInvokerTests : TestBase
             "test.messageName",
             callbackName: "callbacks.messageName"
         );
-        var descriptor = _CreateDescriptor<InvokerTestMessage, NextCallbackConsumer>();
+        var descriptor = _SelectDescriptor(provider);
         var context = new ConsumerContext(descriptor, mediumMessage);
 
         // when
@@ -683,15 +599,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<ResponseBodyConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-invoker.response-body")
-                    )
-            );
+            setup.AddConsumer<ResponseBodyConsumer>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -702,7 +613,7 @@ public sealed class SubscribeInvokerTests : TestBase
             "test.messageName",
             callbackName: "callbacks.messageName"
         );
-        var descriptor = _CreateDescriptor<InvokerTestMessage, ResponseBodyConsumer>();
+        var descriptor = _SelectDescriptor(provider);
         var context = new ConsumerContext(descriptor, mediumMessage);
 
         // when
@@ -718,15 +629,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<InvokerTestConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-invoker.primary")
-                    )
-            );
+            setup.AddConsumer<InvokerTestConsumer>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -738,7 +644,7 @@ public sealed class SubscribeInvokerTests : TestBase
             "test.messageName",
             sentTime: sentTime
         );
-        var descriptor = _CreateDescriptor<InvokerTestMessage>();
+        var descriptor = _SelectDescriptor(provider);
         var context = new ConsumerContext(descriptor, mediumMessage);
 
         // when
@@ -755,15 +661,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<InvokerTestConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-invoker.primary")
-                    )
-            );
+            setup.AddConsumer<InvokerTestConsumer>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -774,7 +675,7 @@ public sealed class SubscribeInvokerTests : TestBase
             "test.messageName",
             tenantId: "tenant-123"
         );
-        var descriptor = _CreateDescriptor<InvokerTestMessage>();
+        var descriptor = _SelectDescriptor(provider);
         var context = new ConsumerContext(descriptor, mediumMessage);
 
         // when
@@ -791,15 +692,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<InvokerTestConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-invoker.primary")
-                    )
-            );
+            setup.AddConsumer<InvokerTestConsumer>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -811,7 +707,7 @@ public sealed class SubscribeInvokerTests : TestBase
             "test.messageName",
             tenantId: maxLengthTenantId
         );
-        var descriptor = _CreateDescriptor<InvokerTestMessage>();
+        var descriptor = _SelectDescriptor(provider);
         var context = new ConsumerContext(descriptor, mediumMessage);
 
         // when
@@ -828,15 +724,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<InvokerTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<InvokerTestConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-invoker.primary")
-                    )
-            );
+            setup.AddConsumer<InvokerTestConsumer>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -848,7 +739,7 @@ public sealed class SubscribeInvokerTests : TestBase
             "test.messageName",
             tenantId: oversizedTenantId
         );
-        var descriptor = _CreateDescriptor<InvokerTestMessage>();
+        var descriptor = _SelectDescriptor(provider);
         var context = new ConsumerContext(descriptor, mediumMessage);
 
         // when
@@ -919,69 +810,9 @@ public sealed class SubscribeInvokerTests : TestBase
         };
     }
 
-    private static ConsumerExecutorDescriptor _CreateDescriptor<TMessage, TConsumer>()
-        where TMessage : class
-        where TConsumer : IConsume<TMessage>
-    {
-        var consumeMethod = typeof(IConsume<TMessage>).GetMethod(
-            nameof(IConsume<>.ConsumeAsync),
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            [typeof(ConsumeContext<TMessage>), typeof(CancellationToken)],
-            null
-        )!;
-
-        return new ConsumerExecutorDescriptor
-        {
-            Lane = MessageLane.Bus,
-            ServiceTypeInfo = typeof(TConsumer).GetTypeInfo(),
-            ImplTypeInfo = typeof(TConsumer).GetTypeInfo(),
-            MethodInfo = consumeMethod,
-            MessageName = "test.messageName",
-            GroupName = "test",
-            Parameters = consumeMethod
-                .GetParameters()
-                .Select(p => new ParameterDescriptor
-                {
-                    Name = p.Name!,
-                    ParameterType = p.ParameterType,
-                    IsFromMessaging = p.ParameterType == typeof(CancellationToken),
-                })
-                .ToList(),
-        };
-    }
-
-    private static ConsumerExecutorDescriptor _CreateDescriptor<TMessage>()
-        where TMessage : class
-    {
-        // For tests, we assume InvokerTestConsumer handles InvokerTestMessage
-        var consumeMethod = typeof(IConsume<TMessage>).GetMethod(
-            nameof(IConsume<>.ConsumeAsync),
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            [typeof(ConsumeContext<TMessage>), typeof(CancellationToken)],
-            null
-        )!;
-
-        return new ConsumerExecutorDescriptor
-        {
-            Lane = MessageLane.Bus,
-            ServiceTypeInfo = typeof(InvokerTestConsumer).GetTypeInfo(),
-            ImplTypeInfo = typeof(InvokerTestConsumer).GetTypeInfo(),
-            MethodInfo = consumeMethod,
-            MessageName = "test.messageName",
-            GroupName = "test",
-            Parameters = consumeMethod
-                .GetParameters()
-                .Select(p => new ParameterDescriptor
-                {
-                    Name = p.Name!,
-                    ParameterType = p.ParameterType,
-                    IsFromMessaging = p.ParameterType == typeof(CancellationToken),
-                })
-                .ToList(),
-        };
-    }
+    // The host's own descriptor, so the invoker runs the consumer through the dispatch its declaration registered.
+    private static ConsumerExecutorDescriptor _SelectDescriptor(IServiceProvider provider) =>
+        provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates().Single();
 }
 
 // Test message and consumers
@@ -989,6 +820,7 @@ public sealed record InvokerTestMessage(string Id);
 
 public sealed record InvokerResponse(string Status);
 
+[BusConsumer("tests.subscribe-invoker.primary")]
 public sealed class InvokerTestConsumer : IConsume<InvokerTestMessage>
 {
     public static ConsumeContext<InvokerTestMessage>? LastConsumed { get; private set; }
@@ -1005,6 +837,7 @@ public sealed class InvokerTestConsumer : IConsume<InvokerTestMessage>
     }
 }
 
+[BusConsumer("tests.subscribe-invoker.cancellable")]
 public sealed class CancellableConsumer : IConsume<InvokerTestMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
@@ -1014,6 +847,7 @@ public sealed class CancellableConsumer : IConsume<InvokerTestMessage>
     }
 }
 
+[BusConsumer("tests.subscribe-invoker.response-header")]
 public sealed class ResponseHeaderConsumer : IConsume<InvokerTestMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
@@ -1023,6 +857,7 @@ public sealed class ResponseHeaderConsumer : IConsume<InvokerTestMessage>
     }
 }
 
+[BusConsumer("tests.subscribe-invoker.response-body")]
 public sealed class ResponseBodyConsumer : IConsume<InvokerTestMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
@@ -1032,6 +867,7 @@ public sealed class ResponseBodyConsumer : IConsume<InvokerTestMessage>
     }
 }
 
+[BusConsumer("tests.subscribe-invoker.response-body-header")]
 public sealed class ResponseBodyAndHeaderConsumer : IConsume<InvokerTestMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
@@ -1042,6 +878,7 @@ public sealed class ResponseBodyAndHeaderConsumer : IConsume<InvokerTestMessage>
     }
 }
 
+[BusConsumer("tests.subscribe-invoker.rewrite-callback")]
 public sealed class RewriteCallbackConsumer : IConsume<InvokerTestMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
@@ -1052,6 +889,7 @@ public sealed class RewriteCallbackConsumer : IConsume<InvokerTestMessage>
     }
 }
 
+[BusConsumer("tests.subscribe-invoker.remove-callback")]
 public sealed class RemoveCallbackConsumer : IConsume<InvokerTestMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
@@ -1062,6 +900,7 @@ public sealed class RemoveCallbackConsumer : IConsume<InvokerTestMessage>
     }
 }
 
+[BusConsumer("tests.subscribe-invoker.next-callback")]
 public sealed class NextCallbackConsumer : IConsume<InvokerTestMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
