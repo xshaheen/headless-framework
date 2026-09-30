@@ -176,9 +176,7 @@ public static class FencingOracleGenerator
 
         foreach (var c in value)
         {
-            builder.Append(
-                c is < ' ' or > '~' ? string.Create(CultureInfo.InvariantCulture, $"\\u{(int)c:x4}") : c.ToString()
-            );
+            builder.Append(c is < ' ' or > '~' ? $"\\u{(int)c:x4}" : c.ToString());
         }
 
         return builder.Append('"').ToString();

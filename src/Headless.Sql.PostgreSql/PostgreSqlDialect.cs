@@ -228,7 +228,7 @@ public sealed class PostgreSqlDialect : ISqlDialect
                 .Concat(table.Checks.Select(c => $"CONSTRAINT {Quote(c.Name)} CHECK ({c.Condition})"));
 
             builder.AppendLine(CultureInfo.InvariantCulture, $"CREATE TABLE IF NOT EXISTS {qualified} (");
-            builder.AppendLine("    " + string.Join("," + Environment.NewLine + "    ", parts));
+            builder.Append("    ").AppendJoin("," + Environment.NewLine + "    ", parts).AppendLine();
             builder.AppendLine(");");
 
             foreach (var index in table.Indexes)

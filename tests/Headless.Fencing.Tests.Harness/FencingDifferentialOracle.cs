@@ -224,7 +224,7 @@ public static class FencingDifferentialOracle
             builder.AppendLine(CultureInfo.InvariantCulture, $"=== {group.Key}");
             builder.AppendLine(
                 CultureInfo.InvariantCulture,
-                $"    seeds: {string.Join(",", group.Select(static d => d.History.Seed))}"
+                $"    seeds: {string.Join(',', group.Select(static d => d.History.Seed))}"
             );
             builder.AppendLine(smallest.Describe());
         }

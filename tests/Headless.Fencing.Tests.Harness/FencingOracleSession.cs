@@ -70,16 +70,20 @@ public sealed class FencingOracleSession : IAsyncDisposable
                 FencingOracleOp.Renew r => (await _RenewAsync(r, cancellationToken).ConfigureAwait(false), null),
                 FencingOracleOp.Settle s => (
                     "settle:"
-                        + await _host
-                            .Leases.SettleAsync(_Lease(s.Key, s.Slot), cancellationToken)
-                            .ConfigureAwait(false),
+                        + (
+                            await _host
+                                .Leases.SettleAsync(_Lease(s.Key, s.Slot), cancellationToken)
+                                .ConfigureAwait(false)
+                        ).ToString(),
                     null
                 ),
                 FencingOracleOp.Release r => (
                     "release:"
-                        + await _host
-                            .Leases.ReleaseAsync(_Lease(r.Key, r.Slot), cancellationToken)
-                            .ConfigureAwait(false),
+                        + (
+                            await _host
+                                .Leases.ReleaseAsync(_Lease(r.Key, r.Slot), cancellationToken)
+                                .ConfigureAwait(false)
+                        ).ToString(),
                     null
                 ),
                 FencingOracleOp.FenceAndSettle f => (
@@ -162,7 +166,7 @@ public sealed class FencingOracleSession : IAsyncDisposable
         // Which contender wins is scheduling; how many win, and what the winner displaced, is the contract.
         var acquired = results.Where(static r => r.IsAcquired).OrderBy(static r => r.Lease!.Generation).ToList();
         var held = results.Count(static r => r.Status == LeaseGrantStatus.Held);
-        var winners = string.Join(",", acquired.Select(r => _DescribeGrant(op.Key, r)));
+        var winners = string.Join(',', acquired.Select(r => _DescribeGrant(op.Key, r)));
 
         return string.Create(CultureInfo.InvariantCulture, $"contend:acquired={acquired.Count}[{winners}],held={held}");
     }
@@ -295,7 +299,7 @@ public sealed class FencingOracleSession : IAsyncDisposable
 
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"sweep:[{string.Join(",", handed)}],failed={result.Failures.Count}"
+            $"sweep:[{string.Join(',', handed)}],failed={result.Failures.Count}"
         );
     }
 
@@ -373,7 +377,7 @@ public sealed class FencingOracleSession : IAsyncDisposable
             );
         }
 
-        return string.Join(" ", rows);
+        return string.Join(' ', rows);
     }
 
     // A key the database cannot even look up is an observation (a provider that cannot store the key), not a harness
@@ -441,7 +445,7 @@ public sealed class FencingOracleSession : IAsyncDisposable
         // Read by name so the harness stays free of driver references: Npgsql's SqlState, SqlClient's Number.
         var code = e.GetType().GetProperty("SqlState")?.GetValue(e) ?? e.GetType().GetProperty("Number")?.GetValue(e);
 
-        return code is null ? type : string.Create(CultureInfo.InvariantCulture, $"{type}({code})");
+        return code is null ? type : $"{type}({Convert.ToString(code, CultureInfo.InvariantCulture)})";
     }
 
     public ValueTask DisposeAsync()

@@ -72,7 +72,7 @@ internal sealed class RelationalFencingProviderExtension<TOptions, TOptionsValid
         }
         else
         {
-            services.Configure<TOptions, TOptionsValidator>(_configureWithServices!);
+            services.Configure<TOptions, TOptionsValidator>(_configureWithServices);
         }
 
         services.AddOptions<FencingStorageOptions, TStorageValidator>();

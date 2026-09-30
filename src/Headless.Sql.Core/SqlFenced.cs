@@ -31,9 +31,11 @@ public sealed class SqlFenced<TRow, TAccepted>
     /// <summary>Gets the row as the transition's locking read found it, before any write.</summary>
     public TRow? Before { get; }
 
-    public static SqlFenced<TRow, TAccepted> Accepted(TRow? before, TAccepted accepted) => new(true, before, accepted);
+    internal static SqlFenced<TRow, TAccepted> Accepted(TRow? before, TAccepted accepted) =>
+        new(isAccepted: true, before, accepted);
 
-    public static SqlFenced<TRow, TAccepted> Rejected(TRow? before) => new(false, before, default!);
+    internal static SqlFenced<TRow, TAccepted> Rejected(TRow? before) =>
+        new(isAccepted: false, before, accepted: default!);
 
     /// <summary>Returns <paramref name="accepted" />'s result for an applied transition, else <paramref name="rejected" />'s.</summary>
     [MustUseReturnValue]

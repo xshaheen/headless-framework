@@ -5,6 +5,8 @@ using System.Runtime.InteropServices;
 
 namespace Headless.Sql;
 
+#pragma warning disable CA1720 // Fix would make it worse: these members name SQL storage widths, and a name other than Int16/32/64 would hide which width each maps to.
+
 /// <summary>
 /// Everything a relational store needs to know about one database engine, so the store itself is written once:
 /// identifier naming and quoting, parameters, time arithmetic, the statement shapes that lock, fence, claim, and

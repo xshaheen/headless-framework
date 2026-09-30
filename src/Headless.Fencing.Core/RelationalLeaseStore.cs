@@ -73,7 +73,7 @@ internal sealed class RelationalLeaseStore : ILeaseStore
         _unitOfWorkFactory = unitOfWorkFactory;
         _timeProvider = timeProvider;
 
-        var now = SqlDialectTokens.Now;
+        const string now = SqlDialectTokens.Now;
         var t = _t;
         var active = FencingTable.StateLiteral(FencingTable.Active);
         var deadline = _dialect.ShiftByDuration(now, "Duration");
