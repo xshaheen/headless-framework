@@ -811,6 +811,7 @@
           "Bogus": "[35.6.5, )",
           "DeepCloner": "[0.10.4, )",
           "Headless.Fencing.Core": "[1.0.0, )",
+          "Headless.Fencing.InMemory": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Testing": "[1.0.0, )",
           "Headless.Testing.Testcontainers": "[1.0.0, )",

@@ -638,6 +638,15 @@
           "Microsoft.Extensions.Options": "[10.0.12, )"
         }
       },
+      "headless.fencing.inmemory": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Fencing.Core": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )"
+        }
+      },
       "headless.fluentvalidation": {
         "type": "Project",
         "dependencies": {
@@ -723,6 +732,15 @@
           "Testcontainers.Redis": "[4.15.0, )",
           "Testcontainers.XunitV3": "[4.15.0, )",
           "xunit.v3.extensibility.core": "[4.0.0, )"
+        }
+      },
+      "headless.unitofwork": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
         }
       },
       "headless.unitofwork.abstractions": {
