@@ -11,6 +11,7 @@ using Headless.Sql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.AuditLog;
@@ -160,7 +161,12 @@ public static class SetupAuditLogSqlServer
             }
 
             services.AddOptions<AuditLogStorageOptions, SqlServerAuditLogStorageOptionsValidator>();
-            services.AddInitializerHostedService<SqlServerAuditLogStorageInitializer>();
+            services.AddHeadlessSchemaContribution(sp =>
+                SqlServerAuditLogSchemaContribution.Create(
+                    sp.GetRequiredService<IOptions<SqlServerAuditLogOptions>>().Value,
+                    sp.GetRequiredService<IOptions<AuditLogStorageOptions>>().Value
+                )
+            );
             services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
             services.TryAddSingleton<SqlServerAuditLogWriter>();
             services.TryAddScoped<IAuditLogStore, SqlServerAuditLogStore>();

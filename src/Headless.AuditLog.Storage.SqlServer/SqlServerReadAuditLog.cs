@@ -61,7 +61,7 @@ internal sealed class SqlServerReadAuditLog<TContext>(
         var order = newestFirst ? "[CreatedAt] DESC, [Id] DESC" : "[CreatedAt] ASC, [Id] ASC";
         var where = filters.Count == 0 ? string.Empty : $" WHERE {string.Join(" AND ", filters)}";
         var sql =
-            $"SELECT TOP(@Limit) [Id],[UserId],[AccountId],[TenantId],[IpAddress],[UserAgent],[CorrelationId],[Action],[ChangeType],[EntityType],[EntityId],[OldValues],[NewValues],[ChangedFields],[Success],[ErrorCode],[CreatedAt] FROM {SqlServerAuditLogStorageInitializer.Qualified(storageOptions.Value)}{where} ORDER BY {order};";
+            $"SELECT TOP(@Limit) [Id],[UserId],[AccountId],[TenantId],[IpAddress],[UserAgent],[CorrelationId],[Action],[ChangeType],[EntityType],[EntityId],[OldValues],[NewValues],[ChangedFields],[Success],[ErrorCode],[CreatedAt] FROM {SqlServerAuditLogSchema.Qualified(storageOptions.Value)}{where} ORDER BY {order};";
 
         var result = new List<AuditLogEntryData>();
         (DateTime CreatedAtUtc, long Id) last = default;

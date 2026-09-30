@@ -123,7 +123,7 @@ internal sealed class SqlServerAuditLogWriter(
 
     private string _BuildInsertSql(int rowCount)
     {
-        var table = SqlServerAuditLogStorageInitializer.Qualified(storageOptions.Value);
+        var table = SqlServerAuditLogSchema.Qualified(storageOptions.Value);
 
         var builder = new StringBuilder(256 + (rowCount * 220));
         builder.Append("INSERT INTO ").Append(table);

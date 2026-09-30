@@ -303,6 +303,7 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
         await using var command = new SqlCommand(
             $"""
             IF OBJECT_ID(N'{_Schema}.AuditLogEntries', N'U') IS NOT NULL DROP TABLE [{_Schema}].[AuditLogEntries];
+            IF OBJECT_ID(N'{_Schema}.headless_schema_history', N'U') IS NOT NULL DROP TABLE [{_Schema}].[headless_schema_history];
             IF EXISTS (SELECT * FROM sys.schemas WHERE name = N'{_Schema}') EXEC(N'DROP SCHEMA [{_Schema}]');
             """,
             connection

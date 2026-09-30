@@ -122,7 +122,7 @@ internal sealed class PostgreSqlAuditLogWriter(
     private string _BuildInsertSql(int rowCount)
     {
         var options = storageOptions.Value;
-        var table = PostgreSqlAuditLogStorageInitializer.Qualified(options);
+        var table = PostgreSqlAuditLogSchema.Qualified(options);
         var jsonColumnType = (options.JsonColumnType ?? AuditLogJsonColumnType.Jsonb).ToSqlFragment();
 
         var builder = new StringBuilder(256 + (rowCount * 256));

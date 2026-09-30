@@ -11,6 +11,7 @@ using Headless.Sql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.AuditLog;
@@ -162,7 +163,12 @@ public static class SetupAuditLogPostgreSql
             }
 
             services.AddOptions<AuditLogStorageOptions, PostgreSqlAuditLogStorageOptionsValidator>();
-            services.AddInitializerHostedService<PostgreSqlAuditLogStorageInitializer>();
+            services.AddHeadlessSchemaContribution(sp =>
+                PostgreSqlAuditLogSchemaContribution.Create(
+                    sp.GetRequiredService<IOptions<PostgreSqlAuditLogOptions>>().Value,
+                    sp.GetRequiredService<IOptions<AuditLogStorageOptions>>().Value
+                )
+            );
             services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
             services.TryAddSingleton<PostgreSqlAuditLogWriter>();
             services.TryAddScoped<IAuditLogStore, PostgreSqlAuditLogStore>();

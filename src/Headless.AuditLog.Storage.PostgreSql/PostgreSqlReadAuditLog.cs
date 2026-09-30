@@ -60,7 +60,7 @@ internal sealed class PostgreSqlReadAuditLog<TContext>(
         var order = newestFirst ? @"""created_at"" DESC, ""id"" DESC" : @"""created_at"" ASC, ""id"" ASC";
         var where = filters.Count == 0 ? string.Empty : $" WHERE {string.Join(" AND ", filters)}";
         var sql =
-            $"""SELECT "id","user_id","account_id","tenant_id","ip_address","user_agent","correlation_id","action","change_type","entity_type","entity_id","old_values","new_values","changed_fields","success","error_code","created_at" FROM {PostgreSqlAuditLogStorageInitializer.Qualified(storageOptions.Value)}{where} ORDER BY {order} LIMIT @Limit;""";
+            $"""SELECT "id","user_id","account_id","tenant_id","ip_address","user_agent","correlation_id","action","change_type","entity_type","entity_id","old_values","new_values","changed_fields","success","error_code","created_at" FROM {PostgreSqlAuditLogSchema.Qualified(storageOptions.Value)}{where} ORDER BY {order} LIMIT @Limit;""";
 
         var result = new List<AuditLogEntryData>();
         (DateTime CreatedAtUtc, long Id) last = default;

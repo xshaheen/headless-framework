@@ -18,7 +18,7 @@ public sealed class SqlServerAuditLogModelParityTests(SqlServerAuditLogFixture f
     [Fact]
     public async Task should_create_the_same_table_columns_and_indexes_the_ef_model_maps()
     {
-        // given — the raw initializer and the EF mapping must agree name for name, or an application that
+        // given — the raw schema contribution and the EF mapping must agree name for name, or an application that
         // provisions with one and reads with the other fails at its first query
         await _DropSchemaAsync();
         using var host = _CreateHost();
@@ -28,9 +28,9 @@ public sealed class SqlServerAuditLogModelParityTests(SqlServerAuditLogFixture f
             new AuditLogStorageOptions { Schema = _Schema }
         );
 
-        // when
+        // when — the schema runner's history table sits next to the audit table but is no part of the EF model
         var createdColumns = await _ReadPairsAsync(
-            "SELECT TABLE_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = @schema"
+            "SELECT TABLE_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = @schema AND TABLE_NAME <> 'headless_schema_history'"
         );
         var createdIndexes = await _ReadPairsAsync(
             """
@@ -38,7 +38,7 @@ public sealed class SqlServerAuditLogModelParityTests(SqlServerAuditLogFixture f
             FROM sys.indexes i
             JOIN sys.tables t ON t.object_id = i.object_id
             JOIN sys.schemas s ON s.schema_id = t.schema_id
-            WHERE s.name = @schema AND i.name IS NOT NULL
+            WHERE s.name = @schema AND i.name IS NOT NULL AND t.name <> 'headless_schema_history'
             """
         );
         var (mappedColumns, mappedIndexes) = _MappedObjects(context.Model);

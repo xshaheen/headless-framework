@@ -156,6 +156,8 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
             $"""
             IF EXISTS (SELECT 1 FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = N'{_Schema}' AND t.name = N'AuditLogEntries')
                 DROP TABLE [{_Schema}].[AuditLogEntries];
+            IF OBJECT_ID(N'{_Schema}.headless_schema_history', N'U') IS NOT NULL
+                DROP TABLE [{_Schema}].[headless_schema_history];
             IF EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'{_Schema}')
                 EXEC(N'DROP SCHEMA [{_Schema}]');
             """,

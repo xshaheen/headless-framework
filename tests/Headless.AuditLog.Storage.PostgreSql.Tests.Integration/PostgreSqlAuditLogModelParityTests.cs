@@ -18,7 +18,7 @@ public sealed class PostgreSqlAuditLogModelParityTests(PostgreSqlAuditLogFixture
     [Fact]
     public async Task should_create_the_same_table_columns_and_indexes_the_ef_model_maps()
     {
-        // given — the raw initializer and the EF mapping must agree name for name, or an application that
+        // given — the raw schema contribution and the EF mapping must agree name for name, or an application that
         // provisions with one and reads with the other fails at its first query
         await _DropSchemaAsync();
         using var host = _CreateHost();
@@ -28,12 +28,12 @@ public sealed class PostgreSqlAuditLogModelParityTests(PostgreSqlAuditLogFixture
             new AuditLogStorageOptions { Schema = _Schema }
         );
 
-        // when
+        // when — the schema runner's history table sits next to the audit table but is no part of the EF model
         var createdColumns = await _ReadPairsAsync(
-            "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = @schema"
+            "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = @schema AND table_name <> 'headless_schema_history'"
         );
         var createdIndexes = await _ReadPairsAsync(
-            "SELECT tablename, indexname FROM pg_indexes WHERE schemaname = @schema"
+            "SELECT tablename, indexname FROM pg_indexes WHERE schemaname = @schema AND tablename <> 'headless_schema_history'"
         );
         var (mappedColumns, mappedIndexes) = _MappedObjects(context.Model);
 
