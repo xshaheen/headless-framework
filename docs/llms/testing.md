@@ -390,7 +390,7 @@ Floating tags such as `:latest` force Docker to hit the registry on every pull t
 
 The fixtures create their containers with Testcontainers reuse enabled, except `HeadlessRabbitMqFixture`, `HeadlessKafkaFixture`, and `HeadlessPulsarFixture`. These broker fixtures need clean restart semantics, so they always create fresh containers. When the host opts in with `testcontainers.reuse.enable=true` in `~/.testcontainers.properties` or the `TESTCONTAINERS_REUSE_ENABLE=true` environment variable, repeated local runs reattach to an already-warm reusable container instead of paying the cold-start cost. CI leaves reuse disabled, so reuse becomes a no-op and Ryuk reaps containers as usual.
 
-Because a reused container keeps state between runs, tests must be idempotent across runs: use drop-before-create (`DROP TABLE IF EXISTS` / `IF OBJECT_ID(...) IS NOT NULL DROP ...`) or guarded create (`CREATE ... IF NOT EXISTS`) rather than assuming a clean database. Each integration project reuses its own container, keyed by the test assembly name, so projects never share state.
+Because a reused container keeps state between runs, tests must be idempotent across runs: use drop-before-create (`DROP TABLE IF EXISTS` / `IF OBJECT_ID(...) IS NOT NULL DROP ...`) or guarded create (`CREATE ... IF NOT EXISTS`) rather than assuming a clean database. Each integration project reuses its own container in each checkout of the repository, keyed by the test assembly name (`headless.fixture` label) and the checkout's root directory (`headless.checkout` label), so neither two projects nor two worktrees running the same project share state. A removed worktree leaves its stopped containers behind; find them with `docker ps -a --filter label=headless.checkout=<path>`.
 
 ### Install
 
