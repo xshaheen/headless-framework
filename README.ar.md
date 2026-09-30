@@ -352,6 +352,7 @@ Interface واحدة لتخزين الملفات، وproviders لكل cloud وpr
 | [Headless.Blobs.Azure](src/Headless.Blobs.Azure/README.md) | Provider لـ Azure Blob Storage |
 | [Headless.Blobs.CloudflareR2](src/Headless.Blobs.CloudflareR2/README.md) | Provider لـ Cloudflare R2 (متوافق مع S3) |
 | [Headless.Blobs.FileSystem](src/Headless.Blobs.FileSystem/README.md) | تخزين على الـ file system المحلي |
+| [Headless.Blobs.MultiTenancy](src/Headless.Blobs.MultiTenancy/README.md) | عزل الـ blob stores حسب الـ tenant |
 | [Headless.Blobs.Redis](src/Headless.Blobs.Redis/README.md) | تخزين جوه Redis |
 | [Headless.Blobs.SshNet](src/Headless.Blobs.SshNet/README.md) | Provider لـ SFTP |
 
