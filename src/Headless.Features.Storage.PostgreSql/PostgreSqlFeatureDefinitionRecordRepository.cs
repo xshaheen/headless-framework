@@ -41,7 +41,7 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
     public async Task<List<FeatureDefinitionRecord>> GetFeaturesListAsync(CancellationToken cancellationToken = default)
     {
         var sql = _selectFeaturesSql ??=
-            $"""SELECT "Id","GroupName","Name","ParentName","DisplayName","Description","DefaultValue","IsVisibleToClients","IsAvailableToHost","Providers","ExtraProperties" FROM {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureDefinitionsTableName)};""";
+            $"""SELECT "id","group_name","name","parent_name","display_name","description","default_value","is_visible_to_clients","is_available_to_host","providers","extra_properties" FROM {PostgreSqlFeaturesStorageInitializer.DefinitionsTable(storageOptions.Value)};""";
 
         var result = new List<FeatureDefinitionRecord>();
         await using var connection = providerOptions.Value.CreateConnection();
@@ -82,7 +82,7 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
     )
     {
         var sql = _selectGroupsSql ??=
-            $"""SELECT "Id","Name","DisplayName","ExtraProperties" FROM {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureGroupDefinitionsTableName)};""";
+            $"""SELECT "id","name","display_name","extra_properties" FROM {PostgreSqlFeaturesStorageInitializer.GroupsTable(storageOptions.Value)};""";
 
         var result = new List<FeatureGroupDefinitionRecord>();
         await using var connection = providerOptions.Value.CreateConnection();
@@ -342,15 +342,12 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
 
     private string _BuildInsertGroupSql(int rowCount)
     {
-        var table = PostgreSqlFeaturesStorageInitializer.Qualified(
-            storageOptions.Value,
-            storageOptions.Value.FeatureGroupDefinitionsTableName
-        );
+        var table = PostgreSqlFeaturesStorageInitializer.GroupsTable(storageOptions.Value);
         var builder = new StringBuilder(128 + (rowCount * 80));
         builder
             .Append("INSERT INTO ")
             .Append(table)
-            .Append(" (\"Id\",\"Name\",\"DisplayName\",\"ExtraProperties\") VALUES ");
+            .Append(" (\"id\",\"name\",\"display_name\",\"extra_properties\") VALUES ");
 
         for (var i = 0; i < rowCount; i++)
         {
@@ -377,14 +374,11 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
 
     private string _BuildInsertFeatureSql(int rowCount)
     {
-        var table = PostgreSqlFeaturesStorageInitializer.Qualified(
-            storageOptions.Value,
-            storageOptions.Value.FeatureDefinitionsTableName
-        );
+        var table = PostgreSqlFeaturesStorageInitializer.DefinitionsTable(storageOptions.Value);
         var builder = new StringBuilder(192 + (rowCount * 200));
         builder.Append("INSERT INTO ").Append(table);
         builder.Append(
-            " (\"Id\",\"GroupName\",\"Name\",\"DisplayName\",\"ParentName\",\"Description\",\"DefaultValue\",\"IsVisibleToClients\",\"IsAvailableToHost\",\"Providers\",\"ExtraProperties\") VALUES "
+            " (\"id\",\"group_name\",\"name\",\"display_name\",\"parent_name\",\"description\",\"default_value\",\"is_visible_to_clients\",\"is_available_to_host\",\"providers\",\"extra_properties\") VALUES "
         );
 
         for (var i = 0; i < rowCount; i++)
@@ -427,25 +421,25 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
     private string _UpdateGroupSql()
     {
         return _updateGroupSql ??=
-            $"""UPDATE {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureGroupDefinitionsTableName)} SET "Name"=@Name,"DisplayName"=@DisplayName,"ExtraProperties"=@ExtraProperties WHERE "Id"=@Id;""";
+            $"""UPDATE {PostgreSqlFeaturesStorageInitializer.GroupsTable(storageOptions.Value)} SET "name"=@Name,"display_name"=@DisplayName,"extra_properties"=@ExtraProperties WHERE "id"=@Id;""";
     }
 
     private string _DeleteGroupSql()
     {
         return _deleteGroupSql ??=
-            $"""DELETE FROM {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureGroupDefinitionsTableName)} WHERE "Id"=@Id;""";
+            $"""DELETE FROM {PostgreSqlFeaturesStorageInitializer.GroupsTable(storageOptions.Value)} WHERE "id"=@Id;""";
     }
 
     private string _UpdateFeatureSql()
     {
         return _updateFeatureSql ??=
-            $"""UPDATE {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureDefinitionsTableName)} SET "GroupName"=@GroupName,"Name"=@Name,"DisplayName"=@DisplayName,"ParentName"=@ParentName,"Description"=@Description,"DefaultValue"=@DefaultValue,"IsVisibleToClients"=@IsVisibleToClients,"IsAvailableToHost"=@IsAvailableToHost,"Providers"=@Providers,"ExtraProperties"=@ExtraProperties WHERE "Id"=@Id;""";
+            $"""UPDATE {PostgreSqlFeaturesStorageInitializer.DefinitionsTable(storageOptions.Value)} SET "group_name"=@GroupName,"name"=@Name,"display_name"=@DisplayName,"parent_name"=@ParentName,"description"=@Description,"default_value"=@DefaultValue,"is_visible_to_clients"=@IsVisibleToClients,"is_available_to_host"=@IsAvailableToHost,"providers"=@Providers,"extra_properties"=@ExtraProperties WHERE "id"=@Id;""";
     }
 
     private string _DeleteFeatureSql()
     {
         return _deleteFeatureSql ??=
-            $"""DELETE FROM {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureDefinitionsTableName)} WHERE "Id"=@Id;""";
+            $"""DELETE FROM {PostgreSqlFeaturesStorageInitializer.DefinitionsTable(storageOptions.Value)} WHERE "id"=@Id;""";
     }
 
     private int _CommandTimeout()

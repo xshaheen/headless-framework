@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
 using Headless.Settings;
 using Headless.Testing.Testcontainers;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 
 namespace Tests;
 
@@ -56,5 +58,58 @@ public sealed class SqlServerSettingsFixture
         command.Parameters.AddWithValue("@table", tableName);
 
         return (bool)await command.ExecuteScalarAsync(cancellationToken);
+    }
+
+    public StorageNamingStyle NamingStyle => StorageNamingStyle.PascalCase;
+
+    public void UseEntityFrameworkProvider(DbContextOptionsBuilder builder, string connectionString)
+    {
+        builder.UseSqlServer(connectionString);
+    }
+
+    public async Task<SettingsStoreObjects> ReadStoreObjectsAsync(string schema, CancellationToken cancellationToken)
+    {
+        await using var connection = new SqlConnection(ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        var columns = await _ReadPairsAsync(
+            connection,
+            "SELECT TABLE_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = @schema",
+            schema,
+            cancellationToken
+        );
+        var indexes = await _ReadPairsAsync(
+            connection,
+            """
+            SELECT t.name, i.name
+            FROM sys.indexes i
+            JOIN sys.tables t ON t.object_id = i.object_id
+            JOIN sys.schemas s ON s.schema_id = t.schema_id
+            WHERE s.name = @schema AND i.name IS NOT NULL
+            """,
+            schema,
+            cancellationToken
+        );
+
+        return new SettingsStoreObjects(columns, indexes);
+    }
+
+    private static async Task<HashSet<string>> _ReadPairsAsync(
+        SqlConnection connection,
+        string sql,
+        string schema,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@schema", schema);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var pairs = new HashSet<string>(StringComparer.Ordinal);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            pairs.Add($"{reader.GetString(0)}.{reader.GetString(1)}");
+        }
+
+        return pairs;
     }
 }

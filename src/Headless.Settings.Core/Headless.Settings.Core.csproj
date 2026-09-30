@@ -6,6 +6,9 @@
     <RootNamespace>Headless.Settings</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Settings.Storage.EntityFramework" />
+    <InternalsVisibleTo Include="Headless.Settings.Storage.PostgreSql" />
+    <InternalsVisibleTo Include="Headless.Settings.Storage.SqlServer" />
     <InternalsVisibleTo Include="Headless.Settings.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>

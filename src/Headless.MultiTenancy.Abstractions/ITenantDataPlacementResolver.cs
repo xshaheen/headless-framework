@@ -3,9 +3,9 @@
 namespace Headless.MultiTenancy;
 
 /// <summary>
-/// Resolves where a tenant's data physically lives, keyed by canonical tenant id. The framework consults it only
-/// for data contexts that were explicitly registered as tenant-routed; every other context keeps the shared
-/// database and schema.
+/// Resolves where a tenant's data physically lives, keyed by canonical tenant id and routed data store. The framework
+/// consults it only for data contexts that were explicitly registered as tenant-routed; every other context keeps
+/// the shared database and schema.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -21,12 +21,16 @@ namespace Headless.MultiTenancy;
 [PublicAPI]
 public interface ITenantDataPlacementResolver
 {
-    /// <summary>Resolves the data placement of the tenant whose canonical id is <paramref name="tenantId"/>.</summary>
-    /// <param name="tenantId">The canonical tenant id.</param>
+    /// <summary>Resolves the data placement described by <paramref name="request"/>.</summary>
+    /// <param name="request">The tenant and routed data store to place.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>
-    /// The tenant's placement, or <see langword="null"/> when the tenant has none. A routed context refuses a
-    /// tenant with no placement rather than falling back to the shared database.
+    /// The tenant's placement, <see cref="TenantDataPlacement.Shared"/> when the tenant deliberately keeps the
+    /// context's own schema and database, or <see langword="null"/> when the tenant has no placement. A routed
+    /// context refuses a tenant with no placement rather than falling back to the shared database.
     /// </returns>
-    Task<TenantDataPlacement?> ResolveAsync(string tenantId, CancellationToken cancellationToken = default);
+    Task<TenantDataPlacement?> ResolveAsync(
+        TenantDataPlacementRequest request,
+        CancellationToken cancellationToken = default
+    );
 }

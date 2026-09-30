@@ -18,7 +18,8 @@ Install three packages: an abstractions package, the core implementation, and ex
 Minimal wiring:
 
 ```csharp
-builder.Services.AddCaching();
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
@@ -42,7 +43,7 @@ Define settings via `ISettingDefinitionProvider.Define()`. Read via `ISettingMan
 - `AddHeadlessSettings(...)` is the single entry point — it registers the management core automatically alongside the storage provider. Only one storage provider (EF / PostgreSQL / SqlServer) may be registered; a second registration throws at startup.
 - To tune management options, call `setup.ConfigureManagement(options => ...)` inside the `AddHeadlessSettings` block. An `(options, IServiceProvider)` overload is available for late-bound configuration. `services.Configure<SettingManagementOptions>(...)` also works and composes regardless of call order.
 - To tune schema and table names, call `setup.ConfigureStorage(o => ...)` inside the same block. The `IConfiguration` overload binds the `Headless:Settings:Storage` section instead.
-- For EF storage: register `AddDbContextFactory<TContext>()` and call `modelBuilder.AddHeadlessSettings(this)` in `OnModelCreating` before calling `setup.UseEntityFramework<TContext>()`. The `(SettingsStorageOptions)` overload exists when you already hold the options object.
+- For EF storage: register `AddDbContextFactory<TContext>()` and call `modelBuilder.AddHeadlessSettings(this)` in `OnModelCreating` before calling `setup.UseEntityFramework<TContext>()`. The factory must be a singleton (the `AddDbContextFactory` / `AddPooledDbContextFactory` default): the EF repositories are singletons that would capture a scoped or transient factory for the life of the host, so startup refuses one with `InvalidServiceLifetimeException`. The `(SettingsStorageOptions)` overload exists when you already hold the options object.
 - Required services before `AddHeadlessSettings(...)`: `TimeProvider`, caching (`ICache`), distributed lock (`IDistributedLock`), and `IStringEncryptionService`. The core throws `InvalidOperationException` on startup if encryption is missing.
 - `DeleteAsync(providerName, providerKey)` removes all setting values for a given provider and key — use it when cleaning up a deleted tenant or user.
 - Both `ISettingManager` and direct `ISettingValueRecordRepository` writes invalidate cached values (the repository removes the affected key after `SaveChangesAsync`). Only writes that bypass the repository entirely (raw SQL, direct `DbContext`) leave the cache stale.
@@ -258,7 +259,8 @@ Register the required services (`TimeProvider`, `ICache`, `IDistributedLock`, `I
 var builder = WebApplication.CreateBuilder(args);
 
 // Required dependencies
-builder.Services.AddCaching();
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
@@ -379,14 +381,16 @@ services.AddHeadlessSettings(setup =>
 {
     setup.ConfigureStorage(o =>
     {
-        o.Schema = "settings"; // default
-        o.SettingValuesTableName = "SettingValues"; // default
-        o.SettingDefinitionsTableName = "SettingDefinitions"; // default
+        o.Schema = "headless"; // default, shared by every Headless feature
+        o.SettingValuesTableName = null; // default: setting_values on PostgreSQL, SettingValues elsewhere
+        o.SettingDefinitionsTableName = null; // default: setting_definitions / SettingDefinitions
         o.InitializeOnStartup = true; // default; set false when schema is provisioned out-of-band
     });
     setup.UseEntityFramework<AppDbContext>();
 });
 ```
+
+Every object follows its database's naming convention. On PostgreSQL the tables, columns, primary keys, and indexes are snake_case (`setting_values`, `provider_key`, `pk_setting_values`, `ix_setting_values_name_provider_name_provider_key`); on SQL Server and other databases they are PascalCase (`SettingValues`, `ProviderKey`, `PK_SettingValues`, `IX_SettingValues_Name_ProviderName_ProviderKey`). A table-name option left `null` takes that convention's default. A table name you set is used verbatim, and its key and index names derive from it (`pk_MyValues`). The raw providers and the EF mapping produce the same names on the same database. Because PostgreSQL silently truncates identifiers longer than 63 bytes, every provider refuses a configured table name whose longest derived PostgreSQL key or index name would exceed that: at most 23 characters for the values table and 55 for definitions.
 
 ### Runtime behavior
 
@@ -404,8 +408,8 @@ Entity Framework Core storage implementation for settings management.
 ### API and behavior
 
 - `setup.UseEntityFramework<TContext>()` — registers the EF storage provider via `HeadlessSettingsSetupBuilder`
-- `modelBuilder.AddHeadlessSettings(DbContext context)` — applies entity configurations by resolving `SettingsStorageOptions` from the context's service provider (no constructor injection required)
-- `modelBuilder.AddHeadlessSettings(SettingsStorageOptions options)` — overload for when you already hold the options
+- `modelBuilder.AddHeadlessSettings(DbContext context)` — applies entity configurations by resolving `SettingsStorageOptions` from the context's service provider (no constructor injection required) and the naming style from `context.Database.ProviderName`: snake_case on Npgsql, PascalCase on every other provider
+- `modelBuilder.AddHeadlessSettings(SettingsStorageOptions options, StorageNamingStyle style)` — overload for when you already hold the options; pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (namespace `Headless.Hosting.Initialization`) so the style matches the database
 - EF repositories for `ISettingValueRecordRepository` and `ISettingDefinitionRecordRepository`
 - `SettingsStorageOptions` for schema and table-name configuration (shared with raw-DDL providers)
 - Startup validation gate that inspects the EF model before hosted services start and fails with an actionable message if any settings entity is missing
@@ -439,7 +443,8 @@ builder.Services.AddDbContextFactory<AppDbContext>(options =>
     options.UseNpgsql(connectionString)
 );
 
-builder.Services.AddCaching();
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 builder.Services.AddStringEncryptionService(
     builder.Configuration.GetRequiredSection("Headless:StringEncryption")
@@ -451,8 +456,6 @@ builder.Services.AddHeadlessSettings(setup =>
     setup.ConfigureStorage(storage =>
     {
         storage.Schema = "app_settings";
-        storage.SettingValuesTableName = "SettingValues";
-        storage.SettingDefinitionsTableName = "SettingDefinitions";
     });
     setup.UseEntityFramework<AppDbContext>();
 });
@@ -462,9 +465,9 @@ builder.Services.AddHeadlessSettings(setup =>
 
 `SettingsStorageOptions` defaults:
 
-- `Schema = "settings"`
-- `SettingValuesTableName = "SettingValues"`
-- `SettingDefinitionsTableName = "SettingDefinitions"`
+- `Schema = "headless"`, the schema every Headless feature shares (see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features))
+- `SettingValuesTableName = null`: `setting_values` on PostgreSQL, `SettingValues` elsewhere
+- `SettingDefinitionsTableName = null`: `setting_definitions` on PostgreSQL, `SettingDefinitions` elsewhere
 - `InitializeOnStartup = true`
 
 The registration validates identifier names using cross-provider rules (SQL Server superset). The startup gate inspects the EF model before hosted services start and fails with an actionable message if any settings entity is missing. `InitializeOnStartup` is ignored by the EF provider — EF uses migrations, not startup DDL.
@@ -488,7 +491,8 @@ PostgreSQL raw-DDL storage for settings management.
 - `setup.UsePostgreSql(IConfiguration configuration)` — overload that binds `PostgreSqlSettingsOptions` from a configuration section
 - `setup.UsePostgreSql(Action<PostgreSqlSettingsOptions> configure)` — overload for full option control
 - `setup.UsePostgreSql(Action<PostgreSqlSettingsOptions, IServiceProvider> configure)` — overload for late-bound configuration
-- Idempotent schema, table, and index creation at host startup via `PostgreSqlSettingsStorageInitializer`
+- `setup.UsePostgreSql()` — reads the connection registered by `AddPostgreSqlSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
+- Idempotent schema, table, and index creation at host startup via `PostgreSqlSettingsStorageInitializer`, with snake_case tables, columns, keys, and indexes (`setting_values`, `provider_key`, `ix_setting_values_name_provider_name_provider_key`)
 - Raw ADO.NET repositories for setting values and definitions
 - `PostgreSqlSettingsOptions` — connection string and command timeout
 - Shares `SettingsStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
@@ -504,17 +508,25 @@ dotnet add package Headless.Settings.Storage.PostgreSql
 Register the required services first — `TimeProvider`, caching, distributed lock, and `IStringEncryptionService`. `AddHeadlessSettings` then registers the management core automatically.
 
 ```csharp
-builder.Services.AddCaching();
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
+builder.Services.AddPostgreSqlSql(connectionString);
+builder.Services.AddHeadlessSettings(setup => setup.UsePostgreSql());
+
+// Or give this feature its own connection and schema:
 builder.Services.AddHeadlessSettings(setup =>
 {
-    setup.ConfigureStorage(storage => storage.Schema = "settings");
+    setup.ConfigureStorage(storage => storage.Schema = "app_settings");
     setup.UsePostgreSql(connectionString);
 });
+```
 
-// Or with full option control:
+Or with full option control:
+
+```csharp
 builder.Services.AddHeadlessSettings(setup =>
 {
     setup.UsePostgreSql(options =>
@@ -556,7 +568,8 @@ SQL Server raw-DDL storage for settings management.
 - `setup.UseSqlServer(IConfiguration configuration)` — overload that binds `SqlServerSettingsOptions` from a configuration section
 - `setup.UseSqlServer(Action<SqlServerSettingsOptions> configure)` — overload for full option control
 - `setup.UseSqlServer(Action<SqlServerSettingsOptions, IServiceProvider> configure)` — overload for late-bound configuration
-- Idempotent schema, table, and index creation at host startup via `SqlServerSettingsStorageInitializer`
+- `setup.UseSqlServer()` — reads the connection registered by `AddSqlServerSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
+- Idempotent schema, table, and index creation at host startup via `SqlServerSettingsStorageInitializer`, with PascalCase tables, columns, keys, and indexes (`SettingValues`, `ProviderKey`, `IX_SettingValues_Name_ProviderName_ProviderKey`)
 - Raw ADO.NET repositories for setting values and definitions
 - `SqlServerSettingsOptions` — connection string and command timeout
 - Shares `SettingsStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
@@ -572,17 +585,25 @@ dotnet add package Headless.Settings.Storage.SqlServer
 Register the required services first — `TimeProvider`, caching, distributed lock, and `IStringEncryptionService`. `AddHeadlessSettings` then registers the management core automatically.
 
 ```csharp
-builder.Services.AddCaching();
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
+builder.Services.AddSqlServerSql(connectionString);
+builder.Services.AddHeadlessSettings(setup => setup.UseSqlServer());
+
+// Or give this feature its own connection and schema:
 builder.Services.AddHeadlessSettings(setup =>
 {
-    setup.ConfigureStorage(storage => storage.Schema = "settings");
+    setup.ConfigureStorage(storage => storage.Schema = "app_settings");
     setup.UseSqlServer(connectionString);
 });
+```
 
-// Or with full option control:
+Or with full option control:
+
+```csharp
 builder.Services.AddHeadlessSettings(setup =>
 {
     setup.UseSqlServer(options =>

@@ -23,6 +23,11 @@ public sealed class ConfigurationTenantDataPlacementResolverTests : TestBase
                     ["Placement:Tenants:0:Schema"] = "tenant_a",
                     ["Placement:Tenants:1:TenantId"] = "tenant-b",
                     ["Placement:Tenants:1:ConnectionString"] = "Host=db;Database=tenant_b",
+                    ["Placement:Tenants:2:TenantId"] = "tenant-b",
+                    ["Placement:Tenants:2:DataStore"] = "billing",
+                    ["Placement:Tenants:2:Schema"] = "tenant_b_billing",
+                    ["Placement:Tenants:3:TenantId"] = "tenant-s",
+                    ["Placement:Tenants:3:Shared"] = "true",
                 }
             )
             .Build();
@@ -34,16 +39,23 @@ public sealed class ConfigurationTenantDataPlacementResolverTests : TestBase
         var sut = provider.GetRequiredService<ITenantDataPlacementResolver>();
 
         // when
-        var a = await sut.ResolveAsync("tenant-a", AbortToken);
-        var b = await sut.ResolveAsync("tenant-b", AbortToken);
-        var unknown = await sut.ResolveAsync("tenant-c", AbortToken);
+        var a = await sut.ResolveAsync(new("tenant-a"), AbortToken);
+        var b = await sut.ResolveAsync(new("tenant-b"), AbortToken);
+        var bBilling = await sut.ResolveAsync(new("tenant-b", "billing"), AbortToken);
+        var aBilling = await sut.ResolveAsync(new("tenant-a", "billing"), AbortToken);
+        var shared = await sut.ResolveAsync(new("tenant-s"), AbortToken);
+        var unknown = await sut.ResolveAsync(new("tenant-c"), AbortToken);
 
         // then
         a!.Schema.Should().Be("tenant_a");
         a.ConnectionString.Should().BeNull();
         b!.Schema.Should().BeNull();
         b.ConnectionString.Should().Be("Host=db;Database=tenant_b");
+        bBilling!.Schema.Should().Be("tenant_b_billing");
+        aBilling.Should().BeNull("a data store the tenant has no entry for is unplaced, not the default store");
+        shared.Should().BeSameAs(TenantDataPlacement.Shared);
         unknown.Should().BeNull();
+        provider.GetRequiredService<ITenantDataPlacementCacheInvalidator>().Should().NotBeNull();
     }
 
     [Fact]
@@ -51,7 +63,7 @@ public sealed class ConfigurationTenantDataPlacementResolverTests : TestBase
     {
         var sut = _Create(new ConfigurationTenantDataPlacement { TenantId = "Tenant-A", Schema = "tenant_a" });
 
-        (await sut.ResolveAsync("tenant-a", AbortToken)).Should().BeNull();
+        (await sut.ResolveAsync(new("tenant-a"), AbortToken)).Should().BeNull();
     }
 
     [Theory]
@@ -60,6 +72,9 @@ public sealed class ConfigurationTenantDataPlacementResolverTests : TestBase
     [InlineData(2)]
     [InlineData(3)]
     [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    [InlineData(7)]
     public void should_reject_invalid_options(int caseIndex)
     {
         var result = new ConfigurationTenantDataPlacementOptionsValidator().Validate(_InvalidOptions()[caseIndex]);
@@ -81,6 +96,48 @@ public sealed class ConfigurationTenantDataPlacementResolverTests : TestBase
             new() { Tenants = [new() { TenantId = "tenant-a" }] },
             new() { Tenants = [new() { TenantId = "tenant-a", Schema = " " }] },
             new() { Tenants = [new() { TenantId = "tenant-a", ConnectionString = "" }] },
+            new()
+            {
+                Tenants =
+                [
+                    new()
+                    {
+                        TenantId = "tenant-a",
+                        Shared = true,
+                        Schema = "a",
+                    },
+                ],
+            },
+            new()
+            {
+                Tenants =
+                [
+                    new()
+                    {
+                        TenantId = "tenant-a",
+                        DataStore = " ",
+                        Schema = "a",
+                    },
+                ],
+            },
+            new()
+            {
+                Tenants =
+                [
+                    new()
+                    {
+                        TenantId = "tenant-a",
+                        DataStore = "orders",
+                        Schema = "a",
+                    },
+                    new()
+                    {
+                        TenantId = "tenant-a",
+                        DataStore = "orders",
+                        Shared = true,
+                    },
+                ],
+            },
         ];
 
     [Fact]
@@ -91,7 +148,14 @@ public sealed class ConfigurationTenantDataPlacementResolverTests : TestBase
             Tenants =
             [
                 new() { TenantId = "tenant-a", Schema = "a" },
+                new()
+                {
+                    TenantId = "tenant-a",
+                    DataStore = "orders",
+                    Schema = "a_orders",
+                },
                 new() { TenantId = "tenant-b", ConnectionString = "Host=db" },
+                new() { TenantId = "tenant-s", Shared = true },
             ],
         };
 

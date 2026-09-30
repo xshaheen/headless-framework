@@ -1,7 +1,7 @@
 ---
 title: Storage Initializer Lifecycle & Concurrent-Startup Safety
 date: 2026-05-25
-last_updated: 2026-06-07
+last_updated: 2026-09-27
 category: best-practices
 module: headless-storage
 problem_type: best_practice
@@ -20,10 +20,15 @@ tags:
   - postgres
   - sqlserver
   - log-dedup
+  - shared-schema
+  - advisory-lock
+  - create-index-concurrently
 applies_when:
   - Writing a new I{Feature}StorageInitializer for Postgres or SqlServer
   - Reviewing concurrent-startup behavior of multiple replicas against one DB
   - Diagnosing startup hangs or duplicate-DDL errors at host boot
+  - Adding a feature whose tables live in the shared headless schema
+  - Running CREATE INDEX CONCURRENTLY from an initializer that other replicas wait on
   - Handling DB-unreachable or auth-failure during the initializer phase
   - Auditing dispose ordering between bootstrapper and repo-held resources
 ---
@@ -79,17 +84,54 @@ The `IsCompleted`-guarded `Interlocked.Exchange` is load-bearing. The earlier (`
 
 ### 2. Concurrent-startup race — provider-specific locks + idempotent DDL
 
-**PostgreSQL** (`PostgreSqlAuditLogStorageInitializer._CreateScript`): each statement is `CREATE … IF NOT EXISTS` and the whole script is preceded by a transaction-scoped advisory lock keyed on `(schema, table)`. The lock serializes racing `CREATE SCHEMA IF NOT EXISTS` calls because PG's `IF NOT EXISTS` check is not transactional with the catalog insert — two concurrent transactions can both pass the check and one fails with `23505`. The initializer also catches `42P06 / 42P07 / 42710 / 23505` to absorb residual races driven by foreign initializers running concurrent DDL.
+**PostgreSQL** (`PostgreSqlAuditLogStorageInitializer._CreateScript`): each statement is `CREATE … IF NOT EXISTS`, and the script takes two transaction-scoped advisory locks before it runs:
+
+1. **The feature lock**, namespaced by feature and keyed on the objects it owns, for example `headless_audit_init:{schema}.{table}` or `headless_fencing_init:{schema}.fencing_leases` on PostgreSQL. It comes first.
+2. **The schema-wide lock**, immediately before `CREATE SCHEMA IF NOT EXISTS`. Every PostgreSQL initializer takes it, whatever its feature, and builds it only through `PostgreSqlSchemaInitLock.AcquireStatement(schema)` in `Headless.Sql.PostgreSql`. That method is the single owner of the lock key. Never inline the `hashtextextended(...)` literal: a key that drifts in one feature stops that feature serializing against the others.
 
 ```csharp
 var lockResource = $"headless_audit_init:{options.Schema}.{options.TableName}";
 var acquireLock = $"""SELECT pg_advisory_xact_lock(hashtextextended('{lockResource}', 0));""";
-// ...
-catch (PostgresException ex) when (ex.SqlState is "42P06" or "42P07" or "42710" or "23505")
+var createSchema = $"""
+    {PostgreSqlSchemaInitLock.AcquireStatement(options.Schema)}
+    CREATE SCHEMA IF NOT EXISTS "{options.Schema}";
+    """;
+```
+
+PostgreSQL's `IF NOT EXISTS` check is not transactional with the catalog insert. Two concurrent transactions can both pass the check, and the loser fails with `42P06` or `23505`. A per-feature lock serializes replicas of one feature only. Every relational feature now defaults to the one `headless` schema, so Messaging, Fencing, and AuditLog replicas all run `CREATE SCHEMA "headless"` at the same moment, each under a different feature lock.
+
+A failed statement aborts the whole PostgreSQL transaction (`25P02`). Catching `42P06` and rolling back therefore does not absorb the race: it discards every table, index, and sequence the losing feature created in that transaction, the initializer reports success, and the first query fails with `42P01`. The schema-wide lock prevents the collision instead of absorbing it. It is transaction-scoped, so it serializes the features' schema-creating transactions only at boot and releases when each commits or rolls back.
+
+The locks cover Headless initializers only. A schema or object creator outside them still wins the race: a consumer's EF migration (`EnsureSchema` for Jobs or an EF storage variant), a DBA script, or other application code. When it commits first, the initializer's transaction fails with `42P06 / 42P07 / 42710 / 23505` and the rollback discards the feature's DDL, exactly as above.
+
+**Rule: an absorbed race reruns the DDL once in a fresh transaction.** By the time the initializer sees the error, the conflicting creator has committed (the losing insert waits on the catalog unique index until the winner ends), so the rerun's `IF NOT EXISTS` guards pass and it creates what the rollback discarded. Catch only on the first attempt. A second failure is not a race: let it propagate, and never mark the storage initialized without a successful commit. The same rule applies to lazily created objects, such as the DistributedLocks fencing sequence, whose "ensured" flag is set only after the commit.
+
+```csharp
+for (var attempt = 1; ; attempt++)
 {
-    await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+    await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+    try
+    {
+        // run the DDL batch
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        return;
+    }
+    catch (PostgresException ex)
+        when (attempt == 1 && ex.SqlState is "42P06" or "42P07" or "42710" or "23505")
+    {
+        await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+        LogSchemaRaceObserved(_logger, ex.SqlState, ex.MessageText);
+    }
 }
 ```
+
+The rerun is safe only because every statement in the batch is idempotent: `IF NOT EXISTS` on each `CREATE`, and catalog checks around each `ALTER`. A non-idempotent statement would fail the rerun deterministically and turn the retry into a startup failure.
+
+SQL Server initializers do not need the schema-wide lock. They create the schema in its own guarded block that swallows `2714` and `2759` (how `CREATE SCHEMA` reports the duplicate), and that error does not doom the rest of the batch. Every SQL Server initializer needs that block: another feature can create the shared schema between the `sys.schemas` check and the `CREATE`.
+
+**PostgreSQL with `CREATE INDEX CONCURRENTLY`** (`PostgreSqlStorageInitializer` in Messaging): `CONCURRENTLY` cannot run inside a transaction, so the feature lock must be a session lock held across the transactional DDL and the index builds. Acquire it by polling `pg_try_advisory_lock` with a short delay. Do not block in `pg_advisory_lock`. A blocked statement holds a snapshot open for as long as it waits, and `CREATE INDEX CONCURRENTLY` waits for every snapshot older than the build to finish. The lock holder's build then waits on the waiter, and the waiter waits on the lock holder, so two replicas that boot together deadlock until the DDL timeout. Between polls the waiting connection runs no statement and holds no snapshot. Bound the polling by the DDL timeout, not the OLTP command timeout, because the holder can keep the lock across a multi-minute build. Release the session lock explicitly in a `finally`, even when a build was cancelled, so a pooled connection returns without it.
 
 **SQL Server** (`SqlServerAuditLogStorageInitializer._CreateScript`): `sp_getapplock` (Session scope) guards the script and `sp_releaseapplock` runs on every path. The release in the success path lives at the end of the inner `TRY`; the outer `CATCH` checks `APPLOCK_MODE` and re-releases before re-throwing. Index creation is split into per-index `IF NOT EXISTS` guards so a partial-failure run that committed the table but missed an index self-heals on next start. Each guarded block also catches `2714, 1913, 2759` (object already exists).
 
@@ -160,6 +202,8 @@ hosts.Select(h => h.Services.GetRequiredService<IEnumerable<IInitializer>>().Sin
 (await _CountTablesAsync("audit_log_pg_concurrent", "audit_log")).Should().Be(1);
 (await _CountIndexesAsync("audit_log_pg_concurrent", "audit_log")).Should().Be(5);
 ```
+
+Racing Headless hosts against each other never exercises a creator outside the locks. `PostgreSqlForeignSchemaCreatorTests` in `tests/Headless.Storage.SharedSchema.Tests.Integration` makes that race deterministic: a foreign transaction runs `CREATE SCHEMA "headless"` and stays open, the initializer's `CREATE SCHEMA IF NOT EXISTS` misses the uncommitted row and blocks on the `pg_namespace` unique index, and the test commits the foreign transaction only once `pg_stat_activity` shows the initializer waiting on a lock. The initializer then always fails with `23505`. Poll `pg_stat_activity` from its own autocommit connection: its values are snapshotted once per transaction, so polling inside the foreign transaction never sees the wait.
 
 ### 5. Dispose-path correctness for `HeadlessDbContext`
 
@@ -255,6 +299,8 @@ internal static class AuditLogFieldLimits
 ## Why This Matters
 
 - **Rolling deploys are the default.** Multi-replica services boot in parallel; without per-provider advisory locks plus idempotent DDL, the first deploy after a schema reset is non-deterministic. PG `23505` and SqlServer `1205` deadlocks are the real-world failure modes.
+- **Features share one schema.** Per-feature locks do not serialize two features creating the same schema, and on PostgreSQL the loser's rollback silently discards its DDL. The schema-wide lock from `PostgreSqlSchemaInitLock.AcquireStatement(schema)` is mandatory for every PostgreSQL initializer, and because creators outside the lock (EF migrations) can still win, an absorbed race reruns the DDL once instead of reporting success.
+- **Blocking lock waits and `CONCURRENTLY` do not mix.** A waiter blocked in `pg_advisory_lock` holds the snapshot that the holder's `CREATE INDEX CONCURRENTLY` waits for. Poll `pg_try_advisory_lock` instead.
 - **Schema leftover from a crashed init must self-heal.** Per-statement `IF NOT EXISTS` guards mean a host that committed the table but crashed before the indexes gets the indexes on next start without operator intervention.
 - **Lock release on the failure path is mandatory for SqlServer.** Session-scoped applocks survive past the throw and starve the next replica until the connection is physically reset by the pool. The outer `TRY/CATCH` with `APPLOCK_MODE` guard is non-negotiable.
 - **TCS replacement under restart is subtle.** Naive cancel-then-reassign breaks pre-host waiters on first start; naive "just reassign" leaks waiters on restart. The `IsCompleted`-gated `Interlocked.Exchange` is the correct shape.
@@ -276,6 +322,10 @@ The same TCS/race/dedup discipline transfers to other startup-time initializers 
 | Concern | Source file (branch `xshaheen/refactor-storage-initialization-unification`) |
 | --- | --- |
 | PG initializer + race lock | `src/Headless.AuditLog.Storage.PostgreSql/PostgreSqlAuditLogStorageInitializer.cs` |
+| PG polled session lock around `CREATE INDEX CONCURRENTLY` | `src/Headless.Messaging.Storage.PostgreSql/PostgreSqlStorageInitializer.cs` |
+| Every feature initializing one schema concurrently | `tests/Headless.Storage.SharedSchema.Tests.Integration/` |
+| Schema created by a foreign transaction first | `tests/Headless.Storage.SharedSchema.Tests.Integration/PostgreSqlForeignSchemaCreatorTests.cs` |
+| Schema-wide PostgreSQL lock (single owner) | `src/Headless.Sql.PostgreSql/PostgreSqlSchemaInitLock.cs` |
 | SqlServer initializer + applock | `src/Headless.AuditLog.Storage.SqlServer/SqlServerAuditLogStorageInitializer.cs` |
 | Settings raw PG initializer | `src/Headless.Settings.Storage.PostgreSql/PostgreSqlSettingsStorageInitializer.cs` |
 | Features raw PG initializer | `src/Headless.Features.Storage.PostgreSql/PostgreSqlFeaturesStorageInitializer.cs` |

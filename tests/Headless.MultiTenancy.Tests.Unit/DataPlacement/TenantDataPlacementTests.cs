@@ -43,6 +43,42 @@ public sealed class TenantDataPlacementTests : TestBase
     }
 
     [Fact]
+    public void should_expose_the_shared_placement_as_a_singleton_without_members()
+    {
+        var shared = TenantDataPlacement.Shared;
+
+        shared.IsShared.Should().BeTrue();
+        shared.Schema.Should().BeNull();
+        shared.ConnectionString.Should().BeNull();
+        shared.Should().BeSameAs(TenantDataPlacement.Shared);
+        shared.ToString().Should().Contain("Shared");
+        new TenantDataPlacement("tenant_a", connectionString: null).IsShared.Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_default_a_request_to_the_default_data_store_and_compare_by_value()
+    {
+        var request = new TenantDataPlacementRequest("tenant-a");
+
+        request.DataStore.Should().Be(TenantDataPlacementRequest.DefaultDataStore);
+        request.Should().Be(new TenantDataPlacementRequest("tenant-a", TenantDataPlacementRequest.DefaultDataStore));
+        request.Should().NotBe(new TenantDataPlacementRequest("tenant-a", "orders"));
+        request.Should().NotBe(new TenantDataPlacementRequest("Tenant-A"));
+    }
+
+    [Theory]
+    [InlineData("", null)]
+    [InlineData(" ", null)]
+    [InlineData("tenant-a", "")]
+    [InlineData("tenant-a", " ")]
+    public void should_reject_a_blank_request_member(string tenantId, string? dataStore)
+    {
+        var act = () => new TenantDataPlacementRequest(tenantId, dataStore);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
     public void should_not_expose_connection_string_through_to_string()
     {
         const string secret = "Host=db;Database=tenant_a;Password=hunter2";
@@ -63,7 +99,7 @@ public sealed class TenantDataPlacementTests : TestBase
         // when
         var placement = await provider
             .GetRequiredService<ITenantDataPlacementResolver>()
-            .ResolveAsync("tenant-a", AbortToken);
+            .ResolveAsync(new("tenant-a"), AbortToken);
 
         // then
         placement.Should().BeNull();

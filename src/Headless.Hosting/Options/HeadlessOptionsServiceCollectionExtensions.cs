@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using FluentValidation;
 using Headless.Checks;
+using Headless.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -19,7 +21,9 @@ public static class HeadlessOptionsServiceCollectionExtensions
         /// <summary>Registers the resolved options value as a singleton service for direct <typeparamref name="TOption"/> injection.</summary>
         /// <typeparam name="TOption">The options type.</typeparam>
         /// <returns>The same service collection.</returns>
-        public IServiceCollection AddSingletonOptionValue<TOption>()
+        public IServiceCollection AddSingletonOptionValue<
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOption
+        >()
             where TOption : class
         {
             services.TryAddSingleton(x => x.GetRequiredService<IOptions<TOption>>().Value);
@@ -32,9 +36,10 @@ public static class HeadlessOptionsServiceCollectionExtensions
         /// <typeparam name="TValidator">The validator type.</typeparam>
         /// <param name="lifetime">The service lifetime for the validator registration.</param>
         /// <returns>The same service collection.</returns>
-        public IServiceCollection AddOptionValidator<TOptions, TValidator>(
-            ServiceLifetime lifetime = ServiceLifetime.Singleton
-        )
+        public IServiceCollection AddOptionValidator<
+            TOptions,
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TValidator
+        >(ServiceLifetime lifetime = ServiceLifetime.Singleton)
             where TOptions : class
             where TValidator : class, IValidator<TOptions>
         {
@@ -60,10 +65,10 @@ public static class HeadlessOptionsServiceCollectionExtensions
         /// <param name="validation">The validation function.</param>
         /// <returns>The created options' builder.</returns>
         /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
-        public OptionsBuilder<TOptions> AddOptions<TOptions, TOptionValidator>(
-            string? optionName = null,
-            Func<TOptions, bool>? validation = null
-        )
+        public OptionsBuilder<TOptions> AddOptions<
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions,
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TOptionValidator
+        >(string? optionName = null, Func<TOptions, bool>? validation = null)
             where TOptions : class
             where TOptionValidator : class, IValidator<TOptions>
         {
@@ -122,7 +127,12 @@ public static class HeadlessOptionsServiceCollectionExtensions
         /// Thrown when <paramref name="services"/> is null, or when <paramref name="config"/> is null while
         /// <paramref name="configureBinder"/> is provided.
         /// </exception>
-        public IServiceCollection Configure<TOption, TOptionValidator>(
+        [RequiresUnreferencedCode(HostingTrimmingMessages.ConfigurationBinding)]
+        [RequiresDynamicCode(HostingTrimmingMessages.ConfigurationBindingDynamicCode)]
+        public IServiceCollection Configure<
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOption,
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TOptionValidator
+        >(
             IConfiguration? config,
             string? name = null,
             Func<TOption, bool>? validation = null,
@@ -157,11 +167,10 @@ public static class HeadlessOptionsServiceCollectionExtensions
         /// <param name="validation">The validation function.</param>
         /// <returns>The same services collection.</returns>
         /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
-        public IServiceCollection Configure<TOption, TOptionValidator>(
-            Action<TOption>? setupAction,
-            string? name = null,
-            Func<TOption, bool>? validation = null
-        )
+        public IServiceCollection Configure<
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOption,
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TOptionValidator
+        >(Action<TOption>? setupAction, string? name = null, Func<TOption, bool>? validation = null)
             where TOption : class
             where TOptionValidator : class, IValidator<TOption>
         {
@@ -182,11 +191,10 @@ public static class HeadlessOptionsServiceCollectionExtensions
         /// <param name="validation">The validation function.</param>
         /// <returns>The same services collection.</returns>
         /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
-        public IServiceCollection Configure<TOption, TOptionValidator>(
-            Action<TOption, IServiceProvider>? setupAction,
-            string? name = null,
-            Func<TOption, bool>? validation = null
-        )
+        public IServiceCollection Configure<
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOption,
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TOptionValidator
+        >(Action<TOption, IServiceProvider>? setupAction, string? name = null, Func<TOption, bool>? validation = null)
             where TOption : class
             where TOptionValidator : class, IValidator<TOption>
         {
@@ -210,11 +218,16 @@ public static class HeadlessOptionsServiceCollectionExtensions
         /// <param name="configureBinder">Used to configure the binder options.</param>
         /// <returns>The same services collection.</returns>
         /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
-        public IServiceCollection ConfigureWithValidateDataAnnotation<TOption>(
-            IConfiguration config,
-            Func<TOption, bool>? validation,
-            Action<BinderOptions>? configureBinder = null
-        )
+        [RequiresUnreferencedCode(HostingTrimmingMessages.ConfigurationBindingWithDataAnnotations)]
+        [RequiresDynamicCode(HostingTrimmingMessages.ConfigurationBindingDynamicCode)]
+        public IServiceCollection ConfigureWithValidateDataAnnotation<
+            [DynamicallyAccessedMembers(
+                DynamicallyAccessedMemberTypes.PublicParameterlessConstructor
+                    | DynamicallyAccessedMemberTypes.PublicProperties
+                    | DynamicallyAccessedMemberTypes.NonPublicProperties
+            )]
+                TOption
+        >(IConfiguration config, Func<TOption, bool>? validation, Action<BinderOptions>? configureBinder = null)
             where TOption : class
         {
             Argument.IsNotNull(services);
@@ -239,10 +252,15 @@ public static class HeadlessOptionsServiceCollectionExtensions
         /// <param name="validation">The validation function.</param>
         /// <returns>The same services collection.</returns>
         /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
-        public IServiceCollection ConfigureWithValidateDataAnnotation<TOption>(
-            Action<TOption> configureOption,
-            Func<TOption, bool>? validation
-        )
+        [RequiresUnreferencedCode(HostingTrimmingMessages.DataAnnotations)]
+        public IServiceCollection ConfigureWithValidateDataAnnotation<
+            [DynamicallyAccessedMembers(
+                DynamicallyAccessedMemberTypes.PublicParameterlessConstructor
+                    | DynamicallyAccessedMemberTypes.PublicProperties
+                    | DynamicallyAccessedMemberTypes.NonPublicProperties
+            )]
+                TOption
+        >(Action<TOption> configureOption, Func<TOption, bool>? validation)
             where TOption : class
         {
             Argument.IsNotNull(services);
@@ -267,10 +285,15 @@ public static class HeadlessOptionsServiceCollectionExtensions
         /// <param name="validation">The validation function.</param>
         /// <returns>The same services collection.</returns>
         /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
-        public IServiceCollection ConfigureWithValidateDataAnnotation<TOption>(
-            Action<TOption, IServiceProvider> configureOption,
-            Func<TOption, bool>? validation
-        )
+        [RequiresUnreferencedCode(HostingTrimmingMessages.DataAnnotations)]
+        public IServiceCollection ConfigureWithValidateDataAnnotation<
+            [DynamicallyAccessedMembers(
+                DynamicallyAccessedMemberTypes.PublicParameterlessConstructor
+                    | DynamicallyAccessedMemberTypes.PublicProperties
+                    | DynamicallyAccessedMemberTypes.NonPublicProperties
+            )]
+                TOption
+        >(Action<TOption, IServiceProvider> configureOption, Func<TOption, bool>? validation)
             where TOption : class
         {
             Argument.IsNotNull(services);
@@ -300,11 +323,11 @@ public static class HeadlessOptionsServiceCollectionExtensions
         /// <param name="configureBinder">Used to configure the binder options.</param>
         /// <returns>The same services collection.</returns>
         /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
-        public IServiceCollection ConfigureWithValidateFluentValidation<TOption>(
-            IConfiguration config,
-            Func<TOption, bool>? validation = null,
-            Action<BinderOptions>? configureBinder = null
-        )
+        [RequiresUnreferencedCode(HostingTrimmingMessages.ConfigurationBinding)]
+        [RequiresDynamicCode(HostingTrimmingMessages.ConfigurationBindingDynamicCode)]
+        public IServiceCollection ConfigureWithValidateFluentValidation<
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOption
+        >(IConfiguration config, Func<TOption, bool>? validation = null, Action<BinderOptions>? configureBinder = null)
             where TOption : class
         {
             Argument.IsNotNull(services);
@@ -329,10 +352,9 @@ public static class HeadlessOptionsServiceCollectionExtensions
         /// <param name="validation">The validation function.</param>
         /// <returns>The same services collection.</returns>
         /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
-        public IServiceCollection ConfigureWithValidateFluentValidation<TOption>(
-            Action<TOption> configureOption,
-            Func<TOption, bool>? validation = null
-        )
+        public IServiceCollection ConfigureWithValidateFluentValidation<
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOption
+        >(Action<TOption> configureOption, Func<TOption, bool>? validation = null)
             where TOption : class
         {
             Argument.IsNotNull(services);
@@ -357,10 +379,9 @@ public static class HeadlessOptionsServiceCollectionExtensions
         /// <param name="validation">The validation function.</param>
         /// <returns>The same services collection.</returns>
         /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
-        public IServiceCollection ConfigureWithValidateFluentValidation<TOption>(
-            Action<TOption, IServiceProvider> configureOption,
-            Func<TOption, bool>? validation = null
-        )
+        public IServiceCollection ConfigureWithValidateFluentValidation<
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOption
+        >(Action<TOption, IServiceProvider> configureOption, Func<TOption, bool>? validation = null)
             where TOption : class
         {
             Argument.IsNotNull(services);
@@ -379,7 +400,9 @@ public static class HeadlessOptionsServiceCollectionExtensions
         #endregion
     }
 
-    extension<TOptions>(OptionsBuilder<TOptions> builder)
+    extension<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions>(
+        OptionsBuilder<TOptions> builder
+    )
         where TOptions : class
     {
         #region Helpers
@@ -413,6 +436,8 @@ public static class HeadlessOptionsServiceCollectionExtensions
             return builder;
         }
 
+        [RequiresUnreferencedCode(HostingTrimmingMessages.ConfigurationBinding)]
+        [RequiresDynamicCode(HostingTrimmingMessages.ConfigurationBindingDynamicCode)]
         private OptionsBuilder<TOptions> _AddSetupBind(IConfiguration? config, Action<BinderOptions>? configureBinder)
         {
             if (config is not null)

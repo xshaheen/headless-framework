@@ -66,10 +66,8 @@ public readonly partial struct SBytePrimitive : global::System.IEquatable<SByteP
         _isInitialized = true;
     }
 
-#pragma warning disable HF1003 // Should not have non obsolete empty constructors.
     [Obsolete("Primitive cannot be created using empty Constructor", true)]
     public SBytePrimitive() { }
-#pragma warning restore HF1003
 
     /// <summary>Tries to create an instance of AsciiString from the specified value.</summary>
     /// <param name="value">The value to create SBytePrimitive from</param>

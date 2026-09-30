@@ -92,8 +92,9 @@ public sealed class HeadlessEntityFrameworkTenancyBuilder
     /// <c>IDbContextFactory&lt;TContext&gt;.CreateDbContextAsync()</c>; injecting one directly under a tenant fails,
     /// because the placement must be resolved before the context builds its model. Without an ambient tenant the
     /// context uses its own registration (connection and <c>DefaultSchema</c>). A tenant with no placement is
-    /// refused rather than sent to the shared database. Requires <c>DataPlacement(...)</c> on the same tenancy
-    /// builder; startup fails otherwise.
+    /// refused rather than sent to the shared database; a tenant kept in the shared database deliberately gets
+    /// <see cref="TenantDataPlacement.Shared"/>. Requires <c>DataPlacement(...)</c> on the same tenancy builder;
+    /// startup fails otherwise.
     /// </summary>
     /// <typeparam name="TContext">The context type to route. It must not back an outbox, a Jobs store, or a
     /// host-level store (tenant catalog, Settings, Features, Permissions); those registrations fail startup over a
@@ -101,6 +102,7 @@ public sealed class HeadlessEntityFrameworkTenancyBuilder
     /// <param name="configure">Optional per-context routing options.</param>
     /// <returns>The same Entity Framework tenancy builder.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><see cref="TenantDataRoutingOptions.MaxCachedSchemas"/> is not positive.</exception>
+    /// <exception cref="ArgumentException"><see cref="TenantDataRoutingOptions.DataStore"/> is empty or white space.</exception>
     /// <exception cref="InvalidOperationException"><typeparamref name="TContext"/> is already routed on this host.</exception>
     public HeadlessEntityFrameworkTenancyBuilder RouteTenantData<TContext>(
         Action<TenantDataRoutingOptions>? configure = null
@@ -111,6 +113,7 @@ public sealed class HeadlessEntityFrameworkTenancyBuilder
         var options = new TenantDataRoutingOptions();
         configure?.Invoke(options);
         Argument.IsPositive(options.MaxCachedSchemas);
+        Argument.IsNotNullOrWhiteSpace(options.DataStore);
 
         if (
             services.Any(d =>
@@ -122,8 +125,10 @@ public sealed class HeadlessEntityFrameworkTenancyBuilder
             throw new InvalidOperationException($"'{typeof(TContext).Name}' is already tenant-routed on this host.");
         }
 
-        services.AddSingleton(new TenantDataRoutedContextRegistration(typeof(TContext)));
-        services.AddSingleton(new HeadlessTenantRoutedContext(typeof(TContext), options.MaxCachedSchemas));
+        services.AddSingleton(new TenantDataRoutedContextRegistration(typeof(TContext), options.DataStore));
+        services.AddSingleton(
+            new HeadlessTenantRoutedContext(typeof(TContext), options.MaxCachedSchemas, options.DataStore)
+        );
 
         services.TryAddSingleton<HeadlessTenantDataRouting>();
         services.TryAddScoped<HeadlessTenantPlacementPin>();

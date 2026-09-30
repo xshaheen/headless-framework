@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
@@ -7,7 +8,15 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Headless.Jobs.Configurations;
 
-public class TimeJobConfigurations<TTimeJob>(string schema, string? contractCollation = null)
+/// <summary>EF Core mapping of the Jobs time-job table.</summary>
+/// <param name="schema">The schema that holds the table.</param>
+/// <param name="style">
+/// The naming style of the database the model targets: <see cref="StorageNamingStyle.SnakeCase"/> on PostgreSQL and
+/// <see cref="StorageNamingStyle.PascalCase"/> elsewhere. Pass <c>HeadlessStorageNaming.ForProvider(Database.ProviderName)</c>
+/// so the model matches the names the Jobs runtime expects on that database.
+/// </param>
+/// <param name="contractCollation">The ordinal collation for the identity columns, or <see langword="null"/>.</param>
+public class TimeJobConfigurations<TTimeJob>(string schema, StorageNamingStyle style, string? contractCollation = null)
     : IEntityTypeConfiguration<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
 {
@@ -29,7 +38,9 @@ public class TimeJobConfigurations<TTimeJob>(string schema, string? contractColl
             builder.Property(x => x.ContractVersion).UseCollation(contractCollation);
         }
 
-        builder.HasKey(x => x.Id);
+        var table = JobsStorageNaming.Table(style, JobsStorageNaming.TimeJobs);
+
+        builder.HasKey(x => x.Id).HasName(HeadlessStorageNaming.PrimaryKeyName(style, table));
 
         builder.Property(x => x.OwnerId).IsRequired(false);
 
@@ -62,25 +73,37 @@ public class TimeJobConfigurations<TTimeJob>(string schema, string? contractColl
             .HasOne(x => x.Parent)
             .WithMany(x => x.Children)
             .HasForeignKey(x => x.ParentId)
-            .OnDelete(DeleteBehavior.NoAction);
+            .OnDelete(DeleteBehavior.NoAction)
+            .HasConstraintName(JobsStorageNaming.Name(style, "FK", table, JobsStorageNaming.TimeJobs, "ParentId"));
 
-        builder.HasIndex("ExecutionTime").HasDatabaseName("IX_TimeJob_ExecutionTime");
+        builder.HasIndex("ParentId").HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "ParentId"));
+
+        builder
+            .HasIndex("ExecutionTime")
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "ExecutionTime"));
 
         // Index for scheduler queries: many jobs can share the same status/time
-        builder.HasIndex("Status", "ExecutionTime").HasDatabaseName("IX_TimeJob_Status_ExecutionTime");
+        builder
+            .HasIndex("Status", "ExecutionTime")
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "Status", "ExecutionTime"));
 
         // Tenant-scoped scheduler queries filter on TenantId alongside status/time.
         builder
             .HasIndex("TenantId", "Status", "ExecutionTime")
-            .HasDatabaseName("IX_TimeJob_TenantId_Status_ExecutionTime");
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "TenantId", "Status", "ExecutionTime"));
 
         // Sweep/reclaim queries filter on lease deadline (Status + LockedUntil) and on ownership
         // (OwnerId + non-terminal Status); without these the 30s fallback sweep and dead-node reclaim
         // scan every InProgress/owned row.
-        builder.HasIndex("Status", "LockedUntil").HasDatabaseName("IX_TimeJob_Status_LockedUntil");
+        builder
+            .HasIndex("Status", "LockedUntil")
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "Status", "LockedUntil"));
 
-        builder.HasIndex("OwnerId", "Status").HasDatabaseName("IX_TimeJob_OwnerId_Status");
+        builder
+            .HasIndex("OwnerId", "Status")
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "OwnerId", "Status"));
 
-        builder.ToTable("TimeJobs", schema);
+        builder.ToTable(table, schema);
+        builder.ApplyJobsColumnNaming(style);
     }
 }

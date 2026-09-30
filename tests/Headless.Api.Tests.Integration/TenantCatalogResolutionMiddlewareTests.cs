@@ -602,6 +602,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
 
         var handler = new TenantIdentifierIntegrityHandler(
             Options.Create(new MultiTenancyOptions()),
+            Options.Create(new TenantCatalogOptions()),
             new HttpContextAccessor { HttpContext = httpContext }
         );
 
@@ -614,7 +615,54 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         await handler.HandleAsync(authorizationContext);
 
         authorizationContext.HasFailed.Should().BeTrue();
-        httpContext.Features.Get<TenantIdentifierMismatchFeature>().Should().NotBeNull();
+        httpContext.Features.Get<IStatusCodeRejectionFeature>().Should().BeOfType<TenantIdentifierMismatchFeature>();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_carry_the_detailed_resolution_errors_setting_into_the_mismatch_rejection(bool detailed)
+    {
+        // The rewriter no longer reads TenantCatalogOptions, so the setting must travel with the rejection
+        // for the detailed 403 and the generic 404 to stay selectable per host.
+        var principal = _CreatePrincipal(tenantId: "ten_999");
+        var httpContext = new DefaultHttpContext { User = principal };
+        httpContext.Features.Set(new TenantIdentifierResolvedFeature("ten_123"));
+
+        var handler = new TenantIdentifierIntegrityHandler(
+            Options.Create(new MultiTenancyOptions()),
+            Options.Create(new TenantCatalogOptions { DetailedResolutionErrors = detailed }),
+            new HttpContextAccessor { HttpContext = httpContext }
+        );
+
+        await handler.HandleAsync(new AuthorizationHandlerContext([new TenantRequirement()], principal, httpContext));
+
+        httpContext
+            .Features.Get<IStatusCodeRejectionFeature>()
+            .Should()
+            .BeOfType<TenantIdentifierMismatchFeature>()
+            .Which.Detailed.Should()
+            .Be(detailed);
+    }
+
+    [Fact]
+    public async Task should_replace_a_rejection_another_handler_already_set_when_the_identifier_mismatches()
+    {
+        // Any other rejection would make the mismatch response differ from the unknown-tenant rejection.
+        var principal = _CreatePrincipal(tenantId: "ten_999");
+        var httpContext = new DefaultHttpContext { User = principal };
+        httpContext.Features.Set(new TenantIdentifierResolvedFeature("ten_123"));
+        httpContext.Features.Set(Substitute.For<IStatusCodeRejectionFeature>());
+
+        var handler = new TenantIdentifierIntegrityHandler(
+            Options.Create(new MultiTenancyOptions()),
+            Options.Create(new TenantCatalogOptions()),
+            new HttpContextAccessor { HttpContext = httpContext }
+        );
+
+        await handler.HandleAsync(new AuthorizationHandlerContext([new TenantRequirement()], principal, httpContext));
+
+        httpContext.Features.Get<IStatusCodeRejectionFeature>().Should().BeOfType<TenantIdentifierMismatchFeature>();
     }
 
     [Fact]
@@ -626,6 +674,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
 
         var handler = new TenantIdentifierIntegrityHandler(
             Options.Create(new MultiTenancyOptions()),
+            Options.Create(new TenantCatalogOptions()),
             new HttpContextAccessor { HttpContext = httpContext }
         );
 
@@ -638,7 +687,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         await handler.HandleAsync(authorizationContext);
 
         authorizationContext.HasFailed.Should().BeFalse();
-        httpContext.Features.Get<TenantIdentifierMismatchFeature>().Should().BeNull();
+        httpContext.Features.Get<IStatusCodeRejectionFeature>().Should().BeNull();
     }
 
     [Fact]
@@ -652,6 +701,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
 
         var handler = new TenantIdentifierIntegrityHandler(
             Options.Create(new MultiTenancyOptions()),
+            Options.Create(new TenantCatalogOptions()),
             new HttpContextAccessor { HttpContext = httpContext }
         );
 
@@ -664,7 +714,7 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         await handler.HandleAsync(authorizationContext);
 
         authorizationContext.HasFailed.Should().BeTrue();
-        httpContext.Features.Get<TenantIdentifierMismatchFeature>().Should().BeNull();
+        httpContext.Features.Get<IStatusCodeRejectionFeature>().Should().BeNull();
     }
 
     [Fact]
@@ -942,7 +992,9 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
                 );
                 ctx.Response.Headers.Append(
                     SelfAuthenticatedMismatchFeatureHeader,
-                    ctx.Features.Get<TenantIdentifierMismatchFeature>() is not null ? "true" : "false"
+                    ctx.Features.Get<IStatusCodeRejectionFeature>() is TenantIdentifierMismatchFeature
+                        ? "true"
+                        : "false"
                 );
 
                 return Results.NoContent();

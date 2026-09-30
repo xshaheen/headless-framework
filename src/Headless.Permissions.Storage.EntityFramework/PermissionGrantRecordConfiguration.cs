@@ -1,22 +1,32 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
 using Headless.Permissions.Entities;
+using Headless.Permissions.Internal;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Headless.Permissions;
 
-internal sealed class PermissionGrantRecordConfiguration(PermissionsStorageOptions options)
+/// <summary>EF Core entity type configuration for <see cref="PermissionGrantRecord"/>.</summary>
+/// <param name="options">Storage options supplying the table name and schema.</param>
+/// <param name="style">The naming style of the database the model targets.</param>
+internal sealed class PermissionGrantRecordConfiguration(PermissionsStorageOptions options, StorageNamingStyle style)
     : IEntityTypeConfiguration<PermissionGrantRecord>
 {
     public void Configure(EntityTypeBuilder<PermissionGrantRecord> b)
     {
-        b.ToTable(options.PermissionGrantsTableName, options.Schema);
+        var table = options.ResolvePermissionGrantsTableName(style);
+
+        b.ToTable(table, options.Schema);
         b.ConfigureHeadlessConvention();
+        b.HasKey(x => x.Id).HasName(HeadlessStorageNaming.PrimaryKeyName(style, table));
         b.Property(x => x.Name).HasMaxLength(PermissionGrantRecordConstants.NameMaxLength).IsRequired();
         b.Property(x => x.ProviderName).HasMaxLength(PermissionGrantRecordConstants.ProviderNameMaxLength).IsRequired();
         b.Property(x => x.ProviderKey).HasMaxLength(PermissionGrantRecordConstants.ProviderKeyMaxLength).IsRequired();
         b.Property(x => x.TenantId).HasMaxLength(PermissionGrantRecordConstants.TenantIdMaxLength).IsRequired(false);
+
+        var tenantId = HeadlessStorageNaming.Apply(style, nameof(PermissionGrantRecord.TenantId));
 
         // PostgreSQL and SQLite treat NULLs as distinct in a unique index, so a single index over the
         // nullable TenantId would let concurrent inserts create duplicate host (NULL-tenant) grant rows.
@@ -29,8 +39,8 @@ internal sealed class PermissionGrantRecordConfiguration(PermissionsStorageOptio
                 x.ProviderKey,
             })
             .IsUnique()
-            .HasFilter("\"TenantId\" IS NOT NULL")
-            .HasDatabaseName($"IX_{options.PermissionGrantsTableName}_TenantId_Name_ProviderName_ProviderKey");
+            .HasFilter($"\"{tenantId}\" IS NOT NULL")
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, PermissionsStorageNames.GrantsByTenant));
 
         b.HasIndex(x => new
             {
@@ -39,7 +49,9 @@ internal sealed class PermissionGrantRecordConfiguration(PermissionsStorageOptio
                 x.ProviderKey,
             })
             .IsUnique()
-            .HasFilter("\"TenantId\" IS NULL")
-            .HasDatabaseName($"IX_{options.PermissionGrantsTableName}_Name_ProviderName_ProviderKey_NullTenantId");
+            .HasFilter($"\"{tenantId}\" IS NULL")
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, PermissionsStorageNames.GrantsByNoTenant));
+
+        b.ApplyColumnNaming(style);
     }
 }

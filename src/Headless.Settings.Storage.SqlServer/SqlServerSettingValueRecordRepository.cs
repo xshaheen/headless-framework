@@ -31,7 +31,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
     )
     {
         var sql =
-            $"SELECT TOP(1) {_ValueColumns} FROM {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE [Name]=@Name AND [ProviderName]=@ProviderName AND (([ProviderKey] IS NULL AND @ProviderKey IS NULL) OR [ProviderKey]=@ProviderKey) ORDER BY [Id];";
+            $"SELECT TOP(1) {_ValueColumns} FROM {SqlServerSettingsStorageInitializer.ValuesTable(storageOptions.Value)} WHERE [Name]=@Name AND [ProviderName]=@ProviderName AND (([ProviderKey] IS NULL AND @ProviderKey IS NULL) OR [ProviderKey]=@ProviderKey) ORDER BY [Id];";
 
         return
             await _ReadValuesAsync(
@@ -71,7 +71,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
         }
 
         var sql =
-            $"SELECT {_ValueColumns} FROM {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE {string.Join(" AND ", filters)};";
+            $"SELECT {_ValueColumns} FROM {SqlServerSettingsStorageInitializer.ValuesTable(storageOptions.Value)} WHERE {string.Join(" AND ", filters)};";
 
         return _ReadValuesAsync(sql, cancellationToken, [.. parameters]);
     }
@@ -92,7 +92,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
         // Pass the names through the HeadlessSettingsNameList TVP: one cached plan regardless of count and
         // no 2100-parameter ceiling, portable to older engines (no OPENJSON / compatibility level 130).
         var sql =
-            $"SELECT {_ValueColumns} FROM {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE [Name] IN (SELECT [Name] FROM @Names) AND [ProviderName]=@ProviderName AND (([ProviderKey] IS NULL AND @ProviderKey IS NULL) OR [ProviderKey]=@ProviderKey);";
+            $"SELECT {_ValueColumns} FROM {SqlServerSettingsStorageInitializer.ValuesTable(storageOptions.Value)} WHERE [Name] IN (SELECT [Name] FROM @Names) AND [ProviderName]=@ProviderName AND (([ProviderKey] IS NULL AND @ProviderKey IS NULL) OR [ProviderKey]=@ProviderKey);";
 
         return _ReadValuesAsync(
             sql,
@@ -111,7 +111,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
     )
     {
         var sql =
-            $"SELECT {_ValueColumns} FROM {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE [ProviderName]=@ProviderName AND (([ProviderKey] IS NULL AND @ProviderKey IS NULL) OR [ProviderKey]=@ProviderKey);";
+            $"SELECT {_ValueColumns} FROM {SqlServerSettingsStorageInitializer.ValuesTable(storageOptions.Value)} WHERE [ProviderName]=@ProviderName AND (([ProviderKey] IS NULL AND @ProviderKey IS NULL) OR [ProviderKey]=@ProviderKey);";
 
         return _ReadValuesAsync(
             sql,
@@ -206,7 +206,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
     private (string Sql, SqlParameter[] Parameters) _InsertStatement(SettingValueRecord setting)
     {
         var sql =
-            $"INSERT INTO {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} ([Id],[Name],[Value],[ProviderName],[ProviderKey],[CreatedAt]) VALUES (@Id,@Name,@Value,@ProviderName,@ProviderKey,@CreatedAt);";
+            $"INSERT INTO {SqlServerSettingsStorageInitializer.ValuesTable(storageOptions.Value)} ([Id],[Name],[Value],[ProviderName],[ProviderKey],[CreatedAt]) VALUES (@Id,@Name,@Value,@ProviderName,@ProviderKey,@CreatedAt);";
 
         // Preserve caller-supplied CreatedAt when present (mirrors the EF path); only stamp from
         // the TimeProvider when the caller left it at default.
@@ -228,7 +228,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
     private (string Sql, SqlParameter[] Parameters) _UpdateStatement(SettingValueRecord setting)
     {
         var sql =
-            $"UPDATE {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} SET [Value]=@Value,[UpdatedAt]=@UpdatedAt WHERE [Id]=@Id;";
+            $"UPDATE {SqlServerSettingsStorageInitializer.ValuesTable(storageOptions.Value)} SET [Value]=@Value,[UpdatedAt]=@UpdatedAt WHERE [Id]=@Id;";
 
         // Preserve caller-supplied UpdatedAt when present (mirrors the EF path); only stamp from
         // the TimeProvider when the caller left it null/default.
@@ -245,7 +245,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
         // Pass ids through the HeadlessSettingsIdList TVP: one cached plan regardless of count, no
         // 2100-parameter ceiling, portable to older engines (no OPENJSON / compatibility level 130).
         var sql =
-            $"DELETE FROM {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE [Id] IN (SELECT [Id] FROM @Ids);";
+            $"DELETE FROM {SqlServerSettingsStorageInitializer.ValuesTable(storageOptions.Value)} WHERE [Id] IN (SELECT [Id] FROM @Ids);";
 
         return (sql, [_BuildIdListTvpParameter(settings.Select(setting => setting.Id))]);
     }

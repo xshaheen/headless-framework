@@ -158,9 +158,10 @@ public sealed class RelationalCronRecoveryScenarioBackend(IJobsCoordinationFixtu
             await using var connection = fixture.CreateConnection();
             await connection.OpenAsync(cancellationToken);
             await using var command = connection.CreateCommand();
-            command.CommandText =
+            command.CommandText = fixture.Sql(
                 "SELECT \"Id\", \"ExecutionTime\", \"Status\", \"Disposition\", \"OwnerId\", \"RecoveredFromUtc\" "
-                + $"FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"CronJobId\" = @cronJobId;";
+                    + $"FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"CronJobId\" = @cronJobId;"
+            );
             JobsCoordinationFixtureExtensions.AddParameter(command, "@cronJobId", cronJobId);
 
             var rows = new List<CronOccurrenceRowSnapshot>();

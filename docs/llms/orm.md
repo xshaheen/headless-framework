@@ -33,7 +33,7 @@ Use these packages for ORM-level persistence primitives. For raw SQL connection 
 - **Use `AddHeadlessDbContext<TDbContext>(...)` not raw `AddDbContext`.** The raw registration misses the save pipeline, DI-registered interceptor auto-attachment, the `IDbContextFactory<TDbContext>` singleton, and the compiled-query cache key replacement. `AddHeadlessDbContext` registers all of these.
 - `HeadlessDbContext` requires two constructor parameters: `(HeadlessDbContextServices services, DbContextOptions options)`. Subclasses must override `public abstract string? DefaultSchema { get; }` — an empty string or `null` means use the provider default, a non-empty string sets `modelBuilder.HasDefaultSchema`.
 - Always call `base.OnModelCreating(modelBuilder)` in `HeadlessDbContext` subclasses before applying your own entity configurations. Skipping it omits global filter wiring, convention configuration, and model processing from `HeadlessDbContextRuntime`.
-- For schema-per-tenant or database-per-tenant data, route the context with `RouteTenantData<TContext>()` and inject it where a Headless tenancy entry point set the tenant, or create it through `IDbContextFactory<TContext>.CreateDbContextAsync()` after changing the tenant yourself; a routed context that overrides `OnConfiguring` must call `base.OnConfiguring(optionsBuilder)`. See [Tenant Data Placement](multi-tenancy.md#tenant-data-placement).
+- For schema-per-tenant or database-per-tenant data, route the context with `RouteTenantData<TContext>()` (optionally naming its data store with `o => o.DataStore = "billing"` when a tenant places contexts differently) and inject it where a Headless tenancy entry point set the tenant, or create it through `IDbContextFactory<TContext>.CreateDbContextAsync()` after changing the tenant yourself; a routed context that overrides `OnConfiguring` must call `base.OnConfiguring(optionsBuilder)`. All routed types of a host share one bounded model cache and one EF internal service provider. See [Tenant Data Placement](multi-tenancy.md#tenant-data-placement).
 - Configure automatic audit capture in the EF model with `IsAudited()`, entity/property `ExcludeFromAudit()`, and `IsAuditSensitive(...)`. Domain entities carry no audit marker or attributes; unconfigured entities follow `AuditLogOptions.AuditByDefault`.
 - **Never pool `HeadlessDbContext`.** Do not register subclasses with `AddDbContextPool` or `AddPooledDbContextFactory`. The context holds a private `HeadlessDbContextRuntime` that captures the request-scoped outbox dispatcher and audit persistence. Pooling reuses a prior request's unit of work — a captive-dependency bug, not a perf trade-off.
 - Declare third-party roots with `IsTenantOwned()` after `base.OnModelCreating(modelBuilder)`. Finalized metadata drives tenant filters, the optional write guard, and SQL concurrency predicates. `IMultiTenant` remains the default ownership signal; `IsNotTenantOwned()` explicitly excludes a root.
@@ -446,6 +446,8 @@ These read `Schema` and `*TableName` from validated `*StorageOptions` and apply 
 #### Custom Save Processors
 
 ```csharp
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+
 public sealed class AppSaveEntryProcessor : IHeadlessSaveEntryProcessor
 {
     public void Process(EntityEntry entry, HeadlessSaveEntryContext context)
@@ -580,21 +582,26 @@ dotnet add package Headless.Couchbase
 ### Setup and use
 
 ```csharp
-// Define a typed bucket context
+using Couchbase;
+using Couchbase.Linq;
+using Couchbase.Transactions;
+
+// Define a typed bucket context; the provider wires each attributed IDocumentSet<T> property to its collection
 public sealed class AppBucketContext(
     IBucket bucket,
     Transactions transactions,
     ILogger<CouchbaseBucketContext> logger
 ) : CouchbaseBucketContext(bucket, transactions, logger)
 {
-    public DocumentSet<Product> Products => GetDocumentSet<Product>("products");
+    [CouchbaseCollection("_default", "products")]
+    public IDocumentSet<Product> Products { get; set; } = null!;
 }
 
 // Resolve context via the provider (typically injected via ICouchbaseClustersProvider + IBucketContextProvider)
 var context = await bucketContextProvider.GetAsync<AppBucketContext>(
     clusterKey: "default",
     bucketName: "app",
-    defaultScopeName: "_default"
+    defaultScopeName: null // use each document set's declared scope
 );
 
 // KV operations via DocumentSetExtensions

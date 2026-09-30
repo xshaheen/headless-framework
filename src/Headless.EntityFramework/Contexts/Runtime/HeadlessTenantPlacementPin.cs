@@ -2,54 +2,89 @@
 
 using System.Collections.Concurrent;
 using System.Collections.Frozen;
+using System.Globalization;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace Headless.EntityFramework.Contexts.Runtime;
 
 /// <summary>The routing options recorded for one tenant-routed context type.</summary>
-internal sealed record HeadlessTenantRoutedContext(Type ContextType, int MaxCachedSchemas);
+internal sealed record HeadlessTenantRoutedContext(Type ContextType, int MaxCachedSchemas, string DataStore);
 
 /// <summary>
-/// The tenant-routed context types and, per type, the bounded memory cache that holds their per-schema models.
+/// The tenant-routed context types of a host and the one bounded memory cache that holds all their per-schema
+/// models and compiled queries.
 /// </summary>
 /// <remarks>
 /// <para>
 /// EF's default internal cache (10240 units) keeps about 40 schemas before it evicts and rebuilds models: EF Core 10
 /// caches a design-time model (150) and a runtime model (100) per schema, sharing the budget with compiled queries
-/// (10 each). Each routed type therefore gets its own cache sized for its schema count plus a compiled-query
-/// allowance per schema.
+/// (10 each). The routed types therefore get a cache sized for the sum of their schema budgets plus a compiled-query
+/// allowance per schema; model cache keys carry the context type, so types never collide inside it.
 /// </para>
 /// <para>
-/// The caches are process-wide, keyed by context type and size, like EF's own model cache. A new cache instance
-/// forces a new EF internal service provider, and EF refuses to build more than twenty per process, so a cache per
-/// application container would break any process that builds several hosts (integration test suites do).
+/// One cache for every routed type of a host, rather than one per type, because a distinct cache instance forces a
+/// distinct EF internal service provider, and EF throws past twenty per process: a cache per routed type would spend
+/// one provider per context an application routes. The cache is process-wide, keyed by the routed set and its
+/// budgets like EF's own model cache, so several hosts with the same routing share it (integration test suites
+/// build many hosts in one process).
 /// </para>
 /// </remarks>
-internal sealed class HeadlessTenantDataRouting(IEnumerable<HeadlessTenantRoutedContext> routedContexts)
+internal sealed class HeadlessTenantDataRouting
 {
     private const long _ModelUnitsPerSchema = 250;
     private const long _CompiledQueryUnitsPerSchema = 1000;
 
-    private static readonly ConcurrentDictionary<(Type ContextType, int MaxCachedSchemas), MemoryCache> _Caches = new();
+    private static readonly ConcurrentDictionary<string, MemoryCache> _Caches = new(StringComparer.Ordinal);
 
-    private readonly FrozenDictionary<Type, int> _routed = routedContexts.ToFrozenDictionary(
-        static routed => routed.ContextType,
-        static routed => routed.MaxCachedSchemas
-    );
+    private readonly FrozenDictionary<Type, HeadlessTenantRoutedContext> _routed;
+    private readonly MemoryCache _modelCache;
+
+    public HeadlessTenantDataRouting(IEnumerable<HeadlessTenantRoutedContext> routedContexts)
+    {
+        _routed = routedContexts.ToFrozenDictionary(static routed => routed.ContextType);
+
+        var entries = _routed
+            .Values.Select(static routed =>
+                (
+                    Key: string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"{routed.ContextType.AssemblyQualifiedName}|{routed.MaxCachedSchemas}"
+                    ),
+                    routed.MaxCachedSchemas
+                )
+            )
+            .OrderBy(static entry => entry.Key, StringComparer.Ordinal)
+            .ToArray();
+        var cacheKey = string.Join('\n', entries.Select(static entry => entry.Key));
+        var totalSchemas = entries.Sum(static entry => (long)entry.MaxCachedSchemas);
+
+        _modelCache = _Caches.GetOrAdd(
+            cacheKey,
+            static (_, schemas) =>
+                new MemoryCache(
+                    new MemoryCacheOptions
+                    {
+                        SizeLimit = schemas * (_ModelUnitsPerSchema + _CompiledQueryUnitsPerSchema),
+                    }
+                ),
+            totalSchemas
+        );
+    }
 
     public bool IsRouted(Type contextType) => _routed.ContainsKey(contextType);
 
-    public IMemoryCache GetModelCache(Type contextType) =>
-        _Caches.GetOrAdd(
-            (contextType, _routed[contextType]),
-            static key => new MemoryCache(
-                new MemoryCacheOptions
-                {
-                    SizeLimit = key.MaxCachedSchemas * (_ModelUnitsPerSchema + _CompiledQueryUnitsPerSchema),
-                }
-            )
-        );
+    /// <summary>The placement request for <paramref name="tenantId"/> and the data store <paramref name="contextType"/> belongs to.</summary>
+    public TenantDataPlacementRequest CreateRequest(Type contextType, string tenantId) =>
+        new(tenantId, _routed[contextType].DataStore);
+
+    public IMemoryCache GetModelCache(Type contextType)
+    {
+        // Indexing asserts the type is routed; every routed type of this host shares the one cache.
+        _ = _routed[contextType];
+
+        return _modelCache;
+    }
 }
 
 /// <summary>

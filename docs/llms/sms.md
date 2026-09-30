@@ -65,13 +65,13 @@ builder.Services.AddHeadlessSms(setup =>
 `SendSingleSmsRequest` is the single-recipient message type used by `ISmsSender`:
 
 ```csharp
-new SendSingleSmsRequest
+var request = new SendSingleSmsRequest
 {
     MessageId = "optional-idempotency-id",          // optional, provider-specific use
     Destination = new SmsRequestDestination(20, "1234567890"), // Code = country calling code
     Text = "Your OTP is 123456",
     Properties = null                               // optional, provider-specific metadata
-}
+};
 ```
 
 `SmsRequestDestination(int Code, string Number)` models a phone number split into country calling code and subscriber number. `ToString()` returns `"{Code}{Number}"` without a plus sign; `ToString(hasPlusPrefix: true)` returns `"+{Code}{Number}"`.

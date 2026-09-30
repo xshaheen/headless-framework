@@ -124,7 +124,7 @@ public sealed class TenantPropagationScheduleMiddleware(
 internal static partial class TenantPropagationScheduleMiddlewareLog
 {
     [LoggerMessage(
-        EventId = 3220,
+        EventId = 3400,
         EventName = "JobSystemScopeScheduled",
         Level = LogLevel.Debug,
         Message = "Scheduling a system-scope (tenantless) job for function '{Function}'."
@@ -132,7 +132,7 @@ internal static partial class TenantPropagationScheduleMiddlewareLog
     public static partial void SystemJobScheduled(this ILogger logger, string function);
 
     [LoggerMessage(
-        EventId = 3221,
+        EventId = 3401,
         EventName = "JobAmbientTenantRejected",
         Level = LogLevel.Warning,
         Message = "The ambient tenant identifier was rejected by Jobs tenant propagation because its length ({Length}) is blank or exceeds JobsTenancyOptions.TenantIdMaxLength. The enqueue fails closed; investigate the ambient tenant source if this repeats."
@@ -140,7 +140,7 @@ internal static partial class TenantPropagationScheduleMiddlewareLog
     public static partial void AmbientTenantRejected(this ILogger logger, int length);
 
     [LoggerMessage(
-        EventId = 3225,
+        EventId = 3402,
         EventName = "JobCrossTenantEnqueue",
         Level = LogLevel.Warning,
         Message = "A job for function '{Function}' was enqueued with an explicit tenant that differs from the present ambient tenant. Explicit wins by design; enable RejectCrossTenantEnqueue() on the Jobs tenancy seam to reject the lateral path."

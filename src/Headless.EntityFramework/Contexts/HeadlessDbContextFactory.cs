@@ -84,7 +84,9 @@ internal sealed class HeadlessDbContextFactory<TDbContext>(IServiceScopeFactory 
     /// </summary>
     private static async Task _PinTenantPlacementAsync(IServiceProvider services, CancellationToken cancellationToken)
     {
-        if (services.GetService<HeadlessTenantDataRouting>()?.IsRouted(typeof(TDbContext)) != true)
+        var routing = services.GetService<HeadlessTenantDataRouting>();
+
+        if (routing?.IsRouted(typeof(TDbContext)) != true)
         {
             return;
         }
@@ -96,14 +98,15 @@ internal sealed class HeadlessDbContextFactory<TDbContext>(IServiceScopeFactory 
             return;
         }
 
-        // Reuse what the tenancy entry point already resolved for this tenant, fault included.
+        // Reuse what the tenancy entry point already resolved for this tenant and data store, fault included.
+        var request = routing.CreateRequest(typeof(TDbContext), tenantId);
         var placement =
             (
-                TenantDataPlacementPreloader.TryGetPreloaded(tenantId, out var preloaded)
+                TenantDataPlacementPreloader.TryGetPreloaded(request, out var preloaded)
                     ? preloaded
                     : await services
                         .GetRequiredService<ITenantDataPlacementResolver>()
-                        .ResolveAsync(tenantId, cancellationToken)
+                        .ResolveAsync(request, cancellationToken)
                         .ConfigureAwait(false)
             ) ?? throw HeadlessRoutedPlacement.NoPlacement(tenantId, typeof(TDbContext));
 

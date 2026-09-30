@@ -16,8 +16,11 @@ namespace Headless.MultiTenancy;
 /// <param name="providerName">
 /// The active EF Core provider's invariant name (<see cref="Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.ProviderName"/>),
 /// used to select the provider-specific collation string. A provider with no known mapping (including
-/// <see langword="null"/>, for example an in-memory or SQLite test provider) gets no <c>UseCollation</c>
-/// call — the index still enforces uniqueness, just under that provider's default collation.
+/// <see langword="null"/>, for example the in-memory provider or a third-party relational provider such as
+/// MySQL or Oracle) gets no <c>UseCollation</c> call — the index still enforces uniqueness, just under that
+/// provider's default collation, which is often case-insensitive. Pin a binary collation for such a provider
+/// after <c>AddHeadlessTenancyCatalog(this)</c> with
+/// <c>modelBuilder.Entity&lt;TenantRecord&gt;().Property(x =&gt; x.NormalizedIdentifier).UseCollation(...)</c>.
 /// </param>
 internal sealed class TenantRecordConfiguration(string? providerName) : IEntityTypeConfiguration<TenantRecord>
 {
@@ -31,6 +34,10 @@ internal sealed class TenantRecordConfiguration(string? providerName) : IEntityT
     // PostgreSQL's "C" collation is byte-ordinal (case- and accent-sensitive) by default already; pinning
     // it explicitly documents the requirement and survives a future database- or cluster-level default change.
     private const string _PostgreSqlCollation = "C";
+
+    // SQLite's default collation is already BINARY (memcmp order); pinning it keeps the column ordinal even if a
+    // consumer's conventions set a case-insensitive default such as NOCASE.
+    private const string _SqliteCollation = "BINARY";
 
     /// <inheritdoc/>
     public void Configure(EntityTypeBuilder<TenantRecord> b)
@@ -63,6 +70,7 @@ internal sealed class TenantRecordConfiguration(string? providerName) : IEntityT
         {
             "Microsoft.EntityFrameworkCore.SqlServer" => _SqlServerCollation,
             "Npgsql.EntityFrameworkCore.PostgreSQL" => _PostgreSqlCollation,
+            "Microsoft.EntityFrameworkCore.Sqlite" => _SqliteCollation,
             _ => null,
         };
     }

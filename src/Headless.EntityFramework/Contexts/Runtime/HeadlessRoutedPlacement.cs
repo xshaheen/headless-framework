@@ -43,7 +43,11 @@ internal sealed class HeadlessRoutedPlacement : IDisposable
     /// <summary>The pinned canonical tenant id, or <see langword="null"/> for the host placement.</summary>
     public string? TenantId { get; }
 
-    /// <summary>The pinned tenant placement, or <see langword="null"/> for the host placement.</summary>
+    /// <summary>
+    /// The pinned tenant placement, or <see langword="null"/> for the host placement. A tenant kept in the shared
+    /// database carries <see cref="TenantDataPlacement.Shared"/>: the pin then enforces the tenant but changes nothing
+    /// about the context's schema or connection.
+    /// </summary>
     public TenantDataPlacement? Placement { get; }
 
     /// <summary>Whether <see cref="Configure"/> ran for this context, which a derived <c>OnConfiguring</c> can skip.</summary>
@@ -102,6 +106,15 @@ internal sealed class HeadlessRoutedPlacement : IDisposable
             defaultSchema
         );
     }
+
+    /// <summary>The fail-closed refusal for a tenant whose placement source has no entry for it.</summary>
+    public static InvalidOperationException NoPlacement(string tenantId, Type contextType) =>
+        new(
+            $"Tenant '{tenantId}' has no data placement, so the tenant-routed context '{contextType.Name}' cannot be "
+                + "created for it. Add the tenant's placement to the configured placement source; routed contexts "
+                + "never fall back to the shared database. A tenant that deliberately stays in the shared database "
+                + "gets TenantDataPlacement.Shared."
+        );
 
     /// <summary>
     /// The placement resolved for <paramref name="tenantId"/> before this constructor ran: the factory's pin for
@@ -179,7 +192,9 @@ internal sealed class HeadlessRoutedPlacement : IDisposable
         optionsBuilder.UseMemoryCache(_modelCache);
         optionsBuilder.AddInterceptors(HeadlessTenantPlacementInterceptor.Instance);
 
-        if (Placement is null)
+        // The host placement and a shared tenant keep the context's own connection and schema; only the pin and
+        // its enforcement apply.
+        if (Placement?.IsShared != false)
         {
             return;
         }
