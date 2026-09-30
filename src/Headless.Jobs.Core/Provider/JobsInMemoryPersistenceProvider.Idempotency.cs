@@ -28,7 +28,6 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         Argument.IsNotNull(job);
         Argument.IsNotEmpty(idempotencyKey);
         cancellationToken.ThrowIfCancellationRequested();
-        JobAtomicity.RejectDirect([job]);
         JobIntentFingerprint.RejectOrdinaryMutation(job);
         JobContract.ValidateName(idempotencyKey);
         JobContract.ValidateIdempotencyTtl(idempotencyTtl);

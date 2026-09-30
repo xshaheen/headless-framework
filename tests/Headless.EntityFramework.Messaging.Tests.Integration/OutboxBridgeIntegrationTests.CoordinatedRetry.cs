@@ -113,7 +113,6 @@ public sealed partial class OutboxBridgeIntegrationTests
                 new JobKey(evidence.Key),
                 DeadlineRegistration.Descriptor,
                 evidence.Due,
-                new JobOptions { Enlistment = TransactionEnlistment.Required },
                 cancellationToken
             );
             evidence.Writes++;

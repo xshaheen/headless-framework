@@ -57,7 +57,9 @@ public sealed class PostgreSqlStorageConnectionTest(PostgreSqlTestFixture fixtur
         {
             await using var connection = new NpgsqlConnection(fixture.ConnectionString);
             await connection.OpenAsync();
-            await connection.ExecuteAsync("TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received;");
+            await connection.ExecuteAsync(
+                "TRUNCATE TABLE headless.messaging_published; TRUNCATE TABLE headless.messaging_received;"
+            );
         }
         catch (PostgresException)
         {

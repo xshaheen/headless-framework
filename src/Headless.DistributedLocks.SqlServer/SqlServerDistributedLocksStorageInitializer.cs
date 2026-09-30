@@ -16,7 +16,7 @@ namespace Headless.DistributedLocks.SqlServer;
 /// Runs only when <see cref="SqlServerDistributedLockOptions.EnableFencing"/> is
 /// <see langword="true"/>. Creates (if absent) the feature-owned
 /// <see cref="DistributedLocksStorageOptions.Schema"/> and a <c>bigint</c> sequence named
-/// <c>{KeyPrefix}_headless_distlocks_fence</c> (truncated to 128 characters if necessary) inside that
+/// <c>DistributedLocksFence_{KeyPrefix}</c> (truncated to 128 characters if necessary) inside that
 /// schema. Schema and sequence creation are guarded by a session-scoped <c>sp_getapplock</c> so
 /// concurrent initializers on multiple nodes do not race on DDL.
 /// </para>
@@ -71,7 +71,10 @@ internal sealed class SqlServerDistributedLocksStorageInitializer(
     )
     {
         var sequenceName = SqlServerIdentifier.FenceSequenceName(options.KeyPrefix);
-        var lockResource = SqlServerResourceName.Encode($"{options.KeyPrefix}init:{schema}.{sequenceName}");
+        // Kept out of the application's KeyPrefix namespace: an application lock named "init:<schema>.<sequence>"
+        // would otherwise be the same app lock and stall fencing initialization until it timed out. The sequence name
+        // already carries the KeyPrefix, so replicas with different prefixes still take different init locks.
+        var lockResource = SqlServerResourceName.Encode($"headless_distributed_locks_init:{schema}.{sequenceName}");
         var qualifiedSequence = $"{SqlServerIdentifier.Quote(schema)}.{SqlServerIdentifier.Quote(sequenceName)}";
         var lockTimeoutMs =
             options.CommandTimeout.TotalMilliseconds >= int.MaxValue
@@ -93,11 +96,19 @@ internal sealed class SqlServerDistributedLocksStorageInitializer(
                 THROW 50000, N'Headless.DistributedLocks.SqlServer: failed to acquire fencing sequence initialization lock.', 1;
 
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = @schema)
-                BEGIN
-                    DECLARE @createSchema nvarchar(max) = N'CREATE SCHEMA {{SqlServerIdentifier.Quote(schema)}}';
-                    EXEC sys.sp_executesql @createSchema;
-                END;
+                -- The schema is shared with other features whose initializers hold their own locks, so one of them
+                -- can create it between this check and the CREATE; that duplicate (2714, reported as 2759 by
+                -- CREATE SCHEMA) means the schema exists, which is all this step needs.
+                BEGIN TRY
+                    IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = @schema)
+                    BEGIN
+                        DECLARE @createSchema nvarchar(max) = N'CREATE SCHEMA {{SqlServerIdentifier.Quote(schema)}}';
+                        EXEC sys.sp_executesql @createSchema;
+                    END;
+                END TRY
+                BEGIN CATCH
+                    IF ERROR_NUMBER() NOT IN (2714, 2759) THROW;
+                END CATCH;
 
                 IF NOT EXISTS (
                     SELECT 1
@@ -125,7 +136,7 @@ internal sealed class SqlServerDistributedLocksStorageInitializer(
             END CATCH;
             """;
         command.Parameters.AddWithValue("lockResource", lockResource);
-        command.Parameters.AddWithValue("schema", schema);
+        command.Parameters.AddWithValue(nameof(schema), schema);
         command.Parameters.AddWithValue("sequenceName", sequenceName);
         command.Parameters.AddWithValue("lockTimeout", lockTimeoutMs);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);

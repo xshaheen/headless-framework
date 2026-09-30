@@ -158,7 +158,7 @@ public sealed class PostgreSqlSchedulePositionTests(PostgreSqlJobsCoordinationFi
         await using var blockerTransaction = await blocker.BeginTransactionAsync(ct);
         await using (
             var command = new NpgsqlCommand(
-                "SELECT \"Id\" FROM jobs.\"CronJobs\" WHERE \"Id\" = @id FOR UPDATE;",
+                "SELECT id FROM headless.cron_jobs WHERE id = @id FOR UPDATE;",
                 blocker,
                 blockerTransaction
             )
@@ -194,7 +194,7 @@ public sealed class PostgreSqlSchedulePositionTests(PostgreSqlJobsCoordinationFi
                 capture.Statements.Any(statement =>
                     statement.InExplicitTransaction
                     && statement.Sql.Contains("UPDATE", StringComparison.OrdinalIgnoreCase)
-                    && statement.Sql.Contains("NextDueUtc", StringComparison.Ordinal)
+                    && statement.Sql.Contains("next_due_utc", StringComparison.Ordinal)
                 ),
             TimeSpan.FromSeconds(5)
         );
@@ -210,7 +210,7 @@ public sealed class PostgreSqlSchedulePositionTests(PostgreSqlJobsCoordinationFi
             .Statements.Should()
             .Contain(statement =>
                 !statement.InExplicitTransaction
-                && statement.Sql.Contains("NextDueUtc", StringComparison.Ordinal)
+                && statement.Sql.Contains("next_due_utc", StringComparison.Ordinal)
                 && statement.Sql.Contains("now()", StringComparison.OrdinalIgnoreCase)
             );
     }

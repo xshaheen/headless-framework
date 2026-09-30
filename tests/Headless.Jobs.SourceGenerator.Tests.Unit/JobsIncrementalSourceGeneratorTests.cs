@@ -680,7 +680,8 @@ public sealed class JobsIncrementalSourceGeneratorTests
     }
 
     private static string _GeneratedSource(GeneratorDriver driver) =>
-        driver.GetRunResult().Results.Single().GeneratedSources.Single().SourceText.ToString();
+        driver.GetRunResult().Results.Single().GeneratedSources.SingleOrDefault().SourceText?.ToString()
+        ?? string.Empty;
 
     private static string[] _RegistrationLines(GeneratorDriver driver)
     {

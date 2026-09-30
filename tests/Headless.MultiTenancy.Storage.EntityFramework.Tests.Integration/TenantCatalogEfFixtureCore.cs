@@ -47,6 +47,9 @@ internal sealed class TenantCatalogEfFixtureCore(
 
         if (!_schemaCreated)
         {
+            // A reused container keeps the table from an earlier run, and EnsureCreatedAsync leaves an existing
+            // table alone, so a column-width change would otherwise never reach the schema under test.
+            await db.Database.ExecuteSqlRawAsync("""DROP TABLE IF EXISTS "Tenants";""", cancellationToken);
             await db.Database.EnsureCreatedAsync(cancellationToken);
             _schemaCreated = true;
         }

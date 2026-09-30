@@ -4,7 +4,9 @@ using System.Diagnostics;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
+using Headless.MultiTenancy;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Jobs.Instrumentation;
 
@@ -15,10 +17,15 @@ namespace Headless.Jobs.Instrumentation;
 /// listener, so OTel-free hosts keep byte-identical logging behavior at the cost of a listener-presence
 /// check per event.
 /// </summary>
-internal sealed class LoggerInstrumentation(ILogger<LoggerInstrumentation> logger, IJobsOwnerIdentity ownerIdentity)
-    : JobsBaseLoggerInstrumentation(logger, ownerIdentity),
-        IJobsInstrumentation
+internal sealed class LoggerInstrumentation(
+    ILogger<LoggerInstrumentation> logger,
+    IJobsOwnerIdentity ownerIdentity,
+    IOptions<TenantTelemetryOptions>? tenantTelemetryOptions = null
+) : JobsBaseLoggerInstrumentation(logger, ownerIdentity), IJobsInstrumentation
 {
+    private readonly TenantTelemetryOptions _tenantTelemetry =
+        tenantTelemetryOptions?.Value ?? new TenantTelemetryOptions();
+
     public override Activity? StartJobActivity(string activityName, JobExecutionState context)
     {
         var activity = JobsDiagnostics.Start(activityName);
@@ -31,10 +38,16 @@ internal sealed class LoggerInstrumentation(ILogger<LoggerInstrumentation> logge
             activity.SetTag("headless.job.contract_version", context.ContractVersion);
             activity.SetTag("headless.job.correlation_id", context.CorrelationId);
             activity.SetTag("headless.job.causation_id", context.CausationId);
-            activity.SetTag("headless.job.tenant_id", context.TenantId);
             activity.SetTag("headless.job.priority", context.CachedPriority.ToString());
             activity.SetTag("headless.job.machine", InstanceIdentifier);
             activity.SetTag("headless.job.retry_count", context.Retries);
+
+            // Written at span creation rather than left to the execute middleware, so a job span that runs without
+            // the tenancy middleware still carries the tenant under the one attribute every entry point uses.
+            if (context.TenantId is { } tenantId)
+            {
+                TenantTelemetry.TagActivity(activity, _tenantTelemetry, tenantId);
+            }
 
             if (context.ParentId.HasValue)
             {

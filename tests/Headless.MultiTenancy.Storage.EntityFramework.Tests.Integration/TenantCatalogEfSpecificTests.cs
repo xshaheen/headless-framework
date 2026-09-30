@@ -100,6 +100,33 @@ public abstract class TenantCatalogEfSpecificTests<TFixture>(TFixture fixture) :
     }
 
     [Fact]
+    public async Task should_round_trip_an_identifier_at_the_catalog_length_ceiling()
+    {
+        // given - a whole-host (custom-domain) identifier may reach the catalog's 253-character ceiling,
+        // so the identifier columns must hold it without truncation.
+        var identifier = _HostnameOfLength(TenantCatalogOptions.MaxIdentifierLengthLimit);
+        await fixture.ResetAsync(AbortToken);
+        await using (var db = new TenantCatalogDbContext(fixture.DbOptions))
+        {
+            db.Add(new TenantRecord("ten_long", identifier, "Long Host"));
+            await db.SaveChangesAsync(AbortToken);
+        }
+
+        var store = await fixture.GetStoreAsync(AbortToken);
+
+        // when
+        var byIdentifier = await store.FindByIdentifierAsync(identifier, AbortToken);
+        var byId = await store.FindByIdAsync("ten_long", AbortToken);
+
+        // then
+        byIdentifier.Should().NotBeNull();
+        byIdentifier!.Id.Should().Be("ten_long");
+        byIdentifier.Identifier.Should().Be(identifier);
+        byId.Should().NotBeNull();
+        byId!.Identifier.Should().Be(identifier);
+    }
+
+    [Fact]
     public async Task should_fail_update_that_collides_with_an_existing_normalized_identifier()
     {
         // given
@@ -122,5 +149,23 @@ public abstract class TenantCatalogEfSpecificTests<TFixture>(TFixture fixture) :
 
         // then
         await act.Should().ThrowAsync<DbUpdateException>();
+    }
+
+    /// <summary>Builds a hostname-shaped identifier of exactly <paramref name="length"/> characters: 63-character labels joined by dots.</summary>
+    private static string _HostnameOfLength(int length)
+    {
+        var builder = new System.Text.StringBuilder(length);
+
+        while (builder.Length < length)
+        {
+            if (builder.Length > 0)
+            {
+                builder.Append('.');
+            }
+
+            builder.Append('a', Math.Min(63, length - builder.Length));
+        }
+
+        return builder.ToString();
     }
 }

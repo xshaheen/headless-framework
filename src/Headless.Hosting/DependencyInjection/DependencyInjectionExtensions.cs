@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
 using Headless.Hosting.Initialization;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -136,7 +137,10 @@ public static class DependencyInjectionExtensions
     /// <exception cref="InvalidOperationException">
     /// Thrown when no unkeyed registration exists for <typeparamref name="TService"/>.
     /// </exception>
-    public static IServiceCollection Decorate<TService, TDecorator>(this IServiceCollection services)
+    public static IServiceCollection Decorate<
+        TService,
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TDecorator
+    >(this IServiceCollection services)
         where TService : class
         where TDecorator : class, TService
     {
@@ -183,7 +187,10 @@ public static class DependencyInjectionExtensions
     /// <param name="services">The service collection.</param>
     /// <returns><see langword="true"/> if at least one registration was decorated; otherwise <see langword="false"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is <see langword="null"/>.</exception>
-    public static bool TryDecorate<TService, TDecorator>(this IServiceCollection services)
+    public static bool TryDecorate<
+        TService,
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TDecorator
+    >(this IServiceCollection services)
         where TService : class
         where TDecorator : class, TService
     {
@@ -223,6 +230,96 @@ public static class DependencyInjectionExtensions
             typeof(TService),
             descriptor => _CreateDecoratedDescriptor(descriptor, decorator)
         );
+    }
+
+    /// <summary>
+    /// Attempts to decorate all existing registrations for <typeparamref name="TService"/> under
+    /// <paramref name="serviceKey"/> with <paramref name="decorator"/>, preserving each original registration's
+    /// lifetime and key.
+    /// </summary>
+    /// <typeparam name="TService">The service type to decorate.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="serviceKey">The key of the registrations to decorate.</param>
+    /// <param name="decorator">Factory that receives the original service and returns the decorator.</param>
+    /// <returns><see langword="true"/> if at least one registration was decorated; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// A registration under <see cref="KeyedService.AnyKey"/> is not decorated: it serves every key, so decorating it
+    /// for one key would change what the others resolve.
+    /// </para>
+    /// <para>
+    /// The decorated registration is a factory, so the container disposes whatever it returns. An instance registered
+    /// with <c>AddKeyedSingleton(key, instance)</c> was never disposed by the container before; after decoration it is,
+    /// either directly or through a decorator that disposes the instance it wraps.
+    /// </para>
+    /// </remarks>
+    public static bool TryDecorateKeyed<TService>(
+        this IServiceCollection services,
+        object serviceKey,
+        Func<TService, IServiceProvider, TService> decorator
+    )
+        where TService : class
+    {
+        Argument.IsNotNull(services);
+        Argument.IsNotNull(serviceKey);
+        Argument.IsNotNull(decorator);
+
+        var decorated = false;
+
+        for (var i = 0; i < services.Count; i++)
+        {
+            var descriptor = services[i];
+
+            if (
+                !descriptor.IsKeyedService
+                || descriptor.ServiceType != typeof(TService)
+                || !Equals(descriptor.ServiceKey, serviceKey)
+            )
+            {
+                continue;
+            }
+
+            services[i] = ServiceDescriptor.DescribeKeyed(
+                typeof(TService),
+                serviceKey,
+                (serviceProvider, key) =>
+                {
+                    var inner = _CreateKeyedService<TService>(serviceProvider, descriptor, key);
+
+                    return decorator(inner, serviceProvider);
+                },
+                descriptor.Lifetime
+            );
+            decorated = true;
+        }
+
+        return decorated;
+    }
+
+    private static TService _CreateKeyedService<TService>(
+        IServiceProvider serviceProvider,
+        ServiceDescriptor descriptor,
+        object? serviceKey
+    )
+        where TService : class
+    {
+        if (descriptor.KeyedImplementationInstance is TService instance)
+        {
+            return instance;
+        }
+
+        if (descriptor.KeyedImplementationFactory is not null)
+        {
+            return (TService)descriptor.KeyedImplementationFactory(serviceProvider, serviceKey);
+        }
+
+        if (descriptor.KeyedImplementationType is not null)
+        {
+            return (TService)ActivatorUtilities.CreateInstance(serviceProvider, descriptor.KeyedImplementationType);
+        }
+
+        throw new InvalidOperationException($"Service '{typeof(TService).Name}' registration cannot be decorated.");
     }
 
     private static bool _TryDecorate(
@@ -298,7 +395,10 @@ public static class DependencyInjectionExtensions
     /// <param name="services">The service collection.</param>
     /// <returns><see langword="true"/> if an existing registration was removed (replaced); <see langword="false"/> if the service was newly added.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is <see langword="null"/>.</exception>
-    public static bool AddOrReplaceScoped<TService, TImplementation>(this IServiceCollection services)
+    public static bool AddOrReplaceScoped<
+        TService,
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TImplementation
+    >(this IServiceCollection services)
         where TService : class
         where TImplementation : class, TService
     {
@@ -332,7 +432,10 @@ public static class DependencyInjectionExtensions
     /// <param name="services">The service collection.</param>
     /// <returns><see langword="true"/> if an existing registration was removed (replaced); <see langword="false"/> if the service was newly added.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is <see langword="null"/>.</exception>
-    public static bool AddOrReplaceTransient<TService, TImplementation>(this IServiceCollection services)
+    public static bool AddOrReplaceTransient<
+        TService,
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TImplementation
+    >(this IServiceCollection services)
         where TService : class
         where TImplementation : class, TService
     {
@@ -366,7 +469,10 @@ public static class DependencyInjectionExtensions
     /// <param name="services">The service collection.</param>
     /// <returns><see langword="true"/> if an existing registration was removed (replaced); <see langword="false"/> if the service was newly added.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is <see langword="null"/>.</exception>
-    public static bool AddOrReplaceSingleton<TService, TImplementation>(this IServiceCollection services)
+    public static bool AddOrReplaceSingleton<
+        TService,
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TImplementation
+    >(this IServiceCollection services)
         where TService : class
         where TImplementation : class, TService
     {
@@ -412,9 +518,11 @@ public static class DependencyInjectionExtensions
     /// is indistinguishable from a consumer override here and is intentionally preserved. Register
     /// fallbacks by type to make them replaceable.
     /// </remarks>
-    public static bool AddOrReplaceFallbackSingleton<TService, TFallback, TImplementation>(
-        this IServiceCollection services
-    )
+    public static bool AddOrReplaceFallbackSingleton<
+        TService,
+        TFallback,
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TImplementation
+    >(this IServiceCollection services)
         where TService : class
         where TFallback : class, TService
         where TImplementation : class, TService
@@ -670,7 +778,9 @@ public static class DependencyInjectionExtensions
     /// two-argument overload of <c>ServiceDescriptor.Singleton&lt;TService, TImplementation&gt;</c>
     /// is what allows <c>TryAddEnumerable</c> to deduplicate by implementation type.
     /// </remarks>
-    public static IServiceCollection AddInitializerHostedService<T>(this IServiceCollection services)
+    public static IServiceCollection AddInitializerHostedService<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T
+    >(this IServiceCollection services)
         where T : class, IHostedService, IInitializer
     {
         Argument.IsNotNull(services);

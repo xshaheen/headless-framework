@@ -16,7 +16,7 @@ namespace Tests;
 public sealed class MessagingStorageOptionsTests : TestBase
 {
     [Fact]
-    public async Task should_default_the_schema_to_the_feature_name()
+    public async Task should_default_the_schema_to_the_shared_headless_schema()
     {
         // given
         var services = _BuildServices(setup => setup.UsePostgreSql("Host=localhost;Database=test"));
@@ -25,7 +25,7 @@ public sealed class MessagingStorageOptionsTests : TestBase
         await using var provider = services.BuildServiceProvider();
 
         // then
-        provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema.Should().Be("messaging");
+        provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema.Should().Be("headless");
     }
 
     [Fact]

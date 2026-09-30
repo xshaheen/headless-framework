@@ -1,6 +1,6 @@
 ---
 domain: Utilities
-packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstractions, Hosting, NetTopologySuite, Redis, Sitemaps, Slugs
+packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstractions, Hosting, Http.Resilience, NetTopologySuite, Redis, Sitemaps, Slugs
 ---
 
 # Utilities
@@ -13,6 +13,7 @@ Install individually as needed -- these packages are independent of each other:
 
 - **Generator.Primitives + Generator.Primitives.Abstractions** -- Roslyn source generator for strongly-typed domain primitives (IDs, value types). Install both together. Define types implementing `IPrimitive<T>` and get auto-generated equality, JSON converters, EF Core value converters, Dapper handlers, and TypeConverters.
 - **FluentValidation** -- Enterprise validators on top of FluentValidation: phone numbers (`InternationalPhoneNumber()`, `MobilePhoneNumber()`), national IDs, collections, geo, pagination, URLs, IP addresses, string formats (slug/username/hex color/Base64/…), relative date/time (`InThePast()`/`MinimumAge()`, `TimeProvider`-based), enum names, and markup rejection (`NoScripts()`). Use `ErrorDescriptor` for structured API errors.
+- **Http.Resilience** -- declare an outbound provider client's side-effect class (`OutboundEffect.Safe | Idempotent | Unsafe`) and derive its HttpClient resilience pipeline from it with `AddEffectResilienceHandler`. Used by the SMS and Paymob packages.
 - **Hosting** -- DI extensions (`AddIf`, `AddOrReplace*`, `Unregister<T>`), options validation with FluentValidation (`AddOptionsWithFluentValidation<T,V>`), database seeder infrastructure (`ISeeder`).
 - **NetTopologySuite** -- Geometry precision, permissive operations, SQL Server geography sanitization (`SanitizeForSqlGeography()`), polygon simplification.
 - **Redis** -- definition-first Lua script loading/execution with StackExchange.Redis.
@@ -151,18 +152,19 @@ Roslyn source generator for creating strongly-typed domain primitives.
 
 Primitive generator diagnostics use the framework-wide `HF` prefix. Existing suppressions for legacy `AL` IDs must move to the corresponding `HF` ID. The former duplicate `AL1012` is split: date-format validation uses `HF1012`, while numeric-operation validation uses `HF1013`.
 
-| ID | Severity | Meaning |
-| --- | --- | --- |
-| `HF1000` | Error | The generator failed with an exception. |
-| `HF1001` | Error | The primitive has an unsupported base type. |
-| `HF1002` | Error | The primitive must be partial. |
-| `HF1003` | Error | The primitive has a non-obsolete default constructor. |
-| `HF1011` | Error | The primitive has a parameterized constructor. |
-| `HF1012` | Error | `SerializationFormatAttribute` requires a date primitive. |
-| `HF1013` | Error | `SupportedOperationsAttribute` requires an operational numeric primitive. |
-| `HF1015` | Warning | A primitive wrapping a value type should be a value type. |
-| `HF1016` | Warning | A primitive wrapping a reference type should be a reference type. |
-| `HF1021` | Warning | Primitive validation throws an incompatible exception type. |
+| ID | Severity | Meaning | Fix |
+| --- | --- | --- | --- |
+| <a id="hf1000"></a>`HF1000` | Error | The generator threw an exception; the message carries it. | Report it as a generator bug with the message. |
+| <a id="hf1001"></a>`HF1001` | Error | The primitive wraps a type the generator does not support, such as a custom class or a nullable value type. Nothing is generated for it. | Wrap a string, `Guid`, `bool`, `char`, numeric, or date and time type, or another primitive. |
+| <a id="hf1002"></a>`HF1002` | Error | The primitive is not declared `partial`. | Add `partial` to the declaration. |
+| <a id="hf1012"></a>`HF1012` | Error | `[SerializationFormat]` is on a primitive that does not wrap `DateTime`, `DateTimeOffset`, `DateOnly`, `TimeOnly`, or `TimeSpan`. The format is ignored. | Remove the attribute, or wrap a date or time type. |
+| <a id="hf1013"></a>`HF1013` | Error | `[SupportedOperations]` is on a primitive that does not wrap a numeric type. The attribute is ignored. | Remove the attribute. |
+| <a id="hf1015"></a>`HF1015` | Warning | A class primitive wraps a value type. | Declare the primitive as a `struct`. |
+| <a id="hf1016"></a>`HF1016` | Warning | A struct primitive wraps a reference type. | Declare the primitive as a `class`. |
+
+Every rule is reported on the primitive's type name, or on the offending attribute for `HF1012` and `HF1013`, so `#pragma warning disable` and `.editorconfig` severity settings apply to them like any compiler diagnostic.
+
+`HF1003`, `HF1011`, and `HF1021` are no longer reported. A declared parameterless or value constructor already conflicts with the one the generator emits, and the compiler reports it as `CS0111`. Checking which exception `Validate` throws needs an analyzer over method bodies, which the generator is not.
 
 ### Install
 
@@ -173,9 +175,11 @@ dotnet add package Headless.Generator.Primitives
 ### Setup and use
 
 ```csharp
+using System.Text.Json;
+
 // Define your primitive
 [StringLength(1, 50)]
-public readonly partial struct Email : IPrimitive<string>
+public sealed partial class Email : IPrimitive<string>
 {
     public static PrimitiveValidationResult Validate(string value)
     {
@@ -187,8 +191,8 @@ public readonly partial struct Email : IPrimitive<string>
 }
 
 // Generated code provides:
-var email = Email.From("user@example.com"); // Factory method
-var value = email.Value; // Underlying value
+var email = new Email("user@example.com"); // Validating constructor; Email.TryCreate(...) does not throw
+string value = email; // Implicit conversion to the underlying value
 var json = JsonSerializer.Serialize(email); // JSON: "user@example.com"
 ```
 
@@ -247,7 +251,7 @@ dotnet add package Headless.Generator.Primitives.Abstractions
 using Headless.Generator.Primitives;
 
 [StringLength(1, 100)]
-public readonly partial struct ProductName : IPrimitive<string>
+public sealed partial class ProductName : IPrimitive<string>
 {
     public static PrimitiveValidationResult Validate(string value)
     {
@@ -262,7 +266,7 @@ public readonly partial struct ProductName : IPrimitive<string>
 #### With Supported Operations
 
 ```csharp
-[SupportedOperations(Comparison = true, Math = true)]
+[SupportedOperations(Addition = true, Subtraction = true)]
 public readonly partial struct Quantity : IPrimitive<int>
 {
     public static PrimitiveValidationResult Validate(int value)
@@ -288,7 +292,7 @@ Core hosting utilities and extensions for ASP.NET Core applications.
 
 ### API and behavior
 
-- DI extensions: `AddIf`, `AddIfElse`, `AddOrReplace*`, `Unregister<T>`
+- DI extensions: `AddIf`, `AddIfElse`, `AddOrReplace*`, `Unregister<T>`, and decorators (`Decorate`/`TryDecorate` for unkeyed registrations, `TryDecorateKeyed` for one service key) that preserve each registration's lifetime
 - Startup validators (`IHeadlessStartupValidator`, `AddStartupValidator`) that run before any hosted service starts and report every failure together
 - Required-service declarations (`RequireRegisteredService<T>`) that fail the host at startup instead of at first use
 - Options validation with FluentValidation
@@ -363,13 +367,25 @@ await app.Services.SeedAsync();
 
 ```csharp
 services.AddOrReplaceScoped<IService, NewImpl>();
-services.AddOrReplaceSingleton<IService>(sp => new Impl(sp.GetRequired<IDep>()));
+services.AddOrReplaceSingleton<IService>(sp => new Impl(sp.GetRequiredService<IDep>()));
 
 // Replaces a known TFallback registration only; preserves consumer-provided non-fallback
 // registrations. Use when multiple packages each register a safe default and a higher-level
 // package wants to swap only those defaults.
 services.AddOrReplaceFallbackSingleton<IService, NullFallback, DefaultImpl>();
 ```
+
+#### Decorators
+
+```csharp
+// Wraps every unkeyed IService registration; the factory receives the original instance.
+services.TryDecorate<IService>((inner, sp) => new LoggingService(inner));
+
+// Wraps only the registrations under one key; other keys and the unkeyed registration are untouched.
+services.TryDecorateKeyed<IService>("reports", (inner, sp) => new LoggingService(inner));
+```
+
+A decorator that returns a different instance owns disposing the inner one, because the container only tracks what the factory returns. Decorating turns every registration into a factory, so an instance the application registered and owned (`AddSingleton(instance)`) becomes container-disposed. `TryDecorateKeyed` does not decorate a `KeyedService.AnyKey` registration, which serves every key.
 
 #### Startup Validators
 
@@ -415,6 +431,22 @@ services.RequireRegisteredService<ICache<SettingValueCacheItem>>(
 
 `Headless.MultiTenancy`, `Headless.Settings.Core`, `Headless.Permissions.Core`, `Headless.Features.Core`, and `Headless.Api.Idempotency` all use this to require a caching provider.
 
+`RequireSingletonService<T>(requiredBy, remedy)` (and the `Type` overload) goes one step further for a service that a feature's *singleton* injects but the application registers:
+
+```csharp
+services.RequireSingletonService(
+    typeof(IDbContextFactory<>).MakeGenericType(dbContextType),
+    requiredBy: "Headless settings EF storage",
+    remedy: "Register the factory with AddDbContextFactory<TContext>() or AddPooledDbContextFactory<TContext>() at the default singleton lifetime."
+);
+```
+
+- **Refuses a captive dependency in every environment.** A scoped or transient registration would be captured by the singleton for the life of the host. Scope validation catches the scoped case only while it is on (the development default) and never catches the transient one, so the check reads the lifetime from the service collection instead and throws `InvalidServiceLifetimeException` (`Headless.Hosting.DependencyInjection`) listing every violation.
+- **Judges the registration the container resolves.** The last unkeyed registration of the closed type wins; with none, the last unkeyed open-generic registration of its definition decides. Keyed registrations are ignored. Registrations added after the declaration are seen, and the service is never resolved.
+- **Also requires the registration.** It declares `RequireRegisteredService` for the same type, so a missing registration still fails with `MissingRequiredServiceException`.
+
+The EF storage providers of `Headless.MultiTenancy`, `Headless.Settings`, `Headless.Features`, `Headless.Permissions`, `Headless.AuditLog`, and `Headless.Jobs` use it to require a singleton `IDbContextFactory<TContext>`.
+
 ### Configuration
 
 No configuration required.
@@ -422,6 +454,27 @@ No configuration required.
 ### Runtime behavior
 
 None directly. Utilities for managing service registration.
+
+`Headless.Hosting` declares `IsAotCompatible`. The helpers that construct a type argument (`AddOrReplace*`, `Decorate`, `AddOptions<TOptions, TValidator>`, `Configure<TOption, TOptionValidator>`, `AddSeeder`, `AddStartupValidator`) annotate it with `DynamicallyAccessedMembers`, so trimming keeps the constructor the container calls. The helpers that bind an `IConfiguration` (`GetOptions`, `GetRequired`, and the `Configure*` overloads that take one) or validate with data annotations are marked `[RequiresUnreferencedCode]`, and the binding ones also `[RequiresDynamicCode]`, so a trimmed or native AOT app gets a warning at the call site instead of a failure at startup. In such an app, configure options through the `Action<TOptions>` overloads with FluentValidation.
+---
+## Headless.Http.Resilience
+
+Declared side-effect classes for outbound HTTP calls, from which the HttpClient resilience pipeline is derived.
+
+### API and behavior
+
+- `OutboundEffect` -- `Safe` (reads; the pipeline retries every method), `Idempotent` (retries, with one stable key per logical call in the provider's deduplication header, reused across that call's retries, and a caller-set header is kept), `Unsafe` (no automatic retry for POST, PUT, PATCH, DELETE, or CONNECT; reads stay retryable).
+- `EffectResilience.AddEffectResilienceHandler(this IHttpClientBuilder, OutboundEffect, string? idempotencyHeader, Action<HttpStandardResilienceOptions>? configureResilience)` -- derives the pipeline. It first removes resilience handlers already on the builder (`RemoveAllResilienceHandlers`), so a host-wide handler added through `ConfigureHttpClientDefaults` (for example by `AddHeadless()` service defaults) cannot stack as an outer pipeline and retry a declared-unsafe call. `configureResilience` runs after the derived defaults; setting `Retry.ShouldHandle` there is the explicit opt-in to retrying unsafe methods.
+
+### Configuration
+
+None. The provider's setup states its effect at the one place the named client is built: `httpClientBuilder.AddEffectResilienceHandler(OutboundEffect.Unsafe, configureResilience: configureResilience)`.
+
+### Runtime behavior
+
+- The effect is declared per client, not per operation. A client whose reads are also unsafe must not rely on `Unsafe`, because `Unsafe` keeps reads retryable.
+- `RemoveAllResilienceHandlers` is marked experimental (`EXTEXP0001`) in `Microsoft.Extensions.Http.Resilience` 10.10.0; the package suppresses it at the one call site.
+
 ---
 ## Headless.NetTopologySuite
 
@@ -490,7 +543,7 @@ var overlap = geom1.ComputeOverlap(geom2);
 #### Ring Orientation
 
 ```csharp
-var fixed = polygon.EnsureIsOrientedCounterClockwise();
+var oriented = polygon.EnsureIsOrientedCounterClockwise();
 ```
 
 ### Configuration
@@ -527,12 +580,30 @@ dotnet add package Headless.Redis
 ### Setup and use
 
 ```csharp
+using Headless.Redis;
+using StackExchange.Redis;
+
 var builder = WebApplication.CreateBuilder(args);
 
 var redis = await ConnectionMultiplexer.ConnectAsync("localhost");
 var scriptsLoader = new HeadlessRedisScriptsLoader(redis);
 
-await scriptsLoader.LoadAsync([IncrementWithExpireScriptDefinition.Instance]);
+await scriptsLoader.LoadAsync([IncrementWithExpireScript.Instance]);
+
+// The loader caches loaded scripts by definition type, so each definition exposes one shared instance.
+public sealed class IncrementWithExpireScript : RedisScriptDefinition
+{
+    public static IncrementWithExpireScript Instance { get; } = new();
+
+    private IncrementWithExpireScript()
+        : base(
+            """
+            redis.call('incrby', @key, @value)
+            redis.call('pexpire', @key, @expires)
+            return redis.call('get', @key)
+            """
+        ) { }
+}
 ```
 
 ### Setup and use
@@ -540,10 +611,13 @@ await scriptsLoader.LoadAsync([IncrementWithExpireScriptDefinition.Instance]);
 #### Script Execution
 
 ```csharp
+using StackExchange.Redis;
+
 var db = redis.GetDatabase();
 var result = await scriptsLoader.EvaluateAsync(
     db,
-    IncrementWithExpireScriptDefinition.Instance,
+    IncrementWithExpireScript.Instance,
+
     new
     {
         key = (RedisKey)"counter",

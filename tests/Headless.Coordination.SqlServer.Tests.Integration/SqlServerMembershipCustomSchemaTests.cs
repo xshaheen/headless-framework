@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Coordination;
+using Headless.Hosting.Initialization;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 
@@ -47,7 +48,7 @@ public sealed class SqlServerMembershipCustomSchemaTests(SqlServerMembershipFixt
     }
 
     [Fact]
-    public async Task should_default_to_the_feature_schema_when_storage_is_not_configured()
+    public async Task should_default_to_the_shared_headless_schema_when_storage_is_not_configured()
     {
         var cluster = Faker.Random.AlphaNumeric(10);
 
@@ -56,7 +57,7 @@ public sealed class SqlServerMembershipCustomSchemaTests(SqlServerMembershipFixt
             await node.Membership.RegisterAsync(AbortToken);
         }
 
-        var tables = await _ListTablesAsync(CoordinationStorageOptions.DefaultSchema);
+        var tables = await _ListTablesAsync(HeadlessStorageDefaults.Schema);
 
         tables.Should().Contain("CoordinationLiveness");
     }
@@ -86,7 +87,7 @@ public sealed class SqlServerMembershipCustomSchemaTests(SqlServerMembershipFixt
             JOIN sys.schemas s ON s.schema_id = t.schema_id
             WHERE s.name = @schema;
             """;
-        command.Parameters.AddWithValue("schema", schema);
+        command.Parameters.AddWithValue(nameof(schema), schema);
 
         var tables = new List<string>();
         await using var reader = await command.ExecuteReaderAsync(AbortToken);

@@ -24,11 +24,13 @@ internal static class BoundConnectionUnitOfWork
     {
         var unit = await factory
             .BeginAsync(
-                ct =>
+                async ct =>
                 {
-                    DbConnectionUnitOfWorkBinding.ThrowIfBound(connection);
+                    // Awaited, not fire-and-forget: a stale unit the binding abandons here closes the connection it
+                    // opened, and that close must land before the begin below reads the connection's state.
+                    await DbConnectionUnitOfWorkBinding.ThrowIfBoundAsync(connection).ConfigureAwait(false);
 
-                    return beginOwned(ct);
+                    return await beginOwned(ct).ConfigureAwait(false);
                 },
                 options: null,
                 cancellationToken

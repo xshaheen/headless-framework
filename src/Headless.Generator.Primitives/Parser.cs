@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Immutable;
+using Headless.Generator.Primitives.Diagnostics;
 using Headless.Generator.Primitives.Extensions;
 using Headless.Generator.Primitives.Models;
 using Headless.Generator.Primitives.Shared;
+using Headless.SourceGenerators;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -37,7 +39,8 @@ internal static class Parser
     /// <param name="ctx">The generator syntax context.</param>
     /// <param name="ct">CancellationToken</param>
     /// <returns>
-    /// The <see cref="PrimitiveTypeInfo"/> if the syntax node is a semantic target; otherwise, <see langword="null"/>.
+    /// The parsed primitive with its diagnostics if the syntax node is a semantic target; otherwise,
+    /// <see langword="null"/>.
     /// </returns>
     /// <remarks>
     /// This method analyzes a <see cref="TypeDeclarationSyntax"/> node to determine if it represents a semantic target
@@ -46,7 +49,10 @@ internal static class Parser
     /// All data needed for emission is extracted here to enable proper incremental caching.
     /// </remarks>
     /// <seealso cref="PrimitiveGenerator"/>
-    internal static PrimitiveTypeInfo? GetSemanticTargetForGeneration(GeneratorSyntaxContext ctx, CancellationToken ct)
+    internal static PrimitiveParseResult? GetSemanticTargetForGeneration(
+        GeneratorSyntaxContext ctx,
+        CancellationToken ct
+    )
     {
         ct.ThrowIfCancellationRequested();
 
@@ -66,21 +72,81 @@ internal static class Parser
             return null;
         }
 
+        var location = typeSyntax.Identifier.GetLocation();
+        var diagnostics = new List<DiagnosticInfo>(2);
+
         // Extract all data needed for emission
-        return _ExtractPrimitiveTypeInfo(symbol, primitiveInterface, ct);
+        var info = _ExtractPrimitiveTypeInfo(symbol, primitiveInterface, location, diagnostics, ct);
+
+        if (info is not null)
+        {
+            _AddDeclarationDiagnostics(info.Value, location, diagnostics);
+        }
+        else if (diagnostics.Count == 0)
+        {
+            return null;
+        }
+
+        return new PrimitiveParseResult(info, diagnostics.ToEquatableArray());
+    }
+
+    /// <summary>
+    /// Finds the declaration problems the generator reports, anchored at the type's identifier so they point at the
+    /// offending declaration and honor <c>#pragma</c> suppression.
+    /// </summary>
+    private static void _AddDeclarationDiagnostics(
+        PrimitiveTypeInfo info,
+        Location location,
+        List<DiagnosticInfo> diagnostics
+    )
+    {
+        if (info is { UnderlyingTypeIsValueType: true, IsValueType: false })
+        {
+            diagnostics.Add(
+                DiagnosticInfo.Create(
+                    DiagnosticDescriptors.TypeShouldBeValueType,
+                    location,
+                    info.ClassName,
+                    info.UnderlyingTypeFriendlyName
+                )
+            );
+        }
+        else if (info is { UnderlyingTypeIsValueType: false, IsValueType: true })
+        {
+            diagnostics.Add(
+                DiagnosticInfo.Create(
+                    DiagnosticDescriptors.TypeShouldBeReferenceType,
+                    location,
+                    info.ClassName,
+                    info.UnderlyingTypeFriendlyName
+                )
+            );
+        }
+
+        if (!info.Modifiers.Contains("partial"))
+        {
+            diagnostics.Add(
+                DiagnosticInfo.Create(DiagnosticDescriptors.PrimitiveMustBePartial, location, info.ClassName)
+            );
+        }
     }
 
     /// <summary>Extracts all data from the symbol into an equatable PrimitiveTypeInfo struct.</summary>
     private static PrimitiveTypeInfo? _ExtractPrimitiveTypeInfo(
         INamedTypeSymbol typeSymbol,
         INamedTypeSymbol primitiveInterface,
+        Location location,
+        List<DiagnosticInfo> diagnostics,
         CancellationToken ct
     )
     {
         ct.ThrowIfCancellationRequested();
 
-        if (primitiveInterface.TypeArguments[0] is not INamedTypeSymbol primitiveType)
+        var wrappedType = primitiveInterface.TypeArguments[0];
+
+        if (wrappedType is not INamedTypeSymbol primitiveType)
         {
+            diagnostics.Add(_UnsupportedUnderlyingType(typeSymbol, wrappedType, location));
             return null;
         }
 
@@ -89,6 +155,7 @@ internal static class Parser
 
         if (underlyingType == PrimitiveUnderlyingType.Other)
         {
+            diagnostics.Add(_UnsupportedUnderlyingType(typeSymbol, underlyingTypeSymbol, location));
             return null;
         }
 
@@ -118,7 +185,7 @@ internal static class Parser
                 p.GetFriendlyName(),
                 p.IsValueType
             ))
-            .ToImmutableArray();
+            .ToEquatableArray();
 
         // Extract all needed attributes in single pass using cheap Name property
         AttributeData? supportedOpsAttr = null;
@@ -151,11 +218,36 @@ internal static class Parser
         {
             supportedOps = _GetCombinedSupportedOperations(typeSymbol, underlyingType, parentSymbols, supportedOpsAttr);
         }
+        else if (supportedOpsAttr is not null)
+        {
+            // Operators are generated only for numeric primitives, so the attribute would otherwise be ignored.
+            diagnostics.Add(
+                DiagnosticInfo.Create(
+                    DiagnosticDescriptors.SupportedOperationsRequiresNumeric,
+                    _AttributeLocation(supportedOpsAttr, location),
+                    typeSymbol.Name,
+                    underlyingTypeSymbol.GetFriendlyName()
+                )
+            );
+        }
 
         // SerializationFormatAttribute
         string? serializationFormat = null;
 
-        if (serializationAttr is not null && serializationAttr.ConstructorArguments.Length != 0)
+        if (serializationAttr is not null && !underlyingType.IsDateOrTime())
+        {
+            // The format is emitted into ParseExact/TryParseExact calls, which only the date and time types provide,
+            // so it is dropped here rather than generating code that does not compile.
+            diagnostics.Add(
+                DiagnosticInfo.Create(
+                    DiagnosticDescriptors.SerializationFormatRequiresDateOrTime,
+                    _AttributeLocation(serializationAttr, location),
+                    typeSymbol.Name,
+                    underlyingTypeSymbol.GetFriendlyName()
+                )
+            );
+        }
+        else if (serializationAttr is not null && serializationAttr.ConstructorArguments.Length != 0)
         {
             serializationFormat = serializationAttr.ConstructorArguments[0].Value?.ToString();
         }
@@ -185,11 +277,6 @@ internal static class Parser
             implementsIUtf8SpanFormattable,
             underlyingImplementsIUtf8SpanFormattable
         ) = _ExtractInterfaceFlags(typeSymbol, primitiveType);
-
-        // Get location info for diagnostics
-        var location = typeSymbol.Locations.FirstOrDefault();
-        var locationFilePath = location?.SourceTree?.FilePath ?? "";
-        var locationLineStart = location?.GetLineSpan().StartLinePosition.Line ?? 0;
 
         // Get XML documentation for Swagger
         string? xmlDocumentation = null;
@@ -235,10 +322,26 @@ internal static class Parser
             ImplementsISpanFormattable: implementsISpanFormattable,
             ImplementsIUtf8SpanFormattable: implementsIUtf8SpanFormattable,
             UnderlyingImplementsIUtf8SpanFormattable: underlyingImplementsIUtf8SpanFormattable,
-            LocationFilePath: locationFilePath,
-            LocationLineStart: locationLineStart,
             XmlDocumentation: xmlDocumentation
         );
+    }
+
+    private static DiagnosticInfo _UnsupportedUnderlyingType(
+        INamedTypeSymbol typeSymbol,
+        ITypeSymbol wrappedType,
+        Location location
+    ) =>
+        DiagnosticInfo.Create(
+            DiagnosticDescriptors.UnsupportedUnderlyingType,
+            location,
+            typeSymbol.Name,
+            wrappedType.ToDisplayString()
+        );
+
+    private static Location _AttributeLocation(AttributeData attribute, Location fallback)
+    {
+        var syntaxReference = attribute.ApplicationSyntaxReference;
+        return syntaxReference?.SyntaxTree.GetLocation(syntaxReference.Span) ?? fallback;
     }
 
     /// <summary>

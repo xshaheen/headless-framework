@@ -24,6 +24,11 @@ public interface ITenantCatalogService
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>Exactly one <see cref="TenantResolutionOutcome"/> classifying the result.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="identifier"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The store answered with a tenant whose <see cref="TenantInfo.Identifier"/> differs from the normalized
+    /// identifier, or whose <see cref="TenantInfo.Id"/> differs from the id the cached mapping named. Treated as a
+    /// store fault: nothing is cached and the exception is not mapped to a resolution outcome.
+    /// </exception>
     Task<TenantResolutionOutcome> ResolveAsync(string identifier, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -35,6 +40,10 @@ public interface ITenantCatalogService
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The matching <see cref="TenantInfo"/>, or <see langword="null"/> when <paramref name="id"/> has no catalog row.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="id"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The store answered with a tenant whose <see cref="TenantInfo.Id"/> differs from <paramref name="id"/>.
+    /// Treated as a store fault: nothing is cached.
+    /// </exception>
     Task<TenantInfo?> FindByIdAsync(string id, CancellationToken cancellationToken = default);
 }
 
@@ -149,6 +158,10 @@ internal sealed class TenantCatalogService(
                             .FindByIdentifierAsync(normalizedIdentifier, factoryCancellationToken)
                             .ConfigureAwait(false);
 
+                        // Verified before storeAnswered is set, so a mismatch is classified as the store's own
+                        // fault and propagates instead of being swallowed as a cache-write fault.
+                        _EnsureMatchesIdentifier(tenant, normalizedIdentifier);
+
                         storeAnswered = true;
                         freshFromStore = tenant;
 
@@ -250,6 +263,8 @@ internal sealed class TenantCatalogService(
     {
         var tenant = await store.FindByIdentifierAsync(normalizedIdentifier, cancellationToken).ConfigureAwait(false);
 
+        _EnsureMatchesIdentifier(tenant, normalizedIdentifier);
+
         if (tenant is null)
         {
             if (_options.UnknownIdentifierCacheExpiration > TimeSpan.Zero)
@@ -312,11 +327,42 @@ internal sealed class TenantCatalogService(
             return null;
         }
 
+        _EnsureMatchesId(tenant, id);
+
         await _CacheTenantInfoAsync(tenant, cancellationToken).ConfigureAwait(false);
 
         // Fresh store instance, exclusively owned by this call — safe to return without cloning, and
         // preserves subclass identity for the typed accessor's downcast fast path.
         return tenant;
+    }
+
+    /// <summary>
+    /// Refuses a store answer for another tenant before anything reaches the cache, where it would otherwise route
+    /// every later request for the queried identifier to that tenant. The message names the store, never the
+    /// identifier, because identifiers are caller input on the pre-auth path.
+    /// </summary>
+    private void _EnsureMatchesIdentifier(TenantInfo? tenant, string normalizedIdentifier)
+    {
+        if (tenant is not null && !string.Equals(tenant.Identifier, normalizedIdentifier, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Tenant store '{store.GetType().FullName}' answered an identifier lookup with a tenant whose "
+                    + "identifier differs from the queried normalized identifier. ITenantStore.FindByIdentifierAsync "
+                    + "must return only the tenant whose normalized identifier equals the queried value."
+            );
+        }
+    }
+
+    /// <summary>The id-axis counterpart of <see cref="_EnsureMatchesIdentifier"/>.</summary>
+    private void _EnsureMatchesId(TenantInfo tenant, string id)
+    {
+        if (!string.Equals(tenant.Id, id, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Tenant store '{store.GetType().FullName}' answered an id lookup with a tenant whose id differs from "
+                    + "the queried id. ITenantStore.FindByIdAsync must return only the tenant with exactly that id."
+            );
+        }
     }
 
     private Task _CacheTenantInfoAsync(TenantInfo tenant, CancellationToken cancellationToken)

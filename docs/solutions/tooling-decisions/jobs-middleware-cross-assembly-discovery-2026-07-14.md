@@ -64,17 +64,22 @@ An exact duplicate of scope, target identity, priority, and stable middleware id
 5. Diagnose exact duplicates and unresolved targets at compile time.
 6. Do not retain an explicit-hook fallback or introduce runtime discovery.
 
-The prototype remains isolated in `Headless.Jobs.MiddlewareDiscovery.Spike.Tests.Unit`; it does not establish the final public attribute names or implement the production middleware pipeline.
+The prototype lived in `Headless.Jobs.MiddlewareDiscovery.Spike.Tests.Unit`, a private generator that never shipped. It was deleted once the production generator covered the decision, so it could not drift into a second, untested definition of the contract.
 
 ## Executable evidence
 
-- `MiddlewareDiscoverySpikeGeneratorTests` covers current/reference metadata, global and targeted calls, deterministic ordering, duplicates, missing targets, the rejected hook candidate, and forbidden runtime APIs.
-- `IncrementalDiscoveryTests` covers referenced priority changes, target-identity changes, tracked discovery steps, and unrelated-edit output stability.
+`Headless.Jobs.SourceGenerator.Tests.Unit` now proves the decision against the shipped generator:
+
+- `JobsIncrementalSourceGeneratorTests` covers global and targeted declarations, direct calls ordered by priority then stable identity, unknown targets (`HF014`), exact duplicates (`HF015`), and the absence of runtime discovery and expression compilation.
+- `IncrementalCachingTests` covers revalidating targets when a referenced assembly renames a function, and output stability on unrelated edits.
+- `GeneratedSourceSnapshotTests` pins the emitted dispatch, including a function-targeted declaration on a referenced function.
+
+Production reads only function descriptor names from referenced assemblies. Each assembly's generated module registers its own middleware, so the prototype's check that a referenced assembly's middleware priority regenerates the consumer has no production counterpart. The explicit-hook candidate was rejected above, so its tests went with the prototype.
 
 Run:
 
 ```bash
-make test-project TEST_PROJECT=tests/Headless.Jobs.MiddlewareDiscovery.Spike.Tests.Unit/Headless.Jobs.MiddlewareDiscovery.Spike.Tests.Unit.csproj
+make test-project TEST_PROJECT=tests/Headless.Jobs.SourceGenerator.Tests.Unit/Headless.Jobs.SourceGenerator.Tests.Unit.csproj
 ```
 
 ## Related

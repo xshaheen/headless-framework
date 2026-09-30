@@ -64,8 +64,8 @@ public sealed class PostgreSqlSettingsFailureModesTests(PostgreSqlSettingsFixtur
                 )
                 .Should()
                 .AllSatisfy(initialized => initialized.Should().BeTrue());
-            (await _CountTablesAsync("settings_pg_concurrent", "SettingValues")).Should().Be(1);
-            (await _CountTablesAsync("settings_pg_concurrent", "SettingDefinitions")).Should().Be(1);
+            (await _CountTablesAsync("settings_pg_concurrent", "setting_values")).Should().Be(1);
+            (await _CountTablesAsync("settings_pg_concurrent", "setting_definitions")).Should().Be(1);
             (await _CountIndexesAsync("settings_pg_concurrent")).Should().Be(3);
         }
         finally
@@ -99,13 +99,13 @@ public sealed class PostgreSqlSettingsFailureModesTests(PostgreSqlSettingsFixtur
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
-        // Matches the 3 `CREATE UNIQUE INDEX IF NOT EXISTS IX_*` statements in the PG initializer;
-        // the LIKE filter excludes the PK indexes (named `PK_<table>`).
+        // Matches the 3 `CREATE UNIQUE INDEX IF NOT EXISTS ix_*` statements in the PG initializer;
+        // the LIKE filter excludes the PK indexes (named `pk_<table>`).
         await using var command = new NpgsqlCommand(
             """
             SELECT COUNT(*)
             FROM pg_indexes
-            WHERE schemaname = @schema AND indexname LIKE 'IX_%'
+            WHERE schemaname = @schema AND indexname LIKE 'ix\_%'
             """,
             connection
         );

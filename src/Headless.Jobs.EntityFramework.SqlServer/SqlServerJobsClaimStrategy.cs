@@ -1010,7 +1010,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
 internal static partial class SqlServerJobsClaimStrategyLoggerExtensions
 {
     [LoggerMessage(
-        EventId = 1,
+        EventId = 20102,
         EventName = "JobsClaimDeadlockRetry",
         Level = LogLevel.Warning,
         Message = "SQL Server Jobs claim hit deadlock victim error 1205; retrying attempt {AttemptNumber}/{MaxAttempts} after {Delay}."

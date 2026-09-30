@@ -2,6 +2,7 @@ using Headless.Abstractions;
 using Headless.Caching;
 using Headless.DistributedLocks;
 using Headless.Domain;
+using Headless.Hosting.Initialization;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.MultiTenancy;
@@ -103,7 +104,10 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddHeadlessSettings(storageOptions.Value);
+            modelBuilder.AddHeadlessSettings(
+                storageOptions.Value,
+                HeadlessStorageNaming.ForProvider(Database.ProviderName)
+            );
         }
     }
 

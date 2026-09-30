@@ -69,9 +69,9 @@ public sealed class PostgreSqlPermissionsFailureModesTests(PostgreSqlPermissions
                 )
                 .Should()
                 .AllSatisfy(initialized => initialized.Should().BeTrue());
-            (await _CountTablesAsync("permissions_pg_concurrent", "PermissionGrants")).Should().Be(1);
-            (await _CountTablesAsync("permissions_pg_concurrent", "PermissionDefinitions")).Should().Be(1);
-            (await _CountTablesAsync("permissions_pg_concurrent", "PermissionGroupDefinitions")).Should().Be(1);
+            (await _CountTablesAsync("permissions_pg_concurrent", "permission_grants")).Should().Be(1);
+            (await _CountTablesAsync("permissions_pg_concurrent", "permission_definitions")).Should().Be(1);
+            (await _CountTablesAsync("permissions_pg_concurrent", "permission_group_definitions")).Should().Be(1);
             (await _CountIndexesAsync("permissions_pg_concurrent")).Should().Be(5);
         }
         finally
@@ -129,13 +129,13 @@ public sealed class PostgreSqlPermissionsFailureModesTests(PostgreSqlPermissions
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
-        // Matches the 5 `CREATE [UNIQUE] INDEX IF NOT EXISTS IX_*` statements in the PG initializer;
-        // the LIKE filter excludes the PK indexes (named `PK_<table>`).
+        // Matches the 5 `CREATE [UNIQUE] INDEX IF NOT EXISTS ix_*` statements in the PG initializer;
+        // the LIKE filter excludes the PK indexes (named `pk_<table>`).
         await using var command = new NpgsqlCommand(
             """
             SELECT COUNT(*)
             FROM pg_indexes
-            WHERE schemaname = @schema AND indexname LIKE 'IX_%'
+            WHERE schemaname = @schema AND indexname LIKE 'ix\_%'
             """,
             connection
         );

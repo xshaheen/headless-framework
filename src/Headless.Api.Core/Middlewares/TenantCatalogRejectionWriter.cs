@@ -15,8 +15,8 @@ namespace Headless.Api.Middlewares;
 /// <see cref="TenantCatalogOptions.DetailedResolutionErrors"/>) and writes them through the same
 /// <see cref="IProblemDetailsService"/> + <c>Results.Problem</c> fallback precedent as
 /// <c>StatusCodesRewriterMiddleware</c>. Shared by <c>TenantCatalogResolutionMiddleware</c> (pre-auth
-/// unknown/disabled/invalid), <c>TenantResolutionMiddleware</c>'s claim-vs-feature fast path, and
-/// <c>StatusCodesRewriterMiddleware</c>'s post-authorization identifier/claim mismatch rewrite.
+/// unknown/disabled/invalid), <c>TenantResolutionMiddleware</c>'s claim-vs-feature fast path, and the
+/// post-authorization identifier/claim mismatch rejection <c>StatusCodesRewriterMiddleware</c> invokes.
 /// </summary>
 internal static class TenantCatalogRejectionWriter
 {

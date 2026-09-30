@@ -323,10 +323,10 @@ public sealed class FeatureManager(
     /// <remarks>
     /// <para>
     /// Published after the write, never before: a receiver that re-read on an announcement of a write that then
-    /// failed would cache the old value and believe it fresh. The injected <c>IBus</c> never enlists in a
-    /// transaction, so when the caller runs <c>SetAsync</c> inside its own unit of work the announcement still goes
-    /// out before that unit commits; a peer that re-reads in that window sees the old value. The consumer
-    /// contract in <c>docs/llms/features.md</c> names this window.
+    /// failed would cache the old value and believe it fresh. The write has already committed when this runs: the
+    /// stores save through their own context or connection and never join a unit of work the caller has open, so a peer
+    /// that re-reads on the announcement loads the new value. A <c>SetAsync</c> inside a unit that later rolls back
+    /// therefore leaves the value changed; the consumer contract in <c>docs/llms/features.md</c> states this.
     /// </para>
     /// <para>
     /// Best-effort by design — messaging is optional, and a failed announcement must not fail the write that

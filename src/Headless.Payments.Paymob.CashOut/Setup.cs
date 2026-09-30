@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Http.Resilience;
 using Headless.Payments.Paymob.CashOut.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,7 +21,7 @@ public static class SetupPaymobCashOut
     /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
     /// <param name="setupAction">Delegate that configures <see cref="PaymobCashOutOptions"/>.</param>
     /// <param name="configureClient">Optional delegate to customise the internal <c>HttpClient</c>.</param>
-    /// <param name="configureResilience">Optional delegate to tune the standard resilience pipeline applied to the client.</param>
+    /// <param name="configureResilience">Optional delegate applied after the derived resilience defaults (no automatic retry on POST).</param>
     /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
     /// <remarks>
     /// Registers <c>IPaymobCashOutAuthenticator</c> as a singleton (token cache is process-scoped) and
@@ -49,7 +50,7 @@ public static class SetupPaymobCashOut
     /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
     /// <param name="setupAction">Delegate that configures <see cref="PaymobCashOutOptions"/> using the service provider.</param>
     /// <param name="configureClient">Optional delegate to customise the internal <c>HttpClient</c>.</param>
-    /// <param name="configureResilience">Optional delegate to tune the standard resilience pipeline applied to the client.</param>
+    /// <param name="configureResilience">Optional delegate applied after the derived resilience defaults (no automatic retry on POST).</param>
     /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
     /// <remarks>
     /// Registers <c>IPaymobCashOutAuthenticator</c> as a singleton and <c>IPaymobCashOutBroker</c>
@@ -77,7 +78,7 @@ public static class SetupPaymobCashOut
     /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
     /// <param name="config">The configuration section that contains <see cref="PaymobCashOutOptions"/> settings.</param>
     /// <param name="configureClient">Optional delegate to customise the internal <c>HttpClient</c>.</param>
-    /// <param name="configureResilience">Optional delegate to tune the standard resilience pipeline applied to the client.</param>
+    /// <param name="configureResilience">Optional delegate applied after the derived resilience defaults (no automatic retry on POST).</param>
     /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
     /// <remarks>
     /// Registers <c>IPaymobCashOutAuthenticator</c> as a singleton and <c>IPaymobCashOutBroker</c>
@@ -111,14 +112,11 @@ public static class SetupPaymobCashOut
             ? services.AddHttpClient(HttpClientName, configureClient)
             : services.AddHttpClient(HttpClientName);
 
-        if (configureResilience is not null)
-        {
-            httpClientBuilder.AddStandardResilienceHandler(configureResilience);
-        }
-        else
-        {
-            httpClientBuilder.AddStandardResilienceHandler();
-        }
+        // /disburse carries no idempotency key or client reference, so a retried payout POST can pay out twice.
+        // The derived pipeline never retries POSTs, keeps retry for budget and transaction inquiry (GET), and
+        // removes host-wide handlers (such as service defaults) that would otherwise retry anyway.
+        // configureResilience runs after these defaults; setting Retry.ShouldHandle there opts back in.
+        httpClientBuilder.AddEffectResilienceHandler(OutboundEffect.Unsafe, configureResilience: configureResilience);
 
         services.AddSingleton<IPaymobCashOutAuthenticator, PaymobCashOutAuthenticator>();
 

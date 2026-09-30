@@ -127,7 +127,10 @@ public abstract class JobsNativeCronClaimConformanceTests<TFixture>(TFixture fix
             // Native lock/write commands bypass EF interception. These are precisely the EF reads that used
             // to grow per item: one optional definition batch and one joined occurrence readback.
             capture.Commands.Should().HaveCount(existingCount == batchSize ? 1 : 2);
-            capture.Commands.Count(sql => sql.Contains("CronJobOccurrences", StringComparison.Ordinal)).Should().Be(1);
+            capture
+                .Commands.Count(sql => sql.Contains(fixture.JobsTable("CronJobOccurrences"), StringComparison.Ordinal))
+                .Should()
+                .Be(1);
             claims.Should().HaveCount(batchSize);
             claims.Should().Equal(dispatches, (claim, dispatch) => claim.CronJobId == dispatch.Id);
 

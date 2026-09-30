@@ -19,7 +19,7 @@ packages: Core, Checks, Domain, Domain.LocalEventBus
 ## Agent Rules
 
 - Use `Headless.Checks` (`Argument.IsNotNull`, `Argument.IsNotNullOrEmpty`, `Argument.IsPositive`, etc.) for argument validation instead of raw `ArgumentNullException` or `ArgumentOutOfRangeException`. Use `Ensure` for internal state assertions.
-- Use `Headless.Domain` base classes for DDD: inherit `Entity<T>` for entities, `AggregateRoot<T>` for aggregate roots, `ValueObject` for value objects. Emit in-process events via `AddDomainEvent()` and distributed events via `AddIntegrationEvent()` on aggregate roots.
+- Use `Headless.Domain` base classes for DDD: inherit `Entity<T>` for entities, `AggregateRoot<T>` for aggregate roots, `ValueObject<TSelf>` for value objects. Emit in-process events via `AddDomainEvent()` and distributed events via `AddIntegrationEvent()` on aggregate roots.
 - Use `Headless.Core` for `ICurrentUser` and `ICurrentTenant`. For time, use the BCL `TimeProvider` — the framework has no clock abstraction of its own. `DateTime.Now` / `DateTime.UtcNow` / `DateTimeOffset.Now` / `DateTimeOffset.UtcNow` are banned at compile time by the Headless SDK (`RS0030`).
 - Name framework-owned event timestamps with an `At` suffix (`CreatedAt`, `UpdatedAt`, `DeletedAt`, `PublishedAt`) and use an `On` suffix only for `DateOnly` values (`EffectiveOn`). Avoid `DateCreated`-style prefixes; persisted instants and public timestamp contracts use `DateTimeOffset`. Preserve provider-owned CLR members, JSON fields, and protocol keys exactly as defined by the third party; the framework convention does not rename contracts it does not own.
 - Time semantics belong to whichever authority owns the decision, not to the ambient environment of the running process. Pick by the question the timestamp answers: **"who owns this, and until when?"** (leases, locks, liveness, visibility) → the **store's** clock, inlined into the atomic statement; **"how long has this taken?"** (timeouts, backoff, deadlines) → a **monotonic** clock, `TimeProvider.GetTimestamp()` / `GetElapsedTime()`; **"when should this fire in human terms?"** (cron, calendars) → the **tz database** via an explicit `TimeZoneInfo` (never `TimeZoneInfo.Local`); **"when did this happen?"** (audit, `CreatedAt`, logs) → the injected **`TimeProvider`** (`timeProvider.GetUtcNow()`). Full rationale: [temporal-authority-standard](../solutions/design-patterns/temporal-authority-standard.md).
@@ -28,7 +28,7 @@ packages: Core, Checks, Domain, Domain.LocalEventBus
 - Use `ApiResult<T>` / `ApiResult` from `Headless.Extensions` for service return types instead of throwing exceptions for expected failures. Use `Result<TValue, TError>` when you need custom error types.
 - For local (in-process) domain events, register `AddHeadlessDomainEventDispatcher()` and implement `IDomainEventHandler<T>`. Use `DomainEventHandlerOrderAttribute` to control handler execution order. For integration (distributed) events, emit integration payloads via `AddIntegrationEvent()` on the aggregate; dispatch is handled by the ORM/messaging layer (see [orm.md](orm.md)), not by this package.
 - For strongly-typed IDs, use the primitives from `Headless.Extensions` (`UserId`, `AccountId`) — they have source-generated JSON and TypeConverter support.
-- Auditing interfaces (`ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`) are marker interfaces — the ORM layer fills the properties automatically.
+- Auditing interfaces (`ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`) are marker interfaces — the ORM layer fills the properties automatically. For an entity that needs all four, inherit `AuditedEntity<TId, …>` or `AuditedAggregateRoot<TId, …>` instead of re-declaring the properties. When implementing the interfaces by hand, give each property a `private` or `protected` setter: the ORM writes non-public setters, but a `private` setter declared on a base class is invisible to it, so a hand-written base class needs `protected`.
 - Register GUID generation through `AddHeadlessGuidGenerator()` only from host/package setup; persisted backends should resolve `SequentialGuidType.Version7` or `SequentialGuidType.SqlServer` by key instead of depending on the unkeyed default. The `IGuidGenerator` / `SequentialGuidType` contracts live in `Headless.Extensions` (see [extensions.md](extensions.md)).
 - Use `Polly.Core`'s `ResiliencePipelineBuilder().AddRetry(...)` for retry logic with exponential backoff and jitter. Build the pipeline once per operation class (e.g. one for transient-Redis-error retries, one for status-check retries) and reuse it. `Polly.Core` has zero transitive dependencies on `net10.0`.
 - Use `LogState` with `HeadlessLoggerExtensions` for structured logging with tags and properties.
@@ -80,7 +80,7 @@ public sealed class OrderService(TimeProvider timeProvider, ICurrentUser user, I
         return new Order
         {
             Id = Guid.NewGuid(),
-            UserId = user.UserId!.Value,
+            UserId = user.UserId!,
             TenantId = tenant.Id,
             // "When did this happen?" — an audit timestamp, so the injected app clock owns it.
             CreatedAt = timeProvider.GetUtcNow(),
@@ -103,6 +103,9 @@ logger.LogInformation(s => s.Tag("orders").Property("orderId", orderId), "Order 
 For retries and delayed execution, use `Polly.Core` directly — it ships zero transitive dependencies on `net10.0`:
 
 ```csharp
+using Polly;
+using Polly.Retry;
+
 private static readonly ResiliencePipeline _RetryPipeline = new ResiliencePipelineBuilder()
     .AddRetry(
         new RetryStrategyOptions
@@ -219,8 +222,10 @@ Core domain-driven design abstractions including entities, aggregate roots, valu
 
 - **Entity Abstractions**: `IEntity`, `IEntity<T>`, base `Entity` class
 - **Aggregate Roots**: `IAggregateRoot`, `AggregateRoot` with built-in message emission
-- **Value Objects**: `ValueObject` base class with equality
-- **Auditing**: `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`
+- **Value Objects**: `ValueObject<TSelf>` base class with equality over the components it compares and hashes
+
+- **Auditing**: `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`, each in three arities: timestamps only, `<TAccountId>` adding actor ids, and `<TAccountId, TAccount>` adding actor navigations plus `Suspend`/`Unsuspend` and `Delete`/`Restore`
+- **Audited bases**: `AuditedEntity<TId>` (over `Entity<TId>`) and `AuditedAggregateRoot<TId>` (over `AggregateRoot<TId>`) implement all four audit interfaces with `protected` setters. The `<TId, TAccountId>` and `<TId, TAccountId, TAccount>` forms add the matching interface arity; only the last form exposes the public transition methods
 - **Concurrency**: `IHasConcurrencyStamp`
 - **Multi-tenancy**: `IMultiTenant`
 - **Domain Events (in-process)**: `IDomainEventEmitter`, `IDomainEventHandler<T>`, `DomainEventHandlerOrderAttribute`. An aggregate raises its own events through the `protected AddDomainEvent`; the readers/clearers (`GetDomainEvents`, `ClearDomainEvents`) and the `IDomainEventEmitter` contract stay public for infrastructure that collects and dispatches them. Dispatch is provided by `Headless.Domain.LocalEventBus`.
@@ -292,23 +297,40 @@ Implement audit interfaces for automatic tracking:
 public sealed class Product : Entity<int>, ICreateAudit, IUpdateAudit
 {
     public required string Name { get; set; }
-    public DateTimeOffset CreatedAt { get; set; }
-    public DateTimeOffset? UpdatedAt { get; set; }
+    public DateTimeOffset CreatedAt { get; private set; }
+    public DateTimeOffset? UpdatedAt { get; private set; }
 }
 ```
+
+Or inherit an audited base, which carries create, update, suspend, and soft-delete fields. The `HeadlessDbContext` save pipeline stamps `CreatedAt`, `UpdatedAt`, `SuspendedAt`, and `DeletedAt`, and it stamps the matching `*ById` from `ICurrentUser` when `TAccountId` is `UserId` or `AccountId`. The entity changes `IsSuspended` / `IsDeleted` through its own behavior:
+
+```csharp
+public sealed class Invoice : AuditedAggregateRoot<Guid, UserId>
+{
+    public required string Number { get; init; }
+
+    public void Void() => IsDeleted = true;
+}
+```
+
+The `<TId, TAccountId, TAccount>` form also implements the public `Suspend`/`Unsuspend` and `Delete`/`Restore` methods. They record the given time and actor, clear the opposite state's fields, and do nothing when the entity is already in the target state. The save pipeline keeps a time the method recorded, and it fills a missing actor id from `ICurrentUser`.
 
 #### Value Objects
 
 ```csharp
-public sealed class Address : ValueObject
+public sealed class Address : ValueObject<Address>
 {
     public required string Street { get; init; }
     public required string City { get; init; }
 
-    protected override IEnumerable<object?> EqualityComponents()
+    protected override bool EqualityComponentsEqual(Address other) =>
+        string.Equals(Street, other.Street, StringComparison.Ordinal)
+        && string.Equals(City, other.City, StringComparison.Ordinal);
+
+    protected override void BuildHashCode(ref HashCode hash)
     {
-        yield return Street;
-        yield return City;
+        hash.Add(Street, StringComparer.Ordinal);
+        hash.Add(City, StringComparer.Ordinal);
     }
 }
 ```

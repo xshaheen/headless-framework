@@ -160,14 +160,12 @@ public sealed class InMemoryCronRecoveryScenarioBackend : ICronRecoveryScenarioB
                 .ToArray();
         }
 
-        public async Task<(DateTime ReconciledThroughUtc, DateTime NextDueUtc)> ReadSchedulePositionAsync(
-            CancellationToken cancellationToken
-        )
+        public async Task<CronSchedulePosition> ReadSchedulePositionAsync(CancellationToken cancellationToken)
         {
             var stored = await provider.GetCronJobByIdAsync(definition.Id, cancellationToken);
             stored.Should().NotBeNull("the seeded cron definition must exist");
 
-            return (stored!.ReconciledThroughUtc, stored.NextDueUtc);
+            return new CronSchedulePosition(stored!.ReconciledThroughUtc, stored.NextDueUtc);
         }
     }
 }

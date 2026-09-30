@@ -9,10 +9,11 @@ namespace Tests.Tenancy;
 
 public sealed class MetadataTenantContext(
     HeadlessDbContextServices services,
-    DbContextOptions<MetadataTenantContext> options
+    DbContextOptions<MetadataTenantContext> options,
+    TenantDataPlacement placement
 ) : HeadlessDbContext(services, options)
 {
-    public override string DefaultSchema => "tenancy";
+    public override string? DefaultSchema => placement.Schema;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -79,7 +80,8 @@ public sealed class ShadowTenantRow
     public string Stamp { get; set; } = "victim-stamp";
 }
 
-public abstract class MetadataTenantFixture(TenantDatabaseProvider provider) : TenantDatabaseFixture(provider)
+public abstract class MetadataTenantFixture(TenantDatabaseProvider provider, TenantDataPlacement? placement = null)
+    : TenantDatabaseFixture(provider, placement)
 {
     protected override void ConfigureServices(IServiceCollection services) =>
         services.AddDbContext<MetadataTenantContext>(ConfigureOptions);

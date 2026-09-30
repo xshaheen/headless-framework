@@ -101,6 +101,47 @@ public abstract class TenantStoreConformanceTests<TFixture>(TFixture fixture) : 
     }
 
     [Fact]
+    public async Task should_not_match_id_differing_only_by_case()
+    {
+        // given - the catalog service refuses an answer whose Id is not exactly the queried id, so a store
+        // that matched a differently-cased id (a database's case-insensitive default collation) would turn
+        // an id lookup into a fault instead of a miss.
+        var seed = TenantSeedFaker.Create(Faker);
+        var store = await fixture.SeedAsync([seed], AbortToken);
+
+        // when
+        var found = await store.FindByIdAsync(seed.Id.ToUpperInvariant(), AbortToken);
+
+        // then
+        found.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_answer_each_lookup_with_the_queried_tenant_when_several_are_seeded()
+    {
+        // given - the catalog service refuses a store answer whose Identifier or Id differs from the lookup
+        // (it would otherwise cache another tenant under the queried key), so every store must return exactly
+        // the queried row, never a neighbor. A single seed cannot tell the two apart.
+        var seeds = Enumerable.Range(0, 3).Select(_ => TenantSeedFaker.Create(Faker)).ToList();
+        var store = await fixture.SeedAsync(seeds, AbortToken);
+
+        foreach (var seed in seeds)
+        {
+            // when
+            var byIdentifier = await store.FindByIdentifierAsync(seed.Identifier, AbortToken);
+            var byId = await store.FindByIdAsync(seed.Id, AbortToken);
+
+            // then
+            byIdentifier.Should().NotBeNull();
+            byIdentifier!.Identifier.Should().Be(seed.Identifier);
+            byIdentifier.Id.Should().Be(seed.Id);
+            byId.Should().NotBeNull();
+            byId!.Id.Should().Be(seed.Id);
+            byId.Identifier.Should().Be(seed.Identifier);
+        }
+    }
+
+    [Fact]
     public async Task should_reject_duplicate_normalized_identifiers()
     {
         // given

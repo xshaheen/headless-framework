@@ -5,7 +5,6 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
-using Headless.UnitOfWork;
 
 namespace Tests;
 
@@ -45,7 +44,6 @@ public sealed class JobSchedulerExtensionsTests : TestBase
                     .WithRetries(0)
                     .WithRetryIntervals(2, 5)
                     .WithNodeDeathPolicy(NodeDeathPolicy.Skip)
-                    .WithEnlistment(TransactionEnlistment.Required)
                     .WithCorrelationId("correlation")
                     .WithCausationId("cause")
                     .WithDescription("invocation")
@@ -74,7 +72,6 @@ public sealed class JobSchedulerExtensionsTests : TestBase
                     Retries = 0,
                     RetryIntervals = [2, 5],
                     OnNodeDeath = NodeDeathPolicy.Skip,
-                    Enlistment = TransactionEnlistment.Required,
                     CorrelationId = "correlation",
                     CausationId = "cause",
                     Description = "invocation",
