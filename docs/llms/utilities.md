@@ -1,6 +1,6 @@
 ---
 domain: Utilities
-packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstractions, Generator.ProviderSetup, Hosting, Http.Effects.Abstractions, NetTopologySuite, Redis, Sitemaps, Slugs
+packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstractions, Hosting, Http.Effects.Abstractions, NetTopologySuite, Redis, Sitemaps, Slugs
 ---
 
 # Utilities
@@ -13,7 +13,7 @@ Install individually as needed -- these packages are independent of each other:
 
 - **Generator.Primitives + Generator.Primitives.Abstractions** -- Roslyn source generator for strongly-typed domain primitives (IDs, value types). Install both together. Define types implementing `IPrimitive<T>` and get auto-generated equality, JSON converters, EF Core value converters, Dapper handlers, and TypeConverters.
 - **FluentValidation** -- Enterprise validators on top of FluentValidation: phone numbers (`InternationalPhoneNumber()`, `MobilePhoneNumber()`), national IDs, collections, geo, pagination, URLs, IP addresses, string formats (slug/username/hex color/Base64/…), relative date/time (`InThePast()`/`MinimumAge()`, `TimeProvider`-based), enum names, and markup rejection (`NoScripts()`). Use `ErrorDescriptor` for structured API errors.
-- **Http.Effects.Abstractions + Generator.ProviderSetup** -- declare an outbound provider's side-effect class (`[OutboundEffect(Safe | Idempotent | Unsafe)]`) and derive its HttpClient resilience pipeline from it; the generator emits the provider's whole registration surface from the attributed options class. Used by the SMS and Paymob packages.
+- **Http.Effects.Abstractions** -- declare an outbound provider client's side-effect class (`OutboundEffect.Safe | Idempotent | Unsafe`) and derive its HttpClient resilience pipeline from it with `AddEffectResilienceHandler`. Used by the SMS and Paymob packages.
 - **Hosting** -- DI extensions (`AddIf`, `AddOrReplace*`, `Unregister<T>`), options validation with FluentValidation (`AddOptionsWithFluentValidation<T,V>`), database seeder infrastructure (`ISeeder`).
 - **NetTopologySuite** -- Geometry precision, permissive operations, SQL Server geography sanitization (`SanitizeForSqlGeography()`), polygon simplification.
 - **Redis** -- definition-first Lua script loading/execution with StackExchange.Redis.
@@ -286,35 +286,6 @@ No configuration required. This is an abstractions-only package.
 
 None.
 ---
-## Headless.Generator.ProviderSetup
-
-Roslyn source generator that emits a provider package's registration surface from one attributed options class.
-
-### API and behavior
-
-- `[GenerateProviderSetup(useMethodName, httpClientName, senderTypeName, validatorTypeName)]` on a provider options class emits `Setup{Provider}` and `Setup{Provider}Named`: the `IConfiguration`, `Action<TOptions>`, and `Action<TOptions, IServiceProvider>` `Use{Provider}` overloads on the family's setup and instance builders, FluentValidation startup validation, a named HttpClient per instance (`{httpClientName}:{name}` for named instances), and the default/keyed sender plus bulk-sender forward. The template is the SMS family's; the sender's constructor must take `IHttpClientFactory`, `string httpClientName`, `IOptionsMonitor<TOptions>`, `string? optionsName`, and optionally `ILogger<TSender>` and `TimeProvider`.
-- `[GenerateClientSetup(addMethodName, httpClientName, validatorTypeName)]` on a single-backend client's options type emits the `Add{Feature}` overload trio on `IServiceCollection`, options validation, and the named HttpClient. The generated class is partial: the package implements `private static partial void _AddServices(IServiceCollection services)` for its typed clients and authenticators, and a missing implementation is a compile error.
-- Both require `[OutboundEffect]` on the same type; the HttpClient pipeline comes from `EffectResilience.AddEffectResilienceHandler`.
-
-### Configuration
-
-Reference the generator as an analyzer from the provider project (`OutputItemType="Analyzer"`, `ReferenceOutputAssembly="false"`, `PrivateAssets="all"`). Consumers of the provider package take no dependency on it.
-
-### Runtime behavior
-
-None; generation happens at build time. The emitted code constructs senders with `new` and resolves services by closed generic types, with no reflection-based registration.
-
-### Diagnostics
-
-| ID | Meaning |
-|---|---|
-| HP001 | A required attribute argument is missing, or the validator type was not found. |
-| HP002 | The sender type does not resolve or does not have exactly one constructor in the template shape. |
-| HP003 | The options type has no `[OutboundEffect]`, so no pipeline can be derived. |
-| HP004 | The sender constructor needs a dependency the template cannot supply; keep a hand-written setup for that provider. |
-| HP005 | Two options types in one assembly declare the same `Use{Provider}` method; the duplicate is not emitted. |
-
----
 ## Headless.Hosting
 
 Core hosting utilities and extensions for ASP.NET Core applications.
@@ -493,13 +464,11 @@ Declared side-effect classes for outbound HTTP calls, from which the HttpClient 
 ### API and behavior
 
 - `OutboundEffect` -- `Safe` (reads; the pipeline retries every method), `Idempotent` (retries, with one stable key per logical call in the provider's deduplication header, reused across that call's retries, and a caller-set header is kept), `Unsafe` (no automatic retry for POST, PUT, PATCH, DELETE, or CONNECT; reads stay retryable).
-- `[OutboundEffect(effect, idempotencyHeader)]` -- declares a provider client's effect on its options type.
 - `EffectResilience.AddEffectResilienceHandler(this IHttpClientBuilder, OutboundEffect, string? idempotencyHeader, Action<HttpStandardResilienceOptions>? configureResilience)` -- derives the pipeline. It first removes resilience handlers already on the builder (`RemoveAllResilienceHandlers`), so a host-wide handler added through `ConfigureHttpClientDefaults` (for example by `AddHeadless()` service defaults) cannot stack as an outer pipeline and retry a declared-unsafe call. `configureResilience` runs after the derived defaults; setting `Retry.ShouldHandle` there is the explicit opt-in to retrying unsafe methods.
-- `[GenerateProviderSetup]` and `[GenerateClientSetup]` -- the attributes `Headless.Generator.ProviderSetup` reads.
 
 ### Configuration
 
-None. Declare the effect on the options type and call `AddEffectResilienceHandler` (or let the generator emit the call).
+None. The provider's setup states its effect at the one place the named client is built: `httpClientBuilder.AddEffectResilienceHandler(OutboundEffect.Unsafe, configureResilience: configureResilience)`.
 
 ### Runtime behavior
 

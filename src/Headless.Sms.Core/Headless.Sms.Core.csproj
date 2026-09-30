@@ -15,6 +15,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Http.Effects.Abstractions\Headless.Http.Effects.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Sms.Abstractions\Headless.Sms.Abstractions.csproj" />
   </ItemGroup>
 </Project>

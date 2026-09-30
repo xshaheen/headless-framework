@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Http.Effects;
 
 namespace Headless.Sms.VictoryLink;
 
@@ -12,13 +11,6 @@ namespace Headless.Sms.VictoryLink;
 /// body on every call.
 /// </remarks>
 [PublicAPI]
-[OutboundEffect(OutboundEffect.Unsafe)] // an SMS send has no provider idempotency key: a retry can deliver twice
-[GenerateProviderSetup(
-    "UseVictoryLink",
-    "Headless:VictoryLinkSms",
-    "VictoryLinkSmsSender",
-    "VictoryLinkSmsOptionsValidator"
-)]
 public sealed class VictoryLinkSmsOptions
 {
     /// <summary>The VictoryLink API endpoint for sending SMS messages. Defaults to the VictoryLink production URL.</summary>

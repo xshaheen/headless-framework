@@ -75,7 +75,6 @@ Headless.Fencing.SqlServer
 Headless.FluentValidation
 Headless.Generator.Primitives
 Headless.Generator.Primitives.Abstractions
-Headless.Generator.ProviderSetup
 Headless.Hosting
 Headless.Http.Effects.Abstractions
 Headless.Idempotency.Abstractions

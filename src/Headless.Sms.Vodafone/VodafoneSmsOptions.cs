@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Http.Effects;
 
 namespace Headless.Sms.Vodafone;
 
@@ -12,8 +11,6 @@ namespace Headless.Sms.Vodafone;
 /// The signature covers the account id, password, sender name, recipient MSISDN, and SMS text.
 /// </remarks>
 [PublicAPI]
-[OutboundEffect(OutboundEffect.Unsafe)] // an SMS send has no provider idempotency key: a retry can deliver twice
-[GenerateProviderSetup("UseVodafone", "Headless:VodafoneSms", "VodafoneSmsSender", "VodafoneSmsOptionsValidator")]
 public sealed class VodafoneSmsOptions
 {
     /// <summary>The Vodafone Egypt SMS submission endpoint. Defaults to the Vodafone Egypt production URL.</summary>

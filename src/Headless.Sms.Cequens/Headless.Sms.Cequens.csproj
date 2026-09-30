@@ -14,11 +14,5 @@
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.Http.Effects.Abstractions\Headless.Http.Effects.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Sms.Core\Headless.Sms.Core.csproj" />
-    <ProjectReference
-      Include="..\Headless.Generator.ProviderSetup\Headless.Generator.ProviderSetup.csproj"
-      OutputItemType="Analyzer"
-      ReferenceOutputAssembly="false"
-      PrivateAssets="all"
-    />
   </ItemGroup>
 </Project>

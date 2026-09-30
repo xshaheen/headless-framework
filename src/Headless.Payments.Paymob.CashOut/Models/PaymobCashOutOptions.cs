@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Http.Effects;
 
 namespace Headless.Payments.Paymob.CashOut.Models;
 
@@ -17,10 +16,6 @@ namespace Headless.Payments.Paymob.CashOut.Models;
 /// automatically based on <c>TokenRefreshBuffer</c>.
 /// </remarks>
 [PublicAPI]
-// /disburse carries no idempotency key or client reference, so a retried payout POST can pay out twice. Budget and
-// transaction inquiry (GET) stay retryable.
-[OutboundEffect(OutboundEffect.Unsafe)]
-[GenerateClientSetup("AddPaymobCashOut", "Headless:PaymobCashOut", "PaymobCashOutOptionsValidator")]
 public sealed class PaymobCashOutOptions
 {
     /// <summary>

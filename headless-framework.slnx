@@ -224,12 +224,10 @@
     <Folder Name="/Generators/">
         <Project Path="src\Headless.Generator.Primitives.Abstractions\Headless.Generator.Primitives.Abstractions.csproj" />
         <Project Path="src\Headless.Generator.Primitives\Headless.Generator.Primitives.csproj" />
-        <Project Path="src\Headless.Generator.ProviderSetup\Headless.Generator.ProviderSetup.csproj" />
     </Folder>
     <Folder Name="/Generators/Tests/">
         <Project Path="tests/Headless.Generator.Primitives.Abstractions.Tests.Unit/Headless.Generator.Primitives.Abstractions.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Generator.Primitives.Tests.Unit/Headless.Generator.Primitives.Tests.Unit.csproj" />
-        <Project Path="tests\Headless.Generator.ProviderSetup.Tests.Unit\Headless.Generator.ProviderSetup.Tests.Unit.csproj" />
         <Project Path="tests/Headless.SourceGenerators.Tests.Harness/Headless.SourceGenerators.Tests.Harness.csproj" />
     </Folder>
     <Folder Name="/Identities/">

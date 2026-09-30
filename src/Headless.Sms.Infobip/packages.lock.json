@@ -538,6 +538,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
+          "Headless.Http.Effects.Abstractions": "[1.0.0, )",
           "Headless.Sms.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Polly.Core": "[8.7.0, )",
