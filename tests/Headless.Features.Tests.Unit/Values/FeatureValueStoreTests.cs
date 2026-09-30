@@ -482,10 +482,29 @@ public sealed class FeatureValueStoreTests : TestBase
         };
 
         // then
-        await action
-            .Should()
-            .ThrowExactlyAsync<ArgumentException>()
-            .WithMessage("*must not start or end with white space*");
+        await action.Should().ThrowExactlyAsync<ArgumentException>().WithMessage("*starts or ends with white space*");
+        _repository.ReceivedCalls().Should().BeEmpty();
+        _cache.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_refuse_key_with_a_nul_or_an_unpaired_surrogate_before_touching_storage()
+    {
+        // PostgreSQL fails the statement on NUL, and SqlClient sends an unpaired surrogate as U+FFFD, so SQL Server
+        // would address one row for keys that differ only in which lone surrogate they carry.
+        Func<Task>[] calls =
+        [
+            async () => await _sut.SetAsync("Reports", "true", "Tenant", "ac\0me", AbortToken),
+            async () => await _sut.DeleteAsync("Reports" + (char)0xD800, "Tenant", "acme", AbortToken),
+        ];
+
+        foreach (var call in calls)
+        {
+            await call.Should()
+                .ThrowExactlyAsync<ArgumentException>()
+                .WithMessage("*storage providers would disagree*");
+        }
+
         _repository.ReceivedCalls().Should().BeEmpty();
         _cache.ReceivedCalls().Should().BeEmpty();
     }
