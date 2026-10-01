@@ -78,7 +78,7 @@ internal sealed partial class SqlServerDataStorage(
     /// </summary>
     private static readonly TimeSpan _QueuedMessageLookback = TimeSpan.FromMinutes(1);
 
-    private static readonly ISqlDialect _Dialect = SqlServerDialect.Instance;
+    private static readonly SqlServerDialect _Dialect = SqlServerDialect.Instance;
     private static readonly string _IdsFilter = _Dialect.InList("[Id]", "Ids", SqlColumnType.Guid);
 
     private readonly string _publishedTable = tableNames.GetPublishedTableName();
@@ -2177,25 +2177,9 @@ internal sealed partial class SqlServerDataStorage(
     /// </summary>
     private static SqlParameter _PoisonMessageListParameter(IReadOnlyList<PoisonMessage> poisonMessages)
     {
-        var buffer = new ArrayBufferWriter<byte>();
-        using (var writer = new Utf8JsonWriter(buffer))
-        {
-            writer.WriteStartArray();
-            foreach (var poisonMessage in poisonMessages)
-            {
-                writer.WriteStartObject();
-                writer.WriteString("Id", poisonMessage.StorageId);
-                writer.WriteString("ExceptionInfo", poisonMessage.ExceptionInfo);
-                writer.WriteEndObject();
-            }
+        var rows = poisonMessages.Select(static p => new { Id = p.StorageId, p.ExceptionInfo });
 
-            writer.WriteEndArray();
-        }
-
-        return new SqlParameter("@PoisonMessages", SqlDbType.NVarChar, -1)
-        {
-            Value = Encoding.UTF8.GetString(buffer.WrittenSpan),
-        };
+        return new SqlParameter("@PoisonMessages", SqlDbType.NVarChar, -1) { Value = JsonSerializer.Serialize(rows) };
     }
 
     private async ValueTask<int> _ReclaimDeadOwnersAsync(

@@ -77,7 +77,7 @@ internal sealed partial class PostgreSqlDataStorage(
     /// </summary>
     private static readonly TimeSpan _QueuedMessageLookback = TimeSpan.FromMinutes(1);
 
-    private static readonly ISqlDialect _Dialect = PostgreSqlDialect.Instance;
+    private static readonly PostgreSqlDialect _Dialect = PostgreSqlDialect.Instance;
 
     private readonly string _publishedTable = tableNames.GetPublishedTableName();
     private readonly string _receivedTable = tableNames.GetReceivedTableName();
@@ -671,7 +671,7 @@ internal sealed partial class PostgreSqlDataStorage(
     }
 
     /// <summary>Binds a duration for <see cref="ISqlDialect.ShiftByDuration"/> under <paramref name="parameter"/>.</summary>
-    private static DbParameter _Duration(string parameter, TimeSpan duration)
+    private static NpgsqlParameter _Duration(string parameter, TimeSpan duration)
     {
         using var command = new NpgsqlCommand();
         _Dialect.AddDuration(command, parameter, duration);
