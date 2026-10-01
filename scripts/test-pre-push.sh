@@ -35,7 +35,7 @@ for format in sha1 sha256; do
   test "$(git config --worktree --get-all core.hooksPath)" = .githooks
   test "$(git -C "$sibling" config --get core.hooksPath)" = .sibling-hooks
   echo "PASS: $format repeated registration preserves sibling worktree settings"
-  # A rejecting build gate makes accidental skips observable without running .NET.
+  # A rejecting pre-push gate makes accidental skips observable without running .NET.
   printf 'hook-pre-push:\n\t@touch gate-ran\n\t@exit 1\n' > Makefile
 
   git push -q origin :one
@@ -44,16 +44,16 @@ for format in sha1 sha256; do
     echo 'FAIL: single deletion did not reach the remote' >&2
     exit 1
   fi
-  echo "PASS: $format single deletion skips build"
+  echo "PASS: $format single deletion skips the pre-push gate"
 
   git push -q --atomic origin :two :three
   test ! -e gate-ran
   test "$(git --git-dir="$scratch/$format.git" for-each-ref --format='%(refname)' refs/heads)" = refs/heads/main
-  echo "PASS: $format batch deletion skips build"
+  echo "PASS: $format batch deletion skips the pre-push gate"
 
   git push -q origin main
   test ! -e gate-ran
-  echo "PASS: $format up-to-date push skips build"
+  echo "PASS: $format up-to-date push skips the pre-push gate"
 
   git -c core.hooksPath=/dev/null commit -qm 'Update' --allow-empty
   for operation in create update mixed tag; do
@@ -64,13 +64,13 @@ for format in sha1 sha256; do
       tag) git tag v1; refs=(refs/tags/v1) ;;
     esac
     if git push -q --atomic origin "${refs[@]}" > push.log 2>&1; then
-      echo "FAIL: $operation bypassed the rejecting build gate" >&2
+      echo "FAIL: $operation bypassed the rejecting pre-push gate" >&2
       exit 1
     fi
     test -e gate-ran
     rm gate-ran
     test "$(git --git-dir="$scratch/$format.git" rev-parse refs/heads/main)" = "$base"
     test "$(git --git-dir="$scratch/$format.git" for-each-ref --format='%(refname)')" = refs/heads/main
-    echo "PASS: $format $operation retains build gate and preserves remote on failure"
+    echo "PASS: $format $operation retains the pre-push gate and preserves remote on failure"
   done
 done
