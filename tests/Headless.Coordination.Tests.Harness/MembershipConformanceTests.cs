@@ -99,6 +99,35 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         }
     }
 
+    public virtual async Task should_allocate_exactly_one_through_n_for_concurrent_allocations()
+    {
+        const int racers = 32;
+        await using var node = await fixture.CreateNodeAsync(_Cluster(), "node-a", AbortToken);
+        var store = node.Services.GetRequiredService<IMembershipStore>();
+        using var start = new SemaphoreSlim(0, racers);
+
+        // Every racer waits on one gate, so the first allocation of the new node races the rest instead of landing
+        // alone ahead of them.
+        var allocations = Enumerable
+            .Range(0, racers)
+            .Select(async _ =>
+            {
+                await start.WaitAsync(AbortToken);
+
+                return await store.AllocateIncarnationAsync(new NodeId("racer"), AbortToken);
+            })
+            .ToArray();
+        start.Release(racers);
+
+        var incarnations = await Task.WhenAll(allocations);
+
+        incarnations
+            .Select(static x => x.Value)
+            .Order()
+            .Should()
+            .Equal(Enumerable.Range(1, racers).Select(static x => (long)x));
+    }
+
     public virtual async Task should_filter_operational_reads_to_current_generation()
     {
         var cluster = _Cluster();
