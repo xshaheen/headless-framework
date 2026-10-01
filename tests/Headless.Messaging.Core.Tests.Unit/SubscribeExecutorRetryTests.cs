@@ -99,7 +99,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
@@ -268,7 +268,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
@@ -330,7 +330,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
@@ -388,7 +388,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
@@ -434,7 +434,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
                 Arg.Any<MessageContentWrite>(),
-                Arg.Is<DateTimeOffset?>(value => value.HasValue),
+                Arg.Is<RetryDelay?>(value => value.HasValue),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Is<int>(value => value == 0),
                 Arg.Any<int>(),
@@ -460,7 +460,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
@@ -516,7 +516,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
@@ -552,7 +552,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
                 Arg.Any<MessageContentWrite>(),
-                Arg.Is<DateTimeOffset?>(v => v == null),
+                Arg.Is<RetryDelay?>(v => v == null),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
@@ -571,7 +571,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
@@ -606,7 +606,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
@@ -666,7 +666,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
@@ -696,7 +696,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
@@ -719,7 +719,6 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             });
 
         var executor = _CreateExecutor(invoker, storage, options);
-        var nowBefore = DateTimeOffset.UtcNow;
         var message = _CreateMediumMessage();
 
         // when
@@ -734,7 +733,9 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 StatusName.Scheduled,
                 Arg.Any<MessageContentWrite>(),
-                Arg.Is<DateTimeOffset?>(v => v > nowBefore.Add(options.RetryPolicy.InitialDispatchGrace)),
+                Arg.Is<RetryDelay?>(v =>
+                    v != null && v.Value.KeepsLaterDue && v.Value.Delay > options.RetryPolicy.InitialDispatchGrace
+                ),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
@@ -756,7 +757,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
@@ -802,7 +803,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
                 Arg.Any<MessageContentWrite>(),
-                Arg.Is<DateTimeOffset?>(v => v.HasValue),
+                Arg.Is<RetryDelay?>(v => v.HasValue),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Is<int>(v => v == startingRetries),
                 Arg.Any<int>(),
@@ -823,7 +824,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
@@ -872,7 +873,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
                 Arg.Any<MessageContentWrite>(),
-                Arg.Is<DateTimeOffset?>(v => v == null),
+                Arg.Is<RetryDelay?>(v => v == null),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
@@ -889,7 +890,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
@@ -920,7 +921,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Is<MediumMessage>(value => value.Retries == 1 && value.InlineAttempts == 0),
                 StatusName.Failed,
                 Arg.Any<MessageContentWrite>(),
-                Arg.Is<DateTimeOffset?>(value => value.HasValue),
+                Arg.Is<RetryDelay?>(value => value.HasValue),
                 Arg.Is<DateTimeOffset?>(value => value == null),
                 Arg.Is(0),
                 Arg.Is(3),
@@ -1003,7 +1004,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
@@ -1073,7 +1074,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 message,
                 StatusName.Failed,
                 MessageContentWrite.Refresh,
-                Arg.Is<DateTimeOffset?>(v => v == null),
+                Arg.Is<RetryDelay?>(v => v == null),
                 Arg.Is<DateTimeOffset?>(v => v == null),
                 Arg.Is(0),
                 Arg.Any<int>(),
@@ -1091,7 +1092,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
@@ -1144,7 +1145,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 message,
                 StatusName.Failed,
                 MessageContentWrite.Refresh,
-                Arg.Is<DateTimeOffset?>(v => v == null),
+                Arg.Is<RetryDelay?>(v => v == null),
                 Arg.Is<DateTimeOffset?>(v => v == null),
                 Arg.Is(0),
                 Arg.Any<int>(),

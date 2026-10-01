@@ -335,7 +335,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                     {
                         InboxAttemptFence = deferredIdentity.InboxAttemptFence! with { AttemptId = Guid.NewGuid() },
                     },
-                    _Now().AddMinutes(5)
+                    TimeSpan.FromMinutes(5)
                 ),
                 AbortToken
             )
@@ -344,7 +344,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .BeFalse("a stale attempt cannot defer its successor");
         (
             await deferralStorage.DeferReceivedRetryAsync(
-                new CircuitRetryDeferral(deferredIdentity, _Now().AddMinutes(5)),
+                new CircuitRetryDeferral(deferredIdentity, TimeSpan.FromMinutes(5)),
                 AbortToken
             )
         )
@@ -524,7 +524,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 admitted.Message,
                 StatusName.Failed,
                 MessageContentWrite.Preserve,
-                nextRetryAt: null,
+                retryDelay: null,
                 lockedUntil: null,
                 originalRetries: 0,
                 originalInlineAttempts: 1,
@@ -858,7 +858,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 stored,
                 StatusName.Failed,
                 MessageContentWrite.Refresh,
-                nextRetryAt: DateTimeOffset.UtcNow,
+                retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
                 cancellationToken: AbortToken
             );
         }
@@ -868,7 +868,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 stored,
                 StatusName.Failed,
                 MessageContentWrite.Refresh,
-                nextRetryAt: DateTimeOffset.UtcNow,
+                retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
                 cancellationToken: AbortToken
             );
         }
@@ -1139,14 +1139,15 @@ public abstract partial class DataStorageTestsBase : TestBase
         var message = CreateMessage();
         var storedMessage = await storage.StoreMessageAsync("state-test", message, cancellationToken: AbortToken);
 
-        var nextRetryAt = DateTimeOffset.UtcNow.AddMinutes(5);
+        var retryDelay = RetryDelay.Exactly(TimeSpan.FromMinutes(5));
+        var nextRetryAt = _Now().Add(retryDelay.Delay);
 
         // when — transition to Failed with a future NextRetryAt so the row stays mutable and the
         // state transition can be read back through the monitoring API.
         var result = await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: nextRetryAt,
+            retryDelay: retryDelay,
             cancellationToken: AbortToken
         );
 
@@ -1173,14 +1174,15 @@ public abstract partial class DataStorageTestsBase : TestBase
         var message = CreateMessage();
         var storedMessage = await storage.StoreReceivedMessageAsync("state-test", "group", message, AbortToken);
 
-        var nextRetryAt = DateTimeOffset.UtcNow.AddMinutes(5);
+        var retryDelay = RetryDelay.Exactly(TimeSpan.FromMinutes(5));
+        var nextRetryAt = _Now().Add(retryDelay.Delay);
 
         // when — transition to Failed with a future NextRetryAt so the row stays mutable and the
         // state transition can be read back through the monitoring API.
         var result = await storage.ChangeReceiveStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: nextRetryAt,
+            retryDelay: retryDelay,
             cancellationToken: AbortToken
         );
 
@@ -1248,20 +1250,21 @@ public abstract partial class DataStorageTestsBase : TestBase
 
         // when — the caller stamps its envelope the way the failure paths do, but declares Preserve
         stored.Origin.AddOrUpdateException(new InvalidOperationException("preserve-probe"));
-        var nextRetryAt = DateTimeOffset.UtcNow.AddMinutes(5);
+        var retryDelay = RetryDelay.Exactly(TimeSpan.FromMinutes(5));
+        var nextRetryAt = _Now().Add(retryDelay.Delay);
         var changed = received
             ? await storage.ChangeReceiveStateAsync(
                 stored,
                 StatusName.Failed,
                 MessageContentWrite.Preserve,
-                nextRetryAt,
+                retryDelay,
                 cancellationToken: AbortToken
             )
             : await storage.ChangePublishStateAsync(
                 stored,
                 StatusName.Failed,
                 MessageContentWrite.Preserve,
-                nextRetryAt: nextRetryAt,
+                retryDelay: retryDelay,
                 cancellationToken: AbortToken
             );
 
@@ -1314,20 +1317,21 @@ public abstract partial class DataStorageTestsBase : TestBase
         // when — the caller stamps the exception onto Origin and declares Refresh, as the failure paths do
         stored.Origin.AddOrUpdateException(new InvalidOperationException("refresh-probe"));
         var expectedContent = GetSerializer().Serialize(stored.Origin);
-        var nextRetryAt = DateTimeOffset.UtcNow.AddMinutes(5);
+        var retryDelay = RetryDelay.Exactly(TimeSpan.FromMinutes(5));
+        var nextRetryAt = _Now().Add(retryDelay.Delay);
         var changed = received
             ? await storage.ChangeReceiveStateAsync(
                 stored,
                 StatusName.Failed,
                 MessageContentWrite.Refresh,
-                nextRetryAt,
+                retryDelay,
                 cancellationToken: AbortToken
             )
             : await storage.ChangePublishStateAsync(
                 stored,
                 StatusName.Failed,
                 MessageContentWrite.Refresh,
-                nextRetryAt: nextRetryAt,
+                retryDelay: retryDelay,
                 cancellationToken: AbortToken
             );
 
@@ -1394,7 +1398,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         var sealedFirst = await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Succeeded,
-            nextRetryAt: null,
+            retryDelay: null,
             cancellationToken: AbortToken
         );
         sealedFirst.Should().BeTrue("the transition to Succeeded must win against a fresh row");
@@ -1407,7 +1411,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         var lateChange = await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Scheduled,
-            nextRetryAt: DateTimeOffset.UtcNow,
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
         lateChange.Should().BeFalse("the terminal seal must survive a late scheduler flush");
@@ -1516,7 +1520,8 @@ public abstract partial class DataStorageTestsBase : TestBase
         var tableNames = GetTableNames();
         var expiredAt = DateTimeOffset.UtcNow.AddMinutes(-10);
         var cleanupCutoff = DateTimeOffset.UtcNow.AddMinutes(-1);
-        var nextRetryAt = DateTimeOffset.UtcNow.AddMinutes(10);
+        var retryDelay = RetryDelay.Exactly(TimeSpan.FromMinutes(10));
+        var nextRetryAt = _Now().Add(retryDelay.Delay);
 
         var published = await storage.StoreMessageAsync(
             "retry-expiration-published",
@@ -1528,7 +1533,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         var publishedChanged = await storage.ChangePublishStateAsync(
             published,
             StatusName.Failed,
-            nextRetryAt: nextRetryAt,
+            retryDelay: retryDelay,
             cancellationToken: AbortToken
         );
         publishedChanged.Should().BeTrue();
@@ -1544,7 +1549,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         var receivedChanged = await storage.ChangeReceiveStateAsync(
             received,
             StatusName.Failed,
-            nextRetryAt: nextRetryAt,
+            retryDelay: retryDelay,
             cancellationToken: AbortToken
         );
         receivedChanged.Should().BeTrue();
@@ -1922,7 +1927,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 
@@ -1952,7 +1957,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: null,
+            retryDelay: null,
             cancellationToken: AbortToken
         );
 
@@ -1978,7 +1983,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         var sealedFirst = await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Succeeded,
-            nextRetryAt: null,
+            retryDelay: null,
             cancellationToken: AbortToken
         );
         sealedFirst.Should().BeTrue("the first transition to Succeeded must win against a fresh row");
@@ -1987,7 +1992,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         var lateChange = await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Scheduled,
-            nextRetryAt: DateTimeOffset.UtcNow,
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 
@@ -2014,7 +2019,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddHours(1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.FromHours(1)),
             cancellationToken: AbortToken
         );
 
@@ -2039,7 +2044,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         await storage.ChangeReceiveStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: null,
+            retryDelay: null,
             cancellationToken: AbortToken
         );
 
@@ -2065,7 +2070,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         await storage.ChangeReceiveStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddHours(1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.FromHours(1)),
             cancellationToken: AbortToken
         );
 
@@ -2094,7 +2099,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 
@@ -2128,7 +2133,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         await storage.ChangeReceiveStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 
@@ -2160,7 +2165,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
         (await storage.LeasePublishAsync(storedMessage, TimeSpan.FromMinutes(30), AbortToken)).Should().BeTrue();
@@ -2252,7 +2257,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         await storage.ChangeReceiveStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
         (await storage.LeaseReceiveAsync(storedMessage, TimeSpan.FromMinutes(30), AbortToken)).Should().BeTrue();
@@ -2276,7 +2281,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
         (await storage.LeasePublishAsync(storedMessage, TimeSpan.FromMinutes(30), AbortToken)).Should().BeTrue();
@@ -2299,7 +2304,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 
@@ -2330,13 +2335,13 @@ public abstract partial class DataStorageTestsBase : TestBase
         await storage.ChangePublishStateAsync(
             due,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
         await storage.ChangePublishStateAsync(
             notDue,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(30),
+            retryDelay: RetryDelay.Exactly(TimeSpan.FromMinutes(30)),
             cancellationToken: AbortToken
         );
 
@@ -2372,13 +2377,13 @@ public abstract partial class DataStorageTestsBase : TestBase
         await storage.ChangeReceiveStateAsync(
             due,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
         await storage.ChangeReceiveStateAsync(
             notDue,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(30),
+            retryDelay: RetryDelay.Exactly(TimeSpan.FromMinutes(30)),
             cancellationToken: AbortToken
         );
 
@@ -2479,12 +2484,11 @@ public abstract partial class DataStorageTestsBase : TestBase
             message,
             AbortToken
         );
-        var now = _Now();
 
         await storage.ChangeReceiveStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: now.AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
         var leased = await storage.LeaseReceiveAsync(storedMessage, TimeSpan.FromMinutes(5), AbortToken);
@@ -2696,13 +2700,13 @@ public abstract partial class DataStorageTestsBase : TestBase
             claimed.LockedUntil!.Value,
             claimed.Lane
         );
-        var deferUntil = _Now().AddMinutes(5);
+        var deferDelay = TimeSpan.FromMinutes(5);
         var before = await storage.GetMonitoringApi().GetReceivedMessageAsync(claimed.StorageId, AbortToken);
         before.Should().NotBeNull();
 
         (
             await deferralStorage.DeferReceivedRetryAsync(
-                new CircuitRetryDeferral(identity with { StorageId = Guid.NewGuid() }, deferUntil),
+                new CircuitRetryDeferral(identity with { StorageId = Guid.NewGuid() }, deferDelay),
                 AbortToken
             )
         )
@@ -2710,7 +2714,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .BeFalse();
         (
             await deferralStorage.DeferReceivedRetryAsync(
-                new CircuitRetryDeferral(identity with { Owner = "stale-owner" }, deferUntil),
+                new CircuitRetryDeferral(identity with { Owner = "stale-owner" }, deferDelay),
                 AbortToken
             )
         )
@@ -2723,7 +2727,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                     {
                         LockedUntil = identity.LockedUntil.AddMilliseconds(1),
                     },
-                    deferUntil
+                    deferDelay
                 ),
                 AbortToken
             )
@@ -2732,7 +2736,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .BeFalse();
         (
             await deferralStorage.DeferReceivedRetryAsync(
-                new CircuitRetryDeferral(identity with { Lane = MessageLane.Queue }, deferUntil),
+                new CircuitRetryDeferral(identity with { Lane = MessageLane.Queue }, deferDelay),
                 AbortToken
             )
         )
@@ -2745,7 +2749,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         afterStaleAttempts.Should().BeEquivalentTo(before, options => options.Excluding(message => message.Origin));
         afterStaleAttempts!.Content.Should().Be(before!.Content);
 
-        (await deferralStorage.DeferReceivedRetryAsync(new CircuitRetryDeferral(identity, deferUntil), AbortToken))
+        (await deferralStorage.DeferReceivedRetryAsync(new CircuitRetryDeferral(identity, deferDelay), AbortToken))
             .Should()
             .BeTrue();
 
@@ -2763,7 +2767,9 @@ public abstract partial class DataStorageTestsBase : TestBase
                         .Excluding(message => message.Origin)
             );
         after.Content.Should().Be(before!.Content);
-        after.NextRetryAt.Should().BeCloseTo(deferUntil, TimeSpan.FromMicroseconds(1));
+        after
+            .NextRetryAt.Should()
+            .BeCloseTo(_Now().Add(deferDelay), TimeSpan.FromSeconds(1), "the store adds the delay to its own clock");
         after.Owner.Should().BeNull();
         after.LockedUntil.Should().BeNull();
         (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
@@ -2790,7 +2796,7 @@ public abstract partial class DataStorageTestsBase : TestBase
 
         (
             await deferralStorage.DeferReceivedRetryAsync(
-                new CircuitRetryDeferral(identity, _Now().AddMinutes(5)),
+                new CircuitRetryDeferral(identity, TimeSpan.FromMinutes(5)),
                 AbortToken
             )
         )
@@ -2809,7 +2815,7 @@ public abstract partial class DataStorageTestsBase : TestBase
 
         (
             await deferralStorage.DeferReceivedRetryAsync(
-                new CircuitRetryDeferral(identity, _Now().AddMinutes(5)),
+                new CircuitRetryDeferral(identity, TimeSpan.FromMinutes(5)),
                 AbortToken
             )
         )
@@ -2837,7 +2843,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             await storage.ChangeReceiveStateAsync(
                 claimed,
                 StatusName.Succeeded,
-                nextRetryAt: null,
+                retryDelay: null,
                 lockedUntil: identity.LockedUntil,
                 cancellationToken: AbortToken
             )
@@ -2849,7 +2855,7 @@ public abstract partial class DataStorageTestsBase : TestBase
 
         (
             await deferralStorage.DeferReceivedRetryAsync(
-                new CircuitRetryDeferral(identity, _Now().AddMinutes(5)),
+                new CircuitRetryDeferral(identity, TimeSpan.FromMinutes(5)),
                 AbortToken
             )
         )
@@ -2899,7 +2905,8 @@ public abstract partial class DataStorageTestsBase : TestBase
             await storage.ChangeReceiveStateAsync(
                 stored,
                 StatusName.Failed,
-                nextRetryAt: _Now().AddSeconds(-30 + index),
+                // Strictly increasing due times, all before the healthy row's: the open group leads the claim order.
+                retryDelay: RetryDelay.Exactly(TimeSpan.FromMilliseconds(index)),
                 cancellationToken: AbortToken
             );
             openRows.Add(stored);
@@ -2924,9 +2931,10 @@ public abstract partial class DataStorageTestsBase : TestBase
         await storage.ChangeReceiveStateAsync(
             healthyStored,
             StatusName.Failed,
-            nextRetryAt: _Now().AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.FromMilliseconds(batchSize)),
             cancellationToken: AbortToken
         );
+        await _ElapseAsync(TimeSpan.FromMilliseconds(100));
 
         // First pickup: 3 slots for 4 due rows, so the earlier-due open rows fill the claim. The
         // healthy row's absence here is what proves starvation is possible without the fix.
@@ -2939,8 +2947,6 @@ public abstract partial class DataStorageTestsBase : TestBase
         ownedFirstClaim.Should().OnlyContain(message => openRowIds.Contains(message.StorageId));
         ownedFirstClaim.Should().NotContain(message => message.StorageId == healthyStored.StorageId);
 
-        var deferUntil = _Now().AddMinutes(10);
-
         foreach (var claimed in firstClaim)
         {
             var identity = new MessageLeaseIdentity(
@@ -2949,7 +2955,12 @@ public abstract partial class DataStorageTestsBase : TestBase
                 claimed.LockedUntil!.Value,
                 claimed.Lane
             );
-            (await deferralStorage.DeferReceivedRetryAsync(new CircuitRetryDeferral(identity, deferUntil), AbortToken))
+            (
+                await deferralStorage.DeferReceivedRetryAsync(
+                    new CircuitRetryDeferral(identity, TimeSpan.FromMinutes(10)),
+                    AbortToken
+                )
+            )
                 .Should()
                 .BeTrue();
         }
@@ -2981,7 +2992,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 claimedPublished,
                 StatusName.Succeeded,
                 MessageContentWrite.Preserve,
-                nextRetryAt: null,
+                retryDelay: null,
                 lockedUntil: null,
                 originalRetries: claimedPublished.Retries,
                 originalInlineAttempts: claimedPublished.InlineAttempts,
@@ -3023,7 +3034,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 claimedReceived,
                 StatusName.Succeeded,
                 MessageContentWrite.Preserve,
-                nextRetryAt: null,
+                retryDelay: null,
                 lockedUntil: null,
                 originalRetries: claimedReceived.Retries,
                 originalInlineAttempts: claimedReceived.InlineAttempts,
@@ -3061,7 +3072,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             await storage.ChangePublishStateAsync(
                 claimedTerminal,
                 StatusName.Succeeded,
-                nextRetryAt: null,
+                retryDelay: null,
                 lockedUntil: claimedTerminal.LockedUntil,
                 cancellationToken: AbortToken
             )
@@ -3154,7 +3165,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             await storage.ChangePublishStateAsync(
                 published,
                 StatusName.Failed,
-                nextRetryAt: null,
+                retryDelay: null,
                 lockedUntil: _FutureLeaseUntil(),
                 cancellationToken: AbortToken
             )
@@ -3168,7 +3179,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             await storage.ChangeReceiveStateAsync(
                 received,
                 StatusName.Failed,
-                nextRetryAt: null,
+                retryDelay: null,
                 lockedUntil: _FutureLeaseUntil(),
                 cancellationToken: AbortToken
             )
@@ -3306,7 +3317,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         await storage.ChangeReceiveStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(5),
+            retryDelay: RetryDelay.Exactly(TimeSpan.FromMinutes(5)),
             cancellationToken: AbortToken
         );
 
@@ -3329,7 +3340,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                         var ok = await storage.ChangeReceiveStateAsync(
                             localCopy,
                             StatusName.Failed,
-                            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(10),
+                            retryDelay: RetryDelay.Exactly(TimeSpan.FromMinutes(10)),
                             originalRetries: 0,
                             cancellationToken: AbortToken
                         );
@@ -3356,7 +3367,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         var first = await storage.ChangeReceiveStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             originalRetries: 0,
             cancellationToken: AbortToken
         );
@@ -3364,7 +3375,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         var second = await storage.ChangeReceiveStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             originalRetries: 0,
             cancellationToken: AbortToken
         );
@@ -3810,7 +3821,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         await storage.ChangePublishStateAsync(
             atLimit,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 
@@ -3824,7 +3835,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         await storage.ChangePublishStateAsync(
             aboveLimit,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 
@@ -3848,7 +3859,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         await storage.ChangeReceiveStateAsync(
             atLimitRecv,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 
@@ -3862,7 +3873,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         await storage.ChangeReceiveStateAsync(
             aboveLimitRecv,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 
@@ -3881,7 +3892,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         await storage.ChangePublishStateAsync(
             stored,
             StatusName.Failed,
-            nextRetryAt: _Now().AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 
@@ -3933,7 +3944,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 await storage.ChangePublishStateAsync(
                     stored,
                     StatusName.Failed,
-                    nextRetryAt: now.AddMinutes(-1),
+                    retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
                     cancellationToken: AbortToken
                 );
             }
@@ -3942,7 +3953,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 await storage.ChangeReceiveStateAsync(
                     stored,
                     StatusName.Failed,
-                    nextRetryAt: now.AddMinutes(-1),
+                    retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
                     cancellationToken: AbortToken
                 );
             }
@@ -4049,7 +4060,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                     await storage.ChangePublishStateAsync(
                         stored,
                         StatusName.Failed,
-                        nextRetryAt: _Now().AddMinutes(-10 + index),
+                        retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
                         cancellationToken: AbortToken
                     );
                 }
@@ -4058,7 +4069,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                     await storage.ChangeReceiveStateAsync(
                         stored,
                         StatusName.Failed,
-                        nextRetryAt: _Now().AddMinutes(-10 + index),
+                        retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
                         cancellationToken: AbortToken
                     );
                 }
@@ -4097,7 +4108,7 @@ public abstract partial class DataStorageTestsBase : TestBase
         await storage.ChangeReceiveStateAsync(
             stored,
             StatusName.Failed,
-            nextRetryAt: _Now().AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 
@@ -4132,11 +4143,11 @@ public abstract partial class DataStorageTestsBase : TestBase
         reserved.Should().BeFalse("a prior lease generation must not reserve under its successor's lease");
 
         foreach (
-            var (state, nextRetryAt) in new[]
+            var (state, retryDelay) in new[]
             {
-                (StatusName.Succeeded, (DateTimeOffset?)null),
-                (StatusName.Failed, (DateTimeOffset?)null),
-                (StatusName.Failed, _Now().AddMinutes(1)),
+                (StatusName.Succeeded, (RetryDelay?)null),
+                (StatusName.Failed, (RetryDelay?)null),
+                (StatusName.Failed, RetryDelay.Exactly(TimeSpan.FromMinutes(1))),
             }
         )
         {
@@ -4147,7 +4158,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                     stale,
                     state,
                     MessageContentWrite.Refresh,
-                    nextRetryAt,
+                    retryDelay,
                     lockedUntil: null,
                     originalRetries: 0,
                     originalInlineAttempts: 0,
@@ -4157,7 +4168,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                     stale,
                     state,
                     MessageContentWrite.Refresh,
-                    nextRetryAt,
+                    retryDelay,
                     lockedUntil: null,
                     originalRetries: 0,
                     originalInlineAttempts: 0,
@@ -4202,7 +4213,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 message,
                 StatusName.Failed,
                 MessageContentWrite.Refresh,
-                nextRetryAt: _Now().AddMinutes(1),
+                retryDelay: RetryDelay.Exactly(TimeSpan.FromMinutes(1)),
                 lockedUntil: null,
                 originalRetries: 0,
                 originalInlineAttempts: 1,
@@ -4212,7 +4223,7 @@ public abstract partial class DataStorageTestsBase : TestBase
                 message,
                 StatusName.Failed,
                 MessageContentWrite.Refresh,
-                nextRetryAt: _Now().AddMinutes(1),
+                retryDelay: RetryDelay.Exactly(TimeSpan.FromMinutes(1)),
                 lockedUntil: null,
                 originalRetries: 0,
                 originalInlineAttempts: 1,
@@ -4238,6 +4249,18 @@ public abstract partial class DataStorageTestsBase : TestBase
             InlineAttempts = message.InlineAttempts,
             ExceptionInfo = message.ExceptionInfo,
         };
+    }
+
+    /// <summary>Lets <paramref name="elapsed"/> pass on the storage's clock: advances a fake clock, or waits out a real one.</summary>
+    private async Task _ElapseAsync(TimeSpan elapsed)
+    {
+        if (TimeProvider is Microsoft.Extensions.Time.Testing.FakeTimeProvider fakeClock)
+        {
+            fakeClock.Advance(elapsed);
+            return;
+        }
+
+        await Task.Delay(elapsed, AbortToken);
     }
 
     private DateTimeOffset _Now()

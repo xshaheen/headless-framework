@@ -761,7 +761,7 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<DbTransaction?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(new ValueTask<bool>(true));
@@ -810,7 +810,7 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<DbTransaction?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(new ValueTask<bool>(true));
@@ -852,7 +852,7 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<DbTransaction?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(new ValueTask<bool>(true));
@@ -867,7 +867,7 @@ public sealed class DispatcherTests : TestBase
                 StatusName.Delayed,
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<DbTransaction?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             );
     }
@@ -917,7 +917,7 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<DbTransaction?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(new ValueTask<bool>(true));
@@ -982,7 +982,7 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<DbTransaction?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(new ValueTask<bool>(true));
@@ -1042,7 +1042,7 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<DbTransaction?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(new ValueTask<bool>(true));
@@ -1084,7 +1084,7 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<DbTransaction?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(new ValueTask<bool>(false));
@@ -1126,7 +1126,7 @@ public sealed class DispatcherTests : TestBase
             StatusName.Delayed,
             Arg.Any<MessageContentWrite>(),
             Arg.Any<DbTransaction?>(),
-            Arg.Any<DateTimeOffset?>(),
+            Arg.Any<RetryDelay?>(),
             cancellationToken: operationToken
         );
         storageWrite.Returns(new ValueTask<bool>(true));
@@ -1155,7 +1155,7 @@ public sealed class DispatcherTests : TestBase
                 StatusName.Delayed,
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<DbTransaction?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 cancellationToken: operationToken
             );
     }
@@ -1170,7 +1170,7 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<DbTransaction?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(callInfo =>
@@ -1221,7 +1221,7 @@ public sealed class DispatcherTests : TestBase
                 StatusName.Queued,
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<DbTransaction?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(_ =>
@@ -1536,7 +1536,7 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<DbTransaction?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(true);
@@ -1712,7 +1712,7 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<DbTransaction?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(new ValueTask<bool>(true));
@@ -1766,7 +1766,7 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<DbTransaction?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(new ValueTask<bool>(true));
@@ -1812,7 +1812,7 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
                 Arg.Any<DbTransaction?>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(new ValueTask<bool>(true));

@@ -167,7 +167,7 @@ internal sealed partial class InMemoryDataStorage(
         StatusName state,
         MessageContentWrite contentWrite = MessageContentWrite.Preserve,
         DbTransaction? dbTransaction = null,
-        DateTimeOffset? nextRetryAt = null,
+        RetryDelay? retryDelay = null,
         DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
@@ -177,7 +177,7 @@ internal sealed partial class InMemoryDataStorage(
             message,
             state,
             contentWrite,
-            nextRetryAt,
+            retryDelay,
             lockedUntil,
             originalRetries,
             originalInlineAttempts: null,
@@ -189,7 +189,7 @@ internal sealed partial class InMemoryDataStorage(
         MediumMessage message,
         StatusName state,
         MessageContentWrite contentWrite,
-        DateTimeOffset? nextRetryAt,
+        RetryDelay? retryDelay,
         DateTimeOffset? lockedUntil,
         int originalRetries,
         int originalInlineAttempts,
@@ -200,7 +200,7 @@ internal sealed partial class InMemoryDataStorage(
             message,
             state,
             contentWrite,
-            nextRetryAt,
+            retryDelay,
             lockedUntil,
             originalRetries,
             originalInlineAttempts,
@@ -250,7 +250,7 @@ internal sealed partial class InMemoryDataStorage(
         MediumMessage message,
         StatusName state,
         MessageContentWrite contentWrite,
-        DateTimeOffset? nextRetryAt,
+        RetryDelay? retryDelay,
         DateTimeOffset? lockedUntil,
         int? originalRetries,
         int? originalInlineAttempts,
@@ -298,7 +298,7 @@ internal sealed partial class InMemoryDataStorage(
                 return ValueTask.FromResult(false);
             }
 
-            var utcNextRetryAt = nextRetryAt;
+            var utcNextRetryAt = retryDelay?.ResolveDueAt(timeProvider.GetUtcNow(), current.NextRetryAt);
             var utcLockedUntil = lockedUntil;
             current.StatusName = state;
             current.ExpiresAt = message.ExpiresAt;
@@ -353,7 +353,7 @@ internal sealed partial class InMemoryDataStorage(
         MediumMessage message,
         StatusName state,
         MessageContentWrite contentWrite = MessageContentWrite.Preserve,
-        DateTimeOffset? nextRetryAt = null,
+        RetryDelay? retryDelay = null,
         DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
@@ -363,7 +363,7 @@ internal sealed partial class InMemoryDataStorage(
             message,
             state,
             contentWrite,
-            nextRetryAt,
+            retryDelay,
             lockedUntil,
             originalRetries,
             originalInlineAttempts: null,
@@ -375,7 +375,7 @@ internal sealed partial class InMemoryDataStorage(
         MediumMessage message,
         StatusName state,
         MessageContentWrite contentWrite,
-        DateTimeOffset? nextRetryAt,
+        RetryDelay? retryDelay,
         DateTimeOffset? lockedUntil,
         int originalRetries,
         int originalInlineAttempts,
@@ -386,7 +386,7 @@ internal sealed partial class InMemoryDataStorage(
             message,
             state,
             contentWrite,
-            nextRetryAt,
+            retryDelay,
             lockedUntil,
             originalRetries,
             originalInlineAttempts,
@@ -416,7 +416,7 @@ internal sealed partial class InMemoryDataStorage(
         MediumMessage message,
         StatusName state,
         MessageContentWrite contentWrite,
-        DateTimeOffset? nextRetryAt,
+        RetryDelay? retryDelay,
         DateTimeOffset? lockedUntil,
         int? originalRetries,
         int? originalInlineAttempts,
@@ -469,7 +469,7 @@ internal sealed partial class InMemoryDataStorage(
                     return ValueTask.FromResult(false);
                 }
 
-                var utcNextRetryAt = nextRetryAt;
+                var utcNextRetryAt = retryDelay?.ResolveDueAt(timeProvider.GetUtcNow(), current.NextRetryAt);
                 var utcLockedUntil = lockedUntil;
                 current.StatusName = state;
                 current.ExpiresAt = message.ExpiresAt;
@@ -1296,7 +1296,7 @@ internal sealed partial class InMemoryDataStorage(
                     return ValueTask.FromResult(false);
                 }
 
-                current.NextRetryAt = deferral.NextRetryAt;
+                current.NextRetryAt = timeProvider.GetUtcNow().Add(deferral.Delay);
                 current.Owner = null;
                 current.LockedUntil = null;
                 return ValueTask.FromResult(true);

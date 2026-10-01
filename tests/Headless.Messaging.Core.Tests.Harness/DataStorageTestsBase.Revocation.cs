@@ -58,7 +58,7 @@ public abstract partial class DataStorageTestsBase
             await storage.ChangePublishStateAsync(
                 message,
                 StatusName.Failed,
-                nextRetryAt: TimeProvider.GetUtcNow().AddMinutes(5),
+                retryDelay: RetryDelay.Exactly(TimeSpan.FromMinutes(5)),
                 cancellationToken: AbortToken
             )
         )
@@ -135,7 +135,7 @@ public abstract partial class DataStorageTestsBase
             await storage.ChangePublishStateAsync(
                 message,
                 status,
-                nextRetryAt: nextRetry ? TimeProvider.GetUtcNow().AddMinutes(5) : null,
+                retryDelay: nextRetry ? RetryDelay.Exactly(TimeSpan.FromMinutes(5)) : null,
                 cancellationToken: AbortToken
             )
         )

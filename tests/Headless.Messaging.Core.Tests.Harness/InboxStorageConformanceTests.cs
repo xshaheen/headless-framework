@@ -159,9 +159,7 @@ public abstract class InboxStorageConformanceTests : TestBase
                 lane,
                 message.InboxAttemptFence
             );
-            (await _MutateLeaseAsync(storage, "defer", identity, DateTimeOffset.UtcNow.AddMinutes(-10 + i)))
-                .Should()
-                .BeTrue();
+            (await _MutateLeaseAsync(storage, "defer", identity, TimeSpan.Zero)).Should().BeTrue();
         }
 
         var ordinary = (await storage.GetReceivedMessagesOfNeedRetryAsync(lane, AbortToken)).ToList();
@@ -201,7 +199,8 @@ public abstract class InboxStorageConformanceTests : TestBase
         var fence = winner.InboxAttemptFence!;
         fence.Should().NotBeNull();
         var identity = new MessageLeaseIdentity(winner.StorageId, winner.Owner, winner.LockedUntil!.Value, lane, fence);
-        var nextRetryAt = winner.LockedUntil.Value.AddMinutes(1);
+        // Longer than the dispatch lease, so a deferred row's due time lands past the lease it replaced.
+        var deferDelay = TimeSpan.FromHours(1);
         foreach (var invalidFence in _InvalidFences(fence).Values)
         {
             (
@@ -212,7 +211,7 @@ public abstract class InboxStorageConformanceTests : TestBase
                     {
                         InboxAttemptFence = invalidFence,
                     },
-                    nextRetryAt
+                    deferDelay
                 )
             )
                 .Should()
@@ -224,14 +223,20 @@ public abstract class InboxStorageConformanceTests : TestBase
             unchanged.InboxAttemptFence.Should().Be(fence);
         }
 
-        (await _MutateLeaseAsync(storage, operation, identity, nextRetryAt)).Should().BeTrue();
+        (await _MutateLeaseAsync(storage, operation, identity, deferDelay)).Should().BeTrue();
         var released = (await _AdmitAsync(storage, envelope)).Message;
         released.Owner.Should().BeNull();
         released.LockedUntil.Should().BeNull();
-        released
-            .NextRetryAt.Should()
-            .Be(string.Equals(operation, "defer", StringComparison.Ordinal) ? nextRetryAt : winner.NextRetryAt);
-        (await _MutateLeaseAsync(storage, operation, identity, nextRetryAt)).Should().BeFalse();
+        if (string.Equals(operation, "defer", StringComparison.Ordinal))
+        {
+            released.NextRetryAt.Should().NotBeNull().And.BeAfter(winner.LockedUntil.Value);
+        }
+        else
+        {
+            released.NextRetryAt.Should().Be(winner.NextRetryAt);
+        }
+
+        (await _MutateLeaseAsync(storage, operation, identity, deferDelay)).Should().BeFalse();
     }
 
     [Theory]
@@ -321,14 +326,7 @@ public abstract class InboxStorageConformanceTests : TestBase
         }
 
         // A claim-time identity must remain valid throughout the inline retry burst.
-        (
-            await _MutateLeaseAsync(
-                storage,
-                recoverThroughPickup ? "defer" : "release",
-                capturedLease,
-                DateTimeOffset.MinValue
-            )
-        )
+        (await _MutateLeaseAsync(storage, recoverThroughPickup ? "defer" : "release", capturedLease, TimeSpan.Zero))
             .Should()
             .BeTrue();
         var successor = (await _AdmitAsync(storage, envelope)).Message;
@@ -516,7 +514,7 @@ public abstract class InboxStorageConformanceTests : TestBase
         IDataStorage storage,
         string operation,
         MessageLeaseIdentity identity,
-        DateTimeOffset nextRetryAt
+        TimeSpan deferDelay
     ) =>
         operation switch
         {
@@ -526,7 +524,7 @@ public abstract class InboxStorageConformanceTests : TestBase
                 AbortToken
             ) == 1,
             "defer" => await ((ICircuitRetryDeferralStorage)storage).DeferReceivedRetryAsync(
-                new(identity, nextRetryAt),
+                new(identity, deferDelay),
                 AbortToken
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(operation)),

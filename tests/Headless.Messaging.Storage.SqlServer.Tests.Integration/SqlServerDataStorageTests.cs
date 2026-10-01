@@ -188,7 +188,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         await _storage.ChangePublishStateAsync(
             stored,
             StatusName.Failed,
-            nextRetryAt: _timeProvider.GetUtcNow().AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 
@@ -262,7 +262,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         await _storage.ChangePublishStateAsync(
             stored,
             StatusName.Failed,
-            nextRetryAt: _timeProvider.GetUtcNow().AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 
@@ -290,7 +290,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         await _storage.ChangeReceiveStateAsync(
             stored,
             StatusName.Failed,
-            nextRetryAt: _timeProvider.GetUtcNow().AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 

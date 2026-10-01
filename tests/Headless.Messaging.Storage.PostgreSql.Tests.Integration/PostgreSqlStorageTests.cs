@@ -1167,7 +1167,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await storage.ChangeReceiveStateAsync(
             stored,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 

@@ -177,7 +177,7 @@ internal sealed partial class PostgreSqlDataStorage(
         StatusName state,
         MessageContentWrite contentWrite = MessageContentWrite.Preserve,
         DbTransaction? transaction = null,
-        DateTimeOffset? nextRetryAt = null,
+        RetryDelay? retryDelay = null,
         DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
@@ -189,7 +189,7 @@ internal sealed partial class PostgreSqlDataStorage(
             state,
             contentWrite,
             transaction,
-            nextRetryAt,
+            retryDelay,
             lockedUntil,
             originalRetries,
             originalInlineAttempts: null,
@@ -201,7 +201,7 @@ internal sealed partial class PostgreSqlDataStorage(
         MediumMessage message,
         StatusName state,
         MessageContentWrite contentWrite,
-        DateTimeOffset? nextRetryAt,
+        RetryDelay? retryDelay,
         DateTimeOffset? lockedUntil,
         int originalRetries,
         int originalInlineAttempts,
@@ -214,7 +214,7 @@ internal sealed partial class PostgreSqlDataStorage(
             state,
             contentWrite,
             transaction: null,
-            nextRetryAt,
+            retryDelay,
             lockedUntil,
             originalRetries,
             originalInlineAttempts,
@@ -270,7 +270,7 @@ internal sealed partial class PostgreSqlDataStorage(
         MediumMessage message,
         StatusName state,
         MessageContentWrite contentWrite = MessageContentWrite.Preserve,
-        DateTimeOffset? nextRetryAt = null,
+        RetryDelay? retryDelay = null,
         DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
@@ -280,7 +280,7 @@ internal sealed partial class PostgreSqlDataStorage(
             message,
             state,
             contentWrite,
-            nextRetryAt,
+            retryDelay,
             lockedUntil,
             originalRetries,
             originalInlineAttempts: null,
@@ -293,7 +293,7 @@ internal sealed partial class PostgreSqlDataStorage(
         MediumMessage message,
         StatusName state,
         MessageContentWrite contentWrite,
-        DateTimeOffset? nextRetryAt,
+        RetryDelay? retryDelay,
         DateTimeOffset? lockedUntil,
         int originalRetries,
         int originalInlineAttempts,
@@ -304,7 +304,7 @@ internal sealed partial class PostgreSqlDataStorage(
             message,
             state,
             contentWrite,
-            nextRetryAt,
+            retryDelay,
             lockedUntil,
             originalRetries,
             originalInlineAttempts,
@@ -326,7 +326,7 @@ internal sealed partial class PostgreSqlDataStorage(
         MediumMessage message,
         StatusName state,
         MessageContentWrite contentWrite,
-        DateTimeOffset? nextRetryAt,
+        RetryDelay? retryDelay,
         DateTimeOffset? lockedUntil,
         int? originalRetries,
         int? originalInlineAttempts,
@@ -348,7 +348,7 @@ internal sealed partial class PostgreSqlDataStorage(
         var refreshContent = contentWrite is MessageContentWrite.Refresh;
         var contentAssignment = refreshContent ? "\"content\"=@Content," : "";
         var sql =
-            $"UPDATE {_receivedTable} SET {contentAssignment}\"retries\"=@Retries,\"inline_attempts\"=@InlineAttempts,\"expires_at\"=@ExpiresAt,\"next_retry_at\"=@NextRetryAt,\"locked_until\"=@LockedUntil,\"owner\"=@Owner,\"status_name\"=@StatusName,\"exception_info\"=@ExceptionInfo,\"attempt_id\"=CASE WHEN @LockedUntil IS NULL THEN NULL ELSE \"attempt_id\" END,\"terminal_at\"=CASE WHEN \"is_inbox_record\" AND @IsTerminal THEN statement_timestamp() ELSE \"terminal_at\" END,\"effective_expires_at\"=CASE WHEN \"is_inbox_record\" AND @IsTerminal THEN statement_timestamp() + (\"inbox_retention_seconds\" * INTERVAL '1 second') ELSE \"effective_expires_at\" END WHERE \"id\"=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (\"locked_until\" IS NOT DISTINCT FROM @OriginalLockedUntil AND \"owner\" IS NOT DISTINCT FROM @OriginalOwner AND \"locked_until\">statement_timestamp())) AND (NOT \"is_inbox_record\" OR (\"intent_type\"=@InboxIntentType AND \"generation\"=@InboxGeneration AND \"generation_incarnation_id\"=@InboxGenerationIncarnationId AND \"attempt_id\"=@InboxAttemptId AND \"owner\" IS NOT DISTINCT FROM @InboxOwner AND \"locked_until\"=@InboxLockedUntil))";
+            $"UPDATE {_receivedTable} SET {contentAssignment}\"retries\"=@Retries,\"inline_attempts\"=@InlineAttempts,\"expires_at\"=@ExpiresAt,\"next_retry_at\"={_NextRetryAtAssignment},\"locked_until\"=@LockedUntil,\"owner\"=@Owner,\"status_name\"=@StatusName,\"exception_info\"=@ExceptionInfo,\"attempt_id\"=CASE WHEN @LockedUntil IS NULL THEN NULL ELSE \"attempt_id\" END,\"terminal_at\"=CASE WHEN \"is_inbox_record\" AND @IsTerminal THEN statement_timestamp() ELSE \"terminal_at\" END,\"effective_expires_at\"=CASE WHEN \"is_inbox_record\" AND @IsTerminal THEN statement_timestamp() + (\"inbox_retention_seconds\" * INTERVAL '1 second') ELSE \"effective_expires_at\" END WHERE \"id\"=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (\"locked_until\" IS NOT DISTINCT FROM @OriginalLockedUntil AND \"owner\" IS NOT DISTINCT FROM @OriginalOwner AND \"locked_until\">statement_timestamp())) AND (NOT \"is_inbox_record\" OR (\"intent_type\"=@InboxIntentType AND \"generation\"=@InboxGeneration AND \"generation_incarnation_id\"=@InboxGenerationIncarnationId AND \"attempt_id\"=@InboxAttemptId AND \"owner\" IS NOT DISTINCT FROM @InboxOwner AND \"locked_until\"=@InboxLockedUntil))";
 
         var inboxFence = message.InboxAttemptFence;
 
@@ -361,7 +361,7 @@ internal sealed partial class PostgreSqlDataStorage(
             {
                 Value = message.ExpiresAt.ToUtcParameterValue(),
             },
-            new NpgsqlParameter("@NextRetryAt", NpgsqlDbType.TimestampTz) { Value = nextRetryAt.ToUtcParameterValue() },
+            .. _RetryDelayParameters(retryDelay),
             new NpgsqlParameter("@LockedUntil", NpgsqlDbType.TimestampTz) { Value = lockedUntil.ToUtcParameterValue() },
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
             {
@@ -387,7 +387,7 @@ internal sealed partial class PostgreSqlDataStorage(
             new NpgsqlParameter("@ExceptionInfo", message.ExceptionInfo ?? (object)DBNull.Value),
             new NpgsqlParameter(
                 "@IsTerminal",
-                (state is StatusName.Succeeded or StatusName.Failed) && nextRetryAt is null
+                (state is StatusName.Succeeded or StatusName.Failed) && retryDelay is null
             ),
             new NpgsqlParameter("@InboxIntentType", NpgsqlDbType.Smallint)
             {
@@ -447,7 +447,7 @@ internal sealed partial class PostgreSqlDataStorage(
             message,
             StatusName.Succeeded,
             MessageContentWrite.Refresh,
-            nextRetryAt: null,
+            retryDelay: null,
             lockedUntil: null,
             originalRetries: message.Retries,
             originalInlineAttempts: message.InlineAttempts,
@@ -680,6 +680,25 @@ internal sealed partial class PostgreSqlDataStorage(
         command.Parameters.Clear();
 
         return bound;
+    }
+
+    /// <summary>
+    /// The <c>next_retry_at</c> a state change writes: cleared without a retry delay, otherwise the delay past the
+    /// database clock, keeping a later stored due time when the delay asks to. The database clock is the one retry
+    /// pickup compares against, so an application clock skewed from it cannot fire the retry early or late.
+    /// </summary>
+    private static readonly string _NextRetryAtAssignment =
+        $"CASE WHEN @HasRetryDelay THEN CASE WHEN @KeepsLaterDue AND \"next_retry_at\" > {_Dialect.ShiftByDuration("statement_timestamp()", "RetryDelay")} THEN \"next_retry_at\" ELSE {_Dialect.ShiftByDuration("statement_timestamp()", "RetryDelay")} END END";
+
+    /// <summary>Binds the parameters <see cref="_NextRetryAtAssignment"/> reads.</summary>
+    private static NpgsqlParameter[] _RetryDelayParameters(RetryDelay? retryDelay)
+    {
+        return
+        [
+            new NpgsqlParameter("@HasRetryDelay", NpgsqlDbType.Boolean) { Value = retryDelay.HasValue },
+            new NpgsqlParameter("@KeepsLaterDue", NpgsqlDbType.Boolean) { Value = retryDelay?.KeepsLaterDue ?? false },
+            _Duration("RetryDelay", retryDelay?.Delay ?? TimeSpan.Zero),
+        ];
     }
 
     /// <summary>
@@ -1065,7 +1084,10 @@ internal sealed partial class PostgreSqlDataStorage(
     {
         var sql = $"""
             UPDATE {_receivedTable}
-            SET "next_retry_at" = @NextRetryAt, "owner" = NULL, "locked_until" = NULL
+            SET "next_retry_at" = {_Dialect.ShiftByDuration(
+                "statement_timestamp()",
+                "RetryDelay"
+            )}, "owner" = NULL, "locked_until" = NULL
             WHERE "id" = @Id
               AND "intent_type" = @IntentType
               AND "owner" IS NOT DISTINCT FROM @Owner
@@ -1092,7 +1114,7 @@ internal sealed partial class PostgreSqlDataStorage(
             },
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = identity.Owner ?? (object)DBNull.Value },
             new NpgsqlParameter("@LockedUntil", NpgsqlDbType.TimestampTz) { Value = identity.LockedUntil },
-            new NpgsqlParameter("@NextRetryAt", NpgsqlDbType.TimestampTz) { Value = deferral.NextRetryAt },
+            _Duration("RetryDelay", deferral.Delay),
             new NpgsqlParameter("@InboxStorageId", NpgsqlDbType.Uuid)
             {
                 Value = inboxFence?.StorageId ?? (object)DBNull.Value,
@@ -1511,7 +1533,7 @@ internal sealed partial class PostgreSqlDataStorage(
         StatusName state,
         MessageContentWrite contentWrite,
         DbTransaction? transaction,
-        DateTimeOffset? nextRetryAt,
+        RetryDelay? retryDelay,
         DateTimeOffset? lockedUntil,
         int? originalRetries,
         int? originalInlineAttempts,
@@ -1521,7 +1543,7 @@ internal sealed partial class PostgreSqlDataStorage(
         var refreshContent = contentWrite is MessageContentWrite.Refresh;
         var contentAssignment = refreshContent ? "\"content\"=@Content," : "";
         var sql =
-            $"UPDATE {tableName} SET {contentAssignment}\"retries\"=@Retries,\"inline_attempts\"=@InlineAttempts,\"expires_at\"=@ExpiresAt,\"next_retry_at\"=@NextRetryAt,\"locked_until\"=@LockedUntil,\"owner\"=@Owner,\"status_name\"=@StatusName WHERE \"id\"=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (\"locked_until\" IS NOT DISTINCT FROM @OriginalLockedUntil AND \"owner\" IS NOT DISTINCT FROM @OriginalOwner AND \"locked_until\">statement_timestamp()))";
+            $"UPDATE {tableName} SET {contentAssignment}\"retries\"=@Retries,\"inline_attempts\"=@InlineAttempts,\"expires_at\"=@ExpiresAt,\"next_retry_at\"={_NextRetryAtAssignment},\"locked_until\"=@LockedUntil,\"owner\"=@Owner,\"status_name\"=@StatusName WHERE \"id\"=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (\"locked_until\" IS NOT DISTINCT FROM @OriginalLockedUntil AND \"owner\" IS NOT DISTINCT FROM @OriginalOwner AND \"locked_until\">statement_timestamp()))";
 
         object[] stateParams =
         [
@@ -1529,7 +1551,7 @@ internal sealed partial class PostgreSqlDataStorage(
             new NpgsqlParameter("@Retries", message.Retries),
             new NpgsqlParameter("@InlineAttempts", message.InlineAttempts),
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.ToUtcParameterValue()),
-            new NpgsqlParameter("@NextRetryAt", nextRetryAt.ToUtcParameterValue()),
+            .. _RetryDelayParameters(retryDelay),
             new NpgsqlParameter("@LockedUntil", lockedUntil.ToUtcParameterValue()),
             new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
             {

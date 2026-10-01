@@ -164,7 +164,7 @@ internal sealed partial class SqlServerDataStorage(
         StatusName state,
         MessageContentWrite contentWrite = MessageContentWrite.Preserve,
         DbTransaction? transaction = null,
-        DateTimeOffset? nextRetryAt = null,
+        RetryDelay? retryDelay = null,
         DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
@@ -176,7 +176,7 @@ internal sealed partial class SqlServerDataStorage(
             state,
             contentWrite,
             transaction,
-            nextRetryAt,
+            retryDelay,
             lockedUntil,
             originalRetries,
             originalInlineAttempts: null,
@@ -188,7 +188,7 @@ internal sealed partial class SqlServerDataStorage(
         MediumMessage message,
         StatusName state,
         MessageContentWrite contentWrite,
-        DateTimeOffset? nextRetryAt,
+        RetryDelay? retryDelay,
         DateTimeOffset? lockedUntil,
         int originalRetries,
         int originalInlineAttempts,
@@ -201,7 +201,7 @@ internal sealed partial class SqlServerDataStorage(
             state,
             contentWrite,
             transaction: null,
-            nextRetryAt,
+            retryDelay,
             lockedUntil,
             originalRetries,
             originalInlineAttempts,
@@ -257,7 +257,7 @@ internal sealed partial class SqlServerDataStorage(
         MediumMessage message,
         StatusName state,
         MessageContentWrite contentWrite = MessageContentWrite.Preserve,
-        DateTimeOffset? nextRetryAt = null,
+        RetryDelay? retryDelay = null,
         DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
@@ -267,7 +267,7 @@ internal sealed partial class SqlServerDataStorage(
             message,
             state,
             contentWrite,
-            nextRetryAt,
+            retryDelay,
             lockedUntil,
             originalRetries,
             originalInlineAttempts: null,
@@ -280,7 +280,7 @@ internal sealed partial class SqlServerDataStorage(
         MediumMessage message,
         StatusName state,
         MessageContentWrite contentWrite,
-        DateTimeOffset? nextRetryAt,
+        RetryDelay? retryDelay,
         DateTimeOffset? lockedUntil,
         int originalRetries,
         int originalInlineAttempts,
@@ -291,7 +291,7 @@ internal sealed partial class SqlServerDataStorage(
             message,
             state,
             contentWrite,
-            nextRetryAt,
+            retryDelay,
             lockedUntil,
             originalRetries,
             originalInlineAttempts,
@@ -313,7 +313,7 @@ internal sealed partial class SqlServerDataStorage(
         MediumMessage message,
         StatusName state,
         MessageContentWrite contentWrite,
-        DateTimeOffset? nextRetryAt,
+        RetryDelay? retryDelay,
         DateTimeOffset? lockedUntil,
         int? originalRetries,
         int? originalInlineAttempts,
@@ -330,7 +330,7 @@ internal sealed partial class SqlServerDataStorage(
             // X1 terminal-row guard: refuses updates to rows that are already terminal AND
             // have NextRetryAt cleared. Failed rows with non-null NextRetryAt stay mutable so
             // the retry processor can rewrite them — see the matching note in PostgreSqlDataStorage.
-            $"DECLARE @LeaseNow datetimeoffset(7) = SYSUTCDATETIME(); UPDATE {_receivedTable} SET {contentAssignment}Retries=@Retries, InlineAttempts=@InlineAttempts, ExpiresAt=@ExpiresAt, NextRetryAt=@NextRetryAt, LockedUntil=@LockedUntil, Owner=@Owner, StatusName=@StatusName, ExceptionInfo=@ExceptionInfo, AttemptId=CASE WHEN @LockedUntil IS NULL THEN NULL ELSE AttemptId END, TerminalAt=CASE WHEN IsInboxRecord=1 AND @IsTerminal=1 THEN @LeaseNow ELSE TerminalAt END, EffectiveExpiresAt=CASE WHEN IsInboxRecord=1 AND @IsTerminal=1 THEN DATEADD(second,InboxRetentionSeconds,@LeaseNow) ELSE EffectiveExpiresAt END WHERE Id=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (((LockedUntil IS NULL AND @OriginalLockedUntil IS NULL) OR LockedUntil=@OriginalLockedUntil) AND ((Owner IS NULL AND @OriginalOwner IS NULL) OR Owner=@OriginalOwner) AND LockedUntil>@LeaseNow)) AND (IsInboxRecord=0 OR (IntentType=@InboxIntentType AND Generation=@InboxGeneration AND GenerationIncarnationId=@InboxGenerationIncarnationId AND AttemptId=@InboxAttemptId AND ((Owner=@InboxOwner) OR (Owner IS NULL AND @InboxOwner IS NULL)) AND LockedUntil=@InboxLockedUntil))";
+            $"DECLARE @LeaseNow datetimeoffset(7) = SYSUTCDATETIME(); UPDATE {_receivedTable} SET {contentAssignment}Retries=@Retries, InlineAttempts=@InlineAttempts, ExpiresAt=@ExpiresAt, NextRetryAt={_NextRetryAtAssignment}, LockedUntil=@LockedUntil, Owner=@Owner, StatusName=@StatusName, ExceptionInfo=@ExceptionInfo, AttemptId=CASE WHEN @LockedUntil IS NULL THEN NULL ELSE AttemptId END, TerminalAt=CASE WHEN IsInboxRecord=1 AND @IsTerminal=1 THEN @LeaseNow ELSE TerminalAt END, EffectiveExpiresAt=CASE WHEN IsInboxRecord=1 AND @IsTerminal=1 THEN DATEADD(second,InboxRetentionSeconds,@LeaseNow) ELSE EffectiveExpiresAt END WHERE Id=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (((LockedUntil IS NULL AND @OriginalLockedUntil IS NULL) OR LockedUntil=@OriginalLockedUntil) AND ((Owner IS NULL AND @OriginalOwner IS NULL) OR Owner=@OriginalOwner) AND LockedUntil>@LeaseNow)) AND (IsInboxRecord=0 OR (IntentType=@InboxIntentType AND Generation=@InboxGeneration AND GenerationIncarnationId=@InboxGenerationIncarnationId AND AttemptId=@InboxAttemptId AND ((Owner=@InboxOwner) OR (Owner IS NULL AND @InboxOwner IS NULL)) AND LockedUntil=@InboxLockedUntil))";
 
         var inboxFence = message.InboxAttemptFence;
 
@@ -343,7 +343,7 @@ internal sealed partial class SqlServerDataStorage(
             {
                 Value = message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value,
             },
-            new SqlParameter("@NextRetryAt", SqlDbType.DateTimeOffset) { Value = nextRetryAt.ToUtcParameterValue() },
+            .. _RetryDelayParameters(retryDelay),
             new SqlParameter("@LockedUntil", SqlDbType.DateTimeOffset) { Value = lockedUntil.ToUtcParameterValue() },
             _OwnerParameter("@Owner", lockedUntil),
             new SqlParameter("@OriginalRetries", SqlDbType.Int) { Value = originalRetries ?? (object)DBNull.Value },
@@ -363,7 +363,7 @@ internal sealed partial class SqlServerDataStorage(
             new SqlParameter("@ExceptionInfo", message.ExceptionInfo ?? (object)DBNull.Value),
             new SqlParameter("@IsTerminal", SqlDbType.Bit)
             {
-                Value = (state is StatusName.Succeeded or StatusName.Failed) && nextRetryAt is null,
+                Value = (state is StatusName.Succeeded or StatusName.Failed) && retryDelay is null,
             },
             new SqlParameter("@InboxIntentType", SqlDbType.SmallInt)
             {
@@ -426,7 +426,7 @@ internal sealed partial class SqlServerDataStorage(
             message,
             StatusName.Succeeded,
             MessageContentWrite.Refresh,
-            nextRetryAt: null,
+            retryDelay: null,
             lockedUntil: null,
             originalRetries: message.Retries,
             originalInlineAttempts: message.InlineAttempts,
@@ -1056,13 +1056,14 @@ internal sealed partial class SqlServerDataStorage(
     )
     {
         var sql = $"""
+            DECLARE @LeaseNow datetimeoffset(7) = SYSUTCDATETIME();
             UPDATE {_receivedTable}
-            SET NextRetryAt = @NextRetryAt, Owner = NULL, LockedUntil = NULL
+            SET NextRetryAt = {_Dialect.ShiftByDuration("@LeaseNow", "RetryDelay")}, Owner = NULL, LockedUntil = NULL
             WHERE Id = @Id
               AND IntentType = @IntentType
               AND (Owner = @Owner OR (Owner IS NULL AND @Owner IS NULL))
               AND LockedUntil = @LockedUntil
-              AND LockedUntil > SYSDATETIMEOFFSET()
+              AND LockedUntil > @LeaseNow
               AND (IsInboxRecord=0 OR (
                     Id=@InboxStorageId
                 AND IntentType=@InboxIntentType
@@ -1087,7 +1088,7 @@ internal sealed partial class SqlServerDataStorage(
                 Value = identity.Owner ?? (object)DBNull.Value,
             },
             new SqlParameter("@LockedUntil", SqlDbType.DateTimeOffset) { Value = identity.LockedUntil },
-            new SqlParameter("@NextRetryAt", SqlDbType.DateTimeOffset) { Value = deferral.NextRetryAt },
+            .. _Duration("RetryDelay", deferral.Delay),
             new SqlParameter("@InboxStorageId", SqlDbType.UniqueIdentifier)
             {
                 Value = inboxFence?.StorageId ?? (object)DBNull.Value,
@@ -1475,6 +1476,26 @@ internal sealed partial class SqlServerDataStorage(
     }
 
     /// <summary>
+    /// The <c>NextRetryAt</c> a state change writes: cleared without a retry delay, otherwise the delay past the
+    /// statement's <c>@LeaseNow</c> database clock, keeping a later stored due time when the delay asks to. The database
+    /// clock is the one retry pickup compares against, so an application clock skewed from it cannot fire the retry
+    /// early or late.
+    /// </summary>
+    private static readonly string _NextRetryAtAssignment =
+        $"CASE WHEN @HasRetryDelay=1 THEN CASE WHEN @KeepsLaterDue=1 AND NextRetryAt > {_Dialect.ShiftByDuration("@LeaseNow", "RetryDelay")} THEN NextRetryAt ELSE {_Dialect.ShiftByDuration("@LeaseNow", "RetryDelay")} END END";
+
+    /// <summary>Binds the parameters <see cref="_NextRetryAtAssignment"/> reads.</summary>
+    private static DbParameter[] _RetryDelayParameters(RetryDelay? retryDelay)
+    {
+        return
+        [
+            new SqlParameter("@HasRetryDelay", SqlDbType.Bit) { Value = retryDelay.HasValue },
+            new SqlParameter("@KeepsLaterDue", SqlDbType.Bit) { Value = retryDelay?.KeepsLaterDue ?? false },
+            .. _Duration("RetryDelay", retryDelay?.Delay ?? TimeSpan.Zero),
+        ];
+    }
+
+    /// <summary>
     /// Returns the monitoring API for querying message statistics and dashboard data against this SQL Server storage.
     /// </summary>
     public IMonitoringApi GetMonitoringApi()
@@ -1564,7 +1585,7 @@ internal sealed partial class SqlServerDataStorage(
         StatusName state,
         MessageContentWrite contentWrite,
         DbTransaction? transaction,
-        DateTimeOffset? nextRetryAt,
+        RetryDelay? retryDelay,
         DateTimeOffset? lockedUntil,
         int? originalRetries,
         int? originalInlineAttempts,
@@ -1574,7 +1595,7 @@ internal sealed partial class SqlServerDataStorage(
         var refreshContent = contentWrite is MessageContentWrite.Refresh;
         var contentAssignment = refreshContent ? "Content=@Content, " : "";
         var sql =
-            $"DECLARE @LeaseNow datetimeoffset(7) = SYSUTCDATETIME(); UPDATE {tableName} SET {contentAssignment}Retries=@Retries,InlineAttempts=@InlineAttempts,ExpiresAt=@ExpiresAt,NextRetryAt=@NextRetryAt,LockedUntil=@LockedUntil,Owner=@Owner,StatusName=@StatusName WHERE Id=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (((LockedUntil IS NULL AND @OriginalLockedUntil IS NULL) OR LockedUntil=@OriginalLockedUntil) AND ((Owner IS NULL AND @OriginalOwner IS NULL) OR Owner=@OriginalOwner) AND LockedUntil>@LeaseNow))";
+            $"DECLARE @LeaseNow datetimeoffset(7) = SYSUTCDATETIME(); UPDATE {tableName} SET {contentAssignment}Retries=@Retries,InlineAttempts=@InlineAttempts,ExpiresAt=@ExpiresAt,NextRetryAt={_NextRetryAtAssignment},LockedUntil=@LockedUntil,Owner=@Owner,StatusName=@StatusName WHERE Id=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (((LockedUntil IS NULL AND @OriginalLockedUntil IS NULL) OR LockedUntil=@OriginalLockedUntil) AND ((Owner IS NULL AND @OriginalOwner IS NULL) OR Owner=@OriginalOwner) AND LockedUntil>@LeaseNow))";
 
         object[] stateParams =
         [
@@ -1585,7 +1606,7 @@ internal sealed partial class SqlServerDataStorage(
             {
                 Value = message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value,
             },
-            new SqlParameter("@NextRetryAt", SqlDbType.DateTimeOffset) { Value = nextRetryAt.ToUtcParameterValue() },
+            .. _RetryDelayParameters(retryDelay),
             new SqlParameter("@LockedUntil", SqlDbType.DateTimeOffset) { Value = lockedUntil.ToUtcParameterValue() },
             _OwnerParameter("@Owner", lockedUntil),
             new SqlParameter("@OriginalRetries", SqlDbType.Int) { Value = originalRetries ?? (object)DBNull.Value },
