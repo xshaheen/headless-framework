@@ -57,6 +57,31 @@ QUALITY_FIX_ARGS = --no-restore --severity "$(QUALITY_FIX_SEVERITY)" -v minimal 
 QUALITY_BUILD_ARGS = --configuration "$(CONFIGURATION)" --no-restore --no-incremental -v:q -nologo /clp:NoSummary $(MSBUILD_ARGS)
 TEST_MAX_PARALLEL ?= 3
 TEST_TIMEOUT ?= 15m
+# Inner-loop build flags. Analyzers are over half of the compiler's CPU on this solution (9 analyzer
+# packs, AnalysisMode=All, AnalysisLevel=latest-all, EnforceCodeStyleInBuild), and MinVer shells out
+# to git once per src project. Neither changes the emitted IL, so a compile-only loop can skip both.
+# Headless.NET.Sdk 0.4.0+ already limits ReportAnalyzer to CI, and RunAnalyzers=false makes it moot.
+# Property names verified against Headless.NET.Sdk 0.4.1 (SupportMandatoryAnalyzers.targets) and
+# MinVer 8.0.0 (MinVer.targets).
+# MinVerSkip pins Version to the SDK default, so alternating a fast build with an analyzed one
+# rewrites the generated AssemblyInfo and recompiles the graph; stay on one or the other per session.
+FAST_BUILD_ARGS ?= -p:RunAnalyzers=false -p:MinVerSkip=true
+# Base ref for the affected-scope targets: the branch's upstream, else origin/main. Resolved once
+# per make invocation (a recursive `?=` would re-run git on every reference).
+ifeq ($(origin AFFECTED_BASE),undefined)
+AFFECTED_BASE := $(shell git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || echo origin/main)
+endif
+# Filter targets scope to one project when TEST_PROJECT is set and fall back to the whole solution.
+TEST_SCOPE_TARGET = $(if $(TEST_PROJECT),test-project,test)
+# Restore is the largest fixed cost in the scoped test loop and almost never has work to do: the
+# package graph moves only when Directory.Packages.props or a project's lock file moves. Assert the
+# project is restored and current instead of restoring, and name the command that fixes it, so a
+# missing restore is one sentence rather than a wall of CS0234/NETSDK1004.
+ASSERT_RESTORED = assert_restored() { local project="$$1" dir assets input; dir="$${project%/*}"; assets="$$dir/obj/project.assets.json"; if [ ! -f "$$assets" ]; then printf 'ERROR: %s is not restored (%s is missing).\n       Run: make restore-project PROJECT=%s   (or `make bootstrap` in a fresh clone/worktree)\n' "$$project" "$$assets" "$$project" >&2; return 2; fi; for input in Directory.Packages.props "$$dir/packages.lock.json"; do if [ -f "$$input" ] && [ "$$input" -nt "$$assets" ]; then printf 'ERROR: restore is stale for %s (%s is newer than %s).\n       Run: make restore-project PROJECT=%s\n' "$$project" "$$input" "$$assets" "$$project" >&2; return 2; fi; done; }
+# Collects every path this side changed, including uncommitted and untracked work. Diffing the merge
+# base rather than AFFECTED_BASE itself matters when the branch is behind: a plain two-dot diff also
+# reports the commits upstream has and we do not, which are not our changes and not ours to test.
+AFFECTED_FILES = affected_files() { local base; base=$$(git merge-base "$(AFFECTED_BASE)" HEAD) || { printf 'ERROR: no common ancestor between HEAD and %s.\n' "$(AFFECTED_BASE)" >&2; return 2; }; { git -c core.quotePath=false diff --name-only "$$base"; git -c core.quotePath=false ls-files --others --exclude-standard; } | sort -u; }
 DOTNET_OUTDATED_AUDIT_ARGS ?= --no-restore --idle-timeout $(DEPENDENCY_AUDIT_IDLE_TIMEOUT) --output "$(DEPENDENCY_AUDIT_DIR)/outdated.json" --output-format json
 DEPENDENCY_SECURITY_AUDIT_ARGS ?= --timeout-seconds "$(DEPENDENCY_SECURITY_AUDIT_TIMEOUT)" --output-dir "$(DEPENDENCY_AUDIT_DIR)/security" --project "$(PROJECT)" --scan vulnerable --include-transitive --scan deprecated
 NUGET_ADVISORY_AUDIT_ARGS ?= --timeout-seconds "$(NUGET_ADVISORY_AUDIT_TIMEOUT)" --output-dir "$(DEPENDENCY_AUDIT_DIR)/nuget-advisories" --scan vulnerable --include-transitive
@@ -73,10 +98,15 @@ help: ## Show available commands.
 	@printf "\nExamples:\n"
 	@printf "  make build\n"
 	@printf "  make test-project TEST_PROJECT=tests/Headless.Api.Composition.Tests.Unit/Headless.Api.Composition.Tests.Unit.csproj\n"
-	@printf "  make test-class CLASS='*ClockTests'\n"
-	@printf "  make quality-analyzers-project PROJECT=src/Headless.Api/Headless.Api.csproj\n"
+	@printf "  make test-class CLASS='*ClockTests' TEST_PROJECT=tests/Headless.Core.Tests.Unit/Headless.Core.Tests.Unit.csproj\n"
+	@printf "  make test-affected\n"
+	@printf "  make quality-analyzers-affected\n"
 	@printf "  make coverage-json\n"
 	@printf "  make pack CONFIGURATION=Release\n\n"
+	@printf "Scoping notes:\n"
+	@printf "  CONFIGURATION defaults to Release, matching CI; overriding it means a separate set of build outputs.\n"
+	@printf "  test-class/-method/-namespace/-trait/-query are solution-wide unless you add TEST_PROJECT=<csproj>.\n"
+	@printf "  build-fast/build-project-fast skip analyzers and MinVer: type-checking only, never a quality gate.\n\n"
 
 .PHONY: bootstrap
 bootstrap: tools restore hooks ## Initialize a clone/worktree: restore tools, packages, and git hooks.
@@ -115,17 +145,19 @@ hook-pre-commit: ## Git hook: format staged C# files before commit.
 	fi
 
 .PHONY: hook-pre-push
-hook-pre-push: hook-pre-push-message hook-format-check hook-build ## Git hook: format-check changed files + incremental build before push.
+hook-pre-push: hook-pre-push-message hook-format-check ## Git hook: CSharpier-check the changed C# files before push. No build; CI compiles.
 
 .PHONY: hook-pre-push-message
 hook-pre-push-message:
-	@printf '\033[36m[pre-push]\033[0m format-check (changed) + incremental build; CI runs the full clean WAE build (skip: --no-verify)...\n'
+	@printf '\033[36m[pre-push]\033[0m format-check on changed files only. NOT checked here: compilation, analyzers, tests — CI does that (skip: --no-verify)...\n'
 
-# Fast local push gate. Mirrors CI's Release posture (analyzer warnings stay warnings; nullable +
-# MSBuild + error-severity rules still fail) but builds incrementally over warm outputs instead of
-# the full --no-incremental rebuild CI runs. Incremental can skip up-to-date projects, so an
-# error-severity analyzer hit in an untouched project is caught by CI, not here. Assumes `make
-# bootstrap` already restored tools/packages (no restore/tool-restore in the hot path).
+# Fast local push gate: formatting only. The hook used to build the whole solution --no-restore,
+# which cost ~90s per push and failed outright after a merge brought in a new package reference,
+# because a build cannot add the missing assets. CI already compiles every project twice (`build`
+# with -p:RunAnalyzers=false, `analyzers` with the full analyzer set), both --no-incremental and
+# both treating warnings as errors, then runs the unit suite, so the hook was re-proving what the
+# merge gate proves anyway. Run `make hook-build` by hand when you want that solution-wide compile
+# before pushing. Assumes `make bootstrap` already restored tools (no tool-restore in the hot path).
 .PHONY: hook-format-check
 hook-format-check: ## Git hook: CSharpier-check only the C# files changed vs upstream.
 	@base=$$(git rev-parse --verify -q '@{upstream}' 2>/dev/null || git merge-base origin/main HEAD 2>/dev/null || true); \
@@ -137,8 +169,16 @@ hook-format-check: ## Git hook: CSharpier-check only the C# files changed vs ups
 	if [ -z "$$files" ]; then echo "[pre-push] no changed C# files to check"; exit 0; fi; \
 	printf '%s\n' "$$files" | tr '\n' '\0' | xargs -0 $(DOTNET) csharpier check
 
+# Manual pre-push sanity build; no longer wired into the hook. Warning posture is NOT "warnings stay
+# warnings": Headless.NET.Sdk turns CodeAnalysisTreatWarningsAsErrors and MSBuildTreatWarningsAsErrors
+# on whenever it detects an agent CLI (SupportDetectLlmContext.props reads CLAUDECODE and friends;
+# SupportGeneral.targets applies the gate), so under Claude Code, Codex, Copilot CLI and the rest this
+# build fails on any analyzer warning, exactly like CI. A human shell keeps them as warnings. Set
+# HeadlessIsLlmContext=false to build with the human posture. Incremental over warm outputs, so an
+# up-to-date project is skipped entirely and its analyzers do not run; `make rebuild` or
+# `make quality-analyzers` (both --no-incremental) is what actually re-checks everything.
 .PHONY: hook-build
-hook-build: ## Git hook: incremental solution build over warm outputs (no restore, no clean).
+hook-build: ## Manual: incremental solution build over warm outputs (no restore, no clean). Agent shells fail on analyzer warnings.
 	$(DOTNET) build "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo /clp:ErrorsOnly $(MSBUILD_ARGS)
 
 .PHONY: ci-build
@@ -166,6 +206,15 @@ build-project-no-restore: ## Build one project without restore; use after restor
 	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make build-project-no-restore PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
 	$(DOTNET) build "$(PROJECT)" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo /clp:ErrorsOnly $(MSBUILD_ARGS)
 
+.PHONY: build-fast
+build-fast: ## NOT A QUALITY GATE. Type-check the solution with analyzers and MinVer off; needs a prior `make restore`.
+	$(DOTNET) build "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo /clp:ErrorsOnly $(FAST_BUILD_ARGS) $(MSBUILD_ARGS)
+
+.PHONY: build-project-fast
+build-project-fast: ## NOT A QUALITY GATE. Type-check one project with analyzers and MinVer off; needs a prior restore.
+	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make build-project-fast PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
+	$(DOTNET) build "$(PROJECT)" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo /clp:ErrorsOnly $(FAST_BUILD_ARGS) $(MSBUILD_ARGS)
+
 .PHONY: quality-analyzers
 quality-analyzers: ## Report build warnings/errors and analyzer suggestions without writing changes.
 	@mkdir -p "$(ARTIFACTS_DIR)"
@@ -192,6 +241,32 @@ quality-analyzers-project: ## Report build warnings/errors and analyzer suggesti
 		awk '!/: hidden [[:alnum:]]+:/' "$(QUALITY_FORMAT_LOG)"; \
 		if awk '/: (info|warning|error) [[:alnum:]]+:/ { found=1 } END { exit found ? 0 : 1 }' "$(QUALITY_FORMAT_LOG)"; then exit 2; fi; \
 		if [ $$format_status -ne 0 ] && [ $$format_status -ne 2 ]; then cat "$(QUALITY_FORMAT_LOG)"; exit $$format_status; fi
+
+# quality-analyzers rebuilds all ~430 projects --no-incremental and then formats the whole solution.
+# This runs the same per-project gate over only the projects the branch touched, which is the useful
+# scope before a PR. It is a subset, not a replacement: an analyzer error in an untouched project
+# still needs `make quality-analyzers` (or CI's `Lint · .NET analyzers` job) to surface.
+.PHONY: quality-analyzers-affected
+quality-analyzers-affected: ## Run quality-analyzers-project over the src/tests projects changed vs AFFECTED_BASE.
+	@git rev-parse --verify -q "$(AFFECTED_BASE)^{commit}" >/dev/null || { printf 'ERROR: AFFECTED_BASE=%s does not resolve to a commit. Fetch it, or pass AFFECTED_BASE=<ref>.\n' "$(AFFECTED_BASE)" >&2; exit 2; }
+	@$(AFFECTED_FILES); \
+	files=$$(affected_files); \
+	projects=""; \
+	while IFS= read -r file; do \
+		[ -n "$$file" ] || continue; \
+		dir=$$(printf '%s\n' "$$file" | cut -d/ -f1-2); \
+		case "$$dir" in \
+			src/*|tests/*|demo/*) project="$$dir/$${dir#*/}.csproj"; if [ -f "$$project" ]; then projects="$$projects $$project"; fi ;; \
+		esac; \
+	done <<< "$$files"; \
+	projects=$$(printf '%s\n' $$projects | sort -u); \
+	if [ -z "$$projects" ]; then \
+		printf '\033[33m[quality-analyzers-affected]\033[0m no changed project vs %s; nothing analyzed. Use `make quality-analyzers` for the whole solution.\n' "$(AFFECTED_BASE)"; \
+		exit 0; \
+	fi; \
+	printf '\033[36m[quality-analyzers-affected]\033[0m %s project(s) vs %s:\n' "$$(printf '%s\n' $$projects | wc -l | tr -d ' ')" "$(AFFECTED_BASE)"; \
+	printf '  %s\n' $$projects; \
+	for project in $$projects; do $(MAKE) --no-print-directory quality-analyzers-project PROJECT="$$project"; done
 
 .PHONY: quality-fix
 quality-fix: ## Apply analyzer fixes for QUALITY_DIAGNOSTICS, then reformat. Rebuild afterwards to verify.
@@ -275,10 +350,11 @@ test-modules: build ## Run prebuilt test DLLs via MTP --test-modules. Override T
 	$(DOTNET) test --test-modules "$(TEST_MODULES)" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
 
 .PHONY: test-project
-test-project: ## Run one test project: make test-project TEST_PROJECT=tests/.../*.csproj
+test-project: ## Run one test project (builds it, asserts restore instead of restoring): make test-project TEST_PROJECT=tests/.../*.csproj
 	@test -n "$(TEST_PROJECT)" || (echo "TEST_PROJECT is required. Example: make test-project TEST_PROJECT=tests/Headless.Api.Composition.Tests.Unit/Headless.Api.Composition.Tests.Unit.csproj" && exit 2)
 	@mkdir -p "$(TEST_RESULTS_DIR)"
-	$(DOTNET) test --project "$(TEST_PROJECT)" --configuration "$(CONFIGURATION)" --results-directory "$(TEST_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER)
+	@$(ASSERT_RESTORED); assert_restored "$(TEST_PROJECT)"
+	$(DOTNET) test --project "$(TEST_PROJECT)" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(TEST_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER)
 
 .PHONY: test-project-fast
 test-project-fast: ## Run one prebuilt test project without restore/build.
@@ -286,30 +362,79 @@ test-project-fast: ## Run one prebuilt test project without restore/build.
 	@mkdir -p "$(TEST_RESULTS_DIR)"
 	$(DOTNET) test --project "$(TEST_PROJECT)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER)
 
+# The five filter targets below select which tests RUN; on their own they do not narrow what gets
+# BUILT. Without TEST_PROJECT they delegate to `test`, which builds all ~430 projects and hands the
+# whole solution to the runner (integration modules included, so Docker is required) just to execute
+# the handful of matching tests. Add TEST_PROJECT=<csproj> and the same filter runs inside that one
+# project instead, which is what a scoped inner loop wants.
 .PHONY: test-class
-test-class: ## Run tests matching CLASS with MTP --filter-class.
-	@test -n "$(CLASS)" || (echo "CLASS is required. Example: make test-class CLASS='*ClockTests'" && exit 2)
-	$(MAKE) test TEST_FILTER='--filter-class "$(CLASS)"'
+test-class: ## Run tests matching CLASS (MTP --filter-class). Solution-wide unless TEST_PROJECT is set.
+	@test -n "$(CLASS)" || (echo "CLASS is required. Example: make test-class CLASS='*ClockTests' TEST_PROJECT=tests/Headless.Core.Tests.Unit/Headless.Core.Tests.Unit.csproj" && exit 2)
+	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-class "$(CLASS)"'
 
 .PHONY: test-method
-test-method: ## Run tests matching METHOD with MTP --filter-method.
+test-method: ## Run tests matching METHOD (MTP --filter-method). Solution-wide unless TEST_PROJECT is set.
 	@test -n "$(METHOD)" || (echo "METHOD is required. Example: make test-method METHOD='*utc_now_should_return_correct_utc_time'" && exit 2)
-	$(MAKE) test TEST_FILTER='--filter-method "$(METHOD)"'
+	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-method "$(METHOD)"'
 
 .PHONY: test-namespace
-test-namespace: ## Run tests matching NAMESPACE with MTP --filter-namespace.
+test-namespace: ## Run tests matching NAMESPACE (MTP --filter-namespace). Solution-wide unless TEST_PROJECT is set.
 	@test -n "$(NAMESPACE)" || (echo "NAMESPACE is required. Example: make test-namespace NAMESPACE=Headless.Api.Tests" && exit 2)
-	$(MAKE) test TEST_FILTER='--filter-namespace "$(NAMESPACE)"'
+	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-namespace "$(NAMESPACE)"'
 
 .PHONY: test-trait
-test-trait: ## Run tests matching TRAIT with MTP --filter-trait.
+test-trait: ## Run tests matching TRAIT (MTP --filter-trait). Solution-wide unless TEST_PROJECT is set.
 	@test -n "$(TRAIT)" || (echo "TRAIT is required. Example: make test-trait TRAIT='Category=Unit'" && exit 2)
-	$(MAKE) test TEST_FILTER='--filter-trait "$(TRAIT)"'
+	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-trait "$(TRAIT)"'
 
 .PHONY: test-query
-test-query: ## Run tests matching QUERY with MTP --filter-query.
+test-query: ## Run tests matching QUERY (MTP --filter-query). Solution-wide unless TEST_PROJECT is set.
 	@test -n "$(QUERY)" || (echo "QUERY is required. Example: make test-query QUERY='/Headless.Core.Tests.Unit/Tests.Abstractions/ClockTests/*'" && exit 2)
-	$(MAKE) test TEST_FILTER='--filter-query "$(QUERY)"'
+	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-query "$(QUERY)"'
+
+# Maps changed paths to *.Tests.Unit projects: a changed tests/<X>.Tests.Unit file selects that
+# project, and a changed src/<X> file selects tests/<X>.Tests.Unit when it exists. Integration and
+# Harness projects are deliberately out of scope (Docker, minutes per module) and are reported, not
+# run. Anything that maps to nothing is named explicitly so a run that tests nothing cannot read as
+# a pass.
+.PHONY: test-affected
+test-affected: ## Run only the *.Tests.Unit projects affected by changes vs AFFECTED_BASE (@{upstream}, else origin/main).
+	@git rev-parse --verify -q "$(AFFECTED_BASE)^{commit}" >/dev/null || { printf 'ERROR: AFFECTED_BASE=%s does not resolve to a commit. Fetch it, or pass AFFECTED_BASE=<ref>.\n' "$(AFFECTED_BASE)" >&2; exit 2; }
+	@$(AFFECTED_FILES); $(ASSERT_RESTORED); \
+	files=$$(affected_files); \
+	if [ -z "$$files" ]; then \
+		printf '\033[36m[test-affected]\033[0m no files changed vs %s; nothing to test.\n' "$(AFFECTED_BASE)"; \
+		exit 0; \
+	fi; \
+	projects=""; no_unit=""; other=""; \
+	while IFS= read -r file; do \
+		[ -n "$$file" ] || continue; \
+		dir=$$(printf '%s\n' "$$file" | cut -d/ -f1-2); \
+		case "$$dir" in \
+			tests/*.Tests.Unit) projects="$$projects $$dir/$${dir#tests/}.csproj" ;; \
+			src/*) candidate="tests/$${dir#src/}.Tests.Unit/$${dir#src/}.Tests.Unit.csproj"; \
+				if [ -f "$$candidate" ]; then projects="$$projects $$candidate"; else no_unit="$$no_unit $$dir"; fi ;; \
+			tests/*|demo/*) no_unit="$$no_unit $$dir" ;; \
+			*) other="$$other $$dir" ;; \
+		esac; \
+	done <<< "$$files"; \
+	projects=$$(printf '%s\n' $$projects | sort -u); \
+	if [ -z "$$projects" ]; then \
+		printf '\033[33m[test-affected] NO UNIT TEST PROJECT MATCHED — nothing ran.\033[0m\n'; \
+		if [ -n "$$no_unit" ]; then printf '  changed project(s) with no *.Tests.Unit sibling: %s\n' "$$(printf '%s\n' $$no_unit | sort -u | tr '\n' ' ')"; fi; \
+		if [ -n "$$other" ]; then printf '  changed non-project path(s): %s\n' "$$(printf '%s\n' $$other | sort -u | tr '\n' ' ')"; fi; \
+		printf '  Pick a suite yourself: `make test-unit`, or `make test-project TEST_PROJECT=<csproj>`.\n'; \
+		exit 0; \
+	fi; \
+	printf '\033[36m[test-affected]\033[0m %s project(s) vs %s:\n' "$$(printf '%s\n' $$projects | wc -l | tr -d ' ')" "$(AFFECTED_BASE)"; \
+	printf '  %s\n' $$projects; \
+	if [ -n "$$no_unit" ]; then printf '\033[33m  not covered here (no *.Tests.Unit sibling): %s\033[0m\n' "$$(printf '%s\n' $$no_unit | sort -u | tr '\n' ' ')"; fi; \
+	for project in $$projects; do assert_restored "$$project"; done; \
+	mkdir -p "$(TEST_RESULTS_DIR)/affected"; \
+	for project in $$projects; do \
+		printf '\033[36m[test-affected]\033[0m running %s\n' "$$project"; \
+		$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(TEST_RESULTS_DIR)/affected" $(TEST_ARGS) $(TEST_FILTER); \
+	done
 
 .PHONY: test-timeout
 test-timeout: ## Run all tests with an explicit MTP timeout. SDK defaults still provide TRX and dumps.
