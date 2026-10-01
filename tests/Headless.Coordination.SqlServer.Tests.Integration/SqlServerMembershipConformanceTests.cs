@@ -37,6 +37,12 @@ public sealed class SqlServerMembershipConformanceTests(SqlServerMembershipFixtu
     }
 
     [Fact]
+    public override Task should_allocate_exactly_one_through_n_for_concurrent_allocations()
+    {
+        return base.should_allocate_exactly_one_through_n_for_concurrent_allocations();
+    }
+
+    [Fact]
     public override Task should_filter_operational_reads_to_current_generation()
     {
         return base.should_filter_operational_reads_to_current_generation();

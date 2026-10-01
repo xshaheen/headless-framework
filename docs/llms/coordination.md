@@ -58,8 +58,8 @@ Coordination is fencing-safe, fail-stop, and fail-closed when backed by an autho
 
 | Provider | Use when | Avoid when | Trade-off |
 | --- | --- | --- | --- |
-| `Headless.Coordination.PostgreSql` | Membership should follow a PostgreSQL primary and server clock. | The deployment cannot use primary/write-path reads for failover. | Native SQL, `clock_timestamp()`, Testcontainers conformance. |
-| `Headless.Coordination.SqlServer` | Membership should follow SQL Server and `SYSUTCDATETIME()`. | The app cannot grant DDL/init permissions or use primary reads. | Guarded update/insert, no `MERGE`. |
+| `Headless.Coordination.PostgreSql` | Membership should follow a PostgreSQL primary and server clock. | The deployment cannot use primary/write-path reads for failover. | The shared relational store, `clock_timestamp()`. |
+| `Headless.Coordination.SqlServer` | Membership should follow SQL Server and `SYSUTCDATETIME()`. | The app cannot grant DDL/init permissions or use primary reads. | The shared relational store, guarded update/insert, no `MERGE`. |
 | `Headless.Coordination.Redis` | Redis is the authoritative coordination store. | Redis eviction can delete generation counters or failover reads may hit stale replicas. | Lua scripts use `TIME`; generation counters are not purged by default. |
 
 ## Headless.Coordination.Abstractions
@@ -173,12 +173,18 @@ Registers `TimeProvider.System`, framework GUID generator defaults, `IHostIdenti
 
 ### API and behavior
 
-- Base store algorithm hooks for cluster-scoped relational providers.
-- Provider-owned physical identifiers: PostgreSQL uses snake_case; SQL Server uses PascalCase.
+- The one relational membership store, written against the SQL dialect kit (`ISqlDialect`, see [sql.md § Store statement kit](sql.md#store-statement-kit-for-provider-authors)); the PostgreSQL and SQL Server packages supply only their dialect, options, and DDL.
+- `RelationalCoordinationOptions`, the options base both providers share: `ConnectionString`, `CommandTimeout` (positive, at most 10 minutes; default 30 seconds), and `InitializeOnStartup`.
+- Allocation is one upsert of the node's generation row. Registration and heartbeats take that row's update-intent lock first, so neither interleaves with an allocation that supersedes the incarnation they write for.
+- A heartbeat is one fenced liveness update: current incarnation, not left, and beat younger than `DeadThreshold`, decided in its `WHERE`. It writes the later of the stored beat and the database clock, so a database clock that steps back never moves a beat backwards. Registering the current incarnation again revives its liveness the same way.
+- `LeaveAsync` stamps the leave once; leaving an incarnation that already left is a no-op.
+- Every comparison runs on the database clock with exact durations; the application clock never classifies a node.
+- Every call runs on its own READ COMMITTED transaction and retries deadlocks and serialization conflicts, at most 3 attempts.
+- `ReadLivenessAsync` prunes retention-expired liveness rows, then orphaned descriptors, in a transaction of its own first. A prune that still fails after its retries is logged as a warning and retried by the next read; the read itself still returns.
 
 ### Design constraints
 
-Provider SQL and physical identifiers remain in the native packages. This package centralizes operation order without forcing PostgreSQL and SQL Server into one naming convention.
+Table and column names come from the dialect, so PostgreSQL keeps snake_case and SQL Server PascalCase while the statements are written once. Cluster names and node ids are compared ordinally on both engines (`COLLATE "C"` on PostgreSQL, `Latin1_General_100_BIN2` on SQL Server): `node-a` and `Node-A` are two nodes on either.
 
 ### Install
 
@@ -204,7 +210,7 @@ None.
 
 ### API and behavior
 
-- Atomic incarnation allocation with `INSERT ... ON CONFLICT ... RETURNING`.
+- Runs the shared relational store from `Headless.Coordination.Core.Database` over the PostgreSQL dialect.
 - Heartbeat guard rejects stale, impossible, dead, gracefully left, and pruned incarnations.
 - Liveness classification uses `clock_timestamp()`.
 - The membership tables are one schema step (`Coordination/1`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
@@ -313,17 +319,14 @@ Registers the core membership services, Redis membership store, keyed Lua script
 
 ### API and behavior
 
-- Atomic incarnation allocation under `UPDLOCK, HOLDLOCK`.
+- Runs the shared relational store from `Headless.Coordination.Core.Database` over the SQL Server dialect.
 - Heartbeat guard rejects stale, impossible, dead, gracefully left, and pruned incarnations.
-- Liveness classification uses `SYSUTCDATETIME()`.
-- Guarded membership writes retry SQL Server deadlock victim error `1205` with a bounded jittered Polly policy.
+- Liveness classification uses `SYSUTCDATETIME()`. Every instant is stored as `datetimeoffset(7)`.
 - The membership tables are one schema step (`Coordination/1`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
 
 ### Design constraints
 
-The provider intentionally avoids `MERGE`. Explicit locking keeps the generation guard and liveness row update readable and testable.
-
-Membership writes intentionally keep `SERIALIZABLE` transactions plus generation-first `UPDLOCK, HOLDLOCK` access. Under a large concurrent startup, SQL Server can still choose one writer as deadlock victim (`1205`); the provider retries the whole rolled-back transaction. This retry is SQL Server-specific and does not apply to PostgreSQL or Redis providers, whose membership write paths use different concurrency primitives.
+The provider avoids `MERGE`. Writes run at READ COMMITTED with explicit `UPDLOCK, HOLDLOCK, ROWLOCK` reads on the clustered primary keys, which serialize two first writers of one key. Under a large concurrent startup SQL Server can still choose a writer as deadlock victim (`1205`); the store retries the whole rolled-back transaction, as it does on PostgreSQL.
 
 ### Install
 

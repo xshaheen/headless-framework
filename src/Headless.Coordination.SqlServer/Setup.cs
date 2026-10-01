@@ -1,14 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FluentValidation;
 using Headless.Checks;
-using Headless.Constants;
 using Headless.Coordination.SqlServer;
 using Headless.Sql;
+using Headless.Sql.SqlServer;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Options;
+using Extension = Headless.Coordination.RelationalCoordinationProviderExtension<
+    Headless.Coordination.SqlServer.SqlServerCoordinationOptions,
+    Headless.Coordination.SqlServer.SqlServerCoordinationOptionsValidator,
+    Headless.Coordination.SqlServer.SqlServerCoordinationStorageOptionsValidator
+>;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Coordination;
@@ -62,7 +63,7 @@ public static class SetupSqlServerCoordination
         {
             Argument.IsNotNull(configuration);
 
-            setup.RegisterExtension(new SqlServerCoordinationOptionsExtension(configuration));
+            setup.RegisterExtension(new Extension(_Provider, configuration));
 
             return setup;
         }
@@ -77,7 +78,7 @@ public static class SetupSqlServerCoordination
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new SqlServerCoordinationOptionsExtension(configure));
+            setup.RegisterExtension(new Extension(_Provider, configure));
 
             return setup;
         }
@@ -95,50 +96,15 @@ public static class SetupSqlServerCoordination
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new SqlServerCoordinationOptionsExtension(configure));
+            setup.RegisterExtension(new Extension(_Provider, configure));
 
             return setup;
         }
     }
 
-    private sealed class SqlServerCoordinationOptionsExtension
-        : CoordinationProviderOptionsExtensionBase<SqlServerCoordinationOptions, SqlServerCoordinationOptionsValidator>
-    {
-        public SqlServerCoordinationOptionsExtension(IConfiguration configuration)
-            : base(configuration) { }
-
-        public SqlServerCoordinationOptionsExtension(Action<SqlServerCoordinationOptions> configure)
-            : base(configure) { }
-
-        public SqlServerCoordinationOptionsExtension(Action<SqlServerCoordinationOptions, IServiceProvider> configure)
-            : base(configure) { }
-
-        protected override void AddProviderServices(IServiceCollection services)
-        {
-            services.AddCoordinationCore<SqlServerMembershipStore>();
-            _AddSqlServerCoordinationProviderCore(services);
-        }
-    }
-
-    private static void _AddSqlServerCoordinationProviderCore(IServiceCollection services)
-    {
-        services.AddOptions<CoordinationStorageOptions, SqlServerCoordinationStorageOptionsValidator>();
-        services.TryAddSingleton<IMembershipStore>(static sp => sp.GetRequiredService<SqlServerMembershipStore>());
-        // The membership schema is applied by the Headless schema runner from the contribution below; the
-        // IMembershipStorageInitializer marker this replaced had no consumer beyond the registration itself.
-        services.AddHeadlessSchemaContribution(sp =>
-            SqlServerMembershipSchemaContribution.Create(
-                sp.GetRequiredService<IOptions<SqlServerCoordinationOptions>>().Value,
-                sp.GetRequiredService<IOptions<CoordinationStorageOptions>>().Value
-            )
-        );
-    }
-
-    private sealed class SqlServerCoordinationStorageOptionsValidator : AbstractValidator<CoordinationStorageOptions>
-    {
-        public SqlServerCoordinationStorageOptionsValidator()
-        {
-            RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.SqlServer);
-        }
-    }
+    private static readonly RelationalCoordinationProvider<SqlServerCoordinationOptions> _Provider = new(
+        SqlServerDialect.Instance,
+        static options => SqlServerDialect.Instance.CreateConnection(options.ConnectionString),
+        SqlServerMembershipSchemaContribution.Create
+    );
 }

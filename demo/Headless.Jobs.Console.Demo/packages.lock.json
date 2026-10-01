@@ -499,7 +499,9 @@
         "type": "Project",
         "dependencies": {
           "Headless.Coordination.Core": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )"
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Core": "[1.0.0, )"
         }
       },
       "headless.coordination.postgresql": {

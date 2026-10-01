@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Coordination;
 using Headless.Hosting.Initialization.Schema;
 using Headless.Sql.PostgreSql;
 
@@ -8,8 +7,7 @@ namespace Headless.Coordination.PostgreSql;
 
 /// <summary>
 /// The Coordination feature's schema contribution for PostgreSQL: the membership generation, descriptor, and
-/// liveness tables plus the liveness index, as one idempotent step the Headless
-/// schema runner applies.
+/// liveness tables plus the liveness index, as one idempotent step the Headless schema runner applies.
 /// </summary>
 internal static class PostgreSqlMembershipSchemaContribution
 {
@@ -20,61 +18,52 @@ internal static class PostgreSqlMembershipSchemaContribution
         CoordinationStorageOptions storageOptions
     )
     {
-        var schema = storageOptions.Schema;
-        var generationTable = PostgreSqlMembershipSchema.Qualified(schema, PostgreSqlMembershipSchema.Generation.Table);
-        var descriptorTable = PostgreSqlMembershipSchema.Qualified(schema, PostgreSqlMembershipSchema.Descriptor.Table);
-        var livenessTable = PostgreSqlMembershipSchema.Qualified(schema, PostgreSqlMembershipSchema.Liveness.Table);
+        var dialect = PostgreSqlDialect.Instance;
+        var t = new CoordinationTables(dialect, storageOptions.Schema);
+        const string emptyJson = "'{}'::jsonb";
+        string pk(string table) => dialect.Quote("pk_" + table);
 
-        var tablesSql = $$"""
-            CREATE TABLE IF NOT EXISTS {{generationTable}} (
-                {{PostgreSqlMembershipSchema.ClusterName}} varchar(200) NOT NULL,
-                {{PostgreSqlMembershipSchema.NodeId}} varchar(400) NOT NULL,
-                {{PostgreSqlMembershipSchema.Generation.CurrentIncarnation}} bigint NOT NULL,
-                {{PostgreSqlMembershipSchema.UpdatedAt}} timestamptz NOT NULL,
-                CONSTRAINT pk_{{PostgreSqlMembershipSchema.Generation.Table}} PRIMARY KEY (
-                    {{PostgreSqlMembershipSchema.ClusterName}},
-                    {{PostgreSqlMembershipSchema.NodeId}}
-                )
+        // Key columns compare with the "C" collation, so cluster names and node ids match ordinally (byte for byte),
+        // as SQL Server's _BIN2 key columns do, whatever the database's default collation is.
+        var tablesSql = $"""
+            CREATE TABLE IF NOT EXISTS {t.Generation} (
+                {t.ClusterName} varchar({CoordinationTables.ClusterNameMaxLength}) COLLATE "C" NOT NULL,
+                {t.NodeId} varchar({CoordinationTables.NodeIdMaxLength}) COLLATE "C" NOT NULL,
+                {t.CurrentIncarnation} bigint NOT NULL,
+                {t.UpdatedAt} timestamptz NOT NULL,
+                CONSTRAINT {pk(t.GenerationTableName)} PRIMARY KEY ({t.ClusterName}, {t.NodeId})
             );
 
-            CREATE TABLE IF NOT EXISTS {{descriptorTable}} (
-                {{PostgreSqlMembershipSchema.ClusterName}} varchar(200) NOT NULL,
-                {{PostgreSqlMembershipSchema.NodeId}} varchar(400) NOT NULL,
-                {{PostgreSqlMembershipSchema.Incarnation}} bigint NOT NULL,
-                {{PostgreSqlMembershipSchema.Descriptor.HostName}} text NULL,
-                {{PostgreSqlMembershipSchema.Descriptor.Endpoints}} jsonb NOT NULL DEFAULT '{}'::jsonb,
-                {{PostgreSqlMembershipSchema.Descriptor.Role}} varchar(200) NULL,
-                {{PostgreSqlMembershipSchema.Descriptor.Metadata}} jsonb NOT NULL DEFAULT '{}'::jsonb,
-                {{PostgreSqlMembershipSchema.CreatedAt}} timestamptz NOT NULL,
-                CONSTRAINT pk_{{PostgreSqlMembershipSchema.Descriptor.Table}} PRIMARY KEY (
-                    {{PostgreSqlMembershipSchema.ClusterName}},
-                    {{PostgreSqlMembershipSchema.NodeId}},
-                    {{PostgreSqlMembershipSchema.Incarnation}}
-                )
+            CREATE TABLE IF NOT EXISTS {t.Descriptor} (
+                {t.ClusterName} varchar({CoordinationTables.ClusterNameMaxLength}) COLLATE "C" NOT NULL,
+                {t.NodeId} varchar({CoordinationTables.NodeIdMaxLength}) COLLATE "C" NOT NULL,
+                {t.Incarnation} bigint NOT NULL,
+                {t.HostName} text NULL,
+                {t.Endpoints} jsonb NOT NULL DEFAULT {emptyJson},
+                {t.Role} varchar({CoordinationTables.RoleMaxLength}) NULL,
+                {t.Metadata} jsonb NOT NULL DEFAULT {emptyJson},
+                {t.CreatedAt} timestamptz NOT NULL,
+                CONSTRAINT {pk(t.DescriptorTableName)} PRIMARY KEY ({t.ClusterName}, {t.NodeId}, {t.Incarnation})
             );
 
-            CREATE TABLE IF NOT EXISTS {{livenessTable}} (
-                {{PostgreSqlMembershipSchema.ClusterName}} varchar(200) NOT NULL,
-                {{PostgreSqlMembershipSchema.NodeId}} varchar(400) NOT NULL,
-                {{PostgreSqlMembershipSchema.Incarnation}} bigint NOT NULL,
-                {{PostgreSqlMembershipSchema.Liveness.LastBeat}} timestamptz NOT NULL,
-                {{PostgreSqlMembershipSchema.Liveness.LeftAt}} timestamptz NULL,
-                CONSTRAINT pk_{{PostgreSqlMembershipSchema.Liveness.Table}} PRIMARY KEY (
-                    {{PostgreSqlMembershipSchema.ClusterName}},
-                    {{PostgreSqlMembershipSchema.NodeId}},
-                    {{PostgreSqlMembershipSchema.Incarnation}}
-                )
+            CREATE TABLE IF NOT EXISTS {t.Liveness} (
+                {t.ClusterName} varchar({CoordinationTables.ClusterNameMaxLength}) COLLATE "C" NOT NULL,
+                {t.NodeId} varchar({CoordinationTables.NodeIdMaxLength}) COLLATE "C" NOT NULL,
+                {t.Incarnation} bigint NOT NULL,
+                {t.LastBeat} timestamptz NOT NULL,
+                {t.LeftAt} timestamptz NULL,
+                CONSTRAINT {pk(t.LivenessTableName)} PRIMARY KEY ({t.ClusterName}, {t.NodeId}, {t.Incarnation})
             );
 
-            CREATE INDEX IF NOT EXISTS ix_{{PostgreSqlMembershipSchema.Liveness.Table}}_cluster_lastbeat
-                ON {{livenessTable}} ({{PostgreSqlMembershipSchema.ClusterName}}, {{PostgreSqlMembershipSchema.Liveness.LastBeat}});
+            CREATE INDEX IF NOT EXISTS {dialect.Quote("ix_" + t.LivenessTableName + "_cluster_lastbeat")}
+                ON {t.Liveness} ({t.ClusterName}, {t.LastBeat});
             """;
 
         return new SchemaContribution(
             feature: "Coordination",
             dialect: PostgreSqlSchemaDialect.Instance,
             createConnection: providerOptions.CreateConnection,
-            schema: schema,
+            schema: storageOptions.Schema,
             steps:
             [
                 new SchemaStep(

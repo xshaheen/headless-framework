@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Coordination;
 using Headless.Hosting.Initialization.Schema;
 using Headless.Sql.SqlServer;
 
@@ -8,93 +7,93 @@ namespace Headless.Coordination.SqlServer;
 
 /// <summary>
 /// The Coordination feature's schema contribution for SQL Server: the membership generation, descriptor, and
-/// liveness tables plus the liveness index, as one idempotent step the Headless
-/// schema runner applies.
+/// liveness tables plus the liveness index, as one idempotent step the Headless schema runner applies.
 /// </summary>
 internal static class SqlServerMembershipSchemaContribution
 {
     public const string TablesStepVersion = "1";
+
+    // Ordinal comparison and ordering of key text, matching PostgreSQL's "C" key columns.
+    private const string _KeyCollation = "Latin1_General_100_BIN2";
 
     public static SchemaContribution Create(
         SqlServerCoordinationOptions providerOptions,
         CoordinationStorageOptions storageOptions
     )
     {
+        var dialect = SqlServerDialect.Instance;
         var schema = storageOptions.Schema;
-        var generationTable = _Qualified(schema, SqlServerMembershipSchema.Generation.Table);
-        var descriptorTable = _Qualified(schema, SqlServerMembershipSchema.Descriptor.Table);
-        var livenessTable = _Qualified(schema, SqlServerMembershipSchema.Liveness.Table);
-        var generationObject = SqlServerCoordinationIdentifier.ObjectName(
-            schema,
-            SqlServerMembershipSchema.Generation.Table
-        );
-        var descriptorObject = SqlServerCoordinationIdentifier.ObjectName(
-            schema,
-            SqlServerMembershipSchema.Descriptor.Table
-        );
-        var livenessObject = SqlServerCoordinationIdentifier.ObjectName(
-            schema,
-            SqlServerMembershipSchema.Liveness.Table
-        );
+        var t = new CoordinationTables(dialect, schema);
+        var clusterName =
+            $"{t.ClusterName} nvarchar({CoordinationTables.ClusterNameMaxLength}) COLLATE {_KeyCollation} NOT NULL";
+        var nodeId = $"{t.NodeId} nvarchar({CoordinationTables.NodeIdMaxLength}) COLLATE {_KeyCollation} NOT NULL";
+        string objectName(string table) => $"{schema}.{table}";
+        string constraint(string prefix, string table) => dialect.Quote($"{prefix}_{table}");
+        const string emptyJson = "N'{}'";
+        var endpointsDefault = constraint("DF", t.DescriptorTableName + "_Endpoints");
+        var metadataDefault = constraint("DF", t.DescriptorTableName + "_Metadata");
 
-        var tablesSql = $$"""
-            IF OBJECT_ID(N'{{generationObject}}', N'U') IS NULL
-                CREATE TABLE {{generationTable}} (
-                    [{{SqlServerMembershipSchema.ClusterName}}] nvarchar(200) NOT NULL,
-                    [{{SqlServerMembershipSchema.NodeId}}] nvarchar(400) NOT NULL,
-                    [{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}] bigint NOT NULL,
-                    [{{SqlServerMembershipSchema.UpdatedAt}}] datetime2(7) NOT NULL,
-                    CONSTRAINT [PK_{{SqlServerMembershipSchema.Generation.Table}}] PRIMARY KEY CLUSTERED (
-                        [{{SqlServerMembershipSchema.ClusterName}}] ASC,
-                        [{{SqlServerMembershipSchema.NodeId}}] ASC
+        // The clustered primary keys are load-bearing, not an index choice: the store's HOLDLOCK reads take their
+        // key-range locks on them, which is what serializes two first writers of one key. Every instant is a
+        // datetimeoffset(7), the type the dialect's clock and parameters carry.
+        var tablesSql = $"""
+            IF OBJECT_ID(N'{objectName(t.GenerationTableName)}', N'U') IS NULL
+                CREATE TABLE {t.Generation} (
+                    {clusterName},
+                    {nodeId},
+                    {t.CurrentIncarnation} bigint NOT NULL,
+                    {t.UpdatedAt} datetimeoffset(7) NOT NULL,
+                    CONSTRAINT {constraint("PK", t.GenerationTableName)} PRIMARY KEY CLUSTERED (
+                        {t.ClusterName} ASC,
+                        {t.NodeId} ASC
                     )
                 );
 
-            IF OBJECT_ID(N'{{descriptorObject}}', N'U') IS NULL
-                CREATE TABLE {{descriptorTable}} (
-                    [{{SqlServerMembershipSchema.ClusterName}}] nvarchar(200) NOT NULL,
-                    [{{SqlServerMembershipSchema.NodeId}}] nvarchar(400) NOT NULL,
-                    [{{SqlServerMembershipSchema.Incarnation}}] bigint NOT NULL,
-                    [{{SqlServerMembershipSchema.Descriptor.HostName}}] nvarchar(max) NULL,
-                    [{{SqlServerMembershipSchema.Descriptor.Endpoints}}] nvarchar(max) NOT NULL CONSTRAINT [DF_{{SqlServerMembershipSchema.Descriptor.Table}}_Endpoints] DEFAULT N'{}',
-                    [{{SqlServerMembershipSchema.Descriptor.Role}}] nvarchar(200) NULL,
-                    [{{SqlServerMembershipSchema.Descriptor.Metadata}}] nvarchar(max) NOT NULL CONSTRAINT [DF_{{SqlServerMembershipSchema.Descriptor.Table}}_Metadata] DEFAULT N'{}',
-                    [{{SqlServerMembershipSchema.CreatedAt}}] datetime2(7) NOT NULL,
-                    CONSTRAINT [PK_{{SqlServerMembershipSchema.Descriptor.Table}}] PRIMARY KEY CLUSTERED (
-                        [{{SqlServerMembershipSchema.ClusterName}}] ASC,
-                        [{{SqlServerMembershipSchema.NodeId}}] ASC,
-                        [{{SqlServerMembershipSchema.Incarnation}}] ASC
+            IF OBJECT_ID(N'{objectName(t.DescriptorTableName)}', N'U') IS NULL
+                CREATE TABLE {t.Descriptor} (
+                    {clusterName},
+                    {nodeId},
+                    {t.Incarnation} bigint NOT NULL,
+                    {t.HostName} nvarchar(max) NULL,
+                    {t.Endpoints} nvarchar(max) NOT NULL CONSTRAINT {endpointsDefault} DEFAULT {emptyJson},
+                    {t.Role} nvarchar({CoordinationTables.RoleMaxLength}) NULL,
+                    {t.Metadata} nvarchar(max) NOT NULL CONSTRAINT {metadataDefault} DEFAULT {emptyJson},
+                    {t.CreatedAt} datetimeoffset(7) NOT NULL,
+                    CONSTRAINT {constraint("PK", t.DescriptorTableName)} PRIMARY KEY CLUSTERED (
+                        {t.ClusterName} ASC,
+                        {t.NodeId} ASC,
+                        {t.Incarnation} ASC
                     )
                 );
 
-            IF OBJECT_ID(N'{{livenessObject}}', N'U') IS NULL
-                CREATE TABLE {{livenessTable}} (
-                    [{{SqlServerMembershipSchema.ClusterName}}] nvarchar(200) NOT NULL,
-                    [{{SqlServerMembershipSchema.NodeId}}] nvarchar(400) NOT NULL,
-                    [{{SqlServerMembershipSchema.Incarnation}}] bigint NOT NULL,
-                    [{{SqlServerMembershipSchema.Liveness.LastBeat}}] datetime2(7) NOT NULL,
-                    [{{SqlServerMembershipSchema.Liveness.LeftAt}}] datetime2(7) NULL,
-                    CONSTRAINT [PK_{{SqlServerMembershipSchema.Liveness.Table}}] PRIMARY KEY CLUSTERED (
-                        [{{SqlServerMembershipSchema.ClusterName}}] ASC,
-                        [{{SqlServerMembershipSchema.NodeId}}] ASC,
-                        [{{SqlServerMembershipSchema.Incarnation}}] ASC
+            IF OBJECT_ID(N'{objectName(t.LivenessTableName)}', N'U') IS NULL
+                CREATE TABLE {t.Liveness} (
+                    {clusterName},
+                    {nodeId},
+                    {t.Incarnation} bigint NOT NULL,
+                    {t.LastBeat} datetimeoffset(7) NOT NULL,
+                    {t.LeftAt} datetimeoffset(7) NULL,
+                    CONSTRAINT {constraint("PK", t.LivenessTableName)} PRIMARY KEY CLUSTERED (
+                        {t.ClusterName} ASC,
+                        {t.NodeId} ASC,
+                        {t.Incarnation} ASC
                     )
                 );
 
             IF NOT EXISTS (
                 SELECT 1
                 FROM sys.indexes
-                WHERE name = N'IX_{{SqlServerMembershipSchema.Liveness.Table}}_ClusterName_LastBeat'
-                  AND object_id = OBJECT_ID(N'{{livenessObject}}')
+                WHERE name = N'IX_{t.LivenessTableName}_ClusterName_LastBeat'
+                  AND object_id = OBJECT_ID(N'{objectName(t.LivenessTableName)}')
             )
-                CREATE NONCLUSTERED INDEX [IX_{{SqlServerMembershipSchema.Liveness.Table}}_ClusterName_LastBeat]
-                    ON {{livenessTable}} ([{{SqlServerMembershipSchema.ClusterName}}] ASC, [{{SqlServerMembershipSchema.Liveness.LastBeat}}] ASC);
+                CREATE NONCLUSTERED INDEX {constraint("IX", t.LivenessTableName + "_ClusterName_LastBeat")}
+                    ON {t.Liveness} ({t.ClusterName} ASC, {t.LastBeat} ASC);
             """;
 
         return new SchemaContribution(
             feature: "Coordination",
             dialect: SqlServerSchemaDialect.Instance,
-            createConnection: providerOptions.CreateConnection,
+            createConnection: () => dialect.CreateConnection(providerOptions.ConnectionString),
             schema: schema,
             steps:
             [
@@ -106,10 +105,5 @@ internal static class SqlServerMembershipSchemaContribution
             ],
             applyOnStartup: providerOptions.InitializeOnStartup
         );
-    }
-
-    private static string _Qualified(string schema, string table)
-    {
-        return SqlServerCoordinationIdentifier.Qualified(schema, table);
     }
 }
