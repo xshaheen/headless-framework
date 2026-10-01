@@ -21,6 +21,9 @@
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.MultiTenancy.Abstractions\Headless.MultiTenancy.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Sequences.Abstractions\Headless.Sequences.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Sql.Abstractions\Headless.Sql.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Sql.Core\Headless.Sql.Core.csproj" />
+    <ProjectReference Include="..\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />
     <ProjectReference Include="..\Headless.UnitOfWork.Abstractions\Headless.UnitOfWork.Abstractions.csproj" />
   </ItemGroup>
 </Project>

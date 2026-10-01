@@ -3,6 +3,7 @@
 using Headless.Checks;
 using Headless.Sequences.SqlServer;
 using Headless.Sql;
+using Headless.Sql.SqlServer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -38,7 +39,7 @@ public static class SetupSequencesSqlServer
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The counter table is created at host startup unless
-        /// <see cref="SqlServerSequencesOptions.InitializeOnStartup" /> is <see langword="false" />. A gap-free call
+        /// <see cref="RelationalSequencesOptions.InitializeOnStartup" /> is <see langword="false" />. A gap-free call
         /// is accepted only on a unit whose SqlClient connection reaches this same database.
         /// </remarks>
         /// <exception cref="ArgumentException"><paramref name="connectionString" /> is <see langword="null" /> or whitespace.</exception>
@@ -57,7 +58,7 @@ public static class SetupSequencesSqlServer
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The counter table is created at host startup unless
-        /// <see cref="SqlServerSequencesOptions.InitializeOnStartup" /> is <see langword="false" />. A gap-free call
+        /// <see cref="RelationalSequencesOptions.InitializeOnStartup" /> is <see langword="false" />. A gap-free call
         /// is accepted only on a unit whose SqlClient connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configuration" /> is <see langword="null" />.</exception>
@@ -75,7 +76,7 @@ public static class SetupSequencesSqlServer
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The counter table is created at host startup unless
-        /// <see cref="SqlServerSequencesOptions.InitializeOnStartup" /> is <see langword="false" />. A gap-free call
+        /// <see cref="RelationalSequencesOptions.InitializeOnStartup" /> is <see langword="false" />. A gap-free call
         /// is accepted only on a unit whose SqlClient connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
@@ -96,7 +97,7 @@ public static class SetupSequencesSqlServer
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The counter table is created at host startup unless
-        /// <see cref="SqlServerSequencesOptions.InitializeOnStartup" /> is <see langword="false" />. A gap-free call
+        /// <see cref="RelationalSequencesOptions.InitializeOnStartup" /> is <see langword="false" />. A gap-free call
         /// is accepted only on a unit whose SqlClient connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
@@ -158,7 +159,12 @@ public static class SetupSequencesSqlServer
             );
             // The store waits between deadlock retries on this clock.
             services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<ISequenceStore, SqlServerSequenceStore>();
+            services.TryAddSingleton<ISequenceStore>(sp => new RelationalSequenceStore(
+                SqlServerDialect.Instance,
+                sp.GetRequiredService<IOptions<SqlServerSequencesOptions>>().Value,
+                "Headless.Sequences.SqlServer",
+                sp.GetRequiredService<TimeProvider>()
+            ));
         }
     }
 }
