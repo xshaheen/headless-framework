@@ -845,7 +845,9 @@
           "FluentValidation": "[12.1.1, )",
           "Headless.AuditLog.Abstractions": "[1.0.0, )",
           "Headless.Checks": "[1.0.0, )",
+          "Headless.Core": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Options": "[10.0.12, )"
         }
@@ -853,11 +855,7 @@
       "headless.auditlog.storage.postgresql": {
         "type": "Project",
         "dependencies": {
-          "Headless.AuditLog.Abstractions": "[1.0.0, )",
           "Headless.AuditLog.Core": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Sql.PostgreSql": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"
         }
@@ -865,10 +863,7 @@
       "headless.auditlog.storage.sqlserver": {
         "type": "Project",
         "dependencies": {
-          "Headless.AuditLog.Abstractions": "[1.0.0, )",
           "Headless.AuditLog.Core": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Sql.SqlServer": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )"
         }
@@ -1075,15 +1070,14 @@
           "Headless.Features.Abstractions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Messaging.Abstractions": "[1.0.0, )",
-          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )"
+          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )"
         }
       },
       "headless.features.storage.postgresql": {
         "type": "Project",
         "dependencies": {
-          "Headless.Extensions": "[1.0.0, )",
           "Headless.Features.Core": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Sql.PostgreSql": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"
         }
@@ -1092,7 +1086,6 @@
         "type": "Project",
         "dependencies": {
           "Headless.Features.Core": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Sql.SqlServer": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )"
         }
@@ -1349,15 +1342,14 @@
           "Headless.Messaging.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Permissions.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
           "Microsoft.AspNetCore.Authorization": "[10.0.12, )"
         }
       },
       "headless.permissions.storage.postgresql": {
         "type": "Project",
         "dependencies": {
-          "Headless.Extensions": "[1.0.0, )",
           "Headless.Permissions.Core": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Sql.PostgreSql": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"
         }
@@ -1366,7 +1358,6 @@
         "type": "Project",
         "dependencies": {
           "Headless.Permissions.Core": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Sql.SqlServer": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )"
         }
@@ -1470,14 +1461,13 @@
           "Headless.Messaging.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Security.Abstractions": "[1.0.0, )",
-          "Headless.Settings.Abstractions": "[1.0.0, )"
+          "Headless.Settings.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )"
         }
       },
       "headless.settings.storage.postgresql": {
         "type": "Project",
         "dependencies": {
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Settings.Core": "[1.0.0, )",
           "Headless.Sql.PostgreSql": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"
@@ -1486,7 +1476,6 @@
       "headless.settings.storage.sqlserver": {
         "type": "Project",
         "dependencies": {
-          "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Settings.Core": "[1.0.0, )",
           "Headless.Sql.SqlServer": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )"

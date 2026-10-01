@@ -975,7 +975,8 @@
           "Headless.Features.Abstractions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Messaging.Abstractions": "[1.0.0, )",
-          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )"
+          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )"
         }
       },
       "headless.features.storage.entityframework": {
@@ -1117,6 +1118,9 @@
           "Headless.Checks": "[1.0.0, )",
           "Headless.Serializer.Abstractions": "[1.0.0, )"
         }
+      },
+      "headless.sql.abstractions": {
+        "type": "Project"
       },
       "headless.testing": {
         "type": "Project",

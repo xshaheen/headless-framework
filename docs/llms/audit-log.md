@@ -248,6 +248,7 @@ DI setup package for `Headless.AuditLog`: options validation, setup builders, an
 - `HeadlessAuditLogBuilder` — returned by `AddHeadlessAuditLog(setup => ...)`; provides access to `IServiceCollection` for chaining.
 - `IAuditLogStorageOptionsExtension` — setup-time hook implemented by storage provider packages.
 - `AuditLogStorageOptions` — shared storage options: `Schema`, `TableName`, `JsonColumnType`, `CreatedAtColumnType`, `InitializeOnStartup`.
+- `RelationalAuditLogOptions` — base of `PostgreSqlAuditLogOptions` and `SqlServerAuditLogOptions` (`ConnectionString`, `CommandTimeout`). Core also holds the one relational audit log, store, writer, and reader both raw providers run, written over the `ISqlDialect` statement kit; each provider package supplies only its options, DDL, and registration.
 - `AuditLogJsonColumnType` — provider-validated JSON column type enum: `Jsonb`, `Json`, `NvarcharMax`.
 - `AuditLogOptionsValidator` — validates transform-sensitive-data configuration at startup.
 
@@ -457,13 +458,13 @@ Raw PostgreSQL storage provider for audit rows. No Entity Framework dependency �
 ### API and behavior
 
 - No EF Core dependency — depends only on `Npgsql`, `Headless.AuditLog.Abstractions`, and `Headless.AuditLog.Core`.
-- `PostgreSqlAuditLogStore` — implements `IAuditLogStore`; enrolls in the consumer's ambient Npgsql transaction when available; falls back to its own connection otherwise.
-- `PostgreSqlAuditLog<TContext>` — implements `IAuditLog<TContext>` and `IAuditLogWriter<TContext>` for explicit event logging; both write over the provider's own connection.
-- `PostgreSqlReadAuditLog<TContext>` — implements `IReadAuditLog<TContext>` via parameterized SQL queries.
+- `IAuditLogStore` — enrolls in the consumer's ambient Npgsql transaction when available; falls back to its own connection otherwise.
+- `IAuditLog<TContext>` and `IAuditLogWriter<TContext>` — explicit event logging; both write over the provider's own connection.
+- `IReadAuditLog<TContext>` — parameterized keyset queries over `(created_at, id)`.
 - The audit table and indexes are two schema steps (`AuditLog/1`, `AuditLog/2`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
-- Batched INSERT: up to 500 rows per command (cached per row count to avoid repeated string building).
+- Batched INSERT: up to 100 rows per command, the size SQL Server's parameter limit allows, so both providers share one writer (statement text cached per row count).
 - `jsonb` by default for `OldValues`, `NewValues`, and `ChangedFields`; override via `AuditLogStorageOptions.JsonColumnType` (`Jsonb` or `Json` accepted; `NvarcharMax` rejected at options validation time).
-- `PostgreSqlAuditLogOptions` — `ConnectionString` (required) and `CommandTimeout` (default 30 s).
+- `PostgreSqlAuditLogOptions` — `ConnectionString` (required) and `CommandTimeout` (default 30 s, applied to every write and read), inherited from `RelationalAuditLogOptions`.
 - `UsePostgreSql` ships the full provider overload trio: `(string connectionString)`, `(IConfiguration configuration)`, `(Action<PostgreSqlAuditLogOptions>)`, and `(Action<PostgreSqlAuditLogOptions, IServiceProvider>)`, plus a parameterless `UsePostgreSql()` that reads the connection registered by `AddPostgreSqlSql`.
 - Creates table `audit_log_entries` (unless `TableName` is set) with snake_case columns (`created_at`, `tenant_id`, `old_values`, …), key `pk_{table}`, and the same index set as the EF provider, named `ix_{table}_tenant_time`, `ix_{table}_tenant_action_time`, `ix_{table}_tenant_entity_time`, `ix_{table}_tenant_actor_time`, `ix_{table}_tenant_account_time`, and `ix_{table}_correlation`, each ending in `(created_at, id)`.
 
@@ -543,10 +544,8 @@ setup.UsePostgreSql((options, sp) =>
 ### Runtime behavior
 
 - Registers the audit-log schema contribution; the one schema runner creates the table and indexes at startup.
-- Registers `PostgreSqlAuditLogWriter` as singleton.
-- Registers `IAuditLogStore` as scoped (`PostgreSqlAuditLogStore`).
-- Registers `IAuditLog<TContext>` and `IAuditLogWriter<TContext>` as singletons (`PostgreSqlAuditLog<TContext>`).
-- Registers `IReadAuditLog<TContext>` as singleton (`PostgreSqlReadAuditLog<TContext>`).
+- Registers the shared relational writer from `Headless.AuditLog.Core`, over the PostgreSQL dialect, as singleton.
+- Registers `IAuditLogStore` as scoped, and `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAuditLog<TContext>` as singletons, all from `Headless.AuditLog.Core`.
 - Registers `IJsonSerializer`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.
 
 ---
@@ -558,13 +557,13 @@ Raw SQL Server storage provider for audit rows. No Entity Framework dependency �
 ### API and behavior
 
 - No EF Core dependency — depends only on `Microsoft.Data.SqlClient`, `Headless.AuditLog.Abstractions`, and `Headless.AuditLog.Core`.
-- `SqlServerAuditLogStore` — implements `IAuditLogStore`; enrolls in the consumer's ambient `SqlTransaction` when available; falls back to its own connection otherwise.
-- `SqlServerAuditLog<TContext>` — implements `IAuditLog<TContext>` and `IAuditLogWriter<TContext>` for explicit event logging; both write over the provider's own connection.
-- `SqlServerReadAuditLog<TContext>` — implements `IReadAuditLog<TContext>` via parameterized SQL queries using `TOP(@Limit)`. The writer and reader bind timestamps typed like the `CreatedAt` column (`datetimeoffset` by default, `datetime2` when `CreatedAtColumnType` says so), so stored values, range bounds, and continuation positions keep full precision and the column is never converted in a comparison.
+- `IAuditLogStore` — enrolls in the consumer's ambient `SqlTransaction` when available; falls back to its own connection otherwise.
+- `IAuditLog<TContext>` and `IAuditLogWriter<TContext>` — explicit event logging; both write over the provider's own connection.
+- `IReadAuditLog<TContext>` — parameterized keyset queries over `(CreatedAt, Id)`, limited with `OFFSET 0 ROWS FETCH NEXT @Limit ROWS ONLY`. The writer and reader bind timestamps typed like the `CreatedAt` column (`datetimeoffset` by default, `datetime2` when `CreatedAtColumnType` says so), so stored values, range bounds, and continuation positions keep full precision and the column is never converted in a comparison.
 - The audit table and indexes are two schema steps (`AuditLog/1`, `AuditLog/2`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
-- Batched INSERT: up to 100 rows per command (SQL Server parameter limit is lower than PostgreSQL's).
+- Batched INSERT: up to 100 rows per command, within SQL Server's 2,100-parameter limit.
 - `nvarchar(max)` by default for JSON columns; `NvarcharMax` is the only accepted `AuditLogJsonColumnType` (PostgreSQL-specific types are rejected at options validation time).
-- `SqlServerAuditLogOptions` — `ConnectionString` (required) and `CommandTimeout` (default 30 s).
+- `SqlServerAuditLogOptions` — `ConnectionString` (required) and `CommandTimeout` (default 30 s, applied to every write and read), inherited from `RelationalAuditLogOptions`.
 - `UseSqlServer` ships the full provider overload trio: `(string connectionString)`, `(IConfiguration configuration)`, `(Action<SqlServerAuditLogOptions>)`, and `(Action<SqlServerAuditLogOptions, IServiceProvider>)`, plus a parameterless `UseSqlServer()` that reads the connection registered by `AddSqlServerSql`.
 - Creates table `AuditLogEntries` (unless `TableName` is set) with PascalCase columns, key `PK_{table}`, and the same index set as the EF provider, named `IX_{table}_TenantTime`, `IX_{table}_TenantActionTime`, `IX_{table}_TenantEntityTime`, `IX_{table}_TenantActorTime`, `IX_{table}_TenantAccountTime`, and `IX_{table}_Correlation`, each ending in `(CreatedAt, Id)`.
 
@@ -574,7 +573,7 @@ Transaction enrollment mirrors the PostgreSQL provider: the store resolves the a
 
 The table and the indexes are separate steps, so each commits and is recorded on its own. Replicas serialize on the runner's one `sp_getapplock` per database.
 
-Batch size is capped at 100 rows (vs. 500 for PostgreSQL) because SQL Server's parameter limit per batch is lower.
+Batch size is capped at 100 rows, on both providers, because SQL Server allows 2,100 parameters per statement.
 
 ### Install
 
@@ -646,8 +645,6 @@ setup.UseSqlServer((options, sp) =>
 ### Runtime behavior
 
 - Registers the audit-log schema contribution; the one schema runner creates the table and indexes at startup.
-- Registers `SqlServerAuditLogWriter` as singleton.
-- Registers `IAuditLogStore` as scoped (`SqlServerAuditLogStore`).
-- Registers `IAuditLog<TContext>` and `IAuditLogWriter<TContext>` as singletons (`SqlServerAuditLog<TContext>`).
-- Registers `IReadAuditLog<TContext>` as singleton (`SqlServerReadAuditLog<TContext>`).
+- Registers the shared relational writer from `Headless.AuditLog.Core`, over the SQL Server dialect, as singleton.
+- Registers `IAuditLogStore` as scoped, and `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAuditLog<TContext>` as singletons, all from `Headless.AuditLog.Core`.
 - Registers `IJsonSerializer`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.

@@ -259,6 +259,7 @@ Core implementation of permission management with grant resolution, caching, bac
 - `PermissionsInitializationBackgroundService` — seeds static definitions with up to 10 jittered exponential-back-off retries capped at 30 seconds; pre-caches dynamic definitions when enabled; implements `IInitializer`
 - `PermissionManagementOptions` — all tuning options for lock keys/timeouts, cache expiry, dynamic store toggle
 - `PermissionsStorageOptions` — schema and table name configuration shared across all storage providers
+- `RelationalPermissionsOptions` — base of `PostgreSqlPermissionsOptions` and `SqlServerPermissionsOptions` (`ConnectionString`, `CommandTimeout`). Core also holds the one relational grant and definition repository both raw providers run, written over the `ISqlDialect` statement kit; each provider package supplies only its options, DDL, and registration
 - `HeadlessPermissionsSetupBuilder` — fluent builder returned inside `AddHeadlessPermissions`; exposes `ConfigureManagement`, `ConfigureStorage`, `DisableStartupInitialization`, `DisablePermissionNamePolicies`, `RegisterExtension`. `ConfigureStorage` also accepts the `Headless:Permissions:Storage` configuration section.
 - `PermissionPolicyProvider` — `IAuthorizationPolicyProvider` that resolves a defined permission name as a policy holding one `PermissionRequirement`; registered by default in place of ASP.NET Core's default provider
 - `IAuthorizationPolicyCatalog` (`Headless.Permissions.Requirements`) — lists names: `GetRegisteredPolicyNamesAsync()` (policies added to `AuthorizationOptions`), `GetPermissionNamesAsync()` (defined permission names, for grant checks), and `GetPolicyNamesAsync()` (every name that resolves to a policy through the active provider: the registered policies, plus the permissions with any `PolicyNamePrefix` applied when `PermissionPolicyProvider` is that provider). Every name `GetPolicyNamesAsync()` returns is safe to pass to `IAuthorizationService`, including under `DisablePermissionNamePolicies()` or a host-owned provider, where it returns the registered policies only
@@ -589,7 +590,7 @@ PostgreSQL raw-DDL storage for permission management.
 - `setup.UsePostgreSql(Action<PostgreSqlPermissionsOptions, IServiceProvider> configure)` — with resolved services
 - `setup.UsePostgreSql()` — reads the connection registered by `AddPostgreSqlSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
 - Table and index creation at host startup as schema steps (`Permissions/1` tables, `Permissions/2` indexes) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with snake_case tables, columns, keys, and indexes (`permission_grants`, `tenant_id`, `ix_permission_grants_tenant_id_name_provider_name_provider_key`)
-- `PostgreSqlPermissionsOptions` — `ConnectionString` and `CommandTimeout` (default 30 seconds)
+- `PostgreSqlPermissionsOptions` — `ConnectionString` and `CommandTimeout` (default 30 seconds), inherited from `RelationalPermissionsOptions`
 - Shares `PermissionsStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
 - Identifier names validated against PostgreSQL naming rules
 
@@ -641,8 +642,7 @@ Configure schema and table names through `PermissionsStorageOptions` via `setup.
 ### Runtime behavior
 
 - Registers the permissions schema contribution; the one schema runner applies it at startup
-- Registers `PostgreSqlPermissionGrantRepository` as `IPermissionGrantRepository` (singleton)
-- Registers `PostgreSqlPermissionDefinitionRecordRepository` as `IPermissionDefinitionRecordRepository` (singleton)
+- Registers the shared relational repositories from `Headless.Permissions.Core`, over the PostgreSQL dialect, as `IPermissionGrantRepository` and `IPermissionDefinitionRecordRepository` (singletons)
 
 ---
 
@@ -658,7 +658,7 @@ SQL Server raw-DDL storage for permission management.
 - `setup.UseSqlServer(Action<SqlServerPermissionsOptions, IServiceProvider> configure)` — with resolved services
 - `setup.UseSqlServer()` — reads the connection registered by `AddSqlServerSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
 - Table, index, and table-type creation at host startup as one schema step (`Permissions/1`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with PascalCase tables, columns, keys, and indexes (`PermissionGrants`, `TenantId`, `IX_PermissionGrants_TenantId_Name_ProviderName_ProviderKey`)
-- `SqlServerPermissionsOptions` — `ConnectionString` and `CommandTimeout` (default 30 seconds)
+- `SqlServerPermissionsOptions` — `ConnectionString` and `CommandTimeout` (default 30 seconds), inherited from `RelationalPermissionsOptions`
 - Shares `PermissionsStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
 - Identifier names validated against SQL Server naming rules
 
@@ -710,8 +710,7 @@ Configure schema and table names through `PermissionsStorageOptions` via `setup.
 ### Runtime behavior
 
 - Registers the permissions schema contribution; the one schema runner applies it at startup
-- Registers `SqlServerPermissionGrantRepository` as `IPermissionGrantRepository` (singleton)
-- Registers `SqlServerPermissionDefinitionRecordRepository` as `IPermissionDefinitionRecordRepository` (singleton)
+- Registers the shared relational repositories from `Headless.Permissions.Core`, over the SQL Server dialect, as `IPermissionGrantRepository` and `IPermissionDefinitionRecordRepository` (singletons)
 
 ---
 

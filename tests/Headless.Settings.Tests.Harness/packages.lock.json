@@ -722,7 +722,8 @@
           "Headless.Messaging.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Security.Abstractions": "[1.0.0, )",
-          "Headless.Settings.Abstractions": "[1.0.0, )"
+          "Headless.Settings.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )"
         }
       },
       "headless.settings.storage.entityframework": {
@@ -731,6 +732,9 @@
           "Headless.EntityFramework": "[1.0.0, )",
           "Headless.Settings.Core": "[1.0.0, )"
         }
+      },
+      "headless.sql.abstractions": {
+        "type": "Project"
       },
       "headless.testing": {
         "type": "Project",

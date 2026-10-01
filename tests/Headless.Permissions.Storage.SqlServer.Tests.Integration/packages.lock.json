@@ -953,6 +953,7 @@
           "Headless.Messaging.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Permissions.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
           "Microsoft.AspNetCore.Authorization": "[10.0.12, )"
         }
       },
@@ -967,7 +968,6 @@
         "type": "Project",
         "dependencies": {
           "Headless.Permissions.Core": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Sql.SqlServer": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )"
         }

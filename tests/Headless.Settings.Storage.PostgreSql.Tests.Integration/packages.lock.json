@@ -980,7 +980,8 @@
           "Headless.Messaging.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Security.Abstractions": "[1.0.0, )",
-          "Headless.Settings.Abstractions": "[1.0.0, )"
+          "Headless.Settings.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )"
         }
       },
       "headless.settings.storage.entityframework": {
@@ -993,8 +994,6 @@
       "headless.settings.storage.postgresql": {
         "type": "Project",
         "dependencies": {
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Settings.Core": "[1.0.0, )",
           "Headless.Sql.PostgreSql": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"

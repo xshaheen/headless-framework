@@ -642,7 +642,9 @@
           "FluentValidation": "[12.1.1, )",
           "Headless.AuditLog.Abstractions": "[1.0.0, )",
           "Headless.Checks": "[1.0.0, )",
+          "Headless.Core": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Options": "[10.0.12, )"
         }
@@ -803,6 +805,9 @@
           "Headless.Checks": "[1.0.0, )",
           "Headless.Serializer.Abstractions": "[1.0.0, )"
         }
+      },
+      "headless.sql.abstractions": {
+        "type": "Project"
       },
       "headless.testing": {
         "type": "Project",

@@ -1,32 +1,38 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Features.Entities;
-using Headless.Hosting.Initialization;
+using Headless.Features.Repositories;
 using Headless.Hosting.Initialization.Schema;
 using Headless.Sql.SqlServer;
 
 namespace Headless.Features.SqlServer;
 
 /// <summary>
-/// The Features feature's schema contribution for SQL Server: the value, definition, and group tables, their indexes,
-/// as one idempotent step the Headless schema runner applies.
+/// The Features feature's schema contribution for SQL Server: the value, definition, and group tables and their
+/// indexes, as one idempotent step the Headless schema runner applies.
 /// </summary>
 internal static class SqlServerFeaturesSchemaContribution
 {
     public const string StepVersion = "1";
 
-    // Only the default names are read from it, so the history identity tracks the defaults FeaturesStorageOptions owns.
-    private static readonly FeaturesStorageOptions _Defaults = new();
+    private static readonly RelationalFeaturesTables _Defaults = new(
+        SqlServerDialect.Instance,
+        new FeaturesStorageOptions()
+    );
 
-    public static SchemaContribution Create(SqlServerFeaturesOptions options, FeaturesStorageOptions storageOptions)
+    public static SchemaContribution Create(
+        SqlServerFeaturesOptions options,
+        RelationalFeaturesTables tables,
+        bool applyOnStartup
+    )
     {
-        var valuesName = storageOptions.ResolveFeatureValuesTableName(StorageNamingStyle.PascalCase);
-        var definitionsName = storageOptions.ResolveFeatureDefinitionsTableName(StorageNamingStyle.PascalCase);
-        var groupsName = storageOptions.ResolveFeatureGroupDefinitionsTableName(StorageNamingStyle.PascalCase);
-        var valuesTable = SqlServerFeaturesSchema.Qualified(storageOptions, valuesName);
-        var definitionsTable = SqlServerFeaturesSchema.Qualified(storageOptions, definitionsName);
-        var groupsTable = SqlServerFeaturesSchema.Qualified(storageOptions, groupsName);
-        var schema = storageOptions.Schema;
+        var valuesName = tables.ValuesName;
+        var definitionsName = tables.DefinitionsName;
+        var groupsName = tables.GroupsName;
+        var valuesTable = tables.Values;
+        var definitionsTable = tables.Definitions;
+        var groupsTable = tables.Groups;
+        var schema = tables.Schema;
         var valuesObject = $"{schema}.{valuesName}";
         var definitionsObject = $"{schema}.{definitionsName}";
         var groupsObject = $"{schema}.{groupsName}";
@@ -93,31 +99,18 @@ internal static class SqlServerFeaturesSchemaContribution
         return new SchemaContribution(
             feature: SchemaContribution.FeatureId(
                 "Features",
-                (
-                    storageOptions.FeatureValuesTableName,
-                    _Defaults.ResolveFeatureValuesTableName(StorageNamingStyle.PascalCase)
-                ),
-                (
-                    storageOptions.FeatureDefinitionsTableName,
-                    _Defaults.ResolveFeatureDefinitionsTableName(StorageNamingStyle.PascalCase)
-                ),
-                (
-                    storageOptions.FeatureGroupDefinitionsTableName,
-                    _Defaults.ResolveFeatureGroupDefinitionsTableName(StorageNamingStyle.PascalCase)
-                )
+                (valuesName, _Defaults.ValuesName),
+                (definitionsName, _Defaults.DefinitionsName),
+                (groupsName, _Defaults.GroupsName)
             ),
             dialect: SqlServerSchemaDialect.Instance,
-            createConnection: options.CreateConnection,
+            createConnection: () => SqlServerDialect.Instance.CreateConnection(options.ConnectionString),
             schema: schema,
             steps:
             [
-                new SchemaStep(
-                    StepVersion,
-                    "Create the value, definition, and group tables, their indexes, and the id and name list types.",
-                    sql
-                ),
+                new SchemaStep(StepVersion, "Create the value, definition, and group tables and their indexes.", sql),
             ],
-            applyOnStartup: storageOptions.InitializeOnStartup
+            applyOnStartup: applyOnStartup
         );
     }
 }

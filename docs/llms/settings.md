@@ -224,6 +224,7 @@ Core implementation of dynamic settings management with hierarchical value provi
 - `SettingsInitializationBackgroundService` — seeds static definitions with up to 10 jittered exponential-back-off retries capped at 30 seconds; pre-caches dynamic definitions when enabled
 - `SettingManagementOptions` — tuning options for lock keys, cache expiries, dynamic store toggle
 - `SettingsStorageOptions` — schema and table name configuration shared across all storage providers
+- `RelationalSettingsOptions` — base of `PostgreSqlSettingsOptions` and `SqlServerSettingsOptions` (`ConnectionString`, `CommandTimeout`). Core also holds the one relational value and definition repository both raw providers run, written over the `ISqlDialect` statement kit; each provider package supplies only its options, DDL, and registration
 - `HeadlessSettingsSetupBuilder` — fluent builder returned to `AddHeadlessSettings`; exposes `ConfigureManagement`, `ConfigureStorage`, and `RegisterExtension`
 - `services.AddSettingDefinitionProvider<T>()` — registers a custom `ISettingDefinitionProvider`
 - `services.AddSettingValueProvider<T>()` — registers a custom value provider (idempotent by type)
@@ -494,7 +495,7 @@ PostgreSQL raw-DDL storage for settings management.
 - `setup.UsePostgreSql()` — reads the connection registered by `AddPostgreSqlSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
 - Table and index creation at host startup as schema steps (`Settings/1` tables, `Settings/2` indexes) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with snake_case tables, columns, keys, and indexes (`setting_values`, `provider_key`, `ix_setting_values_name_provider_name_provider_key`)
 - Raw ADO.NET repositories for setting values and definitions
-- `PostgreSqlSettingsOptions` — connection string and command timeout
+- `PostgreSqlSettingsOptions` — connection string and command timeout, inherited from `RelationalSettingsOptions`
 - Shares `SettingsStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
 
 ### Install
@@ -553,8 +554,7 @@ Configure schema and table names through `SettingsStorageOptions` via `setup.Con
 ### Runtime behavior
 
 - Registers the settings schema contribution; the one schema runner applies it at startup
-- Registers `PostgreSqlSettingValueRecordRepository` as `ISettingValueRecordRepository` (singleton)
-- Registers `PostgreSqlSettingDefinitionRecordRepository` as `ISettingDefinitionRecordRepository` (singleton)
+- Registers the shared relational repositories from `Headless.Settings.Core`, over the PostgreSQL dialect, as `ISettingValueRecordRepository` and `ISettingDefinitionRecordRepository` (singletons)
 
 ---
 
@@ -571,7 +571,7 @@ SQL Server raw-DDL storage for settings management.
 - `setup.UseSqlServer()` — reads the connection registered by `AddSqlServerSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
 - Table and index creation at host startup as schema steps (`Settings/1` tables, `Settings/2` indexes) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with PascalCase tables, columns, keys, and indexes (`SettingValues`, `ProviderKey`, `IX_SettingValues_Name_ProviderName_ProviderKey`)
 - Raw ADO.NET repositories for setting values and definitions
-- `SqlServerSettingsOptions` — connection string and command timeout
+- `SqlServerSettingsOptions` — connection string and command timeout, inherited from `RelationalSettingsOptions`
 - Shares `SettingsStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
 
 ### Install
@@ -630,5 +630,4 @@ Configure schema and table names through `SettingsStorageOptions` via `setup.Con
 ### Runtime behavior
 
 - Registers the settings schema contribution; the one schema runner applies it at startup
-- Registers `SqlServerSettingValueRecordRepository` as `ISettingValueRecordRepository` (singleton)
-- Registers `SqlServerSettingDefinitionRecordRepository` as `ISettingDefinitionRecordRepository` (singleton)
+- Registers the shared relational repositories from `Headless.Settings.Core`, over the SQL Server dialect, as `ISettingValueRecordRepository` and `ISettingDefinitionRecordRepository` (singletons)

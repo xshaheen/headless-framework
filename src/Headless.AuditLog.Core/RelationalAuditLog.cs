@@ -5,10 +5,11 @@ using Headless.Checks;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.Options;
 
-namespace Headless.AuditLog.SqlServer;
+namespace Headless.AuditLog;
 
-internal sealed class SqlServerAuditLog<TContext>(
-    SqlServerAuditLogWriter writer,
+/// <summary>The relational <see cref="IAuditLog{TContext}"/>: stamps the ambient user, tenant, and correlation id on each entry.</summary>
+internal sealed class RelationalAuditLog<TContext>(
+    RelationalAuditLogWriter writer,
     ICurrentUser currentUser,
     ICurrentTenant currentTenant,
     ICorrelationIdProvider correlationIdProvider,

@@ -1,36 +1,38 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Initialization;
 using Headless.Hosting.Initialization.Schema;
 using Headless.Permissions.Entities;
+using Headless.Permissions.Repositories;
 using Headless.Sql.SqlServer;
 
 namespace Headless.Permissions.SqlServer;
 
 /// <summary>
-/// The Permissions feature's schema contribution for SQL Server: the grant, definition, and group tables, their
-/// and indexes, as one idempotent step the Headless schema runner applies.
+/// The Permissions feature's schema contribution for SQL Server: the grant, definition, and group tables and their
+/// indexes, as one idempotent step the Headless schema runner applies.
 /// </summary>
 internal static class SqlServerPermissionsSchemaContribution
 {
     public const string StepVersion = "1";
 
-    // Only the default names are read from it, so the history identity tracks the defaults PermissionsStorageOptions
-    // owns.
-    private static readonly PermissionsStorageOptions _Defaults = new();
+    private static readonly RelationalPermissionsTables _Defaults = new(
+        SqlServerDialect.Instance,
+        new PermissionsStorageOptions()
+    );
 
     public static SchemaContribution Create(
         SqlServerPermissionsOptions options,
-        PermissionsStorageOptions storageOptions
+        RelationalPermissionsTables tables,
+        bool applyOnStartup
     )
     {
-        var grantsName = storageOptions.ResolvePermissionGrantsTableName(StorageNamingStyle.PascalCase);
-        var definitionsName = storageOptions.ResolvePermissionDefinitionsTableName(StorageNamingStyle.PascalCase);
-        var groupsName = storageOptions.ResolvePermissionGroupDefinitionsTableName(StorageNamingStyle.PascalCase);
-        var grantsTable = SqlServerPermissionsSchema.Qualified(storageOptions, grantsName);
-        var definitionsTable = SqlServerPermissionsSchema.Qualified(storageOptions, definitionsName);
-        var groupsTable = SqlServerPermissionsSchema.Qualified(storageOptions, groupsName);
-        var schema = storageOptions.Schema;
+        var grantsName = tables.GrantsName;
+        var definitionsName = tables.DefinitionsName;
+        var groupsName = tables.GroupsName;
+        var grantsTable = tables.Grants;
+        var definitionsTable = tables.Definitions;
+        var groupsTable = tables.Groups;
+        var schema = tables.Schema;
         var grantsObject = $"{schema}.{grantsName}";
         var definitionsObject = $"{schema}.{definitionsName}";
         var groupsObject = $"{schema}.{groupsName}";
@@ -98,31 +100,18 @@ internal static class SqlServerPermissionsSchemaContribution
         return new SchemaContribution(
             feature: SchemaContribution.FeatureId(
                 "Permissions",
-                (
-                    storageOptions.PermissionGrantsTableName,
-                    _Defaults.ResolvePermissionGrantsTableName(StorageNamingStyle.PascalCase)
-                ),
-                (
-                    storageOptions.PermissionDefinitionsTableName,
-                    _Defaults.ResolvePermissionDefinitionsTableName(StorageNamingStyle.PascalCase)
-                ),
-                (
-                    storageOptions.PermissionGroupDefinitionsTableName,
-                    _Defaults.ResolvePermissionGroupDefinitionsTableName(StorageNamingStyle.PascalCase)
-                )
+                (grantsName, _Defaults.GrantsName),
+                (definitionsName, _Defaults.DefinitionsName),
+                (groupsName, _Defaults.GroupsName)
             ),
             dialect: SqlServerSchemaDialect.Instance,
-            createConnection: options.CreateConnection,
+            createConnection: () => SqlServerDialect.Instance.CreateConnection(options.ConnectionString),
             schema: schema,
             steps:
             [
-                new SchemaStep(
-                    StepVersion,
-                    "Create the grant, definition, and group tables, their indexes, and the id and name list types.",
-                    sql
-                ),
+                new SchemaStep(StepVersion, "Create the grant, definition, and group tables and their indexes.", sql),
             ],
-            applyOnStartup: storageOptions.InitializeOnStartup
+            applyOnStartup: applyOnStartup
         );
     }
 }

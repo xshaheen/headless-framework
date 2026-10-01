@@ -4,13 +4,11 @@
     <Description>SQL Server storage provider for Headless permissions.</Description>
     <PackageTags>headless;permissions;storage;sql-server;dotnet</PackageTags>
     <RootNamespace>Headless.Permissions.SqlServer</RootNamespace>
-    <NoWarn>$(NoWarn);CA2100</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
     <ProjectReference Include="..\Headless.Permissions.Core\Headless.Permissions.Core.csproj" />
     <ProjectReference Include="..\Headless.Sql.SqlServer\Headless.Sql.SqlServer.csproj" />
   </ItemGroup>
