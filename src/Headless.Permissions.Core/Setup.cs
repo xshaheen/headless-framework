@@ -4,8 +4,10 @@ using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Checks;
 using Headless.Hosting.Initialization;
+using Headless.Messaging;
 using Headless.MultiTenancy;
 using Headless.Permissions.Definitions;
+using Headless.Permissions.Events;
 using Headless.Permissions.GrantProviders;
 using Headless.Permissions.Grants;
 using Headless.Permissions.Models;
@@ -148,6 +150,17 @@ public static class SetupPermissions
         // The definition store keys its cross-instance lock on the application name and the manager stamps
         // its change announcements with the instance id; a host that never registered an identity gets one.
         services.AddHeadlessHostIdentity();
+
+        // The change announcements' wire names are declared rather than convention-derived, so services sharing a
+        // broker agree on them whatever naming conventions each configures. Inert when the host does not use messaging.
+        services.ConfigureMessaging(static messaging =>
+        {
+            messaging.Message<PermissionGrantChangedMessage>(PermissionGrantChangedMessage.MessageName, "1");
+            messaging.Message<DynamicPermissionDefinitionsChanged>(
+                DynamicPermissionDefinitionsChanged.MessageName,
+                "1"
+            );
+        });
 
         services.AddTransient<IGrantPermissionsSeedHelper, GrantPermissionsSeedHelper>();
 

@@ -783,6 +783,15 @@
           "Headless.Messaging.Core": "[1.0.0, )"
         }
       },
+      "headless.messaging.testing": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Messaging.Core": "[1.0.0, )",
+          "Headless.Messaging.InMemory": "[1.0.0, )",
+          "Headless.Messaging.Storage.InMemory": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
+        }
+      },
       "headless.multitenancy": {
         "type": "Project",
         "dependencies": {

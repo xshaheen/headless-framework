@@ -23,6 +23,13 @@
     <ProjectReference Include="..\..\src\Headless.Permissions.Core\Headless.Permissions.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.Permissions.Storage.EntityFramework\Headless.Permissions.Storage.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.Permissions.Testing\Headless.Permissions.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.Testing\Headless.Messaging.Testing.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <ProjectReference
+      Include="..\..\src\Headless.Messaging.SourceGenerator\Headless.Messaging.SourceGenerator.csproj"
+      OutputItemType="Analyzer"
+      ReferenceOutputAssembly="false"
+      PrivateAssets="all"
+    />
   </ItemGroup>
 </Project>

@@ -13,9 +13,10 @@ internal static class HybridCacheInvalidationConsumerRegistration
 {
     /// <summary>
     /// Contributes this assembly's generated <c>MessagingModule</c>, which declares
-    /// <see cref="HybridCacheInvalidationConsumer"/> as an every-instance Bus consumer. One consumer serves every hybrid,
-    /// default and named, by routing on <see cref="CacheInvalidationMessage.CacheName"/>, so this runs once per hybrid
-    /// registration and messaging registers the module once.
+    /// <see cref="HybridCacheInvalidationConsumer"/> as an every-instance Bus consumer, and declares the invalidation's
+    /// message contract. One consumer serves every hybrid, default and named, by routing on
+    /// <see cref="CacheInvalidationMessage.CacheName"/>, so this runs once per hybrid registration; messaging registers
+    /// the module once and merges the identical contract declarations.
     /// </summary>
     /// <remarks>
     /// The contribution is unconditional and order-independent: it stays inert until messaging starts, and it can come
@@ -26,6 +27,12 @@ internal static class HybridCacheInvalidationConsumerRegistration
     /// <param name="services">The service collection the hybrid cache is being registered into.</param>
     public static void AddInvalidationConsumer(IServiceCollection services)
     {
-        services.ConfigureMessaging(static messaging => messaging.AddModule<Hybrid.MessagingModule>());
+        services.ConfigureMessaging(static messaging =>
+        {
+            // Declared rather than convention-derived so every node agrees on the topic even when the services
+            // sharing the broker configure different naming conventions for their own messages.
+            messaging.Message<CacheInvalidationMessage>(CacheInvalidationMessage.MessageName, "1");
+            messaging.AddModule<Hybrid.MessagingModule>();
+        });
     }
 }

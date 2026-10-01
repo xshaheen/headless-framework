@@ -982,9 +982,6 @@ public sealed class DistributedLock(
         /// <summary>The consumer identity that <c>Tune</c> and <c>ConsumeOnly</c> refer to.</summary>
         public const string Identity = "headless.distributed-locks.release";
 
-        /// <summary>The logical message name the release signal is published and consumed under.</summary>
-        public const string MessageName = "headless.locks.released";
-
         /// <summary>
         /// Fans the release signal to all registered receivers and returns synchronously.
         /// Cancellation is honoured before dispatch; if <paramref name="cancellationToken"/>

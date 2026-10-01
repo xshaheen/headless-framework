@@ -73,7 +73,7 @@ The *static store* (`IStaticFeatureDefinitionStore`) builds the feature catalog 
 
 ### Reacting to a change
 
-`FeatureManager` publishes one `FeatureChangedMessage` over `IBus` after each successful `SetAsync` or `DeleteAsync`, listing every name that call changed, so an instance holding a resolved value learns it is stale instead of polling for it. The state it refreshes lives in each process, so consume it with an [every-instance consumer](messaging.md#every-instance-bus-delivery): every process receives every announcement instead of one replica taking the only copy. Delivery is at most once, so reload after a gap in the subscription too:
+`FeatureManager` publishes one `FeatureChangedMessage` over `IBus` after each successful `SetAsync` or `DeleteAsync`, listing every name that call changed, so an instance holding a resolved value learns it is stale instead of polling for it. The state it refreshes lives in each process, so consume it with an [every-instance consumer](messaging.md#every-instance-bus-delivery): every process receives every announcement instead of one replica taking the only copy. Delivery is at most once, so reload after a gap in the subscription too. Wire contract: `AddHeadlessFeatures` declares the message as `headless.features.changed`, contract version `1` (`FeatureChangedMessage.MessageName`), so the consumer below needs no `Message<T>` declaration of its own. The host's naming conventions (`UseConventions`) do not rename it; only the host-wide `MessagingOptions.MessageNamePrefix` applies, as it does to every message.
 
 ```csharp
 [BusConsumer("app.reload-tenant-features", EveryInstance = true)]

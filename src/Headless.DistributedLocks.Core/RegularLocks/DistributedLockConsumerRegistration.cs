@@ -25,7 +25,7 @@ internal static class DistributedLockConsumerRegistration
     {
         services.ConfigureMessaging(static messaging =>
         {
-            messaging.Message<DistributedLockReleased>(DistributedLock.LockReleasedConsumer.MessageName);
+            messaging.Message<DistributedLockReleased>(DistributedLockReleased.MessageName, "1");
             messaging.AddModule<Core.MessagingModule>();
         });
     }
