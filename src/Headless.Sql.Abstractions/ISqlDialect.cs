@@ -82,7 +82,9 @@ public interface ISqlDialect
     string InList(string expression, string parameter, SqlColumnType elementType);
 
     /// <summary>Binds <paramref name="values" /> as the list parameter an <see cref="InList" /> predicate reads.</summary>
-    /// <exception cref="ArgumentException"><paramref name="elementType" /> is <see cref="SqlColumnKind.Binary" />.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="elementType" /> is <see cref="SqlColumnKind.Binary" /> or <see cref="SqlColumnKind.Json" />.
+    /// </exception>
     void AddListParameter<T>(
         DbCommand command,
         string parameter,
@@ -161,6 +163,12 @@ public readonly record struct SqlColumnType(SqlColumnKind Kind, int MaxLength = 
 
     /// <summary>A boolean: <c>boolean</c> on PostgreSQL, <c>bit</c> on SQL Server.</summary>
     public static SqlColumnType Boolean => new(SqlColumnKind.Boolean);
+
+    /// <summary>
+    /// A JSON document, bound as text: <c>jsonb</c> on PostgreSQL, <c>nvarchar(max)</c> on SQL Server. Read it back as a
+    /// string on both engines.
+    /// </summary>
+    public static SqlColumnType Json => new(SqlColumnKind.Json);
 }
 
 /// <summary>The kind of a portable column type.</summary>
@@ -180,4 +188,7 @@ public enum SqlColumnKind
 
     /// <summary>A boolean.</summary>
     Boolean = 8,
+
+    /// <summary>A JSON document.</summary>
+    Json = 9,
 }

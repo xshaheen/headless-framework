@@ -119,6 +119,7 @@ public sealed class DialectRuntimeTests : TestBase
             (SqlColumnType.Binary, new byte[] { 1 }, NpgsqlDbType.Bytea, System.Data.SqlDbType.VarBinary),
             (SqlColumnType.Guid, Guid.Empty, NpgsqlDbType.Uuid, System.Data.SqlDbType.UniqueIdentifier),
             (SqlColumnType.Boolean, true, NpgsqlDbType.Boolean, System.Data.SqlDbType.Bit),
+            (SqlColumnType.Json, "{}", NpgsqlDbType.Jsonb, System.Data.SqlDbType.NVarChar),
         };
 
         for (var i = 0; i < kinds.Length; i++)

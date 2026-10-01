@@ -115,6 +115,7 @@ public sealed class SqlServerDialect : ISqlDialect
             SqlColumnKind.Binary => new SqlParameter(parameter, SqlDbType.VarBinary, -1),
             SqlColumnKind.Guid => new SqlParameter(parameter, SqlDbType.UniqueIdentifier),
             SqlColumnKind.Boolean => new SqlParameter(parameter, SqlDbType.Bit),
+            SqlColumnKind.Json => new SqlParameter(parameter, SqlDbType.NVarChar, -1),
             _ => throw new ArgumentOutOfRangeException(nameof(type), type.Kind, "Unknown column kind."),
         };
 
@@ -323,8 +324,8 @@ public sealed class SqlServerDialect : ISqlDialect
             SqlColumnKind.Timestamp => "datetimeoffset(7)",
             SqlColumnKind.Guid => "uniqueidentifier",
             SqlColumnKind.Boolean => "bit",
-            SqlColumnKind.Binary => throw new ArgumentException(
-                "A list parameter cannot hold binary values.",
+            SqlColumnKind.Binary or SqlColumnKind.Json => throw new ArgumentException(
+                "A list parameter cannot hold binary or JSON values.",
                 nameof(elementType)
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(elementType), elementType.Kind, "Unknown column kind."),

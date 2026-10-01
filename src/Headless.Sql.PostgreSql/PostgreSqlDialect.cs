@@ -291,9 +291,9 @@ public sealed class PostgreSqlDialect : ISqlDialect
 
     private static void _EnsureListable(SqlColumnType elementType)
     {
-        if (elementType.Kind == SqlColumnKind.Binary)
+        if (elementType.Kind is SqlColumnKind.Binary or SqlColumnKind.Json)
         {
-            throw new ArgumentException("A list parameter cannot hold binary values.", nameof(elementType));
+            throw new ArgumentException("A list parameter cannot hold binary or JSON values.", nameof(elementType));
         }
     }
 
@@ -328,6 +328,7 @@ public sealed class PostgreSqlDialect : ISqlDialect
             SqlColumnKind.Binary => NpgsqlDbType.Bytea,
             SqlColumnKind.Guid => NpgsqlDbType.Uuid,
             SqlColumnKind.Boolean => NpgsqlDbType.Boolean,
+            SqlColumnKind.Json => NpgsqlDbType.Jsonb,
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown column kind."),
         };
     }
