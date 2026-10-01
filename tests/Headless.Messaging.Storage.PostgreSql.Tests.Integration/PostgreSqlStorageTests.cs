@@ -387,6 +387,12 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     }
 
     [Fact]
+    public override Task should_admit_exactly_one_of_many_admissions_of_one_key_released_together()
+    {
+        return base.should_admit_exactly_one_of_many_admissions_of_one_key_released_together();
+    }
+
+    [Fact]
     public override Task should_isolate_every_persisted_inbox_key_component()
     {
         return base.should_isolate_every_persisted_inbox_key_component();

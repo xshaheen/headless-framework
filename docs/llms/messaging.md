@@ -1856,6 +1856,10 @@ Fresh schemas directly create `([StatusName],[Added])` indexes for dashboard tim
 
 Registers SQL Server storage, the monitoring API, table-name resolution, and the messaging schema contribution. It does not register EF Core or `Headless.UnitOfWork`.
 
+- **Monitoring skips locked rows**: dashboard counts, pages, and timelines read with `READPAST`, so a row another transaction holds locked (a claim, an admission, a state change in flight) is left out of that read instead of blocking it. PostgreSQL's monitoring reads instead see the row's last committed version. Counts can therefore dip briefly under load on SQL Server.
+- **Inbox operation lock**: concurrent requests of one inbox operation (hold, release, purge, force-reprocess) that share an operation id serialize on a transaction-scoped `sp_getapplock` named `headless.messaging.inbox.operation.{operationId}`, so one applies and the others replay its receipt. The lock has no timeout of its own, so the wait is bounded by `MessagingOptions.CommandTimeout`, and a timed-out request can be retried with the same operation id.
+- **Admission under READ COMMITTED**: duplicate admission is prevented by the unique index on the inbox key hash, not by the isolation level. Concurrent admissions of one key yield one `Winner`, the rest `InFlightDuplicate`, and one row.
+
 ## Headless.Messaging.Storage.SqlServer.EntityFramework
 
 Adds `setup.UseEntityFramework<TContext>()` for SQL Server, derives the connection from the registered context, and registers `Headless.UnitOfWork` (`AddUnitOfWork()`); there is no startup gate. Depends on the raw SQL Server storage package; install it only for EF-backed transactional outbox composition.
