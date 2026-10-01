@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.MultiTenancy;
+using Headless.Sql;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Idempotency;
@@ -135,7 +136,8 @@ internal sealed class IdempotencyRequestResolver(
 
     /// <summary>
     /// Returns an admission or renewal lease duration, the caller's or the configured default, checked against the
-    /// configured bounds.
+    /// configured bounds and truncated to whole microseconds, the finest resolution every provider stores, so a lease
+    /// expires at the same offset from its admission whichever provider holds it.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="leaseDuration" /> is outside the bounds.</exception>
     public TimeSpan LeaseDuration(TimeSpan? leaseDuration)
@@ -154,15 +156,20 @@ internal sealed class IdempotencyRequestResolver(
             );
         }
 
-        return value;
+        // Checked before truncating, so a duration a tick past the maximum is refused rather than rounded into range.
+        return SqlPortable.Truncate(value);
     }
 
-    /// <summary>Returns the retention to apply: the caller's, or the configured default.</summary>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="retention" /> is not positive.</exception>
+    /// <summary>
+    /// Returns the retention to apply, the caller's or the configured default, truncated to whole microseconds like a
+    /// lease duration.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="retention" /> is under one microsecond.</exception>
     public TimeSpan Retention(TimeSpan? retention)
     {
-        // Read on every call so a default changed through options reload applies to the next admission.
-        var value = retention ?? options.CurrentValue.DefaultRetention;
+        // Read on every call so a default changed through options reload applies to the next admission. Checked after
+        // truncating, so a retention that would truncate to nothing is refused rather than stored already past.
+        var value = SqlPortable.Truncate(retention ?? options.CurrentValue.DefaultRetention);
         Argument.IsPositive(value, paramName: nameof(retention));
 
         return value;

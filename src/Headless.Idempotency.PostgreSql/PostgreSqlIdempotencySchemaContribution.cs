@@ -14,14 +14,16 @@ internal static class PostgreSqlIdempotencySchemaContribution
     public const string StepVersion = "1";
 
     public static SchemaContribution Create(
-        PostgreSqlIdempotencyOptions options,
+        RelationalIdempotencyOptions options,
         IdempotencyStorageOptions storageOptions
     )
     {
-        var schema = storageOptions.Schema;
-        var table = PostgreSqlIdempotencySchema.QualifiedTable(schema);
-        var sequence = PostgreSqlIdempotencySchema.QualifiedSequence(schema);
-        const string t = PostgreSqlIdempotencySchema.TableName;
+        var dialect = PostgreSqlDialect.Instance;
+        var t = new IdempotencyTable(dialect, storageOptions.Schema);
+        var pending = IdempotencyTable.StatusLiteral(IdempotencyRecordStatus.Pending);
+        var completed = IdempotencyTable.StatusLiteral(IdempotencyRecordStatus.Completed);
+
+        string name(string pascal) => dialect.Quote(dialect.Name(pascal));
 
         // Key columns compare with the "C" collation, so keys and tenant ids match ordinally (byte for byte)
         // whatever the database's default collation is. A completed record always carries its result and contract
@@ -32,63 +34,54 @@ internal static class PostgreSqlIdempotencySchemaContribution
         // sequence issues every generation, so a key admitted again after its record was purged still gets a
         // generation above every earlier attempt's. The retention index serves the purge.
         var sql = $"""
-            CREATE SEQUENCE IF NOT EXISTS {sequence} AS bigint START WITH 1 INCREMENT BY 1 NO CYCLE;
+            CREATE SEQUENCE IF NOT EXISTS {t.Sequence} AS bigint START WITH 1 INCREMENT BY 1 NO CYCLE;
 
-            CREATE TABLE IF NOT EXISTS {table} (
-                {PostgreSqlIdempotencySchema.TenantId} varchar({IdempotencyFieldLimits.TenantIdMaxLength}) COLLATE "C" NOT NULL,
-                {PostgreSqlIdempotencySchema.Key} varchar({IdempotencyFieldLimits.KeyMaxLength}) COLLATE "C" NOT NULL,
-                {PostgreSqlIdempotencySchema.Status} smallint NOT NULL,
-                {PostgreSqlIdempotencySchema.FingerprintAlgorithm} varchar({IdempotencyFieldLimits.FingerprintAlgorithmMaxLength}) COLLATE "C" NOT NULL,
-                {PostgreSqlIdempotencySchema.Fingerprint} bytea NOT NULL,
-                {PostgreSqlIdempotencySchema.Generation} bigint NULL,
-                {PostgreSqlIdempotencySchema.LeaseExpiresAt} timestamptz NULL,
-                {PostgreSqlIdempotencySchema.Result} bytea NULL,
-                {PostgreSqlIdempotencySchema.ResultContract} varchar({IdempotencyFieldLimits.ContractMaxLength}) COLLATE "C" NULL,
-                {PostgreSqlIdempotencySchema.RetentionUntil} timestamptz NOT NULL,
-                {PostgreSqlIdempotencySchema.RecoveryPoint} varchar({IdempotencyFieldLimits.RecoveryPointMaxLength}) COLLATE "C" NULL,
-                {PostgreSqlIdempotencySchema.RecoveryState} bytea NULL,
-                {PostgreSqlIdempotencySchema.RecoveryContract} varchar({IdempotencyFieldLimits.ContractMaxLength}) COLLATE "C" NULL,
-                CONSTRAINT "pk_{t}" PRIMARY KEY (
-                    {PostgreSqlIdempotencySchema.TenantId},
-                    {PostgreSqlIdempotencySchema.Key}
+            CREATE TABLE IF NOT EXISTS {t.Table} (
+                {t.TenantId} varchar({IdempotencyFieldLimits.TenantIdMaxLength}) COLLATE "C" NOT NULL,
+                {t.Key} varchar({IdempotencyFieldLimits.KeyMaxLength}) COLLATE "C" NOT NULL,
+                {t.Status} smallint NOT NULL,
+                {t.FingerprintAlgorithm} varchar({IdempotencyFieldLimits.FingerprintAlgorithmMaxLength}) COLLATE "C" NOT NULL,
+                {t.Fingerprint} bytea NOT NULL,
+                {t.Generation} bigint NULL,
+                {t.LeaseExpiresAt} timestamptz NULL,
+                {t.Result} bytea NULL,
+                {t.ResultContract} varchar({IdempotencyFieldLimits.ContractMaxLength}) COLLATE "C" NULL,
+                {t.RetentionUntil} timestamptz NOT NULL,
+                {t.RecoveryPoint} varchar({IdempotencyFieldLimits.RecoveryPointMaxLength}) COLLATE "C" NULL,
+                {t.RecoveryState} bytea NULL,
+                {t.RecoveryContract} varchar({IdempotencyFieldLimits.ContractMaxLength}) COLLATE "C" NULL,
+                CONSTRAINT {name("PK_IdempotencyRecords")} PRIMARY KEY ({t.TenantId}, {t.Key}),
+                CONSTRAINT {name("CK_IdempotencyRecords_Status")} CHECK ({t.Status} BETWEEN {pending} AND {completed}),
+                CONSTRAINT {name("CK_IdempotencyRecords_Fingerprint")} CHECK (
+                    octet_length({t.Fingerprint}) BETWEEN 1 AND {IdempotencyFieldLimits.FingerprintMaxLength}
                 ),
-                CONSTRAINT "ck_{t}_status" CHECK (
-                    {PostgreSqlIdempotencySchema.Status} BETWEEN {PostgreSqlIdempotencySchema.Pending} AND {PostgreSqlIdempotencySchema.Completed}
+                CONSTRAINT {name("CK_IdempotencyRecords_Result")} CHECK (
+                    ({t.Status} = {completed}) = ({t.Result} IS NOT NULL AND {t.ResultContract} IS NOT NULL)
+                    AND ({t.Result} IS NULL) = ({t.ResultContract} IS NULL)
                 ),
-                CONSTRAINT "ck_{t}_fingerprint" CHECK (
-                    octet_length({PostgreSqlIdempotencySchema.Fingerprint}) BETWEEN 1 AND {IdempotencyFieldLimits.FingerprintMaxLength}
+                CONSTRAINT {name("CK_IdempotencyRecords_Recovery")} CHECK (
+                    ({t.RecoveryPoint} IS NULL) = ({t.RecoveryState} IS NULL)
+                    AND ({t.RecoveryPoint} IS NULL) = ({t.RecoveryContract} IS NULL)
+                    AND ({t.RecoveryPoint} IS NULL OR {t.Status} = {pending})
+                    AND COALESCE(octet_length({t.RecoveryState}), 0) <= {IdempotencyFieldLimits.RecoveryStateMaxLength}
                 ),
-                CONSTRAINT "ck_{t}_result" CHECK (
-                    ({PostgreSqlIdempotencySchema.Status} = {PostgreSqlIdempotencySchema.Completed})
-                        = ({PostgreSqlIdempotencySchema.Result} IS NOT NULL AND {PostgreSqlIdempotencySchema.ResultContract} IS NOT NULL)
-                    AND ({PostgreSqlIdempotencySchema.Result} IS NULL) = ({PostgreSqlIdempotencySchema.ResultContract} IS NULL)
-                ),
-                CONSTRAINT "ck_{t}_recovery" CHECK (
-                    ({PostgreSqlIdempotencySchema.RecoveryPoint} IS NULL) = ({PostgreSqlIdempotencySchema.RecoveryState} IS NULL)
-                    AND ({PostgreSqlIdempotencySchema.RecoveryPoint} IS NULL) = ({PostgreSqlIdempotencySchema.RecoveryContract} IS NULL)
-                    AND ({PostgreSqlIdempotencySchema.RecoveryPoint} IS NULL OR {PostgreSqlIdempotencySchema.Status} = {PostgreSqlIdempotencySchema.Pending})
-                    AND COALESCE(octet_length({PostgreSqlIdempotencySchema.RecoveryState}), 0) <= {IdempotencyFieldLimits.RecoveryStateMaxLength}
-                ),
-                CONSTRAINT "ck_{t}_lease" CHECK (
-                    ({PostgreSqlIdempotencySchema.Generation} IS NULL OR {PostgreSqlIdempotencySchema.Generation} > 0)
-                    AND CASE {PostgreSqlIdempotencySchema.Status}
-                        WHEN {PostgreSqlIdempotencySchema.Completed} THEN
-                            {PostgreSqlIdempotencySchema.Generation} IS NOT NULL AND {PostgreSqlIdempotencySchema.LeaseExpiresAt} IS NULL
-                        ELSE
-                            ({PostgreSqlIdempotencySchema.Generation} IS NULL) = ({PostgreSqlIdempotencySchema.LeaseExpiresAt} IS NULL)
+                CONSTRAINT {name("CK_IdempotencyRecords_Lease")} CHECK (
+                    ({t.Generation} IS NULL OR {t.Generation} > 0)
+                    AND CASE {t.Status}
+                        WHEN {completed} THEN {t.Generation} IS NOT NULL AND {t.LeaseExpiresAt} IS NULL
+                        ELSE ({t.Generation} IS NULL) = ({t.LeaseExpiresAt} IS NULL)
                     END
                 )
             );
 
-            CREATE INDEX IF NOT EXISTS "ix_{t}_retention_until"
-                ON {table} ({PostgreSqlIdempotencySchema.RetentionUntil});
+            CREATE INDEX IF NOT EXISTS {name("IX_IdempotencyRecords_RetentionUntil")} ON {t.Table} ({t.RetentionUntil});
             """;
 
         return new SchemaContribution(
             feature: "Idempotency",
             dialect: PostgreSqlSchemaDialect.Instance,
-            createConnection: options.CreateConnection,
-            schema: schema,
+            createConnection: () => dialect.CreateConnection(options.ConnectionString),
+            schema: storageOptions.Schema,
             steps:
             [
                 new SchemaStep(StepVersion, "Create the generation sequence, record table, and retention index.", sql),
