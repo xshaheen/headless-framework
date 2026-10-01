@@ -10,6 +10,7 @@
     <InternalsVisibleTo Include="Headless.UnitOfWork.EntityFramework" />
     <InternalsVisibleTo Include="Headless.UnitOfWork.PostgreSql" />
     <InternalsVisibleTo Include="Headless.UnitOfWork.SqlServer" />
+    <InternalsVisibleTo Include="Headless.UnitOfWork.Sqlite" />
     <InternalsVisibleTo Include="Headless.UnitOfWork.Tests.Harness" />
     <InternalsVisibleTo Include="Headless.UnitOfWork.Tests.Unit" />
   </ItemGroup>
