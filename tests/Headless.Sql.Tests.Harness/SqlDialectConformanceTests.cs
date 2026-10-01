@@ -122,6 +122,61 @@ public abstract class SqlDialectConformanceTests : TestBase
         (await _CountWhereInAsync(table, "Key", SqlColumnType.KeyText(64), Array.Empty<string>())).Should().Be(0);
     }
 
+    public virtual async Task should_match_tuple_lists_row_by_row_and_never_across_rows()
+    {
+        var table = await _CreateTableAsync();
+        var id = Guid.NewGuid();
+        var stamp = new DateTimeOffset(2026, 10, 1, 10, 0, 0, TimeSpan.Zero);
+        _ = await _UpsertAsync(table, "a", increment: 1, guardBelow: null);
+        _ = await _UpsertAsync(table, "b", increment: 2, guardBelow: null);
+        await _ExecuteAsync(
+            $"UPDATE {table} SET {_Column("Id")} = @i, {_Column("Stamp")} = @s WHERE {_Column("Key")} = 'a'",
+            command =>
+            {
+                Dialect.AddParameter(command, "i", SqlColumnType.Guid, id);
+                Dialect.AddParameter(command, "s", SqlColumnType.Timestamp, stamp);
+            }
+        );
+        SqlColumnType[] keyAndValue = [SqlColumnType.KeyText(64), SqlColumnType.Int64];
+
+        // ("a", 2) must not match: "a" holds 1, and only "b" holds 2.
+        (
+            await _CountWhereInTuplesAsync(
+                table,
+                ["Key", "Value"],
+                keyAndValue,
+                [
+                    ["a", 2L],
+                    ["b", 2L],
+                ]
+            )
+        )
+            .Should()
+            .Be(1);
+        (
+            await _CountWhereInTuplesAsync(
+                table,
+                ["Key", "Value"],
+                keyAndValue,
+                [
+                    ["a", 1L],
+                    ["b", 2L],
+                ]
+            )
+        ).Should().Be(2);
+        (
+            await _CountWhereInTuplesAsync(
+                table,
+                ["Id", "Stamp"],
+                [SqlColumnType.Guid, SqlColumnType.Timestamp],
+                [
+                    [id, stamp.ToOffset(TimeSpan.FromHours(2))],
+                ]
+            )
+        ).Should().Be(1, "the same instant matches whatever offset it is written with");
+        (await _CountWhereInTuplesAsync(table, ["Key", "Value"], keyAndValue, [])).Should().Be(0);
+    }
+
     public virtual async Task should_delete_by_the_database_clock_in_a_clocked_statement()
     {
         var table = await _CreateTableAsync();
@@ -262,6 +317,22 @@ public abstract class SqlDialectConformanceTests : TestBase
         await using var command = connection.CreateCommand();
         command.CommandText = $"SELECT COUNT(*) FROM {table} WHERE {Dialect.InList(_Column(column), "list", type)}";
         Dialect.AddListParameter(command, "list", type, values);
+
+        return Convert.ToInt64(await command.ExecuteScalarAsync(AbortToken), CultureInfo.InvariantCulture);
+    }
+
+    private async Task<long> _CountWhereInTuplesAsync(
+        string table,
+        IReadOnlyList<string> columns,
+        IReadOnlyList<SqlColumnType> types,
+        IReadOnlyCollection<IReadOnlyList<object>> rows
+    )
+    {
+        await using var connection = await _OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT COUNT(*) FROM {table} WHERE {Dialect.InTuples([.. columns.Select(_Column)], "rows", types)}";
+        command.Parameters.AddRange(Dialect.CreateTupleListParameters("rows", types, rows).ToArray());
 
         return Convert.ToInt64(await command.ExecuteScalarAsync(AbortToken), CultureInfo.InvariantCulture);
     }

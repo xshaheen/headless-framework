@@ -101,6 +101,31 @@ public interface ISqlDialect
     /// </exception>
     DbParameter CreateListParameter<T>(string parameter, SqlColumnType elementType, IReadOnlyCollection<T> values);
 
+    /// <summary>
+    /// Returns a predicate that the tuple of <paramref name="expressions" /> equals one row of the tuple list
+    /// <paramref name="parameter" />, bound with <see cref="CreateTupleListParameters" />. An empty list matches nothing.
+    /// </summary>
+    /// <remarks>
+    /// Matching each row as a whole keeps pairs together: two separate lists would also match one row's first value
+    /// with another row's second. The parameter count does not grow with the list.
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// The counts differ, there are fewer than two expressions, or an element type is <see cref="SqlColumnKind.Binary" />
+    /// or <see cref="SqlColumnKind.Json" />.
+    /// </exception>
+    string InTuples(IReadOnlyList<string> expressions, string parameter, IReadOnlyList<SqlColumnType> elementTypes);
+
+    /// <summary>
+    /// Creates the parameters an <see cref="InTuples" /> predicate reads: one per element on an engine that binds a
+    /// list per column, or one for the whole list. Every row holds one non-null value per element type, in order.
+    /// </summary>
+    /// <exception cref="ArgumentException">A row has the wrong length or a null value, or an element type cannot be listed.</exception>
+    IReadOnlyList<DbParameter> CreateTupleListParameters(
+        string parameter,
+        IReadOnlyList<SqlColumnType> elementTypes,
+        IReadOnlyCollection<IReadOnlyList<object>> rows
+    );
+
     /// <summary>Renders <see cref="SqlLockedRead" />.</summary>
     string Render(SqlLockedRead statement);
 

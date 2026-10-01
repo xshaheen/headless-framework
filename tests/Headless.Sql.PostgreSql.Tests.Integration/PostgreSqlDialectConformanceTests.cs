@@ -35,6 +35,12 @@ public sealed class PostgreSqlDialectConformanceTests(NpgsqlTestFixture fixture)
     }
 
     [Fact]
+    public override Task should_match_tuple_lists_row_by_row_and_never_across_rows()
+    {
+        return base.should_match_tuple_lists_row_by_row_and_never_across_rows();
+    }
+
+    [Fact]
     public override Task should_insert_then_update_and_report_which()
     {
         return base.should_insert_then_update_and_report_which();
