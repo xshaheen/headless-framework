@@ -5,6 +5,7 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
+using Headless.Sql;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -206,25 +207,33 @@ internal sealed partial class PostgreSqlDataStorage
             return false;
         }
 
-        var nextRetryAt = timeProvider.GetUtcNow().Add(messagingOptions.Value.OrphanProbeInterval);
-        var sql = $"""
-            UPDATE {_receivedTable}
-            SET "is_inbox_orphaned"=@IsInboxOrphaned,
-                "next_retry_at"=CASE WHEN @IsInboxOrphaned THEN @NextRetryAt ELSE "next_retry_at" END,
-                "owner"=CASE WHEN @IsInboxOrphaned THEN NULL ELSE "owner" END,
-                "locked_until"=CASE WHEN @IsInboxOrphaned THEN NULL ELSE "locked_until" END
-            WHERE "id"=@Id
-              AND "intent_type"=@IntentType
-              AND "generation"=@Generation
-              AND "generation_incarnation_id"=@GenerationIncarnationId
-              AND "attempt_id"=@AttemptId
-              AND "owner" IS NOT DISTINCT FROM @Owner
-              AND "locked_until"=@LockedUntil
-              AND "locked_until">statement_timestamp();
-            """;
+        // The next orphan probe falls due on the database clock, the clock the retry pickup compares it against.
+        var sql = _Dialect.Render(
+            new SqlClockedStatement(
+                $"""
+                UPDATE {_receivedTable}
+                SET "is_inbox_orphaned"=@IsInboxOrphaned,
+                    "next_retry_at"=CASE WHEN @IsInboxOrphaned THEN {_Dialect.ShiftByDuration(
+                    SqlDialectTokens.Now,
+                    "ProbeInterval"
+                )} ELSE "next_retry_at" END,
+                    "owner"=CASE WHEN @IsInboxOrphaned THEN NULL ELSE "owner" END,
+                    "locked_until"=CASE WHEN @IsInboxOrphaned THEN NULL ELSE "locked_until" END
+                WHERE "id"=@Id
+                  AND "intent_type"=@IntentType
+                  AND "generation"=@Generation
+                  AND "generation_incarnation_id"=@GenerationIncarnationId
+                  AND "attempt_id"=@AttemptId
+                  AND "owner" IS NOT DISTINCT FROM @Owner
+                  AND "locked_until"=@LockedUntil
+                  AND "locked_until">{SqlDialectTokens.Now}
+                RETURNING "next_retry_at";
+                """
+            )
+        );
         object[] parameters =
         [
-            new NpgsqlParameter("@NextRetryAt", NpgsqlDbType.TimestampTz) { Value = nextRetryAt },
+            _Duration("ProbeInterval", messagingOptions.Value.OrphanProbeInterval),
             new NpgsqlParameter("@IsInboxOrphaned", orphaned),
             new NpgsqlParameter("@Id", fence.StorageId),
             new NpgsqlParameter("@IntentType", NpgsqlDbType.Smallint)
@@ -239,15 +248,24 @@ internal sealed partial class PostgreSqlDataStorage
         ];
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
-        var changed = await connection
-            .ExecuteNonQueryAsync(
+        var (changed, nextRetryAt) = await connection
+            .ExecuteReaderAsync(
                 sql,
+                static async (reader, token) =>
+                    await reader.ReadAsync(token).ConfigureAwait(false)
+                        ? (
+                            true,
+                            await reader.IsDBNullAsync(0, token).ConfigureAwait(false)
+                                ? (DateTimeOffset?)null
+                                : await reader.GetFieldValueAsync<DateTimeOffset>(0, token).ConfigureAwait(false)
+                        )
+                        : (false, null),
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: parameters,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
-        if (changed == 1)
+        if (changed)
         {
             message.IsInboxOrphaned = orphaned;
             if (orphaned)
@@ -258,7 +276,7 @@ internal sealed partial class PostgreSqlDataStorage
             }
         }
 
-        return changed == 1;
+        return changed;
     }
 
     private async ValueTask<(MediumMessage Message, StatusName Status)> _ReadInboxGenerationAsync(

@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Dapper;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
+using Npgsql;
 
 namespace Tests;
 
@@ -12,6 +14,21 @@ public sealed partial class PostgreSqlStorageTests
     {
         _EnsureInitialized();
         return (_CreateStorage(clock), _messagingOptions!.Value);
+    }
+
+    protected override async Task MakeScheduledMessagesDueAsync(
+        IReadOnlyCollection<Guid> storageIds,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                """UPDATE headless.messaging_published SET "expires_at"=clock_timestamp()-INTERVAL '1 second' WHERE "id"=ANY(@Ids);""",
+                new { Ids = storageIds.ToArray() },
+                cancellationToken: cancellationToken
+            )
+        );
     }
 
     [Fact]

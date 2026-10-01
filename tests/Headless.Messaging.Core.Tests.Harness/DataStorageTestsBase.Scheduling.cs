@@ -11,6 +11,18 @@ public abstract partial class DataStorageTestsBase
 {
     protected abstract (IDataStorage Storage, MessagingOptions Options) CreateSchedulingTestStorage(TimeProvider clock);
 
+    /// <summary>
+    /// Moves the due time of scheduled messages into the past on the store's own clock. Stores whose due decisions
+    /// follow an application clock the test controls never call it.
+    /// </summary>
+    protected virtual Task MakeScheduledMessagesDueAsync(
+        IReadOnlyCollection<Guid> storageIds,
+        CancellationToken cancellationToken
+    )
+    {
+        throw new NotSupportedException("The store decides due time on a clock the test cannot control.");
+    }
+
     public virtual async Task should_preserve_schedules_and_revocation_across_restart_and_clock_steps()
     {
         var clock = new SchedulingTestClock(DateTimeOffset.UtcNow);
@@ -62,6 +74,16 @@ public abstract partial class DataStorageTestsBase
         var claimer = (IDelayedMessageClaimStorage)storage;
         (await claimer.ClaimDelayedMessagesAsync(AbortToken)).Should().BeEmpty();
         clock.UtcNow = due.AddSeconds(1);
+        if (!SupportsControllableClock)
+        {
+            // A relational store decides due time on the database clock, which the application clock cannot move:
+            // the rows stay undue until the database itself sees them due.
+            (await claimer.ClaimDelayedMessagesAsync(AbortToken))
+                .Should()
+                .BeEmpty();
+            await MakeScheduledMessagesDueAsync(handles.Skip(1).ToArray(), AbortToken);
+        }
+
         var claimed = new List<Guid>();
         foreach (var expectedCount in new[] { 2, 2, 1, 0 })
         {

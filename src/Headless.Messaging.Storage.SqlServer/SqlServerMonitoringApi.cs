@@ -9,6 +9,8 @@ using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Headless.Primitives;
+using Headless.Sql;
+using Headless.Sql.SqlServer;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 
@@ -19,7 +21,6 @@ namespace Headless.Messaging.Storage.SqlServer;
 /// </summary>
 internal sealed class SqlServerMonitoringApi(
     IOptions<SqlServerOptions> options,
-    IOptions<MessagingStorageOptions> storageOptions,
     IOptions<MessagingOptions> messagingOptions,
     IStorageTableNames tableNames,
     ISerializer serializer,
@@ -27,7 +28,6 @@ internal sealed class SqlServerMonitoringApi(
 ) : IMonitoringApi
 {
     private readonly SqlServerOptions _options = Argument.IsNotNull(options.Value);
-    private readonly MessagingStorageOptions _storageOptions = Argument.IsNotNull(storageOptions.Value);
     private readonly MessagingOptions _messagingOptions = messagingOptions.Value;
     private readonly string _publishedTable = tableNames.GetPublishedTableName();
     private readonly string _receivedTable = tableNames.GetReceivedTableName();
@@ -518,27 +518,15 @@ internal sealed class SqlServerMonitoringApi(
             ? "ExceptionInfo"
             : "CAST(NULL AS nvarchar(max)) AS ExceptionInfo";
 
-        // Pass the id set through the HeadlessMessagingIdList table-valued parameter (provisioned by the
-        // messaging schema contribution and already used by SqlServerDataStorage). The SQL text and the @Ids shape
-        // stay constant regardless of id count, so SQL Server reuses one cached query plan instead of
-        // compiling a fresh plan per dynamic IN-list length — and it stays portable to older engines
-        // (table types need no OPENJSON / compatibility level 130).
-        var tvpTypeName = $"[{_storageOptions.Schema}].[HeadlessMessagingIdList]";
-
-        var idsTable = new DataTable();
-        idsTable.Columns.Add("Id", typeof(Guid));
-        foreach (var id in storageIds)
-        {
-            idsTable.Rows.Add(id);
-        }
-
+        // One list parameter keeps the SQL text constant whatever the id count, so SQL Server reuses one cached plan
+        // instead of compiling a fresh plan per dynamic IN-list length, and no table type has to exist first.
         var sqlParams = new object[]
         {
-            new SqlParameter("@Ids", SqlDbType.Structured) { TypeName = tvpTypeName, Value = idsTable },
+            SqlServerDialect.Instance.CreateListParameter("Ids", SqlColumnType.Guid, storageIds),
         };
 
         var sql =
-            $"SELECT Id, Content, IntentType, Added, ExpiresAt, Retries, {exceptionInfoSql}, NextRetryAt, LockedUntil FROM {tableName} WITH (READPAST, READCOMMITTEDLOCK) WHERE Id IN (SELECT Id FROM @Ids) AND IntentType IN (0, 1)";
+            $"SELECT Id, Content, IntentType, Added, ExpiresAt, Retries, {exceptionInfoSql}, NextRetryAt, LockedUntil FROM {tableName} WITH (READPAST, READCOMMITTEDLOCK) WHERE {SqlServerDialect.Instance.InList("Id", "Ids", SqlColumnType.Guid)} AND IntentType IN (0, 1)";
 
         await using var connection = new SqlConnection(_options.ConnectionString);
 

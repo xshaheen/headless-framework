@@ -9,6 +9,8 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
+using Headless.Sql;
+using Headless.Sql.PostgreSql;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -74,6 +76,8 @@ internal sealed partial class PostgreSqlDataStorage(
     /// Messages queued longer than this are re-scheduled.
     /// </summary>
     private static readonly TimeSpan _QueuedMessageLookback = TimeSpan.FromMinutes(1);
+
+    private static readonly PostgreSqlDialect _Dialect = PostgreSqlDialect.Instance;
 
     private readonly string _publishedTable = tableNames.GetPublishedTableName();
     private readonly string _receivedTable = tableNames.GetReceivedTableName();
@@ -577,24 +581,33 @@ internal sealed partial class PostgreSqlDataStorage(
         CancellationToken cancellationToken
     )
     {
-        var sql =
-            $"INSERT INTO {_publishedTable} (\"id\",\"version\",\"name\",\"content\",\"intent_type\",\"retries\",\"inline_attempts\",\"added\",\"expires_at\",\"next_retry_at\",\"locked_until\",\"owner\",\"status_name\",\"message_id\")"
-            + "VALUES(@Id,@Version,@Name,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId);";
+        // The database clock stamps Added and decides when the row falls due, the same clock the retry pickup and
+        // the delayed claim compare against, so a replica whose clock is skewed cannot make a row due early or late.
+        var sql = _Dialect.Render(
+            new SqlClockedStatement(
+                $"""
+                INSERT INTO {_publishedTable} ("id","version","name","content","intent_type","retries","inline_attempts","added","expires_at","next_retry_at","locked_until","owner","status_name","message_id")
+                VALUES (@Id,@Version,@Name,@Content,@IntentType,0,0,{SqlDialectTokens.Now},@ExpiresAt,
+                    CASE WHEN @ExpiresAt IS NULL THEN {_Dialect.ShiftByDuration(SqlDialectTokens.Now, "Grace")} END,
+                    NULL,NULL,
+                    CASE WHEN @ExpiresAt IS NULL THEN '{nameof(StatusName.Scheduled)}'
+                         WHEN @ExpiresAt <= {SqlDialectTokens.Now} + INTERVAL '1 minute' THEN '{nameof(
+                    StatusName.Queued
+                )}'
+                         ELSE '{nameof(StatusName.Delayed)}' END,
+                    @MessageId)
+                RETURNING "added","next_retry_at";
+                """
+            )
+        );
 
-        var added = timeProvider.GetUtcNow();
-        var statusName =
-            publishAt is null ? StatusName.Scheduled
-            : publishAt <= added.AddMinutes(1) ? StatusName.Queued
-            : StatusName.Delayed;
         var stored = new MediumMessage
         {
             StorageId = guidGenerator.Create(),
             Origin = message.Origin,
             Content = serializer.Serialize(message.Origin),
             Lane = message.Lane,
-            Added = added,
             ExpiresAt = publishAt,
-            NextRetryAt = publishAt is null ? added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace) : null,
             LockedUntil = null,
             Owner = null,
             Retries = 0,
@@ -608,49 +621,65 @@ internal sealed partial class PostgreSqlDataStorage(
             new NpgsqlParameter("@Name", name),
             new NpgsqlParameter("@Content", stored.Content),
             new NpgsqlParameter("@IntentType", MessageLaneCompatibility.ToPersistedValue(stored.Lane)),
-            new NpgsqlParameter("@Retries", stored.Retries),
-            new NpgsqlParameter("@InlineAttempts", stored.InlineAttempts),
-            new NpgsqlParameter("@Added", stored.Added),
-            new NpgsqlParameter("@ExpiresAt", stored.ExpiresAt.ToUtcParameterValue()),
-            new NpgsqlParameter("@NextRetryAt", stored.NextRetryAt.ToUtcParameterValue()),
-            new NpgsqlParameter("@LockedUntil", stored.LockedUntil.ToUtcParameterValue()),
-            new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = DBNull.Value },
-            new NpgsqlParameter("@StatusName", statusName.ToString("G")),
+            new NpgsqlParameter("@ExpiresAt", NpgsqlDbType.TimestampTz) { Value = publishAt.ToUtcParameterValue() },
+            _Duration("Grace", messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
             new NpgsqlParameter("@MessageId", message.Origin.Id),
         ];
 
-        if (transaction == null)
-        {
-            await using var connection = postgreSqlOptions.Value.CreateConnection();
-            await connection
-                .ExecuteNonQueryAsync(
-                    sql,
-                    commandTimeout: messagingOptions.Value.CommandTimeout,
-                    sqlParams: sqlParams,
-                    cancellationToken: cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
-        else
-        {
-            var connection =
-                transaction.Connection
-                ?? throw new InvalidOperationException(
-                    "The supplied DbTransaction has no active Connection — it may have already been committed or rolled back."
-                );
+        await using var ownedConnection = transaction is null ? postgreSqlOptions.Value.CreateConnection() : null;
+        var connection =
+            transaction?.Connection
+            ?? ownedConnection
+            ?? throw new InvalidOperationException(
+                "The supplied DbTransaction has no active Connection — it may have already been committed or rolled back."
+            );
 
-            await connection
-                .ExecuteNonQueryAsync(
-                    sql,
-                    transaction,
-                    commandTimeout: messagingOptions.Value.CommandTimeout,
-                    sqlParams: sqlParams,
-                    cancellationToken: cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
+        var (added, nextRetryAt) = await connection
+            .ExecuteReaderAsync(
+                sql,
+                _ReadStoredTimesAsync,
+                transaction,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        stored.Added = added;
+        stored.NextRetryAt = nextRetryAt;
 
         return stored;
+    }
+
+    /// <summary>Reads the <c>added</c> and <c>next_retry_at</c> the database stamped on the row a write returned.</summary>
+    private static async Task<(DateTimeOffset Added, DateTimeOffset? NextRetryAt)> _ReadStoredTimesAsync(
+        DbDataReader reader,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("The message insert returned no row.");
+        }
+
+        return (
+            await reader.GetFieldValueAsync<DateTimeOffset>(0, cancellationToken).ConfigureAwait(false),
+            await reader.IsDBNullAsync(1, cancellationToken).ConfigureAwait(false)
+                ? null
+                : await reader.GetFieldValueAsync<DateTimeOffset>(1, cancellationToken).ConfigureAwait(false)
+        );
+    }
+
+    /// <summary>Binds a duration for <see cref="ISqlDialect.ShiftByDuration"/> under <paramref name="parameter"/>.</summary>
+    private static NpgsqlParameter _Duration(string parameter, TimeSpan duration)
+    {
+        using var command = new NpgsqlCommand();
+        _Dialect.AddDuration(command, parameter, duration);
+        var bound = command.Parameters[0];
+        // A parameter belongs to one collection at a time; detach it so the caller's command can take it.
+        command.Parameters.Clear();
+
+        return bound;
     }
 
     /// <summary>
@@ -737,21 +766,20 @@ internal sealed partial class PostgreSqlDataStorage(
             new NpgsqlParameter("@IntentType", MessageLaneCompatibility.ToPersistedValue(message.Lane)),
             new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new NpgsqlParameter("@InlineAttempts", message.InlineAttempts),
-            new NpgsqlParameter("@Added", timeProvider.GetUtcNow()),
-            new NpgsqlParameter(
-                "@ExpiresAt",
-                timeProvider.GetUtcNow().AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter)
-            ),
-            new NpgsqlParameter("@NextRetryAt", DBNull.Value),
-            new NpgsqlParameter("@LockedUntil", DBNull.Value),
-            new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = DBNull.Value },
+            _Duration("ExpiresAfter", TimeSpan.FromSeconds(messagingOptions.Value.FailedMessageExpiredAfter)),
             new NpgsqlParameter("@StatusName", nameof(StatusName.Failed)),
             new NpgsqlParameter("@MessageId", message.Origin.Id),
             new NpgsqlParameter("@ExceptionInfo", exceptionInfo ?? (object)DBNull.Value),
         ];
 
-        var rowId = await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
-        return rowId is not null;
+        var stored = await _StoreReceivedMessage(
+                sqlParams,
+                expiresAt: _Dialect.ShiftByDuration(SqlDialectTokens.Now, "ExpiresAfter"),
+                nextRetryAt: "NULL",
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        return stored is not null;
     }
 
     /// <summary>
@@ -768,6 +796,8 @@ internal sealed partial class PostgreSqlDataStorage(
         CancellationToken cancellationToken = default
     )
     {
+        // A guard-blocked redelivery writes nothing, so its snapshot keeps these application-clock values; the
+        // stored row's own times are adopted below whenever the upsert wrote it.
         var added = timeProvider.GetUtcNow();
         var mediumMessage = new MediumMessage
         {
@@ -794,11 +824,7 @@ internal sealed partial class PostgreSqlDataStorage(
             new NpgsqlParameter("@IntentType", MessageLaneCompatibility.ToPersistedValue(mediumMessage.Lane)),
             new NpgsqlParameter("@Retries", mediumMessage.Retries),
             new NpgsqlParameter("@InlineAttempts", mediumMessage.InlineAttempts),
-            new NpgsqlParameter("@Added", mediumMessage.Added),
-            new NpgsqlParameter("@ExpiresAt", mediumMessage.ExpiresAt.ToUtcParameterValue()),
-            new NpgsqlParameter("@NextRetryAt", mediumMessage.NextRetryAt.ToUtcParameterValue()),
-            new NpgsqlParameter("@LockedUntil", mediumMessage.LockedUntil.ToUtcParameterValue()),
-            new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = DBNull.Value },
+            _Duration("Grace", messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
             new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new NpgsqlParameter("@MessageId", message.Origin.Id),
             new NpgsqlParameter("@ExceptionInfo", DBNull.Value),
@@ -807,10 +833,18 @@ internal sealed partial class PostgreSqlDataStorage(
         // #5 — adopt the authoritative persisted row id. On a concurrent redelivery that takes the ON
         // CONFLICT UPDATE branch the row keeps its original "id", so the freshly-generated StorageId would
         // be stale and the caller's later ChangeReceiveStateAsync (WHERE "id"=@Id) would silently no-op.
-        var rowId = await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
-        if (rowId is { } id)
+        var stored = await _StoreReceivedMessage(
+                sqlParams,
+                expiresAt: "NULL",
+                nextRetryAt: _Dialect.ShiftByDuration(SqlDialectTokens.Now, "Grace"),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        if (stored is { } row)
         {
-            mediumMessage.StorageId = id;
+            mediumMessage.StorageId = row.Id;
+            mediumMessage.Added = row.Added;
+            mediumMessage.NextRetryAt = row.NextRetryAt;
         }
 
         return mediumMessage;
@@ -932,20 +966,17 @@ internal sealed partial class PostgreSqlDataStorage(
             return deletedCount;
         }
 
+        // The cutoff is the caller's retention decision, so it stays a parameter rather than the database clock.
         return await connection
             .ExecuteNonQueryAsync(
-                $"""
-                DELETE FROM {table}
-                WHERE "id" IN (
-                    SELECT "id"
-                    FROM {table}
-                    WHERE "expires_at" < @timeout
-                    AND "status_name" IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}')
-                    AND "next_retry_at" IS NULL
-                    AND "intent_type" IN (0, 1)
-                    LIMIT @batchCount
-                )
-                """,
+                _Dialect.Render(
+                    new SqlDeleteBatch(
+                        table,
+                        ["\"id\""],
+                        $"\"expires_at\" < @timeout AND \"status_name\" IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND \"next_retry_at\" IS NULL AND \"intent_type\" IN (0, 1)",
+                        "batchCount"
+                    )
+                ),
                 transaction: null,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
@@ -1581,11 +1612,23 @@ internal sealed partial class PostgreSqlDataStorage(
         return content;
     }
 
-    private async ValueTask<Guid?> _StoreReceivedMessage(
+    /// <summary>Inserts a received message, or rewrites its redelivered non-terminal, unleased row.</summary>
+    /// <param name="sqlParams">The row's values, and the durations <paramref name="expiresAt"/> and <paramref name="nextRetryAt"/> shift by.</param>
+    /// <param name="expiresAt">The <c>expires_at</c> expression, over <see cref="SqlDialectTokens.Now"/>.</param>
+    /// <param name="nextRetryAt">The <c>next_retry_at</c> expression, over <see cref="SqlDialectTokens.Now"/>.</param>
+    /// <param name="cancellationToken">Token used to cancel the statement.</param>
+    /// <returns>The written row's id and database-stamped times, or <see langword="null"/> when a guard refused it.</returns>
+    private async ValueTask<(Guid Id, DateTimeOffset Added, DateTimeOffset? NextRetryAt)?> _StoreReceivedMessage(
         object[] sqlParams,
-        CancellationToken cancellationToken = default
+        string expiresAt,
+        string nextRetryAt,
+        CancellationToken cancellationToken
     )
     {
+        // Not the kit's SqlUpsert: the conflict target is the partial expression index over
+        // ("version","message_id",COALESCE("group",''),"intent_type") of non-inbox rows. The upsert's key is plain
+        // column equality whose columns are also inserted, so it can express neither the expression nor the predicate.
+        //
         // Atomic upsert via INSERT ... ON CONFLICT ON CONSTRAINT against the partial unique index
         // (MessageId, COALESCE("group", '')) created by PostgreSqlMessagingSchemaContribution. The COALESCE
         // expression collapses NULL groups to the empty string so NULL-Group rows participate in
@@ -1613,15 +1656,18 @@ internal sealed partial class PostgreSqlDataStorage(
         // redelivered message that arrives while the row is being dispatched would otherwise
         // overwrite LockedUntil = NULL, releasing the active pickup lease mid-attempt and letting
         // the retry processor re-pick the row while the inline retry burst is still in flight.
-        // Ownership time is the DATABASE's: the guard compares against statement_timestamp(), the same
+        // Ownership time is the DATABASE's: the guard compares against the database clock, the same
         // clock that wrote "locked_until" in _LeaseAndReserveAttemptAsync. Sampling the app clock here
         // instead would let a node running ahead of the server see a live lease as expired and CLEAR it.
         // The DO UPDATE SET list deliberately excludes "retries" and "inline_attempts" so a benign
         // redelivery collapse never resets the durable retry counters.
-        // Mirrors the matching guard in SqlServerDataStorage._StoreReceivedMessage.
-        var sql = $"""
+        // Mirrors the matching guard in SqlServerDataStorage._StoreReceivedMessage. The database clock also stamps
+        // "added" and derives "expires_at" and "next_retry_at", the clock every due-time and expiry comparison reads.
+        var sql = _Dialect.Render(
+            new SqlClockedStatement(
+                $"""
             INSERT INTO {_receivedTable}("id","version","name","group","content","intent_type","retries","inline_attempts","added","expires_at","next_retry_at","locked_until","owner","status_name","message_id","exception_info")
-            VALUES(@Id,@Version,@Name,@Group,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId,@ExceptionInfo)
+            VALUES(@Id,@Version,@Name,@Group,@Content,@IntentType,@Retries,@InlineAttempts,{SqlDialectTokens.Now},{expiresAt},{nextRetryAt},NULL,NULL,@StatusName,@MessageId,@ExceptionInfo)
             ON CONFLICT ("version", "message_id", (COALESCE("group", '')), "intent_type")
             WHERE NOT "is_inbox_record"
             DO UPDATE SET
@@ -1636,17 +1682,27 @@ internal sealed partial class PostgreSqlDataStorage(
               AND NOT ({_receivedTable}."status_name" IN ('{nameof(StatusName.Succeeded)}','{nameof(
                 StatusName.Failed
             )}') AND {_receivedTable}."next_retry_at" IS NULL)
-              AND ({_receivedTable}."locked_until" IS NULL OR {_receivedTable}."locked_until" <= statement_timestamp())
-            RETURNING "id"
-            """;
+              AND ({_receivedTable}."locked_until" IS NULL OR {_receivedTable}."locked_until" <= {SqlDialectTokens.Now})
+            RETURNING "id","added","next_retry_at"
+            """
+            )
+        );
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
 
         return await connection
-            .ExecuteReaderAsync<Guid?>(
+            .ExecuteReaderAsync<(Guid, DateTimeOffset, DateTimeOffset?)?>(
                 sql,
                 static async (reader, token) =>
-                    await reader.ReadAsync(token).ConfigureAwait(false) ? reader.GetGuid(0) : null,
+                    await reader.ReadAsync(token).ConfigureAwait(false)
+                        ? (
+                            reader.GetGuid(0),
+                            await reader.GetFieldValueAsync<DateTimeOffset>(1, token).ConfigureAwait(false),
+                            await reader.IsDBNullAsync(2, token).ConfigureAwait(false)
+                                ? null
+                                : await reader.GetFieldValueAsync<DateTimeOffset>(2, token).ConfigureAwait(false)
+                        )
+                        : null,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
@@ -1781,175 +1837,192 @@ internal sealed partial class PostgreSqlDataStorage(
         var intentValue = MessageLaneCompatibility.ToPersistedValue(lane);
         var isReceivedTable = string.Equals(tableName, _receivedTable, StringComparison.Ordinal);
         var orphanFilter = isReceivedTable
-            ? (orphaned ? "AND message.\"is_inbox_orphaned\" = TRUE" : "AND message.\"is_inbox_orphaned\" = FALSE")
+            ? (orphaned ? "AND \"is_inbox_orphaned\" = TRUE" : "AND \"is_inbox_orphaned\" = FALSE")
             : string.Empty;
         var attemptAssignment = isReceivedTable
-            ? ",\n                \"attempt_id\" = CASE WHEN message.\"is_inbox_record\" THEN gen_random_uuid() ELSE NULL END"
+            ? ", \"attempt_id\" = CASE WHEN \"is_inbox_record\" THEN gen_random_uuid() ELSE NULL END"
             : string.Empty;
-        var inboxProjection = isReceivedTable
-            ? "message.\"is_inbox_record\",message.\"tenant_present\",message.\"tenant_id\",message.\"message_id\",message.\"contract_identity\",message.\"contract_version\",message.\"consumer_identity\",message.\"generation\",message.\"generation_incarnation_id\",message.\"attempt_id\",message.\"is_inbox_orphaned\""
-            : "FALSE";
-        // Transactional poison handling and claim-and-return. Unknown persisted lanes are excluded
-        // before ordering and limiting, so they cannot consume a batch slot and are never leased,
-        // deserialized, or mutated by automatic retry pickup. The claim UPDATE performs leasing and
-        // RETURNING in one step. This replaces the previous two-step
-        // SELECT-FOR-UPDATE-then-Lease pattern, which committed the SELECT transaction before
-        // _LeaseAsync wrote LockedUntil. In between, a concurrent replica could pass the same
-        // "LockedUntil IS NULL" filter and lease the same row — double-dispatch.
+        string[] returning = isReceivedTable ? [.. _RetryClaimColumns, .. _InboxClaimColumns] : _RetryClaimColumns;
+        // One claim statement selects the due rows in the requested recognized lane, skipping rows another
+        // replica holds, and leases them as it returns them, so no second replica can pass the same filter
+        // between a read and a lease. Unknown lanes are excluded inside the filter, so they neither consume
+        // capacity nor get mutated.
         //
-        // FOR UPDATE SKIP LOCKED on the inner SELECT preserves the "skip rows another replica
-        // is mid-claim on" behaviour. The UPDATE then assigns database time + DispatchTimeout
-        // so subsequent pickup polls (anywhere) see the row as leased until the dispatch
-        // attempt completes (or the lease expires).
-        //
-        // NextRetryAt is scheduling state written from the injected TimeProvider, so its due
-        // predicate uses that same authority. Lease expiry and stamping remain on one statement-
-        // time database snapshot, keeping every replica on one ownership authority without a
-        // clock query.
-        var sql = $"""
-            WITH candidates AS (
-                SELECT message."id"
-                FROM {tableName} AS message
-                WHERE "retries" <= @Retries
-                  AND "version" = @Version
-                  AND message."intent_type" = @IntentType
-                  AND "next_retry_at" IS NOT NULL AND "next_retry_at" <= @Now
-                  AND ("locked_until" IS NULL OR "locked_until" <= statement_timestamp())
-                  {orphanFilter}
-                  AND {_TerminalRowGuardSimple}
-                ORDER BY "next_retry_at", "id"
-                LIMIT @BatchSize
-                FOR UPDATE SKIP LOCKED
+        // Due time and lease are both the database's: "next_retry_at" is compared against the same clock that stamps
+        // the lease, so a replica whose clock is skewed neither picks a row up early nor leaves it waiting.
+        var sql = _Dialect.Render(
+            new SqlClaimNext(
+                tableName,
+                ["\"id\""],
+                $"\"retries\" <= @Retries AND \"version\" = @Version AND \"intent_type\" = @IntentType AND \"next_retry_at\" IS NOT NULL AND \"next_retry_at\" <= {SqlDialectTokens.Now} AND (\"locked_until\" IS NULL OR \"locked_until\" <= {SqlDialectTokens.Now}) {orphanFilter} AND {_TerminalRowGuardSimple}",
+                ["\"next_retry_at\"", "\"id\""],
+                $"\"locked_until\" = {_Dialect.ShiftByDuration(SqlDialectTokens.Now, "Lease")}, \"owner\" = @Owner{attemptAssignment}",
+                returning,
+                BatchSizeParameter: "BatchSize"
             )
-            UPDATE {tableName} AS message
-            SET "locked_until" = statement_timestamp() + (@LeaseSeconds * INTERVAL '1 second'),
-                "owner" = @Owner{attemptAssignment}
-            FROM candidates
-            WHERE message."id" = candidates."id"
-            RETURNING message."id",message."content",message."intent_type",message."retries",message."inline_attempts",message."added",message."next_retry_at",message."locked_until",message."owner",
-                {inboxProjection};
-            """;
+        );
 
-        object[] sqlParams =
-        [
-            new NpgsqlParameter(
-                "@BatchSize",
-                orphaned ? messagingOptions.Value.OrphanProbeBatchSize : messagingOptions.Value.RetryBatchSize
-            ),
-            new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
-            _VersionParameter(),
-            new NpgsqlParameter("@IntentType", NpgsqlDbType.Smallint) { Value = intentValue },
-            new NpgsqlParameter("@Now", timeProvider.GetUtcNow()),
-            new NpgsqlParameter("@LeaseSeconds", messagingOptions.Value.RetryPolicy.DispatchTimeout.TotalSeconds),
-            new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
-            {
-                Value = nodeMembership.GetOwnerTag() ?? (object)DBNull.Value,
-            },
-        ];
-
-        await using var connection = postgreSqlOptions.Value.CreateConnection();
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-
-        var poisonMessages = new List<PoisonMessage>();
-        var result = await connection
-            .ExecuteReaderAsync(
-                sql,
-                async (reader, token) =>
+        return await SqlAutonomousTransaction
+            .RunAsync(
+                _Dialect,
+                () => postgreSqlOptions.Value.CreateConnection(),
+                async (connection, transaction, ct) =>
                 {
-                    var messages = new List<MediumMessage>();
-                    while (await reader.ReadAsync(token).ConfigureAwait(false))
-                    {
-                        var storageId = reader.GetGuid(0);
-                        var content = reader.GetString(1);
-                        var persistedLane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2));
-                        if (persistedLane != lane)
+                    object[] sqlParams =
+                    [
+                        new NpgsqlParameter(
+                            "@BatchSize",
+                            orphaned
+                                ? messagingOptions.Value.OrphanProbeBatchSize
+                                : messagingOptions.Value.RetryBatchSize
+                        ),
+                        new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
+                        _VersionParameter(),
+                        new NpgsqlParameter("@IntentType", NpgsqlDbType.Smallint) { Value = intentValue },
+                        _Duration("Lease", messagingOptions.Value.RetryPolicy.DispatchTimeout),
+                        new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
                         {
-                            throw new InvalidOperationException(
-                                $"Retry pickup for lane '{lane}' returned persisted lane '{persistedLane}'."
-                            );
-                        }
+                            Value = nodeMembership.GetOwnerTag() ?? (object)DBNull.Value,
+                        },
+                    ];
+                    var poisonMessages = new List<PoisonMessage>();
+                    var claimed = await connection
+                        .ExecuteReaderAsync(
+                            sql,
+                            (reader, token) =>
+                                _ReadRetryClaimAsync(reader, tableName, lane, isReceivedTable, poisonMessages, token),
+                            transaction: transaction,
+                            commandTimeout: messagingOptions.Value.CommandTimeout,
+                            sqlParams: sqlParams,
+                            cancellationToken: ct
+                        )
+                        .ConfigureAwait(false);
 
-                        MediumMessage mediumMessage;
-                        try
-                        {
-                            mediumMessage = new MediumMessage
-                            {
-                                StorageId = storageId,
-                                Origin = serializer.Deserialize(content)!,
-                                Content = content,
-                                Lane = persistedLane,
-                                Retries = reader.GetInt32(3),
-                                InlineAttempts = reader.GetInt32(4),
-#pragma warning disable CA1849, VSTHRD103, AsyncFixer02, MA0042 // the GetString(1) above already pulls
-                                // the large Content column synchronously, so these remaining small columns
-                                // cannot add blocking this row has not already paid for.
-                                Added = reader.GetFieldValue<DateTimeOffset>(5),
-                                NextRetryAt = reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
-                                LockedUntil = reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
-                                Owner = reader.IsDBNull(8) ? null : reader.GetString(8),
-#pragma warning restore CA1849, VSTHRD103, AsyncFixer02, MA0042
-                            };
+                    await _MarkPoisonMessagesTerminalAsync(connection, transaction, tableName, poisonMessages, ct)
+                        .ConfigureAwait(false);
 
-                            if (reader.GetBoolean(9))
-                            {
-                                var generation = reader.GetInt64(16);
-                                var incarnationId = reader.GetGuid(17);
-                                var lockedUntil =
-                                    mediumMessage.LockedUntil
-                                    ?? throw new InvalidOperationException(
-                                        "Claimed inbox row has no durable lease deadline."
-                                    );
-                                var attemptId = reader.GetGuid(18);
-                                mediumMessage.InboxKey = new InboxKey(
-                                    reader.GetBoolean(10) ? reader.GetString(11) : null,
-                                    reader.GetString(12),
-                                    persistedLane,
-                                    reader.GetString(13),
-                                    reader.GetString(14),
-                                    reader.GetString(15),
-                                    generation
-                                );
-                                mediumMessage.InboxGeneration = new InboxGeneration(generation, incarnationId);
-                                mediumMessage.InboxAttemptFence = new InboxAttemptFence(
-                                    storageId,
-                                    persistedLane,
-                                    generation,
-                                    incarnationId,
-                                    attemptId,
-                                    mediumMessage.Owner,
-                                    lockedUntil
-                                );
-                                mediumMessage.IsInboxOrphaned = reader.GetBoolean(19);
-                            }
-                        }
-#pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort/starve the batch (#3)
-                        catch (Exception ex)
-#pragma warning restore CA1031
-                        {
-                            logger.LogPoisonMessageSkipped(storageId, tableName, ex);
-                            poisonMessages.Add(_CreatePoisonMessage(storageId, ex));
-                            continue;
-                        }
-
-                        messages.Add(mediumMessage);
-                    }
-
-                    return messages;
+                    return (IEnumerable<MediumMessage>)claimed;
                 },
-                transaction: transaction,
-                commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams: sqlParams,
-                cancellationToken: cancellationToken
+                timeProvider,
+                cancellationToken
             )
             .ConfigureAwait(false);
+    }
 
-        await _MarkPoisonMessagesTerminalAsync(connection, transaction, tableName, poisonMessages, cancellationToken)
-            .ConfigureAwait(false);
+    private static readonly string[] _RetryClaimColumns =
+    [
+        "\"id\"",
+        "\"content\"",
+        "\"intent_type\"",
+        "\"retries\"",
+        "\"inline_attempts\"",
+        "\"added\"",
+        "\"next_retry_at\"",
+        "\"locked_until\"",
+        "\"owner\"",
+    ];
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    private static readonly string[] _InboxClaimColumns =
+    [
+        "\"is_inbox_record\"",
+        "\"tenant_present\"",
+        "\"tenant_id\"",
+        "\"message_id\"",
+        "\"contract_identity\"",
+        "\"contract_version\"",
+        "\"consumer_identity\"",
+        "\"generation\"",
+        "\"generation_incarnation_id\"",
+        "\"attempt_id\"",
+        "\"is_inbox_orphaned\"",
+    ];
 
-        return result;
+    private async Task<List<MediumMessage>> _ReadRetryClaimAsync(
+        DbDataReader reader,
+        string tableName,
+        MessageLane lane,
+        bool isReceivedTable,
+        List<PoisonMessage> poisonMessages,
+        CancellationToken cancellationToken
+    )
+    {
+        var messages = new List<MediumMessage>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var storageId = reader.GetGuid(0);
+            var content = reader.GetString(1);
+            var persistedLane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2));
+            if (persistedLane != lane)
+            {
+                throw new InvalidOperationException(
+                    $"Retry pickup for lane '{lane}' returned persisted lane '{persistedLane}'."
+                );
+            }
+
+            MediumMessage mediumMessage;
+            try
+            {
+                mediumMessage = new MediumMessage
+                {
+                    StorageId = storageId,
+                    Origin = serializer.Deserialize(content)!,
+                    Content = content,
+                    Lane = persistedLane,
+                    Retries = reader.GetInt32(3),
+                    InlineAttempts = reader.GetInt32(4),
+#pragma warning disable CA1849, VSTHRD103, AsyncFixer02, MA0042 // the GetString(1) above already pulls
+                    // the large Content column synchronously, so these remaining small columns
+                    // cannot add blocking this row has not already paid for.
+                    Added = reader.GetFieldValue<DateTimeOffset>(5),
+                    NextRetryAt = reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
+                    LockedUntil = reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
+                    Owner = reader.IsDBNull(8) ? null : reader.GetString(8),
+#pragma warning restore CA1849, VSTHRD103, AsyncFixer02, MA0042
+                };
+
+                if (isReceivedTable && reader.GetBoolean(9))
+                {
+                    var generation = reader.GetInt64(16);
+                    var incarnationId = reader.GetGuid(17);
+                    var lockedUntil =
+                        mediumMessage.LockedUntil
+                        ?? throw new InvalidOperationException("Claimed inbox row has no durable lease deadline.");
+                    var attemptId = reader.GetGuid(18);
+                    mediumMessage.InboxKey = new InboxKey(
+                        reader.GetBoolean(10) ? reader.GetString(11) : null,
+                        reader.GetString(12),
+                        persistedLane,
+                        reader.GetString(13),
+                        reader.GetString(14),
+                        reader.GetString(15),
+                        generation
+                    );
+                    mediumMessage.InboxGeneration = new InboxGeneration(generation, incarnationId);
+                    mediumMessage.InboxAttemptFence = new InboxAttemptFence(
+                        storageId,
+                        persistedLane,
+                        generation,
+                        incarnationId,
+                        attemptId,
+                        mediumMessage.Owner,
+                        lockedUntil
+                    );
+                    mediumMessage.IsInboxOrphaned = reader.GetBoolean(19);
+                }
+            }
+#pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort/starve the batch (#3)
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                logger.LogPoisonMessageSkipped(storageId, tableName, ex);
+                poisonMessages.Add(_CreatePoisonMessage(storageId, ex));
+                continue;
+            }
+
+            messages.Add(mediumMessage);
+        }
+
+        return messages;
     }
 
     private async ValueTask _MarkPoisonMessagesTerminalAsync(
@@ -1965,34 +2038,40 @@ internal sealed partial class PostgreSqlDataStorage(
             return;
         }
 
-        var expiresAt = timeProvider
-            .GetUtcNow()
-            .UtcDateTime.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter);
+        // Expiry is decided against the database clock by the purge, so the database clock also stamps it.
         var isReceivedTable = string.Equals(tableName, _receivedTable, StringComparison.Ordinal);
         var ids = poisonMessages.Select(message => message.StorageId).ToArray();
-        var sql = isReceivedTable
-            ? $"""
-                UPDATE {tableName} AS target
-                SET "status_name"=@StatusName,"next_retry_at"=NULL,"locked_until"=NULL,"owner"=NULL,
-                    "expires_at"=@ExpiresAt,"exception_info"=poison."exception_info",
-                    "attempt_id"=CASE WHEN target."is_inbox_record" THEN NULL ELSE target."attempt_id" END,
-                    "terminal_at"=CASE WHEN target."is_inbox_record" THEN statement_timestamp() ELSE target."terminal_at" END,
-                    "effective_expires_at"=CASE WHEN target."is_inbox_record"
-                        THEN statement_timestamp() + (target."inbox_retention_seconds" * INTERVAL '1 second')
-                        ELSE target."effective_expires_at" END
-                FROM unnest(@Ids::uuid[], @ExceptionInfos::text[]) AS poison("id", "exception_info")
-                WHERE target."id"=poison."id" AND {_TerminalRowGuardSimple};
-                """
-            : $"""
-                UPDATE {tableName}
-                SET "status_name"=@StatusName,"next_retry_at"=NULL,"locked_until"=NULL,"owner"=NULL,"expires_at"=@ExpiresAt
-                WHERE "id"=ANY(@Ids) AND {_TerminalRowGuardSimple};
-                """;
+        var sql = _Dialect.Render(
+            new SqlClockedStatement(
+                isReceivedTable
+                    ? $"""
+                    UPDATE {tableName} AS target
+                    SET "status_name"=@StatusName,"next_retry_at"=NULL,"locked_until"=NULL,"owner"=NULL,
+                        "expires_at"={_Dialect.ShiftByDuration(
+                        SqlDialectTokens.Now,
+                        "ExpiresAfter"
+                    )},"exception_info"=poison."exception_info",
+                        "attempt_id"=CASE WHEN target."is_inbox_record" THEN NULL ELSE target."attempt_id" END,
+                        "terminal_at"=CASE WHEN target."is_inbox_record" THEN {SqlDialectTokens.Now} ELSE target."terminal_at" END,
+                        "effective_expires_at"=CASE WHEN target."is_inbox_record"
+                            THEN {SqlDialectTokens.Now} + (target."inbox_retention_seconds" * INTERVAL '1 second')
+                            ELSE target."effective_expires_at" END
+                    FROM unnest(@Ids::uuid[], @ExceptionInfos::text[]) AS poison("id", "exception_info")
+                    WHERE target."id"=poison."id" AND {_TerminalRowGuardSimple};
+                    """
+                    : $"""
+                    UPDATE {tableName}
+                    SET "status_name"=@StatusName,"next_retry_at"=NULL,"locked_until"=NULL,"owner"=NULL,
+                        "expires_at"={_Dialect.ShiftByDuration(SqlDialectTokens.Now, "ExpiresAfter")}
+                    WHERE "id"=ANY(@Ids) AND {_TerminalRowGuardSimple};
+                    """
+            )
+        );
         var sqlParams = new List<object>
         {
             new NpgsqlParameter("@Ids", ids) { DataTypeName = "uuid[]" },
             new NpgsqlParameter("@StatusName", nameof(StatusName.Failed)),
-            new NpgsqlParameter("@ExpiresAt", expiresAt),
+            _Duration("ExpiresAfter", TimeSpan.FromSeconds(messagingOptions.Value.FailedMessageExpiredAfter)),
         };
         if (isReceivedTable)
         {

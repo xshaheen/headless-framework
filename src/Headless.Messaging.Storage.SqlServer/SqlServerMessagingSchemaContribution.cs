@@ -8,8 +8,7 @@ using Microsoft.Data.SqlClient;
 namespace Headless.Messaging.Storage.SqlServer;
 
 /// <summary>
-/// The Messaging feature's schema contribution for SQL Server: the table-valued parameter types, the published and
-/// received message tables, the inbox operation receipt and audit history tables, and their indexes, as idempotent
+/// The Messaging feature's schema contribution for SQL Server: the published and received message tables, the inbox operation receipt and audit history tables, and their indexes, as idempotent
 /// steps the Headless schema runner applies.
 /// </summary>
 internal static class SqlServerMessagingSchemaContribution
@@ -34,9 +33,8 @@ internal static class SqlServerMessagingSchemaContribution
             [
                 new SchemaStep(
                     TablesStepVersion,
-                    "Create the table-valued parameter types and the published, received, inbox receipt, and inbox audit tables with their constraints and indexes.",
-                    _TypesSql(schema, options.OwnerColumnMaxLength)
-                        + _InboxTablesSql(schema, options.OwnerColumnMaxLength)
+                    "Create the published, received, inbox receipt, and inbox audit tables with their constraints and indexes.",
+                    _InboxTablesSql(schema, options.OwnerColumnMaxLength)
                         + _PublishedTableSql(schema, options.OwnerColumnMaxLength)
                 ),
                 new SchemaStep(
@@ -67,32 +65,10 @@ internal static class SqlServerMessagingSchemaContribution
             [
                 new SchemaStep(
                     TablesStepVersion,
-                    "Create the table-valued parameter types and the published table with its indexes.",
-                    _TypesSql(schema, options.OwnerColumnMaxLength)
-                        + _PublishedTableSql(schema, options.OwnerColumnMaxLength)
+                    "Create the published table with its indexes.",
+                    _PublishedTableSql(schema, options.OwnerColumnMaxLength)
                 ),
             ]
-        );
-    }
-
-    private static string _TypesSql(string schema, int ownerColumnMaxLength)
-    {
-        return string.Create(
-            CultureInfo.InvariantCulture,
-            $"""
-            IF TYPE_ID(N'{schema}.HeadlessMessagingIdList') IS NULL
-                CREATE TYPE [{schema}].[HeadlessMessagingIdList] AS TABLE ([Id] UNIQUEIDENTIFIER NOT NULL PRIMARY KEY);
-
-            IF TYPE_ID(N'{schema}.HeadlessMessagingOwnerList') IS NULL
-                CREATE TYPE [{schema}].[HeadlessMessagingOwnerList] AS TABLE ([Owner] [nvarchar]({ownerColumnMaxLength}) NOT NULL PRIMARY KEY);
-
-            IF TYPE_ID(N'{schema}.HeadlessMessagingPoisonMessageList') IS NULL
-                CREATE TYPE [{schema}].[HeadlessMessagingPoisonMessageList] AS TABLE (
-                    [Id] [uniqueidentifier] NOT NULL PRIMARY KEY,
-                    [ExceptionInfo] [nvarchar](max) NOT NULL
-                );
-
-            """
         );
     }
 

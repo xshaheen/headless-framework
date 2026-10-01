@@ -72,6 +72,8 @@ internal static class TestMessagingSchema
             DROP TABLE IF EXISTS [{schema}].MessagingPublished;
             DROP TABLE IF EXISTS [{schema}].MessagingReceived;
             DROP TABLE IF EXISTS [{schema}].[{SchemaRunner.HistoryTableName}];
+            -- The schema no longer creates table types; these clear the ones a reused container kept from an older
+            -- binary, which would otherwise block DROP SCHEMA.
             DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList];
             DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingOwnerList];
             DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingPoisonMessageList];

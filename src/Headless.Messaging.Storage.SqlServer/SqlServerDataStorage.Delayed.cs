@@ -5,6 +5,7 @@ using System.Data.Common;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
+using Headless.Sql;
 using Microsoft.Data.SqlClient;
 
 #pragma warning disable RCS1084 // Use coalesce expression instead of conditional expression
@@ -24,14 +25,18 @@ internal sealed partial class SqlServerDataStorage
         CancellationToken cancellationToken = default
     )
     {
+        // Due time is the database's: the windows are measured from the database clock, the clock every other due
+        // decision reads, so a replica whose clock is skewed neither schedules a message early nor holds it back.
         var sql = $"""
+            DECLARE @now datetimeoffset(7) = TODATETIMEOFFSET(SYSUTCDATETIME(), 0);
+
             WITH DelayedCandidates AS (
                 SELECT TOP (@BatchSize) Id, Content, IntentType, Retries, InlineAttempts, Added, ExpiresAt
                 FROM {_publishedTable} WITH (UPDLOCK, READPAST, READCOMMITTEDLOCK)
                 WHERE Version = @Version
                   AND IntentType IN (0, 1)
                   AND StatusName = @DelayedStatusName
-                  AND ExpiresAt < @TwoMinutesLater
+                  AND ExpiresAt < {_Dialect.ShiftByDuration("@now", "Lookahead")}
                 ORDER BY ExpiresAt, Id
             ),
             QueuedCandidates AS (
@@ -40,7 +45,7 @@ internal sealed partial class SqlServerDataStorage
                 WHERE Version = @Version
                   AND IntentType IN (0, 1)
                   AND StatusName = @QueuedStatusName
-                  AND ExpiresAt < @OneMinutesAgo
+                  AND ExpiresAt < {_Dialect.ShiftByDuration("@now", "Lookback", subtract: true)}
                 ORDER BY ExpiresAt, Id
             ),
             Candidates AS (
@@ -58,8 +63,8 @@ internal sealed partial class SqlServerDataStorage
             _VersionParameter(),
             new SqlParameter("@DelayedStatusName", nameof(StatusName.Delayed)),
             new SqlParameter("@QueuedStatusName", nameof(StatusName.Queued)),
-            new SqlParameter("@TwoMinutesLater", timeProvider.GetUtcNow().Add(_DelayedMessageLookahead)),
-            new SqlParameter("@OneMinutesAgo", timeProvider.GetUtcNow().Subtract(_QueuedMessageLookback)),
+            .. _Duration("Lookahead", _DelayedMessageLookahead),
+            .. _Duration("Lookback", _QueuedMessageLookback),
             new SqlParameter("@BatchSize", messagingOptions.Value.SchedulerBatchSize),
         ];
 
@@ -139,136 +144,86 @@ internal sealed partial class SqlServerDataStorage
         CancellationToken cancellationToken = default
     )
     {
-        var sql = $"""
-            DECLARE @ClaimNow datetimeoffset(7) = SYSUTCDATETIME();
-
-            WITH Candidates AS (
-                SELECT TOP (@BatchSize) Id
-                FROM {_publishedTable} WITH (UPDLOCK, READPAST, READCOMMITTEDLOCK, ROWLOCK)
-                WHERE Version=@Version
-                  AND IntentType IN (0, 1)
-                  AND (LockedUntil IS NULL OR LockedUntil <= @ClaimNow)
-                  AND (
-                      (StatusName=@DelayedStatusName AND ExpiresAt < @TwoMinutesLater)
-                      OR (StatusName=@QueuedStatusName AND ExpiresAt < @OneMinuteAgo)
-                  )
-                ORDER BY ExpiresAt, Id
+        // One claim statement moves due delayed (and stale queued) rows to Queued and leases them past their due
+        // time, skipping rows another replica holds. Due time and lease are both the database's clock.
+        var sql = _Dialect.Render(
+            new SqlClaimNext(
+                _publishedTable,
+                ["[Id]"],
+                $"""
+                Version=@Version
+                AND IntentType IN (0, 1)
+                AND (LockedUntil IS NULL OR LockedUntil <= {SqlDialectTokens.Now})
+                AND (
+                    (StatusName=@DelayedStatusName AND ExpiresAt < {_Dialect.ShiftByDuration(
+                    SqlDialectTokens.Now,
+                    "Lookahead"
+                )})
+                    OR (StatusName=@QueuedStatusName AND ExpiresAt < {_Dialect.ShiftByDuration(
+                    SqlDialectTokens.Now,
+                    "Lookback",
+                    subtract: true
+                )})
+                )
+                AND {_TerminalRowGuardSimple}
+                """,
+                ["[ExpiresAt]", "[Id]"],
+                $"StatusName=@QueuedStatusName, LockedUntil={_Dialect.ShiftByDuration($"CASE WHEN ExpiresAt > {SqlDialectTokens.Now} THEN ExpiresAt ELSE {SqlDialectTokens.Now} END", "Lease")}, Owner=@Owner",
+                [
+                    "[Id]",
+                    "[Content]",
+                    "[IntentType]",
+                    "[Retries]",
+                    "[InlineAttempts]",
+                    "[Added]",
+                    "[ExpiresAt]",
+                    "[LockedUntil]",
+                    "[Owner]",
+                ],
+                BatchSizeParameter: "BatchSize"
             )
-            UPDATE target
-            SET StatusName=@QueuedStatusName,
-                LockedUntil=DATEADD(
-                    nanosecond,
-                    @LeaseNanoseconds,
-                    DATEADD(
-                        second,
-                        @LeaseWholeSeconds,
-                        CASE WHEN target.ExpiresAt > @ClaimNow THEN target.ExpiresAt ELSE @ClaimNow END
-                    )
-                ),
-                Owner=@Owner
-            OUTPUT inserted.Id,inserted.Content,inserted.IntentType,inserted.Retries,
-                   inserted.InlineAttempts,inserted.Added,inserted.ExpiresAt,
-                   inserted.LockedUntil,inserted.Owner
-            FROM {_publishedTable} AS target
-            INNER JOIN Candidates ON target.Id=Candidates.Id
-            WHERE target.IntentType IN (0, 1)
-              AND (target.LockedUntil IS NULL OR target.LockedUntil <= @ClaimNow)
-              AND {_TerminalRowGuardSimple};
-            """;
-
-        var scheduleNow = timeProvider.GetUtcNow();
-        var (leaseWholeSeconds, leaseNanoseconds) = _SplitLeaseDuration(
-            messagingOptions.Value.RetryPolicy.DispatchTimeout
         );
-        object[] sqlParams =
-        [
-            new SqlParameter("@BatchSize", messagingOptions.Value.SchedulerBatchSize),
-            _VersionParameter(),
-            new SqlParameter("@DelayedStatusName", nameof(StatusName.Delayed)),
-            new SqlParameter("@QueuedStatusName", nameof(StatusName.Queued)),
-            new SqlParameter("@TwoMinutesLater", SqlDbType.DateTimeOffset)
-            {
-                Value = scheduleNow.Add(_DelayedMessageLookahead),
-            },
-            new SqlParameter("@OneMinuteAgo", SqlDbType.DateTimeOffset)
-            {
-                Value = scheduleNow.Subtract(_QueuedMessageLookback),
-            },
-            new SqlParameter("@LeaseWholeSeconds", SqlDbType.Int) { Value = leaseWholeSeconds },
-            new SqlParameter("@LeaseNanoseconds", SqlDbType.Int) { Value = leaseNanoseconds },
-            _OwnerParameter("@Owner", hasLease: true),
-        ];
 
-        await using var connection = new SqlConnection(options.Value.ConnectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection
-            .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
-            .ConfigureAwait(false);
-        var poisonMessages = new List<PoisonMessage>();
-        var claimed = await connection
-            .ExecuteReaderAsync(
-                sql,
-                async (reader, token) =>
+        var claimed = await SqlAutonomousTransaction
+            .RunAsync(
+                _Dialect,
+                () => new SqlConnection(options.Value.ConnectionString),
+                async (connection, transaction, ct) =>
                 {
-                    var messages = new List<MediumMessage>();
-                    while (await reader.ReadAsync(token).ConfigureAwait(false))
-                    {
-                        var storageId = reader.GetGuid(0);
-                        var content = reader.GetString(1);
-                        try
-                        {
-                            messages.Add(
-                                new MediumMessage
-                                {
-                                    StorageId = storageId,
-                                    Origin = serializer.Deserialize(content)!,
-                                    Content = content,
-                                    Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2)),
-                                    Retries = reader.GetInt32(3),
-                                    InlineAttempts = reader.GetInt32(4),
-                                    Added = await reader
-                                        .GetFieldValueAsync<DateTimeOffset>(5, token)
-                                        .ConfigureAwait(false),
-                                    ExpiresAt = await reader
-                                        .GetFieldValueAsync<DateTimeOffset>(6, token)
-                                        .ConfigureAwait(false),
-                                    LockedUntil = await reader
-                                        .GetFieldValueAsync<DateTimeOffset>(7, token)
-                                        .ConfigureAwait(false),
-                                    Owner = await reader.IsDBNullAsync(8, token).ConfigureAwait(false)
-                                        ? null
-                                        : reader.GetString(8),
-                                }
-                            );
-                        }
-#pragma warning disable CA1031 // one un-deserializable row must not abort or starve the batch
-                        catch (Exception ex)
-#pragma warning restore CA1031
-                        {
-                            logger.LogPoisonMessageSkipped(storageId, _publishedTable, ex);
-                            poisonMessages.Add(_CreatePoisonMessage(storageId, ex));
-                        }
-                    }
+                    object[] sqlParams =
+                    [
+                        new SqlParameter("@BatchSize", messagingOptions.Value.SchedulerBatchSize),
+                        _VersionParameter(),
+                        new SqlParameter("@DelayedStatusName", nameof(StatusName.Delayed)),
+                        new SqlParameter("@QueuedStatusName", nameof(StatusName.Queued)),
+                        .. _Duration("Lookahead", _DelayedMessageLookahead),
+                        .. _Duration("Lookback", _QueuedMessageLookback),
+                        .. _Duration("Lease", messagingOptions.Value.RetryPolicy.DispatchTimeout),
+                        _OwnerParameter("@Owner", hasLease: true),
+                    ];
+                    var poisonMessages = new List<PoisonMessage>();
+                    var messages = await connection
+                        .ExecuteReaderAsync(
+                            sql,
+                            (reader, token) => _ReadDelayedClaimAsync(reader, poisonMessages, token),
+                            transaction: transaction,
+                            commandTimeout: messagingOptions.Value.CommandTimeout,
+                            sqlParams: sqlParams,
+                            cancellationToken: ct
+                        )
+                        .ConfigureAwait(false);
+
+                    await _MarkPoisonMessagesTerminalAsync(connection, transaction, _publishedTable, poisonMessages, ct)
+                        .ConfigureAwait(false);
 
                     return messages;
                 },
-                transaction: transaction,
-                commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams: sqlParams,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        await _MarkPoisonMessagesTerminalAsync(
-                connection,
-                transaction,
-                _publishedTable,
-                poisonMessages,
+                timeProvider,
                 cancellationToken
             )
             .ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
+        // The claim reports rows in no particular order; callers dispatch in due order.
         claimed.Sort(
             static (left, right) =>
             {
@@ -277,5 +232,54 @@ internal sealed partial class SqlServerDataStorage
             }
         );
         return claimed;
+    }
+
+    private async Task<List<MediumMessage>> _ReadDelayedClaimAsync(
+        DbDataReader reader,
+        List<PoisonMessage> poisonMessages,
+        CancellationToken cancellationToken
+    )
+    {
+        var messages = new List<MediumMessage>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var storageId = reader.GetGuid(0);
+            var content = reader.GetString(1);
+            try
+            {
+                messages.Add(
+                    new MediumMessage
+                    {
+                        StorageId = storageId,
+                        Origin = serializer.Deserialize(content)!,
+                        Content = content,
+                        Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2)),
+                        Retries = reader.GetInt32(3),
+                        InlineAttempts = reader.GetInt32(4),
+                        Added = await reader
+                            .GetFieldValueAsync<DateTimeOffset>(5, cancellationToken)
+                            .ConfigureAwait(false),
+                        ExpiresAt = await reader
+                            .GetFieldValueAsync<DateTimeOffset>(6, cancellationToken)
+                            .ConfigureAwait(false),
+                        LockedUntil = await reader
+                            .GetFieldValueAsync<DateTimeOffset>(7, cancellationToken)
+                            .ConfigureAwait(false),
+                        Owner = await reader.IsDBNullAsync(8, cancellationToken).ConfigureAwait(false)
+                            ? null
+                            : reader.GetString(8),
+                    }
+                );
+            }
+#pragma warning disable CA1031 // one un-deserializable row must not abort or starve the batch
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                logger.LogPoisonMessageSkipped(storageId, _publishedTable, ex);
+                poisonMessages.Add(_CreatePoisonMessage(storageId, ex));
+            }
+        }
+
+        return messages;
     }
 }

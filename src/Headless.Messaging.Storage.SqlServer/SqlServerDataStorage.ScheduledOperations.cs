@@ -48,7 +48,7 @@ internal sealed partial class SqlServerDataStorage
 
         if (query.StorageIds is { Count: > 0 })
         {
-            where += " AND [Id] IN (SELECT [Id] FROM @Ids)";
+            where += $" AND {_IdsFilter}";
         }
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
@@ -232,8 +232,7 @@ internal sealed partial class SqlServerDataStorage
 
         if (query.StorageIds is { Count: > 0 } storageIds)
         {
-            var idsList = storageIds as IReadOnlyList<Guid> ?? storageIds.ToArray();
-            command.Parameters.Add(_BuildIdListTvpParameter(idsList));
+            command.Parameters.Add(_IdListParameter(storageIds));
         }
     }
 
