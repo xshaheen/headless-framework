@@ -2,6 +2,7 @@
 
 using Headless.Hosting.Initialization.Schema;
 using Headless.Settings.Entities;
+using Headless.Settings.Repositories;
 using Headless.Sql.SqlServer;
 
 namespace Headless.Settings.SqlServer;
@@ -15,16 +16,22 @@ internal static class SqlServerSettingsSchemaContribution
     public const string TablesStepVersion = "1";
     public const string IndexesStepVersion = "2";
 
+    private static readonly RelationalSettingsTables _Defaults = new(
+        SqlServerDialect.Instance,
+        new SettingsStorageOptions()
+    );
+
     public static SchemaContribution Create(
         SqlServerSettingsOptions providerOptions,
-        SettingsStorageOptions storageOptions
+        RelationalSettingsTables tables,
+        bool applyOnStartup
     )
     {
-        var schema = storageOptions.Schema;
-        var valuesName = SqlServerSettingsSchema.ValuesName(storageOptions);
-        var definitionsName = SqlServerSettingsSchema.DefinitionsName(storageOptions);
-        var valuesTable = SqlServerSettingsSchema.ValuesTable(storageOptions);
-        var definitionsTable = SqlServerSettingsSchema.DefinitionsTable(storageOptions);
+        var schema = tables.Schema;
+        var valuesName = tables.ValuesName;
+        var definitionsName = tables.DefinitionsName;
+        var valuesTable = tables.Values;
+        var definitionsTable = tables.Definitions;
         var valuesObject = $"{schema}.{valuesName}";
         var definitionsObject = $"{schema}.{definitionsName}";
 
@@ -74,11 +81,11 @@ internal static class SqlServerSettingsSchemaContribution
         return new SchemaContribution(
             feature: SchemaContribution.FeatureId(
                 "Settings",
-                (valuesName, SqlServerSettingsSchema.DefaultValuesName),
-                (definitionsName, SqlServerSettingsSchema.DefaultDefinitionsName)
+                (valuesName, _Defaults.ValuesName),
+                (definitionsName, _Defaults.DefinitionsName)
             ),
             dialect: SqlServerSchemaDialect.Instance,
-            createConnection: providerOptions.CreateConnection,
+            createConnection: () => SqlServerDialect.Instance.CreateConnection(providerOptions.ConnectionString),
             schema: schema,
             steps:
             [
@@ -89,7 +96,7 @@ internal static class SqlServerSettingsSchemaContribution
                     indexesSql
                 ),
             ],
-            applyOnStartup: storageOptions.InitializeOnStartup
+            applyOnStartup: applyOnStartup
         );
     }
 }

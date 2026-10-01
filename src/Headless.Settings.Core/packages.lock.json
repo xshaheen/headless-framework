@@ -467,6 +467,9 @@
           "Headless.Serializer.Json": "[1.0.0, )"
         }
       },
+      "headless.sql.abstractions": {
+        "type": "Project"
+      },
       "headless.unitofwork.abstractions": {
         "type": "Project",
         "dependencies": {

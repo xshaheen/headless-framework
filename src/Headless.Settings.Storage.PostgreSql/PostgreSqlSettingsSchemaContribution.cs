@@ -2,6 +2,7 @@
 
 using Headless.Hosting.Initialization.Schema;
 using Headless.Settings.Entities;
+using Headless.Settings.Repositories;
 using Headless.Sql.PostgreSql;
 
 namespace Headless.Settings.PostgreSql;
@@ -15,15 +16,21 @@ internal static class PostgreSqlSettingsSchemaContribution
     public const string TablesStepVersion = "1";
     public const string IndexesStepVersion = "2";
 
+    private static readonly RelationalSettingsTables _Defaults = new(
+        PostgreSqlDialect.Instance,
+        new SettingsStorageOptions()
+    );
+
     public static SchemaContribution Create(
         PostgreSqlSettingsOptions providerOptions,
-        SettingsStorageOptions storageOptions
+        RelationalSettingsTables tables,
+        bool applyOnStartup
     )
     {
-        var valuesName = PostgreSqlSettingsSchema.ValuesName(storageOptions);
-        var definitionsName = PostgreSqlSettingsSchema.DefinitionsName(storageOptions);
-        var valuesTable = PostgreSqlSettingsSchema.ValuesTable(storageOptions);
-        var definitionsTable = PostgreSqlSettingsSchema.DefinitionsTable(storageOptions);
+        var valuesName = tables.ValuesName;
+        var definitionsName = tables.DefinitionsName;
+        var valuesTable = tables.Values;
+        var definitionsTable = tables.Definitions;
 
         var tablesSql = $"""
             CREATE TABLE IF NOT EXISTS {definitionsTable} (
@@ -63,12 +70,12 @@ internal static class PostgreSqlSettingsSchemaContribution
         return new SchemaContribution(
             feature: SchemaContribution.FeatureId(
                 "Settings",
-                (valuesName, PostgreSqlSettingsSchema.DefaultValuesName),
-                (definitionsName, PostgreSqlSettingsSchema.DefaultDefinitionsName)
+                (valuesName, _Defaults.ValuesName),
+                (definitionsName, _Defaults.DefinitionsName)
             ),
             dialect: PostgreSqlSchemaDialect.Instance,
-            createConnection: providerOptions.CreateConnection,
-            schema: storageOptions.Schema,
+            createConnection: () => PostgreSqlDialect.Instance.CreateConnection(providerOptions.ConnectionString),
+            schema: tables.Schema,
             steps:
             [
                 new SchemaStep(TablesStepVersion, "Create the setting definition and value tables.", tablesSql),
@@ -78,7 +85,7 @@ internal static class PostgreSqlSettingsSchemaContribution
                     indexesSql
                 ),
             ],
-            applyOnStartup: storageOptions.InitializeOnStartup
+            applyOnStartup: applyOnStartup
         );
     }
 }
