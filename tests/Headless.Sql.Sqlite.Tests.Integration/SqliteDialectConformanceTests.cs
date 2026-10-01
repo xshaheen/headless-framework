@@ -29,6 +29,15 @@ public sealed class SqliteDialectConformanceTests : SqlDialectConformanceTests
             """;
     }
 
+    protected override string CreatePartialKeySql(string table, string index)
+    {
+        return $"""CREATE UNIQUE INDEX "{index}" ON {table} (owner) WHERE flag = 1;""";
+    }
+
+    // Never run: a transaction begun IMMEDIATE holds the database write lock from its first statement, so two SQLite
+    // transactions never hold one row each and wait on the other. The two deadlock scenarios are not overridden below.
+    protected override string DeadlockSurvivorSql => "SELECT 1";
+
     // SQLite keeps a transaction alive after an ordinary error, but an OR ROLLBACK conflict (like a full disk or an I/O
     // error) rolls the whole transaction back, after which the driver refuses every statement on it.
     protected override IReadOnlyList<string> DoomThenWriteBatches(string insertAfter)
@@ -96,5 +105,41 @@ public sealed class SqliteDialectConformanceTests : SqlDialectConformanceTests
     public override Task should_fail_loudly_once_the_engine_has_doomed_the_callers_transaction()
     {
         return base.should_fail_loudly_once_the_engine_has_doomed_the_callers_transaction();
+    }
+
+    [Fact]
+    public override Task should_insert_and_report_the_values_it_wrote()
+    {
+        return base.should_insert_and_report_the_values_it_wrote();
+    }
+
+    [Fact]
+    public override Task should_lock_a_batch_in_order_and_skip_rows_another_transaction_holds()
+    {
+        return base.should_lock_a_batch_in_order_and_skip_rows_another_transaction_holds();
+    }
+
+    [Fact]
+    public override Task should_make_holders_of_one_transaction_lock_wait_in_turn()
+    {
+        return base.should_make_holders_of_one_transaction_lock_wait_in_turn();
+    }
+
+    [Fact]
+    public override Task should_render_portable_expressions()
+    {
+        return base.should_render_portable_expressions();
+    }
+
+    [Fact]
+    public override Task should_read_without_waiting_on_a_row_another_transaction_holds()
+    {
+        return base.should_read_without_waiting_on_a_row_another_transaction_holds();
+    }
+
+    [Fact]
+    public override Task should_insert_and_lock_by_a_partial_key()
+    {
+        return base.should_insert_and_lock_by_a_partial_key();
     }
 }

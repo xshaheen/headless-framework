@@ -112,12 +112,55 @@ public sealed class SqliteDialect : ISqlDialect
 
     public string ShiftByDuration(string instant, string parameter, bool subtract = false)
     {
-        // Through integer microseconds and back to the stored text shape. Integer division truncates toward zero, so a
-        // negative total (an instant before 1970) borrows one second for its non-negative fraction.
-        var micros =
-            $"(unixepoch(substr({instant}, 1, 19)) * 1000000 + CAST(substr({instant}, 21, 6) AS INTEGER) {(subtract ? '-' : '+')} @{parameter})";
+        return _ShiftMicros(instant, $"{(subtract ? '-' : '+')} @{parameter}");
+    }
 
-        return $"(strftime('%Y-%m-%d %H:%M:%S', {micros} / 1000000 - ({micros} % 1000000 < 0), 'unixepoch') || '.' || printf('%06d', ({micros} % 1000000 + 1000000) % 1000000) || '{_UtcSuffix}')";
+    public string BooleanLiteral(bool value)
+    {
+        // Booleans are stored as 0 and 1, the form AddParameter binds.
+        return value ? "1" : "0";
+    }
+
+    public string NewGuid()
+    {
+        // A random version-4 identifier in the stored form (upper-case text), drawn again for each row: randomblob and
+        // random are not constant within a statement.
+        return "(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' "
+            + "|| substr('89AB', 1 + (abs(random()) % 4), 1) || substr(hex(randomblob(2)), 2) || '-' "
+            + "|| hex(randomblob(6)))";
+    }
+
+    public string ShiftBySeconds(string instant, string seconds)
+    {
+        return _ShiftMicros(instant, $"+ ({seconds}) * 1000000");
+    }
+
+    public string Limit(string limitParameter, string? offsetParameter = null)
+    {
+        return offsetParameter is null
+            ? $"LIMIT @{limitParameter}"
+            : $"LIMIT @{limitParameter} OFFSET @{offsetParameter}";
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// SQLite's <c>LIKE</c> ignores case for ASCII letters only: without the ICU extension, <c>É</c> does not match
+    /// <c>é</c>.
+    /// </remarks>
+    public string LikeIgnoringCase(string expression, string patternParameter)
+    {
+        return $"{expression} LIKE @{patternParameter} ESCAPE '\\'";
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// A plain read outside a transaction takes no write lock, so it reads the last committed rows while a writer
+    /// holds the database. Under the default rollback journal it can still wait for the instant a writer commits; WAL
+    /// mode removes that wait.
+    /// </remarks>
+    public string ReadWithoutWaiting(string table)
+    {
+        return table;
     }
 
     public void AddDuration(DbCommand command, string parameter, TimeSpan duration)
@@ -235,7 +278,7 @@ public sealed class SqliteDialect : ISqlDialect
             UPDATE {statement.Table} SET {column} = {column} WHERE 0;
             SELECT {string.Join(", ", statement.Columns)}
             FROM {statement.Table}
-            WHERE {_Key(statement.Key, alias: null)};
+            WHERE {_Key(statement.Key, alias: null)}{_And(statement.KeyPredicate)};
             """;
     }
 
@@ -268,8 +311,10 @@ public sealed class SqliteDialect : ISqlDialect
         return $"""
             INSERT INTO {statement.Table} ({string.Join(", ", columns)})
             SELECT {string.Join(", ", values)}
-            WHERE NOT EXISTS (SELECT 1 FROM {statement.Table} WHERE {_Key(statement.Key, alias: null)});
-            {_AppliedAndReturning(statement.Table, statement.Key, statement.Returning)}
+            WHERE NOT EXISTS (
+                SELECT 1 FROM {statement.Table} WHERE {_Key(statement.Key, alias: null)}{_And(statement.KeyPredicate)}
+            );
+            {_AppliedAndReturning(statement.Table, statement.Key, statement.Returning, statement.KeyPredicate)}
             """;
     }
 
@@ -334,6 +379,45 @@ public sealed class SqliteDialect : ISqlDialect
         return _Clocked(statement.Sql);
     }
 
+    public string Render(SqlInsert statement)
+    {
+        return $"""
+            INSERT INTO {statement.Table} ({string.Join(", ", statement.Columns)})
+            VALUES ({string.Join(", ", statement.Values.Select(_Clocked))})
+            RETURNING {string.Join(", ", statement.Returning)};
+            """;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// SQLite has no row locks, so nothing is skipped: the no-op write takes the database write lock (already held in a
+    /// transaction begun <c>IMMEDIATE</c>), which keeps every other writer out until this transaction ends.
+    /// </remarks>
+    public string Render(SqlLockBatch statement)
+    {
+        var column = _OrderColumn(statement.OrderBy[0]);
+
+        return $"""
+            UPDATE {statement.Table} SET {column} = {column} WHERE 0;
+            SELECT {_Clocked(string.Join(", ", statement.Columns))}
+            FROM {statement.Table}
+            WHERE {_Clocked(statement.Filter)}
+            ORDER BY {string.Join(", ", statement.OrderBy)}
+            LIMIT @{statement.BatchSizeParameter};
+            """;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// SQLite has no named locks. A transaction begun <c>IMMEDIATE</c>, the driver's default, already holds the
+    /// database write lock, which serializes every holder of every name, so the statement only names the resource. A
+    /// deferred transaction gets no lock from it.
+    /// </remarks>
+    public string Render(SqlTransactionLock statement)
+    {
+        return $"SELECT @{statement.ResourceParameter} WHERE 0;";
+    }
+
     public SqlErrorKind Classify(Exception exception)
     {
         return exception switch
@@ -356,6 +440,19 @@ public sealed class SqliteDialect : ISqlDialect
             _ when SqliteErrors.IsCompletedTransaction(exception) => SqlErrorKind.TransactionAborted,
             _ => SqlErrorKind.None,
         };
+    }
+
+    /// <summary>
+    /// Moves an instant in the stored text shape by an integer number of microseconds (<paramref name="delta" /> is a
+    /// signed term such as <c>+ @p</c>), through integer microseconds and back. Integer division truncates toward zero,
+    /// so a negative total (an instant before 1970) borrows one second for its non-negative fraction.
+    /// </summary>
+    private static string _ShiftMicros(string instant, string delta)
+    {
+        var micros =
+            $"(unixepoch(substr({instant}, 1, 19)) * 1000000 + CAST(substr({instant}, 21, 6) AS INTEGER) {delta})";
+
+        return $"(strftime('%Y-%m-%d %H:%M:%S', {micros} / 1000000 - ({micros} % 1000000 < 0), 'unixepoch') || '.' || printf('%06d', ({micros} % 1000000 + 1000000) % 1000000) || '{_UtcSuffix}')";
     }
 
     /// <summary>Converts a bound value to the form its column stores.</summary>
@@ -441,7 +538,8 @@ public sealed class SqliteDialect : ISqlDialect
     private static string _AppliedAndReturning(
         string table,
         IReadOnlyList<SqlKeyColumn> key,
-        IReadOnlyList<string> returning
+        IReadOnlyList<string> returning,
+        string? keyPredicate = null
     )
     {
         // changes() reports the statement before this one. The re-read runs under the write lock the batch holds.
@@ -450,8 +548,27 @@ public sealed class SqliteDialect : ISqlDialect
         return $"""
             SELECT changes() > 0{columns}
             FROM (SELECT 1) AS x
-            LEFT JOIN {table} AS t ON changes() > 0 AND {_Key(key, "t")};
+            LEFT JOIN {table} AS t ON changes() > 0 AND {_Key(key, "t")}{_And(keyPredicate)};
             """;
+    }
+
+    private static string _And(string? predicate)
+    {
+        return predicate is null ? "" : $" AND ({predicate})";
+    }
+
+    private static string _OrderColumn(string orderBy)
+    {
+        // An ORDER BY entry may carry a direction; the no-op write needs the bare column.
+        foreach (var direction in (string[])[" ASC", " DESC"])
+        {
+            if (orderBy.EndsWith(direction, StringComparison.OrdinalIgnoreCase))
+            {
+                return orderBy[..^direction.Length].TrimEnd();
+            }
+        }
+
+        return orderBy;
     }
 
     private static string _Clocked(string fragment)
