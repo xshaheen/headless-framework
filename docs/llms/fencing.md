@@ -327,7 +327,7 @@ The lease row stores progress as `progress bytea` plus `progress_contract varcha
 
 - The verbs are the shared relational store's (see [Headless.Fencing.Core](#headlessfencingcore)). A first grant of a key inserts with `INSERT … ON CONFLICT DO NOTHING`; when it loses a race to another transaction's insert, it rereads the committed row and decides again.
 - Sweep claims and purge batches use `FOR UPDATE … SKIP LOCKED`, so a lease another sweeper is already claiming is simply skipped, not waited on.
-- The autonomous path opens its own connection at READ COMMITTED and retries a deadlock or serialization failure (`40P01`, `40001`) up to 3 attempts with a jittered delay between them; the enlisted path runs on the unit's own connection and transaction with no retry.
+- The autonomous path opens its own connection at READ COMMITTED and retries a transient fault raised before the commit (a deadlock or serialization failure, `40P01`, `40001`, or anything Npgsql reports as transient) up to 3 attempts with a jittered delay between them, never a fault from the commit; the enlisted path runs on the unit's own connection and transaction with no retry.
 - The table and sequence are one schema step (`Fencing/1`) the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup, under one advisory lock per database shared with every other Headless feature.
 
 ---
@@ -365,5 +365,5 @@ The lease row stores progress as `Progress varbinary(max)` plus `ProgressContrac
 
 - The verbs are the shared relational store's (see [Headless.Fencing.Core](#headlessfencingcore)). The locking read's `HOLDLOCK` takes a key-range lock when the row is absent, so two first grants of one key serialize and the insert never collides; no batch uses `TRY/CATCH` or a session `SET`, so nothing leaks into or dooms a caller's `XACT_ABORT ON` transaction.
 - Sweep claims and purge batches use `UPDLOCK, READPAST, ROWLOCK, READCOMMITTEDLOCK`: `READPAST` is refused under read committed snapshot isolation unless the read also takes locks, and the hint is the default without it, so the same statement works either way.
-- The autonomous path opens its own connection at READ COMMITTED and retries a deadlock or snapshot update conflict (1205, 3960) up to 3 attempts with a jittered delay between them; the enlisted path runs on the unit's own connection and transaction with no retry.
+- The autonomous path opens its own connection at READ COMMITTED and retries a transient fault raised before the commit (a deadlock or snapshot update conflict, 1205, 3960, a lock timeout, 1222, or a connection fault EF Core's SQL Server retry set covers) up to 3 attempts with a jittered delay between them, never a fault from the commit; the enlisted path runs on the unit's own connection and transaction with no retry.
 - The table and sequence are one schema step (`Fencing/1`) the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup, under one `sp_getapplock` per database shared with every other Headless feature.

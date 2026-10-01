@@ -1677,7 +1677,7 @@ Inside `factory.RunAsync(db, operation, cancellationToken: ct)` (or `await using
 
 - Replaces the default Jobs EF claim strategy with the PostgreSQL atomic strategy.
 - Executes provider-native, parameterized SQL against the mapped Jobs tables during pickup.
-- Retries a claim scope rolled back by a deadlock (`40P01`) or serialization failure (`40001`) as a whole, in a fresh transaction, up to three attempts in total with a short jittered delay between them, and logs event `JobsClaimDeadlockRetry` (20102) per retry. The last failure propagates unchanged.
+- Retries a claim scope that failed with a transient fault before its commit (a deadlock, `40P01`, a serialization failure, `40001`, or anything Npgsql reports as transient) as a whole, in a fresh transaction, up to three attempts in total with a short jittered delay between them, and logs event `JobsClaimTransientRetry` (20102) per retry. A fault from the commit is never retried, because the claim may already be durable. The failure that ends the claim propagates unchanged.
 - Does not change scheduler cadence, leases, retry policy, or the public persistence contract.
 
 ---
@@ -1742,5 +1742,5 @@ Inside `factory.RunAsync(db, operation, cancellationToken: ct)` (or `await using
 
 - Replaces the default Jobs EF claim strategy with the SQL Server atomic strategy.
 - Executes provider-native, parameterized SQL against the mapped Jobs tables during pickup.
-- Retries a claim scope chosen as a deadlock victim (error 1205) as a whole, in a fresh transaction, up to three attempts in total with a short jittered delay between them, and logs event `JobsClaimDeadlockRetry` (20102) per retry. The last failure propagates unchanged.
+- Retries a claim scope that failed with a transient fault before its commit (a deadlock victim, 1205, a lock timeout, 1222, or a connection fault EF Core's SQL Server retry set covers) as a whole, in a fresh transaction, up to three attempts in total with a short jittered delay between them, and logs event `JobsClaimTransientRetry` (20102) per retry. A fault from the commit is never retried, because the claim may already be durable. The failure that ends the claim propagates unchanged.
 - Does not change lock-escalation settings, scheduler cadence, leases, retry policy, or the public persistence contract.
