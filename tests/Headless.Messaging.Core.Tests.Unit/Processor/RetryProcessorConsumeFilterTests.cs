@@ -216,7 +216,6 @@ public sealed class RetryProcessorConsumeFilterTests : TestBase
         }
 
         var provider = services.BuildServiceProvider();
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
         var dispatcher = Substitute.For<IDispatcher>();
         var processor = new MessageNeedToRetryProcessor(
             Options.Create(new MessagingOptions()),
@@ -225,8 +224,7 @@ public sealed class RetryProcessorConsumeFilterTests : TestBase
             dispatcher,
             Substitute.For<IDistributedLock>(),
             consumerResolver: provider.GetRequiredService<MethodMatcherCache>(),
-            consumerRegistry: registry,
-            runtimeConsumerRegistry: provider.GetRequiredService<IRuntimeConsumerRegistry>()
+            hostOwnership: provider.GetRequiredService<IConsumerHostOwnership>()
         );
 
         return new Host(provider, processor, dispatcher);

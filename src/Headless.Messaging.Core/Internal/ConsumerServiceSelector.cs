@@ -80,15 +80,15 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
             return [];
         }
 
+        var ownership = provider.GetRequiredService<IConsumerHostOwnership>();
         var results = new List<ConsumerExecutorDescriptor>();
         var metadata = registry.GetAll();
 
         foreach (var consumer in metadata)
         {
             // ConsumeOnly narrows what this host consumes, not what it registers: a filtered-out consumer gets no
-            // client here, while its messages stay publishable. Every-instance consumers are exempt because they hold
-            // per-process state that every host must keep current.
-            if (!registry.ConsumeFilter.Allows(consumer))
+            // client here, while its messages stay publishable.
+            if (!ownership.Starts(consumer))
             {
                 continue;
             }

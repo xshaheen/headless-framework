@@ -156,6 +156,7 @@ public static class SetupMessaging
         services.TryAddSingleton<IMessageRevoker, MessageRevoker>();
         services.TryAddSingleton<IRuntimeConsumerRegistry, RuntimeConsumerRegistry>();
         services.TryAddSingleton<IRuntimeSubscriber, RuntimeSubscriber>();
+        services.TryAddSingleton<IConsumerHostOwnership, ConsumerHostOwnership>();
 
         services.TryAddSingleton<IConsumerServiceSelector, ConsumerServiceSelector>();
         services.TryAddSingleton<IConsumeMiddlewarePipeline, ConsumeMiddlewarePipeline>();
