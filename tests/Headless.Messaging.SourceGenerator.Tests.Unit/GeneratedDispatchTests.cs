@@ -122,7 +122,9 @@ public sealed class GeneratedDispatchTests : TestBase
         var declarations = _RegisterGeneratedModule(out _);
 
         // then
-        var projection = declarations.Where(x => x.Identity == _InvoiceProjection).ToList();
+        var projection = declarations
+            .Where(x => string.Equals(x.Identity, _InvoiceProjection, StringComparison.Ordinal))
+            .ToList();
         projection.Select(x => x.MessageType.Name).Should().Equal("InvoiceIssued", "InvoicePaid");
         projection.Should().OnlyContain(x => x.Lane == MessageLane.Bus);
         projection[0].Dispatch.Should().Be(projection[1].Dispatch);
@@ -171,9 +173,12 @@ public sealed class GeneratedDispatchTests : TestBase
         var declarations = _RegisterGeneratedModule(out _);
 
         // then
-        declarations.Single(x => x.Identity == _PriceCache).OnSubscriptionEstablished.Should().NotBeNull();
         declarations
-            .Where(x => x.Identity == _InvoiceProjection)
+            .Single(x => string.Equals(x.Identity, _PriceCache, StringComparison.Ordinal))
+            .OnSubscriptionEstablished.Should()
+            .NotBeNull();
+        declarations
+            .Where(x => string.Equals(x.Identity, _InvoiceProjection, StringComparison.Ordinal))
             .Should()
             .OnlyContain(x => x.OnSubscriptionEstablished == null);
     }
@@ -182,7 +187,9 @@ public sealed class GeneratedDispatchTests : TestBase
     public async Task should_run_the_subscription_hook_on_an_instance_it_constructs_and_dispose_it()
     {
         // given
-        var hook = _RegisterGeneratedModule(out _).Single(x => x.Identity == _PriceCache).OnSubscriptionEstablished!;
+        var hook = _RegisterGeneratedModule(out _)
+            .Single(x => string.Equals(x.Identity, _PriceCache, StringComparison.Ordinal))
+            .OnSubscriptionEstablished!;
         await using var provider = new ServiceCollection().AddSingleton<DispatchProbe>().BuildServiceProvider();
 
         // when
@@ -201,7 +208,7 @@ public sealed class GeneratedDispatchTests : TestBase
     {
         // given
         var declarations = _RegisterGeneratedModule(out var messageTypes);
-        var priceCache = declarations.Single(x => x.Identity == _PriceCache);
+        var priceCache = declarations.Single(x => string.Equals(x.Identity, _PriceCache, StringComparison.Ordinal));
         var probe = new DispatchProbe();
         var services = new ServiceCollection().AddSingleton(probe);
         services.AddSingleton(

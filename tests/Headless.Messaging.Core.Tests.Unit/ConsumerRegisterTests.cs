@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Concurrent;
+using System.Collections.Frozen;
 using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
@@ -355,6 +356,79 @@ public sealed class ConsumerRegisterTests : TestBase
         readyClient.ResumeCount.Should().Be(0);
 
         await register.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task topology_rebuild_pauses_a_surviving_group_that_shares_a_reopened_circuit()
+    {
+        // given - a running group delivers to the same circuit as the group a topology change starts, and starting
+        // that group reopened the circuit at epoch 7
+        var circuitKey = CircuitBreakerKeys.For(MessageLane.Queue, "payments.ledger");
+        var mockCb = Substitute.For<ICircuitBreakerStateManager>();
+        mockCb
+            .TryGetOpenEpoch(circuitKey, out Arg.Any<long>())
+            .Returns(callInfo =>
+            {
+                callInfo[1] = 7L;
+                return true;
+            });
+        await using var provider = _CreateProvider(mockCb);
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        typeof(ConsumerRegister)
+            .GetField(
+                "_circuitBreakerStateManager",
+                BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+            )!
+            .SetValue(register, mockCb);
+
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
+        var survivor = _CreateHandle(handleType);
+        handleType.GetProperty("SubscriptionName")!.SetValue(survivor, "1:payments.captured");
+        handleType.GetProperty("Shape")!.SetValue(survivor, "survivor");
+        handleType
+            .GetProperty("CircuitKeys")!
+            .SetValue(survivor, new[] { circuitKey }.ToFrozenSet(StringComparer.Ordinal));
+        var handles = (IDictionary)
+            typeof(ConsumerRegister)
+                .GetField(
+                    "_subscriptionHandles",
+                    BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+                )!
+                .GetValue(register)!;
+        handles.Add("1:payments.captured", survivor);
+
+        var started = new KeyValuePair<ConsumerSubscriptionKey, IReadOnlyList<ConsumerExecutorDescriptor>>(
+            new ConsumerSubscriptionKey("payments.refunded", MessageLane.Queue),
+            [
+                new ConsumerExecutorDescriptor
+                {
+                    Lane = MessageLane.Queue,
+                    ConsumerType = typeof(object),
+                    MessageName = "payments.refunded",
+                    SubscriptionName = "payments.refunded",
+                    ConsumerIdentity = "payments.ledger",
+                },
+            ]
+        );
+
+        // when
+        var pauseSurvivors = typeof(ConsumerRegister).GetMethod(
+            "_PauseSurvivorsOfOpenCircuitsAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            binder: null,
+            [
+                typeof(IReadOnlyCollection<
+                    KeyValuePair<ConsumerSubscriptionKey, IReadOnlyList<ConsumerExecutorDescriptor>>
+                >),
+            ],
+            modifiers: null
+        )!;
+        await (ValueTask)pauseSurvivors.Invoke(register, [new[] { started }])!;
+
+        // then
+        _GetIsPaused(handleType, survivor)
+            .Should()
+            .BeTrue("a group that kept running must not deliver into an Open circuit");
     }
 
     [Fact]

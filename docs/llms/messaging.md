@@ -799,7 +799,7 @@ The collector obtains one fixed provider-clock history cutoff snapshot per invoc
     }
   }
   ```
-- Runtime subscriptions attach handlers after startup through `IRuntimeSubscriber`. On a running host, `SubscribeAsync` and `UnsubscribeAsync` return once the consumer clients reflect the change; a change made while the host is still starting applies when startup finishes. Only the subscription groups (subscription name, lane, and competing or every-instance kind) whose consumers or concurrency changed are stopped or started; every other group keeps its clients.
+- Runtime subscriptions attach handlers after startup through `IRuntimeSubscriber`. On a running host, `SubscribeAsync` and `UnsubscribeAsync` apply the change before they return. While the host is starting or rebuilding its clients after a broker failure, they return at once and the change applies when that finishes. If the changed subscription's old clients do not stop within the rebuild budget, or the broker is unreachable, the call still returns, the host reports itself unhealthy, and the transport health check's full rebuild applies the change. Only the subscription groups (subscription name, lane, and competing or every-instance kind) whose consumers or concurrency changed are stopped or started; every other group keeps its clients.
 
 ### Runtime behavior
 

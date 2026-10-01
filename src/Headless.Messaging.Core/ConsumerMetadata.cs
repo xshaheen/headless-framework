@@ -40,7 +40,7 @@ public sealed record ConsumerMetadata(
 
     /// <summary>
     /// The circuit breaker overrides <c>Tune</c> or configuration gave this consumer. Applied to the
-    /// <see cref="ConsumerCircuitBreakerRegistry"/> during startup discovery.
+    /// <see cref="ConsumerCircuitBreakerRegistry"/> when the consumer registry is built.
     /// </summary>
     internal ConsumerCircuitBreakerOptions? CircuitBreakerOverride { get; init; }
 

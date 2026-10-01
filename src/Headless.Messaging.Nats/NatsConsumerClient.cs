@@ -367,8 +367,11 @@ internal sealed class NatsConsumerClient(
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        if (_everyInstance is { } everyInstance)
+        if (kind is ConsumerSubscriptionKind.EveryInstance)
         {
+            var everyInstance =
+                _everyInstance
+                ?? throw new InvalidOperationException("ConnectAsync must complete before the NATS consumer listens.");
             await everyInstance.ListenAsync(_subscribedMessageNames!, cancellationToken).ConfigureAwait(false);
             return;
         }

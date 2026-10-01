@@ -29,8 +29,10 @@ internal interface IConsumerHostOwnership
     IReadOnlyCollection<string>? GetRetriedIdentities();
 
     /// <summary>
-    /// Whether this host runs the consumer identity: a registered consumer it starts, or a runtime subscription attached
-    /// to it.
+    /// Whether this host runs the consumer identity. An unfiltered host runs every identity. A <c>ConsumeOnly</c> host
+    /// runs the registered consumers it starts, every-instance ones included, and every runtime subscription attached to
+    /// it, competing or every-instance; only the competing ones also appear in <see cref="GetRetriedIdentities"/>,
+    /// because every-instance deliveries store no rows.
     /// </summary>
     bool Owns(string consumerIdentity);
 }

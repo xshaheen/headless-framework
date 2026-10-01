@@ -320,6 +320,7 @@ internal sealed partial class ConsumerRegister(
         {
             // Nothing waits for the establishment hooks under the restart gate, for the reason a rebuild gives.
             _ = await _StartSubscriptionsAsync(added).ConfigureAwait(false);
+            await _PauseSurvivorsOfOpenCircuitsAsync(added).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
             when ((LifecycleState)Volatile.Read(ref _state) is LifecycleState.Disposing or LifecycleState.Disposed)
@@ -332,6 +333,48 @@ internal sealed partial class ConsumerRegister(
             // rebuild recovers it.
             _isHealthy = false;
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Starting a group aborts any half-open probe of the circuits it delivers to, which reopens them without the pause
+    /// callback. A full rebuild pre-pauses every new handle, so nothing else is affected; after a partial one, a group
+    /// that kept running and shares such a circuit would stay resumed while it is Open, so it is paused here too.
+    /// </summary>
+    private async ValueTask _PauseSurvivorsOfOpenCircuitsAsync(
+        IReadOnlyCollection<KeyValuePair<ConsumerSubscriptionKey, IReadOnlyList<ConsumerExecutorDescriptor>>> started
+    )
+    {
+        if (_circuitBreakerStateManager is null || started.Count == 0)
+        {
+            return;
+        }
+
+        var startedNames = started.Select(static x => _CreateHandleName(x.Key)).ToHashSet(StringComparer.Ordinal);
+        var circuitKeys = started
+            .SelectMany(static x => x.Value)
+            .Where(static x => !x.EveryInstance)
+            .Select(CircuitBreakerKeys.For)
+            .Distinct(StringComparer.Ordinal);
+
+        foreach (var circuitKey in circuitKeys)
+        {
+            if (!_circuitBreakerStateManager.TryGetOpenEpoch(circuitKey, out var openEpoch))
+            {
+                continue;
+            }
+
+            foreach (var handle in _subscriptionHandles.Values)
+            {
+                if (
+                    !startedNames.Contains(handle.SubscriptionName)
+                    && handle.CircuitKeys.Contains(circuitKey)
+                    && !handle.IsPauseAppliedForEpoch(openEpoch)
+                )
+                {
+                    await _PauseSubscriptionAsync(handle, openEpoch).ConfigureAwait(false);
+                }
+            }
         }
     }
 

@@ -117,7 +117,7 @@ public sealed class ConsumerTuningBuilder : IConsumerProviderConfigBuilder
     }
 }
 
-/// <summary>One immutable <c>Tune</c> call, applied to the host's consumers when its registrations drain.</summary>
+/// <summary>One immutable <c>Tune</c> call, applied to the host's consumers when its consumer registry is built.</summary>
 internal sealed record ConsumerTuning(
     string Identity,
     byte? Concurrency,

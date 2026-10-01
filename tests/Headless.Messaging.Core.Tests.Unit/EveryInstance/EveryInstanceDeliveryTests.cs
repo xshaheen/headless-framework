@@ -221,6 +221,67 @@ public sealed class EveryInstanceDeliveryTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_deadlock_when_a_topology_change_rebuilds_a_group_whose_hook_attaches_a_subscription()
+    {
+        // given
+        var factory = new RecordingFactory();
+        await using var provider = _BuildHost(
+            factory,
+            configure: services => services.ConfigureMessaging(m => m.AddModule<AttachingPriceCacheModule>())
+        );
+        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+        var probe = provider.GetRequiredService<EveryInstanceProbe>();
+        var registry = provider.GetRequiredService<IRuntimeConsumerRegistry>();
+
+        // when: a runtime subscription joins the hooked consumer's subscription, which rebuilds that group while the
+        // subscriber still holds its mutation lock, and the rebuilt group's hook attaches another subscription
+        await using var handle = await provider
+            .GetRequiredService<IRuntimeSubscriber>()
+            .SubscribeAsync<StockChanged>(
+                (_, _, _) => ValueTask.CompletedTask,
+                new RuntimeSubscriptionOptions
+                {
+                    HandlerId = "tests.joining-stock",
+                    Identity = AttachingPriceCache.Identity,
+                    EveryInstance = true,
+                },
+                AbortToken
+            )
+            .AsTask()
+            .WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        // then: the hook's own subscription attaches once the first one releases the lock
+        await _WaitUntilAsync(() =>
+            registry.GetDescriptors().Count == 2
+            && registry
+                .GetDescriptors()
+                .Any(x =>
+                    string.Equals(x.HandlerId, "tests.hook-attached", StringComparison.Ordinal)
+                    && factory.SubscribedClients(x.SubscriptionName) == 1
+                )
+        );
+        probe.Established.Select(x => x.Generation).Should().Equal(1, 2);
+    }
+
+    [Fact]
+    public async Task should_keep_the_generated_subscription_hook_when_a_hand_written_module_declares_the_consumer_first()
+    {
+        // given: the hand-written declaration carries no hook and registers before the generated-style one
+        var factory = new RecordingFactory();
+        await using var provider = _BuildHost(
+            factory,
+            configure: services =>
+                services.ConfigureMessaging(m => m.AddModule<HooklessPriceCacheModule>().AddModule<PriceCacheModule>())
+        );
+
+        // when
+        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+
+        // then
+        provider.GetRequiredService<EveryInstanceProbe>().Established.Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task should_not_reestablish_an_unrelated_every_instance_consumer_when_a_runtime_subscription_attaches()
     {
         // given
@@ -231,7 +292,9 @@ public sealed class EveryInstanceDeliveryTests : TestBase
         );
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
         var probe = provider.GetRequiredService<EveryInstanceProbe>();
-        var priceCacheClients = factory.Requests.Count(x => x.SubscriptionName == PriceCache.Identity);
+        var priceCacheClients = factory.Requests.Count(x =>
+            string.Equals(x.SubscriptionName, PriceCache.Identity, StringComparison.Ordinal)
+        );
 
         // when
         await using var handle = await provider
@@ -245,7 +308,10 @@ public sealed class EveryInstanceDeliveryTests : TestBase
         // then: only the attached subscription got a client; the price cache kept its clients, so its hook (and a
         // local cache it would flush) never ran again
         factory.SubscribedClients(handle.Identity).Should().Be(1);
-        factory.Requests.Count(x => x.SubscriptionName == PriceCache.Identity).Should().Be(priceCacheClients);
+        factory
+            .Requests.Count(x => string.Equals(x.SubscriptionName, PriceCache.Identity, StringComparison.Ordinal))
+            .Should()
+            .Be(priceCacheClients);
         factory.ShutDownClients(PriceCache.Identity).Should().Be(0);
         probe.Established.Should().ContainSingle().Which.Generation.Should().Be(1);
     }
@@ -860,6 +926,17 @@ public sealed class PriceCacheModule : IMessagingModule
             everyInstance: true,
             Tests.Registration.TestConsumers.Dispatch<PriceCache, PriceChanged>(),
             Tests.Registration.TestConsumers.SubscriptionHook<PriceCache>()
+        );
+}
+
+/// <summary>Declares <see cref="PriceCache"/> the way a hand-written module would, without its subscription hook.</summary>
+public sealed class HooklessPriceCacheModule : IMessagingModule
+{
+    public static void Register(MessagingCatalogBuilder catalog) =>
+        catalog.AddBusConsumer<PriceCache, PriceChanged>(
+            PriceCache.Identity,
+            everyInstance: true,
+            Tests.Registration.TestConsumers.Dispatch<PriceCache, PriceChanged>()
         );
 }
 

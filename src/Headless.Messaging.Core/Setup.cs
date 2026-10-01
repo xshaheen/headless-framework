@@ -417,7 +417,8 @@ public static class SetupMessaging
         MessagingHostControls controls
     )
     {
-        var registeredKeys = new Dictionary<ConsumerRegistrationKey, ConsumerRegistrationSettings>();
+        var registeredKeys =
+            new Dictionary<ConsumerRegistrationKey, (ConsumerRegistrationSettings Settings, int Index)>();
         var consumers = new List<ConsumerMetadata>();
 
         foreach (var registration in registrations)
@@ -456,20 +457,30 @@ public static class SetupMessaging
                 {
                     // A hand-written module may redeclare a generated consumer. An identical redeclaration merges; a
                     // different one would silently lose settings, so it fails naming both.
-                    if (existing != settings)
+                    if (existing.Settings != settings)
                     {
                         throw new InvalidOperationException(
                             $"Consumer {resolved.ConsumerType.FullName ?? resolved.ConsumerType.Name} is declared more "
                                 + $"than once for message name '{resolved.MessageName}' on lane {resolved.Lane} with "
-                                + $"conflicting settings: {existing} and {settings}. Declare the consumer once, or make "
-                                + "every declaration identical."
+                                + $"conflicting settings: {existing.Settings} and {settings}. Declare the consumer once, "
+                                + "or make every declaration identical."
                         );
+                    }
+
+                    // A hand-written redeclaration carries no subscription hook, so whichever declaration came first,
+                    // the merged consumer keeps the generated one.
+                    if (
+                        consumers[existing.Index].OnSubscriptionEstablished is null
+                        && resolved.OnSubscriptionEstablished is { } hook
+                    )
+                    {
+                        consumers[existing.Index] = consumers[existing.Index] with { OnSubscriptionEstablished = hook };
                     }
 
                     continue;
                 }
 
-                registeredKeys.Add(key, settings);
+                registeredKeys.Add(key, (settings, consumers.Count));
                 consumers.Add(resolved);
             }
         }
