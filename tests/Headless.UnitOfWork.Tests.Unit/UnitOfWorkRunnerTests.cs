@@ -173,6 +173,7 @@ public sealed class UnitOfWorkRunnerTests : TestBase
             CancellationToken cancellationToken
         )
         {
+#pragma warning disable ERP022 // Observing the first fault would make the double worse: an execution strategy discards it and replays.
             try
             {
                 return await attempt(cancellationToken);
@@ -181,6 +182,7 @@ public sealed class UnitOfWorkRunnerTests : TestBase
             {
                 return await attempt(cancellationToken);
             }
+#pragma warning restore ERP022
         }
     }
 
