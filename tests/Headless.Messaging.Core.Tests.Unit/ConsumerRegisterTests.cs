@@ -64,7 +64,7 @@ public sealed class ConsumerRegisterTests : TestBase
         await (ValueTask)addClient.Invoke(handle, [client])!;
 
         var resumeGroup = typeof(ConsumerRegister).GetMethod(
-            "_ApplyGroupIntentAsync",
+            "_ApplySubscriptionIntentAsync",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
 
@@ -98,7 +98,7 @@ public sealed class ConsumerRegisterTests : TestBase
         ((IProcessingServerShutdown)register).Quiesce();
 
         var resumeGroup = typeof(ConsumerRegister).GetMethod(
-            "_ApplyGroupIntentAsync",
+            "_ApplySubscriptionIntentAsync",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
 
@@ -348,7 +348,7 @@ public sealed class ConsumerRegisterTests : TestBase
         // A recovery callback launched before the restart bump arrives after the replacement
         // handle applied epoch 7 and must not reopen transport.
         var resumeGroup = typeof(ConsumerRegister).GetMethod(
-            "_ApplyGroupIntentAsync",
+            "_ApplySubscriptionIntentAsync",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
         await (ValueTask)resumeGroup.Invoke(register, [handleObj, false, 6L])!;
@@ -1659,7 +1659,7 @@ public sealed class ConsumerRegisterTests : TestBase
     private static async ValueTask _InvokePauseAsync(ConsumerRegister register, object handle, long epoch)
     {
         var method = typeof(ConsumerRegister).GetMethod(
-            "_PauseGroupAsync",
+            "_PauseSubscriptionAsync",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
         await (ValueTask)method.Invoke(register, [handle, epoch])!;
@@ -1668,7 +1668,7 @@ public sealed class ConsumerRegisterTests : TestBase
     private static async ValueTask _InvokeResumeAsync(ConsumerRegister register, object handle, long epoch)
     {
         var method = typeof(ConsumerRegister).GetMethod(
-            "_ApplyGroupIntentAsync",
+            "_ApplySubscriptionIntentAsync",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
         await (ValueTask)method.Invoke(register, [handle, false, epoch])!;

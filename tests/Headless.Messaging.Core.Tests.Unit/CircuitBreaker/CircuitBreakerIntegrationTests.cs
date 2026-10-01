@@ -787,7 +787,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
     private static async ValueTask _PauseHandleAsync(ConsumerRegister register, object handle, long epoch)
     {
         var method = typeof(ConsumerRegister).GetMethod(
-            "_PauseGroupAsync",
+            "_PauseSubscriptionAsync",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
         await (ValueTask)method.Invoke(register, [handle, epoch])!;
@@ -796,7 +796,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
     private static async ValueTask _ResumeHandleAsync(ConsumerRegister register, object handle, long epoch)
     {
         var method = typeof(ConsumerRegister).GetMethod(
-            "_ApplyGroupIntentAsync",
+            "_ApplySubscriptionIntentAsync",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
         await (ValueTask)method.Invoke(register, [handle, false, epoch])!;

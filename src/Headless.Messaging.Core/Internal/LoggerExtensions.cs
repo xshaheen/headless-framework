@@ -35,9 +35,9 @@ internal static partial class LoggerExtensions
         EventId = 4,
         EventName = "ConsumerDuplicates",
         Level = LogLevel.Warning,
-        Message = "We detected that you have duplicate subscribers ({Subscriber}) in same group ({Group}), this will cause diversity behavior."
+        Message = "We detected that you have duplicate subscribers ({Subscriber}) in the same subscription ({Subscription}), this will cause diversity behavior."
     )]
-    public static partial void ConsumerDuplicates(this ILogger logger, string subscriber, string? group);
+    public static partial void ConsumerDuplicates(this ILogger logger, string subscriber, string? subscription);
 
     [LoggerMessage(
         EventId = 5,

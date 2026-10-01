@@ -627,7 +627,7 @@ internal sealed class ConsumerRegister(
                     // pre-pause the new handle so newly created clients get paused via AddClientAsync.
                     if (_circuitBreakerStateManager.TryGetOpenEpoch(circuitKey, out var openEpoch))
                     {
-                        await _PauseGroupAsync(handle, openEpoch).ConfigureAwait(false);
+                        await _PauseSubscriptionAsync(handle, openEpoch).ConfigureAwait(false);
                     }
                 }
             }
@@ -978,7 +978,7 @@ internal sealed class ConsumerRegister(
                 continue;
             }
 
-            await _ApplyGroupIntentAsync(handle, pause, epoch).ConfigureAwait(false);
+            await _ApplySubscriptionIntentAsync(handle, pause, epoch).ConfigureAwait(false);
         }
     }
 
@@ -998,12 +998,12 @@ internal sealed class ConsumerRegister(
         return false;
     }
 
-    private ValueTask _PauseGroupAsync(SubscriptionHandle handle, long epoch)
+    private ValueTask _PauseSubscriptionAsync(SubscriptionHandle handle, long epoch)
     {
-        return _ApplyGroupIntentAsync(handle, pause: true, epoch);
+        return _ApplySubscriptionIntentAsync(handle, pause: true, epoch);
     }
 
-    private async ValueTask _ApplyGroupIntentAsync(SubscriptionHandle handle, bool pause, long epoch)
+    private async ValueTask _ApplySubscriptionIntentAsync(SubscriptionHandle handle, bool pause, long epoch)
     {
         if (
             handle.IsDisposing
