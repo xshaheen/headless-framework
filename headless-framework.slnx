@@ -604,6 +604,7 @@
         <Project Path="tests/Headless.UnitOfWork.SqlServer.Tests.Integration/Headless.UnitOfWork.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests/Headless.UnitOfWork.Sqlite.Tests.Integration/Headless.UnitOfWork.Sqlite.Tests.Integration.csproj" />
         <Project Path="tests/Headless.UnitOfWork.SqlServer.Tests.Unit/Headless.UnitOfWork.SqlServer.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.UnitOfWork.Sqlite.Tests.Unit/Headless.UnitOfWork.Sqlite.Tests.Unit.csproj" />
         <Project Path="tests/Headless.UnitOfWork.Tests.Harness/Headless.UnitOfWork.Tests.Harness.csproj" />
         <Project Path="tests/Headless.UnitOfWork.Tests.Unit/Headless.UnitOfWork.Tests.Unit.csproj" />
     </Folder>
