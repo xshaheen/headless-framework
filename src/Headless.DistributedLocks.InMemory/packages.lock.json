@@ -542,7 +542,8 @@
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
-          "Nito.AsyncEx": "[5.1.2, )"
+          "Nito.AsyncEx": "[5.1.2, )",
+          "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
       "headless.unitofwork": {
