@@ -109,6 +109,7 @@
         <Project Path="src\Headless.Coordination.PostgreSql\Headless.Coordination.PostgreSql.csproj" />
         <Project Path="src\Headless.Coordination.Redis\Headless.Coordination.Redis.csproj" />
         <Project Path="src\Headless.Coordination.SqlServer\Headless.Coordination.SqlServer.csproj" />
+        <Project Path="src\Headless.Coordination.Sqlite\Headless.Coordination.Sqlite.csproj" />
     </Folder>
     <Folder Name="/Captcha/Demo/">
         <Project Path="demo/Headless.Captcha.Demo/Headless.Captcha.Demo.csproj" />
@@ -270,6 +271,7 @@
         <Project Path="tests\Headless.Coordination.PostgreSql.Tests.Integration\Headless.Coordination.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Coordination.Redis.Tests.Integration\Headless.Coordination.Redis.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Coordination.SqlServer.Tests.Integration\Headless.Coordination.SqlServer.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Coordination.Sqlite.Tests.Integration\Headless.Coordination.Sqlite.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Coordination.Tests.Harness\Headless.Coordination.Tests.Harness.csproj" />
     </Folder>
     <Folder Name="/Dashboard/">

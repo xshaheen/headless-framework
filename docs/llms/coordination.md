@@ -1,6 +1,6 @@
 ---
 domain: Coordination
-packages: Coordination.Abstractions, Coordination.Core, Coordination.Core.Database, Coordination.PostgreSql, Coordination.Redis, Coordination.SqlServer
+packages: Coordination.Abstractions, Coordination.Core, Coordination.Core.Database, Coordination.PostgreSql, Coordination.Redis, Coordination.SqlServer, Coordination.Sqlite
 ---
 
 # Coordination
@@ -60,6 +60,7 @@ Coordination is fencing-safe, fail-stop, and fail-closed when backed by an autho
 | --- | --- | --- | --- |
 | `Headless.Coordination.PostgreSql` | Membership should follow a PostgreSQL primary and server clock. | The deployment cannot use primary/write-path reads for failover. | The shared relational store, `clock_timestamp()`. |
 | `Headless.Coordination.SqlServer` | Membership should follow SQL Server and `SYSUTCDATETIME()`. | The app cannot grant DDL/init permissions or use primary reads. | The shared relational store, guarded update/insert, no `MERGE`. |
+| `Headless.Coordination.Sqlite` | Every node runs on one host and shares a SQLite file, such as an embedded or edge deployment. | Nodes on several hosts: SQLite locking does not work over a network file system. | The shared relational store; every write serializes on the database write lock, and the clock is the host's. |
 | `Headless.Coordination.Redis` | Redis is the authoritative coordination store. | Redis eviction can delete generation counters or failover reads may hit stale replicas. | Lua scripts use `TIME`; generation counters are not purged by default. |
 
 ## Headless.Coordination.Abstractions
@@ -363,3 +364,46 @@ The schema is not a provider option: set it with `setup.ConfigureStorage(storage
 ### Runtime behavior
 
 Registers the core membership services, the SQL Server membership store, and the membership schema contribution; the one schema runner applies it at startup. Creates PascalCase tables and columns. Requires SQL Server DDL permission when initialization runs on startup.
+
+---
+
+## Headless.Coordination.Sqlite
+
+### API and behavior
+
+- Runs the shared relational store from `Headless.Coordination.Core.Database` over the SQLite dialect.
+- Heartbeat guard rejects stale, impossible, dead, gracefully left, and pruned incarnations, as on the other relational providers.
+- Liveness classification uses SQLite's `'now'`: the clock of the host that runs the statement, at millisecond resolution. Every instant is stored as fixed-width UTC text.
+- The membership tables are one schema step (`Coordination/1`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
+
+### Design constraints
+
+SQLite has no row locks: every store transaction begins `IMMEDIATE` and holds the database write lock, so heartbeats and registrations of every node serialize on the file. Every node must run on the host that holds the file, which also makes the host clock the one clock all nodes judge liveness by. A writer that waits longer than the connection's `Default Timeout` (30 seconds) fails with `SQLITE_BUSY`, which the store retries in a fresh transaction. See [sql.md § SQLite in the kit](sql.md#sqlite-in-the-kit).
+
+### Install
+
+```bash
+dotnet add package Headless.Coordination.Sqlite
+```
+
+### Setup and use
+
+```csharp
+services.AddHeadlessCoordination(setup =>
+{
+    setup.Configure(options => options.ClusterName = "orders");
+    setup.UseSqlite(options => options.ConnectionString = "Data Source=/var/lib/app/app.db");
+    // or reuse the connection from services.AddSqliteSql(connectionString): setup.UseSqlite();
+});
+```
+
+### Configuration
+
+Configure `ConnectionString`, `CommandTimeout`, and `InitializeOnStartup` with `setup.UseSqlite(...)`. Use a database file; a private `:memory:` database vanishes between the store's connections.
+
+The schema is set with `setup.ConfigureStorage(storage => storage.Schema = "…")` (default `"headless"`). SQLite has no schemas, so it becomes the tables' name prefix: `headless_coordination_liveness`. It is validated against PostgreSQL's identifier rules, the convention of the SQLite dialect's snake_case names.
+
+### Runtime behavior
+
+Registers the core membership services, the SQLite membership store, and the membership schema contribution; the one schema runner applies it at startup. Creates snake_case tables and columns.
+
