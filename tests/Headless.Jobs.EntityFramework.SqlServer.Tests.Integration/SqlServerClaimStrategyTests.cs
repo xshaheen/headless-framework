@@ -37,46 +37,6 @@ public sealed class SqlServerClaimStrategyTests(SqlServerJobsCoordinationFixture
     private const string _DeadlockRetryEventName = "JobsClaimDeadlockRetry";
 
     [Fact]
-    public void rcsi_hint_includes_readcommittedlock()
-    {
-        SqlServerJobsClaimStrategy<JobsDbContext, TimeJobEntity, CronJobEntity>
-            .GetReadPastHints(readCommittedSnapshotEnabled: true)
-            .Should()
-            .Contain("READCOMMITTEDLOCK");
-    }
-
-    [Fact]
-    public async Task concurrent_and_repeated_claims_probe_rcsi_once()
-    {
-        var ct = AbortToken;
-        await fixture.ResetDatabaseAsync(ct);
-        using var host = fixture.BuildHost("rcsi-probe-a");
-        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
-        await host.StartAsync(ct);
-
-        try
-        {
-            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
-            var strategy = host.Services.GetRequiredService<
-                SqlServerJobsClaimStrategy<JobsDbContext, TimeJobEntity, CronJobEntity>
-            >();
-
-            await Task.WhenAll(
-                Enumerable
-                    .Range(0, 8)
-                    .Select(async _ => await persistence.QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct))
-            );
-            await persistence.QueueTimedOutCronJobOccurrencesAsync(ct).ToArrayAsync(ct);
-
-            strategy.ReadPastHintsProbeCount.Should().Be(1);
-        }
-        finally
-        {
-            await host.StopAsync(ct);
-        }
-    }
-
-    [Fact]
     public async Task locked_candidate_is_skipped_while_an_unlocked_root_is_claimed()
     {
         var ct = AbortToken;

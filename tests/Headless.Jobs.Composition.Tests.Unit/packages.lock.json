@@ -980,6 +980,7 @@
         "dependencies": {
           "Headless.Coordination.PostgreSql": "[1.0.0, )",
           "Headless.Jobs.EntityFramework": "[1.0.0, )",
+          "Headless.Sql.PostgreSql": "[1.0.0, )",
           "Headless.UnitOfWork.EntityFramework": "[1.0.0, )",
           "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )"
         }
@@ -990,9 +991,9 @@
           "Headless.Coordination.SqlServer": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Jobs.EntityFramework": "[1.0.0, )",
+          "Headless.Sql.SqlServer": "[1.0.0, )",
           "Headless.UnitOfWork.EntityFramework": "[1.0.0, )",
-          "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.12, )",
-          "Polly.Core": "[8.7.0, )"
+          "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.12, )"
         }
       },
       "headless.jobs.generateddiscoveryfixture": {

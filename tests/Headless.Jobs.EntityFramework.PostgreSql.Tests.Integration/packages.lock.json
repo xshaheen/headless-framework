@@ -975,6 +975,7 @@
         "dependencies": {
           "Headless.Coordination.PostgreSql": "[1.0.0, )",
           "Headless.Jobs.EntityFramework": "[1.0.0, )",
+          "Headless.Sql.PostgreSql": "[1.0.0, )",
           "Headless.UnitOfWork.EntityFramework": "[1.0.0, )",
           "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )"
         }
