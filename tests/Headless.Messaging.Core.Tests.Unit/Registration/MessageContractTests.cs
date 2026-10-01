@@ -155,7 +155,7 @@ public sealed class MessageContractTests : TestBase
     {
         // given
         var services = new ServiceCollection();
-        void declare(MessagingContributionBuilder messaging) =>
+        static void declare(MessagingContributionBuilder messaging) =>
             messaging
                 .Message<OrderPlaced>(_OrderPlacedName, "1")
                 .OnQueue(queue => _SetProviderConfig(queue, new PartitionSetting("customer")));
