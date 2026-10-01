@@ -49,8 +49,7 @@ public sealed class SqlServerJobsCoordinationFixture
     public string EfTranslatedDatabaseClockSql => "GETUTCDATE()";
 
     // SQL Server has no DROP SCHEMA CASCADE. Drop child tables before parents (CronJobOccurrences -> CronJobs).
-    // The shared headless schema itself stays: the Coordination tables live in it too, and every initializer
-    // creates the schema when missing anyway. DROP TABLE IF EXISTS is a no-op when the table is absent.
+    // The shared headless schema itself stays, and the schema runner creates it when missing anyway. DROP TABLE IF EXISTS is a no-op when the table is absent.
     public string ResetSql =>
         "DROP TABLE IF EXISTS [headless].[CronJobOccurrences];"
         + "DROP TABLE IF EXISTS [consumer_jobs].[consumer_time_jobs];"
@@ -67,16 +66,14 @@ public sealed class SqlServerJobsCoordinationFixture
         + "DROP TABLE IF EXISTS [headless].[MessagingInboxOperationReceipts];"
         + "DROP TABLE IF EXISTS [headless].[MessagingPublished];"
         + "DROP TABLE IF EXISTS [headless].[MessagingReceived];"
-        + "IF TYPE_ID(N'headless.HeadlessMessagingIdList') IS NOT NULL DROP TYPE [headless].[HeadlessMessagingIdList];"
-        + "IF TYPE_ID(N'headless.HeadlessMessagingOwnerList') IS NOT NULL DROP TYPE [headless].[HeadlessMessagingOwnerList];"
-        + "IF TYPE_ID(N'headless.HeadlessMessagingPoisonMessageList') IS NOT NULL DROP TYPE [headless].[HeadlessMessagingPoisonMessageList];"
-        // The schema runner trusts its history, so the history goes with the messaging tables; the steps of every
-        // other feature recorded there are idempotent and simply run again on the next start.
+        + "DROP TABLE IF EXISTS [headless].[CoordinationLiveness];"
+        + "DROP TABLE IF EXISTS [headless].[CoordinationDescriptor];"
+        + "DROP TABLE IF EXISTS [headless].[CoordinationNodeGeneration];"
+        // The history goes with every table its steps created. Dropping the history alone is not a reset: a step's
+        // guarded CREATE skips a table that already exists, so a reused container would keep a table in the shape of
+        // an older step (an in-place step change before a release) while the history says it is current.
         + "DROP TABLE IF EXISTS [headless].[headless_schema_history];"
-        + "DROP TABLE IF EXISTS [jobs_probe];"
-        + "DROP TABLE IF EXISTS [coordination_liveness];"
-        + "DROP TABLE IF EXISTS [coordination_descriptor];"
-        + "DROP TABLE IF EXISTS [coordination_node_generation];";
+        + "DROP TABLE IF EXISTS [jobs_probe];";
 
     private static string _CustomSchemaResetSql
     {
