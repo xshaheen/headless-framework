@@ -16,6 +16,13 @@ namespace Headless.Coordination;
 [PublicAPI]
 public readonly record struct NodeId
 {
+    /// <summary>
+    /// The longest node id, in characters. Every membership store keys rows by the cluster name and the node id
+    /// together, and SQL Server caps a clustered key at 900 bytes: two bytes per character for both, plus the
+    /// incarnation, must fit.
+    /// </summary>
+    public const int MaxLength = 256;
+
     /// <summary>Initializes a <see cref="NodeId"/> with the given string value.</summary>
     /// <param name="value">
     /// The node identifier string. Must not be null or blank, and must be text every membership store keeps unchanged
@@ -25,9 +32,13 @@ public readonly record struct NodeId
     /// Thrown when <paramref name="value"/> is empty or whitespace-only, or is text some store would merge, reject, or
     /// rewrite (see <see cref="Argument.IsPortableKey"/>).
     /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="value"/> is longer than <see cref="MaxLength"/>.
+    /// </exception>
     public NodeId(string value)
     {
         Argument.IsNotNullOrWhiteSpace(value);
+        Argument.HasMaxLength(value, MaxLength);
         Value = Argument.IsPortableKey(value);
     }
 

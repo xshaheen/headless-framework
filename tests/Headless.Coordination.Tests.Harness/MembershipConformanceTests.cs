@@ -25,6 +25,24 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         snapshot.Should().ContainSingle(x => x.Identity == identity && x.State == NodeLivenessState.Alive);
     }
 
+    public virtual async Task should_register_a_node_at_the_maximum_cluster_name_and_node_id_lengths()
+    {
+        // Both key parts at their limits: SQL Server caps a clustered key at 900 bytes, and every membership row is
+        // keyed by the cluster name and the node id together.
+        var prefix = _Cluster();
+        var cluster = prefix + new string('c', CoordinationOptions.ClusterNameMaxLength - prefix.Length);
+        var nodeId = new string('n', NodeId.MaxLength);
+        await using var node = await fixture.CreateNodeAsync(cluster, nodeId, AbortToken);
+
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+        var beat = await node.Membership.HeartbeatAsync(AbortToken);
+        var snapshot = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
+
+        identity.NodeId.Value.Should().HaveLength(NodeId.MaxLength);
+        beat.Should().BeTrue();
+        snapshot.Should().ContainSingle(x => x.Identity == identity && x.State == NodeLivenessState.Alive);
+    }
+
     public virtual async Task should_keep_node_alive_after_heartbeat()
     {
         var cluster = _Cluster();

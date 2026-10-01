@@ -7,6 +7,12 @@ public sealed class SqlServerMembershipConformanceTests(SqlServerMembershipFixtu
     : MembershipConformanceTests<SqlServerMembershipFixture>(fixture)
 {
     [Fact]
+    public override Task should_register_a_node_at_the_maximum_cluster_name_and_node_id_lengths()
+    {
+        return base.should_register_a_node_at_the_maximum_cluster_name_and_node_id_lengths();
+    }
+
+    [Fact]
     public override Task should_register_and_appear_in_live_set()
     {
         return base.should_register_and_appear_in_live_set();

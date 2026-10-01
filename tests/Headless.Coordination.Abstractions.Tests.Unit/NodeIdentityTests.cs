@@ -77,4 +77,14 @@ public sealed class NodeIdentityTests : TestBase
             act.Should().Throw<ArgumentException>();
         }
     }
+
+    [Fact]
+    public void should_accept_a_node_id_at_the_maximum_length_and_refuse_a_longer_one()
+    {
+        new NodeId(new string('n', NodeId.MaxLength)).Value.Should().HaveLength(NodeId.MaxLength);
+
+        var act = () => new NodeId(new string('n', NodeId.MaxLength + 1));
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
 }

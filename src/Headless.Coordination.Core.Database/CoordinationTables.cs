@@ -10,8 +10,8 @@ namespace Headless.Coordination;
 /// </summary>
 internal sealed class CoordinationTables
 {
-    public const int ClusterNameMaxLength = 200;
-    public const int NodeIdMaxLength = 400;
+    public const int ClusterNameMaxLength = CoordinationOptions.ClusterNameMaxLength;
+    public const int NodeIdMaxLength = Headless.Coordination.NodeId.MaxLength;
     public const int RoleMaxLength = 200;
 
     public CoordinationTables(ISqlDialect dialect, string schema)
