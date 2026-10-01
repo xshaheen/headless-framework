@@ -302,7 +302,7 @@ Core hosting utilities and extensions for ASP.NET Core applications.
 - Keyed services helpers
 - Hosted service management
 - Background startup processes can expose readiness signals so dependent flows can wait for initialization completion.
-- The schema runner (`Headless.Hosting.Initialization.Schema`): features register idempotent, versioned DDL steps with `AddHeadlessSchemaContribution`; one hosted `SchemaRunner` applies or verifies them at startup (`AddHeadlessSchemaRunner(o => o.Mode = SchemaRunnerMode.Verify)`) and exports a deploy script with `ExportScript`. The consumer contract is in [SQL](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
+- The schema runner (`Headless.Hosting.Initialization.Schema`): features register idempotent, versioned DDL steps with `AddHeadlessSchemaContribution`; one hosted `SchemaRunner` applies or verifies them at startup (`AddHeadlessSchemaRunner(o => o.Mode = SchemaRunnerMode.Verify)`) and exports a deploy script with `ExportScript`. Its traces and metrics are under `Headless.SchemaRunner` (`SchemaRunnerDiagnostics`, `AddSchemaRunnerInstrumentation()`). The consumer contract is in [SQL](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), including [its observability](sql.md#schema-runner-observability).
 
 ### Install
 

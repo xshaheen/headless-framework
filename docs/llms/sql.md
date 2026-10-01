@@ -145,6 +145,22 @@ Rules that change how you operate a database:
 - **`InitializeOnStartup = false`** on a feature keeps its steps out of `Apply` mode. `Verify` mode and `ExportScript` still include them.
 - History rows of features a host does not register are ignored, so hosts with different feature sets can share one schema. A row for a registered feature whose step this host does not know, such as a newer replica's step during a rolling deploy, is logged, not fatal.
 
+#### Schema runner observability
+
+The runner emits traces and metrics under `Headless.SchemaRunner` (`SchemaRunnerDiagnostics.SourceName`, for both the `ActivitySource` and the `Meter`). Subscribe with `tracing.AddSchemaRunnerInstrumentation()` and `metrics.AddSchemaRunnerInstrumentation()` (namespaces `OpenTelemetry.Trace` and `OpenTelemetry.Metrics`, `OpenTelemetry.Api` only), or with `AddSource`/`AddMeter` and the constant. `builder.AddHeadless()` with `OpenTelemetry.Enabled` already subscribes to every `Headless.*` source and meter. Nothing is recorded until something subscribes.
+
+Spans: one `schema_runner.apply` or `schema_runner.verify` span per pass (`ApplyAsync`, `VerifyAsync`, or the startup `RunAsync`, which also covers the fatal-mismatch check), with a `schema_runner.lock_wait` child per database that takes the lock and a `schema_runner.step` child per applied step. A step's own DDL spans from the driver nest under its step span.
+
+| Instrument | Kind | Unit | Attributes | Meaning |
+| --- | --- | --- | --- | --- |
+| `headless.schema_runner.duration` | Histogram | `s` | `headless.schema_runner.mode` (`apply`, `verify`), `headless.schema_runner.outcome` (`success`, `failure`), `error.type` on failure | One pass, every database it reaches included. A startup refused for a checksum or missing step is a `failure` with `error.type` `Headless.Hosting.Initialization.Schema.SchemaRunnerException`. |
+| `headless.schema_runner.lock.wait.duration` | Histogram | `s` | `headless.schema_runner.dialect`, `headless.schema_runner.lock.outcome` (`acquired`, `timed_out`, `failed`) | Time a pass waited for another replica's per-database lock; `failed` means the lock query failed or the wait was cancelled. A warm database takes no lock and records nothing. |
+| `headless.schema_runner.steps` | Counter | `{step}` | `headless.schema_runner.dialect`, `headless.schema_runner.feature`, `headless.schema_runner.step.outcome` (`applied`, `skipped`) | Steps an apply pass ran, or skipped because the history already records them. Verify passes record none. |
+| `headless.schema_runner.mismatches` | Counter | `{mismatch}` | `headless.schema_runner.mode`, `headless.schema_runner.dialect`, `headless.schema_runner.feature`, `headless.schema_runner.mismatch.kind` (`missing`, `unknown`, `checksum`) | History disagreements a pass found. Apply passes never report `missing`, since applying it is the point. |
+| `headless.schema_runner.absorbed_races` | Counter | `{race}` | `headless.schema_runner.dialect` | Steps re-run because a creator outside the runner committed the same object first. |
+
+`headless.schema_runner.feature` is the feature name alone (`Sequences`, never `Sequences:counters`), and no signal carries a schema name, SQL text, the database identity, or connection details. Span statuses carry no description, because a driver message can quote object names.
+
 ### Store statement kit (for provider authors)
 
 A relational store is written once against `ISqlDialect` (`Headless.Sql`), with `PostgreSqlDialect.Instance` and `SqlServerDialect.Instance` as the two engines. Application code does not call it; a feature's store does. The dialect renders a small set of statement shapes, and each shape keeps the same locking and clock rules on both engines:

@@ -81,7 +81,19 @@ public sealed partial class SchemaRunner(
     /// A connection could not be opened, the lock was not acquired within the timeout, or a step failed on its second
     /// attempt. The driver's exception is the inner exception.
     /// </exception>
-    public async Task<SchemaRunnerResult> ApplyAsync(CancellationToken cancellationToken = default)
+    public Task<SchemaRunnerResult> ApplyAsync(CancellationToken cancellationToken = default)
+    {
+        return SchemaRunnerTelemetry.ObserveAsync(
+            SchemaRunnerMode.Apply,
+            _timeProvider,
+            pass => _ApplyAsync(pass, cancellationToken)
+        );
+    }
+
+    private async Task<SchemaRunnerResult> _ApplyAsync(
+        SchemaRunnerTelemetry.Pass? pass,
+        CancellationToken cancellationToken
+    )
     {
         var applied = new List<SchemaAppliedStep>();
         var mismatches = new List<SchemaMismatch>();
@@ -89,7 +101,7 @@ public sealed partial class SchemaRunner(
 
         foreach (var group in await _GroupByDatabaseAsync(applyingOnly: true).ConfigureAwait(false))
         {
-            races += await _ApplyGroupAsync(group, applied, mismatches, cancellationToken).ConfigureAwait(false);
+            races += await _ApplyGroupAsync(group, applied, mismatches, pass, cancellationToken).ConfigureAwait(false);
         }
 
         return new SchemaRunnerResult
@@ -110,9 +122,23 @@ public sealed partial class SchemaRunner(
     /// <param name="cancellationToken">Cancels the run.</param>
     /// <returns>Every mismatch found, including the tolerated ones.</returns>
     /// <exception cref="SchemaRunnerException">The run failed, or the history disagrees with the registered steps.</exception>
-    public async Task<IReadOnlyList<SchemaMismatch>> RunAsync(
+    public Task<IReadOnlyList<SchemaMismatch>> RunAsync(
         SchemaRunnerMode mode,
         CancellationToken cancellationToken = default
+    )
+    {
+        // One pass span covers the fatal-mismatch check too, so a startup that fails on history reads as a failed pass.
+        return SchemaRunnerTelemetry.ObserveAsync(
+            mode,
+            _timeProvider,
+            pass => _RunAsync(mode, pass, cancellationToken)
+        );
+    }
+
+    private async Task<IReadOnlyList<SchemaMismatch>> _RunAsync(
+        SchemaRunnerMode mode,
+        SchemaRunnerTelemetry.Pass? pass,
+        CancellationToken cancellationToken
     )
     {
         IReadOnlyList<SchemaMismatch> mismatches;
@@ -120,12 +146,12 @@ public sealed partial class SchemaRunner(
 
         if (mode == SchemaRunnerMode.Verify)
         {
-            mismatches = await VerifyAsync(cancellationToken).ConfigureAwait(false);
+            mismatches = await _VerifyAsync(pass, cancellationToken).ConfigureAwait(false);
             fatal = [SchemaMismatchKind.Missing, SchemaMismatchKind.Checksum];
         }
         else
         {
-            mismatches = (await ApplyAsync(cancellationToken).ConfigureAwait(false)).Mismatches;
+            mismatches = (await _ApplyAsync(pass, cancellationToken).ConfigureAwait(false)).Mismatches;
             fatal = [SchemaMismatchKind.Checksum];
         }
 
@@ -154,7 +180,19 @@ public sealed partial class SchemaRunner(
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>Every mismatch; empty when the database holds exactly what the code expects.</returns>
     /// <exception cref="SchemaRunnerException">A connection could not be opened or the history could not be read.</exception>
-    public async Task<IReadOnlyList<SchemaMismatch>> VerifyAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<SchemaMismatch>> VerifyAsync(CancellationToken cancellationToken = default)
+    {
+        return SchemaRunnerTelemetry.ObserveAsync(
+            SchemaRunnerMode.Verify,
+            _timeProvider,
+            pass => _VerifyAsync(pass, cancellationToken)
+        );
+    }
+
+    private async Task<IReadOnlyList<SchemaMismatch>> _VerifyAsync(
+        SchemaRunnerTelemetry.Pass? pass,
+        CancellationToken cancellationToken
+    )
     {
         var mismatches = new List<SchemaMismatch>();
 
@@ -166,7 +204,9 @@ public sealed partial class SchemaRunner(
             {
                 var history = await _ReadHistoryAsync(connection, group.Dialect, schema, cancellationToken)
                     .ConfigureAwait(false);
-                mismatches.AddRange(_Compare(schema, group.InSchema(schema), history));
+                var found = _Compare(schema, group.InSchema(schema), history);
+                pass?.MismatchesFound(group.Dialect.Name, found);
+                mismatches.AddRange(found);
             }
         }
 
@@ -225,6 +265,7 @@ public sealed partial class SchemaRunner(
         DatabaseGroup group,
         List<SchemaAppliedStep> applied,
         List<SchemaMismatch> mismatches,
+        SchemaRunnerTelemetry.Pass? pass,
         CancellationToken cancellationToken
     )
     {
@@ -236,17 +277,26 @@ public sealed partial class SchemaRunner(
         // Warm path: when every step is already recorded there is no DDL to serialize, so the lock, the history DDL,
         // and the re-read are skipped. A warm start then costs one query per schema whatever the feature count. A
         // step recorded by a concurrent runner after this read only sends us down the locked path, which re-reads.
-        var warm = await _AllRecordedAsync(group, connection, mismatches, cancellationToken).ConfigureAwait(false);
+        var warm = await _AllRecordedAsync(group, connection, mismatches, pass, cancellationToken)
+            .ConfigureAwait(false);
 
         if (warm)
         {
+            pass?.StepsSkipped(dialect.Name, group.Schemas.SelectMany(group.InSchema));
+
             return 0;
         }
 
         // Keyed on the database, not a feature or schema, so every runner that reaches this database serializes
         // behind one lock, whichever features it registers.
         var lockResource = $"headless_schema_runner:{group.Identity}";
-        await _AcquireLockAsync(connection, dialect, lockResource, cancellationToken).ConfigureAwait(false);
+
+        // Scoped to the wait alone, so the steps that follow are not children of the lock-wait span.
+        using (var lockWait = pass?.StartLockWait(dialect.Name))
+        {
+            await _AcquireLockAsync(connection, dialect, lockResource, lockWait, cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         try
         {
@@ -266,9 +316,11 @@ public sealed partial class SchemaRunner(
                     .ConfigureAwait(false);
 
                 // Missing is not a mismatch here: applying it is the point of the run.
-                mismatches.AddRange(
-                    _Compare(schema, inSchema, history).Where(m => m.Kind != SchemaMismatchKind.Missing)
-                );
+                var found = _Compare(schema, inSchema, history)
+                    .Where(m => m.Kind != SchemaMismatchKind.Missing)
+                    .ToList();
+                pass?.MismatchesFound(dialect.Name, found);
+                mismatches.AddRange(found);
 
                 var recorded = history.Select(h => (h.Feature, h.Version)).ToHashSet();
 
@@ -280,22 +332,39 @@ public sealed partial class SchemaRunner(
                         // against objects created by the old DDL is the drift the checksum exists to stop.
                         if (!recorded.Add((contribution.Feature, step.Version)))
                         {
+                            pass?.StepSkipped(dialect.Name, contribution.Feature);
+
                             continue;
                         }
 
-                        races += await _RunStepAsync(
-                                connection,
-                                dialect,
-                                step.Sql,
-                                $"{schema}/{contribution.Feature}/{step.Version}",
-                                cancellationToken
-                            )
-                            .ConfigureAwait(false);
+#pragma warning disable CA2000 // False positive: the using statement disposes it on every path; the analyzer loses track inside an awaited loop.
+                        using (var stepRun = pass?.StartStep(dialect.Name, contribution.Feature, step.Version))
+#pragma warning restore CA2000
+                        {
+                            var stepRaces = await _RunStepAsync(
+                                    connection,
+                                    dialect,
+                                    step.Sql,
+                                    $"{schema}/{contribution.Feature}/{step.Version}",
+                                    cancellationToken
+                                )
+                                .ConfigureAwait(false);
+                            races += stepRaces;
 
-                        await _RecordAsync(connection, dialect, schema, contribution.Feature, step, cancellationToken)
-                            .ConfigureAwait(false);
+                            await _RecordAsync(
+                                    connection,
+                                    dialect,
+                                    schema,
+                                    contribution.Feature,
+                                    step,
+                                    cancellationToken
+                                )
+                                .ConfigureAwait(false);
 
-                        applied.Add(new SchemaAppliedStep(schema, contribution.Feature, step.Version));
+                            stepRun?.Applied(stepRaces);
+                            applied.Add(new SchemaAppliedStep(schema, contribution.Feature, step.Version));
+                        }
+
                         LogStepApplied(_logger, dialect.Name, schema, contribution.Feature, step.Version);
                     }
                 }
@@ -306,6 +375,8 @@ public sealed partial class SchemaRunner(
             await _ReleaseLockAsync(connection, dialect, lockResource).ConfigureAwait(false);
         }
 
+        pass?.RacesAbsorbed(dialect.Name, races);
+
         return races;
     }
 
@@ -313,6 +384,7 @@ public sealed partial class SchemaRunner(
         DatabaseGroup group,
         DbConnection connection,
         List<SchemaMismatch> mismatches,
+        SchemaRunnerTelemetry.Pass? pass,
         CancellationToken cancellationToken
     )
     {
@@ -330,6 +402,7 @@ public sealed partial class SchemaRunner(
             }
         }
 
+        pass?.MismatchesFound(group.Dialect.Name, found);
         mismatches.AddRange(found);
 
         return true;
@@ -339,6 +412,7 @@ public sealed partial class SchemaRunner(
         DbConnection connection,
         ISchemaDialect dialect,
         string lockResource,
+        SchemaRunnerTelemetry.LockWait? lockWait,
         CancellationToken cancellationToken
     )
     {
@@ -354,11 +428,15 @@ public sealed partial class SchemaRunner(
 
             if (Convert.ToBoolean(acquired, CultureInfo.InvariantCulture))
             {
+                lockWait?.End(SchemaRunnerTelemetry.LockAcquired);
+
                 return;
             }
 
             if (_timeProvider.GetElapsedTime(started) >= _lockTimeout)
             {
+                lockWait?.End(SchemaRunnerTelemetry.LockTimedOut);
+
                 throw new SchemaRunnerException(
                     $"Headless schema runner: timed out after {_lockTimeout} waiting for the schema lock "
                         + $"'{lockResource}'. Another runner is applying steps to this database, or a crashed one "
