@@ -29,10 +29,13 @@ public sealed class SqlServerAdditionalOutboxTests(SqlServerTestFixture fixture)
         SqlConnection.ClearAllPools();
 
         // A running relay still polls the database, and forcing it to single-user can deadlock with those
-        // sessions. The drop takes deadlock priority, and a rare victim of it retries. The relay can also take the
-        // one single-user connection between the ALTER and the DROP, which fails the drop as in use; retry that too.
+        // sessions. The drop takes deadlock priority, and a rare victim of it retries. A relay whose session the
+        // ALTER killed retries at once and can take the one single-user connection before the DROP, which fails the
+        // drop as in use and every later ALTER as single-user and occupied; each attempt therefore kills the
+        // database's sessions first.
         const int deadlockVictim = 1205;
         const int databaseInUse = 3702;
+        const int singleUserOccupied = 5064;
         for (var attempt = 1; ; attempt++)
         {
             try
@@ -43,6 +46,11 @@ public sealed class SqlServerAdditionalOutboxTests(SqlServerTestFixture fixture)
                     SET DEADLOCK_PRIORITY HIGH;
                     IF DB_ID(N'{name}') IS NOT NULL
                     BEGIN
+                        DECLARE @kill nvarchar(max) = N'';
+                        SELECT @kill += N'KILL ' + CONVERT(nvarchar(11), session_id) + N';'
+                        FROM sys.dm_exec_sessions
+                        WHERE database_id = DB_ID(N'{name}') AND session_id <> @@SPID;
+                        EXEC (@kill);
                         ALTER DATABASE [{name}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
                         DROP DATABASE [{name}];
                     END;
@@ -51,9 +59,13 @@ public sealed class SqlServerAdditionalOutboxTests(SqlServerTestFixture fixture)
 
                 return;
             }
-            catch (SqlException ex) when ((ex.Number is deadlockVictim or databaseInUse) && attempt < 5)
+            catch (SqlException ex)
+                when (ex.Errors.Cast<SqlError>()
+                        .Any(e => e.Number is deadlockVictim or databaseInUse or singleUserOccupied)
+                    && attempt < 10
+                )
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt));
+                await Task.Delay(TimeSpan.FromMilliseconds(100 * attempt));
             }
         }
     }
