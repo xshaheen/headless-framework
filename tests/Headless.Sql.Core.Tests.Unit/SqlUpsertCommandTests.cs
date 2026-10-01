@@ -33,6 +33,35 @@ public sealed class SqlUpsertCommandTests : TestBase
         upserted.Match((_, _) => "applied", () => "refused").Should().Be("refused");
     }
 
+    [Theory]
+    [InlineData(SqlUpsertOutcome.Updated, 0)]
+    [InlineData(SqlUpsertOutcome.Inserted, 1)]
+    [InlineData(SqlUpsertOutcome.Refused, 2)]
+    public async Task should_read_the_first_row_of_any_result_set_when_each_branch_reports_its_own(
+        SqlUpsertOutcome outcome,
+        int resultSet
+    )
+    {
+        // SQLite's shape: update, insert, and refusal each return a result set, and only one of them has a row.
+        using var results = new System.Data.DataSet();
+
+        for (var i = 0; i < 3; i++)
+        {
+            var table = results.Tables.Add($"branch{i}");
+            table.Columns.Add("outcome", typeof(short));
+            table.Columns.Add("value", typeof(long));
+
+            if (i == resultSet)
+            {
+                table.Rows.Add((short)outcome, 7L);
+            }
+        }
+
+        var upserted = await _ExecuteAsync(results);
+
+        upserted.Outcome.Should().Be(outcome);
+    }
+
     [Fact]
     public async Task should_refuse_a_statement_that_returned_no_decision()
     {

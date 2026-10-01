@@ -147,7 +147,7 @@ Rules that change how you operate a database:
 
 ### Store statement kit (for provider authors)
 
-A relational store is written once against `ISqlDialect` (`Headless.Sql`), with `PostgreSqlDialect.Instance` and `SqlServerDialect.Instance` as the two engines. Application code does not call it; a feature's store does. The dialect renders a small set of statement shapes, and each shape keeps the same locking and clock rules on both engines:
+A relational store is written once against `ISqlDialect` (`Headless.Sql`), with `PostgreSqlDialect.Instance`, `SqlServerDialect.Instance`, and `SqliteDialect.Instance` as the engines. Application code does not call it; a feature's store does. The dialect renders a small set of statement shapes, and each shape keeps the same locking and clock rules on every engine:
 
 | Shape | Does | Result |
 | --- | --- | --- |
@@ -163,11 +163,24 @@ A relational store is written once against `ISqlDialect` (`Headless.Sql`), with 
 - **Results.** `SqlFencedCommand.ExecuteAsync` and `SqlUpsertCommand.ExecuteAsync` (`Headless.Sql.Core`) return `SqlFenced<TRow, TAccepted>` and `SqlUpserted<T>`, whose written values are reachable only through `Match`, so a store cannot use a result without handling the refusal.
 - **Lists.** `InList(expression, parameter, elementType)` with `AddListParameter` binds a whole list as one parameter: `= ANY(@p)` over an array on PostgreSQL, `OPENJSON` with a typed `WITH` clause on SQL Server. No table type has to exist, and an empty list matches nothing. Binary and JSON lists are refused. `InTuples` with `CreateTupleListParameters` matches a list of rows as whole tuples (`unnest` over one array per column on PostgreSQL, `OPENJSON` with positional columns and `EXISTS` on SQL Server), so pairs such as (id, expected version) are never matched across rows.
 - **Parameters.** `AddParameter` types each value by `SqlColumnType` (`KeyText`, `Text`, `Int16`, `Int32`, `Int64`, `Timestamp`, `Binary`, `Guid`, `Boolean`, `Json`); text is sized to its column so the comparison keeps the column's collation. `AddDuration` and `ShiftByDuration` add a `TimeSpan` to an instant without the SQL Server `DATEADD` int overflow.
-- **Errors.** `Classify` maps a driver exception to `SqlErrorKind`: `UniqueViolation`, `Deadlock`, `SerializationConflict`, `DuplicateObject`, `LockTimeout`, and `TransactionAborted` for a statement that ran on a transaction an earlier error ended or doomed (PostgreSQL `25P02`, SQL Server `3930`). That transaction is lost; roll the unit back rather than retrying inside it.
-- **Autonomous calls.** `SqlAutonomousTransaction.RunAsync` runs one store call on its own READ COMMITTED transaction, at most 3 attempts, each on a fresh connection. It retries a fault only when `RelationalTransientFaults.IsTransient` (`Headless.UnitOfWork`) calls it transient and it was raised before the commit started: by the transaction begin or the store's statements. That set is the unit of work's: a deadlock, a serialization conflict, a lock timeout, a dropped connection, a capacity fault, and on SQL Server EF Core's `EnableRetryOnFailure` error numbers minus the client command timeout. A fault from the commit is never retried, whatever its classification, because the commit may have landed on the server before it failed on the wire; it surfaces unchanged. Nor is a fault observed after the caller's token was cancelled. `Classify` takes no part in the retry. The call never retries inside a caller's transaction.
+- **Errors.** `Classify` maps a driver exception to `SqlErrorKind`: `UniqueViolation`, `Deadlock`, `SerializationConflict`, `DuplicateObject`, `LockTimeout`, and `TransactionAborted` for a statement that ran on a transaction an earlier error ended or doomed (PostgreSQL `25P02`, SQL Server `3930`, and on SQLite the driver's `InvalidOperationException` for a transaction SQLite rolled back). That transaction is lost; roll the unit back rather than retrying inside it.
+- **Autonomous calls.** `SqlAutonomousTransaction.RunAsync` runs one store call on its own READ COMMITTED transaction, at most 3 attempts, each on a fresh connection. It retries a fault only when `RelationalTransientFaults.IsTransient` (`Headless.UnitOfWork`) calls it transient and it was raised before the commit started: by the transaction begin or the store's statements. That set is the unit of work's: a deadlock, a serialization conflict, a lock timeout, a dropped connection, a capacity fault, on SQL Server EF Core's `EnableRetryOnFailure` error numbers minus the client command timeout, and on SQLite `SQLITE_BUSY` and `SQLITE_LOCKED`. A fault from the commit is never retried, whatever its classification, because the commit may have landed on the server before it failed on the wire; it surfaces unchanged. Nor is a fault observed after the caller's token was cancelled. `Classify` takes no part in the retry. The call never retries inside a caller's transaction.
 - **Custom autonomous loops.** `SqlAutonomousTransaction.RetryAsync` applies the same rule to an attempt that owns its own connection and transaction, such as an EF claim scope. The attempt receives a `SqlAutonomousAttempt` and calls `MarkCommitStarted()` immediately before it commits. An optional `onRetry` callback receives the fault and the number of the attempt about to run.
 - **Portable values.** `SqlPortable.Truncate` truncates a duration to the microsecond every engine keeps. Key text is checked with `Argument.IsPortableKey` (`Headless.Checks`).
 - **Enlistment.** `RelationalEnlistment.RequireLive` and `RequireSameDatabase` (`Headless.UnitOfWork`) are the checks a store runs before writing inside a caller's unit of work.
+
+#### SQLite in the kit
+
+SQLite has no row locks, no `SKIP LOCKED`, no advisory locks, no schemas, and no server clock. `SqliteDialect` keeps each shape's contract with these substitutes:
+
+- **One write lock instead of row locks.** `Microsoft.Data.Sqlite` begins every transaction with `BEGIN IMMEDIATE` unless you pass `deferred: true`, so a store's transaction, autonomous or yours, holds the database write lock from its first statement and every statement in it runs after any other writer finished. The locking read opens with a no-op write, so a deferred caller transaction takes the lock there. Claims and batch deletes skip nothing because no other writer can hold a row. Writers are serialized per database file: do not use SQLite for write-heavy concurrent workloads.
+- **Busy, not deadlock.** A writer that waits longer than the connection's `Default Timeout` (30 seconds) fails with `SQLITE_BUSY`, which `Classify` reports as `LockTimeout` (`SerializationConflict` for `SQLITE_BUSY_SNAPSHOT`) and `RelationalTransientFaults` treats as transient. A deferred transaction that read before writing can fail this way while another writer is active; begin transactions `IMMEDIATE`, the driver's default.
+- **Instants as text.** A `Timestamp` column is `TEXT` holding `yyyy-MM-dd HH:mm:ss.ffffff+00:00`: UTC, always six fractional digits, so text order is time order. A bound instant is converted to UTC and truncated to the microsecond (`TimestampPrecision` is 1 µs). `Microsoft.Data.Sqlite` reads it back as `DateTimeOffset`.
+- **The clock.** `{now}` is SQLite's `'now'`, millisecond resolution, fixed for the whole statement and read inside it, so after the write lock was taken. It is the clock of the host that runs the statement. Every process that opens one SQLite file must run on that file's host (SQLite locking does not work over a network file system), so all of them read one clock.
+- **Other storage forms.** `Guid` is upper-case text, the form EF Core's SQLite provider writes. `Boolean` is `0`/`1`. `Json` is text. List and tuple parameters are one JSON array read with `json_each`.
+- **Schemas are name prefixes.** `Qualify("headless", "fencing_leases")` is `"headless_fencing_leases"`; `SqliteDialect.QualifiedName` returns the unquoted form for index names, which SQLite scopes to the whole file.
+- **No sequences.** `NextSequenceValue` throws `NotSupportedException`.
+- **Upsert outcome.** SQLite's `RETURNING` cannot tell an insert from an update, so the upsert renders one statement per branch and `SqlUpsertCommand` reads the first row of any result set.
 
 ## Choosing a Provider
 
@@ -408,12 +421,15 @@ SQLite connection factory backed by `Microsoft.Data.Sqlite`.
 - `SqliteConnectionFactory` — `ISqlConnectionFactory` implementation; `CreateNewConnectionAsync()` returns a strongly-typed `SqliteConnection` (already open); `GetConnectionString()` retrieves the configured string
 - `SqliteConnectionStringChecker` — `IConnectionStringChecker` that opens the SQLite database and reports both `Connected` and `DatabaseExists` as `true` on success (SQLite creates the file on open, so the two flags are always identical)
 - `SetupSqliteSql.AddSqliteSql(string connectionString)` / `AddSqliteSql(Func<IServiceProvider, string>)` — one-call registration of the factory, checker, and scoped ambient connection
+- `IServiceProvider.GetSqliteConnectionString()` (`HeadlessSqliteSharedConnectionExtensions`) — returns the registered `SqliteConnectionFactory` connection string; the storage features' parameterless `UseSqlite()` calls it
+- `SqliteDialect.Instance` — the store kit's SQLite dialect; see [SQLite in the kit](#sqlite-in-the-kit)
+- `SqliteSchemaDialect.Instance` — the schema runner's SQLite dialect: a leased lock row in `headless_schema_lock` (lease `SqliteSchemaDialect.LockLease`, one minute) in place of a session lock, and the history table named `<schema>_headless_schema_history`. Pass it to `SchemaRunner.ExportScript` for a script the `sqlite3` shell runs as one file
 
 ### Design constraints
 
 `SqliteConnectionStringChecker` differs from the PostgreSQL and SQL Server implementations: because SQLite creates the database file when the connection opens, there is no meaningful distinction between "server reachable" and "database exists". Both `ConnectionCheckResult` fields are set to `true` together on a successful open, or both remain `false` on failure.
 
-For in-process testing, prefer `"Data Source=:memory:"` — the database is private to the connection and disappears when the connection closes.
+For in-process testing, prefer `"Data Source=:memory:"` — the database is private to the connection and disappears when the connection closes. Storage features are the exception: the schema runner and every store call open their own connections, so give them a database file.
 
 ### Install
 

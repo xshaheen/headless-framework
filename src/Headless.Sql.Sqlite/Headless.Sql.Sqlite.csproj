@@ -5,6 +5,7 @@
     <PackageTags>headless;sql;sqlite;dotnet</PackageTags>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
     <ProjectReference Include="..\Headless.Sql.Abstractions\Headless.Sql.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Sql.Core\Headless.Sql.Core.csproj" />
