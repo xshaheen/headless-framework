@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
@@ -13,6 +12,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Tests.Helpers;
 
 namespace Tests;
 
@@ -45,31 +45,13 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
 
     private static ConsumerExecutorDescriptor _CreateDescriptor()
     {
-        var consumeMethod = typeof(IConsume<CancellationExecutorTestMessage>).GetMethod(
-            nameof(IConsume<>.ConsumeAsync),
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            [typeof(ConsumeContext<CancellationExecutorTestMessage>), typeof(CancellationToken)],
-            null
-        )!;
-
         return new ConsumerExecutorDescriptor
         {
             Lane = MessageLane.Bus,
-            ServiceTypeInfo = typeof(CancellationExecutorTestConsumer).GetTypeInfo(),
-            ImplTypeInfo = typeof(CancellationExecutorTestConsumer).GetTypeInfo(),
-            MethodInfo = consumeMethod,
+            ConsumerType = typeof(CancellationExecutorTestConsumer),
+            MessageType = typeof(CancellationExecutorTestMessage),
             MessageName = "test.messageName",
-            GroupName = "test",
-            Parameters = consumeMethod
-                .GetParameters()
-                .Select(p => new ParameterDescriptor
-                {
-                    Name = p.Name!,
-                    ParameterType = p.ParameterType,
-                    IsFromMessaging = p.ParameterType == typeof(CancellationToken),
-                })
-                .ToList(),
+            SubscriptionName = "test",
         };
     }
 
@@ -109,15 +91,12 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
 
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging =>
+            messaging.Message<CancellationExecutorTestMessage>("test.messageName")
+        );
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<CancellationExecutorTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<CancellationExecutorTestConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-cancellation")
-                    )
-            );
+            setup.AddConsumer<CancellationExecutorTestConsumer>();
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
         });
@@ -320,8 +299,11 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
 
 public sealed record CancellationExecutorTestMessage(string Id);
 
+[BusConsumer(Identity)]
 public sealed class CancellationExecutorTestConsumer : IConsume<CancellationExecutorTestMessage>
 {
+    public const string Identity = "tests.subscribe-executor";
+
     public ValueTask ConsumeAsync(
         ConsumeContext<CancellationExecutorTestMessage> context,
         CancellationToken cancellationToken

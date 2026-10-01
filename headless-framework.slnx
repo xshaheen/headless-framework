@@ -367,6 +367,7 @@
         <Project Path="src/Headless.Messaging.Queue.Abstractions/Headless.Messaging.Queue.Abstractions.csproj" />
         <Project Path="src/Headless.Messaging.RabbitMq/Headless.Messaging.RabbitMq.csproj" />
         <Project Path="src/Headless.Messaging.Redis/Headless.Messaging.Redis.csproj" />
+        <Project Path="src/Headless.Messaging.SourceGenerator/Headless.Messaging.SourceGenerator.csproj" />
         <Project Path="src/Headless.Messaging.Storage.InMemory/Headless.Messaging.Storage.InMemory.csproj" />
         <Project Path="src/Headless.Messaging.Storage.PostgreSql.EntityFramework/Headless.Messaging.Storage.PostgreSql.EntityFramework.csproj" />
         <Project Path="src/Headless.Messaging.Storage.PostgreSql/Headless.Messaging.Storage.PostgreSql.csproj" />
@@ -412,6 +413,8 @@
         <Project Path="tests/Headless.Messaging.AzureServiceBus.Tests.Unit/Headless.Messaging.AzureServiceBus.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Core.Tests.Harness/Headless.Messaging.Core.Tests.Harness.csproj" />
         <Project Path="tests/Headless.Messaging.Core.Tests.Unit/Headless.Messaging.Core.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.SourceGenerator.Tests.Unit/Headless.Messaging.SourceGenerator.Tests.Unit.csproj" />
+        <Project Path="test-assets/Headless.Messaging.GeneratedModuleFixture/Headless.Messaging.GeneratedModuleFixture.csproj" />
         <Project Path="tests/Headless.Messaging.Storage.PostgreSql.Tests.Integration/Headless.Messaging.Storage.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.Storage.SqlServer.Tests.Integration/Headless.Messaging.Storage.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.Redis.Tests.Unit/Headless.Messaging.Redis.Tests.Unit.csproj" />

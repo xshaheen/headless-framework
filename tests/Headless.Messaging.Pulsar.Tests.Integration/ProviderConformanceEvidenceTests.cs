@@ -54,12 +54,16 @@ public sealed class ProviderConformanceEvidenceTests(PulsarFixture fixture) : Te
                 nameof(PulsarConsumerClientHarnessTests.should_shutdown_idle_consumer_within_bound)
             ),
             _Bind(
-                TransportConformanceScenario.BusSubscriberGroupFanOut,
-                nameof(PulsarConsumerClientHarnessTests.should_fan_out_one_bus_copy_per_group_while_replicas_compete)
+                TransportConformanceScenario.BusConsumerIdentityFanOut,
+                nameof(
+                    PulsarConsumerClientHarnessTests.should_fan_out_one_bus_copy_per_consumer_identity_while_replicas_compete
+                )
             ),
             _Bind(
                 TransportConformanceScenario.BusReplicaCompetition,
-                nameof(PulsarConsumerClientHarnessTests.should_fan_out_one_bus_copy_per_group_while_replicas_compete)
+                nameof(
+                    PulsarConsumerClientHarnessTests.should_fan_out_one_bus_copy_per_consumer_identity_while_replicas_compete
+                )
             ),
             _Bind(
                 TransportConformanceScenario.QueueOwnership,

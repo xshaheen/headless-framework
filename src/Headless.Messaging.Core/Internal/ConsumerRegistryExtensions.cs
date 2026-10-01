@@ -8,14 +8,14 @@ internal static class ConsumerRegistryExtensions
 {
     public static TConfig? ResolveConsumerConfig<TConfig>(
         this IConsumerRegistry registry,
-        string groupName,
+        string subscriptionName,
         MessageLane lane
     )
         where TConfig : class
     {
         // For class-based configs (IProviderHeaderContributions) that hold a Func and cannot be
         // value-compared, deduplicate by runtime type — two instances of the same type for the
-        // same group are idempotent. Records use their built-in value equality via the default path.
+        // same subscription are idempotent. Records use their built-in value equality via the default path.
         var comparer = EqualityComparer<TConfig?>.Create(
             (x, y) =>
                 x is IProviderHeaderContributions && y is IProviderHeaderContributions
@@ -32,7 +32,8 @@ internal static class ConsumerRegistryExtensions
         var configs = registry
             .GetAll()
             .Where(consumer =>
-                consumer.Lane == lane && string.Equals(consumer.Group, groupName, StringComparison.Ordinal)
+                consumer.Lane == lane
+                && string.Equals(consumer.SubscriptionName, subscriptionName, StringComparison.Ordinal)
             )
             .Select(consumer =>
                 consumer.ProviderConfigs.TryGetValue(typeof(TConfig), out var config) ? config as TConfig : null
@@ -46,7 +47,7 @@ internal static class ConsumerRegistryExtensions
             0 => null,
             1 => configs[0],
             _ => throw new InvalidOperationException(
-                $"Consumer group '{groupName}' has conflicting {typeof(TConfig).Name} provider configs."
+                $"Subscription '{subscriptionName}' has conflicting {typeof(TConfig).Name} provider configs."
             ),
         };
     }

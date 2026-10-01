@@ -14,8 +14,8 @@ public class MessageQuery
     /// <summary>Gets or sets whether to query the published or received message table.</summary>
     public MessageType MessageType { get; set; }
 
-    /// <summary>Gets or sets an optional consumer group filter (case-sensitive, exact match).</summary>
-    public string? Group { get; set; }
+    /// <summary>Gets or sets an optional consumer identity filter for received rows (case-sensitive, exact match).</summary>
+    public string? ConsumerIdentity { get; set; }
 
     /// <summary>Gets or sets an optional message name filter (case-sensitive, exact match).</summary>
     public string? Name { get; set; }

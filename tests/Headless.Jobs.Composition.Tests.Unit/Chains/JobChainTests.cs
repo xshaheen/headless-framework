@@ -8,24 +8,13 @@ using Headless.Jobs.Models;
 namespace Tests.Chains;
 
 /// <summary>
-/// Pins the authoring contract for the typed <see cref="JobChain"/> model (issue #311): payload/descriptor
+/// Pins the authoring contract for the typed <see cref="JobChain"/> model (issue #311): payload/job-type
 /// step capture, single-success/single-failure edges, per-step options, structural-depth validation, and immutability
 /// after <see cref="JobChainBuilder.Build"/>. Descriptor resolution and persistence belong to later units — this suite
 /// only proves the pure authoring/validation logic with no registry or DI access.
 /// </summary>
 public sealed class JobChainTests
 {
-    private static JobFunctionDescriptor _Requestless(string name = "cleanup")
-    {
-        return new JobFunctionDescriptor(
-            name,
-            requestType: null,
-            cronExpression: "",
-            JobPriority.Normal,
-            maxConcurrency: 0
-        );
-    }
-
     [Fact]
     public void start_with_payload_captures_the_payload_and_its_type()
     {
@@ -35,17 +24,15 @@ public sealed class JobChainTests
 
         chain.Root.Payload.Should().BeSameAs(payload);
         chain.Root.PayloadType.Should().Be<OrderRequest>();
-        chain.Root.Descriptor.Should().BeNull();
+        chain.Root.JobType.Should().BeNull();
     }
 
     [Fact]
-    public void start_with_descriptor_captures_the_descriptor_and_not_a_payload()
+    public void start_with_a_job_type_captures_the_job_type_and_not_a_payload()
     {
-        var descriptor = _Requestless();
+        var chain = JobChain.Start<CleanupJob>().Build();
 
-        var chain = JobChain.Start(descriptor).Build();
-
-        chain.Root.Descriptor.Should().BeSameAs(descriptor);
+        chain.Root.JobType.Should().Be<CleanupJob>();
         chain.Root.Payload.Should().BeNull();
         chain.Root.PayloadType.Should().BeNull();
     }
@@ -210,7 +197,7 @@ public sealed class JobChainTests
     }
 
     [Fact]
-    public void the_chain_public_surface_exposes_no_handler_contracts()
+    public void the_chain_public_surface_takes_no_handler_instances()
     {
         var chainTypes = typeof(JobChain)
             .Assembly.GetExportedTypes()
@@ -242,8 +229,8 @@ public sealed class JobChainTests
             }
         }
 
-        // Payload type parameters (TRequest) are fine; handler-type generics never appear.
-        genericParameterNames.Should().NotContain("TJob");
+        // Payload type parameters (TRequest) identify steps with arguments, and TJob identifies a step without
+        // arguments by its class, the same way the scheduler addresses it. No signature takes a handler instance.
         genericParameterNames.Should().NotContain("TArgs");
         signatureTypeNames.Should().NotContain(name => name.Contains("IJob", StringComparison.Ordinal));
         signatureTypeNames.Should().NotContain(name => name.Contains("ICronJob", StringComparison.Ordinal));
@@ -258,4 +245,10 @@ public sealed class JobChainTests
     private sealed record ReceiptRequest(int Id);
 
     private sealed record NotifyRequest(int Id);
+
+    private sealed class CleanupJob : Headless.Jobs.Base.IJob
+    {
+        public ValueTask ExecuteAsync(Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+    }
 }

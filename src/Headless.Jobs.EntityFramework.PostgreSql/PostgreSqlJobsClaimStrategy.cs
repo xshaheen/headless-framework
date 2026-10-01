@@ -28,7 +28,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     [FromKeyedServices(SetupPostgreSqlJobsEntityFramework.GuidGeneratorKey)] IGuidGenerator guidGenerator,
     IJobsOwnerIdentity ownerIdentity,
     SchedulerOptionsBuilder optionsBuilder,
-    ILogger<PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>> logger
+    ILogger<PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>> logger,
+    JobsRunFilter? runFilter = null
 ) : IJobsClaimStrategy<TTimeJob, TCronJob>
     where TDbContext : DbContext
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
@@ -36,12 +37,19 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 {
 #pragma warning disable RCS1158 // Static member in generic type should use a type parameter
     private static readonly SqlColumnType[] _DirectCandidateTypes = [SqlColumnType.Guid, SqlColumnType.Timestamp];
+
+    // Function names are matched as the column stores them, in the database's default collation.
+    private static readonly SqlColumnType _FunctionType = SqlColumnType.Text(0);
 #pragma warning restore RCS1158
     private readonly TimeSpan _leaseDuration = optionsBuilder.LeaseDuration;
 
     // The maximum number of nodes on a root-to-leaf path the tree claim leases (root = depth 1). A timed
     // descendant is a boundary — not descended into, claimed independently.
     private readonly int _maxChainDepth = optionsBuilder.MaxChainDepth;
+
+    // Gates every root claim, including the direct claim whose candidates a filtered peek already chose, so a claim
+    // never depends on its caller having filtered.
+    private readonly JobsRunFilter _runFilter = runFilter ?? JobsRunFilter.All;
 
     public async IAsyncEnumerable<TimeJobEntity> ClaimTimeJobsAsync(
         TimeJobEntity[] timeJobs,
@@ -72,14 +80,14 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                             dbContext,
                             transaction,
                             mapping,
-                            _DirectCandidateFilter(mapping),
+                            _DirectCandidateFilter(mapping) + _RunnableClause(_runFilter, mapping.Function),
                             // Unscheduled roots first, as the CAS path visits them; PostgreSQL sorts NULL last by
                             // default.
                             [$"{mapping.ExecutionTime} NULLS FIRST", mapping.Id],
                             owner,
                             _leaseDuration,
                             ct,
-                            _DirectCandidateParameters(batch)
+                            [.. _DirectCandidateParameters(batch), .. _RunnableParameters(_runFilter)]
                         )
                         .ConfigureAwait(false);
 
@@ -156,6 +164,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                                         OR ({mapping.LockedUntil} <= {SqlDialectTokens.Now}
                                             AND {mapping.OnNodeDeath} = @retry))))
                           {TimedChildGateSql.Build(mapping)}
+                          {_RunnableClause(_runFilter, mapping.Function)}
                         """;
                     var attemptClaim = await _ClaimRootsAsync(
                             dbContext,
@@ -166,9 +175,12 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                             owner,
                             _leaseDuration,
                             ct,
-                            new NpgsqlParameter("idle", nameof(JobStatus.Idle)),
-                            new NpgsqlParameter("queued", nameof(JobStatus.Queued)),
-                            new NpgsqlParameter("retry", nameof(NodeDeathPolicy.Retry))
+                            [
+                                new NpgsqlParameter("idle", nameof(JobStatus.Idle)),
+                                new NpgsqlParameter("queued", nameof(JobStatus.Queued)),
+                                new NpgsqlParameter("retry", nameof(NodeDeathPolicy.Retry)),
+                                .. _RunnableParameters(_runFilter),
+                            ]
                         )
                         .ConfigureAwait(false);
 
@@ -270,7 +282,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                     {
                         ct.ThrowIfCancellationRequested();
                         if (
-                            !await _LockActiveCronDefinitionAsync(transaction, definitionMapping, item, ct)
+                            !await _LockActiveCronDefinitionAsync(transaction, definitionMapping, item, _runFilter, ct)
                                 .ConfigureAwait(false)
                         )
                         {
@@ -369,6 +381,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         IDbContextTransaction transaction,
         CronDefinitionRelationalMapping mapping,
         JobManagerDispatchContext item,
+        JobsRunFilter runFilter,
         CancellationToken cancellationToken
     )
     {
@@ -381,6 +394,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             WHERE {mapping.Id} = @id
               AND {mapping.IsPaused} = FALSE
               AND {mapping.ScheduleRevision} = @scheduleRevision
+              {_RunnableClause(runFilter, mapping.Function)}
             FOR UPDATE
             """,
             connection,
@@ -389,6 +403,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 #pragma warning restore CA2100
         command.Parameters.Add(new NpgsqlParameter<Guid>("id", item.Id));
         command.Parameters.Add(new NpgsqlParameter<long>("scheduleRevision", item.ScheduleRevision));
+        command.Parameters.AddRange(_RunnableParameters(runFilter));
 
         return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
     }
@@ -417,6 +432,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                             dbContext,
                             transaction,
                             mapping,
+                            _runFilter,
                             owner,
                             _leaseDuration,
                             ct
@@ -639,6 +655,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         TDbContext dbContext,
         IDbContextTransaction transaction,
         CronOccurrenceRelationalMapping mapping,
+        JobsRunFilter runFilter,
         string owner,
         TimeSpan leaseDuration,
         CancellationToken cancellationToken
@@ -659,6 +676,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                            AND ({mapping.LockedUntil} IS NULL
                                 OR ({mapping.LockedUntil} <= {SqlDialectTokens.Now}
                                     AND {mapping.OnNodeDeath} = @retry))))
+                  {_RunnableClause(runFilter, mapping.Function)}
                 """,
                 [mapping.ExecutionTime, mapping.Id],
                 $"""
@@ -679,6 +697,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
         dialect.AddDuration(command, "lease", leaseDuration);
         command.Parameters.Add(_BatchSizeParameter());
+        command.Parameters.AddRange(_RunnableParameters(runFilter));
 
         var ids = new List<Guid>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -855,6 +874,17 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             Transaction = (NpgsqlTransaction)transaction.GetDbTransaction(),
         };
     }
+
+    // Empty on an unfiltered host, so its statements keep claiming rows of every function.
+    private static string _RunnableClause(JobsRunFilter runFilter, string functionColumn) =>
+        runFilter.IsFiltered
+            ? " AND " + PostgreSqlDialect.Instance.InList(functionColumn, "runnableFunctions", _FunctionType)
+            : string.Empty;
+
+    private static DbParameter[] _RunnableParameters(JobsRunFilter runFilter) =>
+        runFilter.RunnableFunctions is { } runnable
+            ? [PostgreSqlDialect.Instance.CreateListParameter("runnableFunctions", _FunctionType, runnable)]
+            : [];
 
     private static NpgsqlParameter<int> _BatchSizeParameter()
     {

@@ -3,6 +3,7 @@
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -162,13 +163,80 @@ public abstract class InboxStorageConformanceTests : TestBase
             (await _MutateLeaseAsync(storage, "defer", identity, TimeSpan.Zero)).Should().BeTrue();
         }
 
-        var ordinary = (await storage.GetReceivedMessagesOfNeedRetryAsync(lane, AbortToken)).ToList();
+        var ordinary = (await storage.GetReceivedMessagesOfNeedRetryAsync(lane, null, AbortToken)).ToList();
         ordinary.Should().ContainSingle().Which.StorageId.Should().Be(ordinaryId);
-        var probes = (await storage.GetReceivedInboxOrphansOfNeedRetryAsync(lane, AbortToken)).ToList();
+        var probes = (await storage.GetReceivedInboxOrphansOfNeedRetryAsync(lane, null, AbortToken)).ToList();
         probes.Should().HaveCount(2);
         probes.Should().OnlyContain(message => orphanIds.Contains(message.StorageId) && message.IsInboxOrphaned);
         var oppositeLane = lane is MessageLane.Bus ? MessageLane.Queue : MessageLane.Bus;
-        (await storage.GetReceivedInboxOrphansOfNeedRetryAsync(oppositeLane, AbortToken)).Should().BeEmpty();
+        (await storage.GetReceivedInboxOrphansOfNeedRetryAsync(oppositeLane, null, AbortToken)).Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public async Task should_claim_received_retries_and_orphans_only_for_the_filtered_consumer_identities(
+        MessageLane lane
+    )
+    {
+        // given - due inbox retries, due inbox orphans, and due non-inbox retries for two consumers that two
+        // ConsumeOnly hosts split between them
+        await using var provider = _CreateProvider();
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
+        var storage = provider.GetRequiredService<IDataStorage>();
+        const string orders = "orders.consumer";
+        const string billing = "billing.consumer";
+        var ordersRetry = await _SeedDueInboxRowAsync(storage, lane, orders, orphaned: false);
+        var billingRetry = await _SeedDueInboxRowAsync(storage, lane, billing, orphaned: false);
+        var ordersOrphan = await _SeedDueInboxRowAsync(storage, lane, orders, orphaned: true);
+        var billingOrphan = await _SeedDueInboxRowAsync(storage, lane, billing, orphaned: true);
+        var ordersPlain = await _SeedDueNonInboxRowAsync(storage, lane, orders);
+        var billingPlain = await _SeedDueNonInboxRowAsync(storage, lane, billing);
+
+        // when - the orders-only host polls first
+        var ordersRetries = await storage.GetReceivedMessagesOfNeedRetryAsync(lane, [orders], AbortToken);
+        var ordersOrphans = await storage.GetReceivedInboxOrphansOfNeedRetryAsync(lane, [orders], AbortToken);
+
+        // then - it leases only its own rows, leaving the billing rows unleased for the billing host
+        ordersRetries.Select(x => x.StorageId).Should().BeEquivalentTo([ordersRetry, ordersPlain]);
+        ordersOrphans.Select(x => x.StorageId).Should().BeEquivalentTo([ordersOrphan]);
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(lane, [billing], AbortToken))
+            .Select(x => x.StorageId)
+            .Should()
+            .BeEquivalentTo([billingRetry, billingPlain]);
+        (await storage.GetReceivedInboxOrphansOfNeedRetryAsync(lane, [billing], AbortToken))
+            .Select(x => x.StorageId)
+            .Should()
+            .BeEquivalentTo([billingOrphan]);
+    }
+
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public async Task should_claim_no_received_row_for_an_empty_consumer_identity_filter(MessageLane lane)
+    {
+        // given
+        await using var provider = _CreateProvider();
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
+        var storage = provider.GetRequiredService<IDataStorage>();
+        var retry = await _SeedDueInboxRowAsync(storage, lane, "orders.consumer", orphaned: false);
+        var orphan = await _SeedDueInboxRowAsync(storage, lane, "orders.consumer", orphaned: true);
+
+        // when
+        var retries = await storage.GetReceivedMessagesOfNeedRetryAsync(lane, [], AbortToken);
+        var orphans = await storage.GetReceivedInboxOrphansOfNeedRetryAsync(lane, [], AbortToken);
+
+        // then - an empty set is a filter that matches nothing, not an unfiltered claim
+        retries.Should().BeEmpty();
+        orphans.Should().BeEmpty();
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(lane, null, AbortToken))
+            .Select(x => x.StorageId)
+            .Should()
+            .BeEquivalentTo([retry]);
+        (await storage.GetReceivedInboxOrphansOfNeedRetryAsync(lane, null, AbortToken))
+            .Select(x => x.StorageId)
+            .Should()
+            .BeEquivalentTo([orphan]);
     }
 
     [Theory]
@@ -332,7 +400,7 @@ public abstract class InboxStorageConformanceTests : TestBase
         var successor = (await _AdmitAsync(storage, envelope)).Message;
         if (recoverThroughPickup)
         {
-            successor = (await storage.GetReceivedMessagesOfNeedRetryAsync(lane, AbortToken)).Single(candidate =>
+            successor = (await storage.GetReceivedMessagesOfNeedRetryAsync(lane, null, AbortToken)).Single(candidate =>
                 candidate.StorageId == message.StorageId
             );
         }
@@ -397,7 +465,6 @@ public abstract class InboxStorageConformanceTests : TestBase
         var error = await Record.ExceptionAsync(async () =>
             await storage.AdmitReceivedMessageAsync(
                 string.Equals(parameter, "name", StringComparison.Ordinal) ? value! : "orders.created",
-                "group",
                 string.Equals(parameter, "consumerIdentity", StringComparison.Ordinal) ? value! : "orders.consumer",
                 string.Equals(parameter, "contractVersion", StringComparison.Ordinal) ? value! : "v1",
                 message,
@@ -443,7 +510,6 @@ public abstract class InboxStorageConformanceTests : TestBase
         ValueTask<InboxAdmissionResult> admit() =>
             storage.AdmitReceivedMessageAsync(
                 name,
-                "group",
                 consumer,
                 version,
                 message,
@@ -489,7 +555,7 @@ public abstract class InboxStorageConformanceTests : TestBase
                 {
                     [Headers.MessageId] = Guid.NewGuid().ToString(),
                     [Headers.MessageName] = "orders.created",
-                    [Headers.Group] = "group",
+                    [Headers.ConsumerIdentity] = "orders.consumer",
                 },
                 "payload"
             ),
@@ -502,13 +568,84 @@ public abstract class InboxStorageConformanceTests : TestBase
     ) =>
         storage.AdmitReceivedMessageAsync(
             "orders.created",
-            "group",
             "orders.consumer",
             "v1",
             message,
             generation,
             cancellationToken: AbortToken
         );
+
+    // Admits an inbox row for consumerIdentity and leaves it unleased and due now, either as an ordinary retry or as
+    // a known orphan, which each pickup query claims separately.
+    private static async Task<Guid> _SeedDueInboxRowAsync(
+        IDataStorage storage,
+        MessageLane lane,
+        string consumerIdentity,
+        bool orphaned
+    )
+    {
+        var message = (
+            await storage.AdmitReceivedMessageAsync(
+                "orders.created",
+                consumerIdentity,
+                "v1",
+                _CreateMessage(lane),
+                cancellationToken: AbortToken
+            )
+        ).Message;
+        var attempts = message.InlineAttempts++;
+        (await storage.LeaseReceiveAndReserveAttemptAsync(message, TimeSpan.FromMinutes(5), attempts, AbortToken))
+            .Should()
+            .BeTrue();
+        if (orphaned)
+        {
+            // Orphan deferral releases the claim; re-lease so the due-time mutation below runs under a live fence.
+            (await storage.DeferReceivedInboxOrphanAsync(message, AbortToken))
+                .Should()
+                .BeTrue();
+            attempts = message.InlineAttempts++;
+            (await storage.LeaseReceiveAndReserveAttemptAsync(message, TimeSpan.FromMinutes(5), attempts, AbortToken))
+                .Should()
+                .BeTrue();
+        }
+
+        var identity = new MessageLeaseIdentity(
+            message.StorageId,
+            message.Owner,
+            message.LockedUntil!.Value,
+            lane,
+            message.InboxAttemptFence
+        );
+        (await _MutateLeaseAsync(storage, "defer", identity, TimeSpan.Zero)).Should().BeTrue();
+
+        return message.StorageId;
+    }
+
+    private static async Task<Guid> _SeedDueNonInboxRowAsync(
+        IDataStorage storage,
+        MessageLane lane,
+        string consumerIdentity
+    )
+    {
+        var stored = await storage.StoreReceivedMessageAsync(
+            "orders.created",
+            consumerIdentity,
+            _CreateMessage(lane),
+            AbortToken
+        );
+        (
+            await storage.ChangeReceiveStateAsync(
+                stored,
+                StatusName.Failed,
+                retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
+                cancellationToken: AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+
+        return stored.StorageId;
+    }
 
     private static async ValueTask<bool> _MutateLeaseAsync(
         IDataStorage storage,

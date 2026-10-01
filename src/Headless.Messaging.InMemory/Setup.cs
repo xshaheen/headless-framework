@@ -47,7 +47,8 @@ public static class SetupInMemory
                 MessagingProviderCapabilities.Transport(
                     "InMemory",
                     [MessageLane.Bus, MessageLane.Queue],
-                    supportsIndependentLaneTopology: true
+                    supportsIndependentLaneTopology: true,
+                    supportsEveryInstance: true
                 )
             );
             services.AddSingleton<MemoryQueue>();

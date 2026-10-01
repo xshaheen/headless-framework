@@ -8,6 +8,11 @@
     <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference
+      Include="..\..\src\Headless.Messaging.SourceGenerator\Headless.Messaging.SourceGenerator.csproj"
+      OutputItemType="Analyzer"
+      ReferenceOutputAssembly="false"
+    />
     <ProjectReference Include="..\..\src\Headless.Messaging.Dashboard\Headless.Messaging.Dashboard.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.InMemory\Headless.Messaging.InMemory.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Storage.InMemory\Headless.Messaging.Storage.InMemory.csproj" />

@@ -10,48 +10,25 @@ namespace Tests.Configuration;
 public sealed class MiddlewareRegistryReceiveTests : TestBase
 {
     [Fact]
-    public void should_match_typed_receive_descriptor_on_exact_type_group_and_lane()
+    public void should_match_typed_receive_descriptor_on_exact_type_and_lane()
     {
         // given
         var services = new ServiceCollection();
         var builder = new MessagingBuilder(services);
-        builder.AddReceiveMiddlewareFor<TypedReceiveMiddleware, OrderPlaced>("checkout", MessageLane.Bus);
+        builder.AddReceiveMiddlewareFor<TypedReceiveMiddleware, OrderPlaced>(MessageLane.Bus);
 
         var registry = _GetRegistry(services);
 
         // when
-        var exactMatch = registry.TryGetReceiveDescriptors(
-            typeof(OrderPlaced),
-            "checkout",
-            MessageLane.Bus,
-            out var matched
-        );
-        var otherGroup = registry.TryGetReceiveDescriptors(
-            typeof(OrderPlaced),
-            "fulfillment",
-            MessageLane.Bus,
-            out var groupMiss
-        );
-        var otherLane = registry.TryGetReceiveDescriptors(
-            typeof(OrderPlaced),
-            "checkout",
-            MessageLane.Queue,
-            out var laneMiss
-        );
-        var otherType = registry.TryGetReceiveDescriptors(
-            typeof(OtherOrderPlaced),
-            "checkout",
-            MessageLane.Bus,
-            out var typeMiss
-        );
+        var exactMatch = registry.TryGetReceiveDescriptors(typeof(OrderPlaced), MessageLane.Bus, out var matched);
+        var otherLane = registry.TryGetReceiveDescriptors(typeof(OrderPlaced), MessageLane.Queue, out var laneMiss);
+        var otherType = registry.TryGetReceiveDescriptors(typeof(OtherOrderPlaced), MessageLane.Bus, out var typeMiss);
 
         // then
         exactMatch.Should().BeTrue();
         matched.Should().ContainSingle().Which.MiddlewareType.Should().Be<TypedReceiveMiddleware>();
-        groupMiss.Should().BeEmpty();
         laneMiss.Should().BeEmpty();
         typeMiss.Should().BeEmpty();
-        otherGroup.Should().BeFalse();
         otherLane.Should().BeFalse();
         otherType.Should().BeFalse();
     }
@@ -67,15 +44,9 @@ public sealed class MiddlewareRegistryReceiveTests : TestBase
         var registry = _GetRegistry(services);
 
         // when
-        var busLookup = registry.TryGetReceiveDescriptors(
-            typeof(OrderPlaced),
-            "checkout",
-            MessageLane.Bus,
-            out var busDescriptors
-        );
+        var busLookup = registry.TryGetReceiveDescriptors(typeof(OrderPlaced), MessageLane.Bus, out var busDescriptors);
         var queueLookup = registry.TryGetReceiveDescriptors(
             typeof(OrderPlaced),
-            "checkout",
             MessageLane.Queue,
             out var queueDescriptors
         );
@@ -94,17 +65,12 @@ public sealed class MiddlewareRegistryReceiveTests : TestBase
         var services = new ServiceCollection();
         var builder = new MessagingBuilder(services);
         builder.AddReceiveMiddleware<GlobalReceiveMiddleware>();
-        builder.AddReceiveMiddlewareFor<TypedReceiveMiddleware, OrderPlaced>("checkout", MessageLane.Bus);
+        builder.AddReceiveMiddlewareFor<TypedReceiveMiddleware, OrderPlaced>(MessageLane.Bus);
 
         var registry = _GetRegistry(services);
 
         // when
-        var result = registry.TryGetReceiveDescriptors(
-            typeof(OrderPlaced),
-            "checkout",
-            MessageLane.Queue,
-            out var descriptors
-        );
+        var result = registry.TryGetReceiveDescriptors(typeof(OrderPlaced), MessageLane.Queue, out var descriptors);
 
         // then
         result.Should().BeTrue();
@@ -120,20 +86,15 @@ public sealed class MiddlewareRegistryReceiveTests : TestBase
         builder.AddReceiveMiddleware<GlobalPriorityZeroReceiveMiddlewareA>();
         builder.AddReceiveMiddleware<GlobalPriorityMinusReceiveMiddleware>().WithPriority(-100);
         builder.AddReceiveMiddleware<GlobalPriorityZeroReceiveMiddlewareB>();
-        builder.AddReceiveMiddlewareFor<TypedReceiveMiddleware, OrderPlaced>("checkout", MessageLane.Bus);
+        builder.AddReceiveMiddlewareFor<TypedReceiveMiddleware, OrderPlaced>(MessageLane.Bus);
         builder
-            .AddReceiveMiddlewareFor<TypedPriorityMinusReceiveMiddleware, OrderPlaced>("checkout", MessageLane.Bus)
+            .AddReceiveMiddlewareFor<TypedPriorityMinusReceiveMiddleware, OrderPlaced>(MessageLane.Bus)
             .WithPriority(-5);
 
         var registry = _GetRegistry(services);
 
         // when
-        var result = registry.TryGetReceiveDescriptors(
-            typeof(OrderPlaced),
-            "checkout",
-            MessageLane.Bus,
-            out var descriptors
-        );
+        var result = registry.TryGetReceiveDescriptors(typeof(OrderPlaced), MessageLane.Bus, out var descriptors);
 
         // then
         result.Should().BeTrue();
@@ -147,34 +108,6 @@ public sealed class MiddlewareRegistryReceiveTests : TestBase
                 typeof(TypedPriorityMinusReceiveMiddleware),
                 typeof(TypedReceiveMiddleware)
             );
-    }
-
-    [Fact]
-    public void should_apply_configured_group_prefix_to_typed_receive_middleware_group()
-    {
-        // given
-        var services = new ServiceCollection();
-        var builder = services.AddHeadlessMessaging(options => options.Options.GroupNamePrefix = "tenant");
-
-        // when
-        builder.AddReceiveMiddlewareFor<TypedReceiveMiddleware, OrderPlaced>("checkout", MessageLane.Bus);
-
-        // then
-        var registry = _GetRegistry(services);
-        var descriptor = registry.Descriptors.Single(x => x.MiddlewareType == typeof(TypedReceiveMiddleware));
-        descriptor.GroupName.Should().Be("tenant.checkout");
-
-        registry
-            .TryGetReceiveDescriptors(typeof(OrderPlaced), "checkout", MessageLane.Bus, out var unprefixed)
-            .Should()
-            .BeFalse();
-        unprefixed.Should().BeEmpty();
-
-        registry
-            .TryGetReceiveDescriptors(typeof(OrderPlaced), "tenant.checkout", MessageLane.Bus, out var prefixed)
-            .Should()
-            .BeTrue();
-        prefixed.Should().ContainSingle().Which.MiddlewareType.Should().Be<TypedReceiveMiddleware>();
     }
 
     [Fact]
@@ -204,7 +137,7 @@ public sealed class MiddlewareRegistryReceiveTests : TestBase
 
         // when
         builder.AddReceiveMiddleware<GlobalReceiveMiddleware>();
-        builder.AddReceiveMiddlewareFor<TypedReceiveMiddleware, OrderPlaced>("checkout", MessageLane.Bus);
+        builder.AddReceiveMiddlewareFor<TypedReceiveMiddleware, OrderPlaced>(MessageLane.Bus);
 
         // then
         services
@@ -236,7 +169,7 @@ public sealed class MiddlewareRegistryReceiveTests : TestBase
         var builder = new MessagingBuilder(services);
 
         // when
-        builder.AddReceiveMiddlewareFor<TypedReceiveMiddleware, OrderPlaced>("checkout", MessageLane.Queue);
+        builder.AddReceiveMiddlewareFor<TypedReceiveMiddleware, OrderPlaced>(MessageLane.Queue);
 
         // then
         var descriptor = _GetRegistry(services)
@@ -244,7 +177,6 @@ public sealed class MiddlewareRegistryReceiveTests : TestBase
         descriptor.Direction.Should().Be(MiddlewareDirection.Receive);
         descriptor.Scope.Should().Be(MiddlewareScope.Message);
         descriptor.MessageType.Should().Be<OrderPlaced>();
-        descriptor.GroupName.Should().Be("checkout");
         descriptor.Lane.Should().Be(MessageLane.Queue);
         descriptor.Priority.Should().Be(0);
     }

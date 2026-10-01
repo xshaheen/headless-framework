@@ -154,6 +154,14 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
         public async ValueTask InitializeAsync()
         {
             await _container.StartAsync();
+
+            // The container is reused across runs, and the schema runner trusts the history it finds: tables an older
+            // build created would be kept in their older shape. Start every run from an empty messaging schema.
+            await using var connection = new NpgsqlConnection(ConnectionString);
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """DROP SCHEMA IF EXISTS "headless" CASCADE;""";
+            await command.ExecuteNonQueryAsync();
         }
 
         public async ValueTask DisposeAsync()

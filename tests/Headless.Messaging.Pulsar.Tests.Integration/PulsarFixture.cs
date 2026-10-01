@@ -2,6 +2,7 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Pulsar;
+using Headless.Messaging.Transport;
 using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -11,6 +12,9 @@ namespace Tests;
 [UsedImplicitly]
 public sealed class PulsarFixture : HeadlessPulsarFixture
 {
+    /// <summary>Gets the base address of the broker's HTTP admin API.</summary>
+    public Uri AdminUri => new(Container.GetServiceAddress());
+
     public ValueTask<TransportConsumerConformanceSession> CreateQueueSessionAsync(
         CancellationToken cancellationToken,
         string? destination = null,
@@ -45,20 +49,20 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
         );
     }
 
-    public ValueTask<TransportConsumerConformanceSession> CreateLaneSessionAsync(
-        MessageLane lane,
-        string destination,
-        string group,
+    /// <summary>Opens a session for a conformance endpoint, with the consumer client request the endpoint describes.</summary>
+    public ValueTask<TransportConsumerConformanceSession> CreateEndpointSessionAsync(
+        TransportConformanceEndpoint endpoint,
         CancellationToken cancellationToken
     )
     {
         return CreateSessionAsync(
             ConnectionString,
-            lane,
+            endpoint.Lane,
             cancellationToken,
-            destination,
-            group,
-            failEnvelopeBuild: false
+            endpoint.LogicalName,
+            endpoint.SubscriptionName,
+            failEnvelopeBuild: false,
+            request: endpoint.ToRequest(concurrency: 2)
         );
     }
 
@@ -85,11 +89,13 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
         string? destination = null,
         string? group = null,
         bool createReplacement = true,
-        bool failEnvelopeBuild = false
+        bool failEnvelopeBuild = false,
+        ConsumerClientRequest? request = null
     )
     {
         destination ??= $"persistent://public/default/conf-{Guid.NewGuid():N}";
         group ??= $"group-{Guid.NewGuid():N}";
+        request ??= new ConsumerClientRequest(group, 2, lane);
 
         var services = new ServiceCollection();
         services.AddLogging();
@@ -126,9 +132,7 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
             var consumer = new PulsarConsumerClient(
                 options,
                 client,
-                group,
-                2,
-                lane,
+                request,
                 transportMessageFactory: transportMessageFactory
             );
 #pragma warning restore CA2000
@@ -153,7 +157,8 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
                                 destination,
                                 group,
                                 createReplacement: false,
-                                failEnvelopeBuild
+                                failEnvelopeBuild,
+                                request
                             )
                         : null
                 );

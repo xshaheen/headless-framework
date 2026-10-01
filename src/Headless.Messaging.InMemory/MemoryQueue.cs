@@ -197,10 +197,7 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
         var messageCopy = new TransportMessage(
             message.Headers.ToDictionary(o => o.Key, o => o.Value, StringComparer.Ordinal),
             message.Body
-        )
-        {
-            Headers = { [Headers.Group] = groupId },
-        };
+        );
 
         consumerClient.AddSubscribeMessage(messageCopy);
         return true;

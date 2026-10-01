@@ -97,29 +97,32 @@ public sealed class MessageTests : TestBase
     }
 
     [Fact]
-    public void should_get_group_from_headers()
+    public void should_get_consumer_identity_from_headers()
     {
         // given
-        const string group = "order-service";
-        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.Group] = group };
+        const string consumerIdentity = "billing.invoice-projection";
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.ConsumerIdentity] = consumerIdentity,
+        };
         var message = new Message(headers, null);
 
         // when
-        var result = message.GetGroup();
+        var result = message.GetConsumerIdentity();
 
         // then
-        result.Should().Be(group);
+        result.Should().Be(consumerIdentity);
     }
 
     [Fact]
-    public void should_return_null_when_group_not_present()
+    public void should_return_null_when_consumer_identity_not_present()
     {
         // given
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
         var message = new Message(headers, null);
 
         // when
-        var result = message.GetGroup();
+        var result = message.GetConsumerIdentity();
 
         // then
         result.Should().BeNull();

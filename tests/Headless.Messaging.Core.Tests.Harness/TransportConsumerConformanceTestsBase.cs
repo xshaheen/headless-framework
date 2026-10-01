@@ -110,12 +110,13 @@ public sealed class TransportConsumerConformanceSession(
         {
             return await _deliveries.Reader.ReadAsync(cts.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
             when (cts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
             var diagnostics = string.Join(Environment.NewLine, _logs.Select(log => $"{log.LogType}: {log.Reason}"));
             throw new TimeoutException(
-                $"No broker delivery arrived within {timeout}. Consumer diagnostics:{Environment.NewLine}{diagnostics}"
+                $"No broker delivery arrived within {timeout}. Consumer diagnostics:{Environment.NewLine}{diagnostics}",
+                ex
             );
         }
     }

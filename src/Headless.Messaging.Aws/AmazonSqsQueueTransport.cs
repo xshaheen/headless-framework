@@ -43,7 +43,7 @@ internal sealed class AmazonSqsQueueTransport(
 
             if (queueName.IsAwsFifoName())
             {
-                request.MessageGroupId = _ResolveMessageGroupId(message, affinityKey);
+                request.MessageGroupId = _ResolveMessageGroupId(affinityKey);
 
                 if (
                     message.Headers.TryGetValue(Headers.MessageId, out var messageId)
@@ -80,14 +80,15 @@ internal sealed class AmazonSqsQueueTransport(
         }
     }
 
-    private static string _ResolveMessageGroupId(TransportMessage message, string? messageGroupId)
+    // A FIFO destination requires a message group; without an affinity key every message shares one ordered group.
+    private static string _ResolveMessageGroupId(string? messageGroupId)
     {
         if (!string.IsNullOrWhiteSpace(messageGroupId))
         {
             return messageGroupId;
         }
 
-        return message.GetGroup() ?? "default";
+        return "default";
     }
 
     public ValueTask DisposeAsync()

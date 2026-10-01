@@ -6,6 +6,9 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Messaging.InMemory.Tests.Unit" />
+    <!-- Two-replica tests of framework every-instance consumers share one MemoryQueue between two hosts. -->
+    <InternalsVisibleTo Include="Headless.Caching.Hybrid.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.DistributedLocks.Composition.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Testing" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>

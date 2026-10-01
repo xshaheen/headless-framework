@@ -11,7 +11,7 @@ namespace Tests;
 public sealed class GeneratedSourceSnapshotTests
 {
     [Fact]
-    public Task should_emit_constructor_injection_for_every_constructor_shape()
+    public Task should_emit_a_typed_invoker_for_every_job_shape()
     {
         return _VerifyGenerated(
             """
@@ -21,53 +21,52 @@ public sealed class GeneratedSourceSnapshotTests
             using Headless.Jobs.Base;
             using Microsoft.Extensions.DependencyInjection;
 
-            namespace Demo.Injection;
+            namespace Demo.Shapes;
 
             public interface IClock;
 
-            public interface IStore;
+            public sealed record InvoiceArgs(int Id);
 
-            public sealed class RegularConstructorJobs
+            [Job("shapes.plain")]
+            public sealed class CloseDay(IClock clock) : IJob
             {
-                public RegularConstructorJobs(
-                    IClock clock,
-                    [FromKeyedServices("primary")] IStore store,
-                    IServiceProvider serviceProvider
-                ) { }
-
-                [JobFunction("injection.regular")]
-                public Task RunAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+                public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
             }
 
-            public sealed class PrimaryConstructorJobs(IClock clock, [FromKeyedServices(42)] IStore store)
+            [Job("shapes.typed")]
+            public sealed class SendInvoice : IJob<InvoiceArgs>
             {
-                [JobFunction("injection.primary")]
-                public void Run(JobFunctionContext context) { }
+                public ValueTask ExecuteAsync(JobContext<InvoiceArgs> context, CancellationToken cancellationToken) =>
+                    default;
             }
 
-            public sealed class MarkedConstructorJobs
+            [Job("shapes.explicit")]
+            internal sealed class ExplicitJob : IJob
             {
-                public MarkedConstructorJobs() { }
-
-                [JobsConstructor]
-                public MarkedConstructorJobs(IClock clock) { }
-
-                [JobFunction("injection.marked")]
-                public async Task RunAsync(JobFunctionContext context, CancellationToken cancellationToken) =>
-                    await Task.Yield();
+                ValueTask IJob.ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
             }
 
-            public static class StaticJobs
+            [Job("shapes.disposable")]
+            public sealed class DisposableJob : IJob, IDisposable
             {
-                [JobFunction("injection.static", "0 0 * * * *")]
-                public static Task RunAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+                public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
+
+                public void Dispose() { }
+            }
+
+            [Job("shapes.async-disposable")]
+            public sealed class AsyncDisposableJob : IJob, IAsyncDisposable
+            {
+                public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
+
+                public ValueTask DisposeAsync() => default;
             }
             """
         );
     }
 
     [Fact]
-    public Task should_emit_fully_qualified_request_type_names()
+    public Task should_emit_fully_qualified_argument_type_names()
     {
         return _VerifyGenerated(
             """
@@ -79,19 +78,11 @@ public sealed class GeneratedSourceSnapshotTests
             {
                 public sealed record Payload(int Id);
 
-                public sealed record Order(int Id);
-
-                public sealed class RootJobs
+                [Job("root.payload")]
+                public sealed class RootJob : IJob<Payload>
                 {
-                    [JobFunction("root.instance")]
-                    public Task RunAsync(JobFunctionContext<Payload> context, CancellationToken cancellationToken) =>
-                        Task.CompletedTask;
-
-                    [JobFunction("root.order")]
-                    public Task OrderAsync(JobFunctionContext<Order> context) => Task.CompletedTask;
-
-                    [JobFunction("root.static")]
-                    public static void Run() { }
+                    public ValueTask ExecuteAsync(JobContext<Payload> context, CancellationToken cancellationToken) =>
+                        default;
                 }
             }
 
@@ -99,10 +90,11 @@ public sealed class GeneratedSourceSnapshotTests
             {
                 public sealed record Payload(string Id);
 
-                public sealed class BillingJobs
+                [Job("billing.run", Cron = "%Jobs:Billing:Cron")]
+                public sealed class BillingJob : IJob<Payload>
                 {
-                    [JobFunction("billing.run", "%Jobs:Billing:Cron%")]
-                    public Task RunAsync(JobFunctionContext<Payload> context) => Task.CompletedTask;
+                    public ValueTask ExecuteAsync(JobContext<Payload> context, CancellationToken cancellationToken) =>
+                        default;
                 }
             }
             """
@@ -110,7 +102,7 @@ public sealed class GeneratedSourceSnapshotTests
     }
 
     [Fact]
-    public Task should_emit_descriptor_metadata_recovery_knobs_and_escaped_handles()
+    public Task should_emit_descriptor_metadata_and_every_attribute_knob()
     {
         return _VerifyGenerated(
             """
@@ -121,47 +113,47 @@ public sealed class GeneratedSourceSnapshotTests
 
             namespace Demo.Knobs;
 
-            public sealed class KnobJobs
+            [Job(
+                "knobs.all",
+                Cron = "*/5 * * * * *",
+                TimeZone = "Africa/Cairo",
+                Priority = JobPriority.LongRunning,
+                MaxConcurrency = 4,
+                ContractVersion = "v7",
+                OnMissedRun = MissedRunPolicy.Skip,
+                MissedRunGraceSeconds = 90,
+                OnOverlap = CronOverlapPolicy.Skip
+            )]
+            public sealed class AllKnobs : IJob
             {
-                [JobFunction(
-                    "knobs.all",
-                    "*/5 * * * * *",
-                    JobPriority.LongRunning,
-                    4,
-                    ContractVersion = "v7",
-                    OnMissedRun = MissedRunPolicy.Skip,
-                    MissedRunGraceSeconds = 90,
-                    OnOverlap = CronOverlapPolicy.Skip
-                )]
-                public Task AllAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+                public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
+            }
 
-                [JobFunction("class", JobPriority.Low)]
-                public void Keyword() { }
-
-                [JobFunction("ToString")]
-                public void ObjectMember() { }
-
-                [JobFunction("1start")]
-                public void Digit() { }
+            [Job("knobs.defaults")]
+            public sealed class Defaults : IJob
+            {
+                public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
             }
             """
         );
     }
 
     [Fact]
-    public Task should_emit_assembly_and_method_middleware_registrations()
+    public Task should_emit_assembly_and_class_middleware_registrations()
     {
         var reference = GeneratorTestHelper.EmitReference(
             "Snapshot.Producer",
             """
+            using System.Threading;
+            using System.Threading.Tasks;
             using Headless.Jobs.Base;
 
             namespace Snapshot.Producer;
 
-            public sealed class ProducerJobs
+            [Job("producer.run")]
+            public sealed class ProducerJob : IJob
             {
-                [JobFunction("producer.run")]
-                public void Run() { }
+                public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
             }
             """,
             out var referenceDiagnostics
@@ -196,11 +188,11 @@ public sealed class GeneratedSourceSnapshotTests
                 public Task InvokeAsync(JobExecuteContext c, JobExecuteNext n, CancellationToken t) => n(t);
             }
 
-            public sealed class MiddlewareJobs
+            [Job("middleware.local")]
+            [JobExecuteMiddleware<LocalExecute>(Priority = 1)]
+            public sealed class MiddlewareJob : IJob
             {
-                [JobFunction("middleware.local")]
-                [JobExecuteMiddleware<LocalExecute>(Priority = 1)]
-                public void Run() { }
+                public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
             }
             """,
             reference
@@ -208,7 +200,7 @@ public sealed class GeneratedSourceSnapshotTests
     }
 
     [Fact]
-    public Task should_emit_global_namespace_functions()
+    public Task should_emit_global_namespace_jobs()
     {
         return _VerifyGenerated(
             """
@@ -216,18 +208,17 @@ public sealed class GeneratedSourceSnapshotTests
             using System.Threading.Tasks;
             using Headless.Jobs.Base;
 
-            public sealed class GlobalJobs
+            [Job("global.run")]
+            public sealed class GlobalJob : IJob
             {
-                [JobFunction("global.run")]
-                public Task RunAsync(JobFunctionContext context, CancellationToken cancellationToken) =>
-                    Task.CompletedTask;
+                public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
             }
             """
         );
     }
 
     [Fact]
-    public void should_emit_no_module_when_no_function_or_middleware_is_declared()
+    public void should_emit_no_module_when_no_job_or_middleware_is_declared()
     {
         var driver = GeneratorTestHelper.Run(
             """
@@ -250,14 +241,16 @@ public sealed class GeneratedSourceSnapshotTests
     {
         var driver = GeneratorTestHelper.Run(
             """
+            using System.Threading;
+            using System.Threading.Tasks;
             using Headless.Jobs.Base;
 
             namespace Demo;
 
-            public sealed class Jobs
+            [Job("module.run")]
+            public sealed class ModuleJob : IJob
             {
-                [JobFunction("module.run")]
-                public void Run() { }
+                public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
             }
 
             public static class Host
@@ -272,8 +265,13 @@ public sealed class GeneratedSourceSnapshotTests
         diagnostics.Should().NotContain(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         var generated = driver.GetRunResult().GeneratedTrees.Single().ToString();
         generated.Should().Contain("public sealed class JobsModule : global::Headless.Jobs.IJobsModule");
-        generated.Should().Contain("static void global::Headless.Jobs.IJobsModule.Register()");
+        generated
+            .Should()
+            .Contain(
+                "static void global::Headless.Jobs.IJobsModule.Register(global::Headless.Jobs.JobsCatalogBuilder catalog)"
+            );
         generated.Should().NotContain("ModuleInitializer");
+        generated.Should().NotContain("AppJobs");
     }
 
     private static Task _VerifyGenerated(string source, params MetadataReference[] references)

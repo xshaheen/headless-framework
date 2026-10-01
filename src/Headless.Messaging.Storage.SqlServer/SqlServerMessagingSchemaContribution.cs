@@ -90,11 +90,6 @@ internal static class SqlServerMessagingSchemaContribution
                     [Id] [uniqueidentifier] NOT NULL,
                     [Version] [nvarchar](20) NOT NULL,
                     [Name] [nvarchar](200) NOT NULL,
-                    [Group] [nvarchar](200) NULL,
-                    -- #19 — PERSISTED ISNULL collapses a NULL [Group] to '' so the unique index below
-                    -- converges NULL-group redeliveries to one row, matching the PostgreSQL
-                    -- COALESCE("Group", '') index (a plain nullable [Group] treats each NULL as distinct).
-                    [GroupCoalesced] AS ISNULL([Group], N'') PERSISTED,
                     [Content] [nvarchar](max) NULL,
                     [IntentType] [smallint] NOT NULL,
                     [Retries] [int] NOT NULL,
@@ -166,9 +161,9 @@ internal static class SqlServerMessagingSchemaContribution
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_InboxRootKey' AND object_id = OBJECT_ID(N'{received}'))
                 EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_InboxRootKey] ON {received} ([InboxKeyHash] ASC) WHERE [IsInboxRecord]=1 AND [ReplayParentIncarnationId] IS NULL');
 
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_NonInboxTransportIdentity' AND object_id = OBJECT_ID(N'{received}'))
-                EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_NonInboxTransportIdentity]
-                    ON {received} ([Version],[MessageId],[GroupCoalesced],[IntentType]) WHERE [IsInboxRecord]=0');
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_NonInboxConsumerIdentity' AND object_id = OBJECT_ID(N'{received}'))
+                EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_NonInboxConsumerIdentity]
+                    ON {received} ([Version],[MessageId],[ConsumerIdentity],[IntentType]) WHERE [IsInboxRecord]=0');
 
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_GenerationIncarnationId' AND object_id = OBJECT_ID(N'{received}'))
                 EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_GenerationIncarnationId] ON {received} ([GenerationIncarnationId] ASC) WHERE [GenerationIncarnationId] IS NOT NULL');

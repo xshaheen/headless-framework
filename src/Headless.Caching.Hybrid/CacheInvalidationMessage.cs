@@ -17,6 +17,13 @@ namespace Headless.Caching;
 public sealed record CacheInvalidationMessage
 {
     /// <summary>
+    /// The wire name this message is published and consumed under, at contract version <c>1</c>. Every hybrid cache
+    /// registration declares it, so the topic stays the same whatever naming conventions the host configures for its
+    /// own messages.
+    /// </summary>
+    public const string MessageName = "headless.caching.hybrid.invalidation";
+
+    /// <summary>
     /// ID of the instance that originated this invalidation.
     /// Used to filter out self-originated messages to prevent echo.
     /// </summary>

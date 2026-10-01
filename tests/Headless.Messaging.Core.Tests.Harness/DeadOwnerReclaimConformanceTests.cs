@@ -325,7 +325,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
         // future-leased rows are excluded, so a single call is a faithful "is this row recoverable now?" probe.
         var retriable = published
             ? await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)
-            : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken);
 
         return retriable.Any(message => message.StorageId == storageId);
     }

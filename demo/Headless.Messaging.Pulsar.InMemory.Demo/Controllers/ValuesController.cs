@@ -24,6 +24,7 @@ public class ValuesController(IBus producer) : Controller
 
 public record PulsarMessage(string Value);
 
+[BusConsumer("pulsar-demo.message")]
 public sealed class PulsarMessageConsumer : IConsume<PulsarMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<PulsarMessage> context, CancellationToken cancellationToken)

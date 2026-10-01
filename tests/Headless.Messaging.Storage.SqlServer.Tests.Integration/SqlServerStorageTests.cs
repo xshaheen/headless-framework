@@ -177,13 +177,13 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         var id = Guid.NewGuid();
         var content = _serializer!.Serialize(CreateMessage($"unsupported-lane-{id:N}"));
         var tableName = published ? "MessagingPublished" : "MessagingReceived";
-        var groupColumns = published ? string.Empty : ", [Group], ExceptionInfo";
-        var groupValues = published ? string.Empty : ", 'unsupported-lane-group', NULL";
+        var receivedColumns = published ? string.Empty : ", ConsumerIdentity, ExceptionInfo";
+        var receivedValues = published ? string.Empty : ", 'unsupported-lane-consumer', NULL";
         var sql = $"""
             INSERT INTO headless.{tableName}
-                (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId{groupColumns})
+                (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId{receivedColumns})
             VALUES
-                (@Id, 'v1', 'unsupported-lane', @Content, @IntentType, 0, @Added, NULL, @NextRetryAt, @LockedUntil, 'stale-unsupported-lane-owner', 'Failed', @MessageId{groupValues});
+                (@Id, 'v1', 'unsupported-lane', @Content, @IntentType, 0, @Added, NULL, @NextRetryAt, @LockedUntil, 'stale-unsupported-lane-owner', 'Failed', @MessageId{receivedValues});
             """;
 
         await using var connection = new SqlConnection(fixture.ConnectionString);
@@ -256,21 +256,20 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     /// <inheritdoc />
     protected override async Task<int> CountReceivedMessagesByIdentityAsync(
         string messageId,
-        string? group,
+        string consumerIdentity,
         CancellationToken cancellationToken
     )
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(cancellationToken);
 
-        const string sqlWithGroup =
-            "SELECT COUNT(*) FROM headless.MessagingReceived WHERE [MessageId] = @MessageId AND [Group] = @Group";
-        const string sqlWithoutGroup =
-            "SELECT COUNT(*) FROM headless.MessagingReceived WHERE [MessageId] = @MessageId AND [Group] IS NULL";
+        const string sql =
+            "SELECT COUNT(*) FROM headless.MessagingReceived WHERE [MessageId] = @MessageId AND [ConsumerIdentity] = @ConsumerIdentity";
 
-        return group is null
-            ? await connection.ExecuteScalarAsync<int>(sqlWithoutGroup, new { MessageId = messageId })
-            : await connection.ExecuteScalarAsync<int>(sqlWithGroup, new { MessageId = messageId, Group = group });
+        return await connection.ExecuteScalarAsync<int>(
+            sql,
+            new { MessageId = messageId, ConsumerIdentity = consumerIdentity }
+        );
     }
 
     /// <inheritdoc />
@@ -369,9 +368,9 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     }
 
     [Fact]
-    public override Task should_suppress_terminal_inbox_redelivery_independent_of_topology_group()
+    public override Task should_suppress_terminal_inbox_redelivery()
     {
-        return base.should_suppress_terminal_inbox_redelivery_independent_of_topology_group();
+        return base.should_suppress_terminal_inbox_redelivery();
     }
 
     [Fact]
@@ -418,7 +417,6 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         var storage = _storage!;
         var admitted = await storage.AdmitReceivedMessageAsync(
             "orders.created",
-            "orders-group",
             "orders.cleanup",
             "v1",
             new MediumMessage
@@ -935,9 +933,15 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     }
 
     [Fact]
-    public override Task should_handle_concurrent_first_insert_storm_with_null_and_non_null_group()
+    public override Task should_filter_received_messages_by_consumer_identity()
     {
-        return base.should_handle_concurrent_first_insert_storm_with_null_and_non_null_group();
+        return base.should_filter_received_messages_by_consumer_identity();
+    }
+
+    [Fact]
+    public override Task should_handle_concurrent_first_insert_storm_per_consumer_identity()
+    {
+        return base.should_handle_concurrent_first_insert_storm_per_consumer_identity();
     }
 
     [Fact]
@@ -1103,7 +1107,6 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         var origin = CreateMessage($"transactional-rollback-{Guid.NewGuid():N}", "orders.created");
         var admission = await storage.AdmitReceivedMessageAsync(
             "orders.created",
-            "orders-topology-a",
             "orders.consumer",
             "v1",
             new MediumMessage
@@ -1464,7 +1467,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         // when
         var picked = string.Equals(tableName, "MessagingPublished", StringComparison.Ordinal)
             ? await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)
-            : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken);
 
         // then
         picked.Should().NotContain(message => message.StorageId == id);
@@ -1532,7 +1535,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
 
         var picked = string.Equals(tableName, "MessagingPublished", StringComparison.Ordinal)
             ? await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)
-            : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken);
 
         picked.Select(message => message.StorageId).Should().Contain(healthyId).And.NotContain(poisonId);
 
@@ -1963,7 +1966,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         await connection.ExecuteAsync(
             """
             INSERT INTO headless.MessagingReceived
-                (Id, Version, Name, [Group], Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId, ExceptionInfo)
+                (Id, Version, Name, ConsumerIdentity, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId, ExceptionInfo)
             VALUES
                 (@Id, 'v1', 'poison-received', 'poison-group', 'not-json', 0, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL);
             """,
@@ -2041,7 +2044,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         return connection.ExecuteAsync(
             """
             INSERT INTO headless.MessagingReceived
-                (Id, Version, Name, [Group], Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId, ExceptionInfo)
+                (Id, Version, Name, ConsumerIdentity, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LockedUntil, Owner, StatusName, MessageId, ExceptionInfo)
             VALUES
                 (@Id, 'v1', 'healthy-received', 'healthy-group', @Content, @IntentType, 0, @Now, NULL, @NextRetryAt, NULL, NULL, 'Failed', @MessageId, NULL);
             """,
@@ -2065,7 +2068,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     {
         var messages = published
             ? await storage.GetPublishedMessagesOfNeedRetryAsync(lane, AbortToken)
-            : await storage.GetReceivedMessagesOfNeedRetryAsync(lane, AbortToken);
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(lane, null, AbortToken);
         return messages.ToList();
     }
 

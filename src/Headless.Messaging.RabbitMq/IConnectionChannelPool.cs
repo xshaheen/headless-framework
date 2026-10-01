@@ -33,6 +33,19 @@ internal interface IConnectionChannelPool
     Task<IConnection> GetConnectionAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Opens a new AMQP connection that the caller owns and disposes, with the client library's automatic recovery
+    /// turned off.
+    /// </summary>
+    /// <remarks>
+    /// An every-instance consumer holds its exclusive queue on a connection of its own: the broker deletes the queue
+    /// when that connection closes, and a lost connection stays lost so the messaging core rebuilds the consumer and
+    /// raises its re-established signal. Automatic topology recovery would instead re-declare the server-named queue
+    /// under a new name without telling anyone.
+    /// </remarks>
+    /// <param name="cancellationToken">Token to cancel connection setup.</param>
+    Task<IConnection> CreateNonRecoveringConnectionAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Rents an AMQP channel from the pool, blocking until a slot is available.
     /// The caller must return the channel via <see cref="Return"/> when done.
     /// </summary>
@@ -65,6 +78,7 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
 
     private readonly Func<CancellationToken, Task<IConnection>> _connectionActivator;
+    private readonly Func<CancellationToken, Task<IConnection>> _nonRecoveringConnectionActivator;
     private readonly bool _isPublishConfirms;
     private readonly ILogger<ConnectionChannelPool> _logger;
     private readonly ConcurrentQueue<IChannel> _pool;
@@ -96,7 +110,8 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
         var messagingOptions = messagingAccessorOptionsAccessor.Value;
         var options = optionsAccessor.Value;
 
-        _connectionActivator = connectionActivator ?? _CreateConnection(options);
+        _connectionActivator = connectionActivator ?? _CreateConnection(options, automaticRecovery: true);
+        _nonRecoveringConnectionActivator = connectionActivator ?? _CreateConnection(options, automaticRecovery: false);
         _isPublishConfirms = options.PublishConfirms;
 
         HostAddress = string.Create(CultureInfo.InvariantCulture, $"{options.HostName}:{options.Port}");
@@ -180,6 +195,11 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
         }
     }
 
+    public Task<IConnection> CreateNonRecoveringConnectionAsync(CancellationToken cancellationToken = default)
+    {
+        return _nonRecoveringConnectionActivator(cancellationToken);
+    }
+
     public void Dispose()
     {
         _maxSize = 0;
@@ -212,7 +232,10 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
         _connectionLock.Dispose();
     }
 
-    private static Func<CancellationToken, Task<IConnection>> _CreateConnection(RabbitMqMessagingOptions options)
+    private static Func<CancellationToken, Task<IConnection>> _CreateConnection(
+        RabbitMqMessagingOptions options,
+        bool automaticRecovery
+    )
     {
         var factory = new ConnectionFactory
         {
@@ -226,6 +249,7 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
         if (options.HostName.Contains(',', StringComparison.Ordinal))
         {
             options.ConnectionFactoryOptions?.Invoke(factory);
+            _ApplyRecovery(factory, automaticRecovery);
             var endpoints = AmqpTcpEndpoint.ParseMultiple(options.HostName);
             foreach (var endpoint in endpoints)
             {
@@ -236,7 +260,19 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
 
         factory.HostName = options.HostName;
         options.ConnectionFactoryOptions?.Invoke(factory);
+        _ApplyRecovery(factory, automaticRecovery);
         return cancellationToken => factory.CreateConnectionAsync(cancellationToken);
+    }
+
+    // Applied after ConnectionFactoryOptions: a caller's recovery settings hold for the shared connection, but a
+    // non-recovering connection must not recover whatever the callback set.
+    private static void _ApplyRecovery(ConnectionFactory factory, bool automaticRecovery)
+    {
+        if (!automaticRecovery)
+        {
+            factory.AutomaticRecoveryEnabled = false;
+            factory.TopologyRecoveryEnabled = false;
+        }
     }
 
     private async Task<IChannel> _CreateChannelAsync(CancellationToken cancellationToken)

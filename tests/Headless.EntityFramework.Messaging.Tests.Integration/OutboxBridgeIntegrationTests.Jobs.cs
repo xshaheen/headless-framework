@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using System.Reflection;
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;
@@ -166,11 +165,11 @@ public sealed partial class OutboxBridgeIntegrationTests
 
     private void _RegisterJobs(IServiceCollection services)
     {
-        _ = DeadlineRegistration.Descriptor;
         services.AddHeadlessCoordination(setup => setup.UsePostgreSql(fixture.ConnectionString));
         services.AddHeadlessJobs(options =>
         {
             options.DisableBackgroundServices();
+            options.AddModule<DeadlineModule>();
             options.UseEntityFramework(ef =>
                 ef.UseJobsDbContext<JobsDbContext>(db => db.UseNpgsql(fixture.ConnectionString))
             );
@@ -218,30 +217,7 @@ public sealed partial class OutboxBridgeIntegrationTests
         where TMessage : class
         where TConsumer : IConsume<TMessage>
     {
-        var method = typeof(IConsume<TMessage>).GetMethod(
-            nameof(IConsume<>.ConsumeAsync),
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            [typeof(ConsumeContext<TMessage>), typeof(CancellationToken)]
-        )!;
-        var descriptor = new ConsumerExecutorDescriptor
-        {
-            ServiceTypeInfo = typeof(TConsumer).GetTypeInfo(),
-            ImplTypeInfo = typeof(TConsumer).GetTypeInfo(),
-            MethodInfo = method,
-            MessageName = message.Headers[Headers.MessageName]!,
-            GroupName = "bridge-test",
-            Lane = MessageLane.Bus,
-            MessageContractVersion = message.Headers[Headers.ContractVersion]!,
-            Parameters = method
-                .GetParameters()
-                .Select(parameter => new ParameterDescriptor
-                {
-                    Name = parameter.Name!,
-                    ParameterType = parameter.ParameterType,
-                    IsFromMessaging = parameter.ParameterType == typeof(CancellationToken),
-                })
-                .ToArray(),
-        };
+        var descriptor = _GetDescriptor<TConsumer>(provider);
         var medium = new MediumMessage
         {
             StorageId = Guid.NewGuid(),
@@ -254,12 +230,12 @@ public sealed partial class OutboxBridgeIntegrationTests
             .InvokeAsync(new ConsumerContext(descriptor, medium), AbortToken);
     }
 
-    private sealed class DeadlineReceipt
+    internal sealed class DeadlineReceipt
     {
         public required string Id { get; init; }
     }
 
-    private sealed class DeadlineEvidence
+    internal sealed class DeadlineEvidence
     {
         public bool FailAfterWrite { get; set; }
         public DateTimeOffset Due { get; } = new(2026, 10, 1, 0, 0, 0, TimeSpan.Zero);
@@ -268,7 +244,8 @@ public sealed partial class OutboxBridgeIntegrationTests
 
     private sealed class DeadlineWriteFailureException : Exception;
 
-    private sealed class DeadlineConsumer(
+    [BusConsumer("tests.bridge.deadline")]
+    internal sealed class DeadlineConsumer(
         BridgeTestDbContext db,
         IUnitOfWorkFactory unitOfWorkFactory,
         DeadlineEvidence evidence
@@ -286,9 +263,8 @@ public sealed partial class OutboxBridgeIntegrationTests
                         await db.SaveChangesAsync(token);
                     }
                     evidence.Results.Add(
-                        await unitOfWork.Jobs.ScheduleKeyedAsync(
+                        await unitOfWork.Jobs.ScheduleKeyedAsync<DeadlineJob>(
                             new JobKey(context.MessageId),
-                            DeadlineRegistration.Descriptor,
                             evidence.Due,
                             new JobOptions
                             {
@@ -309,6 +285,12 @@ public sealed partial class OutboxBridgeIntegrationTests
         }
     }
 
+    private sealed class DeadlineJob : Headless.Jobs.Base.IJob
+    {
+        public ValueTask ExecuteAsync(Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+    }
+
     private static class DeadlineRegistration
     {
         public static readonly JobFunctionDescriptor Descriptor = new(
@@ -319,25 +301,31 @@ public sealed partial class OutboxBridgeIntegrationTests
             1,
             "4"
         );
+    }
 
-        static DeadlineRegistration()
+    private sealed class DeadlineModule : IJobsModule
+    {
+        private DeadlineModule() { }
+
+        static void IJobsModule.Register(JobsCatalogBuilder catalog)
         {
-            JobFunctionProvider.RegisterFunctions(
+            catalog.AddFunctions(
                 new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
                 {
-                    [Descriptor.FunctionName] = new()
+                    [DeadlineRegistration.Descriptor.FunctionName] = new()
                     {
                         CronExpression = string.Empty,
                         Priority = JobPriority.Normal,
                         MaxConcurrency = 1,
                         Delegate = static (_, _, _) => Task.CompletedTask,
+                        JobType = typeof(DeadlineJob),
                     },
                 }
             );
-            JobFunctionProvider.RegisterDescriptors(
+            catalog.AddDescriptors(
                 new Dictionary<string, JobFunctionDescriptor>(StringComparer.Ordinal)
                 {
-                    [Descriptor.FunctionName] = Descriptor,
+                    [DeadlineRegistration.Descriptor.FunctionName] = DeadlineRegistration.Descriptor,
                 }
             );
         }

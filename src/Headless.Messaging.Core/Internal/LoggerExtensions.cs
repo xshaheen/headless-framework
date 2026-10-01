@@ -35,9 +35,9 @@ internal static partial class LoggerExtensions
         EventId = 4,
         EventName = "ConsumerDuplicates",
         Level = LogLevel.Warning,
-        Message = "We detected that you have duplicate subscribers ({Subscriber}) in same group ({Group}), this will cause diversity behavior."
+        Message = "We detected that you have duplicate subscribers ({Subscriber}) in the same subscription ({Subscription}), this will cause diversity behavior."
     )]
-    public static partial void ConsumerDuplicates(this ILogger logger, string subscriber, string? group);
+    public static partial void ConsumerDuplicates(this ILogger logger, string subscriber, string? subscription);
 
     [LoggerMessage(
         EventId = 5,
@@ -80,26 +80,26 @@ internal static partial class LoggerExtensions
         EventId = 9,
         EventName = "ConsumerExecuting",
         Level = LogLevel.Information,
-        Message = "Executing subscriber method '{ClassName}.{MethodName}' on group '{Group}'"
+        Message = "Executing subscriber method '{ClassName}.{MethodName}' on consumer '{Consumer}'"
     )]
     public static partial void ConsumerExecuting(
         this ILogger logger,
         string className,
         string methodName,
-        string? group
+        string? consumer
     );
 
     [LoggerMessage(
         EventId = 10,
         EventName = "ConsumerExecuted",
         Level = LogLevel.Information,
-        Message = "Executed subscriber method '{ClassName}.{MethodName}' on group '{Group}' with instance '{Instance}' in {Milliseconds}ms"
+        Message = "Executed subscriber method '{ClassName}.{MethodName}' on consumer '{Consumer}' with instance '{Instance}' in {Milliseconds}ms"
     )]
     public static partial void ConsumerExecuted(
         this ILogger logger,
         string className,
         string methodName,
-        string group,
+        string consumer,
         double milliseconds,
         string? instance
     );
@@ -315,39 +315,43 @@ internal static partial class LoggerExtensions
     [LoggerMessage(
         EventId = 38,
         Level = LogLevel.Warning,
-        Message = "Circuit breaker opened for group '{GroupName}'. Pausing consumers."
+        Message = "Circuit breaker opened; pausing the consumer clients of subscription '{Subscription}'."
     )]
-    public static partial void CircuitBreakerOpenedPausingConsumers(this ILogger logger, string groupName);
+    public static partial void CircuitBreakerOpenedPausingConsumers(this ILogger logger, string subscription);
 
     [LoggerMessage(
         EventId = 39,
         Level = LogLevel.Error,
-        Message = "Failed to pause consumer client for group '{GroupName}'."
+        Message = "Failed to pause consumer client for subscription '{Subscription}'."
     )]
-    public static partial void PauseConsumerClientFailed(this ILogger logger, Exception exception, string groupName);
+    public static partial void PauseConsumerClientFailed(this ILogger logger, Exception exception, string subscription);
 
     [LoggerMessage(
         EventId = 40,
         Level = LogLevel.Debug,
-        Message = "Resuming consumers for group '{GroupName}' (half-open)."
+        Message = "Resuming the consumer clients of subscription '{Subscription}' (half-open)."
     )]
-    public static partial void ResumingConsumersHalfOpen(this ILogger logger, string groupName);
+    public static partial void ResumingConsumersHalfOpen(this ILogger logger, string subscription);
 
     [LoggerMessage(
         EventId = 41,
         Level = LogLevel.Error,
-        Message = "Failed to resume consumer client for group '{GroupName}'."
+        Message = "Failed to resume consumer client for subscription '{Subscription}'."
     )]
-    public static partial void ResumeConsumerClientFailed(this ILogger logger, Exception exception, string groupName);
+    public static partial void ResumeConsumerClientFailed(
+        this ILogger logger,
+        Exception exception,
+        string subscription
+    );
 
     [LoggerMessage(
         EventId = 4113,
         Level = LogLevel.Debug,
-        Message = "Skipping stale circuit intent for group '{GroupName}' (intent epoch {Epoch}, last applied {LastAppliedEpoch})."
+        Message = "Skipping stale circuit intent for subscription '{Subscription}' (intent epoch {Epoch}, last applied {LastAppliedEpoch})."
     )]
     public static partial void StaleCircuitIntentSkipped(
         this ILogger logger,
-        string groupName,
+        string subscription,
         long epoch,
         long lastAppliedEpoch
     );
@@ -355,16 +359,16 @@ internal static partial class LoggerExtensions
     [LoggerMessage(
         EventId = 4114,
         Level = LogLevel.Debug,
-        Message = "Delivery admitted while circuit was open during pause latency for group '{GroupName}'."
+        Message = "Delivery admitted while circuit was open during pause latency for consumer '{Consumer}'."
     )]
-    public static partial void DeliveryAdmittedDuringPauseLatency(this ILogger logger, string groupName);
+    public static partial void DeliveryAdmittedDuringPauseLatency(this ILogger logger, string consumer);
 
     [LoggerMessage(
         EventId = 4115,
         Level = LogLevel.Warning,
-        Message = "Delivery admitted while circuit was open after pause completed for group '{GroupName}'; transport is not paused."
+        Message = "Delivery admitted while circuit was open after pause completed for consumer '{Consumer}'; transport is not paused."
     )]
-    public static partial void DeliveryAdmittedWhileOpenAfterPause(this ILogger logger, string groupName);
+    public static partial void DeliveryAdmittedWhileOpenAfterPause(this ILogger logger, string consumer);
 
     [LoggerMessage(EventId = 42, Level = LogLevel.Warning, Message = "RabbitMQ consumer cancelled. --> {Reason}")]
     public static partial void RabbitMqConsumerCancelled(this ILogger logger, string reason);
@@ -427,9 +431,9 @@ internal static partial class LoggerExtensions
     [LoggerMessage(
         EventId = 56,
         Level = LogLevel.Error,
-        Message = "Message (Name:{GetName},Group:{GetGroup}) can not be found subscriber. Ensure the subscriber method is decorated with [Subscribe] and the consumer group matches."
+        Message = "Message (Name:{GetName},Consumer:{Consumer}) can not be found subscriber. Ensure a consumer with this identity is registered for the message."
     )]
-    public static partial void SubscriberNotFound(this ILogger logger, string? getName, string? getGroup);
+    public static partial void SubscriberNotFound(this ILogger logger, string? getName, string? consumer);
 
     [LoggerMessage(
         EventId = 57,
@@ -775,14 +779,14 @@ internal static partial class LoggerExtensions
         EventId = 99,
         EventName = "ReceiveMessageSkipped",
         Level = LogLevel.Information,
-        Message = "Receive middleware {MiddlewareType} skipped message {MessageId} (name '{MessageName}', group '{Group}', lane '{Lane}'). Reason: {Reason}"
+        Message = "Receive middleware {MiddlewareType} skipped message {MessageId} (name '{MessageName}', consumer '{Consumer}', lane '{Lane}'). Reason: {Reason}"
     )]
     public static partial void ReceiveMessageSkipped(
         this ILogger logger,
         string middlewareType,
         string messageId,
         string messageName,
-        string? group,
+        string? consumer,
         string lane,
         string? reason
     );
@@ -791,7 +795,7 @@ internal static partial class LoggerExtensions
         EventId = 100,
         EventName = "ReceiveMessageRejected",
         Level = LogLevel.Warning,
-        Message = "Receive middleware {MiddlewareType} rejected message {MessageId} (name '{MessageName}', group '{Group}', lane '{Lane}'). Reason: {Reason}"
+        Message = "Receive middleware {MiddlewareType} rejected message {MessageId} (name '{MessageName}', consumer '{Consumer}', lane '{Lane}'). Reason: {Reason}"
     )]
     public static partial void ReceiveMessageRejected(
         this ILogger logger,
@@ -799,7 +803,7 @@ internal static partial class LoggerExtensions
         string middlewareType,
         string messageId,
         string messageName,
-        string? group,
+        string? consumer,
         string lane,
         string? reason
     );
@@ -808,13 +812,13 @@ internal static partial class LoggerExtensions
         EventId = 101,
         EventName = "ReceiveOutcomeCancelled",
         Level = LogLevel.Debug,
-        Message = "Receive of message {MessageId} (name '{MessageName}', group '{Group}') was cancelled before settlement; the transport will redeliver."
+        Message = "Receive of message {MessageId} (name '{MessageName}', consumer '{Consumer}') was cancelled before settlement; the transport will redeliver."
     )]
     public static partial void ReceiveOutcomeCancelled(
         this ILogger logger,
         string messageId,
         string messageName,
-        string? group
+        string? consumer
     );
 
     [LoggerMessage(
@@ -831,6 +835,48 @@ internal static partial class LoggerExtensions
 
     [LoggerMessage(
         EventId = 103,
+        EventName = "EveryInstanceConsumerFailed",
+        Level = LogLevel.Error,
+        Message = "Every-instance consumer '{Consumer}' failed on message {MessageId} (name '{MessageName}'); the message is dropped because every-instance delivery has no retry."
+    )]
+    public static partial void EveryInstanceConsumerFailed(
+        this ILogger logger,
+        Exception exception,
+        string consumer,
+        string messageId,
+        string messageName
+    );
+
+    [LoggerMessage(
+        EventId = 104,
+        EventName = "EveryInstanceMessageDropped",
+        Level = LogLevel.Warning,
+        Message = "Every-instance subscription '{Subscription}' dropped message {MessageId} (name '{MessageName}') before its consumer ran: {Reason}"
+    )]
+    public static partial void EveryInstanceMessageDropped(
+        this ILogger logger,
+        Exception? exception,
+        string subscription,
+        string messageId,
+        string messageName,
+        string reason
+    );
+
+    [LoggerMessage(
+        EventId = 105,
+        EventName = "SubscriptionEstablishedHookFailed",
+        Level = LogLevel.Error,
+        Message = "The subscription-established hook of consumer '{Consumer}' failed (generation {Generation}); the subscription keeps receiving."
+    )]
+    public static partial void SubscriptionEstablishedHookFailed(
+        this ILogger logger,
+        Exception exception,
+        string consumer,
+        long generation
+    );
+
+    [LoggerMessage(
+        EventId = 106,
         EventName = "OutboxStorageInitFailed",
         Level = LogLevel.Error,
         Message = "Initializing additional outbox {OutboxName} failed. The host starts without it and retries in the background; its relay is paused until then."
@@ -838,7 +884,7 @@ internal static partial class LoggerExtensions
     public static partial void OutboxStorageInitFailed(this ILogger logger, Exception exception, string outboxName);
 
     [LoggerMessage(
-        EventId = 104,
+        EventId = 107,
         EventName = "OutboxStorageInitRetryFailed",
         Level = LogLevel.Warning,
         Message = "Initializing additional outbox {OutboxName} failed again. Retrying in {RetryDelay}."
@@ -851,10 +897,37 @@ internal static partial class LoggerExtensions
     );
 
     [LoggerMessage(
-        EventId = 105,
+        EventId = 108,
         EventName = "OutboxStorageInitialized",
         Level = LogLevel.Information,
         Message = "Additional outbox {OutboxName} is initialized; its relay resumes."
     )]
     public static partial void OutboxStorageInitialized(this ILogger logger, string outboxName);
+
+    [LoggerMessage(
+        EventId = 109,
+        EventName = "SubscriptionEstablishedHookTimedOut",
+        Level = LogLevel.Warning,
+        Message = "The subscription-established hook of consumer '{Consumer}' did not finish within {Timeout} (generation {Generation}); its token is canceled and the subscription keeps receiving without waiting for it."
+    )]
+    public static partial void SubscriptionEstablishedHookTimedOut(
+        this ILogger logger,
+        string consumer,
+        TimeSpan timeout,
+        long generation
+    );
+
+    [LoggerMessage(
+        EventId = 110,
+        EventName = "EveryInstanceDeliveryFaulted",
+        Level = LogLevel.Error,
+        Message = "Every-instance subscription '{Subscription}' faulted outside its consumer on message {MessageId} (name '{MessageName}'); the message is committed without retry."
+    )]
+    public static partial void EveryInstanceDeliveryFaulted(
+        this ILogger logger,
+        Exception exception,
+        string subscription,
+        string? messageId,
+        string? messageName
+    );
 }

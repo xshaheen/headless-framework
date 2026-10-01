@@ -48,21 +48,7 @@ builder.Services.AddHttpClient();
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.Bus.ForConsumersFromAssembly(
-        typeof(Program).Assembly,
-        (context, consumer) =>
-            consumer.ConsumerIdentity(
-                context.ConsumerType switch
-                {
-                    { Name: "OrderCreatedConsumer" } => "dashboard-jwt.orders",
-                    { Name: "OrderNotificationConsumer" } => "dashboard-jwt.notifications",
-                    { Name: "PaymentProcessedConsumer" } => "dashboard-jwt.payments",
-                    { Name: "UserRegisteredConsumer" } => "dashboard-jwt.users",
-                    { Name: "InventoryUpdatedConsumer" } => "dashboard-jwt.inventory",
-                    _ => throw new InvalidOperationException($"Missing durable identity for {context.ConsumerType}."),
-                }
-            )
-    );
+    setup.AddModule<Headless.Messaging.Dashboard.Jwt.Demo.MessagingModule>();
     setup.Options.RetryPolicy.MaxPersistedRetries = 0;
     setup.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions
     {

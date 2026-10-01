@@ -41,6 +41,37 @@ public sealed class CronRecoveryConfigurationTests : TestBase
         definition.MissedRunGraceSeconds.Should().Be(300);
     }
 
+    [Fact]
+    public async Task should_seed_the_declared_time_zone_and_reposition_the_definition_when_it_changes()
+    {
+        var provider = _Create();
+
+        await provider.MigrateDefinedCronJobsAsync([_ZonedSeed("Africa/Cairo")], AbortToken);
+        var created = (await provider.GetCronJobsAsync(predicate: null, AbortToken)).Single();
+
+        await provider.MigrateDefinedCronJobsAsync([_ZonedSeed("Africa/Cairo")], AbortToken);
+        var unchanged = (await provider.GetCronJobsAsync(predicate: null, AbortToken)).Single();
+
+        await provider.MigrateDefinedCronJobsAsync([_ZonedSeed("Europe/London")], AbortToken);
+        var moved = (await provider.GetCronJobsAsync(predicate: null, AbortToken)).Single();
+
+        created.TimeZoneId.Should().Be("Africa/Cairo");
+        unchanged.ScheduleRevision.Should().Be(created.ScheduleRevision, "an identical declaration changes nothing");
+        moved.TimeZoneId.Should().Be("Europe/London");
+        moved.ScheduleRevision.Should().Be(created.ScheduleRevision + 1, "a new zone is a new schedule");
+        moved.NextDueUtc.Should().Be(default, "the position derived under the old zone must be re-derived");
+    }
+
+    private static CronSeedDefinition _ZonedSeed(string timeZoneId) =>
+        new(
+            "billing.close-day",
+            "0 0 0 * * *",
+            MissedRunPolicy.Coalesce,
+            60,
+            CronOverlapPolicy.Allow,
+            TimeZoneId: timeZoneId
+        );
+
     /// <summary>
     /// AE16: a runtime override survives application restart and attribute reconciliation.
     /// </summary>
@@ -119,7 +150,7 @@ public sealed class CronRecoveryConfigurationTests : TestBase
     [Fact]
     public void the_attribute_reports_framework_defaults_when_left_unset()
     {
-        var attribute = new JobFunctionAttribute("f", "0 * * * * *");
+        var attribute = new JobAttribute("test.f") { Cron = "0 * * * * *" };
 
         attribute.OnMissedRun.Should().Be(MissedRunPolicy.Coalesce);
         attribute.MissedRunGraceSeconds.Should().Be(JobsRecoveryDefaults.MissedRunGraceSeconds);
@@ -128,8 +159,9 @@ public sealed class CronRecoveryConfigurationTests : TestBase
     [Fact]
     public void the_attribute_round_trips_explicit_values()
     {
-        var attribute = new JobFunctionAttribute("f", "0 * * * * *")
+        var attribute = new JobAttribute("test.f")
         {
+            Cron = "0 * * * * *",
             OnMissedRun = MissedRunPolicy.Skip,
             MissedRunGraceSeconds = 120,
         };

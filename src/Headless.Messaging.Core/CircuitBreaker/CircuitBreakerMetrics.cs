@@ -12,12 +12,12 @@ namespace Headless.Messaging.CircuitBreaker;
 internal sealed class CircuitBreakerMetrics
 {
     /// <summary>
-    /// Tag value used for unrecognized (not pre-registered) group names to prevent
+    /// Tag value used for unrecognized (not pre-registered) consumer names to prevent
     /// unbounded OTel cardinality from attacker-controlled input.
     /// </summary>
-    internal const string UnknownGroupTag = "_unknown";
+    internal const string UnknownConsumerTag = "_unknown";
 
-    private const string _GroupTagKey = "messaging.consumer.group";
+    private const string _ConsumerTagKey = "messaging.consumer.group.name";
 
     private readonly Counter<long> _circuitTrips;
     private readonly Histogram<double> _openDuration;
@@ -34,19 +34,19 @@ internal sealed class CircuitBreakerMetrics
 
         _circuitTrips = meter.CreateCounter<long>(
             "messaging.circuit_breaker.trips",
-            description: "Number of times a consumer group circuit breaker transitioned to Open"
+            description: "Number of times a consumer circuit breaker transitioned to Open"
         );
 
         _openDuration = meter.CreateHistogram<double>(
             "messaging.circuit_breaker.open_duration",
             unit: "s",
-            description: "Duration in seconds that a consumer group circuit was in Open state"
+            description: "Duration in seconds that a consumer circuit was in Open state"
         );
 
         meter.CreateObservableGauge(
             "messaging.circuit_breaker.state",
             observeValues: _ObserveCircuitStates,
-            description: "Current circuit state per group (0=Closed, 1=Open, 2=HalfOpen)"
+            description: "Current circuit state per consumer (0=Closed, 1=Open, 2=HalfOpen)"
         );
     }
 
@@ -59,42 +59,42 @@ internal sealed class CircuitBreakerMetrics
     }
 
     /// <summary>
-    /// Sets the known group names for cardinality guards. When set, unrecognized group names
-    /// are reported with the <see cref="UnknownGroupTag"/> tag value instead of the real name.
+    /// Sets the known consumer names for cardinality guards. When set, unrecognized consumer names
+    /// are reported with the <see cref="UnknownConsumerTag"/> tag value instead of the real name.
     /// </summary>
-    public void SetKnownGroups(IReadOnlySet<string> knownGroups)
+    public void SetKnownConsumers(IReadOnlySet<string> knownConsumers)
     {
-        var cache = new Dictionary<string, string>(knownGroups.Count, StringComparer.Ordinal);
+        var cache = new Dictionary<string, string>(knownConsumers.Count, StringComparer.Ordinal);
 
-        foreach (var group in knownGroups)
+        foreach (var consumer in knownConsumers)
         {
-            cache[group] = group;
+            cache[consumer] = consumer;
         }
 
         Volatile.Write(ref _safeTagCache, cache);
     }
 
     /// <summary>Records a circuit trip (Closed → Open or HalfOpen → Open).</summary>
-    public void RecordTrip(string groupName)
+    public void RecordTrip(string consumerKey)
     {
-        _circuitTrips.Add(1, new TagList { { _GroupTagKey, _SafeTag(groupName) } });
+        _circuitTrips.Add(1, new TagList { { _ConsumerTagKey, _SafeTag(consumerKey) } });
     }
 
     /// <summary>Records how long the circuit was open before transitioning to HalfOpen or Closed.</summary>
-    public void RecordOpenDuration(string groupName, TimeSpan duration)
+    public void RecordOpenDuration(string consumerKey, TimeSpan duration)
     {
-        _openDuration.Record(duration.TotalSeconds, new TagList { { _GroupTagKey, _SafeTag(groupName) } });
+        _openDuration.Record(duration.TotalSeconds, new TagList { { _ConsumerTagKey, _SafeTag(consumerKey) } });
     }
 
-    private string _SafeTag(string groupName)
+    private string _SafeTag(string consumerKey)
     {
         var cache = Volatile.Read(ref _safeTagCache);
         if (cache.Count == 0)
         {
-            return groupName;
+            return consumerKey;
         }
 
-        return cache.TryGetValue(groupName, out var safe) ? safe : UnknownGroupTag;
+        return cache.TryGetValue(consumerKey, out var safe) ? safe : UnknownConsumerTag;
     }
 
     private IEnumerable<Measurement<int>> _ObserveCircuitStates()
@@ -106,9 +106,9 @@ internal sealed class CircuitBreakerMetrics
             yield break;
         }
 
-        foreach (var (group, state) in snapshot)
+        foreach (var (consumer, state) in snapshot)
         {
-            yield return new Measurement<int>((int)state, new TagList { { _GroupTagKey, _SafeTag(group) } });
+            yield return new Measurement<int>((int)state, new TagList { { _ConsumerTagKey, _SafeTag(consumer) } });
         }
     }
 }

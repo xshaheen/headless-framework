@@ -194,6 +194,7 @@ public abstract class JobsClaimRetryConformanceTests<TFixture>(TFixture fixture)
         builder.Services.AddHeadlessJobs(options =>
         {
             options.DisableBackgroundServices();
+            options.AddModule<CoordinatedJobsModule>();
             options.UseEntityFramework(ef =>
             {
                 ef.UseJobsDbContext<JobsDbContext>(db =>

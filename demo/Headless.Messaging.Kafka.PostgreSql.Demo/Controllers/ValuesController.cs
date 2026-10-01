@@ -208,6 +208,7 @@ public class ValuesController(IQueue producer, IUnitOfWorkFactory unitOfWork) : 
 
 public record KafkaMessage(DateTime Value);
 
+[QueueConsumer("kafka-postgresql.message")]
 public sealed class KafkaMessageConsumer : IConsume<KafkaMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<KafkaMessage> context, CancellationToken cancellationToken)

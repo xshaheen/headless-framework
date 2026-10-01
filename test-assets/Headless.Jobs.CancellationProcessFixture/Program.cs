@@ -17,7 +17,7 @@ namespace Headless.Jobs.CancellationProcessFixture;
 internal static class Program
 {
     private const string _ConnectionEnvironmentVariable = "HEADLESS_JOBS_CANCELLATION_SMOKE_CONNECTION";
-    internal const string FunctionName = "CancellationProcessSmoke";
+    internal const string FunctionName = "tests.cancellation-process-smoke";
 
     public static async Task<int> Main(string[] args)
     {
@@ -97,10 +97,10 @@ internal static class Program
     }
 }
 
-internal static class CancellationProcessJobs
+[Job(Program.FunctionName)]
+internal sealed class CancellationProcessJob : IJob
 {
-    [JobFunction(Program.FunctionName)]
-    public static async Task WaitForCancellationAsync(JobFunctionContext context, CancellationToken cancellationToken)
+    public async ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken)
     {
         _ = context;
         await Console.Out.WriteLineAsync("USER_CODE").ConfigureAwait(false);

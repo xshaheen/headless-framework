@@ -3,6 +3,7 @@
 using Headless.Messaging;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Pulsar;
+using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -34,7 +35,7 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
         var factory = new PulsarConsumerClientFactory(_connectionFactory, _loggerFactory, _options);
 
         // when
-        var act = async () => await factory.CreateAsync("test-group", 1, MessageLane.Queue);
+        var act = async () => await factory.CreateAsync(new ConsumerClientRequest("test-group", 1, MessageLane.Queue));
 
         // then
         await act.Should().ThrowAsync<BrokerConnectionException>();
@@ -49,7 +50,7 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
         var factory = new PulsarConsumerClientFactory(_connectionFactory, _loggerFactory, _options);
 
         // when
-        var act = async () => await factory.CreateAsync("test-group", 1, MessageLane.Queue);
+        var act = async () => await factory.CreateAsync(new ConsumerClientRequest("test-group", 1, MessageLane.Queue));
 
         // then
         var exception = await act.Should().ThrowAsync<BrokerConnectionException>();
@@ -101,7 +102,7 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
         // when
         try
         {
-            await factory.CreateAsync("test-group", 1, MessageLane.Queue, AbortToken);
+            await factory.CreateAsync(new ConsumerClientRequest("test-group", 1, MessageLane.Queue), AbortToken);
         }
         catch (BrokerConnectionException)
         {
@@ -121,7 +122,8 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
             .Returns(Task.FromCanceled<Pulsar.Client.Api.PulsarClient>(cancellationToken));
         var factory = new PulsarConsumerClientFactory(_connectionFactory, _loggerFactory, _options);
 
-        var act = async () => await factory.CreateAsync("test-group", 1, MessageLane.Queue, cancellationToken);
+        var act = async () =>
+            await factory.CreateAsync(new ConsumerClientRequest("test-group", 1, MessageLane.Queue), cancellationToken);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         await _connectionFactory.Received(1).RentClientAsync(cancellationToken);

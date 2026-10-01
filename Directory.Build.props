@@ -1,10 +1,8 @@
 <Project>
   <PropertyGroup>
-    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
     <LangVersion>14.0</LangVersion>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
-    <RestoreLockedMode Condition="'$(CI)' == 'true' or '$(ContinuousIntegrationBuild)' == 'true'"
-      >true</RestoreLockedMode>
+    <EmitCompilerGeneratedFiles>false</EmitCompilerGeneratedFiles>
     <GenerateSBOM Condition="'$(GenerateSBOM)' == ''">true</GenerateSBOM>
   </PropertyGroup>
   <ItemGroup Label="Package References">

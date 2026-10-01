@@ -19,7 +19,7 @@ internal static class RedisMessage
         ];
     }
 
-    public static TransportMessage Create(StreamEntry streamEntry, string? groupId = null)
+    public static TransportMessage Create(StreamEntry streamEntry)
     {
         Dictionary<string, string?> headers;
         byte[]? body;
@@ -61,11 +61,6 @@ internal static class RedisMessage
         else
         {
             body = null;
-        }
-
-        if (!string.IsNullOrEmpty(groupId))
-        {
-            headers[Headers.Group] = groupId;
         }
 
         _ValidateRequiredHeaders(headers, entryId);

@@ -13,30 +13,6 @@ namespace Tests;
 public sealed class GeneratedSourceCompilationTests
 {
     [Fact]
-    public void should_compile_a_void_function_that_takes_a_typed_context()
-    {
-        var (diagnostics, generated) = _Generate(
-            "Demo",
-            """
-            using Headless.Jobs.Base;
-
-            namespace Demo;
-
-            public sealed record Payload(int Id);
-
-            public sealed class Jobs
-            {
-                [JobFunction("typed.void")]
-                public void Run(JobFunctionContext<Payload> context) { }
-            }
-            """
-        );
-
-        diagnostics.Should().NotContain(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        generated.Should().NotContain("return Task.CompletedTask;");
-    }
-
-    [Fact]
     public void should_compile_when_a_namespace_segment_matches_the_assembly_name_suffix()
     {
         // Generated code lives in `namespace Billing.Producer`, where an unqualified `Producer.X` binds to the
@@ -44,7 +20,7 @@ public sealed class GeneratedSourceCompilationTests
         var (diagnostics, _) = _Generate(
             "Billing.Producer",
             """
-            using System;
+            using System.Threading;
             using System.Threading.Tasks;
             using Headless.Jobs.Base;
 
@@ -54,13 +30,17 @@ public sealed class GeneratedSourceCompilationTests
 
             public sealed record Payload(int Id);
 
-            public sealed class Jobs(IClock clock)
+            [Job("producer.run")]
+            public sealed class RunJob(IClock clock) : IJob<Payload>
             {
-                [JobFunction("producer.run")]
-                public Task RunAsync(JobFunctionContext<Payload> context) => Task.CompletedTask;
+                public ValueTask ExecuteAsync(JobContext<Payload> context, CancellationToken cancellationToken) =>
+                    default;
+            }
 
-                [JobFunction("producer.static")]
-                public static void Static() { }
+            [Job("producer.plain")]
+            public sealed class PlainJob : IJob
+            {
+                public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
             }
             """
         );
@@ -69,11 +49,12 @@ public sealed class GeneratedSourceCompilationTests
     }
 
     [Fact]
-    public void should_compile_request_types_whose_simple_names_collide()
+    public void should_compile_argument_types_whose_simple_names_collide()
     {
         var (diagnostics, generated) = _Generate(
             "Demo",
             """
+            using System.Threading;
             using System.Threading.Tasks;
             using Headless.Jobs.Base;
 
@@ -81,10 +62,11 @@ public sealed class GeneratedSourceCompilationTests
             {
                 public sealed record Payload(int Id);
 
-                public sealed class BillingJobs
+                [Job("billing.run")]
+                public sealed class BillingJob : IJob<Payload>
                 {
-                    [JobFunction("billing.run")]
-                    public Task RunAsync(JobFunctionContext<Payload> context) => Task.CompletedTask;
+                    public ValueTask ExecuteAsync(JobContext<Payload> context, CancellationToken cancellationToken) =>
+                        default;
                 }
             }
 
@@ -92,22 +74,19 @@ public sealed class GeneratedSourceCompilationTests
             {
                 public sealed record Payload(int Id);
 
-                public sealed record Order(int Id);
-
-                public sealed class ShippingJobs
+                [Job("shipping.run")]
+                public sealed class ShippingJob : IJob<Payload>
                 {
-                    [JobFunction("shipping.run")]
-                    public Task RunAsync(JobFunctionContext<Payload> context) => Task.CompletedTask;
-
-                    [JobFunction("shipping.order")]
-                    public Task OrderAsync(JobFunctionContext<Order> context) => Task.CompletedTask;
+                    public ValueTask ExecuteAsync(JobContext<Payload> context, CancellationToken cancellationToken) =>
+                        default;
                 }
             }
             """
         );
 
         diagnostics.Should().NotContain(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        generated.Should().Contain("ToGenericContextWithRequest<global::Shipping.Order>");
+        generated.Should().Contain("JobsRequestProvider.GetRequestAsync<global::Shipping.Payload>");
+        generated.Should().Contain("JobsRequestProvider.GetRequestAsync<global::Billing.Payload>");
     }
 
     [Fact]
@@ -116,16 +95,19 @@ public sealed class GeneratedSourceCompilationTests
         var (diagnostics, generated) = _Generate(
             "Demo",
             """
+            using System.Threading;
+            using System.Threading.Tasks;
             using Headless.Jobs.Base;
 
             namespace Outer
             {
                 namespace Inner
                 {
-                    public sealed class Jobs
+                    [Job("nested.namespace")]
+                    public sealed class NestedNamespaceJob : IJob
                     {
-                        [JobFunction("nested.namespace")]
-                        public void Run() { }
+                        public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) =>
+                            default;
                     }
                 }
             }
@@ -133,11 +115,11 @@ public sealed class GeneratedSourceCompilationTests
         );
 
         diagnostics.Should().NotContain(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        generated.Should().Contain("new global::Outer.Inner.Jobs()");
+        generated.Should().Contain("ActivatorUtilities.CreateInstance<global::Outer.Inner.NestedNamespaceJob>");
     }
 
     [Fact]
-    public void should_construct_a_partial_class_once_from_the_constructor_in_any_part()
+    public void should_compile_a_partial_job_declared_across_files()
     {
         var (diagnostics, generated) = _Generate(
             "Demo",
@@ -151,26 +133,25 @@ public sealed class GeneratedSourceCompilationTests
 
                     public interface IClock;
 
-                    public sealed partial class Jobs
-                    {
-                        [JobFunction("partial.first")]
-                        public void First() { }
-                    }
+                    [Job("partial.run")]
+                    public sealed partial class PartialJob;
                     """
                 ),
                 (
                     "second.cs",
                     """
+                    using System.Threading;
+                    using System.Threading.Tasks;
                     using Headless.Jobs.Base;
 
                     namespace Demo;
 
-                    partial class Jobs
+                    partial class PartialJob : IJob
                     {
-                        public Jobs(IClock clock) { }
+                        public PartialJob(IClock clock) { }
 
-                        [JobFunction("partial.second")]
-                        public void Second() { }
+                        public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) =>
+                            default;
                     }
                     """
                 ),
@@ -178,17 +159,16 @@ public sealed class GeneratedSourceCompilationTests
         );
 
         diagnostics.Should().NotContain(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        diagnostics.Should().NotContain(diagnostic => string.Equals(diagnostic.Id, "HF001", StringComparison.Ordinal));
-        generated.Split("private static global::Demo.Jobs CreateDemoJobs(").Should().HaveCount(2);
-        generated.Should().Contain("serviceProvider.GetService<global::Demo.IClock>()");
+        generated.Split("private static async Task Invoke_Demo_PartialJob(").Should().HaveCount(2);
     }
 
     [Fact]
-    public void should_escape_function_names_and_configuration_cron_keys()
+    public void should_escape_identities_and_configuration_cron_keys()
     {
         var (diagnostics, _) = _Generate(
             "Demo",
             """
+            using System.Threading;
             using System.Threading.Tasks;
             using Headless.Jobs.Base;
 
@@ -196,10 +176,11 @@ public sealed class GeneratedSourceCompilationTests
 
             public sealed record Payload(int Id);
 
-            public sealed class Jobs
+            [Job("quote.\"and\\slash", Cron = "%Jobs:\"Quoted\"%", TimeZone = "Zone\"Quoted")]
+            public sealed class EscapedJob : IJob<Payload>
             {
-                [JobFunction("quote\"and\\slash", "%Jobs:\"Quoted\"%")]
-                public Task RunAsync(JobFunctionContext<Payload> context) => Task.CompletedTask;
+                public ValueTask ExecuteAsync(JobContext<Payload> context, CancellationToken cancellationToken) =>
+                    default;
             }
             """
         );
@@ -213,20 +194,22 @@ public sealed class GeneratedSourceCompilationTests
         var (diagnostics, _) = _Generate(
             "Demo",
             """
+            using System.Threading;
+            using System.Threading.Tasks;
             using Headless.Jobs.Base;
 
             namespace Demo;
 
-            sealed class ImplicitlyInternal
+            [Job("implicit.internal")]
+            sealed class ImplicitlyInternal : IJob
             {
-                [JobFunction("implicit.internal")]
-                public void Run() { }
+                public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
             }
 
-            file sealed class FileLocal
+            [Job("file.local")]
+            file sealed class FileLocal : IJob
             {
-                [JobFunction("file.local")]
-                public void Run() { }
+                public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
             }
             """
         );
@@ -238,6 +221,33 @@ public sealed class GeneratedSourceCompilationTests
             .Which.GetMessage(CultureInfo.InvariantCulture)
             .Should()
             .Contain("FileLocal");
+    }
+
+    [Fact]
+    public void should_compile_a_record_class_job_and_a_job_whose_namespace_declares_its_own_job_context()
+    {
+        // The generated file imports the assembly's namespace, so a user type named JobContext must not capture the
+        // invoker's parameter type.
+        var (diagnostics, _) = _Generate(
+            "Demo",
+            """
+            using System.Threading;
+            using System.Threading.Tasks;
+
+            namespace Demo;
+
+            public sealed class JobContext;
+
+            [Headless.Jobs.Base.Job("record.run")]
+            public sealed record RecordJob : Headless.Jobs.Base.IJob
+            {
+                public ValueTask ExecuteAsync(Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken) =>
+                    default;
+            }
+            """
+        );
+
+        diagnostics.Should().NotContain(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
     }
 
     private static (ImmutableArray<Diagnostic> Diagnostics, string Generated) _Generate(

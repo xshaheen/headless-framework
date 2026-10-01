@@ -3,6 +3,7 @@
 using Headless.Messaging;
 using Headless.Messaging.AzureServiceBus;
 using Headless.Messaging.Exceptions;
+using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -17,7 +18,7 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
     {
         var loggerFactory = Substitute.For<ILoggerFactory>();
         loggerFactory.CreateLogger(Arg.Any<string>()).Returns(Substitute.For<ILogger>());
-        var factory = new AzureServiceBusConsumerClientFactory(
+        await using var factory = new AzureServiceBusConsumerClientFactory(
             loggerFactory,
             Options.Create(
                 new AzureServiceBusMessagingOptions
@@ -31,7 +32,8 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var act = async () => await factory.CreateAsync("test-group", 1, MessageLane.Queue, cts.Token);
+        var act = async () =>
+            await factory.CreateAsync(new ConsumerClientRequest("test-group", 1, MessageLane.Queue), cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -55,10 +57,15 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
 
         // Real pool: the invalid options must fail through the actual client creation path.
         await using var pool = new AzureServiceBusClientPool(NullLogger<AzureServiceBusClientPool>.Instance, options);
-        var factory = new AzureServiceBusConsumerClientFactory(loggerFactory, options, serviceProvider, pool);
+        await using var factory = new AzureServiceBusConsumerClientFactory(
+            loggerFactory,
+            options,
+            serviceProvider,
+            pool
+        );
 
         // when
-        var act = async () => await factory.CreateAsync("test-group", 5, MessageLane.Queue);
+        var act = async () => await factory.CreateAsync(new ConsumerClientRequest("test-group", 5, MessageLane.Queue));
 
         // then
         await act.Should().ThrowAsync<BrokerConnectionException>();
@@ -82,10 +89,15 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
 
         // Real pool: the malformed connection string must fail through the actual client creation path.
         await using var pool = new AzureServiceBusClientPool(NullLogger<AzureServiceBusClientPool>.Instance, options);
-        var factory = new AzureServiceBusConsumerClientFactory(loggerFactory, options, serviceProvider, pool);
+        await using var factory = new AzureServiceBusConsumerClientFactory(
+            loggerFactory,
+            options,
+            serviceProvider,
+            pool
+        );
 
         // when
-        var act = async () => await factory.CreateAsync("test-group", 5, MessageLane.Queue);
+        var act = async () => await factory.CreateAsync(new ConsumerClientRequest("test-group", 5, MessageLane.Queue));
 
         // then
         await act.Should().ThrowAsync<BrokerConnectionException>();
@@ -105,13 +117,79 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
 
         // Real pool: the invalid connection string must fail through the actual client creation path.
         await using var pool = new AzureServiceBusClientPool(NullLogger<AzureServiceBusClientPool>.Instance, options);
-        var factory = new AzureServiceBusConsumerClientFactory(loggerFactory, options, serviceProvider, pool);
+        await using var factory = new AzureServiceBusConsumerClientFactory(
+            loggerFactory,
+            options,
+            serviceProvider,
+            pool
+        );
         var groupName = new string('a', 80);
 
         // when
-        var act = async () => await factory.CreateAsync(groupName, 5, MessageLane.Queue);
+        var act = async () => await factory.CreateAsync(new ConsumerClientRequest(groupName, 5, MessageLane.Queue));
 
         // then - reaches connection setup instead of rejecting the framework-local group name.
         await act.Should().ThrowAsync<BrokerConnectionException>();
+    }
+
+    [Fact]
+    public async Task should_accept_bus_consumer_identity_longer_than_subscription_limit()
+    {
+        // given
+        var loggerFactory = Substitute.For<ILoggerFactory>();
+        loggerFactory.CreateLogger(Arg.Any<string>()).Returns(Substitute.For<ILogger>());
+
+        var options = Options.Create(
+            new AzureServiceBusMessagingOptions { ConnectionString = "InvalidConnectionString" }
+        );
+        var serviceProvider = new ServiceCollection().BuildServiceProvider();
+
+        await using var pool = new AzureServiceBusClientPool(NullLogger<AzureServiceBusClientPool>.Instance, options);
+        await using var factory = new AzureServiceBusConsumerClientFactory(
+            loggerFactory,
+            options,
+            serviceProvider,
+            pool
+        );
+        var identity = "billing." + new string('a', 112);
+
+        // when
+        var act = async () => await factory.CreateAsync(new ConsumerClientRequest(identity, 5, MessageLane.Bus));
+
+        // then - the identity maps to a valid subscription name, so creation reaches connection setup.
+        await act.Should().ThrowAsync<BrokerConnectionException>();
+    }
+
+    [Fact]
+    public void should_keep_bus_consumer_identity_as_subscription_name_when_within_limits()
+    {
+        AzureServiceBusConsumerClientFactory
+            .BusSubscriptionName("billing.invoice-projection")
+            .Should()
+            .Be("billing.invoice-projection");
+    }
+
+    [Fact]
+    public void should_shorten_long_bus_consumer_identity_to_stable_valid_subscription_name()
+    {
+        var identity = "billing." + new string('a', 112);
+
+        var name = AzureServiceBusConsumerClientFactory.BusSubscriptionName(identity);
+
+        identity.Should().HaveLength(120);
+        name.Should().HaveLength(50);
+        name.Should().MatchRegex("^[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9]$");
+        name.Should().StartWith("billing.aaa");
+        AzureServiceBusConsumerClientFactory.BusSubscriptionName(identity).Should().Be(name);
+        var act = () => AzureServiceBusConsumerClient.CheckValidSubscriptionName(name);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void should_start_and_end_subscription_name_with_alphanumeric()
+    {
+        var name = AzureServiceBusConsumerClientFactory.BusSubscriptionName("_billing.invoice_");
+
+        name.Should().MatchRegex("^billing\\.invoice-[0-9a-f]{12}$");
     }
 }

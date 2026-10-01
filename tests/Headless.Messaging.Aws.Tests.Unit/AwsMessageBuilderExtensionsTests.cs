@@ -3,7 +3,6 @@
 using Headless.Messaging;
 using Headless.Messaging.Aws;
 using Headless.Messaging.Registration;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
@@ -12,11 +11,11 @@ public sealed class AwsMessageBuilderExtensionsTests
     [Fact]
     public void should_store_message_group_id_header_contribution()
     {
-        var builder = new BusMessageBuilder<TestMessage>(new ServiceCollection());
+        var builder = new MessageContractBuilder<TestMessage>("tests.aws.message", "v1");
 
-        builder.UseAws(aws => aws.MessageGroupId(static message => message.TenantId));
+        builder.OnBus(bus => bus.UseAws(aws => aws.MessageGroupId(static message => message.TenantId)));
         var contribution = (
-            (IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single()
+            (IProviderHeaderContributions)builder.Build().Bus.ProviderConfigs.Values.Single()
         ).HeaderContributions.Single();
 
         contribution.HeaderName.Should().Be(AwsMessagingHeaders.MessageGroupId);
@@ -26,10 +25,10 @@ public sealed class AwsMessageBuilderExtensionsTests
     [Fact]
     public void should_reject_message_group_id_longer_than_sqs_limit()
     {
-        var builder = new BusMessageBuilder<TestMessage>(new ServiceCollection());
-        builder.UseAws(aws => aws.MessageGroupId(static _ => new string('x', 129)));
+        var builder = new MessageContractBuilder<TestMessage>("tests.aws.message", "v1");
+        builder.OnBus(bus => bus.UseAws(aws => aws.MessageGroupId(static _ => new string('x', 129))));
         var contribution = (
-            (IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single()
+            (IProviderHeaderContributions)builder.Build().Bus.ProviderConfigs.Values.Single()
         ).HeaderContributions.Single();
 
         var act = () => contribution.Selector(new TestMessage("tenant-a"));

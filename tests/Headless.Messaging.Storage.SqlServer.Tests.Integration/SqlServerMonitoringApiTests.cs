@@ -708,10 +708,10 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
     )
     {
         var receivedColumns = string.Equals(tableName, "MessagingReceived", StringComparison.Ordinal)
-            ? ", [Group], ExceptionInfo"
+            ? ", ConsumerIdentity, ExceptionInfo"
             : string.Empty;
         var receivedValues = string.Equals(tableName, "MessagingReceived", StringComparison.Ordinal)
-            ? ", 'diagnostic-group', NULL"
+            ? ", 'diagnostic-consumer', NULL"
             : string.Empty;
         return connection.ExecuteAsync(
             $"""

@@ -20,6 +20,8 @@ internal sealed class AzureServiceBusProviderConformanceDriver(AzureServiceBusFi
 
     public override bool SupportsRoutingAffinity => true;
 
+    public override bool SupportsEveryInstance => true;
+
     public override void ConfigureRoutingAffinityTransport(
         Headless.Messaging.Configuration.MessagingSetupBuilder setup
     ) =>
@@ -92,7 +94,7 @@ internal sealed class AzureServiceBusProviderConformanceDriver(AzureServiceBusFi
     public override ValueTask<TransportConsumerConformanceSession> CreateRoutingAffinitySessionAsync(
         TransportConformanceEndpoint endpoint,
         CancellationToken cancellationToken
-    ) => fixture.CreateRoutingAffinitySessionAsync(endpoint.LogicalName, endpoint.SubscriberGroup, cancellationToken);
+    ) => fixture.CreateRoutingAffinitySessionAsync(endpoint.LogicalName, endpoint.SubscriptionName, cancellationToken);
 
     public override void AssertNativeRoutingAffinity(TransportConformanceDelivery delivery, string expectedKey) =>
         delivery.Message.Headers["conformance-native-session"].Should().Be(expectedKey);
@@ -114,9 +116,7 @@ internal sealed class AzureServiceBusProviderConformanceDriver(AzureServiceBusFi
             topicName = _topicName;
         }
         return await fixture.CreateConformanceSessionAsync(
-            endpoint.Lane,
-            endpoint.LogicalName,
-            endpoint.SubscriberGroup,
+            endpoint,
             topicName,
             ownsEntity: string.Equals(endpoint.Replica, "replica-1", StringComparison.Ordinal),
             cancellationToken

@@ -2,7 +2,6 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Reflection;
 using Headless.Abstractions;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
@@ -31,17 +30,12 @@ public sealed class MessagingLaneSplitTests : TestBase
     }
 
     [Fact]
-    public void should_stamp_bus_lane_when_for_message_on_bus()
+    public void should_stamp_bus_lane_when_consumer_is_declared_on_bus()
     {
         var services = new ServiceCollection();
 
-        services.AddHeadlessMessaging(setup =>
-            setup.Bus.ForMessage<TestMessage>(message =>
-                message
-                    .Contract("events.orders")
-                    .Consumer<TestBusConsumer>(consumer => consumer.StableContract("tests.lane-split.bus"))
-            )
-        );
+        services.ConfigureMessaging(messaging => messaging.Message<TestMessage>("events.orders"));
+        services.AddHeadlessMessaging(setup => setup.AddConsumer<TestBusConsumer>());
 
         var metadata = services.BuildServiceProvider().GetDrainedConsumerRegistry().GetAll().Single();
 
@@ -50,17 +44,12 @@ public sealed class MessagingLaneSplitTests : TestBase
     }
 
     [Fact]
-    public void should_stamp_queue_lane_when_for_message_on_queue()
+    public void should_stamp_queue_lane_when_consumer_is_declared_on_queue()
     {
         var services = new ServiceCollection();
 
-        services.AddHeadlessMessaging(setup =>
-            setup.Queue.ForMessage<TestMessage>(message =>
-                message
-                    .Contract("jobs.orders")
-                    .Consumer<TestQueueConsumer>(consumer => consumer.StableContract("tests.lane-split.queue"))
-            )
-        );
+        services.ConfigureMessaging(messaging => messaging.Message<TestMessage>("jobs.orders"));
+        services.AddHeadlessMessaging(setup => setup.AddConsumer<TestQueueConsumer>());
 
         var metadata = services.BuildServiceProvider().GetDrainedConsumerRegistry().GetAll().Single();
 
@@ -69,7 +58,7 @@ public sealed class MessagingLaneSplitTests : TestBase
     }
 
     [Fact]
-    public void should_allow_same_topic_group_across_different_lanes_when_consumer_registry()
+    public void should_allow_same_topic_subscription_across_different_lanes_when_consumer_registry()
     {
         var registry = new ConsumerRegistry();
 
@@ -78,7 +67,6 @@ public sealed class MessagingLaneSplitTests : TestBase
                 typeof(TestMessage),
                 typeof(TestBusConsumer),
                 "orders",
-                "workers",
                 1,
                 Lane: MessageLane.Bus,
                 ConsumerIdentity: "tests.lane-split.bus-registry",
@@ -90,7 +78,6 @@ public sealed class MessagingLaneSplitTests : TestBase
                 typeof(TestMessage),
                 typeof(TestQueueConsumer),
                 "orders",
-                "workers",
                 1,
                 Lane: MessageLane.Queue,
                 ConsumerIdentity: "tests.lane-split.queue-registry",
@@ -111,7 +98,6 @@ public sealed class MessagingLaneSplitTests : TestBase
                 typeof(TestMessage),
                 typeof(TestQueueConsumer),
                 "jobs.orders",
-                "workers",
                 1,
                 Lane: MessageLane.Queue,
                 ConsumerIdentity: "tests.lane-split.queue-bootstrap-failure",
@@ -157,7 +143,6 @@ public sealed class MessagingLaneSplitTests : TestBase
                 typeof(TestMessage),
                 typeof(TestBusConsumer),
                 "events.orders",
-                "workers",
                 1,
                 Lane: MessageLane.Bus,
                 ConsumerIdentity: "tests.lane-split.bus-bootstrap-failure",
@@ -166,8 +151,8 @@ public sealed class MessagingLaneSplitTests : TestBase
         );
 
         // Register only the high-level markers; no IBusTransport and no ITransport so the legacy
-        // adapter cannot kick in either. The bootstrapper must surface the per-lane friendly
-        // message naming ForMessage<...>.
+        // adapter cannot kick in either. The bootstrapper must surface a per-lane error naming the
+        // unsupported lane.
         services.AddSingleton(new MessagingMarkerService("Messaging"));
         services.AddSingleton(new MessageQueueMarkerService("TestTransport"));
         services.AddSingleton(new MessageStorageMarkerService("TestStorage"));
@@ -206,7 +191,6 @@ public sealed class MessagingLaneSplitTests : TestBase
                 typeof(TestMessage),
                 typeof(TestQueueConsumer),
                 "jobs.orders",
-                "workers",
                 1,
                 Lane: MessageLane.Queue,
                 ConsumerIdentity: "tests.lane-split.queue-bootstrap",
@@ -453,30 +437,22 @@ public sealed class MessagingLaneSplitTests : TestBase
     }
 
     [Fact]
-    public void should_treat_bus_and_queue_with_same_topic_group_as_distinct_when_descriptor_comparer()
+    public void should_treat_bus_and_queue_with_same_topic_subscription_as_distinct_when_descriptor_comparer()
     {
         var comparer = new ConsumerExecutorDescriptorComparer(NullLogger<ConsumerExecutorDescriptorComparer>.Instance);
-        var implTypeInfo = typeof(TestBusConsumer).GetTypeInfo();
-        var methodInfo = typeof(TestBusConsumer).GetMethod(
-            nameof(TestBusConsumer.ConsumeAsync),
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            [typeof(ConsumeContext<TestMessage>), typeof(CancellationToken)]
-        )!;
 
         var busDescriptor = new ConsumerExecutorDescriptor
         {
-            MethodInfo = methodInfo,
-            ImplTypeInfo = implTypeInfo,
+            ConsumerType = typeof(TestBusConsumer),
             MessageName = "orders.created",
-            GroupName = "workers",
+            SubscriptionName = "workers",
             Lane = MessageLane.Bus,
         };
         var queueDescriptor = new ConsumerExecutorDescriptor
         {
-            MethodInfo = methodInfo,
-            ImplTypeInfo = implTypeInfo,
+            ConsumerType = typeof(TestBusConsumer),
             MessageName = "orders.created",
-            GroupName = "workers",
+            SubscriptionName = "workers",
             Lane = MessageLane.Queue,
         };
 
@@ -485,30 +461,22 @@ public sealed class MessagingLaneSplitTests : TestBase
     }
 
     [Fact]
-    public void should_treat_same_topic_group_and_lane_as_equal_when_descriptor_comparer()
+    public void should_treat_same_topic_subscription_and_lane_as_equal_when_descriptor_comparer()
     {
         var comparer = new ConsumerExecutorDescriptorComparer(NullLogger<ConsumerExecutorDescriptorComparer>.Instance);
-        var implTypeInfo = typeof(TestBusConsumer).GetTypeInfo();
-        var methodInfo = typeof(TestBusConsumer).GetMethod(
-            nameof(TestBusConsumer.ConsumeAsync),
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            [typeof(ConsumeContext<TestMessage>), typeof(CancellationToken)]
-        )!;
 
         var first = new ConsumerExecutorDescriptor
         {
-            MethodInfo = methodInfo,
-            ImplTypeInfo = implTypeInfo,
+            ConsumerType = typeof(TestBusConsumer),
             MessageName = "orders.created",
-            GroupName = "workers",
+            SubscriptionName = "workers",
             Lane = MessageLane.Bus,
         };
         var second = new ConsumerExecutorDescriptor
         {
-            MethodInfo = methodInfo,
-            ImplTypeInfo = implTypeInfo,
+            ConsumerType = typeof(TestBusConsumer),
             MessageName = "orders.created",
-            GroupName = "workers",
+            SubscriptionName = "workers",
             Lane = MessageLane.Bus,
         };
 
@@ -518,6 +486,7 @@ public sealed class MessagingLaneSplitTests : TestBase
 
     private sealed record TestMessage;
 
+    [BusConsumer("tests.lane-split.bus")]
     private sealed class TestBusConsumer : IConsume<TestMessage>
     {
         public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
@@ -526,6 +495,7 @@ public sealed class MessagingLaneSplitTests : TestBase
         }
     }
 
+    [QueueConsumer("tests.lane-split.queue")]
     private sealed class TestQueueConsumer : IConsume<TestMessage>
     {
         public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)

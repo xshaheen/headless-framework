@@ -99,11 +99,10 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
 
     private static (IJobScheduler Facade, JobChain Chain) _ChainFacade(Sut sut)
     {
-        var registry = JobFunctionProvider.CreateHostRegistry(configuration: null);
-        var descriptor = registry.Descriptors[_FunctionName];
-        var builder = JobChain.Start(descriptor, DateTimeOffset.UtcNow.AddHours(1));
-        builder.Root.Then(descriptor);
-        builder.Root.Catch(descriptor);
+        var registry = _BuildRegistry();
+        var builder = JobChain.Start<RoutingJob>(DateTimeOffset.UtcNow.AddHours(1));
+        builder.Root.Then<RoutingJob>();
+        builder.Root.Catch<RoutingJob>();
         var facade = new JobScheduler<TimeJobEntity, CronJobEntity>(
             sut.Time,
             sut.Cron,
@@ -115,5 +114,11 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
             JobSchedulingPolicies.Empty
         );
         return (facade, builder.Build());
+    }
+
+    private sealed class RoutingJob : Headless.Jobs.Base.IJob
+    {
+        public ValueTask ExecuteAsync(Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
     }
 }

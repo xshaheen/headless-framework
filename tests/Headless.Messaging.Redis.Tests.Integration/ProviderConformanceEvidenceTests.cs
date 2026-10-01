@@ -29,7 +29,9 @@ public sealed class ProviderConformanceEvidenceTests(RedisMessagingFixture fixtu
             ),
             _Bind(
                 TransportConformanceScenario.BusRoundTrip,
-                nameof(RedisConsumerConformanceTests.should_deliver_one_bus_copy_per_group_while_replicas_compete)
+                nameof(
+                    RedisConsumerConformanceTests.should_deliver_one_bus_copy_per_consumer_identity_while_replicas_compete
+                )
             ),
             _Bind(
                 TransportConformanceScenario.HeaderRoundTrip,
@@ -52,12 +54,16 @@ public sealed class ProviderConformanceEvidenceTests(RedisMessagingFixture fixtu
                 nameof(RedisConsumerConformanceTests.should_shutdown_idle_consumer_within_bound)
             ),
             _Bind(
-                TransportConformanceScenario.BusSubscriberGroupFanOut,
-                nameof(RedisConsumerConformanceTests.should_deliver_one_bus_copy_per_group_while_replicas_compete)
+                TransportConformanceScenario.BusConsumerIdentityFanOut,
+                nameof(
+                    RedisConsumerConformanceTests.should_deliver_one_bus_copy_per_consumer_identity_while_replicas_compete
+                )
             ),
             _Bind(
                 TransportConformanceScenario.BusReplicaCompetition,
-                nameof(RedisConsumerConformanceTests.should_deliver_one_bus_copy_per_group_while_replicas_compete)
+                nameof(
+                    RedisConsumerConformanceTests.should_deliver_one_bus_copy_per_consumer_identity_while_replicas_compete
+                )
             ),
             _Bind(
                 TransportConformanceScenario.QueueOwnership,

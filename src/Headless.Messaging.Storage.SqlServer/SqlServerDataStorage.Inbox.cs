@@ -58,7 +58,6 @@ internal sealed partial class SqlServerDataStorage
 
     public async ValueTask<InboxAdmissionResult> AdmitReceivedMessageAsync(
         string name,
-        string group,
         string consumerIdentity,
         string contractVersion,
         MediumMessage message,
@@ -100,12 +99,12 @@ internal sealed partial class SqlServerDataStorage
             DECLARE @AdmissionNow datetimeoffset(7) = SYSUTCDATETIME();
 
             INSERT INTO {_receivedTable}(
-                [Id],[Version],[Name],[Group],[Content],[IntentType],[Retries],[InlineAttempts],
+                [Id],[Version],[Name],[Content],[IntentType],[Retries],[InlineAttempts],
                 [Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[Owner],[StatusName],[MessageId],[ExceptionInfo],
                 [TenantPresent],[TenantId],[ContractIdentity],[ContractVersion],[ConsumerIdentity],[Generation],
                 [GenerationIncarnationId],[LifecycleId],[AttemptId],[IsInboxOrphaned],[IsCurrentGeneration],[IsInboxRecord],[InboxKeyHash],[InboxRetentionSeconds]
             )
-            SELECT @Id,@Version,@Name,@Group,@Content,@IntentType,0,0,
+            SELECT @Id,@Version,@Name,@Content,@IntentType,0,0,
                 @AdmissionNow,NULL,DATEADD(nanosecond,@GraceNanoseconds,DATEADD(second,@GraceWholeSeconds,@AdmissionNow)),
                 NULL,NULL,@StatusName,@MessageId,NULL,@TenantPresent,@TenantId,@ContractIdentity,@ContractVersion,
                 @ConsumerIdentity,@Generation,@GenerationIncarnationId,@GenerationIncarnationId,NULL,0,1,1,@InboxKeyHash,@InboxRetentionSeconds
@@ -131,7 +130,6 @@ internal sealed partial class SqlServerDataStorage
             new SqlParameter("@Id", storageId),
             _VersionParameter(),
             new SqlParameter("@Name", SqlDbType.NVarChar, 200) { Value = name },
-            new SqlParameter("@Group", SqlDbType.NVarChar, 200) { Value = group ?? (object)DBNull.Value },
             new SqlParameter("@Content", SqlDbType.NVarChar, -1) { Value = content },
             new SqlParameter("@IntentType", SqlDbType.SmallInt) { Value = intentType },
             new SqlParameter("@GraceWholeSeconds", SqlDbType.Int) { Value = graceWholeSeconds },

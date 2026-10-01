@@ -11,4 +11,11 @@ namespace Headless.DistributedLocks;
 /// <param name="Resource">The resource name for which the lock/slot was released.</param>
 /// <param name="LeaseId">The lease identifier of the just-released holder.</param>
 [PublicAPI]
-public sealed record DistributedLockReleased(string Resource, string LeaseId);
+public sealed record DistributedLockReleased(string Resource, string LeaseId)
+{
+    /// <summary>
+    /// The wire name this message is published and consumed under, at contract version <c>1</c>. The lock providers
+    /// declare it, so the topic stays the same whatever naming conventions the host configures for its own messages.
+    /// </summary>
+    public const string MessageName = "headless.locks.released";
+}

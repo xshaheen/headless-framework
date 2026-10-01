@@ -101,95 +101,23 @@ public sealed class SetupTests : TestBase
             .Be("nats://localhost:4222");
     }
 
-    // Shard symmetry validation
-
     [Fact]
-    public void should_not_throw_when_sharded_producer_and_sharded_consumer()
+    public async Task should_declare_every_instance_support_on_the_transport_capability()
     {
-        // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddHeadlessMessaging(setup => setup.UseNats("nats://localhost:4222"));
+        await using var provider = services.BuildServiceProvider();
 
-        // when
-        var act = () =>
-            services.AddHeadlessMessaging(setup =>
-            {
-                setup.UseNats("nats://localhost:4222");
-                setup.Bus.ForMessage<ShardTestMessage>(message =>
-                    message
-                        .UseNats(nats => nats.SubjectShard(m => m.TenantId))
-                        .Consumer<ShardTestConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.nats.shard-consumer").UseNats(nats => nats.Sharded())
-                        )
-                );
-            });
-
-        // then
-        act.Should().NotThrow();
-    }
-
-    [Fact]
-    public void should_throw_with_clear_message_when_sharded_producer_has_unsharded_consumer()
-    {
-        // given
-        var services = new ServiceCollection();
-        services.AddLogging();
-
-        // when
-        var act = () =>
-            services.AddHeadlessMessaging(setup =>
-            {
-                setup.UseNats("nats://localhost:4222");
-                setup.Bus.ForMessage<ShardTestMessage>(message =>
-                    message
-                        .UseNats(nats => nats.SubjectShard(m => m.TenantId))
-                        .Consumer<ShardTestConsumer>(consumer => consumer.ConsumerIdentity("tests.nats.shard-consumer"))
-                );
-            });
-
-        // then
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("*ShardTestConsumer*")
-            .And.Message.Should()
-            .Contain("UseNats");
-    }
-
-    [Fact]
-    public void should_not_throw_when_message_has_no_subject_shard()
-    {
-        // given
-        var services = new ServiceCollection();
-        services.AddLogging();
-
-        // when
-        var act = () =>
-            services.AddHeadlessMessaging(setup =>
-            {
-                setup.UseNats("nats://localhost:4222");
-                setup.Bus.ForMessage<ShardTestMessage>(message =>
-                    message.Consumer<ShardTestConsumer>(consumer =>
-                        consumer.ConsumerIdentity("tests.nats.shard-consumer")
-                    )
-                );
-            });
-
-        // then
-        act.Should().NotThrow();
+        provider
+            .GetServices<MessagingProviderCapabilities>()
+            .Single(x => x.Role == MessagingProviderRole.Transport)
+            .SupportsEveryInstance.Should()
+            .BeTrue();
     }
 
     private static MessagingSetupBuilder _CreateSetup()
     {
         return new MessagingSetupBuilder(new ServiceCollection(), new MessagingOptions(), new ConsumerRegistry());
-    }
-
-    private sealed record ShardTestMessage(string TenantId);
-
-    private sealed class ShardTestConsumer : IConsume<ShardTestMessage>
-    {
-        public ValueTask ConsumeAsync(ConsumeContext<ShardTestMessage> context, CancellationToken cancellationToken)
-        {
-            return ValueTask.CompletedTask;
-        }
     }
 }

@@ -4,7 +4,9 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Exceptions;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Nats;
+using Headless.Messaging.Registration;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -160,12 +162,67 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void should_include_group_for_bus_intent_when_build_durable_name()
+    public void should_subscribe_every_instance_client_to_the_bus_subjects_of_its_message_names()
+    {
+        NatsConsumerClient
+            .BuildEveryInstanceSubjects(
+                ["payments.captured", "orders"],
+                names => new HashSet<string>(
+                    names.Where(x => string.Equals(x, "orders", StringComparison.Ordinal)),
+                    StringComparer.Ordinal
+                )
+            )
+            .Should()
+            .Equal("headless.bus.payments.captured", "headless.bus.orders", "headless.bus.orders.>");
+    }
+
+    [Fact]
+    public void should_drop_every_instance_subjects_a_sharded_wildcard_already_covers()
+    {
+        // given - a sharded "orders" subscribes "orders.>", which also matches every "orders.created" publish
+        NatsConsumerClient
+            .BuildEveryInstanceSubjects(["orders", "orders.created"], names => names.ToHashSet(StringComparer.Ordinal))
+            .Should()
+            .Equal("headless.bus.orders", "headless.bus.orders.>");
+    }
+
+    [Fact]
+    public void should_include_consumer_identity_for_bus_intent_when_build_durable_name()
     {
         NatsConsumerClient
             .BuildDurableName("payments", "orders.created", MessageLane.Bus)
             .Should()
-            .StartWith("bus-payments-orders_created_");
+            .StartWith("bus-payments-orders-created-");
+    }
+
+    [Fact]
+    public void should_build_valid_stable_durable_name_when_consumer_identity_contains_dots()
+    {
+        var name = NatsConsumerClient.BuildDurableName("billing.invoice-projection", "orders.created", MessageLane.Bus);
+
+        name.Should().StartWith("bus-billing-invoice-projection-orders-created-");
+        name.Should().HaveLength("bus-billing-invoice-projection-orders-created-".Length + 12);
+        name.IndexOfAny([' ', '.', '*', '>', '/', '\\']).Should().Be(-1);
+        NatsConsumerClient
+            .BuildDurableName("billing.invoice-projection", "orders.created", MessageLane.Bus)
+            .Should()
+            .Be(name);
+        NatsConsumerClient
+            .BuildDurableName("billing-invoice-projection", "orders.created", MessageLane.Bus)
+            .Should()
+            .NotBe(name, "a dotted and a dashed identity must not share one durable consumer");
+    }
+
+    [Fact]
+    public void should_bound_durable_name_to_nats_limit_when_identity_and_subject_are_long()
+    {
+        var identity = "billing." + new string('a', 190);
+        var subject = "orders." + new string('x', 60);
+
+        var name = NatsConsumerClient.BuildDurableName(identity, subject, MessageLane.Bus);
+
+        name.Should().HaveLength(255);
+        name.Should().StartWith("bus-billing-aaa");
     }
 
     [Fact]
@@ -1077,6 +1134,76 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_filter_on_the_shard_wildcard_when_the_host_contract_shards_the_subject()
+    {
+        // given: the host's own contract shards orders.created, and the consumer declares nothing about shards
+        var contract = new MessageContractBuilder<ShardedOrder>("orders.created", "v1");
+        contract.OnBus(bus => bus.UseNats(nats => nats.SubjectShard(static order => order.TenantId)));
+        var metadata = Substitute.For<IMessageMetadataRegistry>();
+        metadata
+            .GetAll()
+            .Returns([
+                new MessageMetadata(
+                    new MessageRouteKey(typeof(ShardedOrder), "orders.created", MessageLane.Bus),
+                    typeof(ShardedOrder),
+                    "v1",
+                    CorrelationSelector: null,
+                    contract.Build().Bus.ProviderConfigs
+                ),
+            ]);
+        await using var services = new ServiceCollection().AddSingleton(metadata).BuildServiceProvider();
+
+        var consumer = Substitute.For<INatsJSConsumer>();
+        consumer
+            .NextAsync(
+                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
+                Arg.Any<NatsJSNextOpts?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(async call =>
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, call.Arg<CancellationToken>());
+                return null;
+            });
+        var filters = new ConcurrentQueue<string>();
+
+        await using var client = new NatsConsumerClient(
+            "test-group",
+            1,
+            _options,
+            services,
+            (_, config, _) =>
+            {
+                filters.Enqueue(config.FilterSubject!);
+                return Task.FromResult(consumer);
+            }
+        );
+        await client.SubscribeAsync(["orders.created", "orders.updated"], AbortToken);
+
+        using var cts = new CancellationTokenSource();
+
+        // when
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
+        try
+        {
+            await _WaitUntilAsync(() => filters.Count >= 3, TimeSpan.FromSeconds(5));
+
+            // then: the sharded message is filtered on its exact subject and every shard beneath it
+            filters
+                .Should()
+                .BeEquivalentTo(
+                    "headless.bus.orders.created",
+                    "headless.bus.orders.created.>",
+                    "headless.bus.orders.updated"
+                );
+        }
+        finally
+        {
+            await _StopListeningAsync(listeningTask, cts);
+        }
+    }
+
+    [Fact]
     public void build_stream_subjects_and_build_consumer_subjects_agree_for_duplicate_sharded_names()
     {
         // A sharded message name appearing more than once (e.g. two consumers of the same type) must
@@ -1511,4 +1638,6 @@ public sealed class NatsConsumerClientTests : TestBase
             TaskScheduler.Default
         );
     }
+
+    private sealed record ShardedOrder(string TenantId);
 }

@@ -5,7 +5,7 @@ using Headless.Checks;
 namespace Headless.Messaging;
 
 /// <summary>
-/// Configures convention-based message name naming and default consumer settings for messaging.
+/// Configures convention-based message naming for messaging.
 /// </summary>
 [PublicAPI]
 public sealed class MessagingConventions
@@ -27,22 +27,6 @@ public sealed class MessagingConventions
     public string? MessageNameSuffix { get; set; }
 
     /// <summary>
-    /// Gets or sets the application id used when deriving default consumer groups.
-    /// </summary>
-    public string ApplicationId { get; set; } = _ResolveDefaultApplicationId();
-
-    /// <summary>
-    /// Gets or sets the messaging version used when deriving default consumer groups.
-    /// </summary>
-    public string Version { get; set; } = "v1";
-
-    /// <summary>
-    /// Gets or sets an optional explicit default consumer group name.
-    /// When set, it overrides convention-based group generation.
-    /// </summary>
-    public string? DefaultGroup { get; set; }
-
-    /// <summary>
     /// Configures kebab-case message name generation.
     /// </summary>
     public MessagingConventions UseKebabCaseMessageNames()
@@ -57,30 +41,6 @@ public sealed class MessagingConventions
     public MessagingConventions UseTypeNameMessageNames()
     {
         MessageNaming = MessageNamingConvention.TypeName;
-        return this;
-    }
-
-    /// <summary>
-    /// Sets the application id used for deterministic default group generation.
-    /// </summary>
-    /// <param name="applicationId">A non-whitespace identifier that scopes generated group names to this application.</param>
-    /// <returns>The same <see cref="MessagingConventions"/> instance for chaining.</returns>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="applicationId"/> is null or whitespace.</exception>
-    public MessagingConventions UseApplicationId(string applicationId)
-    {
-        ApplicationId = Argument.IsNotNullOrWhiteSpace(applicationId, "ApplicationId cannot be null or whitespace.");
-        return this;
-    }
-
-    /// <summary>
-    /// Sets the messaging version used for deterministic default group generation.
-    /// </summary>
-    /// <param name="version">A non-whitespace version label (e.g., <c>"v1"</c>, <c>"v2"</c>) appended to generated group names.</param>
-    /// <returns>The same <see cref="MessagingConventions"/> instance for chaining.</returns>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="version"/> is null or whitespace.</exception>
-    public MessagingConventions UseVersion(string version)
-    {
-        Version = Argument.IsNotNullOrWhiteSpace(version, "Version cannot be null or whitespace.");
         return this;
     }
 
@@ -107,17 +67,6 @@ public sealed class MessagingConventions
     }
 
     /// <summary>
-    /// Sets an explicit default consumer group name that overrides convention-based group generation.
-    /// </summary>
-    /// <param name="defaultGroup">The explicit group name, or <see langword="null"/> to restore convention-based generation.</param>
-    /// <returns>The same <see cref="MessagingConventions"/> instance for chaining.</returns>
-    public MessagingConventions WithDefaultGroup(string? defaultGroup)
-    {
-        DefaultGroup = defaultGroup;
-        return this;
-    }
-
-    /// <summary>
     /// Generates a message name for the specified message type based on the configured conventions.
     /// </summary>
     /// <param name="messageType">The message type to generate a message name for.</param>
@@ -133,48 +82,6 @@ public sealed class MessagingConventions
         };
 
         return $"{MessageNamePrefix}{baseName}{MessageNameSuffix}";
-    }
-
-    /// <summary>
-    /// Generates the default consumer group for the specified handler identity.
-    /// </summary>
-    /// <param name="handlerId">The deterministic handler identity string (e.g., from <see cref="GetDefaultHandlerId"/>).</param>
-    /// <returns>
-    /// The configured <see cref="DefaultGroup"/> when set; otherwise a dot-separated combination of the
-    /// normalized application id, handler id, and messaging version.
-    /// </returns>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="handlerId"/> is null or whitespace and no <see cref="DefaultGroup"/> is configured.</exception>
-    public string GetGroupName(string handlerId)
-    {
-        if (!string.IsNullOrWhiteSpace(DefaultGroup))
-        {
-            return DefaultGroup;
-        }
-
-        Argument.IsNotNullOrWhiteSpace(handlerId, "HandlerId cannot be null or whitespace.");
-
-        var normalizedAppId = NormalizeSegment(ApplicationId);
-        var normalizedHandlerId = NormalizeSegment(handlerId);
-        var normalizedVersion = NormalizeSegment(Version);
-
-        return $"{normalizedAppId}.{normalizedHandlerId}.{normalizedVersion}";
-    }
-
-    /// <summary>
-    /// Creates the deterministic default handler identity for a closed <see cref="IConsume{TMessage}"/> registration.
-    /// </summary>
-    /// <param name="consumerType">The concrete consumer type that implements <see cref="IConsume{TMessage}"/>.</param>
-    /// <param name="messageType">The message type that the consumer handles.</param>
-    /// <returns>A stable identity string in the form <c>{consumerFullName}|{messageFullName}</c>.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="consumerType"/> or <paramref name="messageType"/> is <see langword="null"/>.</exception>
-    public static string GetDefaultHandlerId(Type consumerType, Type messageType)
-    {
-        Argument.IsNotNull(consumerType);
-        Argument.IsNotNull(messageType);
-
-        var consumerName = consumerType.FullName ?? consumerType.Name;
-        var messageName = messageType.FullName ?? messageType.Name;
-        return $"{consumerName}|{messageName}";
     }
 
     /// <summary>
@@ -274,11 +181,6 @@ public sealed class MessagingConventions
         }
 
         return builder.ToString();
-    }
-
-    private static string _ResolveDefaultApplicationId()
-    {
-        return AppDomain.CurrentDomain.FriendlyName;
     }
 }
 

@@ -6,6 +6,7 @@ namespace Demo;
 /// Demo consumers — some intentionally fail to populate the dashboard with
 /// failed messages and exception stack traces.
 /// </summary>
+[BusConsumer("dashboard-jwt.orders")]
 public sealed class OrderCreatedConsumer(ILogger<OrderCreatedConsumer> logger) : IConsume<OrderCreated>
 {
     public async ValueTask ConsumeAsync(ConsumeContext<OrderCreated> context, CancellationToken cancellationToken)
@@ -23,6 +24,7 @@ public sealed class OrderCreatedConsumer(ILogger<OrderCreatedConsumer> logger) :
     }
 }
 
+[BusConsumer("dashboard-jwt.notifications")]
 public sealed class OrderNotificationConsumer(ILogger<OrderNotificationConsumer> logger) : IConsume<OrderCreated>
 {
     public async ValueTask ConsumeAsync(ConsumeContext<OrderCreated> context, CancellationToken cancellationToken)
@@ -51,6 +53,7 @@ public sealed class OrderNotificationConsumer(ILogger<OrderNotificationConsumer>
     }
 }
 
+[BusConsumer("dashboard-jwt.payments")]
 public sealed class PaymentProcessedConsumer(ILogger<PaymentProcessedConsumer> logger) : IConsume<PaymentProcessed>
 {
     public async ValueTask ConsumeAsync(ConsumeContext<PaymentProcessed> context, CancellationToken cancellationToken)
@@ -90,6 +93,7 @@ public sealed class PaymentProcessedConsumer(ILogger<PaymentProcessedConsumer> l
     }
 }
 
+[BusConsumer("dashboard-jwt.users")]
 public sealed class UserRegisteredConsumer(ILogger<UserRegisteredConsumer> logger) : IConsume<UserRegistered>
 {
     public async ValueTask ConsumeAsync(ConsumeContext<UserRegistered> context, CancellationToken cancellationToken)
@@ -107,6 +111,7 @@ public sealed class UserRegisteredConsumer(ILogger<UserRegisteredConsumer> logge
     }
 }
 
+[BusConsumer("dashboard-jwt.inventory")]
 public sealed class InventoryUpdatedConsumer(ILogger<InventoryUpdatedConsumer> logger) : IConsume<InventoryUpdated>
 {
     public async ValueTask ConsumeAsync(ConsumeContext<InventoryUpdated> context, CancellationToken cancellationToken)

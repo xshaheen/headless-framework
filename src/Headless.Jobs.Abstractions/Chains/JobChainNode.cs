@@ -7,12 +7,12 @@ namespace Headless.Jobs;
 
 /// <summary>
 /// An immutable node in a built <see cref="JobChain"/>. Each node is one step of the chain: it identifies its work
-/// either by an explicit generated <see cref="JobFunctionDescriptor"/> (a requestless step) or by a captured
-/// <see cref="Payload"/> and its <see cref="PayloadType"/> (resolved to a descriptor later, at enqueue). It also
+/// either by its <see cref="JobType"/> (a step without arguments) or by a captured <see cref="Payload"/> and its
+/// <see cref="PayloadType"/>; both resolve to the generated descriptor at enqueue. It also
 /// carries the per-step options and optional execution time, plus the on-success and on-failure continuation edges.
 /// </summary>
 /// <remarks>
-/// Exactly one identity is set: <see cref="Descriptor"/> is non-<see langword="null"/> for requestless steps, and
+/// Exactly one identity is set: <see cref="JobType"/> is non-<see langword="null"/> for steps without arguments, and
 /// <see cref="Payload"/>/<see cref="PayloadType"/> are non-<see langword="null"/> for payload steps. Nodes are
 /// produced by <see cref="JobChainBuilder.Build"/> and never mutate afterward.
 /// </remarks>
@@ -20,7 +20,7 @@ namespace Headless.Jobs;
 public sealed class JobChainNode
 {
     internal JobChainNode(
-        JobFunctionDescriptor? descriptor,
+        Type? jobType,
         object? payload,
         Type? payloadType,
         JobOptions? options,
@@ -29,7 +29,7 @@ public sealed class JobChainNode
         JobChainNode? onFailure
     )
     {
-        Descriptor = descriptor;
+        JobType = jobType;
         Payload = payload;
         PayloadType = payloadType;
         Options = options;
@@ -39,20 +39,19 @@ public sealed class JobChainNode
     }
 
     /// <summary>
-    /// The explicit generated descriptor for a requestless step, or <see langword="null"/> when this node is a payload
-    /// step whose descriptor is resolved at enqueue.
+    /// The <c>[Job]</c> class of a step without arguments, or <see langword="null"/> when this node is a payload step.
     /// </summary>
-    public JobFunctionDescriptor? Descriptor { get; }
+    public Type? JobType { get; }
 
     /// <summary>
-    /// The captured request payload for a payload step, or <see langword="null"/> when this node carries an explicit
-    /// <see cref="Descriptor"/>.
+    /// The captured request payload for a payload step, or <see langword="null"/> when this node carries a
+    /// <see cref="JobType"/>.
     /// </summary>
     public object? Payload { get; }
 
     /// <summary>
     /// The compile-time type of <see cref="Payload"/> used to resolve the generated descriptor at enqueue, or
-    /// <see langword="null"/> when this node carries an explicit <see cref="Descriptor"/>.
+    /// <see langword="null"/> when this node carries an explicit <see cref="JobType"/>.
     /// </summary>
     public Type? PayloadType { get; }
 

@@ -24,8 +24,15 @@ public sealed class ConsumerClientFactoryContractTests
         parameters
             .Select(parameter => parameter.ParameterType)
             .Should()
-            .Equal(typeof(string), typeof(byte), typeof(MessageLane), typeof(CancellationToken));
-        parameters[2].HasDefaultValue.Should().BeFalse("lane selection must never fall back to Bus");
+            .Equal(typeof(ConsumerClientRequest), typeof(CancellationToken));
+        typeof(ConsumerClientRequest)
+            .GetConstructors()
+            .Should()
+            .ContainSingle()
+            .Which.GetParameters()
+            .Single(parameter => parameter.ParameterType == typeof(MessageLane))
+            .HasDefaultValue.Should()
+            .BeFalse("lane selection must never fall back to Bus");
     }
 
     [Fact]

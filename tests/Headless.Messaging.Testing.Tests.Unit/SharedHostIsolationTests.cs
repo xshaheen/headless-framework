@@ -97,28 +97,14 @@ public sealed class SharedHarnessFixture : IAsyncLifetime
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
                 setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
-                setup.Bus.ForMessage<AlphaEvent>(message =>
-                    message
-                        .Contract("alpha-messageName")
-                        .Consumer<AlphaConsumer>(consumer => consumer.ConsumerIdentity("tests.messaging-testing.alpha"))
-                );
-                setup.Bus.ForMessage<BetaEvent>(message =>
-                    message
-                        .Contract("beta-messageName")
-                        .Consumer<BetaConsumer>(consumer => consumer.ConsumerIdentity("tests.messaging-testing.beta"))
-                );
-                setup.Bus.ForMessage<GammaEvent>(message =>
-                    message
-                        .Contract("gamma-messageName")
-                        .Consumer<GatedConsumer>(consumer => consumer.ConsumerIdentity("tests.messaging-testing.gamma"))
-                );
-                setup.Bus.ForMessage<DeltaEvent>(message =>
-                    message
-                        .Contract("delta-messageName")
-                        .Consumer<DeltaGatedConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.messaging-testing.delta")
-                        )
-                );
+            });
+            services.ConfigureMessaging(messaging =>
+            {
+                messaging.Message<AlphaEvent>("alpha-messageName");
+                messaging.Message<BetaEvent>("beta-messageName");
+                messaging.Message<GammaEvent>("gamma-messageName");
+                messaging.Message<DeltaEvent>("delta-messageName");
+                messaging.AddModule<SharedHostModule>();
             });
         });
     }

@@ -22,6 +22,7 @@
     <PackageReference Include="Headless.Messaging.Queue.Abstractions" Version="$(MessagingPackageVersion)" />
     <PackageReference Include="Headless.Messaging.RabbitMq" Version="$(MessagingPackageVersion)" />
     <PackageReference Include="Headless.Messaging.Redis" Version="$(MessagingPackageVersion)" />
+    <PackageReference Include="Headless.Messaging.SourceGenerator" Version="$(MessagingPackageVersion)" />
     <PackageReference Include="Headless.Messaging.Storage.InMemory" Version="$(MessagingPackageVersion)" />
     <PackageReference Include="Headless.Messaging.Storage.PostgreSql" Version="$(MessagingPackageVersion)" />
     <PackageReference

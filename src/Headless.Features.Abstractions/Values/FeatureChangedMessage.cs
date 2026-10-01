@@ -23,6 +23,13 @@ namespace Headless.Features.Values;
 public sealed record FeatureChangedMessage
 {
     /// <summary>
+    /// The wire name this message is published and consumed under, at contract version <c>1</c>.
+    /// <c>AddHeadlessFeatures</c> declares it, so the topic stays the same whatever naming conventions the host
+    /// configures for its own messages.
+    /// </summary>
+    public const string MessageName = "headless.features.changed";
+
+    /// <summary>
     /// Names of the features whose stored value changed. Never empty. A delete that clears a whole provider
     /// scope reports every name it removed rather than a wildcard, so a consumer can match on the names it
     /// holds without knowing the provider's contents.

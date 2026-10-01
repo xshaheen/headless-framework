@@ -4,7 +4,6 @@ using Confluent.Kafka;
 using Headless.Messaging;
 using Headless.Messaging.Kafka;
 using Headless.Messaging.Registration;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
@@ -13,11 +12,11 @@ public sealed class KafkaMessageBuilderExtensionsTests
     [Fact]
     public void should_store_partition_key_header_contribution()
     {
-        var builder = new QueueMessageBuilder<TestMessage>(new ServiceCollection());
+        var builder = new MessageContractBuilder<TestMessage>("tests.kafka.message", "v1");
 
-        builder.UseKafka(kafka => kafka.PartitionBy(static message => message.TenantId));
+        builder.OnQueue(queue => queue.UseKafka(kafka => kafka.PartitionBy(static message => message.TenantId)));
         var contribution = (
-            (IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single()
+            (IProviderHeaderContributions)builder.Build().Queue.ProviderConfigs.Values.Single()
         ).HeaderContributions.Single();
 
         contribution.HeaderName.Should().Be(KafkaMessagingHeaders.KafkaKey);
@@ -25,27 +24,18 @@ public sealed class KafkaMessageBuilderExtensionsTests
     }
 
     [Fact]
-    public void should_store_consumer_config_without_partition_surface()
+    public void should_store_consumer_config_when_tuning_a_declared_consumer()
     {
-        var builder = new QueueMessageBuilder<TestMessage>(new ServiceCollection());
+        var tuning = new ConsumerTuningBuilder("tests.kafka.tuned");
 
-        builder.Consumer<TestConsumer>(consumer =>
-            consumer
-                .ConsumerIdentity("tests.kafka.consumer-config")
-                .UseKafka(kafka => kafka.WithIsolationLevel(IsolationLevel.ReadCommitted))
-        );
-        var config = builder.Build().Consumers.Single().ProviderConfigs.Values.Single();
+        tuning.UseKafka(kafka => kafka.WithIsolationLevel(IsolationLevel.ReadCommitted));
 
-        config.Should().BeEquivalentTo(new KafkaConsumerConfig(IsolationLevel.ReadCommitted));
+        tuning
+            .Build()
+            .ProviderConfigs.Values.Single()
+            .Should()
+            .BeEquivalentTo(new KafkaConsumerConfig(IsolationLevel.ReadCommitted));
     }
 
     private sealed record TestMessage(string TenantId);
-
-    private sealed class TestConsumer : IConsume<TestMessage>
-    {
-        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
-        {
-            return ValueTask.CompletedTask;
-        }
-    }
 }

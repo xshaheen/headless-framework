@@ -22,6 +22,13 @@ namespace Headless.Permissions.Grants;
 public sealed record PermissionGrantChangedMessage
 {
     /// <summary>
+    /// The wire name this message is published and consumed under, at contract version <c>1</c>.
+    /// <c>AddHeadlessPermissions</c> declares it, so the topic stays the same whatever naming conventions the host
+    /// configures for its own messages.
+    /// </summary>
+    public const string MessageName = "headless.permissions.grant-changed";
+
+    /// <summary>
     /// Names of the permissions whose stored grant changed. Never empty. A delete that clears a whole provider
     /// scope reports every name it removed rather than a wildcard, so a consumer can match on the names it holds
     /// without knowing the provider's contents.

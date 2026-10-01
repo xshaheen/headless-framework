@@ -161,6 +161,68 @@ internal sealed class RedisStreamManager(
         // ReSharper disable once IteratorNeverReturns
     }
 
+    public async Task<StreamPosition[]> GetStreamTailPositionsAsync(
+        string[] streams,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await _ConnectAsync(cancellationToken).ConfigureAwait(false);
+
+        var database = _redis!.GetDatabase();
+        var positions = new StreamPosition[streams.Length];
+
+        for (var i = 0; i < streams.Length; i++)
+        {
+            // XREVRANGE COUNT 1 answers an absent stream with no entries instead of an error, unlike XINFO STREAM.
+            var newest = await database
+                .StreamRangeAsync(streams[i], count: 1, messageOrder: Order.Descending)
+                .WaitAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            // "0-0" reads an absent stream from its first entry, and every entry it gets is newer than this call.
+            positions[i] = new StreamPosition(streams[i], newest.Length > 0 ? newest[0].Id : StreamPosition.Beginning);
+        }
+
+        return positions;
+    }
+
+    public async IAsyncEnumerable<IEnumerable<RedisStreamMessages>> PollStreamsFromAsync(
+        StreamPosition[] startPositions,
+        TimeSpan pollDelay,
+        [EnumeratorCancellation] CancellationToken token
+    )
+    {
+        // StackExchange.Redis never sends blocking commands, which would stall its shared multiplexer, so XREAD
+        // polls at the same cadence as the consumer-group reads. Resuming from the last id read keeps a reconnect
+        // gap-free for as long as the stream retains the entries.
+        var positions = startPositions.ToArray();
+        var errorDelay = pollDelay;
+
+        while (true)
+        {
+            var (succeeded, result) = await _TryReadAsync(positions, token).ConfigureAwait(false);
+
+            yield return result;
+
+            if (!succeeded)
+            {
+                errorDelay = _NextBackoff(errorDelay);
+                await _timeProvider.Delay(errorDelay, token).ConfigureAwait(false);
+                continue;
+            }
+
+            errorDelay = pollDelay;
+
+            // A full batch means a backlog: read on at once instead of waiting a poll interval per batch.
+            if (!result.Any(stream => stream.Entries.Length >= _options.StreamEntriesCount))
+            {
+                await _timeProvider.Delay(pollDelay, token).ConfigureAwait(false);
+            }
+        }
+
+        // ReSharper disable once IteratorNeverReturns
+    }
+
     public async Task Ack(
         string stream,
         string consumerGroup,
@@ -253,6 +315,65 @@ internal sealed class RedisStreamManager(
         catch (Exception ex)
         {
             logger.LogReadConsumerGroupFailed(ex, consumerGroup);
+        }
+
+        return (Succeeded: false, Streams: []);
+    }
+
+    private async Task<(bool Succeeded, RedisStreamMessages[] Streams)> _TryReadAsync(
+        StreamPosition[] positions,
+        CancellationToken token
+    )
+    {
+        try
+        {
+            token.ThrowIfCancellationRequested();
+
+            await _ConnectAsync(token).ConfigureAwait(false);
+
+            var database = _redis!.GetDatabase();
+
+            // A multi-key XREAD must stay within one hash slot on a cluster.
+            var reads = positions
+                .Select((position, index) => (position, index))
+                .GroupBy(x => _redis.GetHashSlot(x.position.Key))
+                .Select(async group =>
+                {
+                    var members = group.ToArray();
+                    var read = await database
+                        .StreamReadAsync([.. members.Select(x => x.position)], _options.StreamEntriesCount)
+                        .ConfigureAwait(false);
+
+                    return (members, read);
+                });
+
+            var results = await Task.WhenAll(reads).ConfigureAwait(false);
+            List<RedisStreamMessages> streams = [];
+
+            foreach (var (members, read) in results)
+            {
+                foreach (var stream in read)
+                {
+                    if (stream.Entries.Length == 0)
+                    {
+                        continue;
+                    }
+
+                    var index = Array.Find(members, x => x.position.Key == stream.Key).index;
+                    positions[index] = new StreamPosition(stream.Key, stream.Entries[^1].Id);
+                    streams.Add(new RedisStreamMessages(stream.Key, stream.Entries));
+                }
+            }
+
+            return (Succeeded: true, Streams: [.. streams]);
+        }
+        catch (OperationCanceledException)
+        {
+            return (Succeeded: true, Streams: []);
+        }
+        catch (Exception ex)
+        {
+            logger.LogReadStreamsFailed(ex);
         }
 
         return (Succeeded: false, Streams: []);
@@ -365,6 +486,14 @@ internal static partial class RedisStreamManagerLog
         Exception exception,
         string consumerGroup
     );
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "ReadStreamsFailed",
+        Level = LogLevel.Error,
+        Message = "Redis error when trying to read streams without a consumer group"
+    )]
+    public static partial void LogReadStreamsFailed(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 2,

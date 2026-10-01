@@ -81,7 +81,11 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
         services.AddHeadlessMessaging(options =>
         {
             options.UseKafka("localhost:9092");
-            options.Bus.ForMessage<KafkaBusContract>(message => message.Contract("orders.changed"));
+        });
+        services.ConfigureMessaging(messaging =>
+        {
+            messaging.Message<KafkaBusContract>("orders.changed");
+            messaging.AddModule<KafkaBusConsumerModule>();
         });
         services.AddMessagingProviderCapabilities(
             MessagingProviderCapabilities.Storage(
@@ -102,7 +106,7 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
 
         await act.Should()
             .ThrowAsync<MessagingConfigurationException>()
-            .WithMessage("*Kafka*does not support Bus*Supported lanes: Queue*setup.Queue.ForMessage*");
+            .WithMessage("*Kafka*does not support Bus*Supported lanes: Queue*");
         storageResolveCalls.Should().Be(0);
     }
 
@@ -130,6 +134,23 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
     }
 
     private sealed record KafkaBusContract;
+
+    // A Bus consumer is what puts a message on the Bus lane, which Kafka does not have.
+    private sealed class KafkaBusConsumer : IConsume<KafkaBusContract>
+    {
+        public ValueTask ConsumeAsync(ConsumeContext<KafkaBusContract> context, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+    }
+
+    private sealed class KafkaBusConsumerModule : IMessagingModule
+    {
+        public static void Register(MessagingCatalogBuilder catalog) =>
+            catalog.AddBusConsumer<KafkaBusConsumer, KafkaBusContract>(
+                "tests.kafka.bus-consumer",
+                everyInstance: false,
+                static (_, _, _) => ValueTask.CompletedTask
+            );
+    }
 
     private sealed class FixedStorageTableNames : IStorageTableNames
     {

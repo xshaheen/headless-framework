@@ -12,8 +12,8 @@ public sealed partial class JobsLoggerMessageEventIdTests
     /// <summary>Every shipped Jobs assembly that can declare log messages.</summary>
     private static readonly Assembly[] _JobsAssemblies =
     [
-        typeof(JobFunctionAttribute).Assembly,
-        typeof(JobFunctionProvider).Assembly,
+        typeof(JobAttribute).Assembly,
+        typeof(JobsCatalogBuilder).Assembly,
         typeof(SetupJobsDashboard).Assembly,
         typeof(SetupJobsEntityFramework).Assembly,
         typeof(SetupPostgreSqlJobsEntityFramework).Assembly,

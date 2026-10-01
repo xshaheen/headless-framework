@@ -16,14 +16,12 @@ internal interface IMiddlewareDescriptorRegistry
 
     bool TryGetConsumeDescriptors(
         Type messageType,
-        string? groupName,
         MessageLane lane,
         out IReadOnlyList<MiddlewareDescriptor> descriptors
     );
 
     bool TryGetReceiveDescriptors(
         Type messageType,
-        string groupName,
         MessageLane lane,
         out IReadOnlyList<MiddlewareDescriptor> descriptors
     );
@@ -64,7 +62,6 @@ internal sealed class MiddlewareDescriptorRegistry : IMiddlewareDescriptorRegist
                 input.ServiceType,
                 input.ContextType,
                 input.MessageType,
-                input.GroupName,
                 input.Lane,
                 _nextOrder++
             );
@@ -118,7 +115,6 @@ internal sealed class MiddlewareDescriptorRegistry : IMiddlewareDescriptorRegist
 
     public bool TryGetConsumeDescriptors(
         Type messageType,
-        string? groupName,
         MessageLane lane,
         out IReadOnlyList<MiddlewareDescriptor> descriptors
     )
@@ -147,11 +143,7 @@ internal sealed class MiddlewareDescriptorRegistry : IMiddlewareDescriptorRegist
                 {
                     bus.Add(descriptor);
                 }
-                else if (
-                    descriptor.Scope == MiddlewareScope.Message
-                    && descriptor.MessageType == messageType
-                    && string.Equals(descriptor.GroupName, groupName, StringComparison.Ordinal)
-                )
+                else if (descriptor.Scope == MiddlewareScope.Message && descriptor.MessageType == messageType)
                 {
                     typed.Add(descriptor);
                 }
@@ -165,7 +157,6 @@ internal sealed class MiddlewareDescriptorRegistry : IMiddlewareDescriptorRegist
 
     public bool TryGetReceiveDescriptors(
         Type messageType,
-        string groupName,
         MessageLane lane,
         out IReadOnlyList<MiddlewareDescriptor> descriptors
     )
@@ -192,7 +183,6 @@ internal sealed class MiddlewareDescriptorRegistry : IMiddlewareDescriptorRegist
                     descriptor.Scope == MiddlewareScope.Message
                     && descriptor.Lane == lane
                     && descriptor.MessageType == messageType
-                    && string.Equals(descriptor.GroupName, groupName, StringComparison.Ordinal)
                 )
                 {
                     typed.Add(descriptor);
@@ -223,7 +213,6 @@ internal sealed class MiddlewareDescriptor(
     Type serviceType,
     Type contextType,
     Type? messageType,
-    string? groupName,
     MessageLane lane,
     long order
 )
@@ -239,8 +228,6 @@ internal sealed class MiddlewareDescriptor(
     public Type ContextType { get; } = contextType;
 
     public Type? MessageType { get; } = messageType;
-
-    public string? GroupName { get; } = groupName;
 
     public MessageLane Lane { get; } = lane;
 
@@ -261,8 +248,7 @@ internal sealed class MiddlewareDescriptor(
             && ServiceType == input.ServiceType
             && ContextType == input.ContextType
             && MessageType == input.MessageType
-            && Lane == input.Lane
-            && string.Equals(GroupName, input.GroupName, StringComparison.Ordinal);
+            && Lane == input.Lane;
     }
 }
 
@@ -273,7 +259,6 @@ internal readonly record struct MiddlewareDescriptorInput(
     Type ServiceType,
     Type ContextType,
     Type? MessageType,
-    string? GroupName,
     MessageLane Lane
 );
 

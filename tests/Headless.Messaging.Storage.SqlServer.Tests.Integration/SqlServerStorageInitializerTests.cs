@@ -94,7 +94,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
                 "Id",
                 "Version",
                 "Name",
-                "Group",
+                "ConsumerIdentity",
                 "Content",
                 "Retries",
                 "Added",

@@ -24,7 +24,7 @@ using Polly.Retry;
 
 builder.Services.AddHeadlessJobs(options =>
 {
-    // One generated module per assembly that declares [JobFunction] methods or Jobs middleware.
+    // One generated module per assembly that declares [Job] classes or Jobs middleware.
     options.AddModule<MyApp.JobsModule>();
     options.ConfigureScheduler(scheduler =>
     {
@@ -46,18 +46,21 @@ builder.Services.AddHeadlessJobs(options =>
 });
 ```
 
-Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpression: "0 * * * * *")]` for cron; expressions have six fields, seconds first) and add `Jobs.SourceGenerator`. The generator emits one `JobsModule` class per assembly, in the namespace named after the assembly (`MyApp.JobsModule` for assembly `MyApp`), and the host registers it with `AddModule`.
+Declare a job as a class that implements `IJob` (no arguments) or `IJob<TArgs>` and carries `[Job("owner.name")]` (add `Cron = "0 * * * * *"` for a recurring job; expressions have six fields, seconds first), then add `Jobs.SourceGenerator`. The generator emits one `JobsModule` class per assembly, in the namespace named after the assembly (`MyApp.JobsModule` for assembly `MyApp`), and the host registers it with `AddModule`.
 
 ## Agent Rules
 
 - Treat `(Function, ContractVersion, Request bytes)` as a durable executable contract. A schema change needs an explicit version; do not infer it from CLR names or trace IDs. Initialize storage using the [current contract mappings](../solutions/guides/jobs-versioned-contracts.md) before starting workers or writers.
 - Do NOT use Hangfire or Quartz — use `Headless.Jobs` for all background jobs in this framework.
-- The registration attribute is `[JobFunction]` (`JobFunctionAttribute` in `Headless.Jobs.Base`). The first positional argument is the function name; `cronExpression` is a named parameter. Add `Headless.Jobs.SourceGenerator` to the project for compile-time registration.
+- A job is a class, never a method: a top-level, non-abstract, non-generic `public` or `internal` class that implements exactly one of `IJob` or `IJob<TArgs>` (`Headless.Jobs.Base`) and carries `[Job("owner.name")]` (`JobAttribute`). The identity is durable and persisted with every run; its first segment names the owning module. `Cron`, `TimeZone`, `Priority`, `MaxConcurrency`, `ContractVersion`, `Policy`, `OnMissedRun`, `MissedRunGraceSeconds`, and `OnOverlap` are named properties. Add `Headless.Jobs.SourceGenerator` to the project for compile-time registration.
 - Call `AddHeadlessJobs()` on `IServiceCollection`. There is no `app.UseJobs()` call — the scheduler starts automatically through `IHostedService` registered by `AddHeadlessJobs`.
-- Add every generated module inside the `AddHeadlessJobs` callback with `options.AddModule<TAssembly.JobsModule>()`, including the host's own assembly. Nothing registers implicitly: an assembly whose module is not added contributes no functions or middleware, even when it is loaded. The first host's callback freezes the process-wide catalog; a later host in the same process may add the same modules again (a no-op) but cannot add one no earlier host added. Runtime services and Dashboard use an immutable configuration-resolved registry owned by each `IHost`.
+- Add every generated module with `options.AddModule<TAssembly.JobsModule>()`, including the host's own assembly. Nothing registers implicitly: an assembly whose module is not added contributes no functions or middleware, even when it is loaded. Each host builds its own catalog from the modules it adds and freezes it into an immutable registry when that registry is first resolved, so hosts in one process may add different modules. Runtime services and Dashboard read only that per-host registry.
+- A module that owns jobs contributes its generated module from its own `Add{Module}` entry point with `services.ConfigureJobs(jobs => jobs.AddModule<TAssembly.JobsModule>())` instead of calling `AddHeadlessJobs`. `JobsContributionBuilder` is not generic, so the module need not know the host's entity types. Contributions are recorded as descriptors and applied in the order they were added, whether they come before or after `AddHeadlessJobs`; contributing a module twice is harmless, and a host that never calls `AddHeadlessJobs` ignores them. Two modules that declare one job identity, one argument type, or one job class fail startup with an error that names both modules.
+- Tune a declared job's deployment settings by identity with `Tune("billing.close-day", job => job.Concurrency(2))`, on `JobsOptionsBuilder` or `JobsContributionBuilder`. `JobTuningBuilder` sets `Concurrency(int)`, `Priority(JobPriority)`, `Options(...)` (retry and node-death overrides for that job), and per-job `UseExecuteMiddleware<T>()` / `UseScheduleMiddleware<T>()` resolved from DI. Tuning never declares a job or changes its identity, argument type, or cron schedule. Configuration binds after every `Tune` call from `Headless:Jobs:Jobs:{identity}` (`Concurrency`, `Priority`). An unknown identity, an unknown setting, or an invalid value fails startup.
+- Split execution between hosts that share modules with `RunOnly("orders.*", "billing.close-day")` on `JobsOptionsBuilder`. An entry is an exact identity or an `owner.*` pattern matching the text before the first `.`; calls accumulate, and an entry that matches no registered job fails startup. Filtered-out jobs stay registered: the host still schedules them, seeds their cron definitions, and shows them in the Dashboard, but its claim, acquire, timed-out sweep, and next-occurrence queries never lease their rows, so a host without the filter runs them. An in-tree chain step runs with the root that claimed it.
 - Use `Jobs.EntityFramework` for durable persistence. Without it, jobs live in memory and are lost on restart.
 - Prefer `jobs.UsePostgreSql<AppDbContext>(coordination => coordination.ClusterName = "orders")` or the SQL Server sibling after registering the application context. These configure models, native claims, same-database cluster membership, and the EF Core unit-of-work provider that gives coordinated writes a transaction to enlist in. For advanced composition, configure `UsePostgreSqlClaims()` or `UseSqlServerClaims()` inside the existing `UseEntityFramework` builder. Configure only one. Omitting both deliberately keeps the portable EF optimistic-CAS claim path. The selected package also fixes the GUID ordering every EF Jobs row is keyed with — SQL Server comb, PostgreSQL UUIDv7 — so occurrence ids stay index-friendly on the paths that do not run through the native claim strategy.
-- The EF store creates a cron definition at runtime by reading the backend's **current statement** clock, and only PostgreSQL and SQL Server have one. On any other EF backend `ICronJobManager.AddAsync` / `AddBatchAsync` (coordinated or not) throws `NotSupportedException`; time jobs and the unseeded `IJobPersistenceProvider.InsertCronJobsAsync(jobs, ct)` overload still work. Seed cron definitions from `[JobFunction]` attributes or position rows yourself on such a backend.
+- The EF store creates a cron definition at runtime by reading the backend's **current statement** clock, and only PostgreSQL and SQL Server have one. On any other EF backend `ICronJobManager.AddAsync` / `AddBatchAsync` (coordinated or not) throws `NotSupportedException`; time jobs and the unseeded `IJobPersistenceProvider.InsertCronJobsAsync(jobs, ct)` overload still work. Seed cron definitions from `[Job(..., Cron = ...)]` attributes or position rows yourself on such a backend.
 - Custom `IJobPersistenceProvider` authors must not re-derive the coalesce-recovery decision. Snapshot `CronRecoveryPlanner.GetInspectionWindow(request)`, call `CronRecoveryPlanner.CreatePlan(...)`, and apply the returned `CronRecoveryPlan` with the store's own fenced writes. See [Applying a recovery pass](#applying-a-recovery-pass).
 - The application-context provider convenience methods register coordination themselves; do not register a second provider. For the advanced `UseEntityFramework` path, register `AddHeadlessCoordination(c => c.Use…(conn))` before `AddHeadlessJobs`. Without coordination, startup throws `InvalidOperationException` naming `AddHeadlessCoordination`.
 - On the durable path, node identity is `node@incarnation` (store-allocated by Coordination), not `Environment.MachineName`. `SchedulerOptionsBuilder.NodeId` is only a pre-registration display fallback — it is NOT the row owner on the durable path.
@@ -68,10 +71,10 @@ Mark job methods with `[JobFunction("name")]` (or `[JobFunction("name", cronExpr
 - Do NOT install a Jobs-specific cache package. Jobs cron-expression caching reuses the host's `ICache` (`Headless.Caching.InMemory`, `.Redis`, or `.Hybrid`). Without a registered `ICache`, cron expressions are read directly from the database.
 - Transactional deadlines: schedule, replace, or cancel the job through `unit.Jobs` on the unit whose commit must carry it. No option, function policy, or host default forces a function onto a unit; the receiver you call is the only statement of enlistment. Messaging delay is not a substitute. Keyed results through `unit.Jobs` are provisional until the outer commit.
 - Atomic enqueue: begin a unit of work on the application context (`await using var unit = await factory.BeginAsync(db, ct)`, or `factory.RunAsync(db, async (unit, ct) => { ...; await unit.Jobs.ScheduleAsync(request, dueAt, ct); }, cancellationToken: ct)` from `Headless.UnitOfWork.EntityFramework`) and schedule **through the unit** — `unit.Jobs`, `unit.TimeJobs<T>()`, `unit.CronJobs<T>()` (`Headless.Jobs.Abstractions`) — so domain writes and the job row commit as one transaction. The injected `IJobScheduler` and managers are autonomous singletons: they never enlist, whatever is open around them. `UsePostgreSql<TContext>` / `UseSqlServer<TContext>` wire the EF Core unit-of-work provider automatically; no separate registration call is needed. Cluster membership (`Headless.Coordination`) and transactional enlistment (the unit of work) remain different subsystems. The enlisted path throws on any failure; wrap in `try/catch`.
-- Use `[JobsConstructor]` (`JobsConstructorAttribute`) on the constructor the source generator should use when a class has multiple constructors.
-- Use `IJobScheduler` for routine immediate, delayed, and recurring scheduling. Typed overloads resolve generated metadata from `typeof(TArgs)`; requestless overloads require a generated `JobFunctionDescriptor` from the generated `AppJobs` catalog.
-- `JobOptions` / `RecurringJobOptions` support description, durable retry count/intervals, and node-death policy; recurring options additionally accept nullable IANA `TimeZoneId`. Execution time and cron expression are method arguments. Do not add priority to scheduling options; priority remains immutable `[JobFunction]` / descriptor metadata.
-- Author static conditional continuation trees with the typed `JobChain` model (it replaces the removed fluent chain builder): `JobChain.Start(payload | descriptor)`, extend node handles with `Then` (on-success) / `Catch` (on-failure), then `await scheduler.EnqueueAsync(chain.Build(), ct)`. Each node allows one `Then` and one `Catch`; chains are capped at `SchedulerOptionsBuilder.MaxChainDepth` nodes deep (default 10); `Catch` is on-failure sugar and never recovers the parent. The tree is written atomically either way: through `unit.Jobs` with the unit, through the injected scheduler in the store's own transaction. See [Typed Job Chains](#typed-job-chains).
+- A job class is built for every run from that run's DI scope with `ActivatorUtilities.CreateInstance`, so constructor parameters resolve like scoped services. When a class has several public constructors, mark the one to use with `[ActivatorUtilitiesConstructor]`.
+- Use `IJobScheduler` for routine immediate, delayed, and recurring scheduling. A job with arguments is addressed by its argument value: `EnqueueAsync(new CloseDayArgs(day), ct)`, because each argument type belongs to exactly one job. A job without arguments is addressed by its class: `EnqueueAsync<CloseDayJob>(ct)`, constrained to `IJob`. There is no descriptor-based overload.
+- `JobOptions` / `RecurringJobOptions` support description, durable retry count/intervals, and node-death policy; recurring options additionally accept nullable IANA `TimeZoneId`. Execution time and cron expression are method arguments. Do not add priority to scheduling options; priority comes from `[Job(Priority = ...)]`, and a host changes it with `Tune`.
+- Author static conditional continuation trees with the typed `JobChain` model (it replaces the removed fluent chain builder): `JobChain.Start(args)` or `JobChain.Start<TJob>()`, extend node handles with `Then` (on-success) / `Catch` (on-failure), then `await scheduler.EnqueueAsync(chain.Build(), ct)`. Each node allows one `Then` and one `Catch`; chains are capped at `SchedulerOptionsBuilder.MaxChainDepth` nodes deep (default 10); `Catch` is on-failure sugar and never recovers the parent. The tree is written atomically either way: through `unit.Jobs` with the unit, through the injected scheduler in the store's own transaction. See [Typed Job Chains](#typed-job-chains).
 - Import `Headless.Jobs` for ordinary scheduling callbacks with the singular `JobOptionsBuilder`; the plural generic `JobsOptionsBuilder<TTimeJob, TCronJob>` configures Core. Callbacks must finish synchronously. Builders support sequential reuse with copied retry arrays; `Build()` alone does not validate or accept work. Nullable setters restore inheritance, and an unset atomic assertion cannot weaken an inherited requirement. `WithIdempotencyKey` / `WithIdempotencyTtl` author the enqueue idempotency window per call; startup policy callbacks reject them — the window is never inherited from host or function policy.
 - For multi-tenant hosts, enable Jobs tenancy through the root tenancy seam: `AddHeadlessTenancy(t => t.Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue()))`. Time jobs then capture the ambient tenant at schedule time and restore it around every execution attempt. Pass `JobOptions.TenantId` to override capture, or `JobOptions.IsSystemJob = true` for a deliberate tenantless job. Cron is always system-scope — never give a cron definition a tenant; fan out explicit-tenant time jobs from application code. See [Tenant Propagation](#tenant-propagation).
 - `PauseCronAsync` / `ResumeCronAsync` control one durable cron definition by ID. Pause skips pending work but preserves `InProgress`; resume schedules one strictly-future occurrence and rebases the watermark to the resume instant, so the paused interval is never replayed as missed.
@@ -93,39 +96,45 @@ Jobs supports two first-class job types:
 
 Both types share `BaseJobEntity` (`Id`, `Function`, `Description`, `CreatedAt`, `UpdatedAt`) and expose `Retries`, `RetryIntervals`, and `OnNodeDeath` policy.
 
-### The `[JobFunction]` Attribute and Source Generator
+### Declaring a job
 
-The source generator (`Headless.Jobs.SourceGenerator`) scans for `JobFunctionAttribute` (`[JobFunction]`) on methods and generates:
-- A public `JobsModule` class (an `IJobsModule`) in the namespace named after the assembly. The host passes it to `AddModule<…JobsModule>()`, which registers the assembly's delegates, request types, descriptors, and middleware once per process.
-- A delegate-free `JobFunctionDescriptor` for every function, frozen by `JobFunctionProvider` into name and typed-request indexes.
-- Factory delegates for every job method.
-- Constructor injection code (using the primary constructor, otherwise the `[JobsConstructor]` constructor, otherwise the first public constructor).
-
-Attribute signatures (from `Headless.Jobs.Base.JobFunctionAttribute`):
+A job is a class that implements `IJob` or `IJob<TArgs>` and carries `[Job(identity)]`. `ExecuteAsync` receives a `JobContext` (or `JobContext<TArgs>`, whose `Request` holds the deserialized argument) and the cancellation token, and returns `ValueTask`.
 
 ```csharp
-public sealed class OrderJobs(IReportService reports, IOrderService orders)
-{
-    // Cron job: six fields, seconds first. Omit cronExpression for time/programmatic jobs.
-    [JobFunction("DailyReport", cronExpression: "0 0 0 * * *", taskPriority: JobPriority.High)]
-    public Task DailyReportAsync(CancellationToken ct) => reports.BuildDailyAsync(ct);
+using Headless.Jobs.Base;
+using Headless.Jobs.Enums;
 
-    // Time job or named function for programmatic enqueue
-    [JobFunction("ProcessOrder")]
-    public Task ProcessOrderAsync(JobFunctionContext<OrderRequest> context, CancellationToken ct) =>
-        orders.ProcessAsync(context.Request, ct);
+public sealed record ProcessOrderArgs(string OrderId);
+
+// Recurring job without arguments: six cron fields, seconds first.
+[Job("reports.daily", Cron = "0 0 0 * * *", Priority = JobPriority.High)]
+public sealed class DailyReportJob(IReportService reports) : IJob
+{
+    public async ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) =>
+        await reports.BuildDailyAsync(cancellationToken);
+}
+
+// Job with a typed argument, scheduled on demand.
+[Job("orders.process")]
+public sealed class ProcessOrderJob(IOrderService orders) : IJob<ProcessOrderArgs>
+{
+    public async ValueTask ExecuteAsync(JobContext<ProcessOrderArgs> context, CancellationToken cancellationToken) =>
+        await orders.ProcessAsync(context.Request.OrderId, cancellationToken);
 }
 ```
 
-A job method may take only `JobFunctionContext`, `JobFunctionContext<T>`, and `CancellationToken` (HF009). Services come from the declaring class's constructor.
+The source generator (`Headless.Jobs.SourceGenerator`) reads every `[Job]` class and emits:
+- A public `JobsModule` class (an `IJobsModule`) in the namespace named after the assembly. The host passes it to `AddModule<…JobsModule>()`, which registers the assembly's jobs, argument types, descriptors, and middleware into each host's catalog when that host's registry is built.
+- A delegate-free `JobFunctionDescriptor` for every job, frozen into each host's identity, argument-type, and job-type indexes.
+- One typed invoker per job that builds the class from the run's scope with `ActivatorUtilities.CreateInstance` and calls `ExecuteAsync` directly, without reflection.
 
-The first positional argument is the durable function identity. `IJobScheduler` obtains it from the generated descriptor, while low-level manager callers set the entity `Function` directly. Priority (`JobPriority.Normal` / `High` / `Low` / `LongRunning`) and max-concurrency are optional attribute parameters.
+The identity (`owner.name`, at most 200 characters) is the durable function name: `IJobScheduler` obtains it from the generated descriptor, while low-level manager callers set the entity `Function` directly. Priority (`JobPriority.Normal` / `High` / `Low` / `LongRunning`) and `MaxConcurrency` are the job's defaults; a host overrides them with `Tune`.
 
-Typed functions are indexed by both function name and exact request `Type`; requestless descriptors have `RequestType = null` and do not appear in the inverse type index. HF005 rejects duplicate function names and HF011 rejects duplicate typed request mappings in one compilation. Cross-assembly collisions fail `JobFunctionProvider.Build()` with a deterministic ordinal-sorted report rather than choosing the first registration. The public descriptor indexes are the configuration-independent canonical catalog; Core derives one configuration-resolved runtime registry per `IHost` after the options callback has added every module.
+Jobs with arguments are indexed by identity and by exact argument `Type`; jobs without arguments have `RequestType = null` and are indexed by their class. HF005 rejects a duplicate identity and HF011 a duplicate argument type in one compilation. Cross-assembly collisions fail the host's registry build with a deterministic ordinal-sorted report that names both modules, rather than choosing the first registration. Core builds one configuration-resolved runtime registry per `IHost` from the modules that host added.
 
 ### Typed Job Chains
 
-A **job chain** composes one root time job with conditional continuation steps into a single tree that the scheduler persists and executes atomically. Author it with the typed `JobChain` model (`Headless.Jobs.Abstractions`); it never names a handler contract — every step's identity is a generated `JobFunctionDescriptor`, resolved from the step's payload type (or supplied explicitly for a requestless step).
+A **job chain** composes one root time job with conditional continuation steps into a single tree that the scheduler persists and executes atomically. Author it with the typed `JobChain` model (`Headless.Jobs.Abstractions`); it never names a function string — every step's identity is a generated `JobFunctionDescriptor`, resolved at enqueue from the step's argument type, or from the job class for a step without arguments (`Start<TJob>()`, `Then<TJob>()`, `Catch<TJob>()`).
 
 ```csharp
 using Headless.Jobs;
@@ -139,7 +148,7 @@ chargeCard.Catch(new RefundPayment(orderId));                // runs when Charge
 var rootJobId = await scheduler.EnqueueAsync(chain.Build(), ct);
 ```
 
-- `JobChain.Start(payload, options?)` or `JobChain.Start(descriptor, options?)` starts an immediate root and returns a `JobChainBuilder`; `builder.Root` is the root node handle. A timed root uses `Start(payloadOrDescriptor, executionTime, options?)` with an explicit, non-null `DateTimeOffset`. Timed `Then` and `Catch` use the same argument order. `DateTime` arguments are compile errors.
+- `JobChain.Start(payload, options?)` or `JobChain.Start<TJob>(options?)` starts an immediate root and returns a `JobChainBuilder`; `builder.Root` is the root node handle. A timed root uses `Start(payload, executionTime, options?)` or `Start<TJob>(executionTime, options?)` with an explicit, non-null `DateTimeOffset`. Timed `Then` and `Catch` use the same argument order. `DateTime` arguments are compile errors.
 - `Then(...)` attaches the single on-success child and `Catch(...)` the single on-failure child; each returns the new child handle so a branch can be extended further. A second `Then` (or second `Catch`) on the same node throws `InvalidOperationException`.
 - `Build()` freezes the tree into an immutable `JobChain`. `IJobScheduler.EnqueueAsync(JobChain, ct)` resolves every node's descriptor, enforces the depth limit, and persists the root plus its whole descendant tree in one atomic write, returning the root job's `Guid`.
 
@@ -147,7 +156,7 @@ var rootJobId = await scheduler.EnqueueAsync(chain.Build(), ct);
 
 - `Then` persists `RunCondition.OnSuccess`; `Catch` persists `RunCondition.OnFailure`. `Catch` is pure on-failure sugar — it does **not** recover the parent. A caught parent stays `Failed`, and a failing catch step is just another failed job whose own `Then` / `Catch` continuations follow the same rules.
 - Any node (including the root) may carry both a success branch and a failure branch, and only those two — there is no parallel fan-out. A **root-only chain** (no children) is valid.
-- Each step carries `JobOptions` (description, retries, retry intervals, node-death policy) plus an optional explicit execution time. Priority is **not** per-step — it is generated from `[JobFunction]` metadata and stays descriptor-canonical.
+- Each step carries `JobOptions` (description, retries, retry intervals, node-death policy) plus an optional explicit execution time. Priority is **not** per-step — it comes from the job's `[Job]` declaration, or the host's `Tune` override.
 - `Build()` returns an immutable value; each `EnqueueAsync` materializes fresh entities, so re-enqueueing the same built chain yields independent trees.
 
 **Timed descendants** — a descendant given an explicit execution time becomes eligible at the **later** of (a) its parent reaching the terminal state that matches its edge and (b) its own execution time. It never starts before its parent completes, and its execution time arriving alone never runs, fails, or skips it. When the parent instead reaches a **non-matching** terminal state (for example the parent fails while the child is an `OnSuccess` step), the timed descendant is skipped together with its subtree — mirroring the non-timed skip cascade.
@@ -285,19 +294,21 @@ using Headless.Jobs.Models;
 // permission cache) observe the right tenant automatically.
 public sealed record TenantReportRequest(string ReportKind);
 
-public sealed class TenantReportJobs(
-    IReportService reports,
+[Job("reports.tenant-report")]
+public sealed class TenantReportJob(IReportService reports) : IJob<TenantReportRequest>
+{
+    public async ValueTask ExecuteAsync(JobContext<TenantReportRequest> context, CancellationToken ct) =>
+        await reports.BuildAsync(context.Request.ReportKind, ct);
+}
+
+// A system-scope cron that fans out one tenant-scoped time job per tenant.
+[Job("reports.nightly-fan-out", Cron = "0 0 2 * * *")]
+public sealed class NightlyReportFanOutJob(
     IJobScheduler scheduler,
     IAppTenantDirectory tenants // application-owned enumeration
-)
+) : IJob
 {
-    [JobFunction("GenerateTenantReport")]
-    public Task GenerateAsync(JobFunctionContext<TenantReportRequest> context, CancellationToken ct) =>
-        reports.BuildAsync(context.Request.ReportKind, ct);
-
-    // A system-scope cron that fans out one tenant-scoped time job per tenant.
-    [JobFunction("NightlyReportFanOut", cronExpression: "0 0 2 * * *")]
-    public async Task FanOutAsync(CancellationToken ct)
+    public async ValueTask ExecuteAsync(JobContext context, CancellationToken ct)
     {
         foreach (var tenantId in await tenants.ListActiveTenantIdsAsync(ct))
         {
@@ -444,8 +455,11 @@ the run the backlog is still owed.
 
 ```csharp
 // Declared in code: seeds the definition when it is first created.
-[JobFunction("reports.nightly", "0 0 2 * * *", OnMissedRun = MissedRunPolicy.Skip, MissedRunGraceSeconds = 300)]
-public Task RunAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+[Job("reports.nightly", Cron = "0 0 2 * * *", OnMissedRun = MissedRunPolicy.Skip, MissedRunGraceSeconds = 300)]
+public sealed class NightlyReportJob : IJob
+{
+    public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+}
 ```
 
 ```csharp
@@ -465,7 +479,7 @@ provenance marker — and it means changing the attribute in code does **not** c
 ### What an executing job sees
 
 ```csharp
-public async Task RunAsync(JobFunctionContext context, CancellationToken cancellationToken)
+public async ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken)
 {
     if (context.IsRecoveryRun)
     {
@@ -526,8 +540,11 @@ build it on.
 ### Configuring it
 
 ```csharp
-[JobFunction("reports.nightly", "0 0 2 * * *", OnOverlap = CronOverlapPolicy.Skip)]
-public Task RunAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+[Job("reports.nightly", Cron = "0 0 2 * * *", OnOverlap = CronOverlapPolicy.Skip)]
+public sealed class NightlyReportJob : IJob
+{
+    public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+}
 ```
 
 ```csharp
@@ -608,17 +625,18 @@ Contracts, entity types, manager interfaces, and execution primitives for the Jo
 
 ### API and behavior
 
-- **Durable contract identity**: `[JobFunction("invoice.create", ContractVersion = "schema-v2")]` and immutable `JobFunctionDescriptor.ContractVersion` declare the stored request schema. The optional descriptor-constructor version defaults to `JobContract.InitialVersion` (`"1"`). `JobContract` defines a 200 UTF-16-unit function-name bound and a 100-unit version bound; names and versions are nonblank, ordinal, and reject surrounding whitespace, controls, and invalid Unicode without normalization or truncation.
+- **Durable contract identity**: `[Job("invoice.create", ContractVersion = "schema-v2")]` and immutable `JobFunctionDescriptor.ContractVersion` declare the stored argument schema. The optional descriptor-constructor version defaults to `JobContract.InitialVersion` (`"1"`). `JobContract` defines a 200 UTF-16-unit function-name bound and a 100-unit version bound; names and versions are nonblank, ordinal, and reject surrounding whitespace, controls, and invalid Unicode without normalization or truncation.
 - **Jobs lineage**: `JobOptions` and `RecurringJobOptions` accept `CorrelationId` and `CausationId`. Persisted entities, `JobExecutionState`, and both execution-context forms carry contract version and Jobs-owned correlation, causation, and tenant metadata. `CronSeedDefinition` includes a trailing version (default `"1"`); consumers that deconstruct it must include that sixth member. Seeding applies that version only to newly created definitions; existing name/version/request tuples require an explicit definition edit. Ordinary time-job and cron-definition edits preserve stored correlation and causation, including when update forms omit them.
 - **Occurrence snapshots**: every new cron occurrence owns `Function`, `ContractVersion`, and a copy of serialized `Request` bytes. Provider implementations must read the current persisted definition under their materialization transaction or lock, including `InsertCronJobOccurrencesAsync` with an already-populated caller tuple. Existing-row pickup, retry, and recovery retain the stored tuple.
-- **Routine scheduling facade**: `IJobScheduler` resolves generated `[JobFunction]` metadata, serializes typed requests, schedules immediate, delayed, and recurring jobs without copied function strings or entity construction, and durably pauses or resumes cron definitions by ID.
+- **Routine scheduling facade**: `IJobScheduler` resolves generated `[Job]` metadata from the argument type or the job class, serializes typed arguments, schedules immediate, delayed, and recurring jobs without copied function strings or entity construction, and durably pauses or resumes cron definitions by ID.
 - **Generated descriptors**: immutable `JobFunctionDescriptor` values expose function identity, nullable request type, cron metadata, priority, and maximum concurrency without exposing execution delegates.
 - **Scheduling options**: `JobOptions` and `RecurringJobOptions` map description, durable retry count/intervals, and node-death policy; recurring options also accept a nullable IANA `TimeZoneId`. Priority remains generated function metadata.
 - **Manager interfaces**: `ITimeJobManager<TTimeJob>` and `ICronJobManager<TCronJob>` with `AddAsync`, `AddBatchAsync`, `UpdateAsync`, `UpdateBatchAsync`, `DeleteAsync`, `DeleteBatchAsync`.
 - **Entity types**: `TimeJobEntity` / `TimeJobEntity<TTicker>` (parent–child chains), `CronJobEntity`, `CronJobOccurrenceEntity`, and `BaseJobEntity`. New entities keep `Id`, `CreatedAt`, and `UpdatedAt` unset until a Jobs manager stamps them during `AddAsync` / `AddBatchAsync`.
-- **Execution context**: `JobFunctionContext` and `JobFunctionContext<TRequest>` — exposes `Id`, `Type`, `RetryCount`, `IsDue`, `ScheduledFor`, `FunctionName`, and durable `RequestCancellationAsync()` for time jobs.
-- **Generated execution delegate**: `JobFunctionDelegate(IServiceProvider, JobFunctionContext, CancellationToken)` keeps the cancellation token last. The generator emits this delegate shape for the runtime.
-- **Attribute types**: `JobFunctionAttribute` (`[JobFunction]`) for function/cron registration; `JobsConstructorAttribute` (`[JobsConstructor]`) for custom DI injection.
+- **Job contracts**: `IJob` (`ExecuteAsync(JobContext, CancellationToken)`) and `IJob<TArgs>` (`ExecuteAsync(JobContext<TArgs>, CancellationToken)`), both returning `ValueTask`.
+- **Execution context**: `JobContext` and `JobContext<TArgs>` (whose `Request` is the deserialized argument) — exposes `Id`, `Type`, `RetryCount`, `IsDue`, `ScheduledFor`, `FunctionName`, recovery metadata, lineage, and durable `RequestCancellationAsync()` for time jobs.
+- **Generated execution delegate**: `JobFunctionDelegate(IServiceProvider, JobContext, CancellationToken)` keeps the cancellation token last. The generator emits one per job; it builds the job class from the run's scope and calls `ExecuteAsync`.
+- **Declaration attribute**: `JobAttribute` (`[Job("owner.name")]`) declares a job class with its identity and intrinsic defaults (cron, time zone, priority, concurrency, contract version, missed-run and overlap policies).
 - **Retry primitives**: `TimeJobEntity.Retries`, `RetryIntervals`, `RetryCount`; `CronJobEntity.Retries`, `RetryIntervals`.
 - **Node-death policy**: `NodeDeathPolicy` enum (`Retry` / `MarkFailed` / `Skip`) on both entity types; propagated from `CronJobEntity` to every generated occurrence.
 - **Atomic cron materialization SPI**: `MaterializeCronScheduleOccurrenceAsync` fences the expected revision and watermark, commits a new unclaimed `Idle` occurrence or recognizes an existing occurrence, and advances the schedule position in the same provider transaction. `CronScheduleMaterializationOutcome` distinguishes a lost fence, a future projection, a new row, an existing live row, and an already-terminal row.
@@ -665,14 +683,15 @@ public sealed class OrderService(IJobScheduler jobs)
     }
 }
 
-// Mark a method for registration (requires Jobs.SourceGenerator)
-public static class OrderReminderJobs
+// Declare the job class (requires Jobs.SourceGenerator). OrderReminderRequest is its argument type,
+// so EnqueueAsync(new OrderReminderRequest(...)) above addresses this job.
+[Job("orders.send-reminder")]
+public sealed class SendOrderReminderJob : IJob<OrderReminderRequest>
 {
-    [JobFunction("SendOrderReminder")]
-    public static Task ExecuteAsync(JobFunctionContext<OrderReminderRequest> context, CancellationToken ct)
+    public ValueTask ExecuteAsync(JobContext<OrderReminderRequest> context, CancellationToken ct)
     {
         // context.Request.OrderId, context.RetryCount, and context.ScheduledFor are available.
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 }
 ```
@@ -689,11 +708,10 @@ JobFunctionDelegate handler = static (serviceProvider, context, cancellationToke
 };
 ```
 
-Requestless scheduling resolves a generated descriptor and passes it to the matching overload:
+A job without arguments is addressed by its class; a job with arguments by its argument value:
 
 ```csharp
-var descriptor = AppJobs.Cleanup;
-var jobId = await scheduler.EnqueueAsync(descriptor, cancellationToken: ct);
+var jobId = await scheduler.EnqueueAsync<CleanupJob>(ct);
 
 var delayedId = await scheduler.ScheduleAsync(
     new OrderReminderRequest(orderId),
@@ -712,11 +730,11 @@ var pauseAccepted = await scheduler.PauseCronAsync(recurringId, ct);
 var resumeAccepted = await scheduler.ResumeCronAsync(recurringId, ct);
 ```
 
-`ScheduleAsync`, `ScheduleKeyedAsync`, and `ReplaceKeyedAsync` require an explicit `DateTimeOffset` instant, including typed, requestless, and fluent callback forms. Passing a `DateTime` is a compile error through diagnostic-only `Obsolete(error: true)` overloads. Convert wall-clock values with an explicit time zone or offset before calling; no scheduler facade call interprets them in the machine-local zone. A known UTC value can use `new DateTimeOffset(utcDateTime, TimeSpan.Zero)`.
+`ScheduleAsync`, `ScheduleKeyedAsync`, and `ReplaceKeyedAsync` require an explicit `DateTimeOffset` instant, including argument, job-class, and fluent callback forms. Passing a `DateTime` is a compile error through diagnostic-only `Obsolete(error: true)` overloads. Convert wall-clock values with an explicit time zone or offset before calling; no scheduler facade call interprets them in the machine-local zone. A known UTC value can use `new DateTimeOffset(utcDateTime, TimeSpan.Zero)`.
 
-`JobChain.Start(payload, options?)`, `Then(payload, options?)`, and `Catch(payload, options?)` author immediate steps. Timed steps use `Start(payload, executionTime, options?)`, `Then(payload, executionTime, options?)`, or `Catch(payload, executionTime, options?)`, with a non-null `DateTimeOffset`. The same forms accept requestless descriptors. `DateTime` arguments are compile errors; omit the instant for an immediate step.
+`JobChain.Start(payload, options?)`, `Then(payload, options?)`, and `Catch(payload, options?)` author immediate steps. Timed steps use `Start(payload, executionTime, options?)`, `Then(payload, executionTime, options?)`, or `Catch(payload, executionTime, options?)`, with a non-null `DateTimeOffset`. Steps without arguments use `Start<TJob>(...)`, `Then<TJob>(...)`, and `Catch<TJob>(...)` with the same optional instant. `DateTime` arguments are compile errors; omit the instant for an immediate step.
 
-Ordinary scheduling methods return the persisted entity `Guid`; recurring scheduling returns the persisted cron-definition ID. Keyed methods return `JobScheduleResult`, separating operation disposition from the observed run ID, generation, and execution state. Unknown request types or descriptor names throw `JobFunctionNotFoundException` before persistence. Duplicate function names or typed request mappings fail deterministically while `JobFunctionProvider` builds its configuration-independent canonical indexes; Core projects a separate configuration-resolved runtime registry for each `IHost`. Low-level managers remain supported for CRUD, batching, seeding, custom entity types, chains, and advanced scenarios.
+Ordinary scheduling methods return the persisted entity `Guid`; recurring scheduling returns the persisted cron-definition ID. Keyed methods return `JobScheduleResult`, separating operation disposition from the observed run ID, generation, and execution state. An argument type or job class that no registered module declares throws `JobFunctionNotFoundException` before persistence. Duplicate identities, argument types, or job classes fail deterministically while the host's registry is built, naming both modules; each `IHost` gets its own configuration-resolved registry. Low-level managers remain supported for CRUD, batching, seeding, custom entity types, chains, and advanced scenarios.
 
 Use `ScheduleKeyedAsync(new JobKey("invoice-42"), request, dueInstant, options, ct)` for a standalone one-shot deadline. The `DateTimeOffset` instant must be captured once and reused on retries. The scope is final tenant/system plus logical function name plus business key; version is intent, not identity. Keys use ordinal equality with a 200 UTF-16 limit and reject padding, controls, and invalid Unicode. `Created` writes generation 1; `Existing` observes the current same-intent run even when terminal. Different intent returns `Conflict`. `ReplaceKeyedAsync(key, observedGeneration, request, dueInstant, options, ct)` also handles rescheduling, advancing once only while pending and unclaimed; lost-response replays report `StaleGeneration`. `CancelKeyedAsync(new JobKeyScope(functionName, tenantId), key, observedGeneration, ct)` targets that generation only. Pending cancellation becomes terminal; claimed cancellation reports a cooperative `CancellationRequested`, without proving execution or external effects stopped. Missing keys return `NotFound`.
 
@@ -739,9 +757,9 @@ Routine calls accept a positional cancellation token: `EnqueueAsync(request, ct)
 
 Omit an unused cancellation token, or pass `default` or `cancellationToken: default` to select the existing token overload. Supplying `default` followed by a cancellation token selects the options overload. Use `options:` and `configure:` to make record and callback intent explicit.
 
-Requestless jobs have generated `AppJobs` handles in the consuming assembly's namespace: `await jobs.EnqueueAsync(AppJobs.Cleanup, ct)` for `[JobFunction("Cleanup")]`. Import that namespace or qualify the catalog when several assemblies supply jobs. Handles reference the same immutable canonical descriptors used for registration; applications do not need a string dictionary lookup.
+A job without arguments is scheduled by its class: `await jobs.EnqueueAsync<CleanupJob>(ct)`, and likewise `ScheduleAsync<TJob>`, `ScheduleAfterAsync<TJob>`, `ScheduleRecurringAsync<TJob>`, `ScheduleKeyedAsync<TJob>`, and `ReplaceKeyedAsync<TJob>`. These overloads are constrained to `IJob`, so a job that takes arguments cannot be scheduled without them.
 
-Fluent callbacks are available on the typed and requestless `EnqueueAsync`, `ScheduleAsync`, and `ScheduleAfterAsync` calls. Import `Headless.Jobs` for `JobOptionsBuilder` and `JobSchedulerExtensions`, and `Headless.Jobs.Interfaces` for `IJobScheduler`. The singular `JobOptionsBuilder` authors one options snapshot; the plural generic `JobsOptionsBuilder<TTimeJob, TCronJob>` configures the subsystem in Core.
+Fluent callbacks are available on the argument and job-class `EnqueueAsync`, `ScheduleAsync`, and `ScheduleAfterAsync` calls. Import `Headless.Jobs` for `JobOptionsBuilder` and `JobSchedulerExtensions`, and `Headless.Jobs.Interfaces` for `IJobScheduler`. The singular `JobOptionsBuilder` authors one options snapshot; the plural generic `JobsOptionsBuilder<TTimeJob, TCronJob>` configures the subsystem in Core.
 
 ```csharp
 using Headless.Jobs;
@@ -752,8 +770,8 @@ public sealed class JobCaller(IJobScheduler scheduler)
     public Task<Guid> EnqueueAsync<TRequest>(TRequest request, CancellationToken ct) =>
         scheduler.EnqueueAsync(request, options => options.WithRetries(0).WithCorrelationId("checkout"), ct);
 
-    public Task<Guid> ScheduleCleanupAsync(JobFunctionDescriptor cleanup, CancellationToken ct) =>
-        scheduler.ScheduleAfterAsync(cleanup, TimeSpan.FromMinutes(5), options => options.WithRetryIntervals(2, 5), ct);
+    public Task<Guid> ScheduleCleanupAsync(CancellationToken ct) =>
+        scheduler.ScheduleAfterAsync<CleanupJob>(TimeSpan.FromMinutes(5), options => options.WithRetryIntervals(2, 5), ct);
 }
 ```
 
@@ -782,7 +800,9 @@ Core implementation of the Jobs scheduler: in-memory persistence provider, execu
 - **Version-checked execution**: the frozen registry remains ordinal and uniquely keyed by function name. A stored version must exactly equal the registered descriptor version before request deserialization or cached delegate invocation. A mismatch logs a diagnostic and returns the job to `Idle` with its lock released, preserving the stored version and retry budget so a compatible node can claim it. Missing functions follow the same release policy. If no node registers the stored version, operators must resolve the registration gap; the first incompatible claimant does not fail the job. Deferred descendants are processed only after a terminal write wins its ownership fence.
 - **Stable causal metadata**: a root time job uses its allocated row ID as correlation unless explicitly supplied. Jobs scheduled from an executing job inherit its correlation and use that parent execution row ID as causation; chain steps use their direct parent row ID. Root cron occurrences allocate correlation from their occurrence ID unless the definition carries explicit or inherited metadata. A parent with no explicit correlation contributes its execution row ID as the causal root. Retries preserve lineage independently of `Activity` traces, and existing tenant checks still apply.
 - **`AddHeadlessJobs()`**: single DI entry point; registers managers, background services, and the in-memory persistence provider.
-- **`IJobScheduler` facade**: schedules typed or requestless `[JobFunction]` methods through generated descriptor indexes, maps supported options, controls cron pause/resume, and returns persisted entity IDs or locked-transition results.
+- **`ConfigureJobs(...)`**: module-owned contributions through the non-generic `JobsContributionBuilder` (`AddModule<TModule>()`, `Tune(identity, ...)`), applied when the host's registry is built, before or after `AddHeadlessJobs`.
+- **`Tune(identity, ...)` and `RunOnly(...)`**: per-job deployment settings bound from code and `Headless:Jobs:Jobs:{identity}`, and the host's run filter applied to every claim query of the in-memory and EF providers.
+- **`IJobScheduler` facade**: schedules `[Job]` classes by argument type or job class through generated descriptor indexes, maps supported options, controls cron pause/resume, and returns persisted entity IDs or locked-transition results.
 - **Injected identity and app time**: managers assign persisted IDs through `IGuidGenerator` and stamp audit/scheduling time through `TimeProvider`, including every descendant in a persisted job chain.
 - **Scheduler background service**: polls for due time jobs and cron occurrences on `FallbackIntervalChecker` cadence (default 30s); also driven by soft-notification signals for near-zero latency.
 - **Bounded task scheduler** (`JobsTaskScheduler`): runs normal jobs as logical worker slots on the shared .NET thread pool, bounds active async executions by `MaxConcurrency` (default `Environment.ProcessorCount`), and honors `High` → `Normal` → `Low` dequeue order. `LongRunning` work receives a dedicated thread within the separate `MaxLongRunningConcurrency` budget (default: the smaller of `MaxConcurrency` and 4). Long-running admission is queued on a detached lane (capped at two parked admissions per slot), so a saturated budget never blocks the dispatch loop; an admission rejected at the cap or dropped by cancellation/shutdown is recovered by the fallback reclaim sweep when its pickup lease lapses.
@@ -812,9 +832,9 @@ The scheduler's wake and restart path lives in that same store domain. Every due
 
 `SchedulerOptionsBuilder.NodeId` is used as the row owner only on the in-memory single-process path (defaults to `Environment.MachineName`). On the durable path this value is overridden by `JobsOwnerIdentityAdapter` which reads the `node@incarnation` string from `Headless.Coordination`; `NodeId` becomes a pre-registration display fallback only.
 
-Generated modules populate one process-wide canonical catalog. `AddHeadlessJobs` invokes the options callback first so every `AddModule<…>()` call registers its module, then freezes that catalog exactly once. A module registers at most once per process, so later hosts may list the same modules; adding a module after the catalog froze, or any other late registration, fails deterministically instead of disappearing. `JobFunctionProvider.JobFunctionDescriptors` remains the public configuration-independent descriptor lookup for requestless scheduling.
+Generated modules register into a per-host catalog, never process-wide state. When a host's registry is first resolved, it runs every module added with `AddModule` or contributed with `ConfigureJobs` once, in registration order, adds the framework tenancy middleware, rejects cross-module conflicts, applies `Tune` calls and then `Headless:Jobs:Jobs` configuration, resolves the `RunOnly` filter, and freezes the result. Module middleware and tuned middleware live in the same frozen, per-host pipeline.
 
-Each `IHost` receives its own immutable runtime registry projected from the canonical catalog and that host's `IConfiguration`. Cron configuration tokens are resolved only in this host-owned registry. Scheduling, execution, seeding, fallback, managers, and Dashboard operations all consume the injected registry, so multiple hosts in one process can use different configuration without resetting or replacing one another.
+Each `IHost` receives its own immutable runtime registry resolved against that host's `IConfiguration`. Cron configuration tokens are resolved only in this host-owned registry. Scheduling, execution, seeding, fallback, managers, and Dashboard operations all consume the injected registry, so multiple hosts in one process can use different configuration without resetting or replacing one another.
 
 Jobs remain `Queued` while waiting for worker and per-function concurrency capacity. The worker performs the owned `Queued` → `InProgress` write immediately before execution, then the execution handler performs one more lease check before invoking user code. If ownership expired while queued, the worker skips the delegate instead of starting an unowned job. Because that transition must happen at admission time, each admitted job issues its own single-row claim write — a tick with N co-due functions performs N claim round trips instead of one batched write; this is the deliberate cost of the single-winner fence.
 
@@ -822,7 +842,7 @@ Claiming a chained time job leases its non-timed descendants down to the configu
 
 Deleting a time job deletes its whole descendant chain. The parent/child foreign key is deliberately non-cascading, so both the in-memory and EF providers resolve the subtree explicitly and delete it deepest-first. On the EF path, discovery and deletion share one read-committed transaction. A foreign-key violation, deadlock, serialization failure, or driver-reported transient error retries the complete scope with fresh discovery up to three times, using jittered exponential backoff. Exhausting those retries leaves the tree intact and is surfaced by `ITimeJobManager` as a failed `JobResult`; caller cancellation is wrapped the same way and is never retried. A commit failure is also never retried because its outcome is in doubt; reissuing the delete safely resolves that uncertainty and returns zero rows if the first commit succeeded. The returned count includes every descendant removed by the attempt that committed. Deleting a non-root node removes only that node's subtree and leaves its ancestors intact.
 
-A typed job function's stored request is read immediately before the handler runs. A read or deserialization failure fails that attempt and is classified by the normal retry pipeline; the handler is never invoked with a default payload, and cancellation stays cancellation. `JobsRequestProvider.GetRequestAsync` therefore returns `default` only when the job genuinely stored no request.
+A job's stored argument is read immediately before its `ExecuteAsync` runs. A read or deserialization failure fails that attempt and is classified by the normal retry pipeline; the handler is never invoked with a default payload, and cancellation stays cancellation. `JobsRequestProvider.GetRequestAsync` therefore returns `default` only when the job genuinely stored no request.
 
 Dashboard SignalR notifications are best-effort on the whole scheduling path: a hub failure is logged and never aborts a claim enumeration, so a dashboard or backplane outage cannot delay job dispatch. If a claim enumeration does abort for another reason, the rows already claimed in that batch are released back to `Idle` instead of waiting out their lease.
 
@@ -873,25 +893,25 @@ builder.Services.AddHeadlessJobs(options =>
 });
 
 // 2. Define a cron job (requires Jobs.SourceGenerator); services come from the constructor
-public sealed class CleanupJobs(ILogger<CleanupJobs> logger)
+[Job("maintenance.cleanup", Cron = "0 */5 * * * *")]
+public sealed class CleanupJob(ILogger<CleanupJob> logger) : IJob
 {
-    [JobFunction("Cleanup", cronExpression: "0 */5 * * * *")]
-    public Task ExecuteAsync(CancellationToken ct)
+    public ValueTask ExecuteAsync(JobContext context, CancellationToken ct)
     {
         logger.LogInformation("Running cleanup");
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 }
 
-// 3. Define a time job with DI
-public sealed class OrderProcessor(IOrderService orders)
+// 3. Define a time job with DI; OrderRequest is its argument type
+[Job("orders.process")]
+public sealed class ProcessOrderJob(IOrderService orders) : IJob<OrderRequest>
 {
-    [JobFunction("ProcessOrder")]
-    public Task ExecuteAsync(JobFunctionContext<OrderRequest> context, CancellationToken ct) =>
-        orders.ProcessAsync(context.Request, ct);
+    public async ValueTask ExecuteAsync(JobContext<OrderRequest> context, CancellationToken ct) =>
+        await orders.ProcessAsync(context.Request, ct);
 }
 
-// 4. Schedule through generated typed metadata.
+// 4. Schedule by the argument type; the generated metadata maps OrderRequest to orders.process.
 public sealed class OrderService(IJobScheduler scheduler)
 {
     public Task<Guid> ScheduleAsync(OrderRequest request, CancellationToken ct) =>
@@ -905,17 +925,57 @@ Routine calls accept a positional cancellation token: `EnqueueAsync(request, ct)
 
 Omit an unused cancellation token, or pass `default` or `cancellationToken: default` to select the existing token overload. Supplying `default` followed by a cancellation token selects the options overload. Use `options:` and `configure:` to make record and callback intent explicit.
 
-Requestless jobs have generated `AppJobs` handles in the consuming assembly's namespace: `await jobs.EnqueueAsync(AppJobs.Cleanup, ct)` for `[JobFunction("Cleanup")]`. Import that namespace or qualify the catalog when several assemblies supply jobs. Handles reference the same immutable canonical descriptors used for registration; applications do not need a string dictionary lookup.
+Argument calls resolve the job from `typeof(TArgs)`, serialize through the configured Jobs JSON/GZip pipeline, and persist through the configured manager. Job-class calls such as `EnqueueAsync<CleanupJob>(ct)` resolve the job from `typeof(TJob)` and store no argument. Immediate, delayed, and recurring methods return the persisted time-job or cron-definition ID. Unknown or stale identities fail before serialization or persistence.
 
-Typed facade calls resolve `typeof(TArgs)`, serialize through the configured Jobs JSON/GZip pipeline, and persist through the configured manager. Requestless calls accept a descriptor from the generated `AppJobs` catalog. Immediate, delayed, and recurring methods return the persisted time-job or cron-definition ID. Unknown or stale identities fail before serialization or persistence.
-
-`JobOptions` and `RecurringJobOptions` expose description, durable retries/intervals, and node-death policy; recurring options also expose nullable IANA `TimeZoneId`. Execution time and cron expression remain explicit method arguments; priority remains immutable `[JobFunction]` / descriptor metadata. Managers remain public and supported for CRUD, batching, seeding, custom entities, chains, and advanced persistence workflows. `ITimeJobManager.UpdateAsync`, `UpdateBatchAsync`, `DeleteAsync`, and `DeleteBatchAsync` return a failed `JobResult` instead of throwing when persistence fails; caller cancellation is carried by that result too.
+`JobOptions` and `RecurringJobOptions` expose description, durable retries/intervals, and node-death policy; recurring options also expose nullable IANA `TimeZoneId`. Execution time and cron expression remain explicit method arguments; priority comes from `[Job(Priority = ...)]` or the host's `Tune`. Managers remain public and supported for CRUD, batching, seeding, custom entities, chains, and advanced persistence workflows. `ITimeJobManager.UpdateAsync`, `UpdateBatchAsync`, `DeleteAsync`, and `DeleteBatchAsync` return a failed `JobResult` instead of throwing when persistence fails; caller cancellation is carried by that result too.
 
 Facade calls use those managers internally, so `unit.Jobs` and `unit.TimeJobs<T>()` / `unit.CronJobs<T>()` are the same receiver family: the enlisted scheduler enlists through the enlisted managers and retains their deferred post-commit dispatch/restart/notification behavior.
 
+### Modules, tuning, and run filters
+
+A module that owns jobs contributes its generated module from its own entry point with `services.ConfigureJobs(...)`; it never calls `AddHeadlessJobs`, which the host owns. The host adds its own assembly's module, tunes jobs by identity, and narrows what it runs:
+
+```csharp
+using Headless.Jobs;
+using Headless.Jobs.Enums;
+
+public static class BillingSetup
+{
+    public static IServiceCollection AddBilling(this IServiceCollection services) =>
+        services.ConfigureJobs(jobs =>
+            jobs.AddModule<Billing.JobsModule>().Tune("billing.close-day", job => job.Concurrency(1))
+        );
+}
+
+// Worker host: order does not matter, because contributions apply when the host's registry is built.
+builder.Services.AddHeadlessJobs(options =>
+{
+    options.AddModule<MyApp.JobsModule>();
+    options.Tune("orders.process", job => job.Concurrency(4).Priority(JobPriority.High));
+    options.RunOnly("billing.*", "orders.process");
+});
+builder.Services.AddBilling();
+```
+
+Configuration tunes the same settings without a redeploy and applies after every `Tune` call. Only `Concurrency` and `Priority` are accepted:
+
+```json
+{
+  "Headless": {
+    "Jobs": {
+      "Jobs": {
+        "billing.close-day": { "Concurrency": 2, "Priority": "High" }
+      }
+    }
+  }
+}
+```
+
+`Tune` also sets `Options(...)` and per-job middleware, but never the identity, argument type, or cron schedule. The host's registry build fails startup when a `Tune` call or configuration entry names an unknown identity or carries an invalid value, and when a `RunOnly` entry matches no registered job. A job outside the `RunOnly` filter stays registered: this host still schedules it, seeds its cron definition, and shows it in the Dashboard, while a host without the filter claims and runs it.
+
 ### Middleware
 
-Jobs middleware uses stage-specific generic attributes. Assembly placement is global; method placement beside `[JobFunction]` targets that function without repeating its durable identity. `Schedule` middleware runs in the manager exactly once per submitted entity, before validation, persistence, or coordinated post-commit work; `Execute` middleware runs inside every retry attempt. Middleware is resolved from a bounded DI scope and must invoke `next` to accept the operation.
+Jobs middleware uses stage-specific generic attributes. Assembly placement is global; class placement on a `[Job]` class targets that job without repeating its durable identity. A host can also attach middleware to one job with `Tune(identity, job => job.UseExecuteMiddleware<T>())` or `UseScheduleMiddleware<T>()`. `Schedule` middleware runs in the manager exactly once per submitted entity, before validation, persistence, or coordinated post-commit work; `Execute` middleware runs inside every retry attempt. Middleware is resolved from a bounded DI scope and must invoke `next` to accept the operation.
 
 ```csharp
 [assembly: JobScheduleMiddleware<AuditScheduleMiddleware>(Priority = JobMiddlewarePriority.Early)]
@@ -923,11 +983,11 @@ Jobs middleware uses stage-specific generic attributes. Assembly placement is gl
 // Uncommon fallback: target a descriptor generated by a referenced assembly.
 [assembly: JobExecuteMiddleware<ExternalInvoiceMiddleware>(Function = "external.invoice.create")]
 
-public static class InvoiceJobs
+[Job("invoice.create")]
+[JobExecuteMiddleware<InvoiceExecutionMiddleware>]
+public sealed class CreateInvoiceJob : IJob<InvoiceRequest>
 {
-    [JobFunction("invoice.create")]
-    [JobExecuteMiddleware<InvoiceExecutionMiddleware>]
-    public static Task CreateAsync(JobFunctionContext<InvoiceRequest> context) => Task.CompletedTask;
+    public ValueTask ExecuteAsync(JobContext<InvoiceRequest> context, CancellationToken ct) => ValueTask.CompletedTask;
 }
 ```
 
@@ -939,19 +999,19 @@ builder.Services.AddScoped<ExternalInvoiceMiddleware>();
 builder.Services.AddScoped<InvoiceExecutionMiddleware>();
 ```
 
-The generic constraint requires schedule and execute middleware to implement their matching interfaces. Declarations are ordered by ascending priority, then middleware type identity. The generated dispatcher is direct-call/AOT-safe: runtime plugin discovery, class-handler targeting, and registration after `JobFunctionProvider.Build()` are unsupported. Middleware is registered by the module of the assembly that declares it, so add that module with `AddModule` even for a middleware-only assembly.
+The generic constraint requires schedule and execute middleware to implement their matching interfaces. Declarations are ordered by ascending priority, then middleware type identity. The generated dispatcher is direct-call/AOT-safe: runtime plugin discovery and registration after the host's registry freezes are unsupported. Middleware is registered by the module of the assembly that declares it, so add that module with `AddModule` even for a middleware-only assembly.
 
 ### Configuration
 
-Absolute scheduler facade calls require an explicit `DateTimeOffset` instant. `DateTime` arguments fail compilation through diagnostic-only `Obsolete(error: true)` overloads, including fluent callbacks and keyed scheduling or replacement. Convert wall-clock values with an explicit time zone or offset before calling. Timed chain steps use `Start(payload, executionTime, options?)`, `Then(payload, executionTime, options?)`, and `Catch(payload, executionTime, options?)`; immediate steps omit the instant. Requestless descriptor forms follow the same contract.
+Absolute scheduler facade calls require an explicit `DateTimeOffset` instant. `DateTime` arguments fail compilation through diagnostic-only `Obsolete(error: true)` overloads, including fluent callbacks and keyed scheduling or replacement. Convert wall-clock values with an explicit time zone or offset before calling. Timed chain steps use `Start(payload, executionTime, options?)`, `Then(payload, executionTime, options?)`, and `Catch(payload, executionTime, options?)`; immediate steps omit the instant. Job-class forms without arguments follow the same contract.
 
 A recurring definition written through `unit.Jobs` enlists like a one-shot job: the definition row and its store-anchored schedule position commit or roll back with the caller, and a unit without a compatible relational resource fails before persistence. Written through the injected scheduler, the definition is its own commit.
 
-Configure facade policies once with `ConfigureDefaults(new JobOptions { Retries = 3, RetryIntervals = [5, 30] })`, then override individual fields with `ConfigureJob<MyRequest>(new JobOptions { OnNodeDeath = NodeDeathPolicy.MarkFailed })` or `ConfigureJob(AppJobs.Cleanup, options)`. The order of precedence is call, function, then application defaults; null fields inherit and an empty interval array explicitly replaces inherited intervals. Configuration snapshots retry arrays and freezes per host after the registration callback; unknown generated identities and invalid retry settings fail before use/startup. Configure each function by either request type or canonical descriptor, not both.
+Configure facade policies once with `ConfigureDefaults(new JobOptions { Retries = 3, RetryIntervals = [5, 30] })`, then override individual fields with `ConfigureJob<MyRequest>(new JobOptions { OnNodeDeath = NodeDeathPolicy.MarkFailed })` or, for a job without arguments, `Tune("billing.close-day", job => job.Options(options))`. The order of precedence is call, function, then application defaults; null fields inherit and an empty interval array explicitly replaces inherited intervals. Configuration snapshots retry arrays and freezes per host after the registration callback; unknown generated identities and invalid retry settings fail before use/startup. Configure each job through either `ConfigureJob<TRequest>` or `Tune(...).Options(...)`, not both.
 
-Startup policies accept only retries, retry intervals, and node-death policy. Tenant, system scope, description, correlation, and causation remain per-invocation metadata; supplying them in startup policies throws. Concurrency and priority remain generated function/scheduler metadata.
+Startup policies accept only retries, retry intervals, and node-death policy. Tenant, system scope, description, correlation, and causation remain per-invocation metadata; supplying them in startup policies throws. Concurrency and priority are not scheduling options: they come from the `[Job]` declaration, and a host overrides them with `Tune(identity, job => job.Concurrency(2).Priority(JobPriority.High))` or `Headless:Jobs:Jobs:{identity}` configuration.
 
-The plural `JobsOptionsBuilder<TTimeJob, TCronJob>` also accepts `Action<JobOptionsBuilder>` for all three policy methods. Import `Headless.Jobs` for the singular options builder and `Headless.Jobs.Enums` for `NodeDeathPolicy`. For example, use `ConfigureDefaults(job => job.WithRetries(3).WithRetryIntervals(5, 30))`, `ConfigureJob<MyRequest>(job => job.WithNodeDeathPolicy(NodeDeathPolicy.MarkFailed))`, or `ConfigureJob(AppJobs.Cleanup, job => job.WithRetries(5))`. Each callback runs once synchronously with a fresh builder; asynchronous callbacks are unsupported. Each successful call replaces the previous policy for that scope. Callback failures or invalid settings leave the prior policy intact. Retained builders and supplied arrays cannot change the captured policy or another host.
+The plural `JobsOptionsBuilder<TTimeJob, TCronJob>` also accepts `Action<JobOptionsBuilder>` for all three policy methods. Import `Headless.Jobs` for the singular options builder and `Headless.Jobs.Enums` for `NodeDeathPolicy`. For example, use `ConfigureDefaults(job => job.WithRetries(3).WithRetryIntervals(5, 30))`, `ConfigureJob<MyRequest>(job => job.WithNodeDeathPolicy(NodeDeathPolicy.MarkFailed))`, or `Tune("billing.close-day", job => job.Options(policy => policy.WithRetries(5)))`. Each callback runs once synchronously with a fresh builder; asynchronous callbacks are unsupported. Each successful call replaces the previous policy for that scope. Callback failures or invalid settings leave the prior policy intact. Retained builders and supplied arrays cannot change the captured policy or another host.
 
 Bare `null` and `default` arguments are ambiguous between the options-record and callback configuration overloads. Use `options:` or a typed `JobOptions` argument for the record overload, and `configure:` or a typed `Action<JobOptionsBuilder>` for the callback overload. Both reject null arguments.
 
@@ -1005,15 +1065,15 @@ builder.Services.AddHeadlessJobs(options =>
 
 ### Trimming and native AOT
 
-`Headless.Jobs.Abstractions` and `Headless.Jobs.Core` declare `IsAotCompatible` and build with the trim, AOT, and single-file analyzers enabled. Generated modules call job methods and middleware directly, without reflection. A trimmed or native AOT host must still do the following:
+`Headless.Jobs.Abstractions` and `Headless.Jobs.Core` declare `IsAotCompatible` and build with the trim, AOT, and single-file analyzers enabled. Generated modules construct job classes and call them and their middleware directly, without reflection. A trimmed or native AOT host must still do the following:
 
 - Supply JSON metadata for every typed request. Core reads payload metadata through the request options' `TypeInfoResolver`; when an app allows reflection-based serialization (the default outside trimmed and AOT publishing), a missing resolver falls back to reflection. Otherwise, register a `JsonSerializerContext`. Without one, the first enqueue or execution of a typed job throws `NotSupportedException` naming the type.
 
   ```csharp
   [JsonSerializable(typeof(CreateInvoice))]
-  internal sealed partial class AppJobsJsonContext : JsonSerializerContext;
+  internal sealed partial class JobArgsJsonContext : JsonSerializerContext;
 
-  options.ConfigureRequestJsonOptions(json => json.TypeInfoResolverChain.Insert(0, AppJobsJsonContext.Default));
+  options.ConfigureRequestJsonOptions(json => json.TypeInfoResolverChain.Insert(0, JobArgsJsonContext.Default));
   ```
 
 - Use a store other than `Headless.Jobs.EntityFramework`. The EF package and its PostgreSQL and SQL Server providers do not declare `IsAotCompatible`: EF Core generates query code at runtime, and the generic time and cron entity types flow into EF model APIs that are not annotated for trimming.
@@ -1117,40 +1177,37 @@ Roslyn incremental source generator that eliminates reflection and manual job re
 
 ### API and behavior
 
-- **Versioned descriptors**: `JobFunctionAttribute.ContractVersion` (default `"1"`) is emitted into assembly metadata and immutable runtime descriptors. Explicit function name and version remain stable through CLR class/method renames and source/reference reordering. Duplicate function names remain invalid even when their versions differ; versioning does not create a second dispatch registry.
+- **Versioned descriptors**: `JobAttribute.ContractVersion` (default `"1"`) is emitted into assembly metadata and immutable runtime descriptors. The identity and version stay stable through CLR class renames and source/reference reordering. Duplicate identities remain invalid even when their versions differ; versioning does not create a second dispatch registry.
 - **Zero reflection**: all dispatch delegates are generated as strongly-typed lambdas.
-- **Explicit registration**: the generated file (`JobsModule.g.cs`) declares `<AssemblyName>.JobsModule`, and nothing is registered until a host calls `AddModule<…JobsModule>()`. There is no module initializer and no runtime assembly loading. An assembly that declares no job function or middleware gets no module.
-- **Descriptor indexes**: generates delegate-free descriptors for every typed and requestless function; the provider exposes frozen indexes by name and by typed request `Type`.
-- **Type safety**: compile-time validation of job method signatures and cron expression syntax.
-- **DI constructor injection**: generates one factory per job class. It calls the primary constructor when the class has one, otherwise the constructor marked `[JobsConstructor]`, otherwise the first public constructor; constructors in every part of a partial class count. Parameters resolve through `GetService<T>()`, or `GetKeyedService<T>(key)` for `[FromKeyedServices]`, and a parameter named `serviceProvider` receives the provider itself.
-- **Incremental**: declarations are reduced to value models when discovered, so an edit that does not change a `[JobFunction]` or middleware declaration reuses every generator step and re-emits nothing.
-- **Collision safety**: HF005 rejects duplicate function names and HF011 rejects duplicate typed request mappings within a compilation. Provider construction reports cross-assembly conflicts deterministically.
-- **Diagnostics**: HF001–HF022, listed with their causes and fixes under [Diagnostics](#diagnostics).
+- **Explicit registration**: the generated file (`JobsModule.g.cs`) declares `<AssemblyName>.JobsModule`, and nothing is registered until a host calls `AddModule<…JobsModule>()`. There is no module initializer and no runtime assembly loading. An assembly that declares no `[Job]` class or middleware gets no module.
+- **Descriptor indexes**: generates delegate-free descriptors for every job; the host registry exposes frozen indexes by identity, by argument `Type`, and by job class.
+- **Type safety**: compile-time validation of the job class shape (`IJob` / `IJob<TArgs>`, accessibility, nesting), the identity, the cron expression, and every attribute value.
+- **Construction through DI**: the typed invoker builds the job class with `ActivatorUtilities.CreateInstance` from the run's scope, so the container selects the constructor (`[ActivatorUtilitiesConstructor]` picks one of several) and resolves its parameters, including `[FromKeyedServices]`.
+- **Incremental**: declarations are reduced to value models when discovered, so an edit that does not change a `[Job]` or middleware declaration reuses every generator step and re-emits nothing.
+- **Collision safety**: HF005 rejects a duplicate identity and HF011 a duplicate argument type within a compilation. Provider construction reports cross-assembly conflicts deterministically.
+- **Diagnostics**: HF001–HF022 (HF002, HF006, and HF010 are retired), listed with their causes and fixes under [Diagnostics](#diagnostics).
 
 ### Diagnostics
 
-Every rule is reported at compile time in category `Headless.Jobs.SourceGenerator`. Only HF006 is a warning; the rest are errors. The table below is each rule's help link target.
+Every rule is reported at compile time in category `Headless.Jobs.SourceGenerator`, and every rule is an error. The table below is each rule's help link target.
 
 | Rule | Reported when | Fix |
 | --- | --- | --- |
-| <a id="hf001"></a>HF001 | The class declaring a `[JobFunction]` is neither public nor internal, or is `file`-local. | Make the class `public` or `internal` (no modifier on a top-level class is internal). |
-| <a id="hf002"></a>HF002 | The `[JobFunction]` method is neither public nor internal. | Declare the method `public` or `internal`. |
-| <a id="hf003"></a>HF003 | The cron expression is not a valid six-field (seconds-first) expression. A `%Key%` configuration placeholder is not checked. | Use six fields, for example `"0 */5 * * * *"`, or a `%Section:Key%` placeholder. |
-| <a id="hf004"></a>HF004 | The function name is empty or white space. | Pass a non-empty durable name as the first argument. |
-| <a id="hf005"></a>HF005 | Two `[JobFunction]` methods in one compilation use the same function name. Nothing is generated. | Give each function a unique name; use `ContractVersion` to version one function, not a second name. |
-| <a id="hf006"></a>HF006 | A job class declares more than one constructor and none is marked `[JobsConstructor]`. Warning. | Mark the constructor the factory must call with `[JobsConstructor]`. |
-| <a id="hf007"></a>HF007 | The class declaring a `[JobFunction]` is abstract. | Move the method to a concrete class. |
-| <a id="hf008"></a>HF008 | The class declaring a `[JobFunction]` is nested in another type. | Move the method to a top-level class. |
-| <a id="hf009"></a>HF009 | A parameter is not `JobFunctionContext`, `JobFunctionContext<T>`, or `CancellationToken`. | Remove the parameter and inject the service through the declaring class's constructor. |
-| <a id="hf010"></a>HF010 | More than one constructor is marked `[JobsConstructor]`. | Keep the attribute on one constructor. |
-| <a id="hf011"></a>HF011 | Two functions in one compilation take `JobFunctionContext<T>` with the same `T`. Nothing is generated. | Give each typed function its own request type. |
-| <a id="hf012"></a>HF012 | The priority argument is not a defined `JobPriority` value. | Pass a `JobPriority` member. |
-| <a id="hf013"></a>HF013 | The maximum concurrency is negative. | Pass `0` for unlimited or a positive limit. |
-| <a id="hf014"></a>HF014 | An assembly-level middleware `Function` names no descriptor published by a referenced assembly. | Correct the name, or reference the assembly that declares the function. |
+| <a id="hf001"></a>HF001 | The `[Job]` class is neither public nor internal, or is `file`-local. | Make the class `public` or `internal` (no modifier on a top-level class is internal). |
+| <a id="hf003"></a>HF003 | The `Cron` value is not a valid six-field (seconds-first) expression. A value starting with `%` names a configuration key and is checked at startup instead. | Use six fields, for example `"0 */5 * * * *"`, or a `%Section:Key` configuration key. |
+| <a id="hf004"></a>HF004 | The identity is not in `owner.name` form: it is empty, longer than 200 characters, has no `.` separator or an empty segment, has surrounding white space, or contains a control character. | Pass an identity such as `"billing.close-day"`, whose first segment names the owning module. |
+| <a id="hf005"></a>HF005 | Two `[Job]` classes in one compilation use the same identity. Nothing is generated. | Give each job a unique identity; use `ContractVersion` to version one job, not a second identity. |
+| <a id="hf007"></a>HF007 | The `[Job]` class is abstract or generic, so a run cannot construct it. | Put `[Job]` on a concrete, non-generic class. |
+| <a id="hf008"></a>HF008 | The `[Job]` class is nested in another type. | Move the class to the top level. |
+| <a id="hf009"></a>HF009 | The `[Job]` class implements neither `IJob` nor `IJob<TArgs>`, or implements more than one of them. | Implement exactly one: `IJob` for a job without arguments, `IJob<TArgs>` for a job with arguments. |
+| <a id="hf011"></a>HF011 | Two `[Job]` classes in one compilation implement `IJob<TArgs>` with the same `TArgs`. Nothing is generated. | Give each job its own argument type; scheduling finds a job by its argument type. |
+| <a id="hf012"></a>HF012 | `Priority` is not a defined `JobPriority` value. | Pass a `JobPriority` member. |
+| <a id="hf013"></a>HF013 | `MaxConcurrency` is negative. | Pass `0` for unlimited or a positive limit. |
+| <a id="hf014"></a>HF014 | An assembly-level middleware `Function` names no job identity published by a referenced assembly. | Correct the identity, or reference the assembly that declares the job. |
 | <a id="hf015"></a>HF015 | The same middleware type is declared twice for the same stage, target, and priority. | Remove the duplicate declaration. |
-| <a id="hf016"></a>HF016 | Method-level middleware is declared on a method without `[JobFunction]`. | Put the middleware attribute beside a `[JobFunction]` attribute, or move it to the assembly. |
-| <a id="hf017"></a>HF017 | Method-level middleware sets `Function`. | Remove `Function`; the neighboring `[JobFunction]` is the target. |
-| <a id="hf018"></a>HF018 | Assembly-level middleware `Function` names a function declared in the same assembly. | Declare the middleware on that `[JobFunction]` method instead. |
+| <a id="hf016"></a>HF016 | Class-level middleware is declared on a class without `[Job]`. | Put the middleware attribute on a `[Job]` class, or move it to the assembly. |
+| <a id="hf017"></a>HF017 | Class-level middleware sets `Function`. | Remove `Function`; the decorated `[Job]` class is the target. |
+| <a id="hf018"></a>HF018 | Assembly-level middleware `Function` names a job declared in the same assembly. | Declare the middleware on that `[Job]` class instead. |
 | <a id="hf019"></a>HF019 | The middleware type, or a type containing it, is private, protected, or `file`-local, so generated code cannot resolve it. | Make the type `public` or `internal`. |
 | <a id="hf020"></a>HF020 | `OnMissedRun` is not a defined `MissedRunPolicy` value. | Pass a `MissedRunPolicy` member. |
 | <a id="hf021"></a>HF021 | `MissedRunGraceSeconds` is zero or negative. | Pass a positive number of seconds, or leave it unset to inherit the scheduler default. |
@@ -1167,55 +1224,47 @@ dotnet add package Headless.Jobs.SourceGenerator
 ```csharp
 using Headless.Jobs.Base;
 using Headless.Jobs.Enums;
+using Microsoft.Extensions.DependencyInjection;
 
-// Static cron job (no DI): a static method needs no instance, so no factory is generated
-public static class MaintenanceJobs
+// Recurring job without arguments, evaluated in a named time zone.
+[Job("maintenance.cleanup", Cron = "0 */5 * * * *", TimeZone = "Africa/Cairo")]
+public sealed class CleanupJob : IJob
 {
-    [JobFunction("Cleanup", cronExpression: "0 */5 * * * *")]
-    public static Task CleanupAsync(CancellationToken ct) => Task.CompletedTask;
+    public ValueTask ExecuteAsync(JobContext context, CancellationToken ct) => ValueTask.CompletedTask;
 }
 
-// Instance job with primary constructor DI
-public sealed class OrderProcessor(IOrderService orders)
+// Job with a typed argument and primary-constructor DI.
+[Job("orders.process", MaxConcurrency = 4)]
+public sealed class ProcessOrderJob(IOrderService orders) : IJob<OrderRequest>
 {
-    [JobFunction("ProcessOrder")]
-    public Task ExecuteAsync(JobFunctionContext<OrderRequest> context, CancellationToken ct) =>
-        orders.ProcessAsync(context.Request, ct);
+    public async ValueTask ExecuteAsync(JobContext<OrderRequest> context, CancellationToken ct) =>
+        await orders.ProcessAsync(context.Request, ct);
 }
 
-// Multiple constructors — mark the target with [JobsConstructor]
-public sealed class ComplexJob
+// Several constructors: ActivatorUtilities uses the one marked [ActivatorUtilitiesConstructor].
+[Job("reports.daily", Cron = "0 0 0 * * *", Priority = JobPriority.High)]
+public sealed class DailyReportJob : IJob
 {
-    [JobsConstructor]
-    public ComplexJob(ILogger<ComplexJob> logger, IConfiguration config) { ... }
+    [ActivatorUtilitiesConstructor]
+    public DailyReportJob(ILogger<DailyReportJob> logger, IConfiguration config) { ... }
 
-    public ComplexJob() { } // default ctor ignored by generator
+    public DailyReportJob() { }
 
-    [JobFunction("ComplexTask")]
-    public async Task ExecuteAsync(CancellationToken ct) { ... }
-}
-
-// High-priority cron
-public static class ReportJobs
-{
-    [JobFunction("DailyReport", cronExpression: "0 0 0 * * *", taskPriority: JobPriority.High)]
-    public static Task DailyAsync(CancellationToken ct) => Task.CompletedTask;
+    public ValueTask ExecuteAsync(JobContext context, CancellationToken ct) { ... }
 }
 ```
 
 ### Configuration
 
-The generator also emits a public static `AppJobs` catalog for requestless functions in the same assembly namespace as its registration class. Each getter returns the immutable canonical descriptor used during module registration. Alphanumeric contract names preserve their spelling (`Cleanup`); keywords are escaped (`@class`). Underscores, punctuation, non-ASCII characters, leading digits, and the first character of reserved member names are encoded as `_uXXXX_` UTF-16 code units. For example, `invoice.send` becomes `AppJobs.invoice_u002E_send`; literal underscores are encoded too, preventing escape-lookalike collisions. The catalog is sorted by ordinal contract name and is independent of CLR handler names and source ordering.
+No generator configuration: attributes are the sole input. Generated output file: `JobsModule.g.cs`, added to the consuming assembly. The generator emits no public job catalog: scheduling code addresses a job by its argument type or its class.
 
-No generator configuration: attributes are the sole input. Generated output file: `JobsModule.g.cs`, added to the consuming assembly.
-
-`[JobFunction]` remains the sole handler discovery model. Requestless descriptors use `RequestType = null`; typed functions are indexed by both durable function name and exact request `Type`. Attribute priority and maximum concurrency remain descriptor metadata, not per-schedule options.
+`[Job]` on an `IJob` / `IJob<TArgs>` class is the sole job declaration model. Jobs without arguments have `RequestType = null`; jobs with arguments are indexed by both identity and exact argument `Type`. Attribute priority and maximum concurrency are descriptor defaults, not per-schedule options; a host overrides them with `Tune`.
 
 ### Runtime behavior
 
 Emits `JobsModule.g.cs` at compile time. The generated file:
-- Declares `JobsModule : IJobsModule`, whose explicitly implemented `Register` adds job delegates, request-type mappings, delegate-free descriptors, and middleware to the Jobs runtime. Only `AddModule<JobsModule>()` calls it.
-- Contains constructor factory methods for each discovered job class.
+- Declares `JobsModule : IJobsModule`, whose explicitly implemented `Register(JobsCatalogBuilder)` adds job delegates, request-type mappings, delegate-free descriptors, and middleware to one host's catalog. Only the host's registry build calls it, for a module added with `AddModule<JobsModule>()`.
+- Contains one typed invoker per job class, which builds the class from the run's scope and calls `ExecuteAsync`.
 - Has no effect at runtime until a host adds the module.
 
 ---
@@ -1260,7 +1309,7 @@ Activity tag reference (framework-owned tags are namespaced `headless.job.*` / `
 |-----|---------|
 | `headless.job.id` | `123e4567-…` |
 | `headless.job.type` | `TimeJob`, `CronJob` |
-| `headless.job.function` | `ProcessOrder` |
+| `headless.job.function` | `orders.process` |
 | `headless.job.priority` | `Normal`, `High`, `Low`, `LongRunning` |
 | `headless.job.machine` | `web-01` |
 | `headless.job.parent_id` | parent job GUID |
@@ -1426,9 +1475,9 @@ await timeJobManager.AddAsync(
 );
 ```
 
-- Retries run automatically when a job method throws.
+- Retries run automatically when a job's `ExecuteAsync` throws.
 - Status remains `InProgress` during retries; becomes `Failed` after exhaustion.
-- `JobFunctionContext.RetryCount` carries the current attempt number.
+- `JobContext.RetryCount` carries the current attempt number.
 - If `RetryIntervals` is shorter than `Retries`, the last interval is reused.
 - If `RetryIntervals` is null or empty, default is 30 seconds.
 
@@ -1496,10 +1545,10 @@ builder.Services.AddHeadlessJobs(options =>
 #### Job-Level Error Handling
 
 ```csharp
-public sealed class ProcessOrderJob(ILogger<ProcessOrderJob> logger)
+[Job("orders.process")]
+public sealed class ProcessOrderJob(ILogger<ProcessOrderJob> logger) : IJob<OrderRequest>
 {
-    [JobFunction("ProcessOrder")]
-    public async Task ExecuteAsync(JobFunctionContext<OrderRequest> context, CancellationToken ct)
+    public async ValueTask ExecuteAsync(JobContext<OrderRequest> context, CancellationToken ct)
     {
         try
         {

@@ -112,7 +112,8 @@ public static class SetupRabbitMqMessaging
                 MessagingProviderCapabilities.Transport(
                     "RabbitMQ",
                     [MessageLane.Bus, MessageLane.Queue],
-                    supportsIndependentLaneTopology: true
+                    supportsIndependentLaneTopology: true,
+                    supportsEveryInstance: true
                 )
             );
             configureOptions(services);

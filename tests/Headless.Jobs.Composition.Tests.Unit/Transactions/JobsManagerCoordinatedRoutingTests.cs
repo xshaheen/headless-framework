@@ -38,10 +38,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
     private readonly List<JobsPostCommitSignalService> _workers = [];
     private readonly List<UnitOfWorkProbe> _scopes = [];
 
-    public JobsManagerCoordinatedRoutingTests()
-    {
-        _BuildProvider();
-    }
+    private JobFunctionRegistry _registry = _BuildRegistry();
 
     protected override async ValueTask DisposeAsyncCore()
     {
@@ -57,7 +54,6 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             await _scopes[i].DisposeAsync();
         }
 
-        JobFunctionProvider.ResetForTests();
         await base.DisposeAsyncCore();
     }
 
@@ -1493,7 +1489,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             dispatcher,
             new CronScheduleCache(TimeZoneInfo.Utc),
             signals,
-            JobFunctionProvider.CreateHostRegistry(configuration: null),
+            _registry,
             logger
         );
 
@@ -1569,44 +1565,51 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         }
     }
 
-    private static IDisposable _ReplaceScheduleDispatch(
+    // Managers created while the returned scope is open read a registry whose only schedule middleware is dispatch.
+    private IDisposable _ReplaceScheduleDispatch(
         Func<JobScheduleContext, JobScheduleNext, CancellationToken, Task> dispatch
     )
     {
-        _BuildProvider(dispatch);
-        return new ResetFunctionProvider();
+        _registry = _BuildRegistry(dispatch);
+        return new RestoreRegistry(this);
     }
 
-    private static void _BuildProvider(
+    private static JobFunctionRegistry _BuildRegistry(
         Func<JobScheduleContext, JobScheduleNext, CancellationToken, Task>? dispatch = null
     )
     {
-        JobFunctionProvider.ResetForTests(discoveryComplete: false);
-        JobFunctionProvider.RegisterFunctions(
-            new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
-            {
-                [_FunctionName] = new JobFunctionRegistration
-                {
-                    CronExpression = "0 0 * * *",
-                    Priority = JobPriority.LongRunning,
-                    Delegate = (_, _, _) => Task.CompletedTask,
-                    MaxConcurrency = 1,
-                },
-            }
+        var registry = JobFunctionRegistryBuilder.Build(
+            [
+                new KeyValuePair<string, JobFunctionRegistration>(
+                    _FunctionName,
+                    new JobFunctionRegistration
+                    {
+                        CronExpression = "0 0 * * *",
+                        Priority = JobPriority.LongRunning,
+                        Delegate = (_, _, _) => Task.CompletedTask,
+                        MaxConcurrency = 1,
+                        JobType = typeof(RoutingJob),
+                    }
+                ),
+            ],
+            [],
+            []
         );
 
-        if (dispatch is not null)
-        {
-            JobMiddlewareRegistry.RegisterSchedule("Tests:ScheduleDispatch", null, 0, dispatch.Invoke);
-        }
-
-        JobFunctionProvider.MarkDiscoveryComplete();
-        JobFunctionProvider.Build();
+        return dispatch is null
+            ? registry
+            : registry with
+            {
+                Middleware = JobMiddlewarePipeline.Create(
+                    [new JobScheduleMiddlewareRegistration("Tests:ScheduleDispatch", null, 0, dispatch.Invoke)],
+                    []
+                ),
+            };
     }
 
-    private sealed class ResetFunctionProvider : IDisposable
+    private sealed class RestoreRegistry(JobsManagerCoordinatedRoutingTests owner) : IDisposable
     {
-        public void Dispose() => JobFunctionProvider.ResetForTests();
+        public void Dispose() => owner._registry = _BuildRegistry();
     }
 
     // A store anchor far from any plausible node clock, so a store-anchored seed is unmistakable in an assertion.

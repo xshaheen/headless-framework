@@ -4,6 +4,7 @@ using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Checks;
 using Headless.Hosting.Initialization;
+using Headless.Messaging;
 using Headless.Security;
 using Headless.Settings.ClientVisibility;
 using Headless.Settings.Definitions;
@@ -149,6 +150,10 @@ public static class SetupSettings
         // The definition store keys its cross-instance lock on the application name and the manager stamps
         // its change announcements with the instance id; a host that never registered an identity gets one.
         services.AddHeadlessHostIdentity();
+
+        // The change announcement's wire name is declared rather than convention-derived, so services sharing a
+        // broker agree on it whatever naming conventions each configures. Inert when the host does not use messaging.
+        services.AddMessageContract<SettingChangedMessage>(SettingChangedMessage.MessageName, "1");
 
         services.TryAddSingleton<ISettingErrorsDescriptor, DefaultSettingErrorsDescriptor>();
         services.TryAddSingleton<ISettingEncryptionService, SettingEncryptionService>();

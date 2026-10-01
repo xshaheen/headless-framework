@@ -4,7 +4,7 @@ Roslyn incremental source generator that eliminates reflection and manual job re
 
 ## Why use this package
 
-Without the source generator, every job class or method must be manually registered with the Jobs runtime at startup, and job dispatch uses reflection to invoke methods. The source generator scans for `[JobFunction]` methods and Jobs middleware at compile time and emits one `JobsModule` per assembly; the host registers it with `AddModule<JobsModule>()`, with no reflection or runtime assembly loading.
+Without the source generator, every job would have to be registered with the Jobs runtime by hand at startup. The source generator finds `[Job]` classes and Jobs middleware at compile time and emits one `JobsModule` per assembly, with a typed invoker for each job; the host registers it with `AddModule<JobsModule>()`, with no runtime assembly scanning.
 
 ## Install
 

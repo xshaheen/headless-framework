@@ -122,7 +122,8 @@ public sealed class RabbitMqMessagingOptions
 
         /// <summary>
         /// Sets the <c>x-message-ttl</c> declaration argument — the time in milliseconds
-        /// before a message is discarded. Defaults to 864,000,000 ms (10 days).
+        /// before a message is discarded. Defaults to 864,000,000 ms (10 days). Every-instance queues do not use it:
+        /// they hold per-process state and always discard a message after 60 seconds.
         /// </summary>
         // ReSharper disable once InconsistentNaming
         public int MessageTTL { get; set; } = 864000000;
