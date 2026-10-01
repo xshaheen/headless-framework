@@ -81,8 +81,8 @@ public sealed class SchemaRunnerTelemetryTests : TestBase
             .Equal(_Tags(("headless.schema_runner.mode", "apply"), ("headless.schema_runner.outcome", "success")));
 
         var wait = recorder.Of(_LockWait).Should().ContainSingle().Which;
-        wait.Unit.Should().Be("s");
-        wait.Value.Should().Be(3);
+        wait.Unit.Should().Be("ms");
+        wait.Value.Should().Be(3000);
         wait.Tags.Should()
             .Equal(
                 _Tags(("headless.schema_runner.dialect", "Sqlite"), ("headless.schema_runner.lock.outcome", "acquired"))

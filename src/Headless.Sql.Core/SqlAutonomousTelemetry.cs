@@ -52,16 +52,13 @@ internal static class SqlAutonomousTelemetry
     internal const string OutcomeCanceled = "canceled";
 
     // Store calls are single-digit milliseconds when healthy, while a call that waits out lock contention and two
-    // retries reaches seconds; the boundaries are the OpenTelemetry advice for db.client.operation.duration.
+    // retries reaches seconds; the boundaries are the OpenTelemetry advice for db.client.operation.duration, in ms.
     private static readonly Histogram<double> _Duration = SqlDiagnostics.Meter.CreateHistogram(
         DurationName,
-        unit: "s",
+        unit: "ms",
         description: "Duration of autonomous store calls, every attempt and retry delay included.",
         tags: null,
-        advice: new InstrumentAdvice<double>
-        {
-            HistogramBucketBoundaries = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10],
-        }
+        advice: new InstrumentAdvice<double> { HistogramBucketBoundaries = [1, 5, 10, 50, 100, 500, 1000, 5000, 10000] }
     );
 
     // One bucket per possible attempt count, so the histogram reads as an exact distribution.
@@ -237,7 +234,7 @@ internal static class SqlAutonomousTelemetry
 
             if (_Duration.Enabled)
             {
-                _Duration.Record(timeProvider.GetElapsedTime(_startedAt).TotalSeconds, tags);
+                _Duration.Record(timeProvider.GetElapsedTime(_startedAt).TotalMilliseconds, tags);
             }
 
             if (_Attempts.Enabled)

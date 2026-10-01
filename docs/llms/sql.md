@@ -153,8 +153,8 @@ Spans: one `schema_runner.apply` or `schema_runner.verify` span per pass (`Apply
 
 | Instrument | Kind | Unit | Attributes | Meaning |
 | --- | --- | --- | --- | --- |
-| `headless.schema_runner.duration` | Histogram | `s` | `headless.schema_runner.mode` (`apply`, `verify`), `headless.schema_runner.outcome` (`success`, `failure`), `error.type` on failure | One pass, every database it reaches included. A startup refused for a checksum or missing step is a `failure` with `error.type` `Headless.Hosting.Initialization.Schema.SchemaRunnerException`. |
-| `headless.schema_runner.lock.wait.duration` | Histogram | `s` | `headless.schema_runner.dialect`, `headless.schema_runner.lock.outcome` (`acquired`, `timed_out`, `failed`) | Time a pass waited for another replica's per-database lock; `failed` means the lock query failed or the wait was cancelled. A warm database takes no lock and records nothing. |
+| `headless.schema_runner.duration` | Histogram | `ms` | `headless.schema_runner.mode` (`apply`, `verify`), `headless.schema_runner.outcome` (`success`, `failure`), `error.type` on failure | One pass, every database it reaches included. A startup refused for a checksum or missing step is a `failure` with `error.type` `Headless.Hosting.Initialization.Schema.SchemaRunnerException`. |
+| `headless.schema_runner.lock.wait.duration` | Histogram | `ms` | `headless.schema_runner.dialect`, `headless.schema_runner.lock.outcome` (`acquired`, `timed_out`, `failed`) | Time a pass waited for another replica's per-database lock; `failed` means the lock query failed or the wait was cancelled. A warm database takes no lock and records nothing. |
 | `headless.schema_runner.steps` | Counter | `{step}` | `headless.schema_runner.dialect`, `headless.schema_runner.feature`, `headless.schema_runner.step.outcome` (`applied`, `skipped`) | Steps an apply pass ran, or skipped because the history already records them. Verify passes record none. |
 | `headless.schema_runner.mismatches` | Counter | `{mismatch}` | `headless.schema_runner.mode`, `headless.schema_runner.dialect`, `headless.schema_runner.feature`, `headless.schema_runner.mismatch.kind` (`missing`, `unknown`, `checksum`) | History disagreements a pass found. Apply passes never report `missing`, since applying it is the point. |
 | `headless.schema_runner.absorbed_races` | Counter | `{race}` | `headless.schema_runner.dialect` | Steps re-run because a creator outside the runner committed the same object first. |
@@ -194,7 +194,7 @@ Each call is one `sql.autonomous_transaction` span; the attempts' driver spans n
 
 | Instrument | Kind | Unit | Attributes | Meaning |
 | --- | --- | --- | --- | --- |
-| `headless.sql.autonomous.duration` | Histogram | `s` | `headless.sql.outcome`, `error.type` on failure | One call, every attempt and retry delay included. |
+| `headless.sql.autonomous.duration` | Histogram | `ms` | `headless.sql.outcome`, `error.type` on failure | One call, every attempt and retry delay included. |
 | `headless.sql.autonomous.attempts` | Histogram | `{attempt}` | `headless.sql.outcome`, `error.type` on failure | Attempts the call made, the first one included: 1 to 3. |
 | `headless.sql.autonomous.retries` | Counter | `{retry}` | `error.type`, `db.response.status_code` when the driver reports one | One per retried attempt: a transient fault raised before the commit started. |
 

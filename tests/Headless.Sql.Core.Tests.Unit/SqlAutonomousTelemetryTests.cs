@@ -44,7 +44,7 @@ public sealed class SqlAutonomousTelemetryTests : TestBase
         span.GetTagItem("error.type").Should().BeNull();
 
         var duration = recorder.Of(_Duration).Should().ContainSingle().Which;
-        duration.Unit.Should().Be("s");
+        duration.Unit.Should().Be("ms");
         duration.Value.Should().BeGreaterThanOrEqualTo(0);
         duration
             .Tags.Should()

@@ -60,11 +60,25 @@ internal static class SchemaRunnerTelemetry
 
     // A warm pass is one history read per schema, tens of milliseconds; a cold one can build indexes on populated
     // tables for minutes, and the default lock and command timeouts are two and ten minutes.
-    private static readonly double[] _DurationBoundaries = [0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30, 60, 120, 300, 600];
+    private static readonly double[] _DurationBoundaries =
+    [
+        10,
+        50,
+        100,
+        500,
+        1_000,
+        5_000,
+        10_000,
+        30_000,
+        60_000,
+        120_000,
+        300_000,
+        600_000,
+    ];
 
     private static readonly Histogram<double> _Duration = SchemaRunnerDiagnostics.Meter.CreateHistogram(
         DurationName,
-        unit: "s",
+        unit: "ms",
         description: "Duration of schema runner apply and verify passes.",
         tags: null,
         advice: new InstrumentAdvice<double> { HistogramBucketBoundaries = _DurationBoundaries }
@@ -72,7 +86,7 @@ internal static class SchemaRunnerTelemetry
 
     private static readonly Histogram<double> _LockWaitDuration = SchemaRunnerDiagnostics.Meter.CreateHistogram(
         LockWaitDurationName,
-        unit: "s",
+        unit: "ms",
         description: "Time a schema runner waited for its per-database lock.",
         tags: null,
         advice: new InstrumentAdvice<double> { HistogramBucketBoundaries = _DurationBoundaries }
@@ -283,7 +297,7 @@ internal static class SchemaRunnerTelemetry
 
             if (_Duration.Enabled)
             {
-                _Duration.Record(timeProvider.GetElapsedTime(_startedAt).TotalSeconds, tags);
+                _Duration.Record(timeProvider.GetElapsedTime(_startedAt).TotalMilliseconds, tags);
             }
 
             if (activity is null)
@@ -348,7 +362,7 @@ internal static class SchemaRunnerTelemetry
             if (_LockWaitDuration.Enabled)
             {
                 _LockWaitDuration.Record(
-                    timeProvider.GetElapsedTime(_startedAt).TotalSeconds,
+                    timeProvider.GetElapsedTime(_startedAt).TotalMilliseconds,
                     new TagList { { TagDialect, dialect }, { TagLockOutcome, outcome } }
                 );
             }
