@@ -9,7 +9,9 @@ namespace Headless.Idempotency.InMemory;
 /// <summary>
 /// The in-memory record store: one process-local table of records, one exclusive lock per record key, and one
 /// store-wide generation counter. Every verb that decides takes its key's lock and only then reads the injected
-/// <see cref="TimeProvider" />, so a decision is never made on a clock read from before a lock wait.
+/// <see cref="TimeProvider" />, so a decision is never made on a clock read from before a lock wait. Inside one unit
+/// the reading never runs backwards, so the instants one admission writes across its insert and its grant agree even
+/// when the wall clock steps back between them.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -68,7 +70,7 @@ internal sealed class InMemoryIdempotencyRecordStore(
     {
         Argument.IsNotNull(fingerprint);
         var transaction = await _LockAsync(unitOfWork, key, cancellationToken).ConfigureAwait(false);
-        var now = timeProvider.GetUtcNow();
+        var now = transaction.Now(timeProvider);
 
         if (transaction.Read(key) is { } existing)
         {
@@ -96,7 +98,9 @@ internal sealed class InMemoryIdempotencyRecordStore(
     {
         var transaction = await _LockAsync(unitOfWork, key, cancellationToken).ConfigureAwait(false);
 
-        return transaction.Read(key) is { } record ? _State(record, timeProvider.GetUtcNow(), inserted: false) : null;
+        return transaction.Read(key) is { } record
+            ? _State(record, transaction.Now(timeProvider), inserted: false)
+            : null;
     }
 
     #endregion
@@ -116,7 +120,7 @@ internal sealed class InMemoryIdempotencyRecordStore(
         Argument.IsNotNull(fingerprint);
         var transaction = await _LockAsync(unitOfWork, key, cancellationToken).ConfigureAwait(false);
         var record = transaction.Read(key) ?? throw _NotWritten(key, "admit");
-        var now = timeProvider.GetUtcNow();
+        var now = transaction.Now(timeProvider);
 
         // Drawn only now, under the record's lock: a generation drawn before the lock could be lower than one a
         // still-open admission already holds. Also the in-place reset of a record past its retention: every outcome
@@ -153,7 +157,7 @@ internal sealed class InMemoryIdempotencyRecordStore(
         Argument.IsNotNull(contract);
         var transaction = await _LockAsync(unitOfWork, key, cancellationToken).ConfigureAwait(false);
         var record = _RequireGeneration(transaction.Read(key), key, generation, "complete");
-        var now = timeProvider.GetUtcNow();
+        var now = transaction.Now(timeProvider);
 
         // The completing generation is kept, so a second completion by the same attempt finds its own completed
         // record and is refused instead of overwriting the stored result. The result copies the caller's bytes.
@@ -204,7 +208,7 @@ internal sealed class InMemoryIdempotencyRecordStore(
     {
         var transaction = await _LockAsync(unitOfWork, key, cancellationToken).ConfigureAwait(false);
         var record = _RequireGeneration(transaction.Read(key), key, generation, "release");
-        var now = timeProvider.GetUtcNow();
+        var now = transaction.Now(timeProvider);
 
         transaction.Stage(
             key,
