@@ -221,7 +221,15 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
             .AsTask();
         await factory.WaitUntilInitialListenerShutdownAsync(AbortToken);
 
-        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        // The restart reads its remaining budget and then arms a timer for it, so one advance can land between the two
+        // and leave the timer due past the advanced clock. Keep advancing, well short of the 30-second health check,
+        // until the restart observes its deadline.
+        for (var advanced = 0; advanced < 10 && !restartTask.IsCompleted; advanced++)
+        {
+            timeProvider.Advance(TimeSpan.FromSeconds(2));
+            await Task.WhenAny(restartTask, Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken));
+        }
+
         await restartTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
 
         factory.ListenerCreateCount.Should().Be(1, "a timed-out old generation must fence replacement startup");
