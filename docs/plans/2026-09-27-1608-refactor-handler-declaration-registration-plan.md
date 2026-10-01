@@ -154,6 +154,8 @@ flowchart TB
 - R18. `Tune(identity, ...)` changes only a declared handler's deployment settings: concurrency, provider settings, a failure policy override, and middleware. It cannot create a handler or change its identity, kind, lane, or messages, and an unknown identity fails startup.
 - R19. The same deployment settings bind from configuration keyed by identity.
 - R20. `ConsumeOnly(...)` and `RunOnly(...)` choose which consumers consume and which jobs run in a host, and handlers outside the filter stay registered so the host can still publish and schedule them.
+  - Every-instance consumers always run regardless of `ConsumeOnly`, because they keep per-process state such as a hybrid-cache L1 current. Runtime subscriptions are never filtered either.
+  - `ConsumeOnly` also filters the host's received-retry and inbox-orphan pickups to its consumed identities plus the identities of the competing runtime subscriptions attached to it, so a host never leases a row it has no executor for, and a runtime subscription's failed rows are retried by the host that holds its delegate.
 - R21. Global and per-message middleware remain, and middleware keyed by group and lane is removed.
 
 **Referencing handlers**
@@ -205,7 +207,7 @@ flowchart TB
 
 - Every-instance delivery semantics, provider mapping, the reconnect signal's firing rules, and cleanup belong to #936. This plan declares every-instance consumers and wires them to that runtime.
 - The contents of the shared failure policy model (tiers, classification, terminal actions) belong to its own issue. This plan adds the `IFailurePolicy` slot and the attribute property only.
-- `IRuntimeSubscriber` keeps registering handlers at run time. Its subscriptions are always every-instance, per #936.
+- `IRuntimeSubscriber` keeps registering handlers at run time. Its subscriptions compete by default; per #936, a subscription opts in to every-instance delivery with `RuntimeSubscriptionOptions.EveryInstance`.
 - There is no migration path or compatibility layer for removed APIs, and group-keyed storage schemas change in place. The `docs/llms/` guides change with the code.
 - Not planned: interceptor-based fluent registration, method-level jobs, lambda jobs, method-level consumer handlers, and attributes on message types.
 
