@@ -84,11 +84,4 @@ public readonly record struct JobFunctionRegistration
     /// for the scheduler's default zone. Ignored for time jobs.
     /// </summary>
     public string? TimeZoneId { get; init; }
-
-    /// <summary>
-    /// The failure policy type the job declares, or <see langword="null"/> when it declares none. The declaration is
-    /// recorded for policy resolution; until a policy model is registered for the type, the host's retry behavior
-    /// applies.
-    /// </summary>
-    public Type? FailurePolicy { get; init; }
 }

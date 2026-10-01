@@ -456,14 +456,6 @@ Distributed background job scheduling with cron expressions, delayed execution, 
 | [Headless.Jobs.EntityFramework.PostgreSql](src/Headless.Jobs.EntityFramework.PostgreSql/README.md) | PostgreSQL atomic claims with `FOR UPDATE SKIP LOCKED` |
 | [Headless.Jobs.EntityFramework.SqlServer](src/Headless.Jobs.EntityFramework.SqlServer/README.md) | SQL Server atomic claims with `UPDLOCK`, `READPAST`, and `ROWLOCK` |
 
-### Reliability
-
-Reliability contracts that Messaging and Jobs share.
-
-| Package | Description |
-|---------|-------------|
-| [Headless.Reliability.Abstractions](src/Headless.Reliability.Abstractions/README.md) | `IFailurePolicy`, the failure policy a consumer or job names in its declaration |
-
 ### OpenAPI
 
 Specification generation and interactive documentation UIs.

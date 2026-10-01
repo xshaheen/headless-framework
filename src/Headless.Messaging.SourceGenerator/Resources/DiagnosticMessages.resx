@@ -36,12 +36,6 @@
   <data name="DuplicateQueueConsumerMessage" xml:space="preserve">
     <value>The message '{0}' already has a [QueueConsumer] in this assembly; a Queue message has exactly one consumer</value>
   </data>
-  <data name="InvalidFailurePolicyTitle" xml:space="preserve">
-    <value>Failure policy type does not implement IFailurePolicy</value>
-  </data>
-  <data name="InvalidFailurePolicyMessage" xml:space="preserve">
-    <value>The failure policy type '{0}' on consumer class '{1}' must be a concrete, closed type that implements Headless.Reliability.IFailurePolicy</value>
-  </data>
   <data name="SubscriptionHookWithoutEveryInstanceTitle" xml:space="preserve">
     <value>IOnSubscriptionEstablished on a consumer that is not every-instance</value>
   </data>

@@ -538,7 +538,6 @@ public sealed class PriceCacheModule : IMessagingModule
         catalog.AddBusConsumer<PriceCache, PriceChanged>(
             Identity,
             everyInstance: true,
-            policy: null,
             static (services, context, cancellationToken) =>
                 ActivatorUtilities
                     .CreateInstance<PriceCache>(services)

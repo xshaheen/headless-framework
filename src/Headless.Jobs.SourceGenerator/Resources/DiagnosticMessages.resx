@@ -126,10 +126,4 @@
   <data name="InaccessibleMiddlewareTypeMessage" xml:space="preserve">
     <value>The Jobs middleware type '{0}' must be accessible from generated code in the declaring assembly</value>
   </data>
-  <data name="InvalidFailurePolicyTitle" xml:space="preserve">
-    <value>Invalid job failure policy</value>
-  </data>
-  <data name="InvalidFailurePolicyMessage" xml:space="preserve">
-    <value>The policy type '{0}' on job class '{1}' must implement Headless.Reliability.IFailurePolicy</value>
-  </data>
 </root>

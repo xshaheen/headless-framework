@@ -72,18 +72,6 @@ internal static class DiagnosticDescriptors
         customTags: _CustomTags
     );
 
-    public static readonly DiagnosticDescriptor InvalidFailurePolicy = new(
-        "HM005",
-        _Resource("InvalidFailurePolicyTitle"),
-        _Resource("InvalidFailurePolicyMessage"),
-        _Category,
-        DiagnosticSeverity.Error,
-        isEnabledByDefault: true,
-        description: _Resource("InvalidFailurePolicyMessage"),
-        helpLinkUri: _HelpLinkBase + "hm005",
-        customTags: _CustomTags
-    );
-
     public static readonly DiagnosticDescriptor SubscriptionHookWithoutEveryInstance = new(
         "HM006",
         _Resource("SubscriptionHookWithoutEveryInstanceTitle"),

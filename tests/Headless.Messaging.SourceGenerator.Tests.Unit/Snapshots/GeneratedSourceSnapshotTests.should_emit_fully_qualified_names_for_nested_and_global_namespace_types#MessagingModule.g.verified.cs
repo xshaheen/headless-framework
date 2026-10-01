@@ -11,10 +11,10 @@ namespace Messaging.SourceGenerator.Tests
 
         static void global::Headless.Messaging.IMessagingModule.Register(global::Headless.Messaging.MessagingCatalogBuilder catalog)
         {
-            catalog.AddBusConsumer<global::Billing_Handlers.Nested, global::Billing.Payload>("billing.flattened", everyInstance: false, policy: null, dispatch: Dispatch_Billing_Handlers_Nested);
-            catalog.AddBusConsumer<global::Billing.Handlers.Nested, global::Billing.Payload>("billing.nested", everyInstance: false, policy: null, dispatch: Dispatch_Billing_Handlers_Nested_2);
-            catalog.AddBusConsumer<global::Billing.Handlers.Nested, global::GlobalMessage>("billing.nested", everyInstance: false, policy: null, dispatch: Dispatch_Billing_Handlers_Nested_2);
-            catalog.AddBusConsumer<global::GlobalConsumer, global::GlobalMessage>("root.global", everyInstance: false, policy: null, dispatch: Dispatch_GlobalConsumer);
+            catalog.AddBusConsumer<global::Billing_Handlers.Nested, global::Billing.Payload>("billing.flattened", everyInstance: false, dispatch: Dispatch_Billing_Handlers_Nested);
+            catalog.AddBusConsumer<global::Billing.Handlers.Nested, global::Billing.Payload>("billing.nested", everyInstance: false, dispatch: Dispatch_Billing_Handlers_Nested_2);
+            catalog.AddBusConsumer<global::Billing.Handlers.Nested, global::GlobalMessage>("billing.nested", everyInstance: false, dispatch: Dispatch_Billing_Handlers_Nested_2);
+            catalog.AddBusConsumer<global::GlobalConsumer, global::GlobalMessage>("root.global", everyInstance: false, dispatch: Dispatch_GlobalConsumer);
         }
 
         private static async global::System.Threading.Tasks.ValueTask Dispatch_Billing_Handlers_Nested(global::System.IServiceProvider services, global::Headless.Messaging.ConsumeContext context, global::System.Threading.CancellationToken cancellationToken)

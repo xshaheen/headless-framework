@@ -15,7 +15,6 @@ internal static class GeneratorTestHelper
         GeneratorCompilation.LoadedAssemblyReferences(
             typeof(JobAttribute).Assembly,
             typeof(JobsCatalogBuilder).Assembly,
-            typeof(Headless.Reliability.IFailurePolicy).Assembly,
             typeof(IServiceCollection).Assembly
         )
     );

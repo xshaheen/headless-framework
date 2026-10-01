@@ -16,7 +16,6 @@ internal static class GeneratorTestHelper
         GeneratorCompilation.LoadedAssemblyReferences(
             typeof(BusConsumerAttribute).Assembly,
             typeof(MessagingCatalogBuilder).Assembly,
-            typeof(Headless.Reliability.IFailurePolicy).Assembly,
             typeof(ActivatorUtilities).Assembly,
             typeof(GeneratorTestHelper).Assembly
         )

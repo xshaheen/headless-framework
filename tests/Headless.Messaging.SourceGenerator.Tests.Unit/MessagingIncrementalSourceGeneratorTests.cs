@@ -15,7 +15,6 @@ public sealed class MessagingIncrementalSourceGeneratorTests
         using System.Threading;
         using System.Threading.Tasks;
         using Headless.Messaging;
-        using Headless.Reliability;
 
         """;
 
@@ -46,8 +45,8 @@ public sealed class MessagingIncrementalSourceGeneratorTests
         _RegistrationLines(generated)
             .Should()
             .Equal(
-                "catalog.AddBusConsumer<global::Billing.InvoiceProjection, global::Billing.InvoiceIssued>(\"billing.invoice-projection\", everyInstance: false, policy: null, dispatch: Dispatch_Billing_InvoiceProjection);",
-                "catalog.AddBusConsumer<global::Billing.InvoiceProjection, global::Billing.InvoicePaid>(\"billing.invoice-projection\", everyInstance: false, policy: null, dispatch: Dispatch_Billing_InvoiceProjection);"
+                "catalog.AddBusConsumer<global::Billing.InvoiceProjection, global::Billing.InvoiceIssued>(\"billing.invoice-projection\", everyInstance: false, dispatch: Dispatch_Billing_InvoiceProjection);",
+                "catalog.AddBusConsumer<global::Billing.InvoiceProjection, global::Billing.InvoicePaid>(\"billing.invoice-projection\", everyInstance: false, dispatch: Dispatch_Billing_InvoiceProjection);"
             );
         generated
             .Should()
@@ -56,7 +55,7 @@ public sealed class MessagingIncrementalSourceGeneratorTests
     }
 
     [Fact]
-    public void should_record_the_every_instance_flag_and_the_policy_type()
+    public void should_record_the_every_instance_flag()
     {
         // given
         const string source =
@@ -65,9 +64,8 @@ public sealed class MessagingIncrementalSourceGeneratorTests
                 namespace Billing;
 
                 public sealed record PriceChanged(string Sku);
-                public sealed class CachePolicy : IFailurePolicy;
 
-                [BusConsumer("billing.price-cache", EveryInstance = true, Policy = typeof(CachePolicy))]
+                [BusConsumer("billing.price-cache", EveryInstance = true)]
                 public sealed class PriceCache : IConsume<PriceChanged>, IOnSubscriptionEstablished
                 {
                     public ValueTask ConsumeAsync(ConsumeContext<PriceChanged> context, CancellationToken cancellationToken) => default;
@@ -83,9 +81,7 @@ public sealed class MessagingIncrementalSourceGeneratorTests
             .Should()
             .ContainSingle()
             .Which.Should()
-            .Contain(
-                "(\"billing.price-cache\", everyInstance: true, policy: typeof(global::Billing.CachePolicy), dispatch: Dispatch_Billing_PriceCache);"
-            );
+            .Contain("(\"billing.price-cache\", everyInstance: true, dispatch: Dispatch_Billing_PriceCache);");
     }
 
     [Fact]
@@ -113,7 +109,7 @@ public sealed class MessagingIncrementalSourceGeneratorTests
         _RegistrationLines(generated)
             .Should()
             .Equal(
-                "catalog.AddQueueConsumer<global::Billing.IssueInvoice, global::Billing.IssueInvoiceCommand>(\"billing.issue-invoice\", policy: null, dispatch: Dispatch_Billing_IssueInvoice);"
+                "catalog.AddQueueConsumer<global::Billing.IssueInvoice, global::Billing.IssueInvoiceCommand>(\"billing.issue-invoice\", dispatch: Dispatch_Billing_IssueInvoice);"
             );
     }
 
@@ -333,38 +329,6 @@ public sealed class MessagingIncrementalSourceGeneratorTests
         driver.GetRunResult().GeneratedTrees.Should().ContainSingle("a warning does not stop registration");
     }
 
-    [Theory]
-    [InlineData("typeof(string)")]
-    [InlineData("typeof(IFailurePolicy)")]
-    [InlineData("typeof(AbstractPolicy)")]
-    [InlineData("typeof(GenericPolicy<>)")]
-    public void should_fail_a_policy_type_that_is_not_a_concrete_failure_policy(string policy)
-    {
-        // given
-        var source =
-            _Usings
-            + $$"""
-                namespace Billing;
-
-                public abstract class AbstractPolicy : IFailurePolicy;
-                public sealed class GenericPolicy<T> : IFailurePolicy;
-                public sealed record PriceChanged(string Sku);
-
-                [BusConsumer("billing.cache", Policy = {{policy}})]
-                public sealed class PriceCache : IConsume<PriceChanged>
-                {
-                    public ValueTask ConsumeAsync(ConsumeContext<PriceChanged> context, CancellationToken cancellationToken) => default;
-                }
-                """;
-
-        // when
-        var driver = GeneratorTestHelper.Run(source);
-
-        // then
-        _Single(driver, "HM005").Severity.Should().Be(DiagnosticSeverity.Error);
-        driver.GetRunResult().GeneratedTrees.Should().BeEmpty();
-    }
-
     [Fact]
     public void should_fail_a_consumer_class_or_message_type_the_generated_code_cannot_name()
     {
@@ -438,7 +402,7 @@ public sealed class MessagingIncrementalSourceGeneratorTests
         _RegistrationLines(generated)
             .Should()
             .Equal(
-                "catalog.AddBusConsumer<global::Billing.Handlers.Nested, global::Billing.Visible>(\"billing.nested\", everyInstance: false, policy: null, dispatch: Dispatch_Billing_Handlers_Nested);"
+                "catalog.AddBusConsumer<global::Billing.Handlers.Nested, global::Billing.Visible>(\"billing.nested\", everyInstance: false, dispatch: Dispatch_Billing_Handlers_Nested);"
             );
     }
 
@@ -517,13 +481,16 @@ public sealed class MessagingIncrementalSourceGeneratorTests
             );
 
         descriptorsType.Should().NotBeNull();
+
+        // HM005 validated a failure-policy type; the declaration waits for the shared failure-policy model, and the
+        // ID stays unassigned so no rule ever changes meaning.
         descriptorsType!
             .GetFields(BindingFlags.Public | BindingFlags.Static)
             .Select(field => field.GetValue(null))
             .OfType<DiagnosticDescriptor>()
             .Select(descriptor => descriptor.Id)
             .Should()
-            .BeEquivalentTo(Enumerable.Range(1, 9).Select(number => $"HM{number:000}"));
+            .BeEquivalentTo(Enumerable.Range(1, 9).Where(number => number != 5).Select(number => $"HM{number:000}"));
     }
 
     private static string _GenerateClean(string source)

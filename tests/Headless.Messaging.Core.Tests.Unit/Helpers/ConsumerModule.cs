@@ -55,11 +55,11 @@ public sealed class ConsumerModule<TConsumer> : IMessagingModule
     {
         if (attribute is BusConsumerAttribute bus)
         {
-            catalog.AddBusConsumer<TClass, TMessage>(bus.Identity, bus.EveryInstance, bus.Policy, _Dispatch<TMessage>);
+            catalog.AddBusConsumer<TClass, TMessage>(bus.Identity, bus.EveryInstance, _Dispatch<TMessage>);
         }
         else
         {
-            catalog.AddQueueConsumer<TClass, TMessage>(attribute.Identity, attribute.Policy, _Dispatch<TMessage>);
+            catalog.AddQueueConsumer<TClass, TMessage>(attribute.Identity, _Dispatch<TMessage>);
         }
     }
 

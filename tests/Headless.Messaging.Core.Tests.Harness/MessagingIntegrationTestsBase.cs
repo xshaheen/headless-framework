@@ -1128,108 +1128,90 @@ public sealed class MessagingIntegrationTestsModule : IMessagingModule
         catalog.AddBusConsumer<TestSubscriber, TestMessage>(
             "tests.integration.test-subscriber",
             everyInstance: false,
-            policy: null,
             TestConsumerDispatch.FromServices<TestSubscriber, TestMessage>()
         );
         catalog.AddBusConsumer<FailingTestSubscriber, FailingTestMessage>(
             "tests.integration.failing-subscriber",
             everyInstance: false,
-            policy: null,
             TestConsumerDispatch.FromServices<FailingTestSubscriber, FailingTestMessage>()
         );
         catalog.AddBusConsumer<CallbackRequestConsumer, CallbackRequestMessage>(
             "tests.integration.callback-request",
             everyInstance: false,
-            policy: null,
             TestConsumerDispatch.FromServices<CallbackRequestConsumer, CallbackRequestMessage>()
         );
         catalog.AddBusConsumer<CallbackFailureRequestConsumer, CallbackFailureRequestMessage>(
             "tests.integration.callback-failure-request",
             everyInstance: false,
-            policy: null,
             TestConsumerDispatch.FromServices<CallbackFailureRequestConsumer, CallbackFailureRequestMessage>()
         );
         catalog.AddQueueConsumer<CallbackQueueRequestConsumer, CallbackQueueRequestMessage>(
             "tests.integration.callback-queue-request",
-            policy: null,
             TestConsumerDispatch.FromServices<CallbackQueueRequestConsumer, CallbackQueueRequestMessage>()
         );
         catalog.AddBusConsumer<FanOutConsumerA, FanOutRequestMessage>(
             "tests.integration.fanout-a",
             everyInstance: false,
-            policy: null,
             TestConsumerDispatch.FromServices<FanOutConsumerA, FanOutRequestMessage>()
         );
         catalog.AddBusConsumer<FanOutConsumerB, FanOutRequestMessage>(
             "tests.integration.fanout-b",
             everyInstance: false,
-            policy: null,
             TestConsumerDispatch.FromServices<FanOutConsumerB, FanOutRequestMessage>()
         );
         catalog.AddBusConsumer<IsolationKeepConsumer, IsolationRequestMessage>(
             "tests.integration.isolation-keep",
             everyInstance: false,
-            policy: null,
             TestConsumerDispatch.FromServices<IsolationKeepConsumer, IsolationRequestMessage>()
         );
         catalog.AddBusConsumer<IsolationRewriteConsumer, IsolationRequestMessage>(
             "tests.integration.isolation-rewrite",
             everyInstance: false,
-            policy: null,
             TestConsumerDispatch.FromServices<IsolationRewriteConsumer, IsolationRequestMessage>()
         );
         catalog.AddBusConsumer<ChainRequestConsumer, ChainRequestMessage>(
             "tests.integration.chain-request",
             everyInstance: false,
-            policy: null,
             TestConsumerDispatch.FromServices<ChainRequestConsumer, ChainRequestMessage>()
         );
         catalog.AddBusConsumer<MessageCollector<CallbackResponse>, CallbackResponse>(
             "tests.integration.callback-response",
             everyInstance: false,
-            policy: null,
             TestConsumerDispatch.FromServices<MessageCollector<CallbackResponse>, CallbackResponse>()
         );
         catalog.AddBusConsumer<MessageCollector<ConcreteCallbackResponse>, ConcreteCallbackResponse>(
             "tests.integration.callback-contract-response",
             everyInstance: false,
-            policy: null,
             TestConsumerDispatch.FromServices<MessageCollector<ConcreteCallbackResponse>, ConcreteCallbackResponse>()
         );
         catalog.AddBusConsumer<MessageCollector<RewrittenCallbackResponse>, RewrittenCallbackResponse>(
             "tests.integration.rewritten-callback-response",
             everyInstance: false,
-            policy: null,
             TestConsumerDispatch.FromServices<MessageCollector<RewrittenCallbackResponse>, RewrittenCallbackResponse>()
         );
         catalog.AddBusConsumer<MessageCollector<FanOutResponse>, FanOutResponse>(
             "tests.integration.fanout-response",
             everyInstance: false,
-            policy: null,
             TestConsumerDispatch.FromServices<MessageCollector<FanOutResponse>, FanOutResponse>()
         );
         catalog.AddBusConsumer<MessageCollector<IsolationKeepResponse>, IsolationKeepResponse>(
             "tests.integration.isolation-callback",
             everyInstance: false,
-            policy: null,
             TestConsumerDispatch.FromServices<MessageCollector<IsolationKeepResponse>, IsolationKeepResponse>()
         );
         catalog.AddBusConsumer<MessageCollector<IsolationRewriteResponse>, IsolationRewriteResponse>(
             "tests.integration.isolation-rewritten-callback",
             everyInstance: false,
-            policy: null,
             TestConsumerDispatch.FromServices<MessageCollector<IsolationRewriteResponse>, IsolationRewriteResponse>()
         );
         catalog.AddBusConsumer<ChainIntermediateConsumer, ChainIntermediateResponse>(
             "tests.integration.chain-intermediate-callback",
             everyInstance: false,
-            policy: null,
             TestConsumerDispatch.FromServices<ChainIntermediateConsumer, ChainIntermediateResponse>()
         );
         catalog.AddBusConsumer<MessageCollector<ChainFinalResponse>, ChainFinalResponse>(
             "tests.integration.chain-final-callback",
             everyInstance: false,
-            policy: null,
             TestConsumerDispatch.FromServices<MessageCollector<ChainFinalResponse>, ChainFinalResponse>()
         );
     }

@@ -143,7 +143,6 @@ Headless.PushNotifications.Dev
 Headless.PushNotifications.Firebase
 Headless.RateLimiting
 Headless.Redis
-Headless.Reliability.Abstractions
 Headless.Security
 Headless.Security.Abstractions
 Headless.Security.Argon2

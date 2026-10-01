@@ -80,14 +80,7 @@ internal static class ConsumerParser
         }
 
         var values = ConsumerAttributeValues.Read(attribute);
-        ConsumerValidator.ValidateAttribute(
-            compilation,
-            values.Identity,
-            values.Policy,
-            classSymbol.Name,
-            attributeLocation,
-            diagnostics
-        );
+        ConsumerValidator.ValidateAttribute(values.Identity, classSymbol.Name, attributeLocation, diagnostics);
 
         // The hook only runs for a process-local subscription, so on any other consumer it is dead code.
         var everyInstance = lane == ConsumerLane.Bus && values.EveryInstance;
@@ -125,7 +118,6 @@ internal static class ConsumerParser
                 lane,
                 values.Identity!,
                 everyInstance,
-                values.Policy?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                 messageTypeNames,
                 HandlerSymbols.GetDisposal(compilation, classSymbol),
                 HandlerSymbols.Implements(
@@ -164,29 +156,26 @@ internal static class ConsumerParser
     }
 
     /// <summary>The values of one consumer attribute application, read without interpreting them.</summary>
-    private readonly record struct ConsumerAttributeValues(string? Identity, bool EveryInstance, ITypeSymbol? Policy)
+    private readonly record struct ConsumerAttributeValues(string? Identity, bool EveryInstance)
     {
         public static ConsumerAttributeValues Read(AttributeData attribute)
         {
             var identity =
                 attribute.ConstructorArguments.Length > 0 ? attribute.ConstructorArguments[0].Value as string : null;
             var everyInstance = false;
-            ITypeSymbol? policy = null;
 
             foreach (var named in attribute.NamedArguments)
             {
-                switch (named.Key)
+                if (
+                    string.Equals(named.Key, "EveryInstance", StringComparison.Ordinal)
+                    && named.Value.Value is bool value
+                )
                 {
-                    case "EveryInstance" when named.Value.Value is bool value:
-                        everyInstance = value;
-                        break;
-                    case "Policy":
-                        policy = named.Value.Value as ITypeSymbol;
-                        break;
+                    everyInstance = value;
                 }
             }
 
-            return new(identity, everyInstance, policy);
+            return new(identity, everyInstance);
         }
     }
 }

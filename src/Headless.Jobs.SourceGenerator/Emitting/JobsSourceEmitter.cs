@@ -146,11 +146,6 @@ internal static class JobsSourceEmitter
             registration.Append(", TimeZoneId = ").Append(HandlerSource.Literal(job.TimeZone));
         }
 
-        if (job.PolicyTypeName is not null)
-        {
-            registration.Append(", FailurePolicy = typeof(").Append(job.PolicyTypeName).Append(')');
-        }
-
         registration.Append(_RecoveryKnobs(job)).Append(" });");
         writer.AppendLine(registration.ToString());
     }

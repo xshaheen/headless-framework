@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Reliability;
 using Headless.Testing.Tests;
 
 namespace Tests.Registration;
@@ -37,14 +36,13 @@ public sealed class ConsumerDeclarationTests : TestBase
     }
 
     [Fact]
-    public void should_read_the_declared_identity_and_policy()
+    public void should_read_the_declared_identity_and_every_instance()
     {
         var attribute = (BusConsumerAttribute)
             Attribute.GetCustomAttribute(typeof(PriceCacheConsumer), typeof(MessageConsumerAttribute))!;
 
         attribute.Identity.Should().Be("billing.price-cache");
         attribute.EveryInstance.Should().BeTrue();
-        attribute.Policy.Should().Be<TestFailurePolicy>();
     }
 
     [Fact]
@@ -67,7 +65,6 @@ public sealed class ConsumerDeclarationTests : TestBase
                     MessageLane.Bus,
                     "billing.price-cache",
                     EveryInstance: true,
-                    typeof(TestFailurePolicy),
                     _NoDispatch
                 ),
                 new MessagingConsumerDeclaration(
@@ -77,25 +74,9 @@ public sealed class ConsumerDeclarationTests : TestBase
                     MessageLane.Queue,
                     "billing.issue-invoice",
                     EveryInstance: false,
-                    Policy: null,
                     _NoDispatch
                 ),
             ]);
-    }
-
-    [Fact]
-    public void should_reject_a_policy_type_that_is_not_a_failure_policy()
-    {
-        var catalog = new MessagingCatalogBuilder();
-
-        var add = () =>
-            catalog.AddQueueConsumer<IssueInvoiceConsumer, IssueInvoice>(
-                "billing.issue-invoice",
-                typeof(string),
-                _NoDispatch
-            );
-
-        add.Should().Throw<ArgumentException>().WithMessage("*String*billing.issue-invoice*IFailurePolicy*");
     }
 
     [Theory]
@@ -106,7 +87,7 @@ public sealed class ConsumerDeclarationTests : TestBase
         var catalog = new MessagingCatalogBuilder();
 
         var add = () =>
-            catalog.AddBusConsumer<PriceCacheConsumer, PriceChanged>(identity, everyInstance: false, null, _NoDispatch);
+            catalog.AddBusConsumer<PriceCacheConsumer, PriceChanged>(identity, everyInstance: false, _NoDispatch);
 
         add.Should().Throw<ArgumentException>();
     }
@@ -118,7 +99,7 @@ public sealed class ConsumerDeclarationTests : TestBase
         var identity = "billing." + new string('x', ConsumerMetadata.ConsumerIdentityMaxLength);
 
         var add = () =>
-            catalog.AddBusConsumer<PriceCacheConsumer, PriceChanged>(identity, everyInstance: false, null, _NoDispatch);
+            catalog.AddBusConsumer<PriceCacheConsumer, PriceChanged>(identity, everyInstance: false, _NoDispatch);
 
         add.Should().Throw<ArgumentException>();
     }
@@ -128,8 +109,7 @@ public sealed class ConsumerDeclarationTests : TestBase
     {
         var catalog = new MessagingCatalogBuilder();
 
-        var add = () =>
-            catalog.AddQueueConsumer<IssueInvoiceConsumer, IssueInvoice>("billing.issue-invoice", null, null!);
+        var add = () => catalog.AddQueueConsumer<IssueInvoiceConsumer, IssueInvoice>("billing.issue-invoice", null!);
 
         add.Should().Throw<ArgumentNullException>();
     }
@@ -141,9 +121,7 @@ public sealed class ConsumerDeclarationTests : TestBase
 
     public sealed record IssueInvoice(string OrderId);
 
-    public sealed class TestFailurePolicy : IFailurePolicy;
-
-    [BusConsumer("billing.price-cache", EveryInstance = true, Policy = typeof(TestFailurePolicy))]
+    [BusConsumer("billing.price-cache", EveryInstance = true)]
     public sealed class PriceCacheConsumer : IConsume<PriceChanged>, IOnSubscriptionEstablished
     {
         public ValueTask ConsumeAsync(ConsumeContext<PriceChanged> context, CancellationToken cancellationToken) =>
@@ -170,10 +148,9 @@ public sealed class ConsumerDeclarationTests : TestBase
             catalog.AddBusConsumer<PriceCacheConsumer, PriceChanged>(
                 "billing.price-cache",
                 everyInstance: true,
-                typeof(TestFailurePolicy),
                 _NoDispatch
             );
-            catalog.AddQueueConsumer<IssueInvoiceConsumer, IssueInvoice>("billing.issue-invoice", null, _NoDispatch);
+            catalog.AddQueueConsumer<IssueInvoiceConsumer, IssueInvoice>("billing.issue-invoice", _NoDispatch);
         }
     }
 }

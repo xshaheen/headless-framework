@@ -365,7 +365,6 @@ internal static class ConformanceReceiveModules
         catalog.AddBusConsumer<ConformanceReceiveConsumer, ConformanceReceiveMessage>(
             identity,
             everyInstance: false,
-            policy: null,
             TestConsumerDispatch.FromServices<ConformanceReceiveConsumer, ConformanceReceiveMessage>()
         );
 }

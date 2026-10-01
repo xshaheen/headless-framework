@@ -11,12 +11,12 @@ namespace Messaging.SourceGenerator.Tests
 
         static void global::Headless.Messaging.IMessagingModule.Register(global::Headless.Messaging.MessagingCatalogBuilder catalog)
         {
-            catalog.AddBusConsumer<global::Billing.Shapes.InvoiceProjection, global::Billing.Shapes.InvoiceIssued>("billing.invoice-projection", everyInstance: false, policy: null, dispatch: Dispatch_Billing_Shapes_InvoiceProjection);
-            catalog.AddBusConsumer<global::Billing.Shapes.InvoiceProjection, global::Billing.Shapes.InvoicePaid>("billing.invoice-projection", everyInstance: false, policy: null, dispatch: Dispatch_Billing_Shapes_InvoiceProjection);
-            catalog.AddBusConsumer<global::Billing.Shapes.PriceCache, global::Billing.Shapes.PriceChanged>("billing.price-cache", everyInstance: true, policy: typeof(global::Billing.Shapes.CachePolicy), dispatch: Dispatch_Billing_Shapes_PriceCache);
-            catalog.AddQueueConsumer<global::Billing.Shapes.CloseDayConsumer, global::Billing.Shapes.CloseDay>("billing.close-day", policy: null, dispatch: Dispatch_Billing_Shapes_CloseDayConsumer);
-            catalog.AddQueueConsumer<global::Billing.Shapes.IssueInvoice, global::Billing.Shapes.IssueInvoiceCommand>("billing.issue-invoice", policy: null, dispatch: Dispatch_Billing_Shapes_IssueInvoice);
-            catalog.AddQueueConsumer<global::Billing.Shapes.RebuildConsumer, global::Billing.Shapes.Rebuild>("billing.rebuild", policy: null, dispatch: Dispatch_Billing_Shapes_RebuildConsumer);
+            catalog.AddBusConsumer<global::Billing.Shapes.InvoiceProjection, global::Billing.Shapes.InvoiceIssued>("billing.invoice-projection", everyInstance: false, dispatch: Dispatch_Billing_Shapes_InvoiceProjection);
+            catalog.AddBusConsumer<global::Billing.Shapes.InvoiceProjection, global::Billing.Shapes.InvoicePaid>("billing.invoice-projection", everyInstance: false, dispatch: Dispatch_Billing_Shapes_InvoiceProjection);
+            catalog.AddBusConsumer<global::Billing.Shapes.PriceCache, global::Billing.Shapes.PriceChanged>("billing.price-cache", everyInstance: true, dispatch: Dispatch_Billing_Shapes_PriceCache);
+            catalog.AddQueueConsumer<global::Billing.Shapes.CloseDayConsumer, global::Billing.Shapes.CloseDay>("billing.close-day", dispatch: Dispatch_Billing_Shapes_CloseDayConsumer);
+            catalog.AddQueueConsumer<global::Billing.Shapes.IssueInvoice, global::Billing.Shapes.IssueInvoiceCommand>("billing.issue-invoice", dispatch: Dispatch_Billing_Shapes_IssueInvoice);
+            catalog.AddQueueConsumer<global::Billing.Shapes.RebuildConsumer, global::Billing.Shapes.Rebuild>("billing.rebuild", dispatch: Dispatch_Billing_Shapes_RebuildConsumer);
         }
 
         private static async global::System.Threading.Tasks.ValueTask Dispatch_Billing_Shapes_InvoiceProjection(global::System.IServiceProvider services, global::Headless.Messaging.ConsumeContext context, global::System.Threading.CancellationToken cancellationToken)

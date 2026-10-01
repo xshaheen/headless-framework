@@ -109,16 +109,10 @@ public sealed class RatesModule : IMessagingModule
 {
     public static void Register(MessagingCatalogBuilder catalog)
     {
-        catalog.AddBusConsumer<RateCache, RateChanged>(
-            "rates.cache",
-            everyInstance: true,
-            policy: null,
-            _Dispatch<RateCache>()
-        );
+        catalog.AddBusConsumer<RateCache, RateChanged>("rates.cache", everyInstance: true, _Dispatch<RateCache>());
         catalog.AddBusConsumer<RateProjection, RateChanged>(
             "rates.projection",
             everyInstance: false,
-            policy: null,
             _Dispatch<RateProjection>()
         );
     }

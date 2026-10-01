@@ -4,7 +4,6 @@ using System.ComponentModel;
 using Headless.Checks;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
-using Headless.Reliability;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs;
@@ -25,7 +24,6 @@ public sealed class JobTuningBuilder
     private readonly List<JobExecuteMiddlewareRegistration> _execute = [];
     private int? _maxConcurrency;
     private JobPriority? _priority;
-    private Type? _failurePolicy;
     private JobOptions? _options;
 
     internal JobTuningBuilder(string identity)
@@ -60,16 +58,6 @@ public sealed class JobTuningBuilder
         }
 
         _priority = priority;
-        return this;
-    }
-
-    /// <summary>Overrides the failure policy the job declares in its <c>[Job]</c> attribute.</summary>
-    /// <typeparam name="TPolicy">The failure policy type.</typeparam>
-    /// <returns>This builder, for chaining.</returns>
-    public JobTuningBuilder FailurePolicy<TPolicy>()
-        where TPolicy : IFailurePolicy
-    {
-        _failurePolicy = typeof(TPolicy);
         return this;
     }
 
@@ -145,8 +133,7 @@ public sealed class JobTuningBuilder
         return this;
     }
 
-    internal JobTuning Build() =>
-        new(Identity, _maxConcurrency, _priority, _failurePolicy, _options, [.. _schedule], [.. _execute]);
+    internal JobTuning Build() => new(Identity, _maxConcurrency, _priority, _options, [.. _schedule], [.. _execute]);
 
     // Prefixed with the job identity so the tuned registration orders deterministically next to generated middleware
     // and a type attached to two jobs keeps two distinct registrations.
@@ -158,7 +145,6 @@ internal sealed record JobTuning(
     string Identity,
     int? MaxConcurrency,
     JobPriority? Priority,
-    Type? FailurePolicy,
     JobOptions? Options,
     JobScheduleMiddlewareRegistration[] ScheduleMiddleware,
     JobExecuteMiddlewareRegistration[] ExecuteMiddleware

@@ -110,7 +110,6 @@ public sealed class BillingModule : IMessagingModule
         catalog.AddBusConsumer<BillingInvoiceProjection, InvoiceIssued>(
             TestConsumers.InvoiceProjection,
             everyInstance: false,
-            policy: null,
             TestConsumers.Dispatch<BillingInvoiceProjection, InvoiceIssued>()
         );
 }
@@ -122,7 +121,6 @@ public sealed class BillingPriceCacheModule : IMessagingModule
         catalog.AddBusConsumer<BillingPriceCache, PriceChanged>(
             TestConsumers.PriceCache,
             everyInstance: true,
-            policy: null,
             TestConsumers.Dispatch<BillingPriceCache, PriceChanged>()
         );
 }
@@ -139,7 +137,6 @@ public sealed class RivalInvoiceModule : IMessagingModule
         catalog.AddBusConsumer<RivalInvoiceProjection, InvoiceIssued>(
             TestConsumers.InvoiceProjection,
             everyInstance: false,
-            policy: null,
             TestConsumers.Dispatch<RivalInvoiceProjection, InvoiceIssued>()
         );
 }
@@ -150,7 +147,6 @@ public sealed class RivalShipmentModule : IMessagingModule
         catalog.AddBusConsumer<RivalShipmentProjection, OrderShipped>(
             TestConsumers.InvoiceProjection,
             everyInstance: false,
-            policy: null,
             TestConsumers.Dispatch<RivalShipmentProjection, OrderShipped>()
         );
 }
@@ -161,7 +157,6 @@ public sealed class OrdersModule : IMessagingModule
         catalog.AddBusConsumer<OrdersShipmentProjection, OrderShipped>(
             TestConsumers.Shipment,
             everyInstance: false,
-            policy: null,
             TestConsumers.Dispatch<OrdersShipmentProjection, OrderShipped>()
         );
 }
@@ -171,7 +166,6 @@ public sealed class BillingQueueModule : IMessagingModule
     public static void Register(MessagingCatalogBuilder catalog) =>
         catalog.AddQueueConsumer<BillingIssueInvoice, IssueInvoiceCommand>(
             TestConsumers.BillingIssueInvoice,
-            policy: null,
             TestConsumers.Dispatch<BillingIssueInvoice, IssueInvoiceCommand>()
         );
 }
@@ -181,7 +175,6 @@ public sealed class OrdersQueueModule : IMessagingModule
     public static void Register(MessagingCatalogBuilder catalog) =>
         catalog.AddQueueConsumer<OrdersIssueInvoice, IssueInvoiceCommand>(
             TestConsumers.OrdersIssueInvoice,
-            policy: null,
             TestConsumers.Dispatch<OrdersIssueInvoice, IssueInvoiceCommand>()
         );
 }

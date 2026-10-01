@@ -13,7 +13,7 @@ namespace Headless.Jobs.Base;
 /// with <c>AddModule&lt;TAssemblyNamespace.JobsModule&gt;()</c>.
 /// <para>
 /// The attribute carries the job's intrinsic defaults. Everything it declares is checked at build time, so an invalid
-/// identity, cron expression, or policy type fails the build rather than a run.
+/// identity or cron expression fails the build rather than a run.
 /// </para>
 /// </remarks>
 /// <param name="identity">
@@ -52,17 +52,6 @@ public sealed class JobAttribute(string identity) : Attribute
 
     /// <summary>Durable argument schema version, compared ordinally. Defaults to the initial schema version.</summary>
     public string ContractVersion { get; set; } = JobContract.InitialVersion;
-
-    /// <summary>
-    /// Failure policy type for this job. It must implement <c>Headless.Reliability.IFailurePolicy</c>; the source
-    /// generator rejects any other type.
-    /// </summary>
-    /// <remarks>
-    /// A policy set at the call site wins over this declaration, and this declaration wins over the host's default.
-    /// Until a policy model is registered for the declared type, the job runs with the host's configured retry
-    /// behavior.
-    /// </remarks>
-    public Type? Policy { get; set; }
 
     /// <summary>
     /// Recovery policy applied when this job's cron schedule falls behind. Ignored for jobs without a cron expression.

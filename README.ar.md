@@ -493,14 +493,6 @@ Message bus موزّع بـ transactional outbox، وretries، وdelayed deliver
 | [Headless.Jobs.EntityFramework.PostgreSql](src/Headless.Jobs.EntityFramework.PostgreSql/README.md) | Atomic claims في PostgreSQL بـ `FOR UPDATE SKIP LOCKED` |
 | [Headless.Jobs.EntityFramework.SqlServer](src/Headless.Jobs.EntityFramework.SqlServer/README.md) | Atomic claims في SQL Server بـ `UPDLOCK` و `READPAST` و `ROWLOCK` |
 
-### Reliability
-
-عقود الـ reliability اللي الـ Messaging والـ Jobs بيشتركوا فيها.
-
-| Package | الوصف |
-|---------|-------|
-| [Headless.Reliability.Abstractions](src/Headless.Reliability.Abstractions/README.md) | `IFailurePolicy`، الـ failure policy اللي الـ consumer أو الـ job بيسمّيها في الـ declaration بتاعته |
-
 ### OpenAPI
 
 توليد الـ spec وواجهات توثيق تفاعلية.

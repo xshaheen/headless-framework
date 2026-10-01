@@ -44,9 +44,8 @@ internal static class JobValidator
         }
     }
 
-    /// <summary>Checks the attribute's own values: identity form, cron, knob ranges, and the policy type.</summary>
+    /// <summary>Checks the attribute's own values: identity form, cron, and knob ranges.</summary>
     public static void ValidateAttribute(
-        Compilation compilation,
         JobAttributeValues values,
         string className,
         Location attributeLocation,
@@ -142,18 +141,6 @@ internal static class JobValidator
         {
             diagnostics.Add(
                 DiagnosticInfo.Create(DiagnosticDescriptors.InvalidOverlapPolicy, attributeLocation, values.OnOverlap)
-            );
-        }
-
-        if (values.Policy is { } policy && !HandlerSymbols.IsFailurePolicy(compilation, policy))
-        {
-            diagnostics.Add(
-                DiagnosticInfo.Create(
-                    DiagnosticDescriptors.InvalidFailurePolicy,
-                    attributeLocation,
-                    policy.ToDisplayString(),
-                    className
-                )
             );
         }
     }

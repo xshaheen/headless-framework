@@ -17,8 +17,6 @@ internal enum HandlerDisposal
 /// <summary>The symbol checks every Headless handler generator applies to a declared handler class.</summary>
 internal static class HandlerSymbols
 {
-    public const string FailurePolicyMetadataName = "Headless.Reliability.IFailurePolicy";
-
     public static bool Implements(Compilation compilation, INamedTypeSymbol classSymbol, string metadataName)
     {
         var type = compilation.GetTypeByMetadataName(metadataName);
@@ -37,19 +35,6 @@ internal static class HandlerSymbols
         }
 
         return Implements(compilation, classSymbol, "System.IDisposable") ? HandlerDisposal.Sync : HandlerDisposal.None;
-    }
-
-    /// <summary>
-    /// A policy is a constructible type implementing <c>IFailurePolicy</c>. The interface itself names no policy, so it
-    /// is rejected along with abstract and open generic types.
-    /// </summary>
-    public static bool IsFailurePolicy(Compilation compilation, ITypeSymbol policy)
-    {
-        var failurePolicy = compilation.GetTypeByMetadataName(FailurePolicyMetadataName);
-        return failurePolicy is not null
-            && policy is INamedTypeSymbol { TypeKind: TypeKind.Class or TypeKind.Struct, IsAbstract: false } named
-            && !named.IsUnboundGenericType
-            && named.AllInterfaces.Contains(failurePolicy, SymbolEqualityComparer.Default);
     }
 
     /// <summary>

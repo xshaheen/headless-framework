@@ -110,11 +110,8 @@ public sealed class GeneratedSourceSnapshotTests
             using System.Threading.Tasks;
             using Headless.Jobs.Base;
             using Headless.Jobs.Enums;
-            using Headless.Reliability;
 
             namespace Demo.Knobs;
-
-            public sealed class PaymentsPolicy : IFailurePolicy;
 
             [Job(
                 "knobs.all",
@@ -123,7 +120,6 @@ public sealed class GeneratedSourceSnapshotTests
                 Priority = JobPriority.LongRunning,
                 MaxConcurrency = 4,
                 ContractVersion = "v7",
-                Policy = typeof(PaymentsPolicy),
                 OnMissedRun = MissedRunPolicy.Skip,
                 MissedRunGraceSeconds = 90,
                 OnOverlap = CronOverlapPolicy.Skip

@@ -28,15 +28,4 @@ public abstract class MessageConsumerAttribute : Attribute
     /// rather than moving the old one.
     /// </remarks>
     public string Identity { get; }
-
-    /// <summary>
-    /// Failure policy type for this consumer. It must implement <c>Headless.Reliability.IFailurePolicy</c>; the source
-    /// generator rejects any other type.
-    /// </summary>
-    /// <remarks>
-    /// A policy set at the call site wins over this declaration, and this declaration wins over the host's default.
-    /// Until a policy model is registered for the declared type, the consumer runs with the host's configured retry
-    /// behavior.
-    /// </remarks>
-    public Type? Policy { get; set; }
 }

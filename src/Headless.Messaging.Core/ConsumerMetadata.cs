@@ -56,9 +56,6 @@ public sealed record ConsumerMetadata(
     /// </summary>
     public bool EveryInstance { get; init; }
 
-    /// <summary>The failure policy type the consumer's attribute names, or <see langword="null"/>.</summary>
-    public Type? FailurePolicy { get; init; }
-
     /// <summary>The generated dispatch that runs the consumer class.</summary>
     internal MessageConsumerDispatch? Dispatch { get; init; }
 

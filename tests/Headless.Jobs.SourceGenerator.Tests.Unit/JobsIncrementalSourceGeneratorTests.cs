@@ -90,7 +90,7 @@ public sealed class JobsIncrementalSourceGeneratorTests
             .Should()
             .BeEquivalentTo(
                 Enumerable
-                    .Range(1, 23)
+                    .Range(1, 22)
                     .Where(number => number is not (2 or 6 or 10))
                     .Select(number => $"HF{number:000}")
             );
@@ -328,52 +328,16 @@ public sealed class JobsIncrementalSourceGeneratorTests
     }
 
     [Fact]
-    public void should_report_a_policy_type_that_does_not_implement_the_failure_policy_contract()
-    {
-        var diagnostics = _Diagnostics(
-            "public sealed class NotAPolicy;\n" + _Job("billing.close-day", "CloseDay", ", Policy = typeof(NotAPolicy)")
-        );
-
-        var diagnostic = diagnostics.Should().ContainSingle().Subject;
-        diagnostic.Id.Should().Be("HF023");
-        diagnostic.GetMessage(CultureInfo.InvariantCulture).Should().Contain("NotAPolicy");
-    }
-
-    [Theory]
-    [InlineData("typeof(Headless.Reliability.IFailurePolicy)")]
-    [InlineData("typeof(AbstractPolicy)")]
-    [InlineData("typeof(GenericPolicy<>)")]
-    public void should_report_a_policy_type_that_names_no_concrete_policy(string policy)
-    {
-        var diagnostics = _Diagnostics(
-            """
-            public abstract class AbstractPolicy : Headless.Reliability.IFailurePolicy;
-            public sealed class GenericPolicy<T> : Headless.Reliability.IFailurePolicy;
-
-            """ + _Job("billing.close-day", "CloseDay", $", Policy = {policy}")
-        );
-
-        diagnostics.Select(diagnostic => diagnostic.Id).Should().Equal("HF023");
-    }
-
-    [Fact]
-    public void should_record_a_valid_policy_and_time_zone_on_the_registration()
+    public void should_record_a_valid_time_zone_on_the_registration()
     {
         var driver = GeneratorTestHelper.Run(
-            _Usings
-                + "public sealed class PaymentsPolicy : Headless.Reliability.IFailurePolicy;\n"
-                + _Job(
-                    "billing.close-day",
-                    "CloseDay",
-                    ", Cron = \"0 0 0 * * *\", TimeZone = \"Africa/Cairo\", Policy = typeof(PaymentsPolicy)"
-                ),
+            _Usings + _Job("billing.close-day", "CloseDay", ", Cron = \"0 0 0 * * *\", TimeZone = \"Africa/Cairo\""),
             out var diagnostics
         );
 
         diagnostics.Should().NotContain(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         var generated = _GeneratedSource(driver);
         generated.Should().Contain("TimeZoneId = \"Africa/Cairo\"");
-        generated.Should().Contain("FailurePolicy = typeof(global::Jobs.SourceGenerator.Tests.PaymentsPolicy)");
     }
 
     [Theory]

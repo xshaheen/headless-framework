@@ -405,7 +405,6 @@ public static class SetupMessaging
                 )
                 {
                     EveryInstance = consumer.EveryInstance,
-                    FailurePolicy = consumer.Policy,
                     DeclaringModule = consumer.Source,
                 },
                 contractVersions.GetValueOrDefault(
@@ -457,7 +456,6 @@ public static class SetupMessaging
                 ) with
                 {
                     EveryInstance = consumer.EveryInstance,
-                    FailurePolicy = consumer.FailurePolicy,
                     Dispatch = consumer.Dispatch,
                     DeclaringModule = consumer.DeclaringModule,
                 };
@@ -466,8 +464,7 @@ public static class SetupMessaging
                 var settings = new ConsumerRegistrationSettings(
                     resolved.ConsumerIdentity,
                     resolved.MessageContractVersion,
-                    resolved.EveryInstance,
-                    resolved.FailurePolicy
+                    resolved.EveryInstance
                 );
 
                 if (registeredKeys.TryGetValue(key, out var existing))
@@ -546,7 +543,6 @@ public static class SetupMessaging
     private readonly record struct ConsumerRegistrationSettings(
         string ConsumerIdentity,
         string MessageContractVersion,
-        bool EveryInstance,
-        Type? FailurePolicy
+        bool EveryInstance
     );
 }

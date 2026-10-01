@@ -19,7 +19,6 @@ public sealed class GeneratedSourceSnapshotTests
             using System.Threading;
             using System.Threading.Tasks;
             using Headless.Messaging;
-            using Headless.Reliability;
 
             namespace Billing.Shapes;
 
@@ -32,8 +31,6 @@ public sealed class GeneratedSourceSnapshotTests
             public sealed record CloseDay(int Day);
             public sealed record Rebuild(int Version);
 
-            public sealed class CachePolicy : IFailurePolicy;
-
             [BusConsumer("billing.invoice-projection")]
             public sealed class InvoiceProjection(IClock clock) : IConsume<InvoiceIssued>, IConsume<InvoicePaid>
             {
@@ -41,7 +38,7 @@ public sealed class GeneratedSourceSnapshotTests
                 public ValueTask ConsumeAsync(ConsumeContext<InvoicePaid> context, CancellationToken cancellationToken) => default;
             }
 
-            [BusConsumer("billing.price-cache", EveryInstance = true, Policy = typeof(CachePolicy))]
+            [BusConsumer("billing.price-cache", EveryInstance = true)]
             public sealed class PriceCache : IConsume<PriceChanged>, IOnSubscriptionEstablished, IDisposable
             {
                 public ValueTask ConsumeAsync(ConsumeContext<PriceChanged> context, CancellationToken cancellationToken) => default;

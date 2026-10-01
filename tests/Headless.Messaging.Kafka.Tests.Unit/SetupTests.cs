@@ -237,7 +237,6 @@ public sealed class SetupTests : TestBase
             catalog.AddBusConsumer<KafkaBusConsumer, KafkaBusContract>(
                 "tests.kafka.bus-consumer",
                 everyInstance: false,
-                policy: null,
                 static (_, _, _) => ValueTask.CompletedTask
             );
     }

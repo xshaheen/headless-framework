@@ -2,7 +2,6 @@
 
 using System.ComponentModel;
 using Headless.Checks;
-using Headless.Reliability;
 
 namespace Headless.Messaging;
 
@@ -48,41 +47,36 @@ public sealed class MessagingCatalogBuilder
     /// <typeparam name="TMessage">One message the consumer implements <see cref="IConsume{TMessage}"/> for.</typeparam>
     /// <param name="identity">The consumer identity from the attribute.</param>
     /// <param name="everyInstance">Whether every process receives every message.</param>
-    /// <param name="policy">The failure policy type from the attribute, or <see langword="null"/>.</param>
     /// <param name="dispatch">The generated dispatch of the consumer class.</param>
     /// <exception cref="ArgumentException">
-    /// <paramref name="identity"/> is empty or longer than <see cref="ConsumerMetadata.ConsumerIdentityMaxLength"/>, or
-    /// <paramref name="policy"/> does not implement <see cref="IFailurePolicy"/>.
+    /// <paramref name="identity"/> is empty or longer than <see cref="ConsumerMetadata.ConsumerIdentityMaxLength"/>.
     /// </exception>
     /// <exception cref="ArgumentNullException"><paramref name="dispatch"/> is <see langword="null"/>.</exception>
     public void AddBusConsumer<TConsumer, TMessage>(
         string identity,
         bool everyInstance,
-        Type? policy,
         MessageConsumerDispatch dispatch
     )
         where TConsumer : class, IConsume<TMessage>
         where TMessage : class
     {
-        _Add(typeof(TConsumer), typeof(TMessage), MessageLane.Bus, identity, everyInstance, policy, dispatch);
+        _Add(typeof(TConsumer), typeof(TMessage), MessageLane.Bus, identity, everyInstance, dispatch);
     }
 
     /// <summary>Adds one message handled by a <see cref="QueueConsumerAttribute"/> consumer.</summary>
     /// <typeparam name="TConsumer">The consumer class.</typeparam>
     /// <typeparam name="TMessage">One message the consumer implements <see cref="IConsume{TMessage}"/> for.</typeparam>
     /// <param name="identity">The consumer identity from the attribute.</param>
-    /// <param name="policy">The failure policy type from the attribute, or <see langword="null"/>.</param>
     /// <param name="dispatch">The generated dispatch of the consumer class.</param>
     /// <exception cref="ArgumentException">
-    /// <paramref name="identity"/> is empty or longer than <see cref="ConsumerMetadata.ConsumerIdentityMaxLength"/>, or
-    /// <paramref name="policy"/> does not implement <see cref="IFailurePolicy"/>.
+    /// <paramref name="identity"/> is empty or longer than <see cref="ConsumerMetadata.ConsumerIdentityMaxLength"/>.
     /// </exception>
     /// <exception cref="ArgumentNullException"><paramref name="dispatch"/> is <see langword="null"/>.</exception>
-    public void AddQueueConsumer<TConsumer, TMessage>(string identity, Type? policy, MessageConsumerDispatch dispatch)
+    public void AddQueueConsumer<TConsumer, TMessage>(string identity, MessageConsumerDispatch dispatch)
         where TConsumer : class, IConsume<TMessage>
         where TMessage : class
     {
-        _Add(typeof(TConsumer), typeof(TMessage), MessageLane.Queue, identity, everyInstance: false, policy, dispatch);
+        _Add(typeof(TConsumer), typeof(TMessage), MessageLane.Queue, identity, everyInstance: false, dispatch);
     }
 
     /// <summary>Runs one module's generated registration, attributing its entries to the module.</summary>
@@ -105,7 +99,6 @@ public sealed class MessagingCatalogBuilder
         MessageLane lane,
         string identity,
         bool everyInstance,
-        Type? policy,
         MessageConsumerDispatch dispatch
     )
     {
@@ -114,13 +107,6 @@ public sealed class MessagingCatalogBuilder
         Argument.IsNotNullOrWhiteSpace(identity);
         Argument.HasMaxLength(identity, ConsumerMetadata.ConsumerIdentityMaxLength);
         Argument.IsNotNull(dispatch);
-        if (policy is not null && !typeof(IFailurePolicy).IsAssignableFrom(policy))
-        {
-            throw new ArgumentException(
-                $"Failure policy type {policy.FullName} of consumer '{identity}' must implement {typeof(IFailurePolicy).FullName}.",
-                nameof(policy)
-            );
-        }
 
         _consumers.Add(
             new MessagingConsumerDeclaration(
@@ -130,7 +116,6 @@ public sealed class MessagingCatalogBuilder
                 lane,
                 identity,
                 everyInstance,
-                policy,
                 dispatch
             )
         );
@@ -144,7 +129,6 @@ public sealed class MessagingCatalogBuilder
 /// <param name="Lane">The lane the consumer's attribute names.</param>
 /// <param name="Identity">The consumer identity.</param>
 /// <param name="EveryInstance">Whether every process receives every message; always false on the Queue lane.</param>
-/// <param name="Policy">The declared failure policy type, if any.</param>
 /// <param name="Dispatch">The generated dispatch that runs the consumer class.</param>
 internal sealed record MessagingConsumerDeclaration(
     string Source,
@@ -153,6 +137,5 @@ internal sealed record MessagingConsumerDeclaration(
     MessageLane Lane,
     string Identity,
     bool EveryInstance,
-    Type? Policy,
     MessageConsumerDispatch Dispatch
 );

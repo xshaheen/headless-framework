@@ -66,13 +66,12 @@ internal static class MessagingSourceEmitter
         foreach (var registration in model.Consumers)
         {
             var consumer = registration.Consumer;
-            var policy = consumer.PolicyTypeName is null ? "null" : $"typeof({consumer.PolicyTypeName})";
             foreach (var message in consumer.MessageTypeNames)
             {
                 writer.AppendLine(
                     consumer.Lane == ConsumerLane.Bus
-                        ? $"catalog.AddBusConsumer<{consumer.TypeName}, {message}>({HandlerSource.Literal(consumer.Identity)}, everyInstance: {(consumer.EveryInstance ? "true" : "false")}, policy: {policy}, dispatch: {registration.DispatcherName});"
-                        : $"catalog.AddQueueConsumer<{consumer.TypeName}, {message}>({HandlerSource.Literal(consumer.Identity)}, policy: {policy}, dispatch: {registration.DispatcherName});"
+                        ? $"catalog.AddBusConsumer<{consumer.TypeName}, {message}>({HandlerSource.Literal(consumer.Identity)}, everyInstance: {(consumer.EveryInstance ? "true" : "false")}, dispatch: {registration.DispatcherName});"
+                        : $"catalog.AddQueueConsumer<{consumer.TypeName}, {message}>({HandlerSource.Literal(consumer.Identity)}, dispatch: {registration.DispatcherName});"
                 );
             }
         }

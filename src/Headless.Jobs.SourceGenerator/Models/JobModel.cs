@@ -15,7 +15,6 @@ namespace Headless.Jobs.SourceGenerator.Models;
 /// <c>IJob</c> class.
 /// </param>
 /// <param name="Disposal">How the invoker releases the instance it constructs.</param>
-/// <param name="PolicyTypeName">The fully qualified failure policy type, or <see langword="null"/> when none is declared.</param>
 internal sealed record JobModel(
     string TypeName,
     string InvokerName,
@@ -29,8 +28,7 @@ internal sealed record JobModel(
     int? OnMissedRun,
     int? MissedRunGraceSeconds,
     int? OnOverlap,
-    string ContractVersion,
-    string? PolicyTypeName
+    string ContractVersion
 )
 {
     public bool HasArgs => ArgsTypeName is not null;

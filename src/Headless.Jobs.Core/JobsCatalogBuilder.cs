@@ -152,11 +152,6 @@ public sealed class JobsCatalogBuilder
             }
 
             _Apply(functions, descriptors, tuning.Identity, tuning.MaxConcurrency, tuning.Priority);
-            if (tuning.FailurePolicy is { } failurePolicy)
-            {
-                functions[tuning.Identity] = functions[tuning.Identity] with { FailurePolicy = failurePolicy };
-            }
-
             if (tuning.Options is { } tunedOptions)
             {
                 options[tuning.Identity] = tunedOptions;

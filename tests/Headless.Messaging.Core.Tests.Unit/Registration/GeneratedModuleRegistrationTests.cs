@@ -36,7 +36,6 @@ public sealed class GeneratedModuleRegistrationTests : TestBase
         projection.Lane.Should().Be(MessageLane.Bus);
         projection.ConsumerIdentity.Should().Be(Fixture.InvoiceProjection.Identity);
         projection.EveryInstance.Should().BeTrue();
-        projection.FailurePolicy.Should().Be<Fixture.FixtureFailurePolicy>();
         projection.DeclaringModule.Should().Be(typeof(Fixture.MessagingModule).FullName);
 
         var issue = consumers.Single(x => x.ConsumerType == typeof(Fixture.IssueInvoice));
@@ -44,7 +43,6 @@ public sealed class GeneratedModuleRegistrationTests : TestBase
         issue.Lane.Should().Be(MessageLane.Queue);
         issue.ConsumerIdentity.Should().Be(Fixture.IssueInvoice.Identity);
         issue.EveryInstance.Should().BeFalse();
-        issue.FailurePolicy.Should().BeNull();
 
         consumers
             .Where(x => x.ConsumerType == typeof(Fixture.LedgerProjection))

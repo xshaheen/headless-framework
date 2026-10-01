@@ -17,6 +17,7 @@ execution: code
 - **Means:** attributes declare handler classes, a source generator emits one module type per assembly per subsystem, and flat fluent calls cover message contracts, deployment tuning, and host controls (KTD1, KTD2).
 - **Product authority:** the framework maintainer. The repository is greenfield, so public APIs and storage schemas break without compatibility shims or migrations. This plan owns the declaration and registration shape of Messaging and Jobs, including the Messaging generator and the move from consumer groups to consumer identities. Every-instance delivery semantics (#936) and the contents of the shared failure policy model are separate work.
 - **Execution profile:** three phases. Phase A (shared contribution and policy slot) and Phase B (Jobs) ship independently. Phase C (Messaging) ships with or after #936, because the framework's per-process consumers need every-instance delivery before consumer identities become shared broker names (KTD7).
+- **Failure policy:** The failure-policy declaration is deferred until the shared failure-policy model is designed. `IFailurePolicy` had no members and no runtime consumer, so every declared policy was a silent no-op; the `Headless.Reliability.Abstractions` package, the attribute `Policy` property, `Tune(...).FailurePolicy<T>()`, and the policy diagnostics were removed. The shared model's own issue reintroduces the declaration together with its behavior.
 - **Stop conditions:** stop and ask when a unit would change a Product Contract requirement, when #936 has not landed and Phase C's framework consumers (U11) are reached, or when a provider cannot derive a Bus subscription name from an identity within its limits.
 - **Tail ownership:** the implementer owns docs, demos, tests, and CONCEPTS.md updates in the same series. Merging into `main` needs an explicit request.
 - **Open blockers:** none.
@@ -43,7 +44,7 @@ In a modular monolith, one process hosts several modules. The group model ties c
 
 ```csharp
 // Handlers declare themselves
-[BusConsumer(Identity, Policy = typeof(PaymentsPolicy))]
+[BusConsumer(Identity)]
 public sealed class InvoiceProjection : IConsume<InvoiceIssued>, IConsume<OrderPlaced>
 {
     public const string Identity = "billing.invoice-projection";
@@ -112,7 +113,7 @@ flowchart TB
 - **A message has exactly one Queue consumer.** (session-settled: user-directed — chosen over one queue per consumer identity: the Queue lane is point-to-point, and Queue destinations stay keyed by the message name.) Governs R26.
 - **Modules own their registration through public, order-independent contributions.** (session-settled: user-approved — chosen over builder extensions the host calls once per subsystem and over a framework module interface: a module owns its registration end to end, and the framework stays unopinionated.) Governs R10, R11, R12.
 - **Hosts tune by identity and filter what runs.** (session-settled: user-approved — chosen over tuning only: API and worker hosts that share modules need to split consumption.) Governs R18, R19, R20.
-- **A handler names its failure policy as a type in its attribute.** (session-settled: user-directed — chosen over a policy name string and over tuning only: a typo fails the build, and the policy lives with the handler it describes.) Governs R6.
+- **A handler names its failure policy as a type in its attribute.** (session-settled: user-directed — chosen over a policy name string and over tuning only: a typo fails the build, and the policy lives with the handler it describes.) Governs R6. **Deferred (2026-10-01):** see the Goal Capsule.
 - **A message contract is declared once for both lanes.** The contract belongs to the message schema, as `docs/llms/messaging.md` already states. (session-settled: user-directed — chosen over one contract per lane: one name per message.) Governs R15.
 - **Message types carry no Headless attribute.** NServiceBus's recorded regret was marker types that tied message assemblies to the framework version. (session-settled: user-approved — chosen over a contract attribute on message types: contract packages stay framework-free.) Governs R16.
 - **Middleware for one handler attaches through tuning.** (session-settled: user-approved — chosen over an attribute and over both: middleware is resolved from DI and often deployment-specific.) Governs R18, R21.
@@ -126,7 +127,7 @@ flowchart TB
 - R3. A consumer attribute on a class that implements no `IConsume<T>` is rejected, and the optional `IOnSubscriptionEstablished` hook on a consumer that is not every-instance produces a warning.
 - R4. A job is declared by `[Job(identity)]` on a class that implements `IJob` or `IJob<TArgs>`, and `[JobFunction]` and method-level jobs are removed.
 - R5. A job attribute carries the job's intrinsic defaults: cron expression, time zone, priority, maximum concurrency, contract version, and missed-run policy.
-- R6. Any handler attribute may name a failure policy type that implements `IFailurePolicy`, which is the declaration level of the shared call, then declaration, then host resolution order.
+- R6. Any handler attribute may name a failure policy type that implements `IFailurePolicy`, which is the declaration level of the shared call, then declaration, then host resolution order. **Deferred (2026-10-01):** not implemented; the shared failure-policy model owns it.
 
 **Identity**
 
@@ -151,7 +152,7 @@ flowchart TB
 
 **Tuning and host control**
 
-- R18. `Tune(identity, ...)` changes only a declared handler's deployment settings: concurrency, provider settings, a failure policy override, and middleware. It cannot create a handler or change its identity, kind, lane, or messages, and an unknown identity fails startup.
+- R18. `Tune(identity, ...)` changes only a declared handler's deployment settings: concurrency, provider settings, a failure policy override (deferred with R6), and middleware. It cannot create a handler or change its identity, kind, lane, or messages, and an unknown identity fails startup.
 - R19. The same deployment settings bind from configuration keyed by identity.
 - R20. `ConsumeOnly(...)` and `RunOnly(...)` choose which consumers consume and which jobs run in a host, and handlers outside the filter stay registered so the host can still publish and schedule them.
   - Every-instance consumers always run regardless of `ConsumeOnly`, because they keep per-process state such as a hybrid-cache L1 current. Runtime subscriptions are never filtered either.
@@ -171,7 +172,7 @@ flowchart TB
   - a consumer attribute on a class with no `IConsume<T>`, or a job attribute on a class with no `IJob` or `IJob<TArgs>`;
   - a second Queue consumer for one message, or a second job for one argument type, in the assembly;
   - an invalid literal cron expression;
-  - a policy type that does not implement `IFailurePolicy`.
+  - a policy type that does not implement `IFailurePolicy` (deferred with R6; HM005 and HF023 are unassigned).
 - R24. Every diagnostic follows the shared diagnostic ID scheme, with resx text and a help link.
 - R25. Consumer and job dispatch runs generated, typed code, with no `MakeGenericType`, runtime assembly scanning, or compiled expressions.
 
@@ -206,7 +207,7 @@ flowchart TB
 ### Scope Boundaries
 
 - Every-instance delivery semantics, provider mapping, the reconnect signal's firing rules, and cleanup belong to #936. This plan declares every-instance consumers and wires them to that runtime.
-- The contents of the shared failure policy model (tiers, classification, terminal actions) belong to its own issue. This plan adds the `IFailurePolicy` slot and the attribute property only.
+- The contents of the shared failure policy model (tiers, classification, terminal actions) belong to its own issue. This plan adds the `IFailurePolicy` slot and the attribute property only. **Deferred (2026-10-01):** the slot and the property were removed too; the shared model's issue adds them with their behavior.
 - `IRuntimeSubscriber` keeps registering handlers at run time. Its subscriptions compete by default; per #936, a subscription opts in to every-instance delivery with `RuntimeSubscriptionOptions.EveryInstance`.
 - There is no migration path or compatibility layer for removed APIs, and group-keyed storage schemas change in place. The `docs/llms/` guides change with the code.
 - Not planned: interceptor-based fluent registration, method-level jobs, lambda jobs, method-level consumer handlers, and attributes on message types.
@@ -226,7 +227,7 @@ This plan owns the declaration and registration shape of Messaging and Jobs. The
 - Jobs generator (#1024, merged): this plan extends its incremental pipeline, its generated `JobsModule`, and its explicit `AddModule<T>()` discovery.
 - Shared generator infrastructure (#1028, merged): the Messaging generator builds on `src/Headless.SourceGenerators.Shared`.
 - Every-instance delivery (#936): Phase C depends on it, and it shares the identity rule in R8.
-- Shared failure policy model: fills the `IFailurePolicy` slot this plan adds.
+- Shared failure policy model: fills the `IFailurePolicy` slot this plan adds. **Deferred (2026-10-01):** it now also owns the declaration slot.
 - Shared diagnostic ID scheme: this plan assigns the Messaging prefix under it (R24).
 - `describe` command and health checks: enabled by the frozen registry in R13.
 - Dead-letter destination, job metrics, and other roadmap items: can proceed independently of this plan.
@@ -269,7 +270,7 @@ This plan owns the declaration and registration shape of Messaging and Jobs. The
 - KTD5. **Queue destinations stay keyed by the message name.** Providers keep their Queue naming, and the one-consumer rule in R26 makes the name unambiguous. Governs R26.
 - KTD6. **One shared helper derives Bus names from identities.** Core owns a deterministic helper that each provider calls with its length limit and allowed characters. It keeps a readable prefix and appends a short stable hash when the identity must be shortened or normalized. Governs R8.
 - KTD7. **Phase C ships with or after #936.** HybridCache invalidation and distributed-lock release use fixed identities. Once identities are shared Bus names, those consumers would compete across every application on a broker namespace instead of reaching every replica, so they move to `EveryInstance = true` in the same change that makes identities the Bus name. Governs R8, R11.
-- KTD8. **`IFailurePolicy` lives in a new `Headless.Reliability.Abstractions` package.** Messaging and Jobs abstractions both reference it. This plan defines only the interface and the attribute property, and resolution falls back to today's host-wide retry until the shared failure policy model lands. Governs R6.
+- KTD8. **`IFailurePolicy` lives in a new `Headless.Reliability.Abstractions` package.** Messaging and Jobs abstractions both reference it. This plan defines only the interface and the attribute property, and resolution falls back to today's host-wide retry until the shared failure policy model lands. Governs R6. **Deferred (2026-10-01):** the package was removed; see the Goal Capsule.
 - KTD9. **Messaging diagnostics use the `HM` prefix.** Jobs keeps `HF001` to `HF022`. Both generators share the resx-and-help-link scheme from `src/Headless.SourceGenerators.Shared`. Governs R23, R24.
 - KTD10. **Host filters take exact identities and `owner.*` patterns.** A pattern matches the owner segment only, which keeps filters readable and unambiguous. Tuning binds from `Headless:Messaging:Consumers:{identity}` and `Headless:Jobs:Jobs:{identity}`. Governs R19, R20.
 - KTD11. **The Jobs context is renamed.** `JobFunctionContext` and `JobFunctionContext<TRequest>` become `JobContext` and `JobContext<TArgs>`, and `IJob.ExecuteAsync` returns `ValueTask`, matching `IConsume<T>.ConsumeAsync`. Governs R4.
@@ -311,7 +312,7 @@ BusName(x) = x, when within the provider's length and character rules
 
 ### Assumptions
 
-- The shared failure policy issue fills `IFailurePolicy` without changing the attribute property's shape.
+- The shared failure policy issue fills `IFailurePolicy` without changing the attribute property's shape. **Deferred (2026-10-01):** no longer applies; that issue designs the declaration shape.
 - #936 provides the every-instance runtime (subscription creation, cleanup, the reconnect signal) behind `EveryInstance = true`.
 
 ### Sequencing
@@ -328,7 +329,7 @@ Phase C adds the new surface alongside the old one first (U6 to U8), switches th
 
 | U-ID | Title | Key files | Depends on |
 |---|---|---|---|
-| U1 | Failure policy slot | `src/Headless.Reliability.Abstractions/` | none |
+| U1 | Failure policy slot (deferred) | `src/Headless.Reliability.Abstractions/` (removed) | none |
 | U2 | Public contribution API | `src/Headless.Messaging.Core/Registration/`, `src/Headless.Jobs.Core/DependencyInjection/` | none |
 | U3 | Job classes and the `[Job]` attribute | `src/Headless.Jobs.Abstractions/`, `src/Headless.Jobs.SourceGenerator/` | U1 |
 | U4 | Jobs contributions, tuning, and filters | `src/Headless.Jobs.Core/` | U2, U3 |
@@ -342,6 +343,8 @@ Phase C adds the new surface alongside the old one first (U6 to U8), switches th
 | U12 | Remove the old surface and update docs | `src/Headless.Messaging.*`, `docs/llms/messaging.md`, `CONCEPTS.md` | U11 |
 
 ### U1. Failure policy slot
+
+**Deferred (2026-10-01):** implemented, then removed. See the Goal Capsule.
 
 **Goal:** give handler attributes a typed place to name a failure policy.
 
@@ -434,7 +437,7 @@ Phase C adds the new surface alongside the old one first (U6 to U8), switches th
 - Two jobs taking `InvoiceArgs` in one assembly fail with the duplicate-argument-type diagnostic. Covers AE8's uniqueness half.
 - An identity `closeDay` (no owner segment) fails with the identity-form diagnostic.
 - `Cron = "not a cron"` fails. `Cron = "%Jobs:Daily"` defers validation to startup.
-- A policy type that does not implement `IFailurePolicy` fails.
+- A policy type that does not implement `IFailurePolicy` fails. (Deferred with R6.)
 - An unrelated edit leaves every cached generator step unchanged.
 - `scheduler.EnqueueAsync(new InvoiceArgs(id))` enqueues a `SendInvoice` run. Covers AE8.
 - `scheduler.EnqueueAsync<CloseDay>()` enqueues a run without arguments.
@@ -550,7 +553,7 @@ Phase C adds the new surface alongside the old one first (U6 to U8), switches th
 **Approach:**
 1. Read `BusConsumerAttribute` and `QueueConsumerAttribute` through `ForAttributeWithMetadataName` into value-equatable models: identity, lane, every-instance flag, policy type, and the message types from implemented `IConsume<T>` interfaces.
 2. Emit `MessagingModule` and a typed dispatcher per consumer that switches on the message type and constructs the consumer from the attempt's DI scope.
-3. Emit `HM` diagnostics with resx text and help links: identity constant and form, duplicate identity, no `IConsume<T>`, a second Queue consumer for one message, a non-`IFailurePolicy` policy type, and the every-instance hook warning.
+3. Emit `HM` diagnostics with resx text and help links: identity constant and form, duplicate identity, no `IConsume<T>`, a second Queue consumer for one message, a non-`IFailurePolicy` policy type (deferred with R6), and the every-instance hook warning.
 
 **Execution note:** add snapshot and caching tests before wiring the generated dispatch into Core.
 

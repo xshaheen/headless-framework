@@ -3,7 +3,6 @@
 using Headless.Checks;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Registration;
-using Headless.Reliability;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -25,7 +24,6 @@ public sealed class ConsumerTuningBuilder : IConsumerProviderConfigBuilder
     private readonly List<Type> _middleware = [];
     private readonly ProviderConfigBag _providerConfigs = new();
     private byte? _concurrency;
-    private Type? _failurePolicy;
     private TimeSpan? _inboxRetention;
     private ConsumerCircuitBreakerOptions? _circuitBreaker;
 
@@ -77,16 +75,6 @@ public sealed class ConsumerTuningBuilder : IConsumerProviderConfigBuilder
         return this;
     }
 
-    /// <summary>Overrides the failure policy the consumer declares in its attribute.</summary>
-    /// <typeparam name="TPolicy">The failure policy type.</typeparam>
-    /// <returns>This builder, for chaining.</returns>
-    public ConsumerTuningBuilder FailurePolicy<TPolicy>()
-        where TPolicy : IFailurePolicy
-    {
-        _failurePolicy = typeof(TPolicy);
-        return this;
-    }
-
     /// <summary>
     /// Runs <typeparamref name="TMiddleware"/> around every delivery to this consumer on this host, inside the global and
     /// per-message consume middleware. The middleware is resolved from the delivery's service scope; when it is not
@@ -115,15 +103,7 @@ public sealed class ConsumerTuningBuilder : IConsumerProviderConfigBuilder
     }
 
     internal ConsumerTuning Build() =>
-        new(
-            Identity,
-            _concurrency,
-            _failurePolicy,
-            [.. _middleware],
-            _providerConfigs.Build(),
-            _inboxRetention,
-            _circuitBreaker
-        );
+        new(Identity, _concurrency, [.. _middleware], _providerConfigs.Build(), _inboxRetention, _circuitBreaker);
 
     internal static TimeSpan ValidateInboxRetention(TimeSpan retention)
     {
@@ -141,7 +121,6 @@ public sealed class ConsumerTuningBuilder : IConsumerProviderConfigBuilder
 internal sealed record ConsumerTuning(
     string Identity,
     byte? Concurrency,
-    Type? FailurePolicy,
     Type[] Middleware,
     IReadOnlyDictionary<Type, object> ProviderConfigs,
     TimeSpan? InboxRetention,

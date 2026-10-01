@@ -49,7 +49,7 @@ internal static class JobParser
         }
 
         var values = JobAttributeValues.Read(attribute);
-        JobValidator.ValidateAttribute(compilation, values, classSymbol.Name, attributeLocation, diagnostics);
+        JobValidator.ValidateAttribute(values, classSymbol.Name, attributeLocation, diagnostics);
 
         var argsTypeName = argsType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         var job =
@@ -70,8 +70,7 @@ internal static class JobParser
                     values.OnMissedRun,
                     values.MissedRunGraceSeconds,
                     values.OnOverlap,
-                    values.ContractVersion,
-                    values.Policy?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                    values.ContractVersion
                 );
 
         return new(
@@ -119,8 +118,7 @@ internal sealed record JobAttributeValues(
     int? OnMissedRun,
     int? MissedRunGraceSeconds,
     int? OnOverlap,
-    string ContractVersion,
-    INamedTypeSymbol? Policy
+    string ContractVersion
 )
 {
     public static JobAttributeValues Read(AttributeData attribute)
@@ -132,7 +130,6 @@ internal sealed record JobAttributeValues(
         var priority = SourceGeneratorConstants.NormalJobPriority;
         var maxConcurrency = 0;
         var contractVersion = SourceGeneratorConstants.InitialContractVersion;
-        INamedTypeSymbol? policy = null;
 
         // The recovery knobs are read only when actually written. That distinguishes "unset" (fall through to the
         // scheduler-wide default at creation) from "explicitly set to the framework default", which the property
@@ -161,9 +158,6 @@ internal sealed record JobAttributeValues(
                 case "ContractVersion":
                     contractVersion = value as string ?? string.Empty;
                     break;
-                case "Policy":
-                    policy = value as INamedTypeSymbol;
-                    break;
                 case "OnMissedRun" when value is int missedRunValue:
                     onMissedRun = missedRunValue;
                     break;
@@ -185,8 +179,7 @@ internal sealed record JobAttributeValues(
             onMissedRun,
             missedRunGraceSeconds,
             onOverlap,
-            contractVersion,
-            policy
+            contractVersion
         );
     }
 }

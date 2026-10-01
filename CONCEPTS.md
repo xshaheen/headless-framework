@@ -208,8 +208,8 @@ host at startup; cross-module conflicts fail there, naming both sources.
 ### Consumer tuning and consume filter
 Host-side controls keyed by consumer identity. `Tune(identity, ...)`, then
 `Headless:Messaging:Consumers:{identity}` configuration, change a declared consumer's deployment
-settings (concurrency, inbox retention, circuit breaker, failure policy, middleware, provider
-consumer settings) and never its identity, lane, or messages. `ConsumeOnly(...)` limits which
+settings (concurrency, inbox retention, circuit breaker, middleware, provider consumer
+settings) and never its identity, lane, or messages. `ConsumeOnly(...)` limits which
 competing consumers a host runs, by exact identity or `owner.*` pattern; filtered consumers stay
 registered and publishable, and every-instance consumers always run.
 

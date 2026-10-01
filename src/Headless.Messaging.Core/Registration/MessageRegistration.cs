@@ -62,9 +62,6 @@ internal sealed record MessageConsumerRegistration(
     /// <summary>Whether every process receives every message; only a Bus consumer sets it.</summary>
     public bool EveryInstance { get; init; }
 
-    /// <summary>The failure policy type the consumer's attribute names, if any.</summary>
-    public Type? FailurePolicy { get; init; }
-
     /// <summary>The generated module that declared the consumer, for conflict messages.</summary>
     public string? DeclaringModule { get; init; }
 }

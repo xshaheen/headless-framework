@@ -19,7 +19,6 @@ internal enum ConsumerLane
 /// <param name="DisplayName">The namespace-qualified class name, used to name the class's dispatcher.</param>
 /// <param name="Identity">The identity from the attribute.</param>
 /// <param name="EveryInstance">Whether the Bus consumer sees every message in every process; always false on the Queue lane.</param>
-/// <param name="PolicyTypeName">The fully qualified failure policy type, or <see langword="null"/> when none is declared.</param>
 /// <param name="MessageTypeNames">
 /// The fully qualified <c>T</c> of every <c>IConsume&lt;T&gt;</c> the class implements, in ordinal order.
 /// </param>
@@ -31,7 +30,6 @@ internal sealed record ConsumerModel(
     ConsumerLane Lane,
     string Identity,
     bool EveryInstance,
-    string? PolicyTypeName,
     EquatableArray<string> MessageTypeNames,
     HandlerDisposal Disposal,
     bool HasLifecycle

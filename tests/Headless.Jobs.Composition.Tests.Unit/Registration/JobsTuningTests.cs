@@ -5,7 +5,6 @@ using Headless.Jobs.Base;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
-using Headless.Reliability;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -84,22 +83,6 @@ public sealed class JobsTuningTests : TestBase
 
         // then
         resolve.Should().Throw<InvalidOperationException>().WithMessage("*'billing.unknown'*");
-    }
-
-    [Fact]
-    public async Task should_override_the_declared_failure_policy()
-    {
-        // given
-        var services = _Services(options =>
-            options.Tune(TestJobs.BillingCloseDay, job => job.FailurePolicy<TunedFailurePolicy>())
-        );
-        await using var provider = services.BuildServiceProvider();
-
-        // when
-        var registry = provider.GetRequiredService<JobFunctionRegistry>();
-
-        // then
-        registry.Functions[TestJobs.BillingCloseDay].FailurePolicy.Should().Be<TunedFailurePolicy>();
     }
 
     [Fact]
@@ -270,8 +253,6 @@ public sealed class JobsTuningTests : TestBase
             AbortToken
         );
     }
-
-    private sealed class TunedFailurePolicy : IFailurePolicy;
 
     private sealed class CountingExecuteMiddleware : IJobExecuteMiddleware
     {

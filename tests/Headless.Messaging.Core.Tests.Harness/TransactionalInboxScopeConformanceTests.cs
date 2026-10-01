@@ -283,7 +283,6 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
             catalog.AddBusConsumer<InboxScopeConsumer, InboxScopeMessage>(
                 "tests.inbox-scope.consumer",
                 everyInstance: false,
-                policy: null,
                 TestConsumerDispatch.FromServices<InboxScopeConsumer, InboxScopeMessage>()
             );
     }

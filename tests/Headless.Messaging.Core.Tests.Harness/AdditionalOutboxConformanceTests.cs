@@ -417,7 +417,6 @@ public sealed class AdditionalOutboxTestsModule : IMessagingModule
         >(
             "tests.additional-outbox.consumer",
             everyInstance: false,
-            policy: null,
             TestConsumerDispatch.FromServices<
                 AdditionalOutboxConformanceTests.OutboxProbeConsumer,
                 AdditionalOutboxConformanceTests.OutboxProbe

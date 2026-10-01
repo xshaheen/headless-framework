@@ -79,7 +79,6 @@ internal static class ConsumerTuningApplier
         return metadata with
         {
             Concurrency = tuning.Concurrency ?? metadata.Concurrency,
-            FailurePolicy = tuning.FailurePolicy ?? metadata.FailurePolicy,
             Middleware = [.. metadata.Middleware.Union(tuning.Middleware)],
             ProviderConfigs = providerConfigs,
             InboxRetention = tuning.InboxRetention ?? metadata.InboxRetention,
@@ -142,7 +141,6 @@ internal static class ConsumerTuningApplier
             var tuning = new ConsumerTuning(
                 consumer.Key,
                 settings.Concurrency,
-                FailurePolicy: null,
                 Middleware: [],
                 ProviderConfigs: new Dictionary<Type, object>(),
                 settings.InboxRetention,

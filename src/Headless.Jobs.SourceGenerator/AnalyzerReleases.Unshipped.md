@@ -3,7 +3,6 @@
 Rule ID | Category | Severity | Notes
 --------|----------|----------|--------------------
 HF022   | Headless.Jobs.SourceGenerator | Error | Undefined overlap policy on [Job]
-HF023   | Headless.Jobs.SourceGenerator | Error | Failure policy type on [Job] does not implement IFailurePolicy
 
 ### Removed Rules
 

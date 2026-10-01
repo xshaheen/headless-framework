@@ -45,11 +45,9 @@ internal static class ConsumerValidator
         }
     }
 
-    /// <summary>Checks the attribute's own values: identity form and the policy type.</summary>
+    /// <summary>Checks the attribute's own values: the identity form.</summary>
     public static void ValidateAttribute(
-        Compilation compilation,
         string? identity,
-        ITypeSymbol? policy,
         string className,
         Location attributeLocation,
         ICollection<DiagnosticInfo> diagnostics
@@ -64,18 +62,6 @@ internal static class ConsumerValidator
                     DiagnosticDescriptors.InvalidConsumerIdentity,
                     attributeLocation,
                     identity ?? "null",
-                    className
-                )
-            );
-        }
-
-        if (policy is not null && !HandlerSymbols.IsFailurePolicy(compilation, policy))
-        {
-            diagnostics.Add(
-                DiagnosticInfo.Create(
-                    DiagnosticDescriptors.InvalidFailurePolicy,
-                    attributeLocation,
-                    policy.ToDisplayString(),
                     className
                 )
             );

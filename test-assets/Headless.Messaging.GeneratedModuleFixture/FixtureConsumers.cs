@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Reliability;
-
 namespace Headless.Messaging.GeneratedModuleFixture;
 
 public sealed record InvoiceIssued(string Number);
@@ -11,9 +9,6 @@ public sealed record IssueInvoiceCommand(string OrderId);
 public sealed record LedgerEntryPosted(string Entry);
 
 public sealed record LedgerEntryReversed(string Entry);
-
-/// <summary>A failure policy type for the Bus consumer to name.</summary>
-public sealed class FixtureFailurePolicy : IFailurePolicy;
 
 /// <summary>Records what the generated dispatchers did, so a test can see each consumer ran with its dependencies.</summary>
 public sealed class FixtureProbe
@@ -42,7 +37,7 @@ public sealed class FixtureProbe
     }
 }
 
-[BusConsumer(Identity, EveryInstance = true, Policy = typeof(FixtureFailurePolicy))]
+[BusConsumer(Identity, EveryInstance = true)]
 public sealed class InvoiceProjection(FixtureProbe probe)
     : IConsume<InvoiceIssued>,
         IOnSubscriptionEstablished,

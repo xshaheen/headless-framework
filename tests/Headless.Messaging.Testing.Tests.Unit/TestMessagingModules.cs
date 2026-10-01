@@ -16,7 +16,6 @@ public sealed class OrderCreatedModule : IMessagingModule
         catalog.AddBusConsumer<OrderCreatedConsumer, OrderCreatedEvent>(
             "tests.messaging-testing.order-created",
             everyInstance: false,
-            policy: null,
             TestDispatch.FromServices<OrderCreatedConsumer, OrderCreatedEvent>()
         );
 }
@@ -27,7 +26,6 @@ public sealed class FailingModule : IMessagingModule
         catalog.AddBusConsumer<FailingConsumer, OrderCreatedEvent>(
             "tests.messaging-testing.failing",
             everyInstance: false,
-            policy: null,
             TestDispatch.FromServices<FailingConsumer, OrderCreatedEvent>()
         );
 }
@@ -38,7 +36,6 @@ public sealed class TestConsumerModule : IMessagingModule
         catalog.AddBusConsumer<TestConsumer<OrderCreatedEvent>, OrderCreatedEvent>(
             "tests.messaging-testing.test-consumer",
             everyInstance: false,
-            policy: null,
             TestDispatch.FromServices<TestConsumer<OrderCreatedEvent>, OrderCreatedEvent>()
         );
 }
@@ -49,7 +46,6 @@ public sealed class NotifyingModule : IMessagingModule
         catalog.AddBusConsumer<NotifyingConsumer, OrderCreatedEvent>(
             "tests.messaging-testing.notifying",
             everyInstance: false,
-            policy: null,
             TestDispatch.FromServices<NotifyingConsumer, OrderCreatedEvent>()
         );
 }
@@ -61,12 +57,10 @@ public sealed class LaneModule : IMessagingModule
         catalog.AddBusConsumer<BusLaneConsumer, OrderCreatedEvent>(
             "tests.messaging-testing.bus-lane",
             everyInstance: false,
-            policy: null,
             TestDispatch.FromServices<BusLaneConsumer, OrderCreatedEvent>()
         );
         catalog.AddQueueConsumer<QueueLaneConsumer, OrderCreatedEvent>(
             "tests.messaging-testing.queue-lane",
-            policy: null,
             TestDispatch.FromServices<QueueLaneConsumer, OrderCreatedEvent>()
         );
     }
@@ -79,12 +73,10 @@ public sealed class DurableLaneModule : IMessagingModule
         catalog.AddBusConsumer<BusLaneConsumer, OrderCreatedEvent>(
             "tests.messaging-testing.durable-bus-lane",
             everyInstance: false,
-            policy: null,
             TestDispatch.FromServices<BusLaneConsumer, OrderCreatedEvent>()
         );
         catalog.AddQueueConsumer<QueueLaneConsumer, OrderCreatedEvent>(
             "tests.messaging-testing.durable-queue-lane",
-            policy: null,
             TestDispatch.FromServices<QueueLaneConsumer, OrderCreatedEvent>()
         );
     }
@@ -96,7 +88,6 @@ public sealed class StandaloneOrderPlacedModule : IMessagingModule
         catalog.AddBusConsumer<StandaloneOrderPlacedConsumer, StandaloneOrderPlaced>(
             "tests.messaging-testing.standalone-order-placed",
             everyInstance: false,
-            policy: null,
             TestDispatch.FromServices<StandaloneOrderPlacedConsumer, StandaloneOrderPlaced>()
         );
 }
@@ -107,7 +98,6 @@ public sealed class CoordinatedOrderPlacedModule : IMessagingModule
         catalog.AddBusConsumer<CoordinatedOrderPlacedConsumer, CoordinatedOrderPlaced>(
             "tests.messaging-testing.coordinated-order-placed",
             everyInstance: false,
-            policy: null,
             TestDispatch.FromServices<CoordinatedOrderPlacedConsumer, CoordinatedOrderPlaced>()
         );
 }
@@ -119,25 +109,21 @@ public sealed class SharedHostModule : IMessagingModule
         catalog.AddBusConsumer<AlphaConsumer, AlphaEvent>(
             "tests.messaging-testing.alpha",
             everyInstance: false,
-            policy: null,
             TestDispatch.FromServices<AlphaConsumer, AlphaEvent>()
         );
         catalog.AddBusConsumer<BetaConsumer, BetaEvent>(
             "tests.messaging-testing.beta",
             everyInstance: false,
-            policy: null,
             TestDispatch.FromServices<BetaConsumer, BetaEvent>()
         );
         catalog.AddBusConsumer<GatedConsumer, GammaEvent>(
             "tests.messaging-testing.gamma",
             everyInstance: false,
-            policy: null,
             TestDispatch.FromServices<GatedConsumer, GammaEvent>()
         );
         catalog.AddBusConsumer<DeltaGatedConsumer, DeltaEvent>(
             "tests.messaging-testing.delta",
             everyInstance: false,
-            policy: null,
             TestDispatch.FromServices<DeltaGatedConsumer, DeltaEvent>()
         );
     }
@@ -149,7 +135,6 @@ public sealed class TenantCaptureModule : IMessagingModule
         catalog.AddBusConsumer<TenantCapturingConsumer, TenantOrderEvent>(
             "tests.tenant-propagation.capture",
             everyInstance: false,
-            policy: null,
             TestDispatch.FromServices<TenantCapturingConsumer, TenantOrderEvent>()
         );
 }
@@ -160,7 +145,6 @@ public sealed class FlakyTenantModule : IMessagingModule
         catalog.AddBusConsumer<FlakyTenantConsumer, TenantOrderEvent>(
             "tests.tenant-propagation.flaky",
             everyInstance: false,
-            policy: null,
             TestDispatch.FromServices<FlakyTenantConsumer, TenantOrderEvent>()
         );
 }
@@ -171,7 +155,6 @@ public sealed class TenantRepublishModule : IMessagingModule
         catalog.AddBusConsumer<ChainedRepublishConsumer, TenantOrderUpstream>(
             "tests.tenant-propagation.republish",
             everyInstance: false,
-            policy: null,
             TestDispatch.FromServices<ChainedRepublishConsumer, TenantOrderUpstream>()
         );
 }

@@ -197,17 +197,14 @@ public sealed class ConsumerHostControlTests : TestBase
     }
 
     [Fact]
-    public void should_apply_tuned_concurrency_and_failure_policy_to_every_message_of_the_identity()
+    public void should_apply_tuned_concurrency_to_every_message_of_the_identity()
     {
         // given
         using var provider = _BuildProvider(services =>
             services.AddHeadlessMessaging(setup =>
                 setup
                     .AddModule<Fixture.MessagingModule>()
-                    .Tune(
-                        Fixture.LedgerProjection.Identity,
-                        consumer => consumer.Concurrency(8).FailurePolicy<Fixture.FixtureFailurePolicy>()
-                    )
+                    .Tune(Fixture.LedgerProjection.Identity, consumer => consumer.Concurrency(8))
             )
         );
 
@@ -219,11 +216,7 @@ public sealed class ConsumerHostControlTests : TestBase
             .Where(x => x.ConsumerType == typeof(Fixture.LedgerProjection))
             .Should()
             .HaveCount(2)
-            .And.AllSatisfy(x =>
-            {
-                x.Concurrency.Should().Be(8);
-                x.FailurePolicy.Should().Be<Fixture.FixtureFailurePolicy>();
-            });
+            .And.AllSatisfy(x => x.Concurrency.Should().Be(8));
         consumers.Single(x => x.ConsumerType == typeof(Fixture.IssueInvoice)).Concurrency.Should().Be(1);
     }
 
