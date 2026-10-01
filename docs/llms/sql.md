@@ -225,6 +225,12 @@ SQLite has no row locks, no `SKIP LOCKED`, no advisory locks, no schemas, and no
 - **Sequences are tables.** `NextSequenceValue` reads one past the `value` of a one-row table (`id` 1). Reading does not advance it: the feature's DDL adds triggers on the table that stores the drawn value, so the draw and the advance happen in one statement under the write lock. One statement draws one value, however many rows it writes.
 - **Upsert outcome.** SQLite's `RETURNING` cannot tell an insert from an update, so the upsert renders one statement per branch and `SqlUpsertCommand` reads the first row of any result set.
 
+**Recommended: WAL journal mode.** Run `PRAGMA journal_mode=WAL;` once on the database file. The setting is stored in the file, so later connections inherit it. In WAL mode, readers read the last committed state while a writer holds the write lock and is committing. The default rollback journal blocks them during each commit. That helps every read outside a store transaction, such as the Idempotency peek, which begins a deferred transaction so it never queues behind a writer. Writers are still serialized: WAL does not add concurrent writers. Trade-offs:
+
+- SQLite keeps two more files next to the database, `<file>-wal` and `<file>-shm`. Back up and move all three together, or checkpoint first (`PRAGMA wal_checkpoint(TRUNCATE);`).
+- WAL relies on shared memory, so every process must run on the host that holds the file. This adds nothing new: SQLite locking already requires it.
+- The Headless providers do not set the journal mode. It belongs to the database, not to one feature that shares it, so the application sets it once, for example right after creating the file.
+
 ## Choosing a Provider
 
 | Provider | Package | ADO.NET driver | Use when | Avoid when |
