@@ -12,7 +12,6 @@ using Headless.Jobs.Internal;
 using Headless.Jobs.Models;
 using Headless.Sql;
 using Headless.Sql.SqlServer;
-using Headless.Threading;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -842,36 +841,19 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         return [.. leasedIds];
     }
 
-    private async Task<TResult> _ExecuteWithDeadlockRetryAsync<TResult>(
+    private Task<TResult> _ExecuteWithDeadlockRetryAsync<TResult>(
         Func<CancellationToken, Task<TResult>> action,
         CancellationToken cancellationToken
     )
     {
-        // SQL Server has rolled the victim transaction back before surfacing 1205. Retrying the whole scope
-        // preserves the root/descendant and definition/occurrence atomicity boundaries; each attempt opens its own
-        // context and transaction, which is the shape TransientRetry requires.
-        var failedAttempts = 0;
-
-        return await TransientRetry
-            .RunAsync(
-                ct => new ValueTask<TResult>(action(ct)),
-                ex =>
-                {
-                    if (!SqlAutonomousTransaction.IsTransient(SqlServerDialect.Instance, ex))
-                    {
-                        return false;
-                    }
-
-                    // TransientRetry asks only when another attempt will run, so this logs once per retry.
-                    failedAttempts++;
-                    logger.LogJobsClaimDeadlockRetry(failedAttempts + 1, TransientRetry.MaxAttempts, ex);
-
-                    return true;
-                },
-                timeProvider,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        // SQL Server has rolled the victim transaction back before surfacing 1205.
+        return JobsClaimRetry.RunAsync(
+            action,
+            static ex => SqlAutonomousTransaction.IsTransient(SqlServerDialect.Instance, ex),
+            timeProvider,
+            logger,
+            cancellationToken
+        );
     }
 
     private readonly record struct ClaimResult(Guid[] Ids, DateTimeOffset ClaimedAt);
@@ -900,20 +882,4 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
     {
         return new(name, SqlDbType.DateTimeOffset) { Value = value };
     }
-}
-
-internal static partial class SqlServerJobsClaimStrategyLoggerExtensions
-{
-    [LoggerMessage(
-        EventId = 20102,
-        EventName = "JobsClaimDeadlockRetry",
-        Level = LogLevel.Warning,
-        Message = "SQL Server Jobs claim was chosen as a deadlock victim; retrying attempt {AttemptNumber}/{MaxAttempts}."
-    )]
-    public static partial void LogJobsClaimDeadlockRetry(
-        this ILogger logger,
-        int attemptNumber,
-        int maxAttempts,
-        Exception? exception
-    );
 }

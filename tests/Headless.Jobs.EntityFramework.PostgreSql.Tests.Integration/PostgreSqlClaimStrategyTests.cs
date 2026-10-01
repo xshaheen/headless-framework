@@ -299,3 +299,23 @@ internal sealed class PostgreSqlMappedJobsDbContext(DbContextOptions<PostgreSqlM
         });
     }
 }
+
+/// <summary>Runs the claim retry conformance suite on PostgreSQL, with the driver's deadlock-detected exception.</summary>
+[Collection<PostgreSqlJobsCoordinationFixture>]
+public sealed class PostgreSqlClaimRetryConformanceTests(PostgreSqlJobsCoordinationFixture fixture)
+    : JobsClaimRetryConformanceTests<PostgreSqlJobsCoordinationFixture>(fixture)
+{
+    [Fact]
+    public override Task deadlocked_claim_scope_is_retried_and_commits_correct_durable_state() =>
+        base.deadlocked_claim_scope_is_retried_and_commits_correct_durable_state();
+
+    [Fact]
+    public override Task deadlock_retries_are_bounded_and_the_driver_exception_propagates() =>
+        base.deadlock_retries_are_bounded_and_the_driver_exception_propagates();
+
+    protected override Exception CreateTransientClaimFailure() =>
+        new PostgresException("deadlock detected", "ERROR", "ERROR", PostgresErrorCodes.DeadlockDetected);
+
+    protected override bool IsInjectedFailure(Exception exception) =>
+        exception is PostgresException { SqlState: PostgresErrorCodes.DeadlockDetected };
+}
