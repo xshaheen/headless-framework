@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Constants;
 using Headless.Messaging.Configuration;
@@ -8,6 +9,7 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.PostgreSql;
 using Headless.Sql;
+using Headless.Sql.PostgreSql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -178,7 +180,7 @@ public static class SetupPostgreSqlMessaging
                     serviceProvider.GetRequiredService<IOptionsMonitor<PostgreSqlOptions>>().Get(optionsName)
                 );
                 var storageOptions = serviceProvider.GetRequiredService<IOptions<MessagingStorageOptions>>();
-                var tableNames = new PostgreSqlStorageTableNames(storageOptions);
+                var tableNames = new RelationalStorageTableNames(PostgreSqlDialect.Instance, storageOptions);
                 // An additional outbox holds published rows only, and its schema is applied by its own runner so an
                 // unreachable outbox database never fails the host's startup.
                 var initializer = ActivatorUtilities.CreateInstance<OutboxSchemaInitializer>(
@@ -186,10 +188,11 @@ public static class SetupPostgreSqlMessaging
                     PostgreSqlMessagingSchemaContribution.CreateOutbox(options.Value, storageOptions.Value),
                     tableNames
                 );
-                var storage = ActivatorUtilities.CreateInstance<PostgreSqlDataStorage>(
+                var storage = RelationalDataStorage.Create(
                     serviceProvider,
-                    options,
-                    tableNames
+                    options.Value.ToStorage(),
+                    tableNames,
+                    SequentialGuidType.Version7
                 );
 
                 return new MessagingOutbox(registrationName, storage, initializer);
@@ -233,10 +236,20 @@ public static class SetupPostgreSqlMessaging
             // identifier rules. The EF-context storage path reuses this extension and is validated here too.
             services.AddOptions<MessagingStorageOptions, PostgreSqlMessagingStorageOptionsValidator>();
             configureOptions(services);
-            services.AddSingleton<PostgreSqlDataStorage>();
-            services.AddSingleton<IDataStorage>(sp => sp.GetRequiredService<PostgreSqlDataStorage>());
-            services.AddSingleton<IDeliveryCoordinationResolver>(sp => sp.GetRequiredService<PostgreSqlDataStorage>());
-            services.AddSingleton<IStorageTableNames, PostgreSqlStorageTableNames>();
+            services.AddSingleton<IStorageTableNames>(sp => new RelationalStorageTableNames(
+                PostgreSqlDialect.Instance,
+                sp.GetRequiredService<IOptions<MessagingStorageOptions>>()
+            ));
+            services.AddSingleton(sp =>
+                RelationalDataStorage.Create(
+                    sp,
+                    sp.GetRequiredService<IOptions<PostgreSqlOptions>>().Value.ToStorage(),
+                    sp.GetRequiredService<IStorageTableNames>(),
+                    SequentialGuidType.Version7
+                )
+            );
+            services.AddSingleton<IDataStorage>(sp => sp.GetRequiredService<RelationalDataStorage>());
+            services.AddSingleton<IDeliveryCoordinationResolver>(sp => sp.GetRequiredService<RelationalDataStorage>());
             // The messaging tables are applied by the Headless schema runner from this contribution, before the
             // messaging bootstrapper starts; the provider runs no DDL of its own.
             services.AddHeadlessSchemaContribution(sp =>

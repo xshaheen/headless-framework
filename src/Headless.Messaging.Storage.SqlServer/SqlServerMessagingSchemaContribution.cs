@@ -77,7 +77,7 @@ internal static class SqlServerMessagingSchemaContribution
         // Constraint names are unique per schema, so the table name alone keeps them distinct; every
         // existence probe below is scoped to its table because the same name exists in every schema.
         const string receivedPrefix = "MessagingReceived";
-        var received = SqlServerStorageTableNames.Received(schema);
+        var received = _Table(schema, "MessagingReceived");
 
         // Simplified SQL for Azure SQL Edge compatibility (no TEXTIMAGE_ON, simpler index options).
 
@@ -91,10 +91,10 @@ internal static class SqlServerMessagingSchemaContribution
                     [Version] [nvarchar](20) NOT NULL,
                     [Name] [nvarchar](200) NOT NULL,
                     [Group] [nvarchar](200) NULL,
-                    -- #19 — PERSISTED ISNULL collapses a NULL [Group] to '' so the unique index below
-                    -- converges NULL-group redeliveries to one row, matching the PostgreSQL
-                    -- COALESCE("Group", '') index (a plain nullable [Group] treats each NULL as distinct).
-                    [GroupCoalesced] AS ISNULL([Group], N'') PERSISTED,
+                    -- The group a non-inbox row is deduplicated by: a missing group is the empty one, so redeliveries
+                    -- of a message without a group converge on one row (a filtered unique index on a nullable [Group]
+                    -- would admit one NULL only, and the storage matches the key by plain equality).
+                    [GroupKey] [nvarchar](200) NOT NULL CONSTRAINT [DF_{receivedPrefix}_GroupKey] DEFAULT N'',
                     [Content] [nvarchar](max) NULL,
                     [IntentType] [smallint] NOT NULL,
                     [Retries] [int] NOT NULL,
@@ -129,11 +129,8 @@ internal static class SqlServerMessagingSchemaContribution
                     [HoldReason] [nvarchar](1000) NULL,
                     [HoldOperationId] [uniqueidentifier] NULL,
                     [InboxRetentionSeconds] [bigint] NOT NULL CONSTRAINT [DF_{receivedPrefix}_InboxRetentionSeconds] DEFAULT 2592000,
-                    [TenantIdOrdinal] AS CONVERT(varbinary(400),[TenantId]) PERSISTED,
-                    [MessageIdOrdinal] AS CONVERT(varbinary(400),[MessageId]) PERSISTED,
-                    [ContractIdentityOrdinal] AS CONVERT(varbinary(400),[ContractIdentity]) PERSISTED,
-                    [ContractVersionOrdinal] AS CONVERT(varbinary(200),[ContractVersion]) PERSISTED,
-                    [ConsumerIdentityOrdinal] AS CONVERT(varbinary(400),[ConsumerIdentity]) PERSISTED,
+                    -- SHA-256 of an inbox generation's identity: the identity's text columns together exceed an
+                    -- index key, so the root-key index is built on this hash.
                     [InboxKeyHash] [binary](32) NULL,
                     CONSTRAINT [PK_{receivedPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC)
                 );
@@ -168,7 +165,7 @@ internal static class SqlServerMessagingSchemaContribution
 
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_NonInboxTransportIdentity' AND object_id = OBJECT_ID(N'{received}'))
                 EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_NonInboxTransportIdentity]
-                    ON {received} ([Version],[MessageId],[GroupCoalesced],[IntentType]) WHERE [IsInboxRecord]=0');
+                    ON {received} ([Version],[MessageId],[GroupKey],[IntentType]) WHERE [IsInboxRecord]=0');
 
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_GenerationIncarnationId' AND object_id = OBJECT_ID(N'{received}'))
                 EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_GenerationIncarnationId] ON {received} ([GenerationIncarnationId] ASC) WHERE [GenerationIncarnationId] IS NOT NULL');
@@ -259,10 +256,15 @@ internal static class SqlServerMessagingSchemaContribution
         );
     }
 
+    private static string _Table(string schema, string pascalName)
+    {
+        return SqlServerDialect.Instance.Qualify(schema, SqlServerDialect.Instance.Name(pascalName));
+    }
+
     private static string _PublishedTableSql(string schema, int ownerColumnMaxLength)
     {
         const string publishedPrefix = "MessagingPublished";
-        var published = SqlServerStorageTableNames.Published(schema);
+        var published = _Table(schema, "MessagingPublished");
 
         return string.Create(
             CultureInfo.InvariantCulture,

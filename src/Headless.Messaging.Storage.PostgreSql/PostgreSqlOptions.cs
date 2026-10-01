@@ -2,6 +2,7 @@
 
 using FluentValidation;
 using Headless.Messaging.Persistence;
+using Headless.Sql.PostgreSql;
 using Npgsql;
 
 namespace Headless.Messaging.Storage.PostgreSql;
@@ -48,6 +49,17 @@ public sealed class PostgreSqlOptions
         }
 
         return new NpgsqlConnection(ConnectionString);
+    }
+
+    /// <summary>Describes this database to the relational messaging storage.</summary>
+    internal RelationalMessagingStorage ToStorage()
+    {
+        return new RelationalMessagingStorage(
+            PostgreSqlDialect.Instance,
+            "PostgreSql",
+            CreateConnection,
+            OwnerColumnMaxLength
+        );
     }
 }
 

@@ -79,7 +79,7 @@ internal static class PostgreSqlMessagingSchemaContribution
 
     private static string _InboxTablesSql(string schema, int ownerColumnMaxLength)
     {
-        var received = PostgreSqlStorageTableNames.Received(schema);
+        var received = _Table(schema, "MessagingReceived");
 
         return string.Create(
             CultureInfo.InvariantCulture,
@@ -93,6 +93,9 @@ internal static class PostgreSqlMessagingSchemaContribution
                 "version" VARCHAR(20) NOT NULL,
             	"name" VARCHAR(200) NOT NULL,
             	"group" VARCHAR(200) NULL,
+                -- The group a non-inbox row is deduplicated by: a missing group is the empty one, so redeliveries
+                -- of a message without a group converge on one row (a NULL "group" would be distinct in the index).
+                "group_key" VARCHAR(200) NOT NULL DEFAULT '',
             	"content" TEXT NULL,
                 "intent_type" SMALLINT NOT NULL,
                 "retries" INT NOT NULL,
@@ -126,7 +129,10 @@ internal static class PostgreSqlMessagingSchemaContribution
                 "held_by" VARCHAR(200) COLLATE "C" NULL,
                 "hold_reason" VARCHAR(1000) NULL,
                 "hold_operation_id" UUID NULL,
-                "inbox_retention_seconds" BIGINT NOT NULL DEFAULT 2592000
+                "inbox_retention_seconds" BIGINT NOT NULL DEFAULT 2592000,
+                -- SHA-256 of an inbox generation's identity: the identity's text columns together are too wide for
+                -- a portable index key, so the root-key index is built on this hash.
+                "inbox_key_hash" BYTEA NULL
             );
 
             DO $headless$
@@ -163,15 +169,16 @@ internal static class PostgreSqlMessagingSchemaContribution
             END
             $headless$;
 
-            CREATE UNIQUE INDEX IF NOT EXISTS "uq_messaging_received_inbox_root_key" ON {received}
-                ("tenant_present","tenant_id","message_id","intent_type","contract_identity","contract_version","consumer_identity","generation")
-                WHERE "is_inbox_record" AND "replay_parent_incarnation_id" IS NULL;
+            -- The predicates are written as the storage writes them in its conflict targets, so PostgreSQL infers
+            -- these partial indexes from its INSERT ... ON CONFLICT.
+            CREATE UNIQUE INDEX IF NOT EXISTS "uq_messaging_received_inbox_root_key" ON {received} ("inbox_key_hash")
+                WHERE "is_inbox_record" = TRUE AND "replay_parent_incarnation_id" IS NULL;
             CREATE UNIQUE INDEX IF NOT EXISTS "uq_messaging_received_inbox_lifecycle_generation" ON {received}
                 ("lifecycle_id","generation") WHERE "is_inbox_record";
             CREATE UNIQUE INDEX IF NOT EXISTS "uq_messaging_received_generation_incarnation" ON {received} ("generation_incarnation_id")
                 WHERE "generation_incarnation_id" IS NOT NULL;
             CREATE UNIQUE INDEX IF NOT EXISTS "uq_messaging_received_non_inbox_transport_identity" ON {received}
-                ("version","message_id",(COALESCE("group",'')),"intent_type") WHERE NOT "is_inbox_record";
+                ("version","message_id","group_key","intent_type") WHERE "is_inbox_record" = FALSE;
             CREATE INDEX IF NOT EXISTS "idx_messaging_received_inbox_retention" ON {received} ("effective_expires_at","id")
                 INCLUDE ("status_name","next_retry_at","intent_type") WHERE "is_inbox_record" AND NOT "is_held";
             CREATE INDEX IF NOT EXISTS "idx_messaging_received_expires_at_status_name" ON {received} ("expires_at","status_name");
@@ -260,7 +267,7 @@ internal static class PostgreSqlMessagingSchemaContribution
 
     private static string _PublishedTableSql(string schema, int ownerColumnMaxLength)
     {
-        var published = PostgreSqlStorageTableNames.Published(schema);
+        var published = _Table(schema, "MessagingPublished");
 
         return string.Create(
             CultureInfo.InvariantCulture,
@@ -297,10 +304,15 @@ internal static class PostgreSqlMessagingSchemaContribution
         );
     }
 
+    private static string _Table(string schema, string pascalName)
+    {
+        return PostgreSqlDialect.Instance.Qualify(schema, PostgreSqlDialect.Instance.Name(pascalName));
+    }
+
     private static string _PickupIndexesSql(string schema, bool inbox)
     {
-        var received = PostgreSqlStorageTableNames.Received(schema);
-        var published = PostgreSqlStorageTableNames.Published(schema);
+        var received = _Table(schema, "MessagingReceived");
+        var published = _Table(schema, "MessagingPublished");
 
         // #8 — the partial retry-pickup indexes serve the hot retry-pickup path, the owner indexes serve dead-owner
         // reclaim, and the history indexes serve retention selection and audit-reference lookups. They are built
@@ -330,8 +342,8 @@ internal static class PostgreSqlMessagingSchemaContribution
 
     private static string _ContentSearchSql(string schema, bool inbox)
     {
-        var received = PostgreSqlStorageTableNames.Received(schema);
-        var published = PostgreSqlStorageTableNames.Published(schema);
+        var received = _Table(schema, "MessagingReceived");
+        var published = _Table(schema, "MessagingPublished");
         var receivedIndex = inbox
             ? $"""CREATE INDEX IF NOT EXISTS "idx_messaging_received_content_trgm" ON {received} USING gin ("content" gin_trgm_ops);"""
             : "";

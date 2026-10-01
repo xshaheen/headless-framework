@@ -237,16 +237,16 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
 
     private IDataStorage _CreateStorage(TimeProvider timeProvider)
     {
-        return new PostgreSqlDataStorage(
-            _postgreSqlOptions!,
-            TestStorageOptions.For(),
+        return new RelationalDataStorage(
+            _postgreSqlOptions!.Value.ToStorage(),
             _messagingOptions!,
+            TestStorageOptions.For(),
             _tableNames!,
             _serializer!,
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             timeProvider,
             NodeMembership,
-            NullLogger<PostgreSqlDataStorage>.Instance
+            NullLogger<RelationalDataStorage>.Instance
         );
     }
 
@@ -258,16 +258,16 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         messagingOptions.RetryPolicy.MaxPersistedRetries = 4;
         messagingOptions.FailedMessageExpiredAfter = 3600;
 
-        return new PostgreSqlDataStorage(
-            _postgreSqlOptions!,
-            TestStorageOptions.For(),
+        return new RelationalDataStorage(
+            _postgreSqlOptions!.Value.ToStorage(),
             Options.Create(messagingOptions),
+            TestStorageOptions.For(),
             _tableNames!,
             _serializer!,
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             TimeProvider.System,
             NodeMembership,
-            NullLogger<PostgreSqlDataStorage>.Instance
+            NullLogger<RelationalDataStorage>.Instance
         );
     }
 
@@ -1333,7 +1333,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         var monitoringApi = storage.GetMonitoringApi();
 
         // then
-        monitoringApi.Should().BeOfType<PostgreSqlMonitoringApi>();
+        monitoringApi.Should().BeOfType<RelationalMonitoringApi>();
         await Task.CompletedTask;
     }
 
@@ -1888,7 +1888,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await connection.ExecuteAsync(seedSql);
         await connection.ExecuteAsync($"ANALYZE {qualifiedTable};");
 
-        // The query mirrors PostgreSqlDataStorage._GetMessagesOfNeedRetryAsync. We omit
+        // The query mirrors RelationalDataStorage._GetMessagesOfNeedRetryAsync. We omit
         // "FOR UPDATE SKIP LOCKED" because EXPLAIN does not require row-level locking and
         // the planner does not include it in the index-selection decision under FORMAT JSON.
         //

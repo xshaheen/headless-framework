@@ -23,7 +23,7 @@ namespace Tests;
 [Collection<SqlServerTestFixture>]
 public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : TestBase
 {
-    private SqlServerDataStorage _storage = null!;
+    private RelationalDataStorage _storage = null!;
     private FakeTimeProvider _timeProvider = null!;
     private IMonitoringApi _monitoringApi = null!;
 
@@ -60,16 +60,16 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
             );
         }
 
-        _storage = new SqlServerDataStorage(
+        _storage = new RelationalDataStorage(
+            provider.GetRequiredService<IOptions<SqlServerOptions>>().Value.ToStorage(),
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
-            provider.GetRequiredService<IOptions<SqlServerOptions>>(),
             TestStorageOptions.For(),
             tableNames,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             _timeProvider,
             new NullNodeMembership(),
-            NullLogger<SqlServerDataStorage>.Instance
+            NullLogger<RelationalDataStorage>.Instance
         );
         _monitoringApi = _storage.GetMonitoringApi();
 

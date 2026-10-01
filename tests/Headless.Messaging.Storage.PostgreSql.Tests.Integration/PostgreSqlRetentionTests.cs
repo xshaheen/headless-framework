@@ -31,16 +31,16 @@ public sealed class PostgreSqlRetentionTests(PostgreSqlTestFixture fixture) : Te
         _postgreSqlOptions = Options.Create(new PostgreSqlOptions { ConnectionString = fixture.ConnectionString });
         _tableNames = TestStorageOptions.TableNames(_schema);
         _table = _tableNames.GetReceivedTableName();
-        _storage = new PostgreSqlDataStorage(
-            _postgreSqlOptions,
-            TestStorageOptions.For(_schema),
+        _storage = new RelationalDataStorage(
+            _postgreSqlOptions.Value.ToStorage(),
             messagingOptions,
+            TestStorageOptions.For(_schema),
             _tableNames,
             new JsonUtf8Serializer(messagingOptions),
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             TimeProvider.System,
             new NullNodeMembership(),
-            NullLogger<PostgreSqlDataStorage>.Instance
+            NullLogger<RelationalDataStorage>.Instance
         );
         await TestMessagingSchema.ApplyAsync(_postgreSqlOptions.Value, _schema, AbortToken);
     }
@@ -78,7 +78,8 @@ public sealed class PostgreSqlRetentionTests(PostgreSqlTestFixture fixture) : Te
         // Applying the schema again must be a no-op that leaves the retention index in place.
         await TestMessagingSchema.ApplyAsync(_postgreSqlOptions.Value, _schema, AbortToken);
 
-        // Capture the command executed by the provider so the plan assertion cannot drift from its SQL.
+        // Capture the selection of expired inbox generations the provider executed, so the plan assertion cannot
+        // drift from its SQL.
         using var capture = new RetentionCommandLogger();
         using var loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder =>
             builder.SetMinimumLevel(LogLevel.Debug).AddProvider(capture)
@@ -178,7 +179,8 @@ public sealed class PostgreSqlRetentionTests(PostgreSqlTestFixture fixture) : Te
                     if (
                         string.Equals(pair.Key, "CommandText", StringComparison.Ordinal)
                         && pair.Value is string sql
-                        && sql.Contains("retention_expired", StringComparison.Ordinal)
+                        && sql.Contains("\"effective_expires_at\" <", StringComparison.Ordinal)
+                        && sql.Contains("SKIP LOCKED", StringComparison.Ordinal)
                     )
                     {
                         Command = sql;

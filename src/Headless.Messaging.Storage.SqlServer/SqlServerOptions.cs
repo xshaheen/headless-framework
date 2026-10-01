@@ -2,6 +2,8 @@
 
 using FluentValidation;
 using Headless.Messaging.Persistence;
+using Headless.Sql.SqlServer;
+using Microsoft.Data.SqlClient;
 
 namespace Headless.Messaging.Storage.SqlServer;
 
@@ -22,6 +24,19 @@ public sealed class SqlServerOptions
     public string? ConnectionString { get; set; }
 
     internal string Version { get; set; } = null!;
+
+    /// <summary>Describes this database to the relational messaging storage.</summary>
+    internal RelationalMessagingStorage ToStorage()
+    {
+        var connectionString = ConnectionString;
+
+        return new RelationalMessagingStorage(
+            SqlServerDialect.Instance,
+            "SqlServer",
+            () => new SqlConnection(connectionString),
+            OwnerColumnMaxLength
+        );
+    }
 }
 
 internal sealed class SqlServerOptionsValidator : AbstractValidator<SqlServerOptions>

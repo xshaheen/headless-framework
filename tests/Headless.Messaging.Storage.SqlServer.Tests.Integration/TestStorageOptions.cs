@@ -5,6 +5,7 @@ using Headless.Hosting.Initialization.Schema;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.SqlServer;
+using Headless.Sql.SqlServer;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -23,7 +24,7 @@ internal static class TestStorageOptions
 
     public static IStorageTableNames TableNames(string schema = HeadlessStorageDefaults.Schema)
     {
-        return new SqlServerStorageTableNames(For(schema));
+        return new RelationalStorageTableNames(SqlServerDialect.Instance, For(schema));
     }
 }
 
@@ -88,7 +89,10 @@ internal static class TestMessagingSchema
     /// </summary>
     public static IServiceCollection AddTestMessagingSchema(this IServiceCollection services)
     {
-        services.AddSingleton<IStorageTableNames, SqlServerStorageTableNames>();
+        services.AddSingleton<IStorageTableNames>(sp => new RelationalStorageTableNames(
+            SqlServerDialect.Instance,
+            sp.GetRequiredService<IOptions<MessagingStorageOptions>>()
+        ));
         services.AddHeadlessSchemaContribution(sp =>
             SqlServerMessagingSchemaContribution.Create(
                 sp.GetRequiredService<IOptions<SqlServerOptions>>().Value,

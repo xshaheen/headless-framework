@@ -234,16 +234,16 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
 
     private IDataStorage _CreateStorage(TimeProvider timeProvider)
     {
-        return new SqlServerDataStorage(
+        return new RelationalDataStorage(
+            _sqlServerOptions!.Value.ToStorage(),
             _messagingOptions!,
-            _sqlServerOptions!,
             TestStorageOptions.For(),
             _tableNames!,
             _serializer!,
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             timeProvider,
             NodeMembership,
-            NullLogger<SqlServerDataStorage>.Instance
+            NullLogger<RelationalDataStorage>.Instance
         );
     }
 
@@ -1214,7 +1214,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         var monitoringApi = storage.GetMonitoringApi();
 
         // then
-        monitoringApi.Should().BeOfType<SqlServerMonitoringApi>();
+        monitoringApi.Should().BeOfType<RelationalMonitoringApi>();
         await Task.CompletedTask;
     }
 
@@ -1908,28 +1908,28 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
             .And.Contain("IS NOT NULL", "the filter must exclude rows without a Coordination owner");
     }
 
-    private SqlServerDataStorage _CreateStorage(MessagingOptions messagingOptions)
+    private RelationalDataStorage _CreateStorage(MessagingOptions messagingOptions)
     {
         return _CreateStorage(messagingOptions, fixture.ConnectionString);
     }
 
-    private SqlServerDataStorage _CreateStorage(MessagingOptions messagingOptions, string connectionString)
+    private RelationalDataStorage _CreateStorage(MessagingOptions messagingOptions, string connectionString)
     {
         messagingOptions.RetryPolicy.MaxPersistedRetries = 4;
         messagingOptions.FailedMessageExpiredAfter = 3600;
 
         var sqlServerOptions = Options.Create(new SqlServerOptions { ConnectionString = connectionString });
 
-        return new SqlServerDataStorage(
+        return new RelationalDataStorage(
+            sqlServerOptions.Value.ToStorage(),
             Options.Create(messagingOptions),
-            sqlServerOptions,
             TestStorageOptions.For(),
             TestStorageOptions.TableNames(),
             GetSerializer(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             NodeMembership,
-            NullLogger<SqlServerDataStorage>.Instance
+            NullLogger<RelationalDataStorage>.Instance
         );
     }
 

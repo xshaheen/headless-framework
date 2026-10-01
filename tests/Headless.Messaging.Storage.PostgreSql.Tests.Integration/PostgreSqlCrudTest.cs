@@ -21,7 +21,7 @@ namespace Tests;
 [Collection<PostgreSqlTestFixture>]
 public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
 {
-    private PostgreSqlDataStorage _storage = null!;
+    private RelationalDataStorage _storage = null!;
 
     public override async ValueTask InitializeAsync()
     {
@@ -42,16 +42,16 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         var provider = services.BuildServiceProvider();
         var tableNames = provider.GetRequiredService<IStorageTableNames>();
         await provider.ApplyMessagingSchemaAsync();
-        _storage = new PostgreSqlDataStorage(
-            provider.GetRequiredService<IOptions<PostgreSqlOptions>>(),
-            TestStorageOptions.For(),
+        _storage = new RelationalDataStorage(
+            provider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value.ToStorage(),
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
+            TestStorageOptions.For(),
             tableNames,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             TimeProvider.System,
             new NullNodeMembership(),
-            NullLogger<PostgreSqlDataStorage>.Instance
+            NullLogger<RelationalDataStorage>.Instance
         );
 
         await base.InitializeAsync();
@@ -384,6 +384,6 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
 
         // then
         monitoringApi.Should().NotBeNull();
-        monitoringApi.Should().BeOfType<PostgreSqlMonitoringApi>();
+        monitoringApi.Should().BeOfType<RelationalMonitoringApi>();
     }
 }
