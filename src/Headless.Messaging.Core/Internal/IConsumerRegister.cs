@@ -55,10 +55,10 @@ internal sealed class ConsumerRegister(
         serviceProvider.GetService<MessagingInstanceId>() ?? new MessagingInstanceId()
     ).Value;
 
-    // How many times each every-instance subscription was established in this process, keyed by handle name. Kept
-    // across rebuilds on purpose: the count is what tells a consumer that an earlier subscription existed, so messages
-    // published between the two may never have arrived.
-    private readonly ConcurrentDictionary<string, long> _establishments = new(StringComparer.Ordinal);
+    // The establishment hooks of each every-instance subscription in this process, keyed by handle name. Kept across
+    // rebuilds on purpose: the generation count is what tells a consumer that an earlier subscription existed, so
+    // messages published between the two may never have arrived.
+    private readonly ConcurrentDictionary<string, EstablishmentChain> _establishments = new(StringComparer.Ordinal);
 
     private ICircuitBreakerStateManager? _circuitBreakerStateManager;
     private readonly IMiddlewareDescriptorRegistry? _middlewareDescriptorRegistry =
@@ -123,7 +123,11 @@ internal sealed class ConsumerRegister(
 
         try
         {
-            await ExecuteAsync().ConfigureAwait(false);
+            var establishments = await _StartSubscriptionsAsync().ConfigureAwait(false);
+
+            // A started host has resynchronized its every-instance consumers. Each hook is bounded, so a stuck one cannot
+            // hold startup, and none holds the restart gate: a hook that changes the topology only marks a refresh here.
+            await Task.WhenAll(establishments).ConfigureAwait(false);
 
             // Acquire the restart gate so topology-change-driven restarts cannot overlap
             // with the drain loop that follows the initial startup.
@@ -212,6 +216,17 @@ internal sealed class ConsumerRegister(
         if (current == LifecycleState.Starting)
         {
             Interlocked.Exchange(ref _pendingTopologyRefresh, 1);
+
+            // A start or restart that finished between the read above and the write may already have drained, and then
+            // nothing would apply this change. Claim the mark back and restart here; an establishment hook running
+            // beside a restart reaches this window.
+            if (
+                (LifecycleState)Volatile.Read(ref _state) == LifecycleState.Running
+                && Interlocked.CompareExchange(ref _pendingTopologyRefresh, 0, 1) == 1
+            )
+            {
+                await ReStartAsync(force: true, cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 
@@ -552,10 +567,15 @@ internal sealed class ConsumerRegister(
     }
 #pragma warning restore VSTHRD003
 
-    public async ValueTask ExecuteAsync()
+    /// <summary>
+    /// Starts a client generation for every subscription and returns once each client receives, with the establishment
+    /// hooks that generation raised. The hooks run on their own and never fault; host startup waits for them.
+    /// </summary>
+    private async ValueTask<IReadOnlyCollection<Task>> _StartSubscriptionsAsync()
     {
         var subscriptions = _selector.GetCandidatesBySubscription();
         List<Task>? startupTasks = null;
+        var establishments = new ConcurrentQueue<Task>();
 
         // Circuits belong to consumer identities, not to the subscriptions their clients consume, so an identity whose
         // messages arrive through several clients trips once and pauses all of them. Arming the known set also stops
@@ -591,7 +611,7 @@ internal sealed class ConsumerRegister(
             {
                 _isHealthy = false;
                 _logger.FailedToConnectToBroker(e);
-                return;
+                return establishments;
             }
 
             var groupCts = CancellationTokenSource.CreateLinkedTokenSource(_stoppingCts.Token);
@@ -658,16 +678,18 @@ internal sealed class ConsumerRegister(
 
                                 _RegisterMessageProcessor(innerClient, subscriptionKey, handle, groupCts.Token);
 
-                                Func<Task>? onReady = null;
+                                Action? onReady = null;
                                 if (everyInstance)
                                 {
                                     onReady = () =>
-                                        _NotifySubscriptionEstablishedAsync(handleName, descriptors, groupCts.Token);
+                                        establishments.Enqueue(
+                                            _RaiseSubscriptionEstablished(handleName, descriptors, groupCts.Token)
+                                        );
 
                                     // A transport that recovers the subscription on its own reports it here, so the
                                     // consumer learns about a gap the core never saw.
                                     innerClient.AttachReestablishedCallback(_ =>
-                                        _NotifySubscriptionEstablishedAsync(handleName, descriptors, groupCts.Token)
+                                        _RaiseSubscriptionEstablished(handleName, descriptors, groupCts.Token)
                                     );
                                 }
 
@@ -713,6 +735,8 @@ internal sealed class ConsumerRegister(
         {
             await Task.WhenAll(startupTasks).ConfigureAwait(false);
         }
+
+        return establishments;
     }
 
     private Task<IConsumerClient> _CreateConsumerClientAsync(
@@ -751,15 +775,16 @@ internal sealed class ConsumerRegister(
     private async Task _AwaitConsumerReadyThenListenAsync(
         IConsumerClient innerClient,
         TaskCompletionSource startupReady,
-        Func<Task>? onReady,
+        Action? onReady,
         CancellationToken cancellationToken
     )
     {
         var readinessTask = innerClient.WaitUntilReadyAsync(cancellationToken).AsTask();
 
-        if (readinessTask.IsCompleted && onReady is null)
+        if (readinessTask.IsCompleted)
         {
             await readinessTask.ConfigureAwait(false);
+            onReady?.Invoke();
             startupReady.TrySetResult();
             await innerClient.ListeningAsync(_pollingDelay, cancellationToken).ConfigureAwait(false);
             return;
@@ -778,29 +803,64 @@ internal sealed class ConsumerRegister(
 
         await readinessTask.ConfigureAwait(false);
 
-        // The hook runs once the subscription receives, while the client already listens, so no message published after
-        // establishment is lost to it; startup waits for it so a started host has resynchronized its consumers.
-        if (onReady is not null)
-        {
-            await onReady().ConfigureAwait(false);
-        }
-
+        // The hook is raised once the subscription receives and runs beside the listening client, so no message
+        // published after establishment is lost to it. The listening loop never waits for it: a hook that restarts the
+        // clients would otherwise wait on its own consumer task.
+        onReady?.Invoke();
         startupReady.TrySetResult();
         await listeningTask.ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Calls <see cref="IOnSubscriptionEstablished"/> on every consumer class of one every-instance subscription, once
-    /// per establishment: at startup, after each rebuild, and when the client reports that it recovered on its own.
+    /// Raises one establishment of an every-instance subscription: at startup, after each rebuild, and when the client
+    /// reports that it recovered on its own. The hooks run off the caller, after the previous establishment's hooks of
+    /// the same subscription, so they keep establishment order without anyone holding the restart gate for them. The
+    /// returned task completes when this establishment's hooks finish or time out, and never faults.
     /// </summary>
-    private async Task _NotifySubscriptionEstablishedAsync(
+    private Task _RaiseSubscriptionEstablished(
         string handleName,
         IReadOnlyList<ConsumerExecutorDescriptor> descriptors,
         CancellationToken cancellationToken
     )
     {
-        var generation = _establishments.AddOrUpdate(handleName, 1, static (_, previous) => previous + 1);
+#pragma warning disable VSTHRD003 // False positive: the lambda starts the task it returns; the previous link is only passed along.
+        return _establishments
+            .GetOrAdd(handleName, static _ => new EstablishmentChain())
+            .Append((previous, generation) => _NotifyAfterAsync(previous, descriptors, generation, cancellationToken));
+#pragma warning restore VSTHRD003
+    }
 
+    private async Task _NotifyAfterAsync(
+        Task previous,
+        IReadOnlyList<ConsumerExecutorDescriptor> descriptors,
+        long generation,
+        CancellationToken cancellationToken
+    )
+    {
+#pragma warning disable VSTHRD003 // The chain's previous link is created by this register and never faults.
+        await previous.ConfigureAwait(false);
+#pragma warning restore VSTHRD003
+
+        try
+        {
+            await _NotifySubscriptionEstablishedAsync(descriptors, generation, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The client generation stopped; a later establishment raises its own hooks.
+        }
+    }
+
+    /// <summary>
+    /// Calls <see cref="IOnSubscriptionEstablished"/> on every consumer class of one every-instance subscription for
+    /// one establishment, each bounded by <see cref="MessagingOptions.SubscriptionEstablishedTimeout"/>.
+    /// </summary>
+    private async Task _NotifySubscriptionEstablishedAsync(
+        IReadOnlyList<ConsumerExecutorDescriptor> descriptors,
+        long generation,
+        CancellationToken cancellationToken
+    )
+    {
         // Runtime subscriptions declare no identity and have no consumer class to call.
         foreach (
             var consumer in descriptors
@@ -821,14 +881,26 @@ internal sealed class ConsumerRegister(
                 generation
             );
 
+            cancellationToken.ThrowIfCancellationRequested();
+            var timeout = _options.SubscriptionEstablishedTimeout;
+            using var timeoutCts = new CancellationTokenSource(timeout, _timeProvider);
+            using var hookCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+            var hook = _InvokeSubscriptionEstablishedAsync(consumer.Key, context, hookCts.Token);
+
             try
             {
-                await _InvokeSubscriptionEstablishedAsync(consumer.Key, context, cancellationToken)
-                    .ConfigureAwait(false);
+                // Waits on the token too, so a hook that ignores it still releases the establishments queued behind it.
+                await hook.WaitAsync(hookCts.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                hook.Forget();
                 throw;
+            }
+            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
+            {
+                hook.Forget();
+                _logger.SubscriptionEstablishedHookTimedOut(LogSanitizer.Sanitize(identity), timeout, generation);
             }
             catch (Exception ex)
             {
@@ -920,7 +992,9 @@ internal sealed class ConsumerRegister(
 
         try
         {
-            await ExecuteAsync().ConfigureAwait(false);
+            // Nothing waits for the establishment hooks under the restart gate: a hook that attaches a runtime
+            // subscription restarts the clients again, and that restart needs the gate this one holds.
+            _ = await _StartSubscriptionsAsync().ConfigureAwait(false);
         }
         catch (OperationCanceledException)
             when ((LifecycleState)Volatile.Read(ref _state) is LifecycleState.Disposing or LifecycleState.Disposed)
@@ -1637,16 +1711,17 @@ internal sealed class ConsumerRegister(
         CancellationToken hostShutdownToken
     )
     {
-        var transportSettled = false;
+        var commitAttempted = false;
         var consumeOutcomeRecorded = false;
         MessagingTraceHandle traceHandle = default;
         var lane = subscriptionKey.Lane;
+        var consumerIdentity = subscriptionKey.SubscriptionName;
 
         try
         {
             var name = transportMessage.Name;
             _selector.TryGetMessageNameExecutor(name, subscriptionKey, out var executor);
-            var consumerIdentity = executor?.ResolvedConsumerIdentity ?? subscriptionKey.SubscriptionName;
+            consumerIdentity = executor?.ResolvedConsumerIdentity ?? consumerIdentity;
 
             // Replaces whatever the publisher sent, so the header always names the consumer that received it.
             transportMessage.Headers[Headers.ConsumerIdentity] = consumerIdentity;
@@ -1685,28 +1760,61 @@ internal sealed class ConsumerRegister(
             }
 
             // Settlement is must-complete: never abandon a commit on host shutdown.
+            commitAttempted = true;
             await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
-            transportSettled = true;
         }
+        catch (OperationCanceledException e) when (hostShutdownToken.IsCancellationRequested && !commitAttempted)
+        {
+            // The only reject: the consumer was stopped mid-delivery, not failed by the message, so this process may
+            // still take it if its subscription survives the stop.
+            _logger.LogProcessReceivedMessageFailed(e, transportMessage);
+            await client.RejectAsync(sender, CancellationToken.None).ConfigureAwait(false);
+            traceHandle.Activity?.Dispose();
+        }
+#pragma warning disable ERP022 // False positive: the fault is logged and counted; every-instance delivery commits rather than requeues by design.
         catch (Exception e)
         {
-            _logger.LogProcessReceivedMessageFailed(e, transportMessage);
+            // A fault outside the consumer is the core's or the transport's, so a redelivery would fault the same way:
+            // a requeue on a per-process subscription only loops. Commit instead, like a consumer failure.
+            _logger.EveryInstanceDeliveryFaulted(
+                e,
+                LogSanitizer.Sanitize(consumerIdentity),
+                LogSanitizer.Sanitize(transportMessage.Headers.TryGetValue(Headers.MessageId, out var id) ? id : null),
+                LogSanitizer.Sanitize(
+                    transportMessage.Headers.TryGetValue(Headers.MessageName, out var messageName) ? messageName : null
+                )
+            );
 
-            if (!transportSettled)
+            if (!consumeOutcomeRecorded)
             {
-                // Settlement is must-complete: never abandon a reject on host shutdown.
-                await client.RejectAsync(sender, CancellationToken.None).ConfigureAwait(false);
-            }
-
-            if (e is OperationCanceledException)
-            {
-                traceHandle.Activity?.Dispose();
-            }
-            else if (!consumeOutcomeRecorded)
-            {
+                MessagingMetrics.RecordEveryInstanceDelivery(consumerIdentity, "dropped", e.GetType().FullName);
                 _TracingError(traceHandle, transportMessage, client.BrokerAddress, e);
             }
+
+            if (!commitAttempted)
+            {
+                await _CommitFaultedEveryInstanceMessageAsync(client, transportMessage, sender).ConfigureAwait(false);
+            }
         }
+#pragma warning restore ERP022
+    }
+
+    private async Task _CommitFaultedEveryInstanceMessageAsync(
+        IConsumerClient client,
+        TransportMessage transportMessage,
+        object? sender
+    )
+    {
+        try
+        {
+            await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
+        }
+#pragma warning disable ERP022 // False positive: logged; a settlement that cannot be sent leaves the message to the broker's own redelivery.
+        catch (Exception ex)
+        {
+            _logger.LogProcessReceivedMessageFailed(ex, transportMessage);
+        }
+#pragma warning restore ERP022
     }
 
     /// <summary>
@@ -2269,6 +2377,32 @@ internal sealed class ConsumerRegister(
         Running = 2,
         Disposing = 3,
         Disposed = 4,
+    }
+
+    /// <summary>The establishments of one every-instance subscription: their count and the tail of their hooks.</summary>
+    private sealed class EstablishmentChain
+    {
+        private readonly Lock _sync = new();
+        private long _generation;
+        private Task _tail = Task.CompletedTask;
+
+        /// <summary>
+        /// Appends one establishment and returns its link; <paramref name="notify"/> receives the previous link and the
+        /// new generation, and runs on the thread pool so no hook runs on the raising thread under the lock.
+        /// </summary>
+        public Task Append(Func<Task, long, Task> notify)
+        {
+            lock (_sync)
+            {
+                var previous = _tail;
+                var generation = ++_generation;
+#pragma warning disable VSTHRD003 // False positive: the lambda starts the task it returns; the previous link is only passed along.
+                var link = Task.Run(() => notify(previous, generation), CancellationToken.None);
+#pragma warning restore VSTHRD003
+                _tail = link;
+                return link;
+            }
+        }
     }
 
     private sealed class SubscriptionHandle

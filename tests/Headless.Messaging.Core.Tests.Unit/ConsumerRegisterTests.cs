@@ -193,7 +193,7 @@ public sealed class ConsumerRegisterTests : TestBase
         await register.StartAsync(hostCts.Token);
 
         // Swap _selector with a MethodMatcherCache whose selector returns one candidate so
-        // ExecuteAsync enters the intent-aware foreach loop and calls the factory.
+        // subscription startup enters the intent-aware foreach loop and calls the factory.
         var selectorSub = Substitute.For<IConsumerServiceSelector>();
         var fakeDescriptor = new ConsumerExecutorDescriptor
         {
@@ -210,7 +210,7 @@ public sealed class ConsumerRegisterTests : TestBase
             .SetValue(register, fakeCache);
 
         // Swap _consumerClientFactory with one that throws a non-BrokerConnectionException
-        // so the exception propagates out of ExecuteAsync.
+        // so the exception propagates out of subscription startup.
         var factorySub = Substitute.For<IConsumerClientFactory>();
         factorySub
             .CreateAsync(Arg.Any<ConsumerClientRequest>(), Arg.Any<CancellationToken>())
@@ -223,7 +223,7 @@ public sealed class ConsumerRegisterTests : TestBase
             )!
             .SetValue(register, factorySub);
 
-        // when — ReStartAsync should propagate the exception from ExecuteAsync.
+        // when — ReStartAsync should propagate the exception from subscription startup.
         var act = async () => await register.ReStartAsync(force: true, AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("boom");
@@ -261,7 +261,7 @@ public sealed class ConsumerRegisterTests : TestBase
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
         using var hostCts = new CancellationTokenSource();
 
-        // Start normally — in-memory queue has no subscribers so ExecuteAsync is a no-op
+        // Start normally — in-memory queue has no subscribers so subscription startup is a no-op
         await register.StartAsync(hostCts.Token);
 
         // Inject mock CB into the field (StartAsync resolves ICircuitBreakerStateManager via GetService)
@@ -271,7 +271,7 @@ public sealed class ConsumerRegisterTests : TestBase
         )!;
         cbField.SetValue(register, mockCb);
 
-        // Swap selector with a fake that has one group so ExecuteAsync enters the per-group loop
+        // Swap selector with a fake that has one group so subscription startup enters the per-group loop
         var selectorSub = Substitute.For<IConsumerServiceSelector>();
         var fakeDescriptor = new ConsumerExecutorDescriptor
         {
@@ -287,7 +287,7 @@ public sealed class ConsumerRegisterTests : TestBase
             .SetValue(register, fakeCache);
 
         // Swap factory: first call returns a metadata client; per-thread calls return a
-        // ready listener so ExecuteAsync can finish and expose the paused handle state.
+        // ready listener so subscription startup can finish and expose the paused handle state.
         await using var readyClient = new ReadyListeningConsumerClient();
         var callCount = 0;
         var factorySub = Substitute.For<IConsumerClientFactory>();
@@ -313,15 +313,15 @@ public sealed class ConsumerRegisterTests : TestBase
             )!
             .SetValue(register, factorySub);
 
-        // when — call ExecuteAsync directly (the internal path ReStartAsync uses after PulseAsync)
-        var executeAsync = typeof(ConsumerRegister).GetMethod(
-            nameof(ConsumerRegister.ExecuteAsync),
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+        // when — start the subscriptions directly (the internal path ReStartAsync uses after PulseAsync)
+        var startSubscriptionsAsync = typeof(ConsumerRegister).GetMethod(
+            "_StartSubscriptionsAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
             binder: null,
             Type.EmptyTypes,
             modifiers: null
         )!;
-        await (ValueTask)executeAsync.Invoke(register, null)!;
+        await (ValueTask<IReadOnlyCollection<Task>>)startSubscriptionsAsync.Invoke(register, null)!;
 
         // then — AbortHalfOpenProbeAsync was called for the group
         await mockCb.Received(1).AbortHalfOpenProbeAsync(handleName);

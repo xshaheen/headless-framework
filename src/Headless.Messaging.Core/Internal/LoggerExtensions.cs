@@ -882,4 +882,31 @@ internal static partial class LoggerExtensions
         string consumer,
         long generation
     );
+
+    [LoggerMessage(
+        EventId = 106,
+        EventName = "SubscriptionEstablishedHookTimedOut",
+        Level = LogLevel.Warning,
+        Message = "The subscription-established hook of consumer '{Consumer}' did not finish within {Timeout} (generation {Generation}); its token is canceled and the subscription keeps receiving without waiting for it."
+    )]
+    public static partial void SubscriptionEstablishedHookTimedOut(
+        this ILogger logger,
+        string consumer,
+        TimeSpan timeout,
+        long generation
+    );
+
+    [LoggerMessage(
+        EventId = 107,
+        EventName = "EveryInstanceDeliveryFaulted",
+        Level = LogLevel.Error,
+        Message = "Every-instance subscription '{Subscription}' faulted outside its consumer on message {MessageId} (name '{MessageName}'); the message is committed without retry."
+    )]
+    public static partial void EveryInstanceDeliveryFaulted(
+        this ILogger logger,
+        Exception exception,
+        string subscription,
+        string? messageId,
+        string? messageName
+    );
 }

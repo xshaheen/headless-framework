@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Collections.ObjectModel;
 using System.Diagnostics.Metrics;
 using System.Reflection;
 using Headless.Messaging;
@@ -133,6 +134,91 @@ public sealed class EveryInstanceDeliveryTests : TestBase
             .Be(0, "a failed every-instance delivery is committed, not requeued");
         storage.ReceivedWrites.Should().BeEmpty("a failed every-instance delivery keeps no retry row");
         outcomes.Should().BeEquivalentTo(["failed", "succeeded"]);
+    }
+
+    [Fact]
+    public async Task should_commit_and_count_a_fault_outside_the_consumer_without_rejecting()
+    {
+        // given
+        var factory = new RecordingFactory();
+        var outcomes = new ConcurrentBag<string>();
+        using var listener = _ListenToEveryInstanceOutcomes(PriceCache.Identity, outcomes);
+        await using var provider = _BuildHost(
+            factory,
+            configure: services => services.ConfigureMessaging(m => m.AddModule<PriceCacheModule>())
+        );
+        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+        var probe = provider.GetRequiredService<EveryInstanceProbe>();
+
+        // A read-only header bag makes the core's own header stamp throw before the consumer runs: a fault outside
+        // the consumer, which a transport that requeues on reject would otherwise redeliver forever.
+        var message = new TransportMessage(
+            new ReadOnlyDictionary<string, string?>(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [Headers.MessageId] = "fault-1",
+                    [Headers.MessageName] = probe.Established[0].MessageNames[0],
+                }
+            ),
+            ReadOnlyMemory<byte>.Empty
+        );
+
+        // when
+        await factory.LatestClient(PriceCache.Identity).DeliverAsync(message, RecordingClient.OutOfBandSender);
+
+        // then
+        factory.Rejects(PriceCache.Identity).Should().Be(0, "a requeue would redeliver the same fault forever");
+        factory.Commits(PriceCache.Identity).Should().Be(1);
+        probe.Consumed.Should().BeEmpty();
+        outcomes.Should().BeEquivalentTo(["dropped"]);
+    }
+
+    [Fact]
+    public async Task should_finish_startup_when_a_subscription_hook_never_returns()
+    {
+        // given
+        var factory = new RecordingFactory();
+        await using var provider = _BuildHost(
+            factory,
+            configure: services => services.ConfigureMessaging(m => m.AddModule<StalledPriceCacheModule>()),
+            configureMessaging: setup => setup.Options.SubscriptionEstablishedTimeout = TimeSpan.FromMilliseconds(200)
+        );
+
+        // when
+        var bootstrap = provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+
+        // then
+        await bootstrap.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        provider.GetRequiredService<EveryInstanceProbe>().Established.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task should_not_deadlock_when_a_subscription_hook_attaches_a_runtime_subscription()
+    {
+        // given
+        var factory = new RecordingFactory();
+        await using var provider = _BuildHost(
+            factory,
+            configure: services => services.ConfigureMessaging(m => m.AddModule<AttachingPriceCacheModule>())
+        );
+        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+        var probe = provider.GetRequiredService<EveryInstanceProbe>();
+        var registry = provider.GetRequiredService<IRuntimeConsumerRegistry>();
+
+        // when: a runtime subscription rebuilds the clients, and the rebuilt subscription's hook attaches another
+        await using var handle = await provider
+            .GetRequiredService<IRuntimeSubscriber>()
+            .SubscribeAsync<PriceChanged>(
+                (_, _, _) => ValueTask.CompletedTask,
+                new RuntimeSubscriptionOptions { HandlerId = "tests.runtime-price", EveryInstance = true },
+                AbortToken
+            )
+            .AsTask()
+            .WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        // then
+        await _WaitUntilAsync(() => registry.GetDescriptors().Count == 2 && probe.Established.Count >= 3);
+        probe.Established.Select(x => x.Generation).Should().StartWith([1, 2, 3]);
     }
 
     [Fact]
@@ -490,9 +576,13 @@ public sealed class EveryInstanceDeliveryTests : TestBase
     /// <summary>Forwards to the transport's client and counts what the core asked of it.</summary>
     private sealed class RecordingClient(ConsumerClientRequest request, IConsumerClient inner) : IConsumerClient
     {
+        /// <summary>Marks a delivery the test injects, which the transport underneath never saw.</summary>
+        public static readonly object OutOfBandSender = new();
+
         private int _commits;
         private int _rejects;
         private Func<CancellationToken, Task>? _onReestablished;
+        private Func<TransportMessage, object?, Task>? _onMessage;
 
         public ConsumerClientRequest Request { get; } = request;
 
@@ -507,6 +597,9 @@ public sealed class EveryInstanceDeliveryTests : TestBase
         public Func<TransportMessage, object?, Task>? OnMessageCallback => inner.OnMessageCallback;
 
         public Action<LogMessageEventArgs>? OnLogCallback => inner.OnLogCallback;
+
+        public Task DeliverAsync(TransportMessage message, object? sender) =>
+            (_onMessage ?? throw new InvalidOperationException("No message callback is attached."))(message, sender);
 
         public Task RaiseReestablishedAsync(CancellationToken cancellationToken) =>
             (_onReestablished ?? throw new InvalidOperationException("No re-established callback is attached."))(
@@ -536,13 +629,13 @@ public sealed class EveryInstanceDeliveryTests : TestBase
         public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _commits);
-            return inner.CommitAsync(sender, cancellationToken);
+            return sender == OutOfBandSender ? ValueTask.CompletedTask : inner.CommitAsync(sender, cancellationToken);
         }
 
         public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _rejects);
-            return inner.RejectAsync(sender, cancellationToken);
+            return sender == OutOfBandSender ? ValueTask.CompletedTask : inner.RejectAsync(sender, cancellationToken);
         }
 
         public ValueTask PauseAsync(CancellationToken cancellationToken = default) =>
@@ -554,7 +647,11 @@ public sealed class EveryInstanceDeliveryTests : TestBase
         public void AttachCallbacks(
             Func<TransportMessage, object?, Task>? onMessage,
             Action<LogMessageEventArgs>? onLog
-        ) => inner.AttachCallbacks(onMessage, onLog);
+        )
+        {
+            _onMessage = onMessage;
+            inner.AttachCallbacks(onMessage, onLog);
+        }
 
         public void AttachReestablishedCallback(Func<CancellationToken, Task>? onReestablished) =>
             _onReestablished = onReestablished;
@@ -709,5 +806,74 @@ public sealed class CompetingPriceCacheModule : IMessagingModule
             everyInstance: false,
             policy: null,
             Tests.Registration.TestConsumers.Dispatch<PriceCache, PriceChanged>()
+        );
+}
+
+public sealed class StalledPriceCache(EveryInstanceProbe probe) : IConsume<PriceChanged>, IOnSubscriptionEstablished
+{
+    public const string Identity = "tests.stalled-price-cache";
+
+    public ValueTask ConsumeAsync(ConsumeContext<PriceChanged> context, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
+
+    // Ignores its token on purpose: the bound has to hold for a hook that never cooperates.
+    public async ValueTask OnSubscriptionEstablishedAsync(
+        SubscriptionEstablishedContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        probe.Establish(context);
+        await Task.Delay(Timeout.InfiniteTimeSpan, CancellationToken.None);
+    }
+}
+
+public sealed class StalledPriceCacheModule : IMessagingModule
+{
+    public static void Register(MessagingCatalogBuilder catalog) =>
+        catalog.AddBusConsumer<StalledPriceCache, PriceChanged>(
+            StalledPriceCache.Identity,
+            everyInstance: true,
+            policy: null,
+            Tests.Registration.TestConsumers.Dispatch<StalledPriceCache, PriceChanged>()
+        );
+}
+
+/// <summary>Attaches a runtime subscription from the hook of the rebuild that another runtime subscription caused.</summary>
+public sealed class AttachingPriceCache(IRuntimeSubscriber subscriber, EveryInstanceProbe probe)
+    : IConsume<PriceChanged>,
+        IOnSubscriptionEstablished
+{
+    public const string Identity = "tests.attaching-price-cache";
+
+    public ValueTask ConsumeAsync(ConsumeContext<PriceChanged> context, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
+
+    public async ValueTask OnSubscriptionEstablishedAsync(
+        SubscriptionEstablishedContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        probe.Establish(context);
+        if (context.Generation != 2)
+        {
+            return;
+        }
+
+        await subscriber.SubscribeAsync<PriceChanged>(
+            (_, _, _) => ValueTask.CompletedTask,
+            new RuntimeSubscriptionOptions { HandlerId = "tests.hook-attached", EveryInstance = true },
+            cancellationToken
+        );
+    }
+}
+
+public sealed class AttachingPriceCacheModule : IMessagingModule
+{
+    public static void Register(MessagingCatalogBuilder catalog) =>
+        catalog.AddBusConsumer<AttachingPriceCache, PriceChanged>(
+            AttachingPriceCache.Identity,
+            everyInstance: true,
+            policy: null,
+            Tests.Registration.TestConsumers.Dispatch<AttachingPriceCache, PriceChanged>()
         );
 }

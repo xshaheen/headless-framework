@@ -428,8 +428,10 @@ internal static class MessagingMetrics
 
     /// <summary>
     /// Records one every-instance delivery, which has no inbox row to count it: <c>succeeded</c> when the consumer
-    /// returned, <c>failed</c> when it threw (with <c>error.type</c>), and <c>dropped</c> when the message never reached
-    /// it (no consumer on the subscription, or a receive-stage reject). Every outcome commits the message.
+    /// returned, <c>failed</c> when it threw (with <c>error.type</c>), <c>dropped</c> when the message never reached it or
+    /// faulted outside it (no consumer on the subscription, a receive-stage reject, a core or transport fault, or a NATS
+    /// channel overflow with <c>error.type</c> = <c>overflow</c>), and <c>skipped</c> when receive middleware skipped it.
+    /// Every outcome commits the message, except where the transport itself discarded it.
     /// </summary>
     internal static void RecordEveryInstanceDelivery(string consumerIdentity, string outcome, string? errorType = null)
     {

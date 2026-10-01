@@ -230,6 +230,17 @@ public sealed class MessagingOptions
     public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// Gets or sets how long one <see cref="IOnSubscriptionEstablished"/> hook may run before the framework stops
+    /// waiting for it. Default is 30 seconds.
+    /// </summary>
+    /// <remarks>
+    /// Host startup waits for the hooks of every every-instance subscription, so a hook that never returns would
+    /// otherwise hold startup forever. When the bound expires the hook's token is canceled, the expiry is logged, and
+    /// startup and later establishments continue without it.
+    /// </remarks>
+    public TimeSpan SubscriptionEstablishedTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// Gets or sets the cadence of the dead-owner recovery reconcile backstop. Default is 1 minute.
     /// </summary>
     /// <remarks>
@@ -334,6 +345,7 @@ public sealed class MessagingOptions
         target.TransportPublishTimeout = TransportPublishTimeout;
         target.CommandTimeout = CommandTimeout;
         target.ShutdownTimeout = ShutdownTimeout;
+        target.SubscriptionEstablishedTimeout = SubscriptionEstablishedTimeout;
         target.DeadNodeReconcileInterval = DeadNodeReconcileInterval;
         target.RequiredInboxCapability = RequiredInboxCapability;
         target.DefaultDeliveryMode = DefaultDeliveryMode;
@@ -547,6 +559,11 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
             .WithMessage("ShutdownTimeout must be greater than zero.")
             .LessThanOrEqualTo(TimeSpan.FromMinutes(5))
             .WithMessage("ShutdownTimeout must not exceed 5 minutes.");
+        RuleFor(x => x.SubscriptionEstablishedTimeout)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("SubscriptionEstablishedTimeout must be greater than zero.")
+            .LessThanOrEqualTo(TimeSpan.FromMinutes(5))
+            .WithMessage("SubscriptionEstablishedTimeout must not exceed 5 minutes.");
         // No upper bound: the reconcile is a backstop cadence, not a correctness deadline (the per-row
         // LockedUntil floor recovers rows independently), so a long interval is a legitimate choice.
         RuleFor(x => x.DeadNodeReconcileInterval)

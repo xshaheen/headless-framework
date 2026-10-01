@@ -183,6 +183,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
         options.TransportPublishTimeout.Should().Be(TimeSpan.FromSeconds(10));
         options.CommandTimeout.Should().Be(TimeSpan.FromSeconds(30));
         options.ShutdownTimeout.Should().Be(TimeSpan.FromSeconds(30));
+        options.SubscriptionEstablishedTimeout.Should().Be(TimeSpan.FromSeconds(30));
         options.RetryPolicy.RetryStrategy.BackoffType.Should().Be(DelayBackoffType.Exponential);
         options.RetryPolicy.RetryStrategy.ShouldHandle.Should().NotBeNull();
     }
@@ -358,6 +359,16 @@ public sealed class MessagingOptionsValidationTests : TestBase
 
         new MessagingOptionsValidator()
             .Validate(new MessagingOptions { CommandTimeout = TimeSpan.FromMinutes(6) })
+            .IsValid.Should()
+            .BeFalse();
+
+        new MessagingOptionsValidator()
+            .Validate(new MessagingOptions { SubscriptionEstablishedTimeout = TimeSpan.Zero })
+            .IsValid.Should()
+            .BeFalse();
+
+        new MessagingOptionsValidator()
+            .Validate(new MessagingOptions { SubscriptionEstablishedTimeout = TimeSpan.FromMinutes(6) })
             .IsValid.Should()
             .BeFalse();
     }
