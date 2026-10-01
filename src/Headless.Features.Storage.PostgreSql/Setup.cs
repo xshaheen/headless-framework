@@ -1,16 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FluentValidation;
 using Headless.Checks;
 using Headless.Constants;
 using Headless.Features.PostgreSql;
 using Headless.Features.Repositories;
-using Headless.Serializer;
 using Headless.Sql;
+using Headless.Sql.PostgreSql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Features;
@@ -128,39 +125,12 @@ public static class SetupFeaturesPostgreSql
                 );
             }
 
-            services.AddOptions<FeaturesStorageOptions, PostgreSqlFeaturesStorageOptionsValidator>();
-            // The contribution factory reads options at first resolution, so InitializeOnStartup keeps its
-            // contract: false means the runner never creates the tables (a migration tool owns them), while the
-            // initializer promise still completes for dependents.
-            services.AddHeadlessSchemaContribution(sp =>
-                PostgreSqlFeaturesSchemaContribution.Create(
-                    sp.GetRequiredService<IOptions<PostgreSqlFeaturesOptions>>().Value,
-                    sp.GetRequiredService<IOptions<FeaturesStorageOptions>>().Value
-                )
+            RelationalFeaturesStorage.AddServices<PostgreSqlFeaturesOptions>(
+                services,
+                PostgreSqlDialect.Instance,
+                StorageProvider.PostgreSql,
+                PostgreSqlFeaturesSchemaContribution.Create
             );
-            services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
-            services.TryAddSingleton<IFeatureValueRecordRepository, PostgreSqlFeatureValueRecordRepository>();
-            services.TryAddSingleton<IFeatureDefinitionRecordRepository, PostgreSqlFeatureDefinitionRecordRepository>();
-        }
-    }
-
-    private sealed class PostgreSqlFeaturesStorageOptionsValidator : AbstractValidator<FeaturesStorageOptions>
-    {
-        public PostgreSqlFeaturesStorageOptionsValidator()
-        {
-            RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.PostgreSql);
-            RuleFor(x => x.FeatureValuesTableName)
-                .IsValidIdentifierFor(StorageProvider.PostgreSql)
-                .FitsDerivedPostgreSqlNames(FeaturesStorageNames.ValuesIndexes)
-                .When(x => x.FeatureValuesTableName is not null);
-            RuleFor(x => x.FeatureDefinitionsTableName)
-                .IsValidIdentifierFor(StorageProvider.PostgreSql)
-                .FitsDerivedPostgreSqlNames(FeaturesStorageNames.DefinitionsIndexes)
-                .When(x => x.FeatureDefinitionsTableName is not null);
-            RuleFor(x => x.FeatureGroupDefinitionsTableName)
-                .IsValidIdentifierFor(StorageProvider.PostgreSql)
-                .FitsDerivedPostgreSqlNames(FeaturesStorageNames.GroupsIndexes)
-                .When(x => x.FeatureGroupDefinitionsTableName is not null);
         }
     }
 }

@@ -229,6 +229,7 @@ Core implementation of feature management with caching, value providers, and def
 - `FeaturesInitializationBackgroundService` — seeds static definitions with up to 10 jittered exponential-back-off retries capped at 30 seconds; pre-caches dynamic definitions when enabled
 - `FeatureManagementOptions` — tuning options for lock keys, cache expiries, dynamic store toggle, and named cache routing
 - `FeaturesStorageOptions` — schema and table name configuration shared across all storage providers
+- `RelationalFeaturesOptions` — base of `PostgreSqlFeaturesOptions` and `SqlServerFeaturesOptions` (`ConnectionString`, `CommandTimeout`). Core also holds the one relational value and definition repository both raw providers run, written over the `ISqlDialect` statement kit; each provider package supplies only its options, DDL, and registration
 - `HeadlessFeaturesSetupBuilder` — fluent builder returned to `AddHeadlessFeatures`; exposes `ConfigureManagement`, `ConfigureStorage`, and `RegisterExtension`
 - `services.AddFeatureDefinitionProvider<T>()` — registers a custom `IFeatureDefinitionProvider`
 - `services.AddFeatureValueProvider<T>()` — registers a custom `IFeatureValueReadProvider` (idempotent by type)
@@ -425,7 +426,7 @@ PostgreSQL raw-DDL storage for feature management.
 - `setup.UsePostgreSql()` — reads the connection registered by `AddPostgreSqlSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
 - Table and index creation at host startup as schema steps (`Features/1` tables, `Features/2` indexes) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with snake_case tables, columns, keys, and indexes (`feature_values`, `provider_key`, `ix_feature_values_provider_name_provider_key`)
 - Raw ADO.NET repositories for feature values, feature definitions, and feature group definitions
-- `PostgreSqlFeaturesOptions` — connection string and command timeout (`CommandTimeout`, default 30 seconds)
+- `PostgreSqlFeaturesOptions` — connection string and command timeout (`CommandTimeout`, default 30 seconds), inherited from `RelationalFeaturesOptions`
 - Shares `FeaturesStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
 
 ### Install
@@ -479,8 +480,7 @@ Configure schema and table names through `FeaturesStorageOptions` via `setup.Con
 ### Runtime behavior
 
 - Registers the features schema contribution; the one schema runner applies it at startup
-- Registers `PostgreSqlFeatureValueRecordRepository` as `IFeatureValueRecordRepository` (singleton)
-- Registers `PostgreSqlFeatureDefinitionRecordRepository` as `IFeatureDefinitionRecordRepository` (singleton)
+- Registers the shared relational repositories from `Headless.Features.Core`, over the PostgreSQL dialect, as `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository` (singletons)
 
 ---
 
@@ -497,7 +497,7 @@ SQL Server raw-DDL storage for feature management.
 - `setup.UseSqlServer()` — reads the connection registered by `AddSqlServerSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
 - Table, index, and table-type creation at host startup as one schema step (`Features/1`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts)
 - Raw ADO.NET repositories for feature values, feature definitions, and feature group definitions
-- `SqlServerFeaturesOptions` — connection string and command timeout (`CommandTimeout`, default 30 seconds)
+- `SqlServerFeaturesOptions` — connection string and command timeout (`CommandTimeout`, default 30 seconds), inherited from `RelationalFeaturesOptions`
 - Shares `FeaturesStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
 
 ### Install
@@ -551,5 +551,4 @@ Configure schema and table names through `FeaturesStorageOptions` via `setup.Con
 ### Runtime behavior
 
 - Registers the features schema contribution; the one schema runner applies it at startup
-- Registers `SqlServerFeatureValueRecordRepository` as `IFeatureValueRecordRepository` (singleton)
-- Registers `SqlServerFeatureDefinitionRecordRepository` as `IFeatureDefinitionRecordRepository` (singleton)
+- Registers the shared relational repositories from `Headless.Features.Core`, over the SQL Server dialect, as `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository` (singletons)

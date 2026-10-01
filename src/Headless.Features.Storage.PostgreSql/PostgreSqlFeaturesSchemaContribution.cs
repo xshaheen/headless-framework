@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Features.Entities;
-using Headless.Hosting.Initialization;
+using Headless.Features.Repositories;
 using Headless.Hosting.Initialization.Schema;
 using Headless.Sql.PostgreSql;
 
@@ -16,17 +16,23 @@ internal static class PostgreSqlFeaturesSchemaContribution
     public const string TablesStepVersion = "1";
     public const string IndexesStepVersion = "2";
 
-    // Only the default names are read from it, so the history identity tracks the defaults FeaturesStorageOptions owns.
-    private static readonly FeaturesStorageOptions _Defaults = new();
+    private static readonly RelationalFeaturesTables _Defaults = new(
+        PostgreSqlDialect.Instance,
+        new FeaturesStorageOptions()
+    );
 
-    public static SchemaContribution Create(PostgreSqlFeaturesOptions options, FeaturesStorageOptions storageOptions)
+    public static SchemaContribution Create(
+        PostgreSqlFeaturesOptions options,
+        RelationalFeaturesTables tables,
+        bool applyOnStartup
+    )
     {
-        var valuesName = PostgreSqlFeaturesSchema.ValuesName(storageOptions);
-        var definitionsName = PostgreSqlFeaturesSchema.DefinitionsName(storageOptions);
-        var groupsName = PostgreSqlFeaturesSchema.GroupsName(storageOptions);
-        var valuesTable = PostgreSqlFeaturesSchema.ValuesTable(storageOptions);
-        var definitionsTable = PostgreSqlFeaturesSchema.DefinitionsTable(storageOptions);
-        var groupsTable = PostgreSqlFeaturesSchema.GroupsTable(storageOptions);
+        var valuesName = tables.ValuesName;
+        var definitionsName = tables.DefinitionsName;
+        var groupsName = tables.GroupsName;
+        var valuesTable = tables.Values;
+        var definitionsTable = tables.Definitions;
+        var groupsTable = tables.Groups;
 
         var tablesSql = $"""
             CREATE TABLE IF NOT EXISTS {groupsTable} (
@@ -78,28 +84,19 @@ internal static class PostgreSqlFeaturesSchemaContribution
         return new SchemaContribution(
             feature: SchemaContribution.FeatureId(
                 "Features",
-                (
-                    storageOptions.FeatureValuesTableName,
-                    _Defaults.ResolveFeatureValuesTableName(StorageNamingStyle.SnakeCase)
-                ),
-                (
-                    storageOptions.FeatureDefinitionsTableName,
-                    _Defaults.ResolveFeatureDefinitionsTableName(StorageNamingStyle.SnakeCase)
-                ),
-                (
-                    storageOptions.FeatureGroupDefinitionsTableName,
-                    _Defaults.ResolveFeatureGroupDefinitionsTableName(StorageNamingStyle.SnakeCase)
-                )
+                (valuesName, _Defaults.ValuesName),
+                (definitionsName, _Defaults.DefinitionsName),
+                (groupsName, _Defaults.GroupsName)
             ),
             dialect: PostgreSqlSchemaDialect.Instance,
-            createConnection: options.CreateConnection,
-            schema: storageOptions.Schema,
+            createConnection: () => PostgreSqlDialect.Instance.CreateConnection(options.ConnectionString),
+            schema: tables.Schema,
             steps:
             [
                 new SchemaStep(TablesStepVersion, "Create the value, definition, and group tables.", tablesSql),
                 new SchemaStep(IndexesStepVersion, "Create the value, definition, and group indexes.", indexesSql),
             ],
-            applyOnStartup: storageOptions.InitializeOnStartup
+            applyOnStartup: applyOnStartup
         );
     }
 }
