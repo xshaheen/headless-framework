@@ -23,7 +23,7 @@ public sealed class SqliteDialectTests : TestBase
         {
             { new DateTimeOffset(2026, 10, 1, 10, 0, 0, TimeSpan.Zero).AddTicks(1_234_560), 1 },
             { new DateTimeOffset(2026, 10, 1, 23, 59, 59, TimeSpan.Zero).AddTicks(9_999_990), 10 },
-            { new DateTimeOffset(1970, 1, 1, 0, 0, 0, TimeSpan.Zero).AddTicks(10), -2_000_000 },
+            { DateTimeOffset.UnixEpoch.AddTicks(10), -2_000_000 },
             { new DateTimeOffset(1969, 12, 31, 23, 59, 59, TimeSpan.Zero).AddTicks(5_000_000), 7_500_000 },
             { new DateTimeOffset(2000, 2, 28, 12, 0, 0, TimeSpan.FromHours(-5)), TimeSpan.FromDays(10_000).Ticks / 10 },
         };

@@ -110,7 +110,7 @@ public sealed class SqliteFencingFixture : ICollectionFixture<SqliteFencingFixtu
 
     public async Task ShiftIntoPastAsync(LeaseKey key, TimeSpan by, CancellationToken cancellationToken)
     {
-        string back(string column) => _Dialect.ShiftByDuration(column, "by", subtract: true);
+        static string back(string column) => _Dialect.ShiftByDuration(column, "by", subtract: true);
 
         await using var connection = await _OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();

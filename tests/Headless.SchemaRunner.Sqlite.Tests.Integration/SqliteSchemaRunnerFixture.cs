@@ -104,6 +104,7 @@ public sealed class SqliteSchemaRunnerFixture
             using var process = Process.Start(
                 new ProcessStartInfo(shell, ["-bail", new SqliteConnectionStringBuilder(ConnectionString).DataSource])
                 {
+                    UseShellExecute = false,
                     RedirectStandardInput = true,
                     RedirectStandardError = true,
                     RedirectStandardOutput = true,

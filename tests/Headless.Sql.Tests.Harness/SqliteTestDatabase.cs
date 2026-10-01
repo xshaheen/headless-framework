@@ -36,9 +36,9 @@ public sealed class SqliteTestDatabase : IAsyncDisposable
         {
             connection.Open();
             resolved = connection.DataSource;
+            connection.Close();
+            SqliteConnection.ClearPool(connection);
         }
-
-        SqliteConnection.ClearPool(new SqliteConnection(requested.ConnectionString));
 
         return new SqliteTestDatabase(
             directory,
@@ -46,9 +46,9 @@ public sealed class SqliteTestDatabase : IAsyncDisposable
         );
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
-        using (var connection = new SqliteConnection(ConnectionString))
+        await using (var connection = new SqliteConnection(ConnectionString))
         {
             SqliteConnection.ClearPool(connection);
         }
@@ -61,7 +61,5 @@ public sealed class SqliteTestDatabase : IAsyncDisposable
         {
             // A connection a failed test leaked still holds the file; the directory is in the temp area regardless.
         }
-
-        return ValueTask.CompletedTask;
     }
 }
