@@ -153,9 +153,7 @@ public static class SetupSettings
 
         // The change announcement's wire name is declared rather than convention-derived, so services sharing a
         // broker agree on it whatever naming conventions each configures. Inert when the host does not use messaging.
-        services.ConfigureMessaging(static messaging =>
-            messaging.Message<SettingChangedMessage>(SettingChangedMessage.MessageName, "1")
-        );
+        services.AddMessageContract<SettingChangedMessage>(SettingChangedMessage.MessageName, "1");
 
         services.TryAddSingleton<ISettingErrorsDescriptor, DefaultSettingErrorsDescriptor>();
         services.TryAddSingleton<ISettingEncryptionService, SettingEncryptionService>();

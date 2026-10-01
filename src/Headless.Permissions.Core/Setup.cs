@@ -153,14 +153,11 @@ public static class SetupPermissions
 
         // The change announcements' wire names are declared rather than convention-derived, so services sharing a
         // broker agree on them whatever naming conventions each configures. Inert when the host does not use messaging.
-        services.ConfigureMessaging(static messaging =>
-        {
-            messaging.Message<PermissionGrantChangedMessage>(PermissionGrantChangedMessage.MessageName, "1");
-            messaging.Message<DynamicPermissionDefinitionsChanged>(
-                DynamicPermissionDefinitionsChanged.MessageName,
-                "1"
-            );
-        });
+        services.AddMessageContract<PermissionGrantChangedMessage>(PermissionGrantChangedMessage.MessageName, "1");
+        services.AddMessageContract<DynamicPermissionDefinitionsChanged>(
+            DynamicPermissionDefinitionsChanged.MessageName,
+            "1"
+        );
 
         services.AddTransient<IGrantPermissionsSeedHelper, GrantPermissionsSeedHelper>();
 

@@ -97,6 +97,21 @@ public static class SetupMessaging
         services.AddSingleton(registry);
         services.TryAddSingleton<IConsumerRegistry>(registry);
 
+        // AddMessageContract lives in the abstractions, so a library declares its contracts without referencing this
+        // package. Declarations recorded before messaging first touched the collection apply here, and the observer
+        // applies later ones as they are made; either way they register eagerly, through the same sink as
+        // Message<T>, so they merge and conflict by its rules and a publish before startup already sees the name.
+        var sink = new MessageRegistrationSink(services, registry);
+        var earlier = services
+            .Select(static descriptor => descriptor.ImplementationInstance)
+            .OfType<MessageContractDeclaration>()
+            .ToList();
+        services.AddSingleton(new MessageContractDeclarationObserver(sink.RegisterContract));
+        foreach (var declaration in earlier)
+        {
+            sink.RegisterContract(declaration);
+        }
+
         return registry;
     }
 

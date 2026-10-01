@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Messaging.Registration;
@@ -14,6 +15,35 @@ namespace Headless.Messaging.Registration;
 internal sealed class MessageRegistrationSink(IServiceCollection services, ConsumerRegistry registry)
 {
     public IServiceCollection Services { get; } = services;
+
+    /// <summary>
+    /// Records one <c>AddMessageContract&lt;T&gt;(name, version)</c> declaration exactly as
+    /// <c>Message&lt;T&gt;(name, version)</c> with no further settings, so it merges with and conflicts against the
+    /// <c>ConfigureMessaging</c> declarations of the same type under the same rules.
+    /// </summary>
+    public void RegisterContract(MessageContractDeclaration declaration)
+    {
+        Argument.IsNotNull(declaration);
+        MessagingOptions.ValidateMessageName(declaration.Name);
+
+        var noSettings = new MessageContractLaneSettings(
+            RequiresRoutingAffinity: false,
+            DeliveryMode: null,
+            new ProviderConfigBag().Build()
+        );
+
+        RegisterContract(
+            new MessageContract(
+                declaration.MessageType,
+                declaration.Name,
+                MessagingOptions.ValidateContractVersion(declaration.Version),
+                DeclaredCorrelationSelector: null,
+                CorrelationSelector: null,
+                noSettings,
+                noSettings
+            )
+        );
+    }
 
     /// <summary>
     /// Records one lane-agnostic message contract. The first declaration for a message type contributes that type's
