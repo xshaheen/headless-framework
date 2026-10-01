@@ -197,7 +197,7 @@ internal static partial class HybridCacheLoggerExtensions
         EventId = 24,
         EventName = "FlushedLocalCacheAfterSubscriptionGap",
         Level = LogLevel.Information,
-        Message = "Flushed local cache after the invalidation subscription was re-established (generation {Generation}); invalidations published during the gap were not delivered"
+        Message = "Flushed local cache after the invalidation subscription was established (generation {Generation}); invalidations published while it was not live were not delivered"
     )]
     public static partial void LogFlushedLocalCacheAfterSubscriptionGap(this ILogger logger, long generation);
 }

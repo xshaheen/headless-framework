@@ -110,8 +110,9 @@ public sealed partial class HybridCache(
             : null;
 
     /// <summary>
-    /// Drops this process's whole L1 after the invalidation subscription was re-established. Delivery is at most once,
-    /// so any entry cached before the gap may have missed its invalidation; L2 stays the source of truth and refills L1.
+    /// Drops this process's whole L1 each time the invalidation subscription is established. Delivery is at most once,
+    /// so any entry cached while no subscription was live may have missed its invalidation; L2 stays the source of truth
+    /// and refills L1.
     /// Nothing is published, since peers had no gap of their own.
     /// </summary>
     internal async ValueTask FlushLocalAfterSubscriptionGapAsync(long generation, CancellationToken ct)

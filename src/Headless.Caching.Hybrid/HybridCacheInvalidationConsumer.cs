@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Messaging;
 using Microsoft.Extensions.Logging;
 
@@ -13,8 +14,8 @@ namespace Headless.Caching;
 /// </summary>
 /// <remarks>
 /// The consumer is every-instance: each L1 lives in one process, so every process must see every invalidation rather than
-/// share one copy with its replicas. Delivery is at most once, so after a gap in the subscription the consumer flushes
-/// every hybrid's L1 instead of trusting entries whose invalidation may never have arrived.
+/// share one copy with its replicas. Delivery is at most once, so each time the subscription is established the consumer
+/// flushes every hybrid's L1 instead of trusting entries whose invalidation may never have arrived.
 /// </remarks>
 [PublicAPI]
 [BusConsumer(Identity, EveryInstance = true)]
@@ -62,10 +63,15 @@ public sealed class HybridCacheInvalidationConsumer(
     }
 
     /// <summary>
-    /// Flushes the L1 of the default and every named hybrid cache when the subscription was re-established, because
-    /// invalidations published during the gap were never delivered to this process.
+    /// Flushes the L1 of the default and every named hybrid cache each time the subscription is established, because
+    /// invalidations published while this process had no live subscription were never delivered to it.
     /// </summary>
-    /// <param name="context">The establishment; only a reconnect flushes.</param>
+    /// <remarks>
+    /// The first establishment flushes too: L1 can be warmed before the subscription is live (host startup reads, or a
+    /// broker outage at startup that delays it), and any invalidation published in that window is lost. Flushing an
+    /// empty L1 on a clean start costs nothing.
+    /// </remarks>
+    /// <param name="context">The establishment, first or re-established.</param>
     /// <param name="cancellationToken">Cancelled when the subscription stops.</param>
     /// <returns>A <see cref="ValueTask"/> that completes when every L1 is flushed.</returns>
     public async ValueTask OnSubscriptionEstablishedAsync(
@@ -73,10 +79,7 @@ public sealed class HybridCacheInvalidationConsumer(
         CancellationToken cancellationToken
     )
     {
-        if (!context.IsReconnect)
-        {
-            return;
-        }
+        Argument.IsNotNull(context);
 
         if (cacheProvider.GetCacheOrNull(CacheConstants.HybridCacheProvider) is HybridCache defaultCache)
         {

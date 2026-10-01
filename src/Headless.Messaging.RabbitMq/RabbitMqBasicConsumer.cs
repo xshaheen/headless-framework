@@ -22,7 +22,8 @@ internal sealed class RabbitMqBasicConsumer(
     Func<TransportMessage, object?, Task> msgCallback,
     Action<LogMessageEventArgs> logCallback,
     Func<BasicDeliverEventArgs, IServiceProvider, List<KeyValuePair<string, string>>>? customHeadersBuilder,
-    IServiceProvider serviceProvider
+    IServiceProvider serviceProvider,
+    Action<string>? onBrokerCancelled = null
 ) : AsyncDefaultBasicConsumer(channel), IDisposable
 {
     private readonly SemaphoreSlim _semaphore = new(concurrent);
@@ -256,6 +257,15 @@ internal sealed class RabbitMqBasicConsumer(
         };
 
         logCallback(args);
+    }
+
+    // basic.cancel from the broker, not a reply to this client's own BasicCancelAsync: the queue was deleted or the
+    // node holding it went away, and the channel stays open while nothing is delivered any more.
+    public override async Task HandleBasicCancelAsync(string consumerTag, CancellationToken cancellationToken = default)
+    {
+        await base.HandleBasicCancelAsync(consumerTag, cancellationToken).ConfigureAwait(false);
+
+        onBrokerCancelled?.Invoke(consumerTag);
     }
 
     public override async Task HandleBasicCancelOkAsync(

@@ -1,12 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
+using Headless.Messaging.Exceptions;
 using Headless.Messaging.RabbitMq;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
 
 namespace Tests;
 
@@ -222,24 +224,143 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void should_carry_only_the_message_ttl_into_every_instance_queue_arguments()
+    public async Task should_declare_every_instance_queue_with_a_one_minute_ttl_whatever_the_competing_queue_arguments()
     {
-        var options = new RabbitMqMessagingOptions
-        {
-            UserName = "test_user",
-            Password = "test_pass",
-            QueueArguments = new RabbitMqMessagingOptions.QueueArgumentsOptions
+        // given - competing queue arguments that must not reach a per-process queue
+        var options = Options.Create(
+            new RabbitMqMessagingOptions
             {
-                MessageTTL = 1234,
-                QueueMode = "lazy",
-                QueueType = "quorum",
-            },
-        };
+                HostName = "localhost",
+                UserName = "test_user",
+                Password = "test_pass",
+                QueueArguments = new RabbitMqMessagingOptions.QueueArgumentsOptions
+                {
+                    MessageTTL = 864000000,
+                    QueueMode = "lazy",
+                    QueueType = "quorum",
+                },
+            }
+        );
+        _UseOwnedConnectionWithServerNamedQueue();
+        await using var client = new RabbitMqConsumerClient(
+            "billing.cache",
+            1,
+            _pool,
+            options,
+            _serviceProvider,
+            lane: MessageLane.Bus,
+            kind: ConsumerSubscriptionKind.EveryInstance
+        );
 
-        RabbitMqConsumerClient
-            .BuildEveryInstanceQueueArguments(options)
-            .Should()
-            .BeEquivalentTo(new Dictionary<string, object?>(StringComparer.Ordinal) { ["x-message-ttl"] = 1234 });
+        // when
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+
+        // then - a stalled or paused queue never replays more than a minute of per-process state
+        await _channel
+            .Received(1)
+            .QueueDeclareAsync(
+                string.Empty,
+                false,
+                true,
+                false,
+                Arg.Is<IDictionary<string, object?>?>(d =>
+                    d != null && d.Count == 1 && Equals(d["x-message-ttl"], 60_000)
+                ),
+                false,
+                false,
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_fail_every_instance_listening_for_a_rebuild_when_its_channel_shuts_down()
+    {
+        // given
+        _UseOwnedConnectionWithServerNamedQueue();
+        var client = _CreateEveryInstanceClient();
+
+        try
+        {
+            client.AttachCallbacks(onMessage: (_, _) => Task.CompletedTask, onLog: _ => { });
+            await client.SubscribeAsync(["orders.created"], AbortToken);
+            var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), AbortToken).AsTask();
+            await client.WaitUntilReadyAsync(AbortToken).AsTask().WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+            // when
+            _channel.ChannelShutdownAsync += Raise.Event<AsyncEventHandler<ShutdownEventArgs>>(
+                _channel,
+                new ShutdownEventArgs(ShutdownInitiator.Peer, 320, "CONNECTION_FORCED")
+            );
+
+            // then
+            var act = () => listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            (await act.Should().ThrowAsync<BrokerConnectionException>())
+                .WithInnerException<InvalidOperationException>()
+                .WithMessage("*CONNECTION_FORCED*");
+        }
+        finally
+        {
+            await client.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task should_fail_every_instance_listening_for_a_rebuild_when_the_broker_cancels_its_consumer()
+    {
+        // given
+        _UseOwnedConnectionWithServerNamedQueue();
+        var client = _CreateEveryInstanceClient();
+
+        try
+        {
+            client.AttachCallbacks(onMessage: (_, _) => Task.CompletedTask, onLog: _ => { });
+            await client.SubscribeAsync(["orders.created"], AbortToken);
+            var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), AbortToken).AsTask();
+            await client.WaitUntilReadyAsync(AbortToken).AsTask().WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            var consumer = _channel
+                .ReceivedCalls()
+                .First(c =>
+                    string.Equals(c.GetMethodInfo().Name, nameof(IChannel.BasicConsumeAsync), StringComparison.Ordinal)
+                )
+                .GetArguments()
+                .OfType<IAsyncBasicConsumer>()
+                .Single();
+
+            // when - an operator deleted the queue: the broker cancels the consumer and the channel stays open
+            await consumer.HandleBasicCancelAsync("amq.ctag-every", AbortToken);
+
+            // then
+            var act = () => listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            (await act.Should().ThrowAsync<BrokerConnectionException>())
+                .WithInnerException<InvalidOperationException>()
+                .WithMessage("*amq.ctag-every*");
+        }
+        finally
+        {
+            await client.DisposeAsync();
+        }
+    }
+
+    private void _UseOwnedConnectionWithServerNamedQueue()
+    {
+        var ownedConnection = Substitute.For<IConnection>();
+        ownedConnection
+            .CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_channel);
+        _pool.CreateNonRecoveringConnectionAsync(Arg.Any<CancellationToken>()).Returns(ownedConnection);
+        _channel.IsClosed.Returns(false);
+        _channel
+            .QueueDeclareAsync(
+                Arg.Any<string>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<IDictionary<string, object?>?>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(new QueueDeclareOk("amq.gen-every", 0, 0));
     }
 
     [Fact]

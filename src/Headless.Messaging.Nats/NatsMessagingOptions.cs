@@ -32,9 +32,9 @@ public sealed class NatsMessagingOptions
     /// The number of consecutive consume-loop failures (JetStream consumer create/update or message fetch)
     /// tolerated on a single subject listener before it is terminated for a supervised restart with a fresh
     /// connection. The counter resets to zero on any forward progress (a successful consumer bind or fetch).
-    /// This bounds in-place spinning when a connection is permanently dead but the surfaced error is not one
-    /// of the classified connection-failure types (<c>MaxReconnectRetry = 0</c> means the client never
-    /// reconnects on its own). Defaults to <c>10</c>.
+    /// This bounds in-place spinning when a connection stays unusable but the surfaced error is not one of the
+    /// classified connection-failure types; the NATS client keeps reconnecting on its own without a limit, so
+    /// this counter is what hands a stuck listener back for a rebuild. Defaults to <c>10</c>.
     /// </summary>
     public int MaxConsecutiveConsumeFailures { get; set; } = 10;
 

@@ -166,14 +166,24 @@ public sealed class NatsConsumerClientTests : TestBase
     {
         NatsConsumerClient
             .BuildEveryInstanceSubjects(
-                ["orders.created", "orders"],
+                ["payments.captured", "orders"],
                 names => new HashSet<string>(
                     names.Where(x => string.Equals(x, "orders", StringComparison.Ordinal)),
                     StringComparer.Ordinal
                 )
             )
             .Should()
-            .Equal("headless.bus.orders.created", "headless.bus.orders", "headless.bus.orders.>");
+            .Equal("headless.bus.payments.captured", "headless.bus.orders", "headless.bus.orders.>");
+    }
+
+    [Fact]
+    public void should_drop_every_instance_subjects_a_sharded_wildcard_already_covers()
+    {
+        // given - a sharded "orders" subscribes "orders.>", which also matches every "orders.created" publish
+        NatsConsumerClient
+            .BuildEveryInstanceSubjects(["orders", "orders.created"], names => names.ToHashSet(StringComparer.Ordinal))
+            .Should()
+            .Equal("headless.bus.orders", "headless.bus.orders.>");
     }
 
     [Fact]

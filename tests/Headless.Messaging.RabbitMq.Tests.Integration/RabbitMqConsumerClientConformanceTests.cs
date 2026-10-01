@@ -129,6 +129,48 @@ public sealed class RabbitMqConsumerClientConformanceTests(RabbitMqFixture fixtu
             .Be(404, "the broker deletes the exclusive queue with its connection");
     }
 
+    [Fact]
+    public async Task should_fail_every_instance_listening_for_a_rebuild_when_an_operator_deletes_its_queue()
+    {
+        // given
+        await using var session = await fixture.CreateEndpointSessionAsync(
+            _EveryInstanceEndpoint($"message-{Guid.NewGuid():N}", $"group-{Guid.NewGuid():N}", "replica-1"),
+            $"bus-{Guid.NewGuid():N}",
+            AbortToken
+        );
+        var consumer = session.Consumer;
+        consumer.AttachCallbacks(onMessage: (_, _) => Task.CompletedTask, onLog: _ => { });
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listening = consumer.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
+
+        try
+        {
+            await consumer.WaitUntilReadyAsync(AbortToken);
+            var queueName = ((Headless.Messaging.RabbitMq.RabbitMqConsumerClient)consumer).QueueNames.Single();
+
+            // when - the broker cancels the consumer and leaves its channel open
+            await fixture.DeleteQueueAsOperatorAsync(queueName, AbortToken);
+
+            // then - the listener fails so the core rebuilds the client with a new queue
+            var act = () => listening.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+            await act.Should().ThrowAsync<Headless.Messaging.Exceptions.BrokerConnectionException>();
+        }
+        finally
+        {
+            await cts.CancelAsync();
+#pragma warning disable ERP022 // The assertion above already observed the listener's outcome; this only joins it.
+            try
+            {
+                await listening;
+            }
+            catch
+            {
+                // ignored
+            }
+#pragma warning restore ERP022
+        }
+    }
+
     // Returns the AMQP reply code of a passive declare from another connection: 200 when the queue is visible to it,
     // 405 RESOURCE_LOCKED when another connection holds it exclusively, and 404 NOT_FOUND when it does not exist.
     private async Task<int> _ProbeQueueAsync(string queueName)

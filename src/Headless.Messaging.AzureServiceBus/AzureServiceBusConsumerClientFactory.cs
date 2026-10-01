@@ -5,6 +5,7 @@ using Azure.Messaging.ServiceBus;
 using Headless.Checks;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Transport;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -17,8 +18,9 @@ internal sealed class AzureServiceBusConsumerClientFactory(
     IAzureServiceBusClientPool clientPool
 ) : IConsumerClientFactory, IAsyncDisposable
 {
-    // Bounds the subscription cleanup on shutdown; whatever it cannot delete in time, Azure deletes once idle.
-    private static readonly TimeSpan _CleanupTimeout = TimeSpan.FromSeconds(30);
+    // Bounds each subscription delete on shutdown, so one slow delete cannot starve the rest; whatever it cannot delete
+    // in time, Azure deletes once idle.
+    internal static readonly TimeSpan CleanupTimeoutPerSubscription = TimeSpan.FromSeconds(30);
 
     // Azure Resource Manager naming rules for Service Bus subscriptions: 1-50 letters, digits, '.', '-', or '_',
     // starting and ending with a letter or digit.
@@ -129,10 +131,12 @@ internal sealed class AzureServiceBusConsumerClientFactory(
         }
 
         var topicPath = asbOptions.Value.TopicPath;
-        using var timeout = new CancellationTokenSource(_CleanupTimeout);
+        var timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
 
         foreach (var subscriptionName in _everyInstanceSubscriptions.Keys)
         {
+            using var timeout = new CancellationTokenSource(CleanupTimeoutPerSubscription, timeProvider);
+
             try
             {
                 await clientPool

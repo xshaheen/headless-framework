@@ -111,13 +111,16 @@ internal sealed class AzureServiceBusConsumerClient(
 
     // An every-instance subscription belongs to this process, so it is created on first subscribe rather than when the
     // client connects: the topology-only client the core creates and disposes never subscribes and leaves nothing.
-    private async Task _ProvisionEveryInstanceSubscriptionAsync(
+    // Returns whether this call created it, which only then means messages published meanwhile were lost.
+    private async Task<bool> _ProvisionEveryInstanceSubscriptionAsync(
         IReadOnlyList<string> ruleNames,
         CancellationToken cancellationToken
     )
     {
         try
         {
+            var created = false;
+
             if (
                 !await _administrationClient!
                     .SubscriptionExistsAsync(_asbOptions.TopicPath, subscriptionName, cancellationToken)
@@ -153,9 +156,12 @@ internal sealed class AzureServiceBusConsumerClient(
                 }
 
                 logger.SubscriptionCreated(_asbOptions.TopicPath, subscriptionName);
+                created = true;
             }
 
             await _SyncRulesAsync(ruleNames, cancellationToken).ConfigureAwait(false);
+
+            return created;
         }
         catch (UnauthorizedAccessException e)
         {
@@ -405,11 +411,13 @@ internal sealed class AzureServiceBusConsumerClient(
 
         try
         {
-            await _ProvisionEveryInstanceSubscriptionAsync(_subscribedMessageNames, cancellationToken)
+            var recreated = await _ProvisionEveryInstanceSubscriptionAsync(_subscribedMessageNames, cancellationToken)
                 .ConfigureAwait(false);
 
+            // A missing-entity error while the subscription still exists (a transient lookup failure, or a sibling
+            // error already recovered it) lost nothing, so it must not make the consumer flush its state again.
             var onReestablished = Volatile.Read(ref _onReestablished);
-            if (onReestablished is not null)
+            if (recreated && onReestablished is not null)
             {
                 await onReestablished(cancellationToken).ConfigureAwait(false);
             }
