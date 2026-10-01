@@ -20,12 +20,16 @@ namespace Headless.Fencing;
 /// <param name="SchemaContribution">
 /// Builds the provider's schema contribution (its DDL, in its dialect) for the schema runner from the bound options.
 /// </param>
+/// <param name="EnlistedGrantRefusal">
+/// Why the provider refuses a grant inside a caller's unit, or <see langword="null" /> when it accepts one.
+/// </param>
 internal sealed record RelationalFencingProvider(
     ISqlDialect Dialect,
     string PackageName,
     Func<IUnitOfWorkFactory, DbConnection, CancellationToken, ValueTask<IUnitOfWork>> BeginOwnedUnit,
     Action<IServiceCollection> AddUnitOfWork,
-    Func<RelationalFencingOptions, FencingStorageOptions, SchemaContribution> SchemaContribution
+    Func<RelationalFencingOptions, FencingStorageOptions, SchemaContribution> SchemaContribution,
+    string? EnlistedGrantRefusal = null
 );
 
 /// <summary>
@@ -98,7 +102,8 @@ internal sealed class RelationalFencingProviderExtension<TOptions, TOptionsValid
                 options.ConnectionString,
                 options.CommandTimeoutSeconds,
                 new FencingTable(provider.Dialect, schema),
-                provider.BeginOwnedUnit
+                provider.BeginOwnedUnit,
+                provider.EnlistedGrantRefusal
             );
         });
 

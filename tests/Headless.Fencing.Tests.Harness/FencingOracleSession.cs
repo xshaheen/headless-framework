@@ -20,11 +20,19 @@ public sealed class FencingOracleSession : IAsyncDisposable
     private readonly LeaseKey[] _keys;
     private readonly List<long>[] _generations;
     private readonly Dictionary<long, int> _ordinals = [];
+    private readonly bool _enlistedGrantRefused;
 
-    private FencingOracleSession(ILeasesFixture fixture, LeasesHost host, FencingOracleHistory history, string runId)
+    private FencingOracleSession(
+        ILeasesFixture fixture,
+        LeasesHost host,
+        FencingOracleHistory history,
+        string runId,
+        bool enlistedGrantRefused
+    )
     {
         _fixture = fixture;
         _host = host;
+        _enlistedGrantRefused = enlistedGrantRefused;
         _kinds = [.. FencingOracleGenerator.KindSuffixes.Select(suffix => runId + suffix)];
         _keys =
         [
@@ -39,16 +47,21 @@ public sealed class FencingOracleSession : IAsyncDisposable
 
     /// <summary>Builds a host on <paramref name="fixture" /> for one run of <paramref name="history" />.</summary>
     /// <param name="runId">A prefix unique to this run, so its kinds, sweeps, and purges touch only its own rows.</param>
+    /// <param name="enlistedGrantRefused">
+    /// Whether the provider under comparison refuses enlisted grants; both sessions then report every enlisted grant
+    /// as refused, and the refusing one proves it by its own call.
+    /// </param>
     public static async Task<FencingOracleSession> StartAsync(
         ILeasesFixture fixture,
         FencingOracleHistory history,
         string runId,
+        bool enlistedGrantRefused,
         CancellationToken cancellationToken
     )
     {
         var host = await fixture.CreateHostAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
 
-        return new FencingOracleSession(fixture, host, history, runId);
+        return new FencingOracleSession(fixture, host, history, runId, enlistedGrantRefused);
     }
 
     public async Task<FencingOracleObservation> ExecuteAsync(FencingOracleOp op, CancellationToken cancellationToken)
@@ -241,6 +254,11 @@ public sealed class FencingOracleSession : IAsyncDisposable
         var key = _keys[op.Key];
         LeaseGrantResult result;
 
+        if (_enlistedGrantRefused)
+        {
+            return (await _RefusedEnlistedGrantAsync(op, cancellationToken).ConfigureAwait(false), null);
+        }
+
         await using (var unit = await _fixture.BeginUnitAsync(_host, cancellationToken).ConfigureAwait(false))
         {
             using (_host.CurrentTenant.Change(key.PublicTenantId))
@@ -268,6 +286,40 @@ public sealed class FencingOracleSession : IAsyncDisposable
                 ? await _TtlErrorAsync(op.Key, result, op.Duration, cancellationToken).ConfigureAwait(false)
                 : null
         );
+    }
+
+    /// <summary>
+    /// Compared with a provider that refuses enlisted grants, both sides run the grant in a unit that is then rolled
+    /// back, so argument refusals still match and nothing either side wrote survives. The refusing provider must
+    /// refuse; the model's grant is discarded, and the generation it drew is never observed.
+    /// </summary>
+    private async Task<string> _RefusedEnlistedGrantAsync(
+        FencingOracleOp.EnlistedGrant op,
+        CancellationToken cancellationToken
+    )
+    {
+        var key = _keys[op.Key];
+        await using var unit = await _fixture.BeginUnitAsync(_host, cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            using (_host.CurrentTenant.Change(key.PublicTenantId))
+            {
+                await unit
+                    .Unit.Leases.GrantAsync(key.Kind, key.Resource, op.Duration, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            return _fixture.SupportsEnlistedGrant ? "enlisted-grant:refused" : "enlisted-grant:accepted";
+        }
+        catch (NotSupportedException) when (!_fixture.SupportsEnlistedGrant)
+        {
+            return "enlisted-grant:refused";
+        }
+        finally
+        {
+            await unit.RollbackAsync().ConfigureAwait(false);
+        }
     }
 
     private async Task<string> _SweepAsync(FencingOracleOp.Sweep op, CancellationToken cancellationToken)

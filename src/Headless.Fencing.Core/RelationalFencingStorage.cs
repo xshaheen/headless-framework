@@ -15,13 +15,17 @@ namespace Headless.Fencing;
 /// <param name="BeginOwnedUnit">
 /// Begins an owned unit of work on a new connection at READ COMMITTED, through the provider's typed unit-of-work entry.
 /// </param>
+/// <param name="EnlistedGrantRefusal">
+/// Why a grant inside a caller's unit is refused, or <see langword="null" /> when it is accepted.
+/// </param>
 internal sealed record RelationalFencingStorage(
     ISqlDialect Dialect,
     string PackageName,
     string ConnectionString,
     int CommandTimeoutSeconds,
     FencingTable Table,
-    Func<IUnitOfWorkFactory, DbConnection, CancellationToken, ValueTask<IUnitOfWork>> BeginOwnedUnit
+    Func<IUnitOfWorkFactory, DbConnection, CancellationToken, ValueTask<IUnitOfWork>> BeginOwnedUnit,
+    string? EnlistedGrantRefusal = null
 )
 {
     public DbConnection CreateConnection() => Dialect.CreateConnection(ConnectionString);
