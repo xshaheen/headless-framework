@@ -19,6 +19,15 @@ internal static class MessagingKeys
     }
 
     /// <summary>
+    /// Builds the lock resource name for the published-retry pickup loop of one additional outbox, so each
+    /// database's relay holds its own lease and a stalled database never holds another one's.
+    /// </summary>
+    public static string PublishRetryResource(string version, MessageLane lane, string outboxKey)
+    {
+        return $"messaging.publish-retry-{_LaneSegment(lane)}-{version}-outbox-{outboxKey}";
+    }
+
+    /// <summary>
     /// Builds the canonical lock resource name for the received-retry pickup loop.
     /// The <paramref name="version"/> is the per-deployment isolation key from
     /// <see cref="Configuration.MessagingOptions.Version"/> — two services sharing a single

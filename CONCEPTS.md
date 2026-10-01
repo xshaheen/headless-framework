@@ -141,11 +141,20 @@ The publish surface reached from a unit of work as `unit.Outbox` (contract in
 `Headless.Messaging.Abstractions`, implementation in `Headless.Messaging.Core`, resolved from the unit
 as a [unit-of-work feature](#unit-local-state)). Every publish through it writes its durable row inside
 that unit's transaction: the row becomes visible when the unit completes and is discarded when it
-rolls back. It refuses rather than degrades — when the configured storage cannot join the given unit
-the call throws before any storage or transport effect, instead of writing a standalone row. Its
+rolls back. It refuses rather than degrades — when no configured outbox can join the given unit
+the call throws before any storage or transport effect, instead of writing a standalone row. With
+[additional outboxes](#additional-outbox), it writes to the outbox whose database matches the unit. Its
 counterpart is the autonomous pair `IBus`/`IQueue`, whose rows survive the caller's rollback.
 Whether a stored row was written this way is recorded on the row as a nullable
 `IsCoordinated`/`headless-delivery-coordinated` fact, where absent means unrecorded, not "no".
+
+### Additional outbox
+A messaging storage registered with `setup.AddOutbox().Use…()` for a database other than the primary
+storage's, so a unit of work on that database can publish through the [enlisted outbox](#enlisted-outbox).
+It holds only published rows and relays them under its own lease; the inbox, received-message retry state,
+and the dashboard stay on the primary storage. At most one outbox, the primary included, may resolve to
+each database. Unlike the primary, one whose database is down at startup does not stop the host: it is
+initialized in the background, or by the first unit of work on its database. Contract in [messaging.md § Additional outboxes](docs/llms/messaging.md#additional-outboxes).
 
 ### Operator ledger
 One generalized receipt-and-audit ledger, shared by the inbox operator surface and the
@@ -257,29 +266,39 @@ enlisting receivers hang off the unit, not off DI: `unit.Outbox` for Messaging, 
 `unit.TimeJobs<T>()` / `unit.CronJobs<T>()` for Jobs. The injected `IBus`/`IQueue` and
 `IJobScheduler`/managers are the autonomous receivers — singletons that never enlist.
 
+### In-doubt commit
+
+A commit whose request may have reached the database but whose connection failed or timed out before
+an answer came back, so the transaction may or may not have committed. The unit ends `Failed` with
+`UnitOfWorkFailureReason.InDoubt`, `OnCompleted` never runs, and `CompleteAsync` (and every
+`RunAsync`) throws `UnitOfWorkInDoubtException`. It differs from a `Faulted` commit, which the
+database answered with an error or which was never sent, so it certainly did not commit. The
+recovery is to check the operation's durable idempotency key before retrying; enlisted outbox and
+job rows share the transaction's fate, and the relay delivers them if it committed.
+
 ### Transaction enlistment
 
-The guard a **Jobs** write (a one-shot deadline, a keyed job, a chain node, a recurring definition)
-uses to refuse the autonomous receiver: `TransactionEnlistment { Optional, Required }`, surfaced as
-`JobOptions.Enlistment` and `RecurringJobOptions.Enlistment`. Precedence is per call, then per
-function, then the host default; composition across those tiers is strictest-wins. Enlistment itself
-is chosen by the receiver — `unit.Jobs` always enlists, an injected scheduler never does — and the
-knob only says whether the autonomous receiver is acceptable. The guarantee matrix:
+Whether a write joins the caller's transaction. The receiver the caller invokes is the only thing
+that decides it, in every domain: `unit.Outbox`, `unit.Jobs`, `unit.TimeJobs<T>()`, and
+`unit.CronJobs<T>()` always enlist, and the injected `IBus`/`IQueue`/`IJobScheduler`/managers never
+do. No option, per-function policy, or host default selects enlistment. For a **Jobs** write (a
+one-shot deadline, a keyed job, a chain, a recurring definition):
 
-| Receiver | `Optional` (default) | `Required` |
-|---|---|---|
-| `unit.Jobs` over a unit with a live, same-database relational resource | enlist in the transaction, dispatch/signal after commit | same |
-| `unit.Jobs` over a resource-less, dead, or other-database unit | throw | throw |
-| Injected `IJobScheduler` / managers | autonomous durable write, poller recovers it | throw |
+| Receiver | Write |
+|---|---|
+| `unit.Jobs` over a unit with a live, same-database relational resource | enlist in the transaction, dispatch/signal after commit |
+| `unit.Jobs` over a resource-less, dead, or other-database unit | throw |
+| Injected `IJobScheduler` / managers | autonomous durable write in the store's own transaction, poller recovers it |
 
 Every refusal happens at the call itself, before any effect — there is no separate startup gate,
 because the factory always exists (`AddUnitOfWork()` is idempotent and called by every consumer
 package's setup).
 
-The enum is Jobs-only. Messaging once shared it, with the same matrix and the same precedence; it
-now expresses the same intent structurally, by which publisher is called — see [Enlisted
-outbox](#enlisted-outbox) — so no Messaging option, per-type policy, or host default selects
-enlistment any more.
+Both domains once carried a `TransactionEnlistment { Optional, Required }` guard that made the
+autonomous receiver refuse a function. It was removed from each for the same reason: one function or
+message type is written from sites with different needs (a business transaction, an admin resend, a
+backfill, startup seeding), and a function-level flag refuses the legitimate autonomous ones. See
+[Enlisted outbox](#enlisted-outbox).
 
 ### Unit-of-work resource
 
@@ -533,14 +552,12 @@ keyed rows remain indefinitely; ordinary edits, resets, retries, and hard deleti
 
 ### Transactional deadline capability
 
-`TransactionEnlistment.Required` requires a Jobs write — a one-shot deadline or a recurring definition — to use
-the exact live relational transaction that owns the application update. The requirement is transient;
-it is not job payload, definition payload, or persisted intent. A keyed result returned inside that
-transaction is provisional until the caller commits, and rollback removes the write. Scheduler wake-up
-is post-commit acceleration; polling recovers a missed wake-up. Recurring definitions take the
-requirement from the call or the function policy, never the host default, and startup seeding of
-attribute-defined definitions is exempt because it runs before any application transaction exists.
-Messaging delivery delay, distributed locks, and membership do not provide this capability.
+A Jobs write made through `unit.Jobs` — a one-shot deadline, a keyed job, a chain, or a recurring
+definition — uses the exact live relational transaction that owns the application update. A keyed result
+returned inside that transaction is provisional until the caller commits, and rollback removes the write.
+Scheduler wake-up is post-commit acceleration; polling recovers a missed wake-up. The same write through
+the injected scheduler is its own commit. Messaging delivery delay, distributed locks, and membership do
+not provide this capability.
 
 ### Catch step
 
@@ -587,6 +604,18 @@ The stable id that keys everything tenant-owned: ambient `ICurrentTenant.Id`, EF
 guards, Jobs/Messaging propagation, and per-tenant Settings/Features/Permissions state. The JWT
 tenant claim carries it directly; identifier-based resolution must map to it before ambient context
 is set.
+
+### Tenant storage scope
+
+The physical namespace a tenant's blobs and cache entries occupy, derived from the canonical tenant
+id because files and cache entries carry no tenant column: a leading path segment (`acme/1.png`) or a
+per-tenant container (`{ContainerPrefix}acme`) for blobs, and the key scope `t:acme:` for caches.
+Tenant-scoped stores refuse to work without an ambient tenant. Shared data lives outside the scope
+(an unscoped named blob store, the plain `ICache`), and infrastructure that holds physical blob
+locations unwraps a scoped store through `IScopedBlobStorage.Unscoped`. Distinct from the tenant
+write guard, which protects rows. *Avoid:* "tenant prefix" for the
+container-per-tenant layout, where the tenant is the container rather than a prefix. See
+[docs/llms/multi-tenancy.md](docs/llms/multi-tenancy.md#tenant-scoped-blobs-and-caches).
 
 ### Tenant catalog
 

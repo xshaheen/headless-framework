@@ -69,6 +69,7 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 ## Agent Rules
 
 - **App install pattern**: install `Messaging.Core` + exactly one transport + exactly one storage. Bootstrap fails when zero or multiple storage providers are configured. Core brings shared/bus/queue abstractions transitively for applications.
+- **One outbox per database, not one storage per database**: when units of work run on several databases, keep one primary storage and add `setup.AddOutbox().UseEntityFramework<TContext>()` (or `UsePostgreSql(...)` / `UseSqlServer(...)`) for each other database. See [Additional outboxes](#additional-outboxes).
 - **Library contract pattern**: install `Messaging.Abstractions`, `Messaging.Bus.Abstractions`, or `Messaging.Queue.Abstractions` directly only when a library exposes envelopes or publisher interfaces without bootstrapping Core. A library that declares consumers references `Messaging.Core`, which carries the source generator and `ConfigureMessaging`, and still never calls `AddHeadlessMessaging`.
 - **Use `InMemory` + `InMemoryStorage` only for dev/testing**, never in production. Data is lost on restart.
 - **OpenTelemetry is native to `Messaging.Core`** (no satellite package). Subscribe traces/metrics with `AddMessagingInstrumentation()` on the `TracerProviderBuilder`/`MeterProviderBuilder`, and configure enrichers/suppression via `setup.Instrumentation` inside `AddHeadlessMessaging(...)`.
@@ -95,7 +96,7 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 - **Message-name mapping**: `m.Message<TMessage>("message.name")` is the normal way to name a message. `setup.WithMessageNameMapping<TMessage>("message.name")` is a type-global name mapping without a version or lane settings; with neither, the name comes from `UseConventions(...)` (the type name by default).
 - **Fail-fast defaults**: Duplicate consumer identities and duplicate runtime subscriptions are rejected by default. Anonymous runtime delegates must set `RuntimeSubscriptionOptions.HandlerId`.
 - **Telemetry parity**: Existing diagnostic listener and metric names stay stable across direct publish, outbox publish, and runtime subscriptions.
-- **Inbox telemetry is bounded**: inbox counters use registered consumer identity plus finite lane, outcome, tier, and provider dimensions. Message/replay IDs, payloads, and headers are never metric labels. `setup.Instrumentation.IncludeTenantIdInMetricTags` is an explicit, default-off cardinality opt-in.
+- **Inbox telemetry is bounded**: inbox counters use registered consumer identity plus finite lane, outcome, tier, and provider dimensions. Message/replay IDs, payloads, and headers are never metric labels. `setup.Instrumentation.IncludeTenantIdInMetricTags` is an explicit, default-off cardinality opt-in; the dimension it adds is named by `TenantTelemetryOptions.AttributeName` (`tenant.id`).
 - **Retention resets identity after purge or expiry**: terminal generations are retained for 30 days by default; configure it per consumer with `Tune(identity, c => c.InboxRetention(...))` or `Headless:Messaging:Consumers:{identity}:InboxRetention`. Direct admission suppresses duplicates while its root is retained. Once that root expires or is purged, readmission creates a fresh lifecycle, even if older replay descendants remain held. Replay generation numbers are local to their lifecycle; explicit admission generations remain independent. Holds, mutations, and operation receipts target immutable generation incarnations. Relational inbox schema v4 requires lifecycle identity and separate admission/replay uniqueness; startup rejects retained older inbox rows whose lifecycle identity cannot be reconstructed safely.
 - **Poison inbox retention**: recovery of an unreadable inbox envelope records a terminal failure and clears the attempt fence in the claim transaction. Terminal retention starts from the database clock using the row's persisted retention duration. Terminal redeliveries are suppressed without deserializing or replacing the retained payload; expiry then allows fresh admission.
 - Recover missing registrations with the exact consumer identity, logical contract name/version, and lane. Known orphans use independent probe capacity and consume no handler failure retries during deferral. They do not expire automatically; holds do not pause recovery. Unclaimed orphans allow Hold/ReleaseHold and unheld Purge, while live claims block these actions and ForceReprocess remains terminal-only.
@@ -151,7 +152,7 @@ Two independent questions, answered by two different things. **Durability** — 
 
 - **Precedence (`DeliveryMode`)**: per-call `PublishOptions.DeliveryMode` / `QueueOptions.DeliveryMode`, then the per-type, per-lane policy declared with `WithDeliveryMode(...)` on the contract's lane builder (`m.Message<T>(...).OnBus(b => b.WithDeliveryMode(...))` / `.OnQueue(q => q.WithDeliveryMode(...))`), then `MessagingOptions.DefaultDeliveryMode` (`Durable`). `Direct` bypasses storage and rejects a per-call `Delay` or `ScheduledAt`, because scheduling requires storage.
 - **An enlisted publish consults none of that.** `OutboxOptions` carries no delivery mode, and the resolver fixes the mode to `Durable` before reading the per-type policy or the host default — durable capture is the mechanism the row joins the transaction through. This is deliberate: under the previous model a type pinned `Direct` with `WithDeliveryMode` made every coordinated publish of that type fail, because `Direct` and enlistment are contradictory. Delay and schedule still work, and `Direct` delivery combined with a coordination requirement throws ("Direct delivery cannot be coordinated with a unit of work; durable delivery is required to write inside its transaction") — a state only framework-internal callers can construct.
-- **Whether a storage can join a unit is the storage's own answer.** The relational storages join only an `IRelationalUnitOfWorkResource` whose transaction is live and on the same database, decided by the shared `RelationalDatabaseIdentity` check the Jobs store uses too (see [unit-of-work.md § Database identity](unit-of-work.md#database-identity-and-several-databases)). In-memory storage joins any active unit, including a resource-less one opened with `IUnitOfWorkFactory.BeginAsync()` (test hosts), through its buffered-promotion seam. A relational storage against a resource-less unit, a unit on another database, a completed transaction, or another provider's resource cannot join, and an enlisted publish throws naming the mismatch: `Publishing 'OrderPlaced' cannot join the active unit of work ({Mismatch}): {detail}. {advice}` — for example "the active unit of work exposes no relational resource for the messaging storage to write into. Begin the unit of work over a relational resource for the messaging database, or publish without coordination."
+- **Whether a storage can join a unit is the storage's own answer.** The relational storages join only an `IRelationalUnitOfWorkResource` whose transaction is live and on the same database, decided by the shared `RelationalDatabaseIdentity` check the Jobs store uses too (see [unit-of-work.md § Database identity](unit-of-work.md#database-identity-and-several-databases)). In-memory storage joins any active unit, including a resource-less one opened with `IUnitOfWorkFactory.BeginAsync()` (test hosts), through its buffered-promotion seam. With [additional outboxes](#additional-outboxes), `unit.Outbox` asks every outbox and writes to the one whose database matches the unit; a unit that matches none is refused with the `Database` mismatch. A relational storage against a resource-less unit, a unit on another database, a completed transaction, or another provider's resource cannot join, and an enlisted publish throws naming the mismatch: `Publishing 'OrderPlaced' cannot join the active unit of work ({Mismatch}): {detail}. {advice}` — for example "the active unit of work exposes no relational resource for the messaging storage to write into. Begin the unit of work over a relational resource for the messaging database, or publish without coordination."
 - **The refusal belongs to the enlisted surface only.** `IBus`/`IQueue` hand the publisher no unit at all, so there is nothing for a storage to reject: a durable autonomous publish always writes standalone, including inside a unit of work whose transaction the storage could have joined. The mismatch throw above is reachable only through `unit.Outbox`.
 - **There is no startup gate for enlistment**; the failure is always a per-call refusal. `IUnitOfWorkFactory` always exists (`AddUnitOfWork()` is idempotent and is called by `AddHeadlessMessaging`, `AddHeadlessJobs`, `AddHeadlessDbContextServices`, and the three `Headless.UnitOfWork.*` provider setups). The only startup validation in this area is unchanged: durable consumers still require `MessagingOptions.RequiredInboxCapability` (default `Transactional`) from the configured storage.
 - **Migration note — the "never publish outside a transaction" guardrail is gone.** A host that set `MessagingOptions.DefaultEnlistment = TransactionEnlistment.Required`, or registered a type `WithEnlistment(TransactionEnlistment.Required)`, used it to make an un-enlisted publish fail loudly. Both members are deleted, so that host gets a compile error, not a silent behavior change. Nothing replaces it as a host-wide setting: the guarantee is now structural per call site. Reading `unit.Outbox.PublishAsync(...)` proves enlistment at the line, and an `IBus.PublishAsync` in code that must be transactional is a review finding rather than a runtime throw. Where a build-time guard is wanted, ban the `IBus`/`IQueue` *types* in the transactional assembly rather than the package reference: the lane abstractions are on the compile surface of anything that references Messaging. With `Microsoft.CodeAnalysis.BannedApiAnalyzers` referenced, a `BannedSymbols.txt` added as an `AdditionalFiles` item in that project needs exactly these two lines:
@@ -165,7 +166,7 @@ Two independent questions, answered by two different things. **Durability** — 
 - **The default costs one storage write.** A `Durable` autonomous publish is stored first and dispatched by the relay, so high-rate events pay a storage write and a relay hop per message. Opt out per type and lane with `.OnBus(b => b.WithDeliveryMode(DeliveryMode.Direct))` (or `.OnQueue(...)`) on the contract, or per host with `DefaultDeliveryMode = DeliveryMode.Direct`; `Direct` gives up durability and atomicity and returns a receipt with no `StorageId`.
 - **Storage is mandatory**, so "no storage" is a configuration error raised by startup validation rather than another matrix column.
 - **Telemetry**: `headless.messaging.delivery.requested` and `headless.messaging.delivery.resolved` emit `durable` or `direct` only, and the `headless-delivery-requested` / `headless-delivery-resolved` headers carry the same names. Whether the row was written inside a transaction travels separately, in the framework-reserved `headless-delivery-coordinated` header, as the literal `"true"` or `"false"`. It is a three-state fact: an **absent** header means unrecorded, never "not coordinated" — rows written before this header existed read as unknown. The dashboard's message detail shows it as "Transaction coordinated" (`Yes` / `No` / `Not recorded`), `MessageView.IsCoordinated` is the monitoring projection, and `RecordedMessage.IsCoordinated` exposes it to tests. All three are `bool?`.
-- **Jobs is the exception that keeps the enum.** `TransactionEnlistment { Optional, Required }` still lives in `Headless.UnitOfWork.Abstractions` and still drives `JobOptions.Enlistment` / `RecurringJobOptions.Enlistment` as the guard that makes the autonomous receivers refuse a function. It has nothing to do with Messaging. See [Enlisted Enqueue](jobs.md#enlisted-enqueue-atomic-enqueue).
+- **Jobs follows the same rule.** `TransactionEnlistment` is gone from Jobs too: `unit.Jobs` enlists and the injected `IJobScheduler` never does. See [Enlisted Enqueue](jobs.md#enlisted-enqueue-atomic-enqueue).
 - **`IBus` and `IQueue` are autonomous singletons** (`TryAddSingleton`): they are handed no unit and look for none, so a publish made while a unit of work is open still writes a standalone durable row, and any singleton or hosted service can take them directly. The framework-internal singletons that publish through them (`HybridCache`, `DistributedLock`, `DistributedReadWriteLock`, `DistributedSemaphoreProvider`) resolve the registered service and keep requesting `Direct` explicitly.
 
 Two unit-of-work behaviors are documented, not defects. `IUnitOfWork.OnCompleted` registrations are savepoint-blind: a registration made inside a savepoint that is later rolled back still runs when the outer transaction commits, even though its row was discarded — publish after the last partial rollback. Under EF's execution strategy, `IUnitOfWorkFactory.RunAsync(db, …)` replays the whole operation, publishes included, for a failure before the commit starts; once the commit has started, or after `IUnitOfWork.PreventRetry()`, the fault surfaces without replay. See [Unit of Work](unit-of-work.md).
@@ -406,6 +407,59 @@ Table names are not configurable; each provider creates its own fixed set inside
 | `messaging_schema_state` | `MessagingSchemaState` | Schema readiness versions |
 
 Columns, indexes, and constraints follow the same split: snake_case on PostgreSQL (`status_name`, `next_retry_at`, `idx_messaging_received_status_name_added`) and PascalCase on SQL Server (`StatusName`, `NextRetryAt`). Raw SQL against the PostgreSQL tables needs no identifier quoting. A received row belongs to one consumer: both providers key it by message ID plus `consumer_identity` / `ConsumerIdentity`, so a message delivered to two consumers keeps one row per consumer, and the dashboard filters received rows by that identity.
+
+### Additional outboxes
+
+A host has one primary storage. When units of work run on other databases too, for example one `DbContext` per
+module, register an additional outbox for each of those databases so a unit on it can publish atomically through
+`unit.Outbox`:
+
+```csharp
+services.AddHeadlessMessaging(setup =>
+{
+    setup.UseEntityFramework<OrdersDb>();              // primary: outbox, inbox, retry state, dashboard
+    setup.AddOutbox().UseEntityFramework<BillingDb>(); // additional: outbox rows and their relay only
+    setup.AddOutbox().UsePostgreSql(builder.Configuration.GetConnectionString("Shipping")!);
+});
+```
+
+- **Registration.** `AddOutbox()` returns an `OutboxStorageBuilder` that accepts only a storage:
+  `UseEntityFramework<TContext>()` from the EF storage packages, and `UsePostgreSql(...)` / `UseSqlServer(...)`
+  with the same connection-string, `IConfiguration`, and delegate overloads as the primary storage. Each outbox
+  keeps its own named provider options, validated on start. `AddOutbox()` without a storage, or a second storage
+  on one `AddOutbox()`, throws during `AddHeadlessMessaging`.
+- **Selection.** `unit.Outbox.PublishAsync` / `EnqueueAsync` writes to the primary storage when the unit's
+  database is the primary's, and otherwise to the additional outbox whose database matches, decided by the same
+  `RelationalDatabaseIdentity` check a single storage runs. A unit that matches no outbox is refused with the
+  usual `Database` mismatch. `IBus` / `IQueue` publishes are autonomous and always write to the primary storage.
+- **Startup validation.** The primary storage must be relational (PostgreSQL or SQL Server): an in-memory primary
+  joins every unit and would take the additional outboxes' publishes. Two outboxes, the primary included, that
+  resolve to the same database fail host startup with a `MessagingConfigurationException` naming both
+  registrations. Mixing providers is allowed, for example a SQL Server primary with a PostgreSQL outbox.
+- **Schema.** Each additional outbox creates only the published table, its indexes, and the table types it uses,
+  in the same `MessagingStorageOptions.Schema` as the primary. It has no received table, inbox history, or schema
+  readiness state. Its schema initialization runs at host startup after the primary's.
+- **Availability at startup.** Only the primary storage must be reachable for the host to start. The additional
+  outboxes are initialized concurrently, once each; one whose database is unreachable logs EventId 106 and the
+  host starts without it. A background processor then retries it with jittered backoff from 1 second up to
+  30 seconds (EventId 107 per failed retry, 108 once it is initialized). Until then its relay (retry, delayed,
+  and collector) skips it, and a `unit.Outbox` publish on its database first initializes it, sharing one attempt
+  with the retry, then writes; if the initialization fails, the publish throws and the unit rolls back. Its rows
+  are relayed only once it is initialized, so a relay can lag a recovered database by up to that backoff.
+  Dead-owner recovery and `IMessageRevoker` keep reaching it and report its failures as they do for any outage.
+  A misconfigured additional outbox, such as wrong credentials, therefore does not stop startup either: watch for
+  EventId 106.
+- **Relay.** Each outbox relays its own rows: retry pickup runs one published-retry quadrant per outbox and lane,
+  each with its own lock resource, backoff, and pickup-failure count, and the delayed-message claim runs for every
+  outbox concurrently. An unreachable outbox database backs off alone; the primary and the other outboxes keep
+  relaying. The collector expires published rows in every outbox, dead-owner recovery reclaims published rows in
+  every outbox, and `IMessageRevoker.RevokeAsync` finds a scheduled row in whichever outbox holds it.
+- **What stays on the primary.** The inbox, received-message retry state, consumer bookkeeping, the monitoring
+  API, and the dashboard read only the primary storage, so the dashboard does not list an additional outbox's
+  rows.
+- **Jobs.** Jobs keeps one store. To schedule a job atomically with a unit on an additional outbox's database,
+  publish a message through `unit.Outbox` and schedule the job from that message's consumer on the Jobs database.
+  The outbox row commits with the unit, and the consumer's inbox and `unit.Jobs` give the job the same guarantee.
 
 ## Headless.Messaging.Abstractions
 
@@ -892,10 +946,11 @@ Messaging keeps its lock provider under an **internal keyed-DI key** (`"headless
 - `messaging.publish-retry-queue-{version}` — Published-Queue pickup.
 - `messaging.receive-retry-bus-{version}` — Received-Bus pickup.
 - `messaging.receive-retry-queue-{version}` — Received-Queue pickup.
+- `messaging.publish-retry-{lane}-{version}-outbox-{key}` — Published pickup of an [additional outbox](#additional-outboxes), per lane. `{key}` is a 16-hex-digit hash of the outbox's provider, data source, and database, so each database's relay holds its own lease.
 
 Both names follow the literal pattern shown above. They are constructed internally by `Headless.Messaging.Core`; downstream consumers must not depend on the internal helper that builds them — register a real provider exclusively via `MessagingBuilder.UseDistributedLock(...)` and let messaging resolve its own keyed-DI slot.
 
-`{version}` comes from `MessagingOptions.Version` and is the **cross-process isolation key**. Two services that share a single lock store (e.g., both pointed at the same Redis) MUST set distinct `Version` values — otherwise matching quadrants collide on the same resources and starve each other. All four locks use `acquireTimeout: TimeSpan.Zero` (non-blocking try-once), a finite lease window equal to that quadrant's current polling interval, and `Monitoring = LockMonitoringMode.AutoExtend`; contention skips only that quadrant's pickup cycle.
+`{version}` comes from `MessagingOptions.Version` and is the **cross-process isolation key**. Two services that share a single lock store (e.g., both pointed at the same Redis) MUST set distinct `Version` values — otherwise matching quadrants collide on the same resources and starve each other. All retry locks use `acquireTimeout: TimeSpan.Zero` (non-blocking try-once), a finite lease window equal to that quadrant's current polling interval, and `Monitoring = LockMonitoringMode.AutoExtend`; contention skips only that quadrant's pickup cycle.
 
 **When `UseStorageLock = false`** (default): `IDistributedLock` is never called and distributed lock wiring is not required. Dead-owner recovery is unaffected — it runs independently of this lock (see [Dead-owner recovery](#dead-owner-recovery)).
 
@@ -1388,14 +1443,14 @@ Spans and metrics for messaging publish, persist, consume, and subscriber-invoke
 - Delivery mode tags use lowercase values on spans and metrics. `headless.messaging.delivery.requested` and `headless.messaging.delivery.resolved` now only ever emit `durable` or `direct` — that removed `DeliveryMode` member never appears as a requested or resolved value. Queries and alerts must use `direct` for `DeliveryMode.Direct`. The former `transport_direct`, `auto`, and "coordinated" values have no compatibility alias.
 - Metrics are always registered; **subscribing a meter is the toggle** — there is no `EnableMetrics` flag. Emission is near-free when unobserved (`ActivitySource.HasListeners()` / `Counter.Enabled` early-outs).
 - Enricher registration and the built-in suppression toggles live on the **messaging setup builder** (`setup.Instrumentation`), not at OpenTelemetry-registration time. This is what fixes the old bridge's fire-and-forget async-enricher wart: enrichers run synchronously, so every tag they add is attached before the span can end.
-- **PII guardrails.** Enrichers must not write the reserved namespaces `messaging.*`, `server.*`, `headless.messaging.*`, `exception.*` (the framework/SDK overwrite them). `headless.messaging.tenant_id` is suppressible. Never serialize raw `context.Headers` onto tags — they may carry tokens/PII.
+- **PII guardrails.** Enrichers must not write the reserved namespaces `messaging.*`, `server.*`, `headless.messaging.*`, `exception.*` (the framework/SDK overwrite them). The tenant attribute is controlled by `TenantTelemetryOptions.EnrichTraces`. Never serialize raw `context.Headers` onto tags — they may carry tokens/PII.
 
 ### Span attributes and toggles
 
 | Tag / attribute | Emitted by | Toggle |
 | --- | --- | --- |
 | `headless.messaging.intent` (`bus`/`queue`) + `messaging.destination.kind` | built-in `IntentTagEnricher` | `setup.Instrumentation.SuppressIntentTags` |
-| `headless.messaging.tenant_id` | built-in `TenantIdTagEnricher` | `setup.Instrumentation.SuppressTenantIdTag` |
+| `tenant.id` (`TenantTelemetryOptions.AttributeName`), written before any enricher runs | `MessagingTelemetry` | `TenantTelemetryOptions.EnrichTraces`, set through `AddHeadlessTenancy(t => t.Telemetry(...))`; see [multi-tenancy observability](multi-tenancy.md#observability) |
 | `headless.messaging.retry_count` | built-in `RetryCountTagEnricher` (subscriber-invoke) | `setup.Instrumentation.SuppressRetryCountTag` |
 | custom tags | your `IActivityTagEnricher` | `setup.Instrumentation.AddEnricher(...)` |
 
@@ -1406,7 +1461,7 @@ Spans and metrics for messaging publish, persist, consume, and subscriber-invoke
 builder.Services.AddHeadlessMessaging(setup =>
 {
     // ... transport + storage registration ...
-    setup.Instrumentation.SuppressTenantIdTag = true;      // opt out of tenant-id tagging
+    setup.Instrumentation.SuppressRetryCountTag = true;    // opt out of retry-count tagging
     setup.Instrumentation.AddEnricher(new MyTagEnricher()); // custom tags
 });
 
@@ -1435,7 +1490,7 @@ All instruments register on the `Headless.Messaging` meter. Names and standard d
 | `messaging.persistence.duration` | Histogram (ms) | `messaging.operation`, `messaging.persistence.type` |
 | `messaging.message.size` | Histogram (bytes) | `messaging.operation`, `messaging.system` |
 
-Framework span attributes: `headless.messaging.intent` (`bus`/`queue`), `headless.messaging.tenant_id` (suppressible), `headless.messaging.retry_count` (suppressible), plus per-phase duration attributes (`headless.messaging.persistence.duration_ms`, `send.duration_ms`, `receive.duration_ms`, `invoke.duration_ms`) retained verbatim from the pre-migration bridge.
+Framework span attributes: `headless.messaging.intent` (`bus`/`queue`), `tenant.id` (named and switched by `TenantTelemetryOptions`), `headless.messaging.retry_count` (suppressible), plus per-phase duration attributes (`headless.messaging.persistence.duration_ms`, `send.duration_ms`, `receive.duration_ms`, `invoke.duration_ms`) retained verbatim from the pre-migration bridge.
 
 ## Headless.Messaging.Aws
 

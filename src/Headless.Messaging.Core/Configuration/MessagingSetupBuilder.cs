@@ -107,6 +107,37 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     }
 
     /// <summary>
+    /// Adds an outbox storage for another database, next to the primary storage, so a unit of work begun on that
+    /// database can publish atomically through <c>unit.Outbox</c>.
+    /// </summary>
+    /// <returns>A builder that accepts only the storage of the new outbox.</returns>
+    /// <remarks>
+    /// <para>
+    /// The additional outbox holds published rows and relays them under its own lease, so an outage of its
+    /// database does not stall the relay of the others. The inbox, retry state, and the dashboard stay on the
+    /// primary storage, which must be relational.
+    /// </para>
+    /// <para>
+    /// <c>unit.Outbox</c> writes to the outbox whose database matches the unit's connection. Registering two outboxes,
+    /// the primary included, that resolve to the same database fails host startup.
+    /// </para>
+    /// <code>
+    /// services.AddHeadlessMessaging(setup =>
+    /// {
+    ///     setup.UseEntityFramework&lt;OrdersDb&gt;();
+    ///     setup.AddOutbox().UseEntityFramework&lt;BillingDb&gt;();
+    /// });
+    /// </code>
+    /// </remarks>
+    public OutboxStorageBuilder AddOutbox()
+    {
+        var builder = new OutboxStorageBuilder(this, OutboxBuilders.Count + 1);
+        OutboxBuilders.Add(builder);
+
+        return builder;
+    }
+
+    /// <summary>
     /// Tunes the deployment settings of one declared consumer on this host, for example
     /// <c>Tune("billing.invoice-projection", consumer =&gt; consumer.Concurrency(16))</c>. Equivalent to the same call on
     /// <c>services.ConfigureMessaging(...)</c>.
@@ -163,6 +194,8 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     internal ConsumerCircuitBreakerRegistry CircuitBreakerRegistry { get; } = new();
 
     internal IList<IMessagesOptionsExtension> Extensions { get; } = [];
+
+    internal List<OutboxStorageBuilder> OutboxBuilders { get; } = [];
 
     /// <summary>
     /// Registers a messaging options extension executed when configuring messaging services.

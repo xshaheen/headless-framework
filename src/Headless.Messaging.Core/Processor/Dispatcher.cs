@@ -188,7 +188,9 @@ internal sealed class Dispatcher
         var timeSpan = publishTime - _timeProvider.GetUtcNow();
         var statusName = timeSpan <= TimeSpan.FromMinutes(1) ? StatusName.Queued : StatusName.Delayed;
 
-        var changed = await _storage
+        // The transaction, when there is one, belongs to the storage that holds this row, and so must the write.
+        var storage = message.OutboxStorage ?? _storage;
+        var changed = await storage
             .ChangePublishStateAsync(
                 message,
                 statusName,
@@ -206,7 +208,7 @@ internal sealed class Dispatcher
         {
             if (!_schedulerQueue.TryEnqueue(message, publishTime.Ticks))
             {
-                await _storage
+                await storage
                     .ChangePublishStateAsync(
                         message,
                         StatusName.Delayed,
@@ -326,7 +328,7 @@ internal sealed class Dispatcher
 
     async ValueTask IRetryDispatcher.DispatchPublishedAsync(MediumMessage message, CancellationToken cancellationToken)
     {
-        var attempt = RetryDispatchAttempt.TryCreate(_storage, MessageType.Publish, message);
+        var attempt = RetryDispatchAttempt.TryCreate(message.OutboxStorage ?? _storage, MessageType.Publish, message);
         if (attempt is null)
         {
             await EnqueueToPublish(message, cancellationToken).ConfigureAwait(false);
@@ -569,9 +571,25 @@ internal sealed class Dispatcher
                 return;
             }
 
-            var messageIds = _schedulerQueue.UnorderedItems.Select(x => x.StorageId).ToArray();
-            await _storage.ChangePublishStateToDelayedAsync(messageIds).ConfigureAwait(false);
-            _logger.DelayedStorageUpdateSuccess();
+            // Each row goes back to Delayed in its own outbox; one unreachable database must not keep the others'
+            // rows queued, so every group is attempted.
+            var groups = _schedulerQueue
+                .UnorderedItems.GroupBy(x => x.OutboxStorage ?? _storage)
+                .Select(group => (Storage: group.Key, Ids: group.Select(x => x.StorageId).ToArray()))
+                .ToArray();
+
+            foreach (var (storage, ids) in groups)
+            {
+                try
+                {
+                    await storage.ChangePublishStateToDelayedAsync(ids).ConfigureAwait(false);
+                    _logger.DelayedStorageUpdateSuccess();
+                }
+                catch (Exception e)
+                {
+                    _logger.DelayedStorageUpdateFailed(e);
+                }
+            }
         }
         catch (Exception e)
         {

@@ -2,6 +2,7 @@
 
 using Headless.Api.DataProtection;
 using Headless.Blobs;
+using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
@@ -40,9 +41,11 @@ internal sealed class SignedUrlTestApp : IAsyncDisposable
     /// Persist the data-protection key ring to the default store instead of using an ephemeral provider, the pairing
     /// the Blobs guide recommends for multi-replica hosts.
     /// </param>
+    /// <param name="scopeBlobsByTenant">Scope both stores by the ambient tenant through the blob tenancy seam.</param>
     public static async Task<SignedUrlTestApp> StartAsync(
         CancellationToken cancellationToken,
-        bool persistKeysToBlobStorage = false
+        bool persistKeysToBlobStorage = false,
+        bool scopeBlobsByTenant = false
     )
     {
         var time = new FakeTimeProvider(DateTimeOffset.Parse("2026-09-26T10:00:00Z", CultureInfo.InvariantCulture));
@@ -70,6 +73,11 @@ internal sealed class SignedUrlTestApp : IAsyncDisposable
             );
             setup.UseSignedUrlEndpoint(options => options.BaseUrl = new Uri("http://localhost"));
         });
+
+        if (scopeBlobsByTenant)
+        {
+            builder.AddHeadlessTenancy(tenancy => tenancy.Blobs(blobs => blobs.ScopeByTenant()));
+        }
 
         var app = builder.Build();
         app.MapBlobSignedUrlEndpoint();

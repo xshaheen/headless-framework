@@ -69,11 +69,11 @@ internal sealed class PostgresFencingTokenSource(
     /// disturbed.
     /// </param>
     /// <param name="cancellationToken">Token used to cancel the sequence or sequence-init command.</param>
-    /// <returns>The next strictly-increasing sequence value.</returns>
+    /// <returns>A token carrying the next strictly-increasing sequence value.</returns>
     /// <exception cref="OperationCanceledException">
     /// Thrown when <paramref name="cancellationToken"/> is cancelled before the sequence value is returned.
     /// </exception>
-    public async ValueTask<long?> NextAsync(
+    public async ValueTask<LockFencingToken?> NextAsync(
         string resource,
         DbConnection? connection = null,
         CancellationToken cancellationToken = default
@@ -94,7 +94,9 @@ internal sealed class PostgresFencingTokenSource(
         command.CommandText = $"SELECT nextval('{_qualifiedSequence}')";
         command.CommandTimeout = (int)_commandTimeout.TotalSeconds;
 
-        return (long?)await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        var value = (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
+
+        return new LockFencingToken(value);
     }
 
     // Runs the catalog-mutating DDL once per source lifetime instead of on every acquire, which

@@ -885,6 +885,35 @@ internal static partial class LoggerExtensions
 
     [LoggerMessage(
         EventId = 106,
+        EventName = "OutboxStorageInitFailed",
+        Level = LogLevel.Error,
+        Message = "Initializing additional outbox {OutboxName} failed. The host starts without it and retries in the background; its relay is paused until then."
+    )]
+    public static partial void OutboxStorageInitFailed(this ILogger logger, Exception exception, string outboxName);
+
+    [LoggerMessage(
+        EventId = 107,
+        EventName = "OutboxStorageInitRetryFailed",
+        Level = LogLevel.Warning,
+        Message = "Initializing additional outbox {OutboxName} failed again. Retrying in {RetryDelay}."
+    )]
+    public static partial void OutboxStorageInitRetryFailed(
+        this ILogger logger,
+        Exception exception,
+        string outboxName,
+        TimeSpan retryDelay
+    );
+
+    [LoggerMessage(
+        EventId = 108,
+        EventName = "OutboxStorageInitialized",
+        Level = LogLevel.Information,
+        Message = "Additional outbox {OutboxName} is initialized; its relay resumes."
+    )]
+    public static partial void OutboxStorageInitialized(this ILogger logger, string outboxName);
+
+    [LoggerMessage(
+        EventId = 109,
         EventName = "SubscriptionEstablishedHookTimedOut",
         Level = LogLevel.Warning,
         Message = "The subscription-established hook of consumer '{Consumer}' did not finish within {Timeout} (generation {Generation}); its token is canceled and the subscription keeps receiving without waiting for it."
@@ -897,7 +926,7 @@ internal static partial class LoggerExtensions
     );
 
     [LoggerMessage(
-        EventId = 107,
+        EventId = 110,
         EventName = "EveryInstanceDeliveryFaulted",
         Level = LogLevel.Error,
         Message = "Every-instance subscription '{Subscription}' faulted outside its consumer on message {MessageId} (name '{MessageName}'); the message is committed without retry."

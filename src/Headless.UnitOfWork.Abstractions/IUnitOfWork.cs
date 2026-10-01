@@ -4,8 +4,8 @@ namespace Headless.UnitOfWork;
 
 /// <summary>
 /// Owner-side handle for one unit of work, returned by
-/// <see cref="IUnitOfWorkFactory.BeginAsync(UnitOfWorkOptions?, CancellationToken)" /> and
-/// <see cref="IUnitOfWorkFactory.Enlist(IUnitOfWorkResource, UnitOfWorkOptions?)" />. Dispose without
+/// <see cref="IUnitOfWorkFactory.BeginAsync(CancellationToken)" /> and
+/// <see cref="IUnitOfWorkFactory.Enlist(IUnitOfWorkResource)" />. Dispose without
 /// <see cref="CompleteAsync" /> is an implicit rollback.
 /// </summary>
 /// <remarks>

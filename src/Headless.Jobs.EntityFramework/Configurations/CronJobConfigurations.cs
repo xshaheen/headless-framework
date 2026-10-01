@@ -106,10 +106,6 @@ public class CronJobConfigurations<TCronJob>(string schema, StorageNamingStyle s
         // Transient schedule-time authorization flag: never a column.
         builder.Ignore(e => e.IsSystemJob);
 
-        // Transient per-call atomic-enlistment requirement: call intent, not definition payload, so never a column
-        // (mirrors TimeJobConfigurations).
-        builder.Ignore(e => e.Enlistment);
-
         builder.HasIndex("Expression").HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "Expression"));
 
         // Index for common lookups by function + expression

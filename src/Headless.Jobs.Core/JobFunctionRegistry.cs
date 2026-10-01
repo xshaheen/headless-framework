@@ -222,7 +222,7 @@ internal sealed record JobFunctionRegistry(
     /// </summary>
     public JobsRunFilter RunFilter { get; init; } = JobsRunFilter.All;
 
-    /// <summary>Retry, node-death, and enlistment overrides tuned per job identity.</summary>
+    /// <summary>Retry and node-death overrides tuned per job identity.</summary>
     public FrozenDictionary<string, JobOptions> OptionsByFunction { get; init; } =
         FrozenDictionary<string, JobOptions>.Empty;
 }

@@ -303,7 +303,7 @@ internal sealed class MessageSender : IMessageSender
         message.NextRetryAt = null;
         DateTimeOffset? lockedUntil = null;
 
-        var affected = await _dataStorage
+        var affected = await _StorageOf(message)
             .ChangePublishRetryStateAsync(
                 message,
                 StatusName.Failed,
@@ -330,7 +330,7 @@ internal sealed class MessageSender : IMessageSender
     {
         message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.SucceedMessageExpiredAfter);
         DateTimeOffset? lockedUntil = null;
-        var updated = await _dataStorage
+        var updated = await _StorageOf(message)
             .ChangePublishRetryStateAsync(
                 message,
                 StatusName.Succeeded,
@@ -503,7 +503,7 @@ internal sealed class MessageSender : IMessageSender
         // persisted-retry and terminal transitions so the retry processor can re-pick the row.
         // Mirrors the consume path's _PersistFailedStateAsync.
         var lockedUntil = state.IsInlineRetryInFlight ? message.LockedUntil : null;
-        var affected = await _dataStorage
+        var affected = await _StorageOf(message)
             .ChangePublishRetryStateAsync(
                 message,
                 state.NextStatus,
@@ -553,9 +553,12 @@ internal sealed class MessageSender : IMessageSender
         return decision;
     }
 
+    // A row from an additional outbox lives in that outbox's database; every other published row is the primary's.
+    private IDataStorage _StorageOf(MediumMessage message) => message.OutboxStorage ?? _dataStorage;
+
     private async Task<bool> _LeaseAsync(MediumMessage message, CancellationToken cancellationToken)
     {
-        return await _dataStorage
+        return await _StorageOf(message)
             .LeasePublishAsync(message, _retryPolicy.DispatchTimeout, cancellationToken)
             .ConfigureAwait(false);
     }
@@ -564,7 +567,7 @@ internal sealed class MessageSender : IMessageSender
     {
         var originalInlineAttempts = message.InlineAttempts;
         message.InlineAttempts++;
-        var reserved = await _dataStorage
+        var reserved = await _StorageOf(message)
             .LeasePublishAndReserveAttemptAsync(
                 message,
                 _retryPolicy.DispatchTimeout,
@@ -584,7 +587,7 @@ internal sealed class MessageSender : IMessageSender
     {
         var originalInlineAttempts = message.InlineAttempts;
         message.InlineAttempts++;
-        var reserved = await _dataStorage
+        var reserved = await _StorageOf(message)
             .ReservePublishAttemptAsync(message, originalInlineAttempts, cancellationToken)
             .ConfigureAwait(false);
         if (!reserved)

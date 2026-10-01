@@ -66,6 +66,7 @@ internal sealed class OutboxMessageWriter(
             // No active unit of work (or no relational transaction on it): commit the durable row first.
             // Dispatch after this boundary is non-blocking acceleration; retry/delayed pickup owns recovery.
             var immediateMessage = await _StoreMessageAsync(
+                    storage,
                     publishRequest,
                     decision,
                     transaction: null,
@@ -110,7 +111,9 @@ internal sealed class OutboxMessageWriter(
     {
         if (decision.Coordination.Transaction is { } transaction)
         {
-            return _StoreMessageAsync(publishRequest, decision, transaction, cancellationToken);
+            return decision.Coordination.Outbox is { } outbox
+                ? _StoreInOutboxAsync(outbox, publishRequest, decision, transaction, cancellationToken)
+                : _StoreMessageAsync(storage, publishRequest, decision, transaction, cancellationToken);
         }
 
         // A compatible unit without a relational handle is only valid for a storage that captures rows on the
@@ -132,7 +135,29 @@ internal sealed class OutboxMessageWriter(
         );
     }
 
-    private ValueTask<MediumMessage> _StoreMessageAsync(
+    // The unit's transaction belongs to an additional outbox's database: the row is written there, and the stamp
+    // routes the relay's later state changes of this row back to the same database.
+    // An outbox whose database was unreachable at startup may not be initialized yet. The open transaction proves
+    // the database is reachable now, so initialize it here rather than fail the write on a missing table.
+    private static async ValueTask<MediumMessage> _StoreInOutboxAsync(
+        MessagingOutbox outbox,
+        PreparedPublishMessage publishRequest,
+        DeliveryDecision decision,
+        System.Data.Common.DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        await outbox.EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+
+        var message = await _StoreMessageAsync(outbox.Storage, publishRequest, decision, transaction, cancellationToken)
+            .ConfigureAwait(false);
+        message.OutboxStorage = outbox.Storage;
+
+        return message;
+    }
+
+    private static ValueTask<MediumMessage> _StoreMessageAsync(
+        IDataStorage target,
         PreparedPublishMessage publishRequest,
         DeliveryDecision decision,
         System.Data.Common.DbTransaction? transaction,
@@ -141,14 +166,14 @@ internal sealed class OutboxMessageWriter(
     {
         var envelope = _CreateStorageEnvelope(publishRequest);
         return decision.PublishAt is { } publishAt
-            ? storage.StoreScheduledMessageAsync(
+            ? target.StoreScheduledMessageAsync(
                 publishRequest.MessageName,
                 envelope,
                 publishAt,
                 transaction,
                 cancellationToken
             )
-            : storage.StoreMessageAsync(publishRequest.MessageName, envelope, transaction, cancellationToken);
+            : target.StoreMessageAsync(publishRequest.MessageName, envelope, transaction, cancellationToken);
     }
 
     private static MediumMessage _CreateStorageEnvelope(PreparedPublishMessage publishRequest)

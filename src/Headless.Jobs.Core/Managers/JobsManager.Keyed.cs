@@ -27,12 +27,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         Argument.IsPositive(expectedGeneration);
         JobIntentFingerprint.RejectOrdinaryMutation(entity);
         JobIntentFingerprint.Validate(entity);
-        var coordinated = _TryCaptureCoordinatedContext(
-            unitOfWork,
-            entity.Enlistment,
-            entity.Function,
-            requireSavepoints: true
-        );
+        var coordinated = _TryCaptureCoordinatedContext(unitOfWork, entity.Function, requireSavepoints: true);
         var now = timeProvider.GetUtcNow();
         _StampTimeJobTree(entity, now, assignIds: true);
         await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
@@ -65,16 +60,14 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         JobKeyScope scope,
         JobKey key,
         long expectedGeneration,
-        TransactionEnlistment enlistment,
         IUnitOfWork? unitOfWork,
         CancellationToken cancellationToken
-    ) => _CancelKeyedAsync(scope, key, expectedGeneration, enlistment, unitOfWork, cancellationToken);
+    ) => _CancelKeyedAsync(scope, key, expectedGeneration, unitOfWork, cancellationToken);
 
     private async Task<JobScheduleResult> _CancelKeyedAsync(
         JobKeyScope scope,
         JobKey key,
         long expectedGeneration,
-        TransactionEnlistment enlistment,
         IUnitOfWork? unitOfWork,
         CancellationToken cancellationToken
     )
@@ -82,12 +75,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         Argument.IsNotNull(scope);
         Argument.IsNotNull(key);
         Argument.IsPositive(expectedGeneration);
-        var coordinated = _TryCaptureCoordinatedContext(
-            unitOfWork,
-            enlistment,
-            scope.Function,
-            requireSavepoints: true
-        );
+        var coordinated = _TryCaptureCoordinatedContext(unitOfWork, scope.Function, requireSavepoints: true);
         if (scope.TenantId is null)
         {
             JobTenantValidation.ValidateSystemJob(

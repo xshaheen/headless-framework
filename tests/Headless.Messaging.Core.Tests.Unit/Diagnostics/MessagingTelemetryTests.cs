@@ -7,6 +7,7 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
+using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using OpenTelemetry;
 using OpenTelemetry.Context.Propagation;
@@ -42,7 +43,7 @@ public sealed class MessagingTelemetryTests : TestBase
         persist.GetTagItem(MessagingTags.ResolvedDeliveryMode).Should().Be("durable");
         MessagingTelemetry.PersistStop(persist, persistMessage.Name, 100, 150);
 
-        // publish (with a tenant header so the tenant-id enricher tag is emitted)
+        // publish (with a tenant header so the tenant attribute is emitted)
         var publishMessage = _CreateTransportMessage(
             "orders.placed",
             extraHeaders: new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -67,12 +68,12 @@ public sealed class MessagingTelemetryTests : TestBase
                 "server.port",
                 MessagingTags.Lane,
                 MessagingTags.DestinationKind,
-                MessagingTags.TenantId,
+                TenantTelemetryOptions.DefaultAttributeName,
                 MessagingTags.RequestedDeliveryMode,
                 MessagingTags.ResolvedDeliveryMode,
             ]);
         publish.GetTagItem(MessagingTags.Lane).Should().Be("bus");
-        publish.GetTagItem(MessagingTags.TenantId).Should().Be("tenant-7");
+        publish.GetTagItem(TenantTelemetryOptions.DefaultAttributeName).Should().Be("tenant-7");
         publish.GetTagItem(MessagingTags.RequestedDeliveryMode).Should().Be("durable");
         publish.GetTagItem(MessagingTags.ResolvedDeliveryMode).Should().Be("direct");
         MessagingTelemetry.PublishStop(publish, publishMessage, _Broker, 200, 260);
@@ -219,7 +220,7 @@ public sealed class MessagingTelemetryTests : TestBase
                 MessagingInboxCapabilityTier.Transactional,
                 "PostgreSql",
                 tenantId: "tenant-unbounded",
-                includeTenantId: false
+                tenantTagName: null
             );
         }
 
@@ -256,14 +257,16 @@ public sealed class MessagingTelemetryTests : TestBase
             MessagingInboxCapabilityTier.DurableDedupeOnly,
             "PostgreSql",
             tenantId: "tenant-7",
-            includeTenantId: true
+            tenantTagName: TenantTelemetryOptions.DefaultAttributeName
         );
 
         measurements
             .Should()
             .Contain(measurement =>
                 measurement.Name == "messaging.inbox.duplicates"
-                && measurement.Tags.Any(tag => string.Equals(tag.Key, MessagingTags.TenantId, StringComparison.Ordinal))
+                && measurement.Tags.Any(tag =>
+                    string.Equals(tag.Key, TenantTelemetryOptions.DefaultAttributeName, StringComparison.Ordinal)
+                )
             );
     }
 
@@ -328,6 +331,49 @@ public sealed class MessagingTelemetryTests : TestBase
         publish.Should().NotBeNull();
         publish!.GetTagItem("app.custom").Should().Be("value-1");
         MessagingTelemetry.PublishStop(publish, message, _Broker, 100, 110);
+    }
+
+    [Fact]
+    public void should_tag_tenant_attribute_with_configured_name_before_enrichers_run()
+    {
+        using var listener = _StartActivityListener([]);
+        var observedByEnricher = new List<object?>();
+        var telemetry = new MessagingTelemetry(
+            [new ObservingEnricher("app.tenant", observedByEnricher)],
+            tenantTelemetry: new TenantTelemetryOptions { AttributeName = "app.tenant" }
+        );
+        var message = _CreateTransportMessage(
+            "orders.placed",
+            extraHeaders: new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.TenantId] = "tenant-7" }
+        );
+
+        var publish = telemetry.PublishStart(message, MessageLane.Bus, _Broker, 100);
+
+        publish.Should().NotBeNull();
+        publish!.GetTagItem("app.tenant").Should().Be("tenant-7");
+        publish.GetTagItem(TenantTelemetryOptions.DefaultAttributeName).Should().BeNull();
+        observedByEnricher.Should().Equal("tenant-7");
+        MessagingTelemetry.PublishStop(publish, message, _Broker, 100, 110);
+    }
+
+    [Fact]
+    public void should_not_tag_tenant_attribute_when_trace_enrichment_is_off_or_message_has_no_tenant()
+    {
+        using var listener = _StartActivityListener([]);
+        var disabled = new MessagingTelemetry([], tenantTelemetry: new TenantTelemetryOptions { EnrichTraces = false });
+        var tenantMessage = _CreateTransportMessage(
+            "orders.placed",
+            extraHeaders: new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.TenantId] = "tenant-7" }
+        );
+        var noTenantMessage = _CreateTransportMessage("orders.placed");
+
+        var disabledPublish = disabled.PublishStart(tenantMessage, MessageLane.Bus, _Broker, 100);
+        var noTenantPublish = MessagingTelemetry.Default.PublishStart(noTenantMessage, MessageLane.Bus, _Broker, 100);
+
+        disabledPublish!.GetTagItem(TenantTelemetryOptions.DefaultAttributeName).Should().BeNull();
+        noTenantPublish!.GetTagItem(TenantTelemetryOptions.DefaultAttributeName).Should().BeNull();
+        MessagingTelemetry.PublishStop(disabledPublish, tenantMessage, _Broker, 100, 110);
+        MessagingTelemetry.PublishStop(noTenantPublish, noTenantMessage, _Broker, 100, 110);
     }
 
     // A throwing enricher is isolated; the operation and later enrichers are unaffected.
@@ -441,7 +487,7 @@ public sealed class MessagingTelemetryTests : TestBase
             && tagKeys.Contains(MessagingTags.InboxOutcome, StringComparer.Ordinal)
             && tagKeys.Contains(MessagingTags.InboxTier, StringComparer.Ordinal)
             && tagKeys.Contains(MessagingTags.InboxProvider, StringComparer.Ordinal)
-            && !tagKeys.Contains(MessagingTags.TenantId, StringComparer.Ordinal)
+            && !tagKeys.Contains(TenantTelemetryOptions.DefaultAttributeName, StringComparer.Ordinal)
             && !tagKeys.Any(key =>
                 key.Contains("message", StringComparison.OrdinalIgnoreCase)
                 || key.Contains("replay", StringComparison.OrdinalIgnoreCase)
@@ -490,6 +536,14 @@ public sealed class MessagingTelemetryTests : TestBase
         };
 
         return new Message(headers, value: null);
+    }
+
+    private sealed class ObservingEnricher(string key, List<object?> observed) : IActivityTagEnricher
+    {
+        public void Enrich(Activity activity, in MessagingEnrichmentContext context)
+        {
+            observed.Add(activity.GetTagItem(key));
+        }
     }
 
     private sealed class StubEnricher(string key, string value) : IActivityTagEnricher

@@ -2,7 +2,6 @@
 
 using Headless.Jobs.Base;
 using Headless.Jobs.Models;
-using Headless.UnitOfWork;
 
 namespace Headless.Jobs.Interfaces;
 
@@ -100,7 +99,7 @@ public interface IJobScheduler
     /// Within the key scope, intent consists of contract version, exact durable request bytes after middleware,
     /// and the UTC due instant truncated to microseconds. Retry and node-death policy differences, including
     /// explicit overrides, observe the existing generation without changing its captured policy.
-    /// Options validation and required atomic enlistment still apply.
+    /// Options validation still applies.
     /// </remarks>
     Task<JobScheduleResult> ScheduleKeyedAsync<TArgs>(
         JobKey key,
@@ -143,15 +142,6 @@ public interface IJobScheduler
         JobKeyScope scope,
         JobKey key,
         long expectedGeneration,
-        CancellationToken cancellationToken = default
-    );
-
-    /// <summary>Requests cancellation with an explicit transaction-enlistment override.</summary>
-    Task<JobScheduleResult> CancelKeyedAsync(
-        JobKeyScope scope,
-        JobKey key,
-        long expectedGeneration,
-        TransactionEnlistment enlistment,
         CancellationToken cancellationToken = default
     );
 
@@ -372,7 +362,7 @@ public interface IJobScheduler
     /// Within the key scope, intent consists of contract version, exact durable request bytes after middleware,
     /// and the UTC due instant truncated to microseconds.
     /// Retry and node-death policy differences, including explicit overrides, preserve the existing generation's
-    /// captured policy. Options validation and required atomic enlistment still apply.
+    /// captured policy. Options validation still applies.
     /// </remarks>
     Task<JobScheduleResult> ScheduleKeyedAsync<TJob>(
         JobKey key,

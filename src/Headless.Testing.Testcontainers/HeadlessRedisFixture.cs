@@ -17,6 +17,7 @@ public class HeadlessRedisFixture() : ContainerFixture<RedisBuilder, RedisContai
         return base.Configure()
             .WithImage(TestImages.Redis)
             .WithReuse(true)
-            .WithLabel(ReuseLabel.Key, ReuseLabel.For(this));
+            .WithLabel(ReuseLabel.Key, ReuseLabel.For(this))
+            .WithLabel(ReuseLabel.CheckoutKey, ReuseLabel.Checkout);
     }
 }

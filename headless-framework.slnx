@@ -66,6 +66,7 @@
         <Project Path="src\Headless.Blobs.CloudflareR2\Headless.Blobs.CloudflareR2.csproj" />
         <Project Path="src\Headless.Blobs.Core\Headless.Blobs.Core.csproj" />
         <Project Path="src\Headless.Blobs.FileSystem\Headless.Blobs.FileSystem.csproj" />
+        <Project Path="src\Headless.Blobs.MultiTenancy\Headless.Blobs.MultiTenancy.csproj" />
         <Project Path="src\Headless.Blobs.Redis\Headless.Blobs.Redis.csproj" />
         <Project Path="src\Headless.Blobs.SignedUrlEndpoint\Headless.Blobs.SignedUrlEndpoint.csproj" />
         <Project Path="src\Headless.Blobs.SshNet\Headless.Blobs.SshNet.csproj" />
@@ -83,6 +84,7 @@
         <Project Path="tests\Headless.Blobs.Core.Tests.Unit\Headless.Blobs.Core.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Blobs.FileSystem.Tests.Integration\Headless.Blobs.FileSystem.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Blobs.FileSystem.Tests.Unit\Headless.Blobs.FileSystem.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Blobs.MultiTenancy.Tests.Unit\Headless.Blobs.MultiTenancy.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Blobs.Redis.Tests.Integration\Headless.Blobs.Redis.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Blobs.Redis.Tests.Unit\Headless.Blobs.Redis.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Blobs.SignedUrlEndpoint.Tests.Unit\Headless.Blobs.SignedUrlEndpoint.Tests.Unit.csproj" />
@@ -302,6 +304,7 @@
     <Folder Name="/Kernel/">
         <Project Path="src\Headless.Extensions\Headless.Extensions.csproj" />
         <Project Path="src\Headless.Urls\Headless.Urls.csproj" />
+        <Project Path="src\Headless.Http.Resilience\Headless.Http.Resilience.csproj" />
         <Project Path="src\Headless.Primitives\Headless.Primitives.csproj" />
         <Project Path="src\Headless.Core\Headless.Core.csproj" />
         <Project Path="src/Headless.FluentValidation/Headless.FluentValidation.csproj" />
@@ -319,6 +322,7 @@
     </Folder>
     <Folder Name="/Kernel/Tests/">
         <Project Path="tests/Headless.FluentValidation.Tests.Unit/Headless.FluentValidation.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Http.Resilience.Tests.Unit\Headless.Http.Resilience.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Checks.Tests.Unit\Headless.Checks.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Core.Tests.Unit\Headless.Core.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Domain.LocalEventBus.Tests.Unit\Headless.Domain.LocalEventBus.Tests.Unit.csproj" />
@@ -447,6 +451,7 @@
         <Project Path="tests\Headless.EntityFramework.Tests.Harness\Headless.EntityFramework.Tests.Harness.csproj" />
         <Project Path="tests\Headless.EntityFramework.Testing.Tests.Unit\Headless.EntityFramework.Testing.Tests.Unit.csproj" />
         <Project Path="tests\Headless.EntityFramework.Tests.Integration\Headless.EntityFramework.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.EntityFramework.Tests.Unit\Headless.EntityFramework.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Payments/">
         <Project Path="src\Headless.Payments.Paymob.CashIn\Headless.Payments.Paymob.CashIn.csproj" />

@@ -121,7 +121,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
     {
 #pragma warning disable AsyncFixer04 // The lease is intentionally returned by the composite before this test disposes it.
         var provider = _CreateProvider(new FakeTimeProvider());
-        await using var child = new CompositeTestLease("A", fencingToken: 42);
+        await using var child = new CompositeTestLease("A", fencingToken: new LockFencingToken(42));
         provider
             .TryAcquireAsync("A", Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLease?>(child));
@@ -130,7 +130,7 @@ public sealed class CompositeDistributedLockAcquireTests : TestBase
 
         result.Should().BeSameAs(child);
         result!.LeaseId.Should().Be(child.LeaseId);
-        result.FencingToken.Should().Be(42);
+        result.FencingToken.Should().Be(new LockFencingToken(42));
         await provider
             .Received(1)
             .TryAcquireAsync("A", Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>());

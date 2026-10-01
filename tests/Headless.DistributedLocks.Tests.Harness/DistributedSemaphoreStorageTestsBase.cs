@@ -61,9 +61,9 @@ public abstract class DistributedSemaphoreStorageTestsBase : TestBase
         var released = await SemaphoreStorage.ReleaseAsync(resource, "lock-1", AbortToken);
         var second = await SemaphoreStorage.TryAcquireAsync(resource, "lock-2", 1, TimeSpan.FromMinutes(5), AbortToken);
 
-        first.FencingToken.Should().Be(1);
+        first.FencingToken.Should().Be(new LockFencingToken(1));
         released.Should().BeTrue();
-        second.FencingToken.Should().Be(2);
+        second.FencingToken.Should().Be(new LockFencingToken(2));
     }
 
     public virtual async Task should_not_advance_fencing_token_on_capacity_rejected_acquire()
@@ -82,10 +82,10 @@ public abstract class DistributedSemaphoreStorageTestsBase : TestBase
         await SemaphoreStorage.ReleaseAsync(resource, "lock-1", AbortToken);
         var second = await SemaphoreStorage.TryAcquireAsync(resource, "lock-3", 1, TimeSpan.FromMinutes(5), AbortToken);
 
-        first.FencingToken.Should().Be(1);
+        first.FencingToken.Should().Be(new LockFencingToken(1));
         rejected.Acquired.Should().BeFalse();
         rejected.FencingToken.Should().BeNull();
-        second.FencingToken.Should().Be(2);
+        second.FencingToken.Should().Be(new LockFencingToken(2));
     }
 
     public virtual async Task should_reacquire_after_slot_expiry()

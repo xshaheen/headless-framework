@@ -23,6 +23,11 @@ namespace Headless.Messaging;
 
 /// <summary>Configures PostgreSQL messaging storage from an EF Core DbContext.</summary>
 [PublicAPI]
+[SuppressMessage(
+    "Naming",
+    "CA1708:Identifiers should differ by more than case",
+    Justification = "C# 14 extension member blocks emit compiler-generated marker members differing only by case."
+)]
 public static class SetupPostgreSqlEntityFrameworkMessaging
 {
     extension(MessagingSetupBuilder setup)
@@ -48,6 +53,36 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
             setup.RegisterExtension(
                 new PostgreSqlEntityFrameworkOptionsExtension<TContext>(options, setup.Options.Version)
             );
+
+            return setup;
+        }
+    }
+
+    extension(OutboxStorageBuilder outbox)
+    {
+        /// <summary>
+        /// Stores this additional outbox's published rows in the PostgreSQL database configured for
+        /// <typeparamref name="TContext"/>, so a unit of work begun on that context publishes atomically through
+        /// <c>unit.Outbox</c>.
+        /// </summary>
+        /// <typeparam name="TContext">The context whose database holds the outbox.</typeparam>
+        /// <returns>The messaging setup builder, for chaining.</returns>
+        /// <exception cref="InvalidOperationException">This outbox already has a storage.</exception>
+        public MessagingSetupBuilder UseEntityFramework<TContext>()
+            where TContext : DbContext
+        {
+            var setup = SetupPostgreSqlMessaging.AddPostgreSqlOutboxCore(
+                outbox,
+                $"AddOutbox().UseEntityFramework<{typeof(TContext).Name}>()",
+                options =>
+                    options.Configure<IServiceScopeFactory>(
+                        (storageOptions, scopeFactory) =>
+                            new ConfigurePostgreSqlOptions<TContext>(scopeFactory).Configure(storageOptions)
+                    )
+            );
+
+            // The outbox exists to be joined by units begun on this context.
+            setup.Services.AddEntityFrameworkUnitOfWork();
 
             return setup;
         }
