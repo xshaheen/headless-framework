@@ -402,8 +402,8 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         var tableNames = TestStorageOptions.TableNames(schema);
 
         // when & then
-        tableNames.GetPublishedTableName().Should().Be($"{schema}.MessagingPublished");
-        tableNames.GetReceivedTableName().Should().Be($"{schema}.MessagingReceived");
+        tableNames.GetPublishedTableName().Should().Be($"[{schema}].[MessagingPublished]");
+        tableNames.GetReceivedTableName().Should().Be($"[{schema}].[MessagingReceived]");
     }
 
     [Fact]

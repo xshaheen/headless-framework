@@ -22,7 +22,7 @@ namespace Tests;
 [Collection<SqlServerTestFixture>]
 public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : TestBase
 {
-    private SqlServerDataStorage _storage = null!;
+    private RelationalDataStorage _storage = null!;
     private FakeTimeProvider _timeProvider = null!;
 
     public override async ValueTask InitializeAsync()
@@ -44,16 +44,16 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         var provider = services.BuildServiceProvider();
         var tableNames = provider.GetRequiredService<IStorageTableNames>();
         await provider.ApplyMessagingSchemaAsync();
-        _storage = new SqlServerDataStorage(
+        _storage = new RelationalDataStorage(
+            provider.GetRequiredService<IOptions<SqlServerOptions>>().Value.ToStorage(),
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
-            provider.GetRequiredService<IOptions<SqlServerOptions>>(),
             TestStorageOptions.For(),
             tableNames,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             _timeProvider,
             new NullNodeMembership(),
-            NullLogger<SqlServerDataStorage>.Instance
+            NullLogger<RelationalDataStorage>.Instance
         );
 
         await base.InitializeAsync();

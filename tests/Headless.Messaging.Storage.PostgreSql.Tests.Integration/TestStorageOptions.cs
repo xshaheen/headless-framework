@@ -5,6 +5,7 @@ using Headless.Hosting.Initialization.Schema;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.PostgreSql;
+using Headless.Sql.PostgreSql;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -23,7 +24,7 @@ internal static class TestStorageOptions
 
     public static IStorageTableNames TableNames(string schema = HeadlessStorageDefaults.Schema)
     {
-        return new PostgreSqlStorageTableNames(For(schema));
+        return new RelationalStorageTableNames(PostgreSqlDialect.Instance, For(schema));
     }
 }
 
@@ -66,7 +67,10 @@ internal static class TestMessagingSchema
     /// </summary>
     public static IServiceCollection AddTestMessagingSchema(this IServiceCollection services)
     {
-        services.AddSingleton<IStorageTableNames, PostgreSqlStorageTableNames>();
+        services.AddSingleton<IStorageTableNames>(sp => new RelationalStorageTableNames(
+            PostgreSqlDialect.Instance,
+            sp.GetRequiredService<IOptions<MessagingStorageOptions>>()
+        ));
         services.AddHeadlessSchemaContribution(sp =>
             PostgreSqlMessagingSchemaContribution.Create(
                 sp.GetRequiredService<IOptions<PostgreSqlOptions>>().Value,

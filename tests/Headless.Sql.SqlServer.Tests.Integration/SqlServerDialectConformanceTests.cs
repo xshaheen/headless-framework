@@ -28,6 +28,14 @@ public sealed class SqlServerDialectConformanceTests(SqlServerTestFixture fixtur
             """;
     }
 
+    protected override string CreatePartialKeySql(string table, string index)
+    {
+        return $"CREATE UNIQUE INDEX [{index}] ON {table} ([Owner]) WHERE [Flag] = 1;";
+    }
+
+    // The deadlock monitor always picks the session with the lower DEADLOCK_PRIORITY as the victim.
+    protected override string DeadlockSurvivorSql => "SET DEADLOCK_PRIORITY HIGH";
+
     // A TRY/CATCH that swallows an error under XACT_ABORT ON leaves the transaction doomed rather than rolled back, and
     // the rest of the batch keeps running on it: the write is refused with 3930 instead of committing on its own.
     protected override IReadOnlyList<string> DoomThenWriteBatches(string insertAfter)
@@ -81,5 +89,53 @@ public sealed class SqlServerDialectConformanceTests(SqlServerTestFixture fixtur
     public override Task should_fail_loudly_once_the_engine_has_doomed_the_callers_transaction()
     {
         return base.should_fail_loudly_once_the_engine_has_doomed_the_callers_transaction();
+    }
+
+    [Fact]
+    public override Task should_insert_and_report_the_values_it_wrote()
+    {
+        return base.should_insert_and_report_the_values_it_wrote();
+    }
+
+    [Fact]
+    public override Task should_lock_a_batch_in_order_and_skip_rows_another_transaction_holds()
+    {
+        return base.should_lock_a_batch_in_order_and_skip_rows_another_transaction_holds();
+    }
+
+    [Fact]
+    public override Task should_make_holders_of_one_transaction_lock_wait_in_turn()
+    {
+        return base.should_make_holders_of_one_transaction_lock_wait_in_turn();
+    }
+
+    [Fact]
+    public override Task should_render_portable_expressions()
+    {
+        return base.should_render_portable_expressions();
+    }
+
+    [Fact]
+    public override Task should_read_without_waiting_on_a_row_another_transaction_holds()
+    {
+        return base.should_read_without_waiting_on_a_row_another_transaction_holds();
+    }
+
+    [Fact]
+    public override Task should_insert_and_lock_by_a_partial_key()
+    {
+        return base.should_insert_and_lock_by_a_partial_key();
+    }
+
+    [Fact]
+    public override Task should_retry_engine_chosen_deadlock_victims_and_apply_each_call_once()
+    {
+        return base.should_retry_engine_chosen_deadlock_victims_and_apply_each_call_once();
+    }
+
+    [Fact]
+    public override Task should_surface_the_deadlock_after_the_attempt_cap_and_apply_nothing()
+    {
+        return base.should_surface_the_deadlock_after_the_attempt_cap_and_apply_nothing();
     }
 }

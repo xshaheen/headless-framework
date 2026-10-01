@@ -347,4 +347,37 @@ public abstract class FeaturesStorageConformanceTests<TFixture>(TFixture fixture
         var stored = await repository.GetListAsync("Tenant", "acme", AbortToken);
         stored.Should().ContainSingle().Which.Value.Should().Be("true");
     }
+
+    [Fact]
+    public async Task should_not_match_a_stored_prefix_when_a_lookup_value_is_longer_than_its_column()
+    {
+        // given a row whose name and provider key fill their columns
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
+        var name = new string('n', FeatureValueRecordConstants.NameMaxLength);
+        var providerKey = new string('k', FeatureValueRecordConstants.ProviderKeyMaxLength);
+        await repository.InsertAsync(
+            new FeatureValueRecord(Guid.NewGuid(), name, "v", "Tenant", providerKey),
+            AbortToken
+        );
+
+        // when each lookup carries one character more than the column holds
+        var found = await repository.FindAsync(name + "x", "Tenant", providerKey, AbortToken);
+        var all = await repository.FindAllAsync(name + "x", providerName: null, providerKey: null, AbortToken);
+        var byNames = await repository.GetListAsync(
+            new HashSet<string>(StringComparer.Ordinal) { name + "x" },
+            "Tenant",
+            providerKey,
+            AbortToken
+        );
+        var byScope = await repository.GetListAsync("Tenant", providerKey + "x", AbortToken);
+
+        // then none of them matches the stored row, which is the lookup value's prefix
+        found.Should().BeNull();
+        all.Should().BeEmpty();
+        byNames.Should().BeEmpty();
+        byScope.Should().BeEmpty();
+    }
 }

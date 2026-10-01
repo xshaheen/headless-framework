@@ -78,6 +78,38 @@ public sealed class SqlServerDialect : ISqlDialect
         return $"DATEADD(nanosecond, {sign}@{parameter}Nanoseconds, DATEADD(second, {sign}@{parameter}Seconds, DATEADD(day, {sign}@{parameter}Days, {instant})))";
     }
 
+    public string BooleanLiteral(bool value)
+    {
+        return value ? "1" : "0";
+    }
+
+    public string NewGuid()
+    {
+        return "NEWID()";
+    }
+
+    public string ShiftBySeconds(string instant, string seconds)
+    {
+        return $"DATEADD(second, CONVERT(int, {seconds}), {instant})";
+    }
+
+    public string Limit(string limitParameter, string? offsetParameter = null)
+    {
+        return $"OFFSET {(offsetParameter is null ? "0" : "@" + offsetParameter)} ROWS FETCH NEXT @{limitParameter} ROWS ONLY";
+    }
+
+    public string LikeIgnoringCase(string expression, string patternParameter)
+    {
+        return $"{expression} LIKE @{patternParameter} ESCAPE '\\'";
+    }
+
+    public string ReadWithoutWaiting(string table)
+    {
+        // READPAST is refused under a snapshot read, so READCOMMITTEDLOCK keeps it valid whether or not the database
+        // runs read committed snapshot isolation.
+        return $"{table} WITH (READPAST, READCOMMITTEDLOCK)";
+    }
+
     public void AddDuration(DbCommand command, string parameter, TimeSpan duration)
     {
         var days = checked((int)(duration.Ticks / TimeSpan.TicksPerDay));
@@ -112,7 +144,9 @@ public sealed class SqlServerDialect : ISqlDialect
             SqlColumnKind.Int32 => new SqlParameter(parameter, SqlDbType.Int),
             SqlColumnKind.Int64 => new SqlParameter(parameter, SqlDbType.BigInt),
             SqlColumnKind.Timestamp => new SqlParameter(parameter, SqlDbType.DateTimeOffset),
-            SqlColumnKind.Binary => new SqlParameter(parameter, SqlDbType.VarBinary, -1),
+            SqlColumnKind.Binary => type.MaxLength > 0
+                ? new SqlParameter(parameter, SqlDbType.Binary, type.MaxLength)
+                : new SqlParameter(parameter, SqlDbType.VarBinary, -1),
             SqlColumnKind.Guid => new SqlParameter(parameter, SqlDbType.UniqueIdentifier),
             SqlColumnKind.Boolean => new SqlParameter(parameter, SqlDbType.Bit),
             SqlColumnKind.Json => new SqlParameter(parameter, SqlDbType.NVarChar, -1),
@@ -212,7 +246,7 @@ public sealed class SqlServerDialect : ISqlDialect
         return $"""
             SELECT {string.Join(", ", statement.Columns)}
             FROM {statement.Table} WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
-            WHERE {_Key(statement.Key, alias: null)};
+            WHERE {_Key(statement.Key, alias: null)}{_And(statement.KeyPredicate)};
             """;
     }
 
@@ -256,9 +290,9 @@ public sealed class SqlServerDialect : ISqlDialect
                 SELECT 1 FROM {statement.Table} WITH (UPDLOCK, HOLDLOCK, ROWLOCK) WHERE {_Key(
                 statement.Key,
                 alias: null
-            )}
+            )}{_And(statement.KeyPredicate)}
             );
-            {_AppliedAndReturning(statement.Table, statement.Key, statement.Returning)}
+            {_AppliedAndReturning(statement.Table, statement.Key, statement.Returning, statement.KeyPredicate)}
             """;
     }
 
@@ -335,6 +369,39 @@ public sealed class SqlServerDialect : ISqlDialect
         return $"""
             {_Clock}
             {_Clocked(statement.Sql)}
+            """;
+    }
+
+    public string Render(SqlInsert statement)
+    {
+        return $"""
+            {_Clock}
+            INSERT INTO {statement.Table} ({string.Join(", ", statement.Columns)})
+            OUTPUT {string.Join(", ", statement.Returning.Select(static c => "inserted." + c))}
+            VALUES ({string.Join(", ", statement.Values.Select(_Clocked))});
+            """;
+    }
+
+    public string Render(SqlLockBatch statement)
+    {
+        // Nothing waits, so the clock can be read first.
+        return $"""
+            {_Clock}
+            SELECT TOP (@{statement.BatchSizeParameter}) {_Clocked(string.Join(", ", statement.Columns))}
+            FROM {statement.Table} WITH ({_SkipLocked})
+            WHERE {_Clocked(statement.Filter)}
+            ORDER BY {string.Join(", ", statement.OrderBy)};
+            """;
+    }
+
+    public string Render(SqlTransactionLock statement)
+    {
+        // A transaction-owned application lock ends with the transaction. The wait is left to the command timeout; a
+        // refusal (a deadlock, or a cancelled wait) is raised so it cannot pass for an acquired lock.
+        return $"""
+            DECLARE @lockResult int;
+            EXEC @lockResult = sp_getapplock @Resource = @{statement.ResourceParameter}, @LockMode = N'Exclusive', @LockOwner = N'Transaction', @LockTimeout = -1;
+            IF @lockResult < 0 THROW 51000, N'The application lock was not granted.', 1;
             """;
     }
 
@@ -419,7 +486,8 @@ public sealed class SqlServerDialect : ISqlDialect
     private static string _AppliedAndReturning(
         string table,
         IReadOnlyList<SqlKeyColumn> key,
-        IReadOnlyList<string> returning
+        IReadOnlyList<string> returning,
+        string? keyPredicate = null
     )
     {
         // @@ROWCOUNT must be read by the very next statement. The re-read runs under the lock the batch already holds.
@@ -429,8 +497,13 @@ public sealed class SqlServerDialect : ISqlDialect
             DECLARE @applied bit = CASE WHEN @@ROWCOUNT > 0 THEN 1 ELSE 0 END;
             SELECT @applied{columns}
             FROM (SELECT 1 AS one) AS x
-            LEFT JOIN {table} AS t ON @applied = 1 AND {_Key(key, "t")};
+            LEFT JOIN {table} AS t ON @applied = 1 AND {_Key(key, "t")}{_And(keyPredicate)};
             """;
+    }
+
+    private static string _And(string? predicate)
+    {
+        return predicate is null ? "" : $" AND ({predicate})";
     }
 
     private static string _Stored(string fragment)

@@ -4,6 +4,7 @@ using System.Data.Common;
 using System.Globalization;
 using Headless.Sql;
 using Headless.Testing.Tests;
+using Nito.AsyncEx;
 
 namespace Tests;
 
@@ -13,6 +14,9 @@ namespace Tests;
 /// </summary>
 public abstract class SqlDialectConformanceTests : TestBase
 {
+    // Bounds every wait on the other party, so a call that fails before its rendezvous fails the test, never hangs it.
+    private static readonly TimeSpan _RendezvousTimeout = TimeSpan.FromSeconds(30);
+
     private int _table;
 
     protected abstract ISqlDialect Dialect { get; }
@@ -33,6 +37,18 @@ public abstract class SqlDialectConformanceTests : TestBase
     /// first holds its rows and the two claims race as whole transactions instead.
     /// </summary>
     protected virtual bool SerializesWriteTransactions => false;
+
+    /// <summary>
+    /// Creates a unique index named <paramref name="index" /> over the owner column of <paramref name="table" />,
+    /// covering only rows whose flag is set and written with the dialect's boolean literal, as a partial key.
+    /// </summary>
+    protected abstract string CreatePartialKeySql(string table, string index);
+
+    /// <summary>
+    /// A statement, run first inside a transaction, that makes the engine pick the other transaction as the victim of
+    /// any deadlock this one joins, so a test can force a deadlock on every attempt of an autonomous call.
+    /// </summary>
+    protected abstract string DeadlockSurvivorSql { get; }
 
     private string _Column(string pascal) => Dialect.Quote(Dialect.Name(pascal));
 
@@ -224,6 +240,229 @@ public abstract class SqlDialectConformanceTests : TestBase
         (await _ReadValueAsync(table, "future")).Should().Be(0);
     }
 
+    public virtual async Task should_insert_and_report_the_values_it_wrote()
+    {
+        var table = await _CreateTableAsync();
+        await using var connection = await _OpenAsync();
+        var before = await _ReadDatabaseNowAsync(connection);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = Dialect.Render(
+            new SqlInsert(
+                table,
+                [_Column("Key"), _Column("Value"), _Column("Stamp")],
+                ["@k", "@v", SqlDialectTokens.Now],
+                [_Column("Key"), _Column("Stamp")]
+            )
+        );
+        Dialect.AddParameter(command, "k", SqlColumnType.KeyText(64), "written");
+        Dialect.AddParameter(command, "v", SqlColumnType.Int64, 7L);
+        await using var reader = await command.ExecuteReaderAsync(AbortToken);
+
+        (await reader.ReadAsync(AbortToken)).Should().BeTrue();
+        reader.GetString(0).Should().Be("written");
+        (await reader.GetFieldValueAsync<DateTimeOffset>(1, AbortToken))
+            .Should()
+            .BeOnOrAfter(before, "the stamp is the database clock read by the insert");
+        (await reader.ReadAsync(AbortToken)).Should().BeFalse();
+    }
+
+    public virtual async Task should_lock_a_batch_in_order_and_skip_rows_another_transaction_holds()
+    {
+        var table = await _CreateTableAsync();
+
+        for (var i = 0; i < 6; i++)
+        {
+            _ = await _UpsertAsync(table, $"row-{i:D2}", increment: i, guardBelow: null);
+        }
+
+        await using var first = await _OpenAsync();
+        await using var second = await _OpenAsync();
+        await using var firstTransaction = await first.BeginTransactionAsync(AbortToken);
+        await using var secondTransaction = await second.BeginTransactionAsync(AbortToken);
+
+        var lockedByFirst = await _LockBatchAsync(first, firstTransaction, table, batch: 2);
+        var lockedBySecond = await _LockBatchAsync(second, secondTransaction, table, batch: 2);
+
+        lockedByFirst.Should().Equal("row-00", "row-01");
+        lockedBySecond.Should().Equal(["row-02", "row-03"], "a locked batch skips rows another transaction holds");
+    }
+
+    public virtual async Task should_make_holders_of_one_transaction_lock_wait_in_turn()
+    {
+        var resource = $"conformance.{Guid.NewGuid():N}";
+        await using var first = await _OpenAsync();
+        await using var firstTransaction = await first.BeginTransactionAsync(AbortToken);
+        await _TakeTransactionLockAsync(first, firstTransaction, resource);
+
+        var waiting = _TakeTransactionLockInOwnTransactionAsync(resource);
+        await Task.Delay(TimeSpan.FromMilliseconds(500), AbortToken);
+        waiting.IsCompleted.Should().BeFalse("the lock is held until the first transaction ends");
+
+        await firstTransaction.CommitAsync(AbortToken);
+        await waiting;
+    }
+
+    public virtual async Task should_render_portable_expressions()
+    {
+        var table = await _CreateTableAsync();
+        var stamp = new DateTimeOffset(2026, 10, 1, 10, 0, 0, TimeSpan.Zero);
+        await _ExecuteAsync(
+            $"INSERT INTO {table} ({_Column("Key")}, {_Column("Value")}, {_Column("Flag")}, {_Column("Stamp")}, {_Column("Owner")}) VALUES ('a', 1, {Dialect.BooleanLiteral(true)}, @s, 'Hello World'), ('b', 2, {Dialect.BooleanLiteral(false)}, @s, '100% done'), ('c', 3, NULL, @s, NULL)",
+            command => Dialect.AddParameter(command, "s", SqlColumnType.Timestamp, stamp)
+        );
+
+        (
+            await _ScalarAsync(
+                $"SELECT COUNT(*) FROM {table} WHERE {_Column("Flag")} = {Dialect.BooleanLiteral(true)}",
+                _ => { }
+            )
+        )
+            .Should()
+            .Be(1L);
+        (
+            await _ScalarAsync(
+                $"SELECT COUNT(*) FROM {table} WHERE {_Column("Flag")} = {Dialect.BooleanLiteral(false)}",
+                _ => { }
+            )
+        )
+            .Should()
+            .Be(1L);
+
+        await _ExecuteAsync($"UPDATE {table} SET {_Column("Id")} = {Dialect.NewGuid()}", _ => { });
+        (await _ScalarAsync($"SELECT COUNT(DISTINCT {_Column("Id")}) FROM {table}", _ => { }))
+            .Should()
+            .Be(3L, "every row draws its own identifier");
+
+        await using (var connection = await _OpenAsync())
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText =
+                $"SELECT {Dialect.ShiftBySeconds(_Column("Stamp"), _Column("Value"))} FROM {table} WHERE {_Column("Key")} = 'b'";
+            (await command.ExecuteScalarAsync(AbortToken) is { } shifted ? _Instant(shifted) : default)
+                .Should()
+                .Be(stamp.AddSeconds(2));
+        }
+
+        (
+            await _KeysAsync(
+                table,
+                Dialect.Limit("l", "o"),
+                command =>
+                {
+                    Dialect.AddParameter(command, "l", SqlColumnType.Int32, 1);
+                    Dialect.AddParameter(command, "o", SqlColumnType.Int64, 1L);
+                }
+            )
+        ).Should().Equal("b");
+        (
+            await _KeysAsync(
+                table,
+                Dialect.Limit("l"),
+                command => Dialect.AddParameter(command, "l", SqlColumnType.Int32, 2)
+            )
+        )
+            .Should()
+            .Equal("a", "b");
+
+        (
+            await _ScalarAsync(
+                $"SELECT COUNT(*) FROM {table} WHERE {Dialect.LikeIgnoringCase(_Column("Owner"), "p")}",
+                command => Dialect.AddParameter(command, "p", SqlColumnType.Text(64), "%WORLD%")
+            )
+        )
+            .Should()
+            .Be(1L, "the match ignores case");
+        (
+            await _ScalarAsync(
+                $"SELECT COUNT(*) FROM {table} WHERE {Dialect.LikeIgnoringCase(_Column("Owner"), "p")}",
+                command => Dialect.AddParameter(command, "p", SqlColumnType.Text(64), "%0\\%%")
+            )
+        )
+            .Should()
+            .Be(1L, "a backslash escapes a wildcard");
+
+        byte[] bytes = [1, 2, 3, 4];
+        (
+            await _ScalarObjectAsync(
+                "SELECT @b",
+                command => Dialect.AddParameter(command, "b", SqlColumnType.FixedBinary(4), bytes)
+            )
+        )
+            .Should()
+            .BeEquivalentTo(bytes);
+    }
+
+    public virtual async Task should_read_without_waiting_on_a_row_another_transaction_holds()
+    {
+        var table = await _CreateTableAsync();
+        _ = await _UpsertAsync(table, "held", increment: 1, guardBelow: null);
+        await using var holder = await _OpenAsync();
+        await using var transaction = await holder.BeginTransactionAsync(AbortToken);
+        await using (var update = holder.CreateCommand())
+        {
+            update.Transaction = transaction;
+            update.CommandText = $"UPDATE {table} SET {_Column("Value")} = {_Column("Value")} + 1";
+            await update.ExecuteNonQueryAsync(AbortToken);
+        }
+
+        await using var reader = await _OpenAsync();
+        await using var count = reader.CreateCommand();
+        count.CommandText = $"SELECT COUNT(*) FROM {Dialect.ReadWithoutWaiting(table)}";
+        count.CommandTimeout = 5;
+
+        // PostgreSQL returns the row as last committed; SQL Server skips it. Neither waits for the holder.
+        Convert
+            .ToInt64(await count.ExecuteScalarAsync(AbortToken), CultureInfo.InvariantCulture)
+            .Should()
+            .BeInRange(0, 1);
+    }
+
+    public virtual async Task should_insert_and_lock_by_a_partial_key()
+    {
+        var table = await _CreateTableAsync();
+        await _ExecuteAsync(CreatePartialKeySql(table, Dialect.Name($"UxOwner{Guid.NewGuid():N}")), _ => { });
+        var flagged = $"{_Column("Flag")} = {Dialect.BooleanLiteral(true)}";
+        var insert = Dialect.Render(
+            new SqlInsertIfAbsent(
+                table,
+                [new SqlKeyColumn(_Column("Owner"), "o")],
+                [_Column("Key"), _Column("Value"), _Column("Flag")],
+                ["@k", "1", Dialect.BooleanLiteral(true)],
+                [_Column("Key")],
+                flagged
+            )
+        );
+
+        // A row with the owner but without the flag is outside the partial key, so it does not hold it.
+        await _ExecuteAsync(
+            $"INSERT INTO {table} ({_Column("Key")}, {_Column("Value")}, {_Column("Flag")}, {_Column("Owner")}) VALUES ('plain', 0, {Dialect.BooleanLiteral(false)}, 'owner')",
+            _ => { }
+        );
+
+        (await _InsertIfAbsentAsync(insert, "first", "owner")).Should().BeTrue();
+        (await _InsertIfAbsentAsync(insert, "second", "owner")).Should().BeFalse("the partial key is held");
+
+        await using var connection = await _OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+        await using var read = connection.CreateCommand();
+        read.Transaction = transaction;
+        read.CommandText = Dialect.Render(
+            new SqlLockedRead(table, [new SqlKeyColumn(_Column("Owner"), "o")], [_Column("Key")], flagged)
+        );
+        Dialect.AddParameter(read, "o", SqlColumnType.Text(64), "owner");
+        var keys = new List<string>();
+        await using (var reader = await read.ExecuteReaderAsync(AbortToken))
+        {
+            while (await reader.ReadAsync(AbortToken))
+            {
+                keys.Add(reader.GetString(0));
+            }
+        }
+
+        keys.Should().Equal("first");
+    }
+
     public virtual async Task should_fail_loudly_once_the_engine_has_doomed_the_callers_transaction()
     {
         var table = await _CreateTableAsync();
@@ -259,6 +498,208 @@ public abstract class SqlDialectConformanceTests : TestBase
         last.Should().NotBeNull("the write ran on a transaction the engine had already doomed");
         Dialect.Classify(last!).Should().Be(SqlErrorKind.TransactionAborted);
         (await _ReadValueAsync(table, "after")).Should().BeNull();
+    }
+
+    public virtual async Task should_retry_engine_chosen_deadlock_victims_and_apply_each_call_once()
+    {
+        const int pairs = 4;
+        var table = await _CreateTableAsync();
+        var deadlocks = 0;
+
+        for (var pair = 0; pair < pairs; pair++)
+        {
+            _ = await _UpsertAsync(table, $"p{pair}-a", increment: 0, guardBelow: null);
+            _ = await _UpsertAsync(table, $"p{pair}-b", increment: 0, guardBelow: null);
+        }
+
+        // Each pair locks its two rows in opposite orders and meets at a rendezvous between the two updates, so on the
+        // first attempt both hold one row and wait for the other: a deadlock the engine must break by picking a victim.
+        // Retries skip the rendezvous; the survivor already holds both rows, so the victim's retry only waits for it.
+        var calls = Enumerable
+            .Range(0, pairs)
+            .SelectMany(pair =>
+            {
+                var rendezvous = new AsyncCountdownEvent(2);
+
+                return new[]
+                {
+                    _AutonomousIncrementAsync(
+                        table,
+                        $"p{pair}-a",
+                        $"p{pair}-b",
+                        rendezvous,
+                        () => Interlocked.Increment(ref deadlocks)
+                    ),
+                    _AutonomousIncrementAsync(
+                        table,
+                        $"p{pair}-b",
+                        $"p{pair}-a",
+                        rendezvous,
+                        () => Interlocked.Increment(ref deadlocks)
+                    ),
+                };
+            })
+            .ToArray();
+
+        var committedOnAttempt = await Task.WhenAll(calls);
+
+        Volatile.Read(ref deadlocks).Should().Be(pairs, "the engine breaks each pair's deadlock with one victim");
+        committedOnAttempt.Count(a => a == 1).Should().Be(pairs, "each pair's survivor commits its first attempt");
+        committedOnAttempt.Count(a => a == 2).Should().Be(pairs, "each victim commits its first retry");
+
+        for (var pair = 0; pair < pairs; pair++)
+        {
+            // Two calls touch each row once each; a victim's rolled-back attempt leaking into the total would make 3.
+            (await _ReadValueAsync(table, $"p{pair}-a"))
+                .Should()
+                .Be(2);
+            (await _ReadValueAsync(table, $"p{pair}-b")).Should().Be(2);
+        }
+    }
+
+    public virtual async Task should_surface_the_deadlock_after_the_attempt_cap_and_apply_nothing()
+    {
+        var table = await _CreateTableAsync();
+        _ = await _UpsertAsync(table, "cap-a", increment: 0, guardBelow: null);
+        _ = await _UpsertAsync(table, "cap-b", increment: 0, guardBelow: null);
+        var attempts = 0;
+        var deadlocks = 0;
+        var survivors = new List<Task>();
+
+        // Every attempt meets a fresh survivor transaction that locks the rows in the opposite order and is protected
+        // from being the victim, so every attempt deadlocks and the call runs out of attempts.
+        var act = async () =>
+            await SqlAutonomousTransaction.RunAsync(
+                () => Dialect.CreateConnection(ConnectionString),
+                async (connection, transaction, cancellationToken) =>
+                {
+                    attempts++;
+                    var callLocked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    var survivorLocked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    survivors.Add(_RunDeadlockSurvivorAsync(table, callLocked.Task, survivorLocked));
+
+                    try
+                    {
+                        await _IncrementAsync(connection, transaction, table, "cap-a", cancellationToken);
+                        callLocked.SetResult();
+                        await survivorLocked.Task.WaitAsync(_RendezvousTimeout, cancellationToken);
+                        await _IncrementAsync(connection, transaction, table, "cap-b", cancellationToken);
+
+                        return attempts;
+                    }
+                    catch (DbException e) when (Dialect.Classify(e) == SqlErrorKind.Deadlock)
+                    {
+                        deadlocks++;
+
+                        throw;
+                    }
+                },
+                TimeProvider.System,
+                AbortToken
+            );
+
+        var thrown = await act.Should().ThrowAsync<DbException>();
+        await Task.WhenAll(survivors);
+
+        Dialect
+            .Classify(thrown.Which)
+            .Should()
+            .Be(SqlErrorKind.Deadlock, "the last attempt's fault surfaces unchanged");
+        attempts.Should().Be(3, "a transient fault is retried until the attempt cap and no further");
+        deadlocks.Should().Be(3, "the engine chose the call as the victim on every attempt");
+        (await _ReadValueAsync(table, "cap-a")).Should().Be(3, "only the three survivors' writes committed");
+        (await _ReadValueAsync(table, "cap-b")).Should().Be(3, "only the three survivors' writes committed");
+    }
+
+    private Task<int> _AutonomousIncrementAsync(
+        string table,
+        string firstKey,
+        string secondKey,
+        AsyncCountdownEvent rendezvous,
+        Action onDeadlock
+    )
+    {
+        var attempts = 0;
+
+        return Task.Run(
+            async () =>
+                await SqlAutonomousTransaction.RunAsync(
+                    () => Dialect.CreateConnection(ConnectionString),
+                    async (connection, transaction, cancellationToken) =>
+                    {
+                        var attempt = ++attempts;
+
+                        try
+                        {
+                            await _IncrementAsync(connection, transaction, table, firstKey, cancellationToken);
+
+                            if (attempt == 1)
+                            {
+                                rendezvous.Signal();
+                                await rendezvous
+                                    .WaitAsync(cancellationToken)
+                                    .WaitAsync(_RendezvousTimeout, cancellationToken);
+                            }
+
+                            await _IncrementAsync(connection, transaction, table, secondKey, cancellationToken);
+
+                            return attempt;
+                        }
+                        catch (DbException e) when (Dialect.Classify(e) == SqlErrorKind.Deadlock)
+                        {
+                            onDeadlock();
+
+                            throw;
+                        }
+                    },
+                    TimeProvider.System,
+                    AbortToken
+                ),
+            AbortToken
+        );
+    }
+
+    private async Task _RunDeadlockSurvivorAsync(string table, Task callLocked, TaskCompletionSource survivorLocked)
+    {
+        // Unpooled, so the survivor's session settings never reach a pooled connection a later test reuses.
+        var builder = new DbConnectionStringBuilder { ConnectionString = ConnectionString };
+        builder["Pooling"] = false;
+
+        await using var connection = Dialect.CreateConnection(builder.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+
+        await using (var protect = connection.CreateCommand())
+        {
+            protect.Transaction = transaction;
+            protect.CommandText = DeadlockSurvivorSql;
+            await protect.ExecuteNonQueryAsync(AbortToken);
+        }
+
+        await _IncrementAsync(connection, transaction, table, "cap-b", AbortToken);
+        survivorLocked.SetResult();
+        await callLocked.WaitAsync(_RendezvousTimeout, AbortToken);
+
+        // Waits on the call's row until the engine kills the call, then commits.
+        await _IncrementAsync(connection, transaction, table, "cap-a", AbortToken);
+        await transaction.CommitAsync(AbortToken);
+    }
+
+    private async Task _IncrementAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        string table,
+        string key,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            $"UPDATE {table} SET {_Column("Value")} = {_Column("Value")} + 1 WHERE {_Column("Key")} = @k";
+        Dialect.AddParameter(command, "k", SqlColumnType.KeyText(64), key);
+
+        (await command.ExecuteNonQueryAsync(cancellationToken)).Should().Be(1);
     }
 
     private async Task<SqlUpserted<long>> _UpsertAsync(string table, string key, long increment, long? guardBelow)
@@ -340,6 +781,112 @@ public abstract class SqlDialectConformanceTests : TestBase
         await transaction.CommitAsync(AbortToken);
 
         return claimed;
+    }
+
+    private async Task<List<string>> _LockBatchAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        string table,
+        int batch
+    )
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = Dialect.Render(
+            new SqlLockBatch(table, [_Column("Key")], $"{_Column("Value")} >= 0", [_Column("Key")], "batch")
+        );
+        Dialect.AddParameter(command, "batch", SqlColumnType.Int32, batch);
+
+        var locked = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync(AbortToken);
+
+        while (await reader.ReadAsync(AbortToken))
+        {
+            locked.Add(reader.GetString(0));
+        }
+
+        return locked;
+    }
+
+    private async Task _TakeTransactionLockAsync(DbConnection connection, DbTransaction transaction, string resource)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = Dialect.Render(new SqlTransactionLock("r"));
+        Dialect.AddParameter(command, "r", SqlColumnType.Text(255), resource);
+        await command.ExecuteNonQueryAsync(AbortToken);
+    }
+
+    private async Task _TakeTransactionLockInOwnTransactionAsync(string resource)
+    {
+        await using var connection = await _OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+        await _TakeTransactionLockAsync(connection, transaction, resource);
+        await transaction.CommitAsync(AbortToken);
+    }
+
+    private async Task<bool> _InsertIfAbsentAsync(string sql, string key, string owner)
+    {
+        await using var connection = await _OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        Dialect.AddParameter(command, "k", SqlColumnType.KeyText(64), key);
+        Dialect.AddParameter(command, "o", SqlColumnType.Text(64), owner);
+        await using var reader = await command.ExecuteReaderAsync(AbortToken);
+
+        return await reader.ReadAsync(AbortToken) && reader.GetBoolean(0);
+    }
+
+    private async Task<List<string>> _KeysAsync(string table, string limit, Action<DbCommand> bind)
+    {
+        await using var connection = await _OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT {_Column("Key")} FROM {table} ORDER BY {_Column("Key")} {limit}";
+        bind(command);
+
+        var keys = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync(AbortToken);
+
+        while (await reader.ReadAsync(AbortToken))
+        {
+            keys.Add(reader.GetString(0));
+        }
+
+        return keys;
+    }
+
+    private async Task<long> _ScalarAsync(string sql, Action<DbCommand> bind)
+    {
+        return Convert.ToInt64(await _ScalarObjectAsync(sql, bind), CultureInfo.InvariantCulture);
+    }
+
+    private async Task<object?> _ScalarObjectAsync(string sql, Action<DbCommand> bind)
+    {
+        await using var connection = await _OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        bind(command);
+
+        return await command.ExecuteScalarAsync(AbortToken);
+    }
+
+    private async Task<DateTimeOffset> _ReadDatabaseNowAsync(DbConnection connection)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = Dialect.Render(new SqlClockedStatement($"SELECT {SqlDialectTokens.Now}"));
+
+        return _Instant((await command.ExecuteScalarAsync(AbortToken))!);
+    }
+
+    /// <summary>A timestamp as the driver returns it: Npgsql reads timestamptz as a UTC <see cref="DateTime" />.</summary>
+    private static DateTimeOffset _Instant(object value)
+    {
+        return value switch
+        {
+            DateTimeOffset instant => instant,
+            DateTime utc => new DateTimeOffset(DateTime.SpecifyKind(utc, DateTimeKind.Utc)),
+            _ => throw new InvalidOperationException($"Not a timestamp: {value.GetType()}."),
+        };
     }
 
     private async Task<long> _CountWhereInAsync<T>(

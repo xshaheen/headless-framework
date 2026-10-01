@@ -370,6 +370,43 @@ public abstract partial class DataStorageTestsBase : TestBase
         admissions.Select(result => result.Message.InboxGeneration).Distinct().Should().ContainSingle();
     }
 
+    public virtual async Task should_admit_exactly_one_of_many_admissions_of_one_key_released_together()
+    {
+        // given — every admission waits on one gate, so they reach the database as close together as the pool allows
+        const int admissionCount = 32;
+        var storage = GetStorage();
+        var messageId = $"inbox-barrier-{Guid.NewGuid():N}";
+        var origin = CreateMessage(messageId, "orders.created");
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pending = Enumerable
+            .Range(0, admissionCount)
+            .Select(_ =>
+                Task.Run(
+                    async () =>
+                    {
+                        await gate.Task;
+                        return await _AdmitInboxAsync(storage, origin);
+                    },
+                    AbortToken
+                )
+            )
+            .ToList();
+
+        // when
+        gate.SetResult();
+        var admissions = await Task.WhenAll(pending);
+
+        // then — one winner, every other admission reports the duplicate, and the key holds one row
+        admissions.Should().ContainSingle(result => result.Disposition == InboxAdmissionDisposition.Winner);
+        admissions
+            .Where(result => result.Disposition != InboxAdmissionDisposition.Winner)
+            .Should()
+            .HaveCount(admissionCount - 1)
+            .And.OnlyContain(result => result.Disposition == InboxAdmissionDisposition.InFlightDuplicate);
+        admissions.Select(result => result.Message.StorageId).Distinct().Should().ContainSingle();
+        (await CountReceivedMessagesByIdentityAsync(messageId, "orders-group", AbortToken)).Should().Be(1);
+    }
+
     public virtual async Task should_isolate_every_persisted_inbox_key_component()
     {
         var storage = GetStorage();

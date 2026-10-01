@@ -31,7 +31,7 @@ public interface IMessagesOptionsExtension
     /// <code>
     /// public void AddServices(IServiceCollection services)
     /// {
-    ///     services.TryAddSingleton&lt;IDataStorage, SqlServerDataStorage&gt;();
+    ///     services.TryAddSingleton&lt;IDataStorage, MyDataStorage&gt;();
     ///     services.TryAddSingleton&lt;ITransport, RabbitMQTransport&gt;();
     /// }
     /// </code>

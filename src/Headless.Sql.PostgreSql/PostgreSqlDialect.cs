@@ -68,6 +68,39 @@ public sealed class PostgreSqlDialect : ISqlDialect
         return $"{instant} {(subtract ? '-' : '+')} @{parameter}";
     }
 
+    public string BooleanLiteral(bool value)
+    {
+        return value ? "TRUE" : "FALSE";
+    }
+
+    public string NewGuid()
+    {
+        return "gen_random_uuid()";
+    }
+
+    public string ShiftBySeconds(string instant, string seconds)
+    {
+        return $"({instant} + ({seconds}) * INTERVAL '1 second')";
+    }
+
+    public string Limit(string limitParameter, string? offsetParameter = null)
+    {
+        return offsetParameter is null
+            ? $"LIMIT @{limitParameter}"
+            : $"LIMIT @{limitParameter} OFFSET @{offsetParameter}";
+    }
+
+    public string LikeIgnoringCase(string expression, string patternParameter)
+    {
+        return $"{expression} ILIKE @{patternParameter} ESCAPE '\\'";
+    }
+
+    public string ReadWithoutWaiting(string table)
+    {
+        // A plain read takes no row lock and sees the last committed version, so it never waits.
+        return table;
+    }
+
     public void AddDuration(DbCommand command, string parameter, TimeSpan duration)
     {
         command.Parameters.Add(
@@ -180,7 +213,7 @@ public sealed class PostgreSqlDialect : ISqlDialect
         return $"""
             SELECT {string.Join(", ", statement.Columns)}
             FROM {statement.Table}
-            WHERE {_Key(statement.Key, alias: null)}
+            WHERE {_Key(statement.Key, alias: null)}{_And(statement.KeyPredicate)}
             FOR NO KEY UPDATE;
             """;
     }
@@ -228,7 +261,9 @@ public sealed class PostgreSqlDialect : ISqlDialect
                 INSERT INTO {statement.Table} ({string.Join(", ", columns)})
                 SELECT {string.Join(", ", values)}
                 FROM clock
-                ON CONFLICT ({string.Join(", ", statement.Key.Select(static k => k.Column))}) DO NOTHING
+                ON CONFLICT ({string.Join(", ", statement.Key.Select(static k => k.Column))}){_Where(
+                statement.KeyPredicate
+            )} DO NOTHING
                 RETURNING {string.Join(", ", statement.Returning)}
             )
             SELECT EXISTS (SELECT 1 FROM inserted){_Prefixed(statement.Returning, "inserted")}
@@ -310,6 +345,38 @@ public sealed class PostgreSqlDialect : ISqlDialect
             """;
     }
 
+    public string Render(SqlInsert statement)
+    {
+        return $"""
+            {_Clock}
+            INSERT INTO {statement.Table} ({string.Join(", ", statement.Columns)})
+            SELECT {string.Join(", ", statement.Values.Select(_Clocked))}
+            FROM clock
+            RETURNING {string.Join(", ", statement.Returning)};
+            """;
+    }
+
+    public string Render(SqlLockBatch statement)
+    {
+        // FOR UPDATE rather than FOR NO KEY UPDATE: the locked rows may be deleted later in the same transaction.
+        return $"""
+            {_Clock}
+            SELECT {_Clocked(string.Join(", ", statement.Columns))}
+            FROM {statement.Table} AS l, clock
+            WHERE {_Clocked(statement.Filter)}
+            ORDER BY {string.Join(", ", statement.OrderBy)}
+            LIMIT @{statement.BatchSizeParameter}
+            FOR UPDATE OF l SKIP LOCKED;
+            """;
+    }
+
+    public string Render(SqlTransactionLock statement)
+    {
+        // hashtextextended maps the name onto the 64-bit advisory-lock key space; a transaction-level lock ends with
+        // the transaction, so no release can be forgotten.
+        return $"SELECT pg_advisory_xact_lock(hashtextextended(@{statement.ResourceParameter}, 0));";
+    }
+
     public SqlErrorKind Classify(Exception exception)
     {
         return exception is PostgresException { SqlState: var state }
@@ -331,6 +398,16 @@ public sealed class PostgreSqlDialect : ISqlDialect
     private static string _Clocked(string fragment)
     {
         return fragment.Replace(SqlDialectTokens.Now, "clock.now", StringComparison.Ordinal);
+    }
+
+    private static string _And(string? predicate)
+    {
+        return predicate is null ? "" : $" AND ({predicate})";
+    }
+
+    private static string _Where(string? predicate)
+    {
+        return predicate is null ? "" : $" WHERE {predicate}";
     }
 
     private static string _Stored(string fragment)

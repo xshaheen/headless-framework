@@ -4,14 +4,11 @@
     <Description>PostgreSQL storage provider for Headless permissions.</Description>
     <PackageTags>headless;permissions;storage;postgresql;dotnet</PackageTags>
     <RootNamespace>Headless.Permissions.PostgreSql</RootNamespace>
-    <NoWarn>$(NoWarn);CA2100</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Npgsql" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
-    <ProjectReference Include="..\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
     <ProjectReference Include="..\Headless.Permissions.Core\Headless.Permissions.Core.csproj" />
     <ProjectReference Include="..\Headless.Sql.PostgreSql\Headless.Sql.PostgreSql.csproj" />
   </ItemGroup>

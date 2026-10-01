@@ -1,16 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FluentValidation;
 using Headless.Checks;
 using Headless.Constants;
 using Headless.Permissions.Repositories;
 using Headless.Permissions.SqlServer;
-using Headless.Serializer;
 using Headless.Sql;
+using Headless.Sql.SqlServer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Permissions;
@@ -139,42 +136,12 @@ public static class SetupPermissionsSqlServer
                 );
             }
 
-            services.AddOptions<PermissionsStorageOptions, SqlServerPermissionsStorageOptionsValidator>();
-            // The contribution factory reads options at first resolution, so InitializeOnStartup keeps its
-            // contract: false means the runner never creates the tables (a migration tool owns them), while the
-            // initializer promise still completes for dependents.
-            services.AddHeadlessSchemaContribution(sp =>
-                SqlServerPermissionsSchemaContribution.Create(
-                    sp.GetRequiredService<IOptions<SqlServerPermissionsOptions>>().Value,
-                    sp.GetRequiredService<IOptions<PermissionsStorageOptions>>().Value
-                )
+            RelationalPermissionsStorage.AddServices<SqlServerPermissionsOptions>(
+                services,
+                SqlServerDialect.Instance,
+                StorageProvider.SqlServer,
+                SqlServerPermissionsSchemaContribution.Create
             );
-            services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
-            services.TryAddSingleton<IPermissionGrantRepository, SqlServerPermissionGrantRepository>();
-            services.TryAddSingleton<
-                IPermissionDefinitionRecordRepository,
-                SqlServerPermissionDefinitionRecordRepository
-            >();
-        }
-    }
-
-    private sealed class SqlServerPermissionsStorageOptionsValidator : AbstractValidator<PermissionsStorageOptions>
-    {
-        public SqlServerPermissionsStorageOptionsValidator()
-        {
-            RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.SqlServer);
-            RuleFor(x => x.PermissionGrantsTableName)
-                .IsValidIdentifierFor(StorageProvider.SqlServer)
-                .FitsDerivedPostgreSqlNames(PermissionsStorageNames.GrantsIndexes)
-                .When(x => x.PermissionGrantsTableName is not null);
-            RuleFor(x => x.PermissionDefinitionsTableName)
-                .IsValidIdentifierFor(StorageProvider.SqlServer)
-                .FitsDerivedPostgreSqlNames(PermissionsStorageNames.DefinitionsIndexes)
-                .When(x => x.PermissionDefinitionsTableName is not null);
-            RuleFor(x => x.PermissionGroupDefinitionsTableName)
-                .IsValidIdentifierFor(StorageProvider.SqlServer)
-                .FitsDerivedPostgreSqlNames(PermissionsStorageNames.GroupsIndexes)
-                .When(x => x.PermissionGroupDefinitionsTableName is not null);
         }
     }
 }

@@ -65,6 +65,11 @@ public sealed record SchemaContribution
     /// <see langword="false"/> keeps the steps registered, so verify mode and script export still describe them, but
     /// the runner never applies them: the feature's <c>InitializeOnStartup = false</c> contract.
     /// </param>
+    /// <param name="exportOnly">
+    /// <see langword="true"/> limits the contribution to <see cref="SchemaRunner.ExportScript"/>: the runner neither
+    /// applies nor verifies it. For a feature that runs its database's steps with a runner of its own, so that one
+    /// database being unreachable cannot fail the host's startup, and still belongs in the host's deploy script.
+    /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="dialect"/>, <paramref name="createConnection"/>, or <paramref name="steps"/> is null.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="feature"/> or <paramref name="schema"/> is null or whitespace, <paramref name="steps"/> is
@@ -76,7 +81,8 @@ public sealed record SchemaContribution
         Func<DbConnection> createConnection,
         string schema,
         IReadOnlyList<SchemaStep> steps,
-        bool applyOnStartup = true
+        bool applyOnStartup = true,
+        bool exportOnly = false
     )
     {
         Feature = Argument.IsNotNullOrWhiteSpace(feature);
@@ -93,6 +99,7 @@ public sealed record SchemaContribution
         );
         Steps = steps;
         ApplyOnStartup = applyOnStartup;
+        ExportOnly = exportOnly;
     }
 
     /// <summary>The feature's stable name.</summary>
@@ -112,6 +119,9 @@ public sealed record SchemaContribution
 
     /// <summary>Whether the runner applies the steps at startup.</summary>
     public bool ApplyOnStartup { get; }
+
+    /// <summary>Whether the runner only exports the steps, and never applies or verifies them.</summary>
+    public bool ExportOnly { get; }
 
     /// <summary>
     /// Returns the history identity of a feature whose object names are configurable: <paramref name="feature"/>

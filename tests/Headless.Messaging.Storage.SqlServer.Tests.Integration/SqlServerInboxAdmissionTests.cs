@@ -33,16 +33,16 @@ public sealed class SqlServerInboxAdmissionTests(SqlServerTestFixture fixture, I
 
         try
         {
-            var storage = new SqlServerDataStorage(
+            var storage = new RelationalDataStorage(
+                sqlOptions.Value.ToStorage(),
                 messagingOptions,
-                sqlOptions,
                 TestStorageOptions.For(schema),
                 tableNames,
                 new JsonUtf8Serializer(messagingOptions),
                 new SequentialGuidGenerator(SequentialGuidType.SqlServer),
                 TimeProvider.System,
                 new NullNodeMembership(),
-                NullLogger<SqlServerDataStorage>.Instance
+                NullLogger<RelationalDataStorage>.Instance
             );
             const int retainedCount = 512;
             for (var index = 0; index < retainedCount; index++)

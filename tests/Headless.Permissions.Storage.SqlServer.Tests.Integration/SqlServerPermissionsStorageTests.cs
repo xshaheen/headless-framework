@@ -480,4 +480,30 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
             action();
         }
     }
+
+    [Fact]
+    public async Task should_not_match_a_stored_prefix_when_a_lookup_value_is_longer_than_its_column()
+    {
+        // given a grant whose name and provider key fill their columns
+        await _DropSchemaAsync();
+        using var host = _CreateHost();
+        await host.StartAsync(AbortToken);
+        var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
+        var name = new string('n', PermissionGrantRecordConstants.NameMaxLength);
+        var providerKey = new string('k', PermissionGrantRecordConstants.ProviderKeyMaxLength);
+        await grantRepository.InsertAsync(
+            new PermissionGrantRecord(Guid.NewGuid(), name, "Role", providerKey, isGranted: true),
+            AbortToken
+        );
+
+        // when each lookup carries one character more than the column holds
+        var found = await grantRepository.FindAsync(name + "x", "Role", providerKey, AbortToken);
+        var byNames = await grantRepository.GetListAsync([name + "x"], "Role", providerKey, AbortToken);
+        var byScope = await grantRepository.GetListAsync("Role", providerKey + "x", AbortToken);
+
+        // then none of them matches the stored grant, which is the lookup value's prefix
+        found.Should().BeNull();
+        byNames.Should().BeEmpty();
+        byScope.Should().BeEmpty();
+    }
 }

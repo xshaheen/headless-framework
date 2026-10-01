@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using Headless.Hosting.Initialization.Schema;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -19,7 +20,8 @@ namespace Tests;
 /// One outbox per database, against a real provider: a unit begun on an additional outbox's database commits its
 /// row there and the relay delivers it, a rollback leaves no row anywhere, a unit on an unregistered database is
 /// refused, two outboxes on one database fail startup, one database's outage does not stop the others' relay, and
-/// an outbox whose database is down at startup does not stop the host and works once its database is back.
+/// an outbox whose database is down at startup does not stop the host and works once its database is back. The
+/// host's deploy script also creates an outbox's tables on an empty database.
 /// </summary>
 /// <remarks>Each test creates its own databases, so the primary and the outboxes never share one by accident.</remarks>
 public abstract class AdditionalOutboxConformanceTests : TestBase
@@ -49,6 +51,9 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
 
     /// <summary>Whether the messaging schema of the database has a received (inbox) table.</summary>
     protected abstract Task<bool> HasReceivedTableAsync(string connectionString);
+
+    /// <summary>Runs an exported deploy script against the database, batch by batch where the dialect separates them.</summary>
+    protected abstract Task ExecuteScriptAsync(string connectionString, string script);
 
     protected override async ValueTask DisposeAsyncCore()
     {
@@ -270,6 +275,32 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
         await _WaitForStatusAsync(shipping.ConnectionString, shippingMarker, "Succeeded");
         (await HasReceivedTableAsync(shipping.ConnectionString)).Should().BeFalse("an additional outbox has no inbox");
         await host.StopAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_export_an_outbox_schema_that_creates_its_tables_on_an_empty_database()
+    {
+        // given — a host with an additional outbox whose database is still empty, and a runner that only verifies
+        var orders = await _CreateDatabaseAsync("orders");
+        var billing = await _CreateDatabaseAsync("billing");
+        using var host = _BuildHost(
+            orders,
+            billing,
+            setup => UseOutboxStorage<BillingOutboxDbContext>(setup.AddOutbox()),
+            services => services.AddHeadlessSchemaRunner(options => options.Mode = SchemaRunnerMode.Verify)
+        );
+        var runner = host.Services.GetRequiredService<SchemaRunner>();
+        var outboxContribution = runner.Contributions.Single(c => c.ExportOnly);
+
+        // when
+        var script = runner.ExportScript(outboxContribution.Dialect);
+        await ExecuteScriptAsync(billing.ConnectionString, script);
+
+        // then — the script carries the outbox's steps, and the outbox's own runner finds them all applied
+        script.Should().Contain($"-- {outboxContribution.Feature}/");
+        (await ReadPublishedAsync(billing.ConnectionString)).Should().BeEmpty();
+        var outbox = host.Services.GetRequiredService<MessagingOutboxes>().Secondaries.Single();
+        await outbox.Initializer.InitializeAsync(AbortToken);
     }
 
     private IHost _BuildHost(
