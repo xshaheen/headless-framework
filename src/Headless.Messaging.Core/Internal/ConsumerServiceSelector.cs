@@ -106,6 +106,7 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
                 Lane = consumer.Lane,
                 EveryInstance = consumer.EveryInstance,
                 Dispatch = consumer.Dispatch,
+                OnSubscriptionEstablished = consumer.OnSubscriptionEstablished,
                 Middleware = consumer.Middleware,
             };
 

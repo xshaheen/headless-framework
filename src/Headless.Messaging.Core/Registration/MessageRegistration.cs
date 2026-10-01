@@ -64,4 +64,7 @@ internal sealed record MessageConsumerRegistration(
 
     /// <summary>The generated module that declared the consumer, for conflict messages.</summary>
     public string? DeclaringModule { get; init; }
+
+    /// <summary>The generated subscription hook of an every-instance consumer class, when it has one.</summary>
+    public SubscriptionEstablishedDispatch? OnSubscriptionEstablished { get; init; }
 }

@@ -861,18 +861,14 @@ internal sealed class ConsumerRegister(
         CancellationToken cancellationToken
     )
     {
-        // Runtime subscriptions declare no identity and have no consumer class to call.
+        // Only a generated consumer class that implements the hook carries one; a runtime subscription never does.
         foreach (
             var consumer in descriptors
-                .Where(static x => !string.IsNullOrWhiteSpace(x.ConsumerIdentity))
+                .Where(static x => x.OnSubscriptionEstablished is not null)
                 .GroupBy(static x => x.ConsumerType)
         )
         {
-            if (!typeof(IOnSubscriptionEstablished).IsAssignableFrom(consumer.Key))
-            {
-                continue;
-            }
-
+            var onSubscriptionEstablished = consumer.First().OnSubscriptionEstablished!;
             var identity = consumer.First().ConsumerIdentity!;
             var context = new SubscriptionEstablishedContext(
                 identity,
@@ -885,7 +881,7 @@ internal sealed class ConsumerRegister(
             var timeout = _options.SubscriptionEstablishedTimeout;
             using var timeoutCts = new CancellationTokenSource(timeout, _timeProvider);
             using var hookCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
-            var hook = _InvokeSubscriptionEstablishedAsync(consumer.Key, context, hookCts.Token);
+            var hook = _InvokeSubscriptionEstablishedAsync(onSubscriptionEstablished, context, hookCts.Token);
 
             try
             {
@@ -910,40 +906,15 @@ internal sealed class ConsumerRegister(
     }
 
     private async Task _InvokeSubscriptionEstablishedAsync(
-        Type consumerType,
+        SubscriptionEstablishedDispatch onSubscriptionEstablished,
         SubscriptionEstablishedContext context,
         CancellationToken cancellationToken
     )
     {
+        // The generated call builds the consumer the way its delivery dispatch does, preferring the scope's own
+        // registration, and releases only an instance it created.
         await using var scope = serviceScopeFactory.CreateAsyncScope();
-        var services = scope.ServiceProvider;
-
-        // A container-registered consumer is resolved and owned by the scope; an attribute-declared one is built the way
-        // its generated dispatch builds it, and disposed here because the scope does not track it.
-        var registered = services.GetService(consumerType);
-        var consumer = registered ?? ActivatorUtilities.CreateInstance(services, consumerType);
-
-        try
-        {
-            await ((IOnSubscriptionEstablished)consumer)
-                .OnSubscriptionEstablishedAsync(context, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        finally
-        {
-            if (registered is null)
-            {
-                switch (consumer)
-                {
-                    case IAsyncDisposable asyncDisposable:
-                        await asyncDisposable.DisposeAsync().ConfigureAwait(false);
-                        break;
-                    case IDisposable disposable:
-                        disposable.Dispose();
-                        break;
-                }
-            }
-        }
+        await onSubscriptionEstablished(scope.ServiceProvider, context, cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask _RestartCoreAsync()

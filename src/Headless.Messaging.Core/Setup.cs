@@ -395,6 +395,7 @@ public static class SetupMessaging
                 {
                     EveryInstance = consumer.EveryInstance,
                     DeclaringModule = consumer.Source,
+                    OnSubscriptionEstablished = consumer.OnSubscriptionEstablished,
                 },
                 contractVersions.GetValueOrDefault(
                     (consumer.MessageType, consumer.Lane),
@@ -440,6 +441,7 @@ public static class SetupMessaging
                 {
                     EveryInstance = consumer.EveryInstance,
                     Dispatch = consumer.Dispatch,
+                    OnSubscriptionEstablished = consumer.OnSubscriptionEstablished,
                     DeclaringModule = consumer.DeclaringModule,
                 };
 

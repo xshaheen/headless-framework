@@ -81,7 +81,10 @@ public sealed class MessagingIncrementalSourceGeneratorTests
             .Should()
             .ContainSingle()
             .Which.Should()
-            .Contain("(\"billing.price-cache\", everyInstance: true, dispatch: Dispatch_Billing_PriceCache);");
+            .Contain(
+                "(\"billing.price-cache\", everyInstance: true, dispatch: Dispatch_Billing_PriceCache, "
+                    + "onSubscriptionEstablished: OnSubscriptionEstablished_Billing_PriceCache);"
+            );
     }
 
     [Fact]

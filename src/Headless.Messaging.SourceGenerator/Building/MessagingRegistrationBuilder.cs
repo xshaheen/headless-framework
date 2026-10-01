@@ -108,7 +108,7 @@ internal static class MessagingRegistrationBuilder
     }
 
     /// <summary>
-    /// Names each class's dispatcher after its full name, ordered by identity so the emitted file does not change with
+    /// Names each class's generated members after its full name, ordered by identity so the emitted file does not change with
     /// declaration order. Nested and top-level classes can flatten to one name, so a repeat gets a numeric suffix.
     /// </summary>
     private static EquatableArray<ConsumerRegistrationModel> _NameDispatchers(List<ConsumerResult> consumers)
@@ -125,7 +125,7 @@ internal static class MessagingRegistrationBuilder
                 .ThenBy(x => x.TypeName, StringComparer.Ordinal)
         )
         {
-            var baseName = HandlerSymbols.ToMemberName("Dispatch_", consumer.DisplayName);
+            var baseName = HandlerSymbols.ToMemberName("", consumer.DisplayName);
             var name = baseName;
             for (var suffix = 2; !used.Add(name); suffix++)
             {

@@ -793,7 +793,8 @@ public sealed class PriceCacheModule : IMessagingModule
         catalog.AddBusConsumer<PriceCache, PriceChanged>(
             PriceCache.Identity,
             everyInstance: true,
-            Tests.Registration.TestConsumers.Dispatch<PriceCache, PriceChanged>()
+            Tests.Registration.TestConsumers.Dispatch<PriceCache, PriceChanged>(),
+            Tests.Registration.TestConsumers.SubscriptionHook<PriceCache>()
         );
 }
 
@@ -831,7 +832,8 @@ public sealed class StalledPriceCacheModule : IMessagingModule
         catalog.AddBusConsumer<StalledPriceCache, PriceChanged>(
             StalledPriceCache.Identity,
             everyInstance: true,
-            Tests.Registration.TestConsumers.Dispatch<StalledPriceCache, PriceChanged>()
+            Tests.Registration.TestConsumers.Dispatch<StalledPriceCache, PriceChanged>(),
+            Tests.Registration.TestConsumers.SubscriptionHook<StalledPriceCache>()
         );
 }
 
@@ -870,6 +872,7 @@ public sealed class AttachingPriceCacheModule : IMessagingModule
         catalog.AddBusConsumer<AttachingPriceCache, PriceChanged>(
             AttachingPriceCache.Identity,
             everyInstance: true,
-            Tests.Registration.TestConsumers.Dispatch<AttachingPriceCache, PriceChanged>()
+            Tests.Registration.TestConsumers.Dispatch<AttachingPriceCache, PriceChanged>(),
+            Tests.Registration.TestConsumers.SubscriptionHook<AttachingPriceCache>()
         );
 }

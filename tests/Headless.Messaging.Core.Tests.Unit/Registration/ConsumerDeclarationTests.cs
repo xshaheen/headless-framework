@@ -65,7 +65,8 @@ public sealed class ConsumerDeclarationTests : TestBase
                     MessageLane.Bus,
                     "billing.price-cache",
                     EveryInstance: true,
-                    _NoDispatch
+                    _NoDispatch,
+                    _NoHook
                 ),
                 new MessagingConsumerDeclaration(
                     typeof(TestMessagingModule).FullName!,
@@ -74,7 +75,8 @@ public sealed class ConsumerDeclarationTests : TestBase
                     MessageLane.Queue,
                     "billing.issue-invoice",
                     EveryInstance: false,
-                    _NoDispatch
+                    _NoDispatch,
+                    OnSubscriptionEstablished: null
                 ),
             ]);
     }
@@ -117,6 +119,9 @@ public sealed class ConsumerDeclarationTests : TestBase
     // Stands in for a generated dispatcher; these tests only read the declarations.
     private static readonly MessageConsumerDispatch _NoDispatch = static (_, _, _) => ValueTask.CompletedTask;
 
+    // Stands in for a generated subscription hook.
+    private static readonly SubscriptionEstablishedDispatch _NoHook = static (_, _, _) => ValueTask.CompletedTask;
+
     public sealed record PriceChanged(string Sku);
 
     public sealed record IssueInvoice(string OrderId);
@@ -148,7 +153,8 @@ public sealed class ConsumerDeclarationTests : TestBase
             catalog.AddBusConsumer<PriceCacheConsumer, PriceChanged>(
                 "billing.price-cache",
                 everyInstance: true,
-                _NoDispatch
+                _NoDispatch,
+                _NoHook
             );
             catalog.AddQueueConsumer<IssueInvoiceConsumer, IssueInvoice>("billing.issue-invoice", _NoDispatch);
         }

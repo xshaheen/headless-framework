@@ -94,6 +94,12 @@ public sealed class ConsumerExecutorDescriptor
     /// </summary>
     internal MessageConsumerDispatch? Dispatch { get; init; }
 
+    /// <summary>
+    /// The generated <see cref="IOnSubscriptionEstablished"/> call of an every-instance consumer class that implements
+    /// the hook; <see langword="null"/> for any other consumer and for a runtime subscription.
+    /// </summary>
+    internal SubscriptionEstablishedDispatch? OnSubscriptionEstablished { get; init; }
+
     /// <summary>Consume middleware types that run for this consumer alone, resolved from the delivery's scope.</summary>
     internal IReadOnlyList<Type> Middleware { get; init; } = [];
 }

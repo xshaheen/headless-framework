@@ -62,7 +62,31 @@ public sealed class GeneratedDispatchTests : TestBase
 
             public void Dispose() => probe.Calls.Add("disposed");
         }
+
+        public sealed record PriceChanged(string Number);
+
+        [BusConsumer("billing.price-cache", EveryInstance = true)]
+        public sealed class PriceCache(Tests.DispatchProbe probe) : IConsume<PriceChanged>, IOnSubscriptionEstablished, IDisposable
+        {
+            public ValueTask ConsumeAsync(ConsumeContext<PriceChanged> context, CancellationToken cancellationToken)
+            {
+                probe.Calls.Add("price:" + context.Message.Number);
+                return default;
+            }
+
+            public ValueTask OnSubscriptionEstablishedAsync(SubscriptionEstablishedContext context, CancellationToken cancellationToken)
+            {
+                probe.Calls.Add("established:" + context.Generation);
+                return default;
+            }
+
+            public void Dispose() => probe.Calls.Add("disposed");
+        }
         """;
+
+    private const string _InvoiceProjection = "billing.invoice-projection";
+
+    private const string _PriceCache = "billing.price-cache";
 
     [Fact]
     public async Task should_invoke_the_consume_overload_that_matches_the_typed_context()
@@ -98,9 +122,10 @@ public sealed class GeneratedDispatchTests : TestBase
         var declarations = _RegisterGeneratedModule(out _);
 
         // then
-        declarations.Select(x => x.MessageType.Name).Should().Equal("InvoiceIssued", "InvoicePaid");
-        declarations.Should().OnlyContain(x => x.Identity == "billing.invoice-projection" && x.Lane == MessageLane.Bus);
-        declarations[0].Dispatch.Should().Be(declarations[1].Dispatch);
+        var projection = declarations.Where(x => x.Identity == _InvoiceProjection).ToList();
+        projection.Select(x => x.MessageType.Name).Should().Equal("InvoiceIssued", "InvoicePaid");
+        projection.Should().OnlyContain(x => x.Lane == MessageLane.Bus);
+        projection[0].Dispatch.Should().Be(projection[1].Dispatch);
 
         await using var provider = new ServiceCollection().AddSingleton<DispatchProbe>().BuildServiceProvider();
         var unrelated = _Context(typeof(UnrelatedMessage), "X-1");
@@ -109,6 +134,96 @@ public sealed class GeneratedDispatchTests : TestBase
             .Should()
             .ThrowAsync<InvalidOperationException>()
             .WithMessage("*InvoiceProjection*UnrelatedMessage*");
+    }
+
+    [Fact]
+    public async Task should_build_the_consumer_from_its_container_registration_and_leave_it_to_the_container()
+    {
+        // given - an application registration, or a decorator around it, must not be bypassed
+        var declarations = _RegisterGeneratedModule(out var messageTypes);
+        var probe = new DispatchProbe();
+        var consumerType = declarations[0].ConsumerType;
+        var services = new ServiceCollection().AddSingleton(probe);
+        services.AddSingleton(
+            consumerType,
+            sp =>
+            {
+                probe.Calls.Add("resolved");
+                return ActivatorUtilities.CreateInstance(sp, consumerType);
+            }
+        );
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        await declarations[0].Dispatch(provider, _Context(messageTypes["InvoicePaid"], "INV-2"), AbortToken);
+        await declarations[0].Dispatch(provider, _Context(messageTypes["InvoicePaid"], "INV-3"), AbortToken);
+
+        // then - one container instance served both deliveries, and the dispatcher never disposed it
+        probe
+            .Calls.Should()
+            .Equal("resolved", "starting", "paid:INV-2", "stopping", "starting", "paid:INV-3", "stopping");
+    }
+
+    [Fact]
+    public void should_hand_messaging_the_subscription_hook_of_an_every_instance_class_that_implements_it()
+    {
+        // when
+        var declarations = _RegisterGeneratedModule(out _);
+
+        // then
+        declarations.Single(x => x.Identity == _PriceCache).OnSubscriptionEstablished.Should().NotBeNull();
+        declarations
+            .Where(x => x.Identity == _InvoiceProjection)
+            .Should()
+            .OnlyContain(x => x.OnSubscriptionEstablished == null);
+    }
+
+    [Fact]
+    public async Task should_run_the_subscription_hook_on_an_instance_it_constructs_and_dispose_it()
+    {
+        // given
+        var hook = _RegisterGeneratedModule(out _).Single(x => x.Identity == _PriceCache).OnSubscriptionEstablished!;
+        await using var provider = new ServiceCollection().AddSingleton<DispatchProbe>().BuildServiceProvider();
+
+        // when
+        await hook(
+            provider,
+            new SubscriptionEstablishedContext(_PriceCache, ["prices"], IsReconnect: true, 2),
+            AbortToken
+        );
+
+        // then
+        provider.GetRequiredService<DispatchProbe>().Calls.Should().Equal("established:2", "disposed");
+    }
+
+    [Fact]
+    public async Task should_run_the_subscription_hook_and_the_deliveries_on_the_same_container_registration()
+    {
+        // given
+        var declarations = _RegisterGeneratedModule(out var messageTypes);
+        var priceCache = declarations.Single(x => x.Identity == _PriceCache);
+        var probe = new DispatchProbe();
+        var services = new ServiceCollection().AddSingleton(probe);
+        services.AddSingleton(
+            priceCache.ConsumerType,
+            sp =>
+            {
+                probe.Calls.Add("resolved");
+                return ActivatorUtilities.CreateInstance(sp, priceCache.ConsumerType);
+            }
+        );
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        await priceCache.OnSubscriptionEstablished!(
+            provider,
+            new SubscriptionEstablishedContext(_PriceCache, ["prices"], IsReconnect: false, 1),
+            AbortToken
+        );
+        await priceCache.Dispatch(provider, _Context(messageTypes["PriceChanged"], "SKU-1"), AbortToken);
+
+        // then
+        probe.Calls.Should().Equal("resolved", "established:1", "price:SKU-1");
     }
 
     public sealed record UnrelatedMessage(string Number);
@@ -131,6 +246,7 @@ public sealed class GeneratedDispatchTests : TestBase
         {
             ["InvoiceIssued"] = assembly.GetType("Billing.InvoiceIssued", throwOnError: true)!,
             ["InvoicePaid"] = assembly.GetType("Billing.InvoicePaid", throwOnError: true)!,
+            ["PriceChanged"] = assembly.GetType("Billing.PriceChanged", throwOnError: true)!,
         };
 
         var module = assembly.GetType($"{GeneratorTestHelper.AssemblyName}.MessagingModule", throwOnError: true)!;
