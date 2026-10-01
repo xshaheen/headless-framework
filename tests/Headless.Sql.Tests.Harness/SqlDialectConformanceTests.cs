@@ -276,6 +276,25 @@ public abstract class SqlDialectConformanceTests : TestBase
             _ = await _UpsertAsync(table, $"row-{i:D2}", increment: i, guardBelow: null);
         }
 
+        if (SerializesWriteTransactions)
+        {
+            // One write transaction at a time: there is no row to skip, because the second transaction cannot lock
+            // anything while the first holds its batch. What holds is the order, the bound, and that exclusion.
+            await using var holder = await _OpenAsync();
+            await using var holding = await holder.BeginTransactionAsync(AbortToken);
+            var held = await _LockBatchAsync(holder, holding, table, batch: 2);
+            var waiting = Task.Run(() => _LockBatchInOwnTransactionAsync(table, batch: 2), AbortToken);
+            await Task.Delay(TimeSpan.FromMilliseconds(500), AbortToken);
+
+            held.Should().Equal("row-00", "row-01");
+            waiting.IsCompleted.Should().BeFalse("no other transaction can lock rows while the batch is held");
+
+            await holding.CommitAsync(AbortToken);
+            (await waiting.WaitAsync(_RendezvousTimeout, AbortToken)).Should().Equal("row-00", "row-01");
+
+            return;
+        }
+
         await using var first = await _OpenAsync();
         await using var second = await _OpenAsync();
         await using var firstTransaction = await first.BeginTransactionAsync(AbortToken);
@@ -295,7 +314,8 @@ public abstract class SqlDialectConformanceTests : TestBase
         await using var firstTransaction = await first.BeginTransactionAsync(AbortToken);
         await _TakeTransactionLockAsync(first, firstTransaction, resource);
 
-        var waiting = _TakeTransactionLockInOwnTransactionAsync(resource);
+        // On a thread of its own: SQLite's driver waits for the write lock synchronously inside the begin.
+        var waiting = Task.Run(() => _TakeTransactionLockInOwnTransactionAsync(resource), AbortToken);
         await Task.Delay(TimeSpan.FromMilliseconds(500), AbortToken);
         waiting.IsCompleted.Should().BeFalse("the lock is held until the first transaction ends");
 
@@ -808,6 +828,16 @@ public abstract class SqlDialectConformanceTests : TestBase
         return locked;
     }
 
+    private async Task<List<string>> _LockBatchInOwnTransactionAsync(string table, int batch)
+    {
+        await using var connection = await _OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+        var locked = await _LockBatchAsync(connection, transaction, table, batch);
+        await transaction.CommitAsync(AbortToken);
+
+        return locked;
+    }
+
     private async Task _TakeTransactionLockAsync(DbConnection connection, DbTransaction transaction, string resource)
     {
         await using var command = connection.CreateCommand();
@@ -878,13 +908,17 @@ public abstract class SqlDialectConformanceTests : TestBase
         return _Instant((await command.ExecuteScalarAsync(AbortToken))!);
     }
 
-    /// <summary>A timestamp as the driver returns it: Npgsql reads timestamptz as a UTC <see cref="DateTime" />.</summary>
+    /// <summary>
+    /// A timestamp as the driver returns it: Npgsql reads timestamptz as a UTC <see cref="DateTime" />, and SQLite stores
+    /// instants as text.
+    /// </summary>
     private static DateTimeOffset _Instant(object value)
     {
         return value switch
         {
             DateTimeOffset instant => instant,
             DateTime utc => new DateTimeOffset(DateTime.SpecifyKind(utc, DateTimeKind.Utc)),
+            string text => DateTimeOffset.Parse(text, CultureInfo.InvariantCulture),
             _ => throw new InvalidOperationException($"Not a timestamp: {value.GetType()}."),
         };
     }

@@ -159,6 +159,24 @@ public sealed class SqliteDialectTests : TestBase
     }
 
     [Fact]
+    public async Task should_draw_version_4_identifiers_the_driver_reads_as_guids()
+    {
+        await using var connection = await _OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT {_Dialect.NewGuid()} FROM (SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3)";
+        var drawn = new List<Guid>();
+        await using var reader = await command.ExecuteReaderAsync(AbortToken);
+
+        while (await reader.ReadAsync(AbortToken))
+        {
+            drawn.Add(await reader.GetFieldValueAsync<Guid>(0, AbortToken));
+        }
+
+        drawn.Should().HaveCount(3).And.OnlyHaveUniqueItems("each row draws its own");
+        drawn.Should().AllSatisfy(id => id.Version.Should().Be(4));
+    }
+
+    [Fact]
     public async Task should_prefix_the_schema_onto_qualified_names()
     {
         var table = _Dialect.Qualify("headless", "fencing_leases");
