@@ -34,9 +34,12 @@ public sealed class SqliteDialectConformanceTests : SqlDialectConformanceTests
         return $"""CREATE UNIQUE INDEX "{index}" ON {table} (owner) WHERE flag = 1;""";
     }
 
-    // Never run: a transaction begun IMMEDIATE holds the database write lock from its first statement, so two SQLite
-    // transactions never hold one row each and wait on the other. The two deadlock scenarios are not overridden below.
-    protected override string DeadlockSurvivorSql => "SELECT 1";
+    // Only the two real-deadlock scenarios read it, and this leaf does not run them: SQLite admits one writer at a time,
+    // and a transaction begun IMMEDIATE holds the write lock from its first statement, so no deadlock can form.
+    protected override string DeadlockSurvivorSql =>
+        throw new NotSupportedException(
+            "SQLite cannot deadlock: it admits one writer at a time, so the deadlock-victim scenarios do not apply."
+        );
 
     // SQLite keeps a transaction alive after an ordinary error, but an OR ROLLBACK conflict (like a full disk or an I/O
     // error) rolls the whole transaction back, after which the driver refuses every statement on it.
