@@ -200,6 +200,74 @@ public sealed class DialectRuntimeTests : TestBase
     }
 
     [Fact]
+    public void should_refuse_malformed_tuple_lists_on_both_engines()
+    {
+        ISqlDialect[] dialects = [PostgreSqlDialect.Instance, SqlServerDialect.Instance];
+        SqlColumnType[] pair = [SqlColumnType.KeyText(8), SqlColumnType.Int64];
+
+        foreach (var dialect in dialects)
+        {
+            FluentActions
+                .Invoking(() => dialect.InTuples(["a"], "p", [SqlColumnType.Int64]))
+                .Should()
+                .Throw<ArgumentException>();
+            FluentActions
+                .Invoking(() => dialect.InTuples(["a", "b"], "p", [SqlColumnType.Int64]))
+                .Should()
+                .Throw<ArgumentException>();
+            FluentActions
+                .Invoking(() => dialect.InTuples(["a", "b"], "p", [SqlColumnType.Int64, SqlColumnType.Json]))
+                .Should()
+                .Throw<ArgumentException>();
+            FluentActions
+                .Invoking(() =>
+                    dialect.CreateTupleListParameters(
+                        "p",
+                        pair,
+                        [
+                            ["a"],
+                        ]
+                    )
+                )
+                .Should()
+                .Throw<ArgumentException>();
+            FluentActions
+                .Invoking(() =>
+                    dialect.CreateTupleListParameters(
+                        "p",
+                        pair,
+                        [
+                            ["a", null!],
+                        ]
+                    )
+                )
+                .Should()
+                .Throw<ArgumentException>();
+        }
+
+        PostgreSqlDialect
+            .Instance.CreateTupleListParameters(
+                "p",
+                pair,
+                [
+                    ["a", 1L],
+                ]
+            )
+            .Should()
+            .HaveCount(2);
+        SqlServerDialect
+            .Instance.CreateTupleListParameters(
+                "p",
+                pair,
+                [
+                    ["a", 1L],
+                ]
+            )
+            .Should()
+            .ContainSingle();
+    }
+
+    [Fact]
     public void should_expose_each_engines_provider_types()
     {
         PostgreSqlDialect.Instance.ConnectionType.Should().Be<NpgsqlConnection>();

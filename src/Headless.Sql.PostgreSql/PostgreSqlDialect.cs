@@ -130,6 +130,51 @@ public sealed class PostgreSqlDialect : ISqlDialect
         return new NpgsqlParameter(parameter, array);
     }
 
+    public string InTuples(
+        IReadOnlyList<string> expressions,
+        string parameter,
+        IReadOnlyList<SqlColumnType> elementTypes
+    )
+    {
+        _ValidateTuples(expressions, elementTypes, _EnsureListable);
+        var arrays = string.Join(
+            ", ",
+            Enumerable.Range(0, elementTypes.Count).Select(i => "@" + _TupleParameter(parameter, i))
+        );
+
+        // unnest over several arrays zips them into rows, so each row stays one tuple.
+        return $"({string.Join(", ", expressions)}) IN (SELECT * FROM unnest({arrays}))";
+    }
+
+    public IReadOnlyList<DbParameter> CreateTupleListParameters(
+        string parameter,
+        IReadOnlyList<SqlColumnType> elementTypes,
+        IReadOnlyCollection<IReadOnlyList<object>> rows
+    )
+    {
+        _ValidateTupleRows(elementTypes, rows, _EnsureListable);
+        var parameters = new DbParameter[elementTypes.Count];
+
+        for (var column = 0; column < elementTypes.Count; column++)
+        {
+            var array = Array.CreateInstance(_ClrType(elementTypes[column].Kind), rows.Count);
+            var index = 0;
+
+            foreach (var row in rows)
+            {
+                array.SetValue(
+                    row[column] is DateTimeOffset instant ? instant.ToUniversalTime() : row[column],
+                    index++
+                );
+            }
+
+            // Npgsql types each array from its CLR element type.
+            parameters[column] = new NpgsqlParameter(_TupleParameter(parameter, column), array);
+        }
+
+        return parameters;
+    }
+
     public string Render(SqlLockedRead statement)
     {
         return $"""
@@ -323,6 +368,66 @@ public sealed class PostgreSqlDialect : ISqlDialect
         var list = string.Join(", ", columns.Select(c => $"{alias}.{c}"));
 
         return leadingComma ? (list.Length == 0 ? "" : ", " + list) : list;
+    }
+
+    private static void _ValidateTuples(
+        IReadOnlyList<string> expressions,
+        IReadOnlyList<SqlColumnType> elementTypes,
+        Action<SqlColumnType> ensureListable
+    )
+    {
+        if (expressions.Count < 2 || expressions.Count != elementTypes.Count)
+        {
+            throw new ArgumentException(
+                "A tuple list needs at least two expressions and one element type per expression.",
+                nameof(elementTypes)
+            );
+        }
+
+        foreach (var type in elementTypes)
+        {
+            ensureListable(type);
+        }
+    }
+
+    private static void _ValidateTupleRows(
+        IReadOnlyList<SqlColumnType> elementTypes,
+        IReadOnlyCollection<IReadOnlyList<object>> rows,
+        Action<SqlColumnType> ensureListable
+    )
+    {
+        foreach (var type in elementTypes)
+        {
+            ensureListable(type);
+        }
+
+        foreach (var row in rows)
+        {
+            if (row.Count != elementTypes.Count || row.Any(static value => value is null))
+            {
+                throw new ArgumentException("Every tuple row needs one non-null value per element type.", nameof(rows));
+            }
+        }
+    }
+
+    private static string _TupleParameter(string parameter, int column)
+    {
+        return parameter + "_" + column.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static Type _ClrType(SqlColumnKind kind)
+    {
+        return kind switch
+        {
+            SqlColumnKind.KeyText or SqlColumnKind.Text => typeof(string),
+            SqlColumnKind.Int16 => typeof(short),
+            SqlColumnKind.Int32 => typeof(int),
+            SqlColumnKind.Int64 => typeof(long),
+            SqlColumnKind.Timestamp => typeof(DateTimeOffset),
+            SqlColumnKind.Guid => typeof(Guid),
+            SqlColumnKind.Boolean => typeof(bool),
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "This column kind cannot be listed."),
+        };
     }
 
     private static NpgsqlDbType _DbType(SqlColumnKind kind)

@@ -171,6 +171,42 @@ public sealed class SqlServerDialect : ISqlDialect
         return new SqlParameter(parameter, SqlDbType.NVarChar, -1) { Value = JsonSerializer.Serialize(values) };
     }
 
+    public string InTuples(
+        IReadOnlyList<string> expressions,
+        string parameter,
+        IReadOnlyList<SqlColumnType> elementTypes
+    )
+    {
+        _ValidateTuples(expressions, elementTypes, static type => _ListElementType(type));
+        var columns = string.Join(
+            ", ",
+            elementTypes.Select(
+                (type, i) => string.Create(CultureInfo.InvariantCulture, $"[c{i}] {_ListElementType(type)} '$[{i}]'")
+            )
+        );
+        var matches = string.Join(
+            " AND ",
+            expressions.Select(
+                (expression, i) => string.Create(CultureInfo.InvariantCulture, $"t.[c{i}] = {expression}")
+            )
+        );
+
+        // T-SQL has no row-value IN, so the row list is read as typed columns and matched with EXISTS.
+        return $"EXISTS (SELECT 1 FROM OPENJSON(@{parameter}) WITH ({columns}) AS t WHERE {matches})";
+    }
+
+    public IReadOnlyList<DbParameter> CreateTupleListParameters(
+        string parameter,
+        IReadOnlyList<SqlColumnType> elementTypes,
+        IReadOnlyCollection<IReadOnlyList<object>> rows
+    )
+    {
+        _ValidateTupleRows(elementTypes, rows, static type => _ListElementType(type));
+
+        // Each row is a JSON array, read back by position.
+        return [new SqlParameter(parameter, SqlDbType.NVarChar, -1) { Value = JsonSerializer.Serialize(rows) }];
+    }
+
     public string Render(SqlLockedRead statement)
     {
         return $"""
@@ -317,6 +353,46 @@ public sealed class SqlServerDialect : ISqlDialect
                 _ => SqlErrorKind.None,
             }
             : SqlErrorKind.None;
+    }
+
+    private static void _ValidateTuples(
+        IReadOnlyList<string> expressions,
+        IReadOnlyList<SqlColumnType> elementTypes,
+        Action<SqlColumnType> ensureListable
+    )
+    {
+        if (expressions.Count < 2 || expressions.Count != elementTypes.Count)
+        {
+            throw new ArgumentException(
+                "A tuple list needs at least two expressions and one element type per expression.",
+                nameof(elementTypes)
+            );
+        }
+
+        foreach (var type in elementTypes)
+        {
+            ensureListable(type);
+        }
+    }
+
+    private static void _ValidateTupleRows(
+        IReadOnlyList<SqlColumnType> elementTypes,
+        IReadOnlyCollection<IReadOnlyList<object>> rows,
+        Action<SqlColumnType> ensureListable
+    )
+    {
+        foreach (var type in elementTypes)
+        {
+            ensureListable(type);
+        }
+
+        foreach (var row in rows)
+        {
+            if (row.Count != elementTypes.Count || row.Any(static value => value is null))
+            {
+                throw new ArgumentException("Every tuple row needs one non-null value per element type.", nameof(rows));
+            }
+        }
     }
 
     private static string _ListElementType(SqlColumnType elementType)
