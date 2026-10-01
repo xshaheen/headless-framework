@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Initialization;
 using Headless.Hosting.Initialization.Schema;
 using Headless.Permissions.Entities;
+using Headless.Permissions.Repositories;
 using Headless.Sql.PostgreSql;
 
 namespace Headless.Permissions.PostgreSql;
@@ -16,21 +16,23 @@ internal static class PostgreSqlPermissionsSchemaContribution
     public const string TablesStepVersion = "1";
     public const string IndexesStepVersion = "2";
 
-    // Only the default names are read from it, so the history identity tracks the defaults PermissionsStorageOptions
-    // owns.
-    private static readonly PermissionsStorageOptions _Defaults = new();
+    private static readonly RelationalPermissionsTables _Defaults = new(
+        PostgreSqlDialect.Instance,
+        new PermissionsStorageOptions()
+    );
 
     public static SchemaContribution Create(
         PostgreSqlPermissionsOptions options,
-        PermissionsStorageOptions storageOptions
+        RelationalPermissionsTables tables,
+        bool applyOnStartup
     )
     {
-        var grantsName = PostgreSqlPermissionsSchema.GrantsName(storageOptions);
-        var definitionsName = PostgreSqlPermissionsSchema.DefinitionsName(storageOptions);
-        var groupsName = PostgreSqlPermissionsSchema.GroupsName(storageOptions);
-        var grantsTable = PostgreSqlPermissionsSchema.GrantsTable(storageOptions);
-        var definitionsTable = PostgreSqlPermissionsSchema.DefinitionsTable(storageOptions);
-        var groupsTable = PostgreSqlPermissionsSchema.GroupsTable(storageOptions);
+        var grantsName = tables.GrantsName;
+        var definitionsName = tables.DefinitionsName;
+        var groupsName = tables.GroupsName;
+        var grantsTable = tables.Grants;
+        var definitionsTable = tables.Definitions;
+        var groupsTable = tables.Groups;
 
         var tablesSql = $"""
             CREATE TABLE IF NOT EXISTS {groupsTable} (
@@ -77,28 +79,19 @@ internal static class PostgreSqlPermissionsSchemaContribution
         return new SchemaContribution(
             feature: SchemaContribution.FeatureId(
                 "Permissions",
-                (
-                    storageOptions.PermissionGrantsTableName,
-                    _Defaults.ResolvePermissionGrantsTableName(StorageNamingStyle.SnakeCase)
-                ),
-                (
-                    storageOptions.PermissionDefinitionsTableName,
-                    _Defaults.ResolvePermissionDefinitionsTableName(StorageNamingStyle.SnakeCase)
-                ),
-                (
-                    storageOptions.PermissionGroupDefinitionsTableName,
-                    _Defaults.ResolvePermissionGroupDefinitionsTableName(StorageNamingStyle.SnakeCase)
-                )
+                (grantsName, _Defaults.GrantsName),
+                (definitionsName, _Defaults.DefinitionsName),
+                (groupsName, _Defaults.GroupsName)
             ),
             dialect: PostgreSqlSchemaDialect.Instance,
-            createConnection: options.CreateConnection,
-            schema: storageOptions.Schema,
+            createConnection: () => PostgreSqlDialect.Instance.CreateConnection(options.ConnectionString),
+            schema: tables.Schema,
             steps:
             [
                 new SchemaStep(TablesStepVersion, "Create the grant, definition, and group tables.", tablesSql),
                 new SchemaStep(IndexesStepVersion, "Create the grant, definition, and group indexes.", indexesSql),
             ],
-            applyOnStartup: storageOptions.InitializeOnStartup
+            applyOnStartup: applyOnStartup
         );
     }
 }
