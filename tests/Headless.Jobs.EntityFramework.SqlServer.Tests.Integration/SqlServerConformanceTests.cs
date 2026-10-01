@@ -211,6 +211,14 @@ public sealed class SqlServerConformanceTests(SqlServerJobsCoordinationFixture f
 public sealed class SqlServerClaimConformanceTests(SqlServerJobsCoordinationFixture fixture)
     : JobsClaimConformanceTests<SqlServerJobsCoordinationFixture>(fixture)
 {
+    [Fact]
+    public override Task direct_claim_of_a_full_candidate_page_claims_every_job_once() =>
+        base.direct_claim_of_a_full_candidate_page_claims_every_job_once();
+
+    [Fact]
+    public override Task direct_claim_does_not_match_a_stamp_from_another_candidate() =>
+        base.direct_claim_does_not_match_a_stamp_from_another_candidate();
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

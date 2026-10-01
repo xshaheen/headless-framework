@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
+using System.Data.Common;
 using System.Runtime.CompilerServices;
 using Headless.Abstractions;
 using Headless.Jobs.Entities;
@@ -11,7 +12,6 @@ using Headless.Jobs.Internal;
 using Headless.Jobs.Models;
 using Headless.Sql;
 using Headless.Sql.SqlServer;
-using Headless.Threading;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -34,6 +34,9 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
+#pragma warning disable RCS1158 // Static member in generic type should use a type parameter
+    private static readonly SqlColumnType[] _DirectCandidateTypes = [SqlColumnType.Guid, SqlColumnType.Timestamp];
+#pragma warning restore RCS1158
     private readonly TimeSpan _leaseDuration = optionsBuilder.LeaseDuration;
 
     // The maximum number of nodes on a root-to-leaf path the tree claim leases (root = depth 1). A timed
@@ -68,22 +71,13 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                             dbContext,
                             transaction,
                             mapping,
-                            _BuildDirectCandidateFilter(batch, mapping),
+                            _DirectCandidateFilter(mapping),
                             // Unscheduled roots first, as the CAS path visits them; SQL Server sorts NULL first.
                             [mapping.ExecutionTime, mapping.Id],
                             owner,
                             _leaseDuration,
                             ct,
-                            [
-                                .. batch.SelectMany(
-                                    (job, index) =>
-                                        new[]
-                                        {
-                                            new(_ParameterName("id", index), job.Id),
-                                            _DateTimeOffsetParameter(_ParameterName("updatedAt", index), job.UpdatedAt),
-                                        }
-                                ),
-                            ]
+                            _DirectCandidateParameters(batch)
                         )
                         .ConfigureAwait(false);
 
@@ -700,22 +694,24 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         return [.. ids];
     }
 
-    // Hand-written rather than one list parameter: the CAS pairs each id with its own expected UpdatedAt, and a
-    // single-column list cannot keep the pairs together (two lists would also match an id against another job's
-    // stamp). MaxCandidatePageSize bounds the parameter count under SQL Server's 2,100 limit.
-    private static string _BuildDirectCandidateFilter(TimeJobEntity[] timeJobs, TimeJobRelationalMapping mapping)
+    // The CAS pairs each id with its own expected UpdatedAt, so the pairs are matched as whole rows: two separate
+    // lists would also match an id against another job's stamp. One list parameter carries every pair, so the
+    // candidate page size no longer approaches the engine's parameter limit.
+    private static string _DirectCandidateFilter(TimeJobRelationalMapping mapping)
     {
-        var values = string.Join(
-            ", ",
-            timeJobs.Select((_, index) => $"(@{_ParameterName("id", index)}, @{_ParameterName("updatedAt", index)})")
-        );
-        return $"""
-            EXISTS (
-                SELECT 1
-                FROM (VALUES {values}) AS requested(requested_id, requested_updated_at)
-                WHERE requested.requested_id = {mapping.Id} AND requested.requested_updated_at = {mapping.UpdatedAt}
-            )
-            """;
+        return SqlServerDialect.Instance.InTuples([mapping.Id, mapping.UpdatedAt], "requested", _DirectCandidateTypes);
+    }
+
+    private static DbParameter[] _DirectCandidateParameters(TimeJobEntity[] timeJobs)
+    {
+        return
+        [
+            .. SqlServerDialect.Instance.CreateTupleListParameters(
+                "requested",
+                _DirectCandidateTypes,
+                [.. timeJobs.Select(static job => (IReadOnlyList<object>)[job.Id, job.UpdatedAt])]
+            ),
+        ];
     }
 
     private static async Task<ClaimResult> _ClaimRootsAsync(
@@ -727,7 +723,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         string owner,
         TimeSpan leaseDuration,
         CancellationToken cancellationToken,
-        params SqlParameter[] filterParameters
+        params DbParameter[] filterParameters
     )
     {
         var dialect = SqlServerDialect.Instance;
@@ -845,36 +841,19 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         return [.. leasedIds];
     }
 
-    private async Task<TResult> _ExecuteWithDeadlockRetryAsync<TResult>(
+    private Task<TResult> _ExecuteWithDeadlockRetryAsync<TResult>(
         Func<CancellationToken, Task<TResult>> action,
         CancellationToken cancellationToken
     )
     {
-        // SQL Server has rolled the victim transaction back before surfacing 1205. Retrying the whole scope
-        // preserves the root/descendant and definition/occurrence atomicity boundaries; each attempt opens its own
-        // context and transaction, which is the shape TransientRetry requires.
-        var failedAttempts = 0;
-
-        return await TransientRetry
-            .RunAsync(
-                ct => new ValueTask<TResult>(action(ct)),
-                ex =>
-                {
-                    if (!SqlAutonomousTransaction.IsTransient(SqlServerDialect.Instance, ex))
-                    {
-                        return false;
-                    }
-
-                    // TransientRetry asks only when another attempt will run, so this logs once per retry.
-                    failedAttempts++;
-                    logger.LogJobsClaimDeadlockRetry(failedAttempts + 1, TransientRetry.MaxAttempts, ex);
-
-                    return true;
-                },
-                timeProvider,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        // SQL Server has rolled the victim transaction back before surfacing 1205.
+        return JobsClaimRetry.RunAsync(
+            action,
+            static ex => SqlAutonomousTransaction.IsTransient(SqlServerDialect.Instance, ex),
+            timeProvider,
+            logger,
+            cancellationToken
+        );
     }
 
     private readonly record struct ClaimResult(Guid[] Ids, DateTimeOffset ClaimedAt);
@@ -903,25 +882,4 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
     {
         return new(name, SqlDbType.DateTimeOffset) { Value = value };
     }
-
-    private static string _ParameterName(string prefix, int index)
-    {
-        return string.Create(CultureInfo.InvariantCulture, $"{prefix}{index}");
-    }
-}
-
-internal static partial class SqlServerJobsClaimStrategyLoggerExtensions
-{
-    [LoggerMessage(
-        EventId = 20102,
-        EventName = "JobsClaimDeadlockRetry",
-        Level = LogLevel.Warning,
-        Message = "SQL Server Jobs claim was chosen as a deadlock victim; retrying attempt {AttemptNumber}/{MaxAttempts}."
-    )]
-    public static partial void LogJobsClaimDeadlockRetry(
-        this ILogger logger,
-        int attemptNumber,
-        int maxAttempts,
-        Exception? exception
-    );
 }
