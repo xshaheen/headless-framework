@@ -13,6 +13,12 @@ public sealed class SqlServerIdempotencyConformanceTests(SqlServerIdempotencyFix
     }
 
     [Fact]
+    public override Task should_admit_exactly_once_and_complete_exactly_once_under_parallel_racers()
+    {
+        return base.should_admit_exactly_once_and_complete_exactly_once_under_parallel_racers();
+    }
+
+    [Fact]
     public override Task should_serialize_parallel_enlisted_admissions_and_replay_the_winner()
     {
         return base.should_serialize_parallel_enlisted_admissions_and_replay_the_winner();

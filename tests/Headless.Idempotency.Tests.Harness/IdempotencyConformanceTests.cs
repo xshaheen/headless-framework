@@ -89,6 +89,100 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
         }
     }
 
+    public virtual async Task should_admit_exactly_once_and_complete_exactly_once_under_parallel_racers()
+    {
+        const int racers = 12;
+        var key = CreateKey();
+        await using var hostA = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+        await using var hostB = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        // Every racer is released at once, half through each host, so the store alone decides who wins.
+        var admitStart = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var admitting = Enumerable
+            .Range(0, racers)
+            .Select(i =>
+                Task.Run(
+                    async () =>
+                    {
+                        await admitStart.Task;
+
+                        return await (i % 2 == 0 ? hostA : hostB).Operations.AdmitAsync(
+                            key,
+                            Fingerprint,
+                            leaseDuration: LongLease,
+                            retention: Retention,
+                            cancellationToken: AbortToken
+                        );
+                    },
+                    AbortToken
+                )
+            )
+            .ToList();
+
+        admitStart.SetResult();
+        var admissions = await Task.WhenAll(admitting);
+
+        var admitted = admissions.Where(static a => a.IsAdmitted).ToList();
+        admitted.Should().ContainSingle("exactly one racer is admitted");
+        var winner = admitted[0];
+        admissions
+            .Where(static a => !a.IsAdmitted)
+            .Should()
+            .HaveCount(racers - 1)
+            .And.AllSatisfy(a =>
+            {
+                a.Disposition.Should().Be(IdempotentDisposition.InFlight, "nothing completed while they raced");
+                a.Generation.Should().Be(winner.Generation, "every loser sees the winner holding the key");
+            });
+
+        // Every racer then completes the one admitted attempt, each with its own result.
+        var completeStart = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completing = Enumerable
+            .Range(0, racers)
+            .Select(i =>
+                Task.Run(
+                    async () =>
+                    {
+                        await completeStart.Task;
+
+                        try
+                        {
+                            await (i % 2 == 0 ? hostA : hostB).Operations.CompleteAsync(
+                                winner,
+                                Payload($"racer-{i}"),
+                                Contract,
+                                cancellationToken: AbortToken
+                            );
+
+                            return (Racer: i, Refusal: (IdempotentLeaseStatus?)null);
+                        }
+                        catch (StaleAdmissionException e)
+                        {
+                            return (Racer: i, Refusal: e.Reason);
+                        }
+                    },
+                    AbortToken
+                )
+            )
+            .ToList();
+
+        completeStart.SetResult();
+        var completions = await Task.WhenAll(completing);
+
+        var completed = completions.Where(static c => c.Refusal is null).ToList();
+        completed.Should().ContainSingle("exactly one completion is stored");
+        completions
+            .Where(static c => c.Refusal is not null)
+            .Should()
+            .HaveCount(racers - 1)
+            .And.AllSatisfy(c => c.Refusal.Should().Be(IdempotentLeaseStatus.Completed));
+
+        var stored = await Fixture.ReadRecordAsync(HostKey(key), AbortToken);
+        stored!.Status.Should().Be(IdempotencyRecordStatus.Completed);
+        stored.Generation.Should().Be(winner.Generation);
+        Text(stored.Result!).Should().Be($"racer-{completed[0].Racer}", "the one stored result is the winner's");
+    }
+
     public virtual async Task should_serialize_parallel_enlisted_admissions_and_replay_the_winner()
     {
         var key = CreateKey();
