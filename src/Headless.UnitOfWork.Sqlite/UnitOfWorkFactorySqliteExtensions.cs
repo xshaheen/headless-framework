@@ -341,6 +341,9 @@ public static class UnitOfWorkFactorySqliteExtensions
         CancellationToken cancellationToken
     )
     {
+        // The driver waits for the database write lock synchronously inside the begin; yielding first hands the
+        // caller a pending task instead of blocking its thread through that wait.
+        await Task.Yield();
         var shouldClose = connection.State == ConnectionState.Closed;
 
         if (shouldClose)
