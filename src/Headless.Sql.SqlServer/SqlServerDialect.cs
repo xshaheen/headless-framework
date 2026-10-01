@@ -157,10 +157,18 @@ public sealed class SqlServerDialect : ISqlDialect
         IReadOnlyCollection<T> values
     )
     {
+        command.Parameters.Add(CreateListParameter(parameter, elementType, values));
+    }
+
+    public DbParameter CreateListParameter<T>(
+        string parameter,
+        SqlColumnType elementType,
+        IReadOnlyCollection<T> values
+    )
+    {
         _ListElementType(elementType);
-        command.Parameters.Add(
-            new SqlParameter(parameter, SqlDbType.NVarChar, -1) { Value = JsonSerializer.Serialize(values) }
-        );
+
+        return new SqlParameter(parameter, SqlDbType.NVarChar, -1) { Value = JsonSerializer.Serialize(values) };
     }
 
     public string Render(SqlLockedRead statement)

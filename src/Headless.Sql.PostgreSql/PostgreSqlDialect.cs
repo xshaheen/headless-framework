@@ -112,13 +112,22 @@ public sealed class PostgreSqlDialect : ISqlDialect
         IReadOnlyCollection<T> values
     )
     {
+        command.Parameters.Add(CreateListParameter(parameter, elementType, values));
+    }
+
+    public DbParameter CreateListParameter<T>(
+        string parameter,
+        SqlColumnType elementType,
+        IReadOnlyCollection<T> values
+    )
+    {
         _EnsureListable(elementType);
         Array array = values is IReadOnlyCollection<DateTimeOffset> instants
             ? instants.Select(static i => i.ToUniversalTime()).ToArray()
             : values.ToArray();
 
         // Npgsql types the parameter from the element type of the CLR array (string[] -> text[], Guid[] -> uuid[]).
-        command.Parameters.Add(new NpgsqlParameter(parameter, array));
+        return new NpgsqlParameter(parameter, array);
     }
 
     public string Render(SqlLockedRead statement)

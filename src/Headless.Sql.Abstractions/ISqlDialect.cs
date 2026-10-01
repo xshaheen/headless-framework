@@ -92,6 +92,15 @@ public interface ISqlDialect
         IReadOnlyCollection<T> values
     );
 
+    /// <summary>
+    /// Creates the list parameter an <see cref="InList" /> predicate reads, for a caller that builds its parameters
+    /// before it has a command.
+    /// </summary>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="elementType" /> is <see cref="SqlColumnKind.Binary" /> or <see cref="SqlColumnKind.Json" />.
+    /// </exception>
+    DbParameter CreateListParameter<T>(string parameter, SqlColumnType elementType, IReadOnlyCollection<T> values);
+
     /// <summary>Renders <see cref="SqlLockedRead" />.</summary>
     string Render(SqlLockedRead statement);
 

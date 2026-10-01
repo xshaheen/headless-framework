@@ -184,6 +184,22 @@ public sealed class DialectRuntimeTests : TestBase
     }
 
     [Fact]
+    public void should_create_a_list_parameter_without_a_command()
+    {
+        var ids = new[] { Guid.Empty };
+
+        var pg = PostgreSqlDialect.Instance.CreateListParameter("Ids", SqlColumnType.Guid, ids);
+        var ss = SqlServerDialect.Instance.CreateListParameter("Ids", SqlColumnType.Guid, ids);
+
+        pg.Should().BeOfType<NpgsqlParameter>().Which.Value.Should().BeEquivalentTo(ids);
+        ss.Should().BeOfType<SqlParameter>().Which.Value.Should().Be("[\"00000000-0000-0000-0000-000000000000\"]");
+        FluentActions
+            .Invoking(() => SqlServerDialect.Instance.CreateListParameter("J", SqlColumnType.Json, new[] { "{}" }))
+            .Should()
+            .Throw<ArgumentException>();
+    }
+
+    [Fact]
     public void should_expose_each_engines_provider_types()
     {
         PostgreSqlDialect.Instance.ConnectionType.Should().Be<NpgsqlConnection>();
