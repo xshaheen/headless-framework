@@ -9,7 +9,8 @@ namespace Headless.UnitOfWork;
 
 /// <summary>
 /// Classifies a relational failure as transient: a fault that a replay of the whole transaction, on a fresh
-/// transaction, may cure. It is the framework's default replay filter and the composition point a narrower
+/// transaction, may cure. It is the framework's default replay filter (the unit-of-work runner, the SQL store kit's
+/// autonomous calls, the Jobs claim scopes) and the composition point a narrower
 /// classifier builds on (the Jobs tree delete adds its own foreign-key conflicts); reuse or compose it in a
 /// hand-rolled retry loop around <c>RunAsync</c> so a custom loop keeps the framework's classification.
 /// </summary>

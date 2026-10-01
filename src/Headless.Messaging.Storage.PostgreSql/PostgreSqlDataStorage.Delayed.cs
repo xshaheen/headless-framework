@@ -175,7 +175,6 @@ internal sealed partial class PostgreSqlDataStorage
         // the client then observes cancellation, and the claim must not lose winners it already leased.
         var claimed = await SqlAutonomousTransaction
             .RunAsync(
-                _Dialect,
                 () => postgreSqlOptions.Value.CreateConnection(),
                 async (connection, transaction, ct) =>
                 {

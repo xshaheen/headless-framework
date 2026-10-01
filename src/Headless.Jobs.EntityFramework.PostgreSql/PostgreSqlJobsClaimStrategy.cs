@@ -58,10 +58,11 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 ? timeJobs
                 : [.. timeJobs.Take(JobsClaimStrategyDefaults.MaxCandidatePageSize)];
         var (claim, leasedDescendantIds) = await _ExecuteWithRetryAsync(
-                async ct =>
+                async (attempt, ct) =>
                 {
                     await using var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
                         dbContextFactory,
+                        attempt,
                         ct
                     );
                     var dbContext = claimTransaction.DbContext;
@@ -133,10 +134,11 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 
         TimeJobEntity[] claimed;
         var (claim, leasedDescendantIds) = await _ExecuteWithRetryAsync(
-                async ct =>
+                async (attempt, ct) =>
                 {
                     await using var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
                         dbContextFactory,
+                        attempt,
                         ct
                     );
                     var dbContext = claimTransaction.DbContext;
@@ -250,11 +252,12 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         }
 
         var claimed = await _ExecuteWithRetryAsync(
-                async ct =>
+                async (attempt, ct) =>
                 {
                     CronJobOccurrenceEntity<TCronJob>[] attemptClaimed = [];
                     await using var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
                         dbContextFactory,
+                        attempt,
                         ct
                     );
                     var dbContext = claimTransaction.DbContext;
@@ -400,10 +403,11 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         }
 
         var claimed = await _ExecuteWithRetryAsync(
-                async ct =>
+                async (attempt, ct) =>
                 {
                     await using var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
                         dbContextFactory,
+                        attempt,
                         ct
                     );
                     var dbContext = claimTransaction.DbContext;
@@ -831,18 +835,11 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     }
 
     private Task<TResult> _ExecuteWithRetryAsync<TResult>(
-        Func<CancellationToken, Task<TResult>> action,
+        Func<SqlAutonomousAttempt, CancellationToken, Task<TResult>> action,
         CancellationToken cancellationToken
     )
     {
-        // PostgreSQL has rolled the transaction back before surfacing 40P01 or 40001.
-        return JobsClaimRetry.RunAsync(
-            action,
-            static ex => SqlAutonomousTransaction.IsTransient(PostgreSqlDialect.Instance, ex),
-            timeProvider,
-            logger,
-            cancellationToken
-        );
+        return JobsClaimRetry.RunAsync(action, timeProvider, logger, cancellationToken);
     }
 
     private readonly record struct ClaimResult(Guid[] Ids, DateTimeOffset ClaimedAt);

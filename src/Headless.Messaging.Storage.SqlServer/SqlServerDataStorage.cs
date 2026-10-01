@@ -961,7 +961,6 @@ internal sealed partial class SqlServerDataStorage(
 
         return await SqlAutonomousTransaction
             .RunAsync(
-                _Dialect,
                 () => new SqlConnection(options.Value.ConnectionString),
                 (purgeConnection, transaction, ct) =>
                     purgeConnection.ExecuteNonQueryAsync(
@@ -1913,7 +1912,6 @@ internal sealed partial class SqlServerDataStorage(
 
         return await SqlAutonomousTransaction
             .RunAsync(
-                _Dialect,
                 () => new SqlConnection(options.Value.ConnectionString),
                 async (connection, transaction, ct) =>
                 {

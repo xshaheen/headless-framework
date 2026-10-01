@@ -24,8 +24,8 @@ namespace Headless.Fencing;
 /// absent row is inserted by a statement that cannot raise a duplicate-key error inside a caller's transaction.
 /// </para>
 /// <para>
-/// Autonomous verbs open their own connection at READ COMMITTED, commit before returning, and retry only deadlocks and
-/// serialization conflicts. Enlisted verbs run on the unit's connection and transaction, never commit, and never retry:
+/// Autonomous verbs open their own connection at READ COMMITTED, commit before returning, and retry a transient fault
+/// raised before the commit (<see cref="SqlAutonomousTransaction" />). Enlisted verbs run on the unit's connection and transaction, never commit, and never retry:
 /// the failure has already rolled back the caller's transaction, so only the unit's owner can run it again.
 /// </para>
 /// </remarks>
@@ -627,13 +627,7 @@ internal sealed class RelationalLeaseStore : ILeaseStore
         CancellationToken cancellationToken
     )
     {
-        return SqlAutonomousTransaction.RunAsync(
-            _dialect,
-            _storage.CreateConnection,
-            body,
-            _timeProvider,
-            cancellationToken
-        );
+        return SqlAutonomousTransaction.RunAsync(_storage.CreateConnection, body, _timeProvider, cancellationToken);
     }
 
     private DbCommand _Command(string sql, DbConnection connection, DbTransaction transaction, LeaseKey? key = null)

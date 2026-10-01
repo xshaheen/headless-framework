@@ -23,8 +23,8 @@ namespace Headless.Coordination;
 /// clock, so a database clock that steps back never moves a beat backwards.
 /// </para>
 /// <para>
-/// Every call runs on its own connection and READ COMMITTED transaction and retries only deadlocks and serialization
-/// conflicts. The snapshot read prunes retention-expired rows first, in a transaction of its own whose failure is
+/// Every call runs on its own connection and READ COMMITTED transaction and retries a transient fault raised before
+/// the commit (<see cref="SqlAutonomousTransaction" />). The snapshot read prunes retention-expired rows first, in a transaction of its own whose failure is
 /// logged and left to the next read, so a lost prune never costs the read.
 /// </para>
 /// </remarks>
@@ -514,13 +514,7 @@ internal sealed class RelationalMembershipStore : IMembershipStore
         CancellationToken cancellationToken
     )
     {
-        return SqlAutonomousTransaction.RunAsync(
-            _dialect,
-            _storage.CreateConnection,
-            body,
-            _timeProvider,
-            cancellationToken
-        );
+        return SqlAutonomousTransaction.RunAsync(_storage.CreateConnection, body, _timeProvider, cancellationToken);
     }
 
     private DbCommand _Command(string sql, DbConnection connection, DbTransaction transaction)

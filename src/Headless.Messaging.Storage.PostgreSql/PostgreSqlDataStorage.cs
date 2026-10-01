@@ -1864,7 +1864,6 @@ internal sealed partial class PostgreSqlDataStorage(
 
         return await SqlAutonomousTransaction
             .RunAsync(
-                _Dialect,
                 () => postgreSqlOptions.Value.CreateConnection(),
                 async (connection, transaction, ct) =>
                 {

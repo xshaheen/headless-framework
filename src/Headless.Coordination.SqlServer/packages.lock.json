@@ -573,6 +573,7 @@
           "Headless.Checks": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
           "Nito.AsyncEx": "[5.1.2, )"
         }
       },
@@ -587,6 +588,23 @@
           "Microsoft.Data.SqlClient": "[7.0.2, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
+        }
+      },
+      "headless.unitofwork": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
+          "Microsoft.Extensions.Options": "[10.0.12, )",
+          "Polly.Core": "[8.7.0, )"
+        }
+      },
+      "headless.unitofwork.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
         }
       },
       "headless.urls": {

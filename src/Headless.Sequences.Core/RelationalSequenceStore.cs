@@ -39,11 +39,10 @@ internal sealed class RelationalSequenceStore(
         CancellationToken cancellationToken = default
     )
     {
-        // Each attempt opens its own connection and READ COMMITTED transaction, so a deadlock victim's rolled-back
+        // Each attempt opens its own connection and READ COMMITTED transaction, so a failed attempt's rolled-back
         // transaction is already gone when the retry starts. A stricter server default would turn a concurrent first
         // use into a serialization failure.
         return SqlAutonomousTransaction.RunAsync(
-            _dialect,
             () => _dialect.CreateConnection(_options.ConnectionString),
             (connection, transaction, ct) => _ExecuteAsync(connection, transaction, key, insertValue, delta, ct),
             _timeProvider,
