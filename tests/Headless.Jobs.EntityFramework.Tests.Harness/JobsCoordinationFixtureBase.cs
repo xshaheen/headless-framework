@@ -182,6 +182,13 @@ public static partial class JobsCoordinationFixtureExtensions
     public static readonly TimeSpan DeadThreshold = TimeSpan.FromMilliseconds(1200);
     public static readonly TimeSpan DeadRetentionWindow = TimeSpan.FromMilliseconds(1200);
 
+    // An intercepted host captures the SQL of acquires and renewals and never waits for a node to die, so it keeps
+    // membership on production-scale thresholds. On the second-scale ones above, one heartbeat stalled past 1.2 s by
+    // a loaded run fail-stops the node, and every later acquire returns nothing because the node has no owner identity.
+    public static readonly TimeSpan InterceptedHostHeartbeatInterval = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan _InterceptedHostSuspicionThreshold = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan _InterceptedHostDeadThreshold = TimeSpan.FromSeconds(30);
+
     /// <summary>Registers the generated-equivalent job functions used by the relational conformance suite.</summary>
     public static void RegisterJobFunctions() => CoordinatedEnqueueJobsRegistration.Initialize();
 
@@ -231,7 +238,8 @@ public static partial class JobsCoordinationFixtureExtensions
         this IJobsCoordinationFixture fixture,
         string nodeId,
         IInterceptor interceptor,
-        TimeSpan? leaseDuration = null
+        TimeSpan? leaseDuration = null,
+        TimeProvider? timeProvider = null
     )
     {
         return _BuildHost<JobsDbContext>(
@@ -239,10 +247,16 @@ public static partial class JobsCoordinationFixtureExtensions
             nodeId,
             HeadlessStorageDefaults.Schema,
             MembershipLostBehavior.StopMembershipOnly,
-            timeProvider: null,
+            timeProvider,
             leaseDuration,
             useNativeClaims: false,
-            interceptor
+            interceptor,
+            membershipTimings: (
+                InterceptedHostHeartbeatInterval,
+                _InterceptedHostSuspicionThreshold,
+                _InterceptedHostDeadThreshold,
+                _InterceptedHostDeadThreshold
+            )
         );
     }
 
@@ -255,10 +269,14 @@ public static partial class JobsCoordinationFixtureExtensions
         TimeSpan? leaseDuration = null,
         bool useNativeClaims = true,
         IInterceptor? interceptor = null,
-        Action<JobsOptionsBuilder<TimeJobEntity, CronJobEntity>>? configureJobs = null
+        Action<JobsOptionsBuilder<TimeJobEntity, CronJobEntity>>? configureJobs = null,
+        (TimeSpan Heartbeat, TimeSpan Suspicion, TimeSpan Dead, TimeSpan DeadRetention)? membershipTimings = null
     )
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
+        var (heartbeat, suspicion, dead, deadRetention) =
+            membershipTimings ?? (HeartbeatInterval, SuspicionThreshold, DeadThreshold, DeadRetentionWindow);
+
         var builder = Host.CreateApplicationBuilder();
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
@@ -271,10 +289,10 @@ public static partial class JobsCoordinationFixtureExtensions
             setup.Configure(options =>
             {
                 options.ClusterName = ClusterName;
-                options.HeartbeatInterval = HeartbeatInterval;
-                options.SuspicionThreshold = SuspicionThreshold;
-                options.DeadThreshold = DeadThreshold;
-                options.DeadRetentionWindow = DeadRetentionWindow;
+                options.HeartbeatInterval = heartbeat;
+                options.SuspicionThreshold = suspicion;
+                options.DeadThreshold = dead;
+                options.DeadRetentionWindow = deadRetention;
                 options.MembershipLostBehavior = lostBehavior;
             });
         });

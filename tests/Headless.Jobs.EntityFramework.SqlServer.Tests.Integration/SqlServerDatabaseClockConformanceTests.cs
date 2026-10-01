@@ -32,4 +32,10 @@ public sealed class SqlServerDatabaseClockConformanceTests(SqlServerJobsCoordina
     {
         return base.schedule_advance_sql_is_owned_by_the_database_clock();
     }
+
+    [Fact]
+    public override Task intercepted_host_keeps_its_owner_identity_across_a_heartbeat_stall()
+    {
+        return base.intercepted_host_keeps_its_owner_identity_across_a_heartbeat_stall();
+    }
 }
