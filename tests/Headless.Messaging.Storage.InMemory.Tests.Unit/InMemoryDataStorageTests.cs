@@ -104,7 +104,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
     /// <inheritdoc />
     protected override Task<int> CountReceivedMessagesByIdentityAsync(
         string messageId,
-        string? group,
+        string consumerIdentity,
         CancellationToken cancellationToken
     )
     {
@@ -112,7 +112,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
 
         var count = _storage!.ReceivedMessages.Values.Count(m =>
             string.Equals(m.Origin.Id, messageId, StringComparison.Ordinal)
-            && string.Equals(m.Group, group, StringComparison.Ordinal)
+            && string.Equals(m.ConsumerIdentity, consumerIdentity, StringComparison.Ordinal)
         );
 
         return Task.FromResult(count);
@@ -146,7 +146,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
             InlineAttempts = 0,
             ExceptionInfo = null,
             Name = "unsupported-lane",
-            Group = published ? null! : "unsupported-lane-group",
+            ConsumerIdentity = published ? null! : "unsupported-lane-consumer",
             StatusName = StatusName.Failed,
             Version = "v1",
         };
@@ -494,7 +494,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
             Retries = 0,
             InlineAttempts = 0,
             Name = $"unknown-lane-{rawLane}",
-            Group = "unknown-lane-group",
+            ConsumerIdentity = "unknown-lane-consumer",
             StatusName = StatusName.Failed,
             Version = "v1",
         };
@@ -1117,7 +1117,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
             cancellationToken: AbortToken
         );
 
-        var picked = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).Single(m =>
+        var picked = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken)).Single(m =>
             m.StorageId == stored.StorageId
         );
 
@@ -1134,8 +1134,8 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         changed.Should().BeTrue();
 
         // then — the next pickup gets an Origin and a Content that still describe the same envelope
-        var repicked = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).Single(m =>
-            m.StorageId == stored.StorageId
+        var repicked = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken)).Single(
+            m => m.StorageId == stored.StorageId
         );
 
         repicked
@@ -1304,9 +1304,15 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
     }
 
     [Fact]
-    public override Task should_handle_concurrent_first_insert_storm_with_null_and_non_null_group()
+    public override Task should_filter_received_messages_by_consumer_identity()
     {
-        return base.should_handle_concurrent_first_insert_storm_with_null_and_non_null_group();
+        return base.should_filter_received_messages_by_consumer_identity();
+    }
+
+    [Fact]
+    public override Task should_handle_concurrent_first_insert_storm_per_consumer_identity()
+    {
+        return base.should_handle_concurrent_first_insert_storm_per_consumer_identity();
     }
 
     [Fact]
@@ -1354,13 +1360,13 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         var leased = await storage.LeaseReceiveAsync(storedMessage, leaseWindow, AbortToken);
 
         leased.Should().BeTrue();
-        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken))
             .Should()
             .NotContain(m => m.StorageId == storedMessage.StorageId);
 
         _fakeTimeProvider!.Advance(leaseWindow + TimeSpan.FromMilliseconds(250));
 
-        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken))
             .Should()
             .Contain(m => m.StorageId == storedMessage.StorageId);
     }
@@ -1611,7 +1617,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         duplicate.Disposition.Should().Be(InboxAdmissionDisposition.InFlightDuplicate);
 
         _fakeTimeProvider!.Advance(TimeSpan.FromMinutes(5));
-        var recovered = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).Single();
+        var recovered = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken)).Single();
 
         recovered.StorageId.Should().Be(winner.StorageId);
         recovered.InlineAttempts.Should().Be(1, "the crashed reservation remains spent");
@@ -1647,7 +1653,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
             .Should()
             .BeTrue();
 
-        var successor = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).Single();
+        var successor = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken)).Single();
         var originalAttempts = successor.InlineAttempts;
         successor.InlineAttempts++;
         (await storage.ReserveReceiveAttemptAsync(successor, originalAttempts, AbortToken)).Should().BeTrue();
@@ -1710,12 +1716,12 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
     }
 
     [Fact]
-    public async Task inbox_terminal_failure_should_suppress_redelivery_and_topology_group_should_not_reset_identity()
+    public async Task inbox_terminal_failure_should_suppress_redelivery()
     {
         _EnsureInitialized();
         var storage = GetStorage();
         var origin = CreateMessage("inbox-terminal", "orders.created");
-        var admitted = await _AdmitAsync(storage, origin, group: "old-topology");
+        var admitted = await _AdmitAsync(storage, origin);
 
         admitted.Message.InlineAttempts++;
         (
@@ -1743,7 +1749,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
             .Should()
             .BeTrue();
 
-        var redelivery = await _AdmitAsync(storage, origin, group: "renamed-topology");
+        var redelivery = await _AdmitAsync(storage, origin);
         redelivery.Disposition.Should().Be(InboxAdmissionDisposition.TerminalFailedDuplicate);
         redelivery.Message.StorageId.Should().Be(admitted.Message.StorageId);
     }
@@ -1858,7 +1864,6 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
     private static ValueTask<InboxAdmissionResult> _AdmitAsync(
         IDataStorage storage,
         Message origin,
-        string group = "orders-group",
         string consumerIdentity = "orders.consumer-a",
         string contractVersion = "v1",
         MessageLane lane = MessageLane.Bus,
@@ -1868,7 +1873,6 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
     {
         return storage.AdmitReceivedMessageAsync(
             origin.Name,
-            group,
             consumerIdentity,
             contractVersion,
             new MediumMessage

@@ -10,14 +10,14 @@ namespace Headless.Messaging.CircuitBreaker;
 
 /// <summary>
 /// Default implementation of <see cref="ICircuitBreakerStateManager"/>.
-/// Maintains per-group circuit state and drives Open → HalfOpen transitions via <see cref="Timer"/>.
-/// Thread safety is achieved with a per-group <see cref="Lock"/> object (embedded in
-/// <see cref="GroupCircuitState"/>) for all compound check-and-transition operations.
+/// Maintains per-consumer circuit state and drives Open → HalfOpen transitions via <see cref="Timer"/>.
+/// Thread safety is achieved with a per-consumer <see cref="Lock"/> object (embedded in
+/// <see cref="ConsumerCircuitState"/>) for all compound check-and-transition operations.
 /// </summary>
 /// <remarks>
 /// This is a custom circuit breaker rather than Polly's <c>CircuitBreakerStrategyOptions</c> because
 /// Polly operates at the per-call pipeline level and cannot coordinate transport-level pause/resume
-/// across a consumer group. This implementation provides per-group state tracking, escalating open
+/// across a consumer. This implementation provides per-consumer state tracking, escalating open
 /// durations, and direct integration with the transport pause/resume lifecycle and OTel metrics.
 /// </remarks>
 internal sealed class CircuitBreakerStateManager(
@@ -28,16 +28,16 @@ internal sealed class CircuitBreakerStateManager(
     TimeProvider timeProvider
 ) : ICircuitBreakerStateManager, IAsyncDisposable, IDisposable
 {
-    // Lock-free reads on per-group state are intentional throughout this class:
-    //   - GroupCircuitState.State and ConsecutiveFailures use Volatile.Read/Write via their
-    //     property accessors (see field comments in GroupCircuitState).
+    // Lock-free reads on per-consumer state are intentional throughout this class:
+    //   - ConsumerCircuitState.State and ConsecutiveFailures use Volatile.Read/Write via their
+    //     property accessors (see field comments in ConsumerCircuitState).
     //   - _disposed uses Interlocked.Exchange for writes and Volatile.Read for reads.
     // ReSharper's InconsistentlySynchronizedField analyzer flags these because the same fields
-    // are also touched inside per-group locks — but the lock protects compound state transitions,
+    // are also touched inside per-consumer locks — but the lock protects compound state transitions,
     // not single-field visibility, and Volatile/Interlocked provide visibility on their own.
     private readonly CircuitBreakerOptions _options = options.Value;
 
-    private readonly ConcurrentDictionary<string, GroupCircuitState> _groups = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, ConsumerCircuitState> _circuits = new(StringComparer.Ordinal);
 
     private readonly CancellationTokenSource _disposalCts = new();
 
@@ -53,19 +53,19 @@ internal sealed class CircuitBreakerStateManager(
     private int _capWarningLogged;
 
     /// <summary>
-    /// Known consumer group names registered at startup. When populated (non-empty),
+    /// Known consumer names registered at startup. When populated (non-empty),
     /// <see cref="_GetOrAddState"/> returns a static no-op state for unrecognized names
-    /// to prevent unbounded OTel cardinality. Empty before <see cref="RegisterKnownGroups"/> is called.
+    /// to prevent unbounded OTel cardinality. Empty before <see cref="RegisterKnownConsumers"/> is called.
     /// </summary>
-    private FrozenSet<string> _knownGroups = [];
+    private FrozenSet<string> _knownConsumers = [];
 
     /// <summary>
-    /// Static no-op state returned for unrecognized group names. Permanently Closed,
+    /// Static no-op state returned for unrecognized consumer names. Permanently Closed,
     /// disabled, with no real tracking.
     /// </summary>
-    private static readonly GroupCircuitState _NoOpState = new()
+    private static readonly ConsumerCircuitState _NoOpState = new()
     {
-        GroupName = "_noop",
+        ConsumerKey = "_noop",
         Enabled = false,
         EffectiveFailureThreshold = int.MaxValue,
         EffectiveOpenDuration = TimeSpan.MaxValue,
@@ -73,12 +73,16 @@ internal sealed class CircuitBreakerStateManager(
     };
 
     /// <inheritdoc />
-    public void RegisterGroupCallbacks(string groupName, Func<long, ValueTask> onPause, Func<long, ValueTask> onResume)
+    public void RegisterConsumerCallbacks(
+        string consumerKey,
+        Func<long, ValueTask> onPause,
+        Func<long, ValueTask> onResume
+    )
     {
-        var state = _GetOrAddState(groupName);
-        var groupLock = state.SyncLock;
+        var state = _GetOrAddState(consumerKey);
+        var stateLock = state.SyncLock;
 
-        lock (groupLock)
+        lock (stateLock)
         {
             state.OnPause = onPause;
             state.OnResume = onResume;
@@ -86,33 +90,33 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <summary>
-    /// Freezes the set of valid consumer group names. After this call, <see cref="_GetOrAddState"/>
-    /// returns a static no-op state for any group name not in the set, and metrics tag unrecognized
+    /// Freezes the set of valid consumer names. After this call, <see cref="_GetOrAddState"/>
+    /// returns a static no-op state for any consumer name not in the set, and metrics tag unrecognized
     /// names as <c>_unknown</c>. Should be called once during startup after all consumers are registered.
     /// </summary>
-    public void RegisterKnownGroups(IEnumerable<string> groups)
+    public void RegisterKnownConsumers(IEnumerable<string> consumers)
     {
-        var frozen = groups.ToFrozenSet(StringComparer.Ordinal);
-        Volatile.Write(ref _knownGroups, frozen);
+        var frozen = consumers.ToFrozenSet(StringComparer.Ordinal);
+        Volatile.Write(ref _knownConsumers, frozen);
 
-        // Pre-populate state for all known groups so GetAllStates() returns them immediately
-        foreach (var group in frozen)
+        // Pre-populate state for all known consumers so GetAllStates() returns them immediately
+        foreach (var consumer in frozen)
         {
-            _GetOrAddState(group);
+            _GetOrAddState(consumer);
         }
 
-        metrics.SetKnownGroups(frozen);
+        metrics.SetKnownConsumers(frozen);
         metrics.RegisterStateCallback(GetAllStates);
     }
 
     /// <inheritdoc />
     public async ValueTask ReportFailureAsync(
-        string groupName,
+        string consumerKey,
         Exception exception,
         CancellationToken cancellationToken = default
     )
     {
-        var state = _GetOrAddState(groupName);
+        var state = _GetOrAddState(consumerKey);
 
         if (!state.Enabled)
         {
@@ -127,11 +131,11 @@ internal sealed class CircuitBreakerStateManager(
         }
         catch (Exception ex)
         {
-            logger.IsTransientPredicateFailed(ex, LogSanitizer.Sanitize(groupName));
+            logger.IsTransientPredicateFailed(ex, LogSanitizer.Sanitize(consumerKey));
             isTransient = false;
         }
 
-        var groupLock = state.SyncLock;
+        var stateLock = state.SyncLock;
         Func<long, ValueTask>? pauseCallback = null;
         var tripped = false;
         var closedFromHalfOpen = false;
@@ -147,7 +151,7 @@ internal sealed class CircuitBreakerStateManager(
             ITimer? OldTimerToDispose
         ) openInfo = default;
 
-        lock (groupLock)
+        lock (stateLock)
         {
             switch (state.State)
             {
@@ -197,7 +201,7 @@ internal sealed class CircuitBreakerStateManager(
         {
             logger.CircuitOpened(
                 openInfo.PreviousState,
-                LogSanitizer.Sanitize(groupName),
+                LogSanitizer.Sanitize(consumerKey),
                 openInfo.Failures,
                 openInfo.Escalation,
                 openInfo.OpenDuration
@@ -205,7 +209,7 @@ internal sealed class CircuitBreakerStateManager(
         }
         else if (closedFromHalfOpen)
         {
-            logger.CircuitClosedAfterNonTransientHalfOpenFailure(LogSanitizer.Sanitize(groupName));
+            logger.CircuitClosedAfterNonTransientHalfOpenFailure(LogSanitizer.Sanitize(consumerKey));
         }
 
         // Dispose timers outside the lock
@@ -223,12 +227,12 @@ internal sealed class CircuitBreakerStateManager(
         if (tripped)
         {
             await _CreateAndAssignOpenTimer(state, openInfo.OpenDuration, openInfo.Epoch).ConfigureAwait(false);
-            metrics.RecordTrip(groupName);
+            metrics.RecordTrip(consumerKey);
         }
 
         if (openDuration is not null)
         {
-            metrics.RecordOpenDuration(groupName, openDuration.Value);
+            metrics.RecordOpenDuration(consumerKey, openDuration.Value);
         }
 
         if (pauseCallback is not null)
@@ -238,22 +242,22 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public CircuitRetryDecision GetRetryDecision(MessageLane lane, string groupName)
+    public CircuitRetryDecision GetRetryDecision(MessageLane lane, string consumerIdentity)
     {
-        var circuitGroup = CircuitBreakerGroupKeys.For(lane, groupName);
-        if (!_groups.TryGetValue(circuitGroup, out var state))
+        var circuitKey = CircuitBreakerKeys.For(lane, consumerIdentity);
+        if (!_circuits.TryGetValue(circuitKey, out var state))
         {
             return CircuitRetryDecision.Closed;
         }
 
-        var groupLock = state.SyncLock;
+        var stateLock = state.SyncLock;
         Func<long, ValueTask>? resumeCallback = null;
         TaskCompletionSource? resumeTcs = null;
         long resumeEpoch = 0;
         CircuitRetryDecision decision;
         var transitionedToHalfOpen = false;
 
-        lock (groupLock)
+        lock (stateLock)
         {
             if (state.State is CircuitBreakerState.Closed)
             {
@@ -274,7 +278,7 @@ internal sealed class CircuitBreakerStateManager(
                 }
 
                 // The timer callback may be queued but not yet running. Advance the same epoch
-                // under the group lock so a persisted retry can become the probe without waiting for
+                // under the consumer lock so a persisted retry can become the probe without waiting for
                 // a fresh broker delivery. The queued callback observes State != Open and exits.
                 state.CurrentEpoch = _NextEpoch();
                 state.State = CircuitBreakerState.HalfOpen;
@@ -316,24 +320,24 @@ internal sealed class CircuitBreakerStateManager(
 
         if (transitionedToHalfOpen)
         {
-            logger.CircuitHalfOpen(circuitGroup);
-            _StartResumeCallback(state, circuitGroup, resumeCallback, resumeEpoch, resumeTcs);
+            logger.CircuitHalfOpen(circuitKey);
+            _StartResumeCallback(state, circuitKey, resumeCallback, resumeEpoch, resumeTcs);
         }
 
         return decision;
     }
 
     /// <inheritdoc />
-    public long? TryAcquireHalfOpenProbe(string groupName)
+    public long? TryAcquireHalfOpenProbe(string consumerKey)
     {
-        if (!_groups.TryGetValue(groupName, out var state))
+        if (!_circuits.TryGetValue(consumerKey, out var state))
         {
             return 0;
         }
 
-        var groupLock = state.SyncLock;
+        var stateLock = state.SyncLock;
 
-        lock (groupLock)
+        lock (stateLock)
         {
             if (state.State is not CircuitBreakerState.HalfOpen)
             {
@@ -355,19 +359,19 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public bool TryGetOpenEpoch(string groupName, out long epoch)
+    public bool TryGetOpenEpoch(string consumerKey, out long epoch)
     {
-        Argument.IsNotNull(groupName);
+        Argument.IsNotNull(consumerKey);
 
-        if (!_groups.TryGetValue(groupName, out var state))
+        if (!_circuits.TryGetValue(consumerKey, out var state))
         {
             epoch = 0;
             return false;
         }
 
-        var groupLock = state.SyncLock;
+        var stateLock = state.SyncLock;
 
-        lock (groupLock)
+        lock (stateLock)
         {
             if (state.State is not CircuitBreakerState.Open)
             {
@@ -381,16 +385,16 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public void ReleaseHalfOpenProbe(string groupName, long epoch)
+    public void ReleaseHalfOpenProbe(string consumerKey, long epoch)
     {
-        if (!_groups.TryGetValue(groupName, out var state))
+        if (!_circuits.TryGetValue(consumerKey, out var state))
         {
             return;
         }
 
-        var groupLock = state.SyncLock;
+        var stateLock = state.SyncLock;
 
-        lock (groupLock)
+        lock (stateLock)
         {
             if (state.State is not CircuitBreakerState.HalfOpen || state.ProbeAcquiredEpoch != epoch)
             {
@@ -404,9 +408,9 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public async ValueTask ReportSuccessAsync(string groupName, CancellationToken cancellationToken = default)
+    public async ValueTask ReportSuccessAsync(string consumerKey, CancellationToken cancellationToken = default)
     {
-        if (!_groups.TryGetValue(groupName, out var state))
+        if (!_circuits.TryGetValue(consumerKey, out var state))
         {
             return;
         }
@@ -418,12 +422,12 @@ internal sealed class CircuitBreakerStateManager(
             return;
         }
 
-        var groupLock = state.SyncLock;
+        var stateLock = state.SyncLock;
         TimeSpan? openDuration = null;
         ITimer? closedTimerToDispose = null;
         var transitionedToClosed = false;
 
-        lock (groupLock)
+        lock (stateLock)
         {
             if (state.State is CircuitBreakerState.Closed)
             {
@@ -442,7 +446,7 @@ internal sealed class CircuitBreakerStateManager(
 
         if (transitionedToClosed)
         {
-            logger.CircuitClosedAfterProbeSucceeded(groupName);
+            logger.CircuitClosedAfterProbeSucceeded(consumerKey);
         }
 
         if (closedTimerToDispose is not null)
@@ -452,17 +456,17 @@ internal sealed class CircuitBreakerStateManager(
 
         if (openDuration is not null)
         {
-            metrics.RecordOpenDuration(groupName, openDuration.Value);
+            metrics.RecordOpenDuration(consumerKey, openDuration.Value);
         }
     }
 
     /// <inheritdoc />
-    public bool IsOpen(string groupName)
+    public bool IsOpen(string consumerKey)
     {
-        Argument.IsNotNull(groupName);
-        Argument.IsLessThanOrEqualTo(groupName.Length, 256);
+        Argument.IsNotNull(consumerKey);
+        Argument.IsLessThanOrEqualTo(consumerKey.Length, 256);
 
-        if (!_groups.TryGetValue(groupName, out var state))
+        if (!_circuits.TryGetValue(consumerKey, out var state))
         {
             return false;
         }
@@ -472,24 +476,24 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public bool IsOpen(MessageLane lane, string groupName)
+    public bool IsOpen(MessageLane lane, string consumerIdentity)
     {
-        return IsOpen(CircuitBreakerGroupKeys.For(lane, groupName));
+        return IsOpen(CircuitBreakerKeys.For(lane, consumerIdentity));
     }
 
     /// <inheritdoc />
-    public async ValueTask RemoveGroupAsync(string groupName)
+    public async ValueTask RemoveConsumerAsync(string consumerKey)
     {
-        if (!_groups.TryRemove(groupName, out var state))
+        if (!_circuits.TryRemove(consumerKey, out var state))
         {
             return;
         }
 
-        var groupLock = state.SyncLock;
+        var stateLock = state.SyncLock;
         ITimer? timerToDispose;
         Task[] resumeTasks;
 
-        lock (groupLock)
+        lock (stateLock)
         {
             state.OnPause = null;
             state.OnResume = null;
@@ -525,19 +529,19 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public async ValueTask AbortHalfOpenProbeAsync(string groupName)
+    public async ValueTask AbortHalfOpenProbeAsync(string consumerKey)
     {
-        if (!_groups.TryGetValue(groupName, out var state))
+        if (!_circuits.TryGetValue(consumerKey, out var state))
         {
             return;
         }
 
-        var safeGroupName = LogSanitizer.Sanitize(groupName);
-        var groupLock = state.SyncLock;
+        var safeConsumerKey = LogSanitizer.Sanitize(consumerKey);
+        var stateLock = state.SyncLock;
         ITimer? oldTimer;
         (TimeSpan OpenDuration, long Epoch) timerInfo;
 
-        lock (groupLock)
+        lock (stateLock)
         {
             if (state.State is not CircuitBreakerState.HalfOpen)
             {
@@ -566,7 +570,7 @@ internal sealed class CircuitBreakerStateManager(
             timerInfo = (openDuration, state.CurrentEpoch);
         }
 
-        logger.CircuitReopenedAfterProbeAbort(safeGroupName);
+        logger.CircuitReopenedAfterProbeAbort(safeConsumerKey);
 
         // Await timer disposal outside the lock
         if (oldTimer is not null)
@@ -577,16 +581,16 @@ internal sealed class CircuitBreakerStateManager(
         await _CreateAndAssignOpenTimer(state, timerInfo.OpenDuration, timerInfo.Epoch).ConfigureAwait(false);
 
         // Record a trip metric — we are re-entering Open (counts for operator visibility)
-        metrics.RecordTrip(groupName);
+        metrics.RecordTrip(consumerKey);
     }
 
     /// <inheritdoc />
-    public CircuitBreakerState? GetState(string groupName)
+    public CircuitBreakerState? GetState(string consumerKey)
     {
-        Argument.IsNotNull(groupName);
-        Argument.IsLessThanOrEqualTo(groupName.Length, 256);
+        Argument.IsNotNull(consumerKey);
+        Argument.IsLessThanOrEqualTo(consumerKey.Length, 256);
 
-        if (!_groups.TryGetValue(groupName, out var state))
+        if (!_circuits.TryGetValue(consumerKey, out var state))
         {
             return null;
         }
@@ -596,34 +600,34 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public CircuitBreakerState? GetState(MessageLane lane, string groupName)
+    public CircuitBreakerState? GetState(MessageLane lane, string consumerIdentity)
     {
-        return GetState(CircuitBreakerGroupKeys.For(lane, groupName));
+        return GetState(CircuitBreakerKeys.For(lane, consumerIdentity));
     }
 
     /// <inheritdoc />
-    public IReadOnlySet<string> KnownGroups => Volatile.Read(ref _knownGroups);
+    public IReadOnlySet<string> KnownConsumers => Volatile.Read(ref _knownConsumers);
 
     /// <inheritdoc />
     public IReadOnlyDictionary<string, CircuitBreakerState> GetAllStates()
     {
-        var knownGroups = Volatile.Read(ref _knownGroups);
-        var capacity = knownGroups.Count > 0 ? knownGroups.Count : _groups.Count;
+        var knownConsumers = Volatile.Read(ref _knownConsumers);
+        var capacity = knownConsumers.Count > 0 ? knownConsumers.Count : _circuits.Count;
         var result = new Dictionary<string, CircuitBreakerState>(capacity, StringComparer.Ordinal);
 
-        if (knownGroups.Count > 0)
+        if (knownConsumers.Count > 0)
         {
-            // Emit all known groups to guarantee OTel gauge shape even before first message.
-            // Groups already in _groups get their real state; others default to Closed.
-            foreach (var group in knownGroups)
+            // Emit all known consumers to guarantee OTel gauge shape even before first message.
+            // Consumers already in _circuits get their real state; others default to Closed.
+            foreach (var consumer in knownConsumers)
             {
-                var state = _groups.TryGetValue(group, out var s) ? s.State : CircuitBreakerState.Closed;
-                result[group] = state;
+                var state = _circuits.TryGetValue(consumer, out var s) ? s.State : CircuitBreakerState.Closed;
+                result[consumer] = state;
             }
         }
         else
         {
-            foreach (var kvp in _groups)
+            foreach (var kvp in _circuits)
             {
                 result[kvp.Key] = kvp.Value.State;
             }
@@ -633,19 +637,19 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public CircuitBreakerSnapshot? GetSnapshot(string groupName)
+    public CircuitBreakerSnapshot? GetSnapshot(string consumerKey)
     {
-        Argument.IsNotNull(groupName);
-        Argument.IsLessThanOrEqualTo(groupName.Length, 256);
+        Argument.IsNotNull(consumerKey);
+        Argument.IsLessThanOrEqualTo(consumerKey.Length, 256);
 
-        if (!_groups.TryGetValue(groupName, out var state))
+        if (!_circuits.TryGetValue(consumerKey, out var state))
         {
             return null;
         }
 
-        var groupLock = state.SyncLock;
+        var stateLock = state.SyncLock;
 
-        lock (groupLock)
+        lock (stateLock)
         {
             var effectiveOpenDuration = _GetOpenDuration(state);
             TimeSpan? remaining = null;
@@ -669,34 +673,34 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public CircuitBreakerSnapshot? GetSnapshot(MessageLane lane, string groupName)
+    public CircuitBreakerSnapshot? GetSnapshot(MessageLane lane, string consumerIdentity)
     {
-        return GetSnapshot(CircuitBreakerGroupKeys.For(lane, groupName));
+        return GetSnapshot(CircuitBreakerKeys.For(lane, consumerIdentity));
     }
 
     /// <inheritdoc />
-    public async ValueTask<bool> ResetAsync(string groupName, CancellationToken cancellationToken = default)
+    public async ValueTask<bool> ResetAsync(string consumerKey, CancellationToken cancellationToken = default)
     {
-        Argument.IsNotNull(groupName);
-        Argument.IsLessThanOrEqualTo(groupName.Length, 256);
+        Argument.IsNotNull(consumerKey);
+        Argument.IsLessThanOrEqualTo(consumerKey.Length, 256);
 
-        // Must-complete transition: this resumes ALL consumption for the group, and aborting mid-flip
+        // Must-complete transition: this resumes ALL consumption for the consumer, and aborting mid-flip
         // could leave the breaker in a torn (half-applied) state. Honor the token only here, before the
         // transition begins — it is never raced against the state mutation or the resume callback.
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!_groups.TryGetValue(groupName, out var state))
+        if (!_circuits.TryGetValue(consumerKey, out var state))
         {
             return false;
         }
 
-        var groupLock = state.SyncLock;
+        var stateLock = state.SyncLock;
         Func<long, ValueTask>? resumeCallback;
         ITimer? timerToDispose;
         CircuitBreakerState previousState;
         long resumeEpoch;
 
-        lock (groupLock)
+        lock (stateLock)
         {
             previousState = state.State;
 
@@ -722,7 +726,7 @@ internal sealed class CircuitBreakerStateManager(
             resumeEpoch = state.CurrentEpoch;
         }
 
-        logger.CircuitClosedByManualReset(previousState, LogSanitizer.Sanitize(groupName));
+        logger.CircuitClosedByManualReset(previousState, LogSanitizer.Sanitize(consumerKey));
 
         if (timerToDispose is not null)
         {
@@ -738,35 +742,39 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public ValueTask<bool> ResetAsync(MessageLane lane, string groupName, CancellationToken cancellationToken = default)
+    public ValueTask<bool> ResetAsync(
+        MessageLane lane,
+        string consumerIdentity,
+        CancellationToken cancellationToken = default
+    )
     {
-        return ResetAsync(CircuitBreakerGroupKeys.For(lane, groupName), cancellationToken);
+        return ResetAsync(CircuitBreakerKeys.For(lane, consumerIdentity), cancellationToken);
     }
 
     /// <inheritdoc />
-    public async ValueTask<bool> ForceOpenAsync(string groupName, CancellationToken cancellationToken = default)
+    public async ValueTask<bool> ForceOpenAsync(string consumerKey, CancellationToken cancellationToken = default)
     {
-        Argument.IsNotNull(groupName);
-        Argument.IsLessThanOrEqualTo(groupName.Length, 256);
+        Argument.IsNotNull(consumerKey);
+        Argument.IsLessThanOrEqualTo(consumerKey.Length, 256);
 
-        // Must-complete transition: this halts ALL consumption for the group, and aborting mid-flip
+        // Must-complete transition: this halts ALL consumption for the consumer, and aborting mid-flip
         // could leave the breaker in a torn (half-applied) state. Honor the token only here, before the
         // transition begins — it is never raced against the state mutation or the pause callback.
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!_groups.TryGetValue(groupName, out var state))
+        if (!_circuits.TryGetValue(consumerKey, out var state))
         {
             return false;
         }
 
-        var groupLock = state.SyncLock;
+        var stateLock = state.SyncLock;
         Func<long, ValueTask>? pauseCallback;
         ITimer? timerToDispose;
         (TimeSpan OpenDuration, long Epoch) timerInfo;
         CircuitBreakerState previousState;
         int escalationLevel;
 
-        lock (groupLock)
+        lock (stateLock)
         {
             if (state.State is CircuitBreakerState.Open)
             {
@@ -799,7 +807,7 @@ internal sealed class CircuitBreakerStateManager(
 
         logger.CircuitForcedOpen(
             previousState,
-            LogSanitizer.Sanitize(groupName),
+            LogSanitizer.Sanitize(consumerKey),
             escalationLevel,
             timerInfo.OpenDuration
         );
@@ -810,7 +818,7 @@ internal sealed class CircuitBreakerStateManager(
         }
 
         await _CreateAndAssignOpenTimer(state, timerInfo.OpenDuration, timerInfo.Epoch).ConfigureAwait(false);
-        metrics.RecordTrip(groupName);
+        metrics.RecordTrip(consumerKey);
 
         if (pauseCallback is not null)
         {
@@ -823,15 +831,15 @@ internal sealed class CircuitBreakerStateManager(
     /// <inheritdoc />
     public ValueTask<bool> ForceOpenAsync(
         MessageLane lane,
-        string groupName,
+        string consumerIdentity,
         CancellationToken cancellationToken = default
     )
     {
-        return ForceOpenAsync(CircuitBreakerGroupKeys.For(lane, groupName), cancellationToken);
+        return ForceOpenAsync(CircuitBreakerKeys.For(lane, consumerIdentity), cancellationToken);
     }
 
     /// <summary>
-    /// Asynchronously disposes all per-group <see cref="Timer"/> instances and cancels
+    /// Asynchronously disposes all per-consumer <see cref="Timer"/> instances and cancels
     /// any in-flight resume callbacks. Preferred over <see cref="Dispose"/> because it
     /// can await timer disposal, ensuring no callbacks fire after this method returns.
     /// </summary>
@@ -844,13 +852,13 @@ internal sealed class CircuitBreakerStateManager(
 
         await _disposalCts.CancelAsync().ConfigureAwait(false);
 
-        foreach (var state in _groups.Values)
+        foreach (var state in _circuits.Values)
         {
-            var groupLock = state.SyncLock;
+            var stateLock = state.SyncLock;
             ITimer? timerToDispose;
             Task[] resumeTasks;
 
-            lock (groupLock)
+            lock (stateLock)
             {
                 state.OnPause = null;
                 state.OnResume = null;
@@ -885,7 +893,7 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <summary>
-    /// Synchronously disposes all per-group <see cref="Timer"/> instances and blocks on any
+    /// Synchronously disposes all per-consumer <see cref="Timer"/> instances and blocks on any
     /// in-flight resume tasks to ensure <see cref="_disposalCts"/>
     /// is not disposed while a background task still holds a reference to its token.
     /// Prefer <see cref="DisposeAsync"/> when an async context is available.
@@ -899,13 +907,13 @@ internal sealed class CircuitBreakerStateManager(
 
         _disposalCts.Cancel();
 
-        foreach (var state in _groups.Values)
+        foreach (var state in _circuits.Values)
         {
-            var groupLock = state.SyncLock;
+            var stateLock = state.SyncLock;
             ITimer? timerToDispose;
             Task[] resumeTasks;
 
-            lock (groupLock)
+            lock (stateLock)
             {
                 state.OnPause = null;
                 state.OnResume = null;
@@ -950,8 +958,8 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <summary>
-    /// Hard cap on the number of tracked groups. If exceeded, new groups receive the no-op state
-    /// to prevent unbounded memory growth even if <see cref="_knownGroups"/> is not yet populated.
+    /// Hard cap on the number of tracked consumers. If exceeded, new consumers receive the no-op state
+    /// to prevent unbounded memory growth even if <see cref="_knownConsumers"/> is not yet populated.
     /// <para>
     /// The cap is approximate: under high concurrency, multiple threads may pass the count check
     /// simultaneously and each insert a new key, allowing the dictionary to exceed this value by
@@ -959,9 +967,9 @@ internal sealed class CircuitBreakerStateManager(
     /// to prevent unbounded growth, not enforce an exact limit.
     /// </para>
     /// </summary>
-    private const int _MaxTrackedGroups = 1000;
+    private const int _MaxTrackedConsumers = 1000;
 
-    private TimeSpan _GetRemainingOpenDuration(GroupCircuitState state)
+    private TimeSpan _GetRemainingOpenDuration(ConsumerCircuitState state)
     {
         if (!state.OpenedAt.HasValue)
         {
@@ -973,19 +981,19 @@ internal sealed class CircuitBreakerStateManager(
         return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
     }
 
-    private DateTimeOffset _GetNextProbeAt(GroupCircuitState state)
+    private DateTimeOffset _GetNextProbeAt(ConsumerCircuitState state)
     {
         // Derive from the injected clock plus the monotonic remaining duration. Reconstructing
         // OpenedAtUtc + open duration would pin the persisted boundary to a stale wall-clock
         // reading if the application clock jumped after the circuit opened (already-due rows
-        // get reclaimed and deferred in a loop; a backward jump over-defers the group).
+        // get reclaimed and deferred in a loop; a backward jump over-defers the consumer).
         // Every Reopened call site assigns OpenedAt first, so the remaining duration equals the
         // full open duration at reopen time.
         return timeProvider.GetUtcNow().Add(_GetRemainingOpenDuration(state));
     }
 
     private static void _CompleteRetryProbeOutcome(
-        GroupCircuitState state,
+        ConsumerCircuitState state,
         CircuitRetryProbeOutcomeKind kind,
         DateTimeOffset? nextProbeAt
     )
@@ -994,53 +1002,53 @@ internal sealed class CircuitBreakerStateManager(
         state.RetryProbeOutcome = null;
     }
 
-    private GroupCircuitState _GetOrAddState(string groupName)
+    private ConsumerCircuitState _GetOrAddState(string consumerKey)
     {
-        // Fast path: group already tracked — no allocation, no contention
-        if (_groups.TryGetValue(groupName, out var existingState))
+        // Fast path: consumer already tracked — no allocation, no contention
+        if (_circuits.TryGetValue(consumerKey, out var existingState))
         {
             return existingState;
         }
 
-        var knownGroups = Volatile.Read(ref _knownGroups);
-        if (knownGroups.Count > 0 && !knownGroups.Contains(groupName))
+        var knownConsumers = Volatile.Read(ref _knownConsumers);
+        if (knownConsumers.Count > 0 && !knownConsumers.Contains(consumerKey))
         {
-            logger.UnrecognizedConsumerGroup(LogSanitizer.Sanitize(groupName));
+            logger.UnrecognizedConsumer(LogSanitizer.Sanitize(consumerKey));
 
             return _NoOpState;
         }
 
-        // Slow path: group not yet tracked
-        if (_groups.Count >= _MaxTrackedGroups)
+        // Slow path: consumer not yet tracked
+        if (_circuits.Count >= _MaxTrackedConsumers)
         {
             if (Interlocked.CompareExchange(ref _capWarningLogged, 1, 0) == 0)
             {
-                logger.CircuitBreakerGroupCountCapReached(_MaxTrackedGroups);
+                logger.CircuitBreakerConsumerCountCapReached(_MaxTrackedConsumers);
             }
 
             return _NoOpState;
         }
 
-        registry.TryGet(groupName, out var perGroup);
+        registry.TryGet(consumerKey, out var perConsumer);
 
-        var newState = new GroupCircuitState
+        var newState = new ConsumerCircuitState
         {
-            GroupName = groupName,
-            Enabled = perGroup?.Enabled ?? true,
+            ConsumerKey = consumerKey,
+            Enabled = perConsumer?.Enabled ?? true,
             // ReSharper disable once InconsistentlySynchronizedField
-            EffectiveFailureThreshold = perGroup?.FailureThreshold ?? _options.FailureThreshold,
+            EffectiveFailureThreshold = perConsumer?.FailureThreshold ?? _options.FailureThreshold,
             // ReSharper disable once InconsistentlySynchronizedField
-            EffectiveOpenDuration = perGroup?.OpenDuration ?? _options.OpenDuration,
+            EffectiveOpenDuration = perConsumer?.OpenDuration ?? _options.OpenDuration,
             // ReSharper disable once InconsistentlySynchronizedField
-            EffectiveIsTransient = perGroup?.IsTransientException ?? _options.IsTransientException,
+            EffectiveIsTransient = perConsumer?.IsTransientException ?? _options.IsTransientException,
         };
 
-        return _groups.GetOrAdd(groupName, newState);
+        return _circuits.GetOrAdd(consumerKey, newState);
     }
 
     /// <summary>
-    /// Must be called while holding the group lock. Performs no logging or I/O.
-    /// Callers must log the transition and invoke <c>metrics.RecordTrip(groupName)</c>
+    /// Must be called while holding the consumer lock. Performs no logging or I/O.
+    /// Callers must log the transition and invoke <c>metrics.RecordTrip(consumerKey)</c>
     /// after releasing the lock.
     /// </summary>
     private (
@@ -1050,7 +1058,7 @@ internal sealed class CircuitBreakerStateManager(
         int Failures,
         int Escalation,
         ITimer? OldTimerToDispose
-    ) _TransitionToOpen(GroupCircuitState state)
+    ) _TransitionToOpen(ConsumerCircuitState state)
     {
         var previousState = state.State;
         state.State = CircuitBreakerState.Open;
@@ -1082,11 +1090,11 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <summary>
-    /// Creates the open timer outside the group lock, then briefly re-acquires the lock
+    /// Creates the open timer outside the consumer lock, then briefly re-acquires the lock
     /// to store it. This avoids holding the lock during Timer construction (heap allocation
     /// and TimerQueue registration which may acquire internal runtime locks).
     /// </summary>
-    private async ValueTask _CreateAndAssignOpenTimer(GroupCircuitState state, TimeSpan openDuration, long epoch)
+    private async ValueTask _CreateAndAssignOpenTimer(ConsumerCircuitState state, TimeSpan openDuration, long epoch)
     {
         var callbackState = new TimerCallbackState(state, epoch);
         var timer = timeProvider.CreateTimer(
@@ -1097,9 +1105,9 @@ internal sealed class CircuitBreakerStateManager(
         );
         var stale = false;
 
-        var groupLock = state.SyncLock;
+        var stateLock = state.SyncLock;
 
-        lock (groupLock)
+        lock (stateLock)
         {
             // If the epoch has moved on (another thread transitioned the state while we
             // were outside the lock), this timer is already stale — dispose it immediately.
@@ -1121,11 +1129,11 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <summary>
-    /// Must be called while holding the group lock. Performs no logging or I/O.
+    /// Must be called while holding the consumer lock. Performs no logging or I/O.
     /// Callers must log the transition after releasing the lock.
     /// </summary>
     private (TimeSpan? OpenDuration, ITimer? TimerToDispose) _TransitionToClosed(
-        GroupCircuitState state,
+        ConsumerCircuitState state,
         bool probeSucceeded
     )
     {
@@ -1171,14 +1179,14 @@ internal sealed class CircuitBreakerStateManager(
         }
 
         var (state, expectedEpoch) = (TimerCallbackState)timerState!;
-        var groupName = state.GroupName;
+        var consumerKey = state.ConsumerKey;
 
-        var groupLock = state.SyncLock;
+        var stateLock = state.SyncLock;
         Func<long, ValueTask>? resumeCallback;
         TaskCompletionSource? resumeTcs = null;
         long resumeEpoch = 0;
 
-        lock (groupLock)
+        lock (stateLock)
         {
             if (state.State is not CircuitBreakerState.Open || state.CurrentEpoch != expectedEpoch)
             {
@@ -1209,14 +1217,14 @@ internal sealed class CircuitBreakerStateManager(
             }
         }
 
-        logger.CircuitHalfOpen(groupName);
+        logger.CircuitHalfOpen(consumerKey);
 
-        _StartResumeCallback(state, groupName, resumeCallback, resumeEpoch, resumeTcs);
+        _StartResumeCallback(state, consumerKey, resumeCallback, resumeEpoch, resumeTcs);
     }
 
     private void _StartResumeCallback(
-        GroupCircuitState state,
-        string groupName,
+        ConsumerCircuitState state,
+        string consumerKey,
         Func<long, ValueTask>? resumeCallback,
         long epoch,
         TaskCompletionSource? resumeTcs
@@ -1229,7 +1237,7 @@ internal sealed class CircuitBreakerStateManager(
             // can race with Dispose (callback captures resumeCallback before Dispose nulls it).
             var ct = _disposalCts.Token;
 
-            // Fire-and-forget: the work is tracked through resumeTcs.Task in the group's
+            // Fire-and-forget: the work is tracked through resumeTcs.Task in the consumer's
             // in-flight set. The discard suppresses VSTHRD110/MA0134.
             _ = Task.Run(
                     async () =>
@@ -1252,8 +1260,8 @@ internal sealed class CircuitBreakerStateManager(
                                     return;
                                 }
 
-                                logger.ResumeCallbackFailed(ex, LogSanitizer.Sanitize(groupName));
-                                await _ReopenAfterResumeFailureAsync(groupName, epoch).ConfigureAwait(false);
+                                logger.ResumeCallbackFailed(ex, LogSanitizer.Sanitize(consumerKey));
+                                await _ReopenAfterResumeFailureAsync(consumerKey, epoch).ConfigureAwait(false);
                             }
                         }
                         finally
@@ -1269,7 +1277,7 @@ internal sealed class CircuitBreakerStateManager(
                     // the TCS would never complete — complete it here as a fallback.
                     static (_, s) =>
                     {
-                        var (source, currentState) = ((TaskCompletionSource, GroupCircuitState))s!;
+                        var (source, currentState) = ((TaskCompletionSource, ConsumerCircuitState))s!;
                         source.TrySetResult();
                         currentState.InFlightResumes.TryRemove(source.Task, out byte _);
                     },
@@ -1281,19 +1289,19 @@ internal sealed class CircuitBreakerStateManager(
         }
     }
 
-    private async Task _ReopenAfterResumeFailureAsync(string groupName, long failedEpoch)
+    private async Task _ReopenAfterResumeFailureAsync(string consumerKey, long failedEpoch)
     {
         if (_disposalCts.IsCancellationRequested)
         {
             return;
         }
 
-        if (!_groups.TryGetValue(groupName, out var state))
+        if (!_circuits.TryGetValue(consumerKey, out var state))
         {
             return;
         }
 
-        var groupLock = state.SyncLock;
+        var stateLock = state.SyncLock;
         Func<long, ValueTask>? pauseCallback;
         (
             CircuitBreakerState PreviousState,
@@ -1304,7 +1312,7 @@ internal sealed class CircuitBreakerStateManager(
             ITimer? OldTimerToDispose
         ) openInfo;
 
-        lock (groupLock)
+        lock (stateLock)
         {
             if (state.State is not CircuitBreakerState.HalfOpen || state.CurrentEpoch != failedEpoch)
             {
@@ -1319,7 +1327,7 @@ internal sealed class CircuitBreakerStateManager(
 
         logger.CircuitOpened(
             openInfo.PreviousState,
-            LogSanitizer.Sanitize(groupName),
+            LogSanitizer.Sanitize(consumerKey),
             openInfo.Failures,
             openInfo.Escalation,
             openInfo.OpenDuration
@@ -1332,7 +1340,7 @@ internal sealed class CircuitBreakerStateManager(
         }
 
         await _CreateAndAssignOpenTimer(state, openInfo.OpenDuration, openInfo.Epoch).ConfigureAwait(false);
-        metrics.RecordTrip(groupName);
+        metrics.RecordTrip(consumerKey);
 
         if (pauseCallback is not null)
         {
@@ -1351,12 +1359,12 @@ internal sealed class CircuitBreakerStateManager(
                 // _TransitionToOpen already incremented EscalationLevel, so do NOT bump it
                 // again here — that would cause 4x escalation instead of the intended 2x.
                 // Log at Critical level so operators are alerted to the inconsistency.
-                logger.ReopenPauseCallbackFailed(ex, groupName, openInfo.Escalation);
+                logger.ReopenPauseCallbackFailed(ex, consumerKey, openInfo.Escalation);
             }
         }
     }
 
-    private TimeSpan _GetOpenDuration(GroupCircuitState state)
+    private TimeSpan _GetOpenDuration(ConsumerCircuitState state)
     {
         var exponent = Math.Max(0, state.EscalationLevel - 1);
         var scaledSeconds = state.EffectiveOpenDuration.TotalSeconds * Math.Pow(2, exponent);
@@ -1370,15 +1378,15 @@ internal sealed class CircuitBreakerStateManager(
 
     /// <summary>
     /// Callback state for <see cref="_OnOpenTimerElapsed"/>. Captures the expected
-    /// <see cref="GroupCircuitState.CurrentEpoch"/> so stale timer callbacks from
+    /// <see cref="ConsumerCircuitState.CurrentEpoch"/> so stale timer callbacks from
     /// a previous Open cycle are rejected even when the circuit has re-opened.
     /// </summary>
-    private sealed record TimerCallbackState(GroupCircuitState State, long Epoch);
+    private sealed record TimerCallbackState(ConsumerCircuitState State, long Epoch);
 
-    private sealed class GroupCircuitState
+    private sealed class ConsumerCircuitState
     {
         /// <summary>
-        /// Per-group lock for all compound check-and-transition operations.
+        /// Per-consumer lock for all compound check-and-transition operations.
         /// Embedded in the state object to avoid a separate dictionary lookup.
         /// Always assign to a local variable before locking to satisfy the analyzer
         /// (MT1000: locking on publicly accessible member).
@@ -1442,20 +1450,20 @@ internal sealed class CircuitBreakerStateManager(
         public ITimer? OpenTimer { get; set; }
 
         /// <summary>
-        /// All resume callbacks launched for this generation of group state. Disposal and removal
+        /// All resume callbacks launched for this generation of consumer state. Disposal and removal
         /// wait on every entry; the per-epoch fence handles the transition order itself.
         /// </summary>
         public ConcurrentDictionary<Task, byte> InFlightResumes { get; } = new();
 
         /// <summary>
         /// The manager-wide intent epoch currently represented by this circuit state. It is
-        /// assigned under <see cref="SyncLock"/> and never repeats across group lifetimes.
+        /// assigned under <see cref="SyncLock"/> and never repeats across consumer lifetimes.
         /// </summary>
         public long CurrentEpoch { get; set; }
 
         /// <summary>
         /// Whether a HalfOpen probe has been acquired. Guards single-probe semantics.
-        /// Must only be read/written while holding the group lock.
+        /// Must only be read/written while holding the consumer lock.
         /// </summary>
         public bool ProbeAcquired { get; set; }
 
@@ -1468,32 +1476,32 @@ internal sealed class CircuitBreakerStateManager(
         public TaskCompletionSource<CircuitRetryProbeOutcome>? RetryProbeOutcome { get; set; }
 
         /// <summary>
-        /// The consumer group name this state belongs to. Used as timer callback state
+        /// The consumer name this state belongs to. Used as timer callback state
         /// to avoid boxing a <c>(string, int)</c> ValueTuple on every circuit trip.
         /// </summary>
-        public required string GroupName { get; init; }
+        public required string ConsumerKey { get; init; }
 
         /// <summary>
-        /// Whether the circuit breaker is enabled for this group. When <see langword="false"/>,
+        /// Whether the circuit breaker is enabled for this consumer. When <see langword="false"/>,
         /// all failure reporting is skipped.
         /// </summary>
         public bool Enabled { get; init; } = true;
 
         /// <summary>
-        /// Resolved failure threshold (per-group override or global fallback).
-        /// Cached at group creation to avoid re-merging on every call.
+        /// Resolved failure threshold (per-consumer override or global fallback).
+        /// Cached at consumer creation to avoid re-merging on every call.
         /// </summary>
         public required int EffectiveFailureThreshold { get; init; }
 
         /// <summary>
-        /// Resolved open duration (per-group override or global fallback).
-        /// Cached at group creation to avoid re-merging on every call.
+        /// Resolved open duration (per-consumer override or global fallback).
+        /// Cached at consumer creation to avoid re-merging on every call.
         /// </summary>
         public required TimeSpan EffectiveOpenDuration { get; init; }
 
         /// <summary>
-        /// Resolved transient-exception predicate (per-group override or global fallback).
-        /// Cached at group creation to avoid re-merging on every call.
+        /// Resolved transient-exception predicate (per-consumer override or global fallback).
+        /// Cached at consumer creation to avoid re-merging on every call.
         /// </summary>
         public required Func<Exception, bool> EffectiveIsTransient { get; init; }
     }
@@ -1504,19 +1512,19 @@ internal static partial class CircuitBreakerStateManagerLog
     [LoggerMessage(
         EventId = 4100,
         Level = LogLevel.Warning,
-        Message = "IsTransientException predicate threw for group {Group}; treating as non-transient"
+        Message = "IsTransientException predicate threw for consumer {Consumer}; treating as non-transient"
     )]
-    public static partial void IsTransientPredicateFailed(this ILogger logger, Exception exception, string? group);
+    public static partial void IsTransientPredicateFailed(this ILogger logger, Exception exception, string? consumer);
 
     [LoggerMessage(
         EventId = 4101,
         Level = LogLevel.Warning,
-        Message = "Circuit breaker {PreviousState} → Open for group {Group} (failures: {Failures}, escalation: {Escalation}, open for {Duration})"
+        Message = "Circuit breaker {PreviousState} → Open for consumer {Consumer} (failures: {Failures}, escalation: {Escalation}, open for {Duration})"
     )]
     public static partial void CircuitOpened(
         this ILogger logger,
         CircuitBreakerState previousState,
-        string? group,
+        string? consumer,
         int failures,
         int escalation,
         TimeSpan duration
@@ -1525,55 +1533,55 @@ internal static partial class CircuitBreakerStateManagerLog
     [LoggerMessage(
         EventId = 4102,
         Level = LogLevel.Warning,
-        Message = "Circuit breaker HalfOpen → Closed for group {Group} (non-transient failure, dependency considered healthy)"
+        Message = "Circuit breaker HalfOpen → Closed for consumer {Consumer} (non-transient failure, dependency considered healthy)"
     )]
-    public static partial void CircuitClosedAfterNonTransientHalfOpenFailure(this ILogger logger, string? group);
+    public static partial void CircuitClosedAfterNonTransientHalfOpenFailure(this ILogger logger, string? consumer);
 
-    public static void CircuitClosedAfterProbeSucceeded(this ILogger logger, string groupName)
+    public static void CircuitClosedAfterProbeSucceeded(this ILogger logger, string consumerKey)
     {
         if (!logger.IsEnabled(LogLevel.Information))
         {
             return;
         }
 
-        logger.CircuitClosedAfterProbeSucceededCore(LogSanitizer.Sanitize(groupName));
+        logger.CircuitClosedAfterProbeSucceededCore(LogSanitizer.Sanitize(consumerKey));
     }
 
     [LoggerMessage(
         EventId = 4103,
         Level = LogLevel.Information,
-        Message = "Circuit breaker HalfOpen → Closed for group {Group} (probe succeeded)"
+        Message = "Circuit breaker HalfOpen → Closed for consumer {Consumer} (probe succeeded)"
     )]
     // ReSharper disable once InconsistentNaming
-    private static partial void CircuitClosedAfterProbeSucceededCore(this ILogger logger, string? group);
+    private static partial void CircuitClosedAfterProbeSucceededCore(this ILogger logger, string? consumer);
 
     [LoggerMessage(
         EventId = 4104,
         Level = LogLevel.Information,
-        Message = "Circuit breaker HalfOpen → Open (probe aborted by transport restart) for group {Group}"
+        Message = "Circuit breaker HalfOpen → Open (probe aborted by transport restart) for consumer {Consumer}"
     )]
-    public static partial void CircuitReopenedAfterProbeAbort(this ILogger logger, string? group);
+    public static partial void CircuitReopenedAfterProbeAbort(this ILogger logger, string? consumer);
 
     [LoggerMessage(
         EventId = 4105,
         Level = LogLevel.Warning,
-        Message = "Circuit breaker {PreviousState} → Closed (manual reset) for group {Group}"
+        Message = "Circuit breaker {PreviousState} → Closed (manual reset) for consumer {Consumer}"
     )]
     public static partial void CircuitClosedByManualReset(
         this ILogger logger,
         CircuitBreakerState previousState,
-        string? group
+        string? consumer
     );
 
     [LoggerMessage(
         EventId = 4106,
         Level = LogLevel.Warning,
-        Message = "Circuit breaker {PreviousState} → Open (forced) for group {Group} (escalation: {Escalation}, open for {Duration})"
+        Message = "Circuit breaker {PreviousState} → Open (forced) for consumer {Consumer} (escalation: {Escalation}, open for {Duration})"
     )]
     public static partial void CircuitForcedOpen(
         this ILogger logger,
         CircuitBreakerState previousState,
-        string? group,
+        string? consumer,
         int escalation,
         TimeSpan duration
     );
@@ -1588,53 +1596,53 @@ internal static partial class CircuitBreakerStateManagerLog
     [LoggerMessage(
         EventId = 4112,
         Level = LogLevel.Debug,
-        Message = "Ignoring resume task failure during consumer-group removal."
+        Message = "Ignoring resume task failure during consumer removal."
     )]
     public static partial void IgnoringResumeTaskFailureDuringRemoval(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 4108,
         Level = LogLevel.Warning,
-        Message = "Unrecognized consumer group '{Group}' — returning no-op circuit state to prevent unbounded cardinality"
+        Message = "Unrecognized consumer '{Consumer}' — returning no-op circuit state to prevent unbounded cardinality"
     )]
-    public static partial void UnrecognizedConsumerGroup(this ILogger logger, string? group);
+    public static partial void UnrecognizedConsumer(this ILogger logger, string? consumer);
 
     [LoggerMessage(
         EventId = 4109,
         Level = LogLevel.Warning,
-        Message = "Circuit breaker group count cap ({Cap}) reached — returning no-op state for new groups"
+        Message = "Circuit breaker consumer count cap ({Cap}) reached — returning no-op state for new consumers"
     )]
-    public static partial void CircuitBreakerGroupCountCapReached(this ILogger logger, int cap);
+    public static partial void CircuitBreakerConsumerCountCapReached(this ILogger logger, int cap);
 
-    public static void CircuitHalfOpen(this ILogger logger, string groupName)
+    public static void CircuitHalfOpen(this ILogger logger, string consumerKey)
     {
         if (!logger.IsEnabled(LogLevel.Information))
         {
             return;
         }
 
-        logger.CircuitHalfOpenCore(LogSanitizer.Sanitize(groupName));
+        logger.CircuitHalfOpenCore(LogSanitizer.Sanitize(consumerKey));
     }
 
     [LoggerMessage(
         EventId = 4110,
         Level = LogLevel.Information,
-        Message = "Circuit breaker Open → HalfOpen for group {Group}"
+        Message = "Circuit breaker Open → HalfOpen for consumer {Consumer}"
     )]
     // ReSharper disable once InconsistentNaming
-    private static partial void CircuitHalfOpenCore(this ILogger logger, string? group);
+    private static partial void CircuitHalfOpenCore(this ILogger logger, string? consumer);
 
     [LoggerMessage(
         EventId = 4111,
         Level = LogLevel.Error,
-        Message = "Resume callback failed for group {Group} during HalfOpen transition"
+        Message = "Resume callback failed for consumer {Consumer} during HalfOpen transition"
     )]
-    public static partial void ResumeCallbackFailed(this ILogger logger, Exception exception, string? group);
+    public static partial void ResumeCallbackFailed(this ILogger logger, Exception exception, string? consumer);
 
     public static void ReopenPauseCallbackFailed(
         this ILogger logger,
         Exception exception,
-        string groupName,
+        string consumerKey,
         int escalation
     )
     {
@@ -1643,19 +1651,19 @@ internal static partial class CircuitBreakerStateManagerLog
             return;
         }
 
-        logger.ReopenPauseCallbackFailedCore(exception, LogSanitizer.Sanitize(groupName), escalation);
+        logger.ReopenPauseCallbackFailedCore(exception, LogSanitizer.Sanitize(consumerKey), escalation);
     }
 
     [LoggerMessage(
         EventId = 4112,
         Level = LogLevel.Critical,
-        Message = "Pause callback failed while re-opening circuit for group {Group}. Circuit is Open but transport may not be paused — manual ResetAsync may be required (escalation: {Escalation})"
+        Message = "Pause callback failed while re-opening circuit for consumer {Consumer}. Circuit is Open but transport may not be paused — manual ResetAsync may be required (escalation: {Escalation})"
     )]
     // ReSharper disable once InconsistentNaming
     private static partial void ReopenPauseCallbackFailedCore(
         this ILogger logger,
         Exception exception,
-        string? group,
+        string? consumer,
         int escalation
     );
 }

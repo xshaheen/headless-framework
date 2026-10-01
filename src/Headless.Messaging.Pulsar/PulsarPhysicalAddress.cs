@@ -1,12 +1,21 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Messaging.Runtime;
+using Headless.Messaging.Transport;
 
 namespace Headless.Messaging.Pulsar;
 
 internal static class PulsarPhysicalAddress
 {
+    private const string _BusSubscriptionPrefix = "headless-bus-";
+
+    // A broker with strictlyVerifySubscriptionName accepts only [-=:.\w] in a new subscription name. Pulsar documents no
+    // length limit; 255 keeps the cursor name, which the broker stores URL-encoded, within common key and path limits.
+    private static readonly BusNameRules _BusSubscriptionRules = new(
+        maxLength: 255 - _BusSubscriptionPrefix.Length,
+        isAllowed: static c => c is '-' or '=' or ':' or '.' or '_'
+    );
+
     public static string Topic(MessageLane lane, string logicalName)
     {
         Argument.IsNotNullOrWhiteSpace(logicalName);
@@ -23,12 +32,24 @@ internal static class PulsarPhysicalAddress
         return $"{prefix}headless-{_Lane(lane)}-{localName}";
     }
 
-    public static string Subscription(MessageLane lane, string groupName) =>
-        lane switch
+    /// <summary>
+    /// Returns the subscription a consumer reads through: one per consumer identity on the Bus lane, and one shared
+    /// subscription on each Queue topic.
+    /// </summary>
+    public static string Subscription(MessageLane lane, string subscriptionName) =>
+        Subscription(new ConsumerClientRequest(subscriptionName, concurrency: 0, lane));
+
+    /// <summary>
+    /// Returns the subscription a consumer client of <paramref name="request"/> reads through: one per consumer
+    /// identity on the Bus lane, one per identity and process for an every-instance Bus request, and one shared
+    /// subscription on each Queue topic.
+    /// </summary>
+    public static string Subscription(ConsumerClientRequest request) =>
+        request.Lane switch
         {
-            MessageLane.Bus => $"headless-bus-{TransportNaming.NormalizeDistinct(groupName)}",
+            MessageLane.Bus => _BusSubscriptionPrefix + BusNameBuilder.Build(request, _BusSubscriptionRules),
             MessageLane.Queue => "headless-queue",
-            _ => throw new ArgumentOutOfRangeException(nameof(lane), lane, message: null),
+            _ => throw new ArgumentOutOfRangeException(nameof(request), request.Lane, message: null),
         };
 
     private static string _Lane(MessageLane lane) =>

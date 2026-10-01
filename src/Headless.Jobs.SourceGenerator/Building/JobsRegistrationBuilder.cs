@@ -15,7 +15,7 @@ namespace Headless.Jobs.SourceGenerator.Building;
 internal static class JobsRegistrationBuilder
 {
     public static JobsGenerationResult Build(
-        ImmutableArray<JobFunctionResult> functions,
+        ImmutableArray<JobResult> jobs,
         EquatableArray<MiddlewareResult> middleware,
         EquatableArray<string> referencedFunctions,
         string assemblyName
@@ -27,64 +27,64 @@ internal static class JobsRegistrationBuilder
         }
 
         // A collision makes every generated lookup ambiguous, so it is reported alone and nothing is emitted.
-        var collisions = _FindCollisions(functions);
+        var collisions = _FindCollisions(jobs);
         if (collisions.Count > 0)
         {
             return new(Model: null, collisions.ToEquatableArray());
         }
 
         var diagnostics = new List<DiagnosticInfo>();
-        foreach (var function in functions)
+        foreach (var job in jobs)
         {
-            diagnostics.AddRange(function.Diagnostics);
+            diagnostics.AddRange(job.Diagnostics);
         }
 
-        var functionModels = functions.Select(function => function.Function).ToEquatableArray();
-        var registrations = _ResolveMiddleware(
-            functionModels,
-            middleware,
-            referencedFunctions,
-            assemblyName,
-            diagnostics
-        );
+        var jobModels = jobs.Where(job => job.Job is not null).Select(job => job.Job!).ToEquatableArray();
+        var registrations = _ResolveMiddleware(jobs, middleware, referencedFunctions, assemblyName, diagnostics);
         // An assembly that declares nothing gets no module: a public JobsModule type would otherwise appear in every
         // project that references Jobs.
         var model =
-            functionModels.Count == 0 && registrations.Count == 0
+            jobModels.Count == 0 && registrations.Count == 0
                 ? null
-                : new JobsRegistrationModel(assemblyName, functionModels, registrations);
+                : new JobsRegistrationModel(assemblyName, jobModels, registrations);
 
-        // One class can hold several functions, so class-level diagnostics arrive once per function.
         return new(model, diagnostics.Distinct().ToEquatableArray());
     }
 
-    private static List<DiagnosticInfo> _FindCollisions(ImmutableArray<JobFunctionResult> functions)
+    /// <summary>
+    /// Finds identities and argument types declared by more than one job. Scheduling resolves a job from its argument
+    /// type, so a shared argument type is as ambiguous as a shared identity.
+    /// </summary>
+    private static List<DiagnosticInfo> _FindCollisions(ImmutableArray<JobResult> jobs)
     {
-        var functionNames = new HashSet<string>(StringComparer.Ordinal);
-        var requestTypes = new HashSet<string>(StringComparer.Ordinal);
+        var identities = new HashSet<string>(StringComparer.Ordinal);
+        var argsTypes = new HashSet<string>(StringComparer.Ordinal);
         var collisions = new List<DiagnosticInfo>();
 
-        foreach (var result in functions)
+        // Source order is not stable across partial edits, so the second declaration is chosen by location.
+        foreach (
+            var result in jobs.OrderBy(x => x.AttributeLocation?.FilePath ?? string.Empty, StringComparer.Ordinal)
+                .ThenBy(x => x.AttributeLocation?.TextSpan.Start ?? 0)
+        )
         {
-            var function = result.Function;
-            if (!string.IsNullOrWhiteSpace(function.FunctionName) && !functionNames.Add(function.FunctionName!))
+            if (HandlerIdentity.IsValid(result.Identity) && !identities.Add(result.Identity!))
             {
                 collisions.Add(
                     new(
-                        DiagnosticDescriptors.DuplicateFunctionName,
+                        DiagnosticDescriptors.DuplicateJobIdentity,
                         result.AttributeLocation,
-                        new EquatableArray<string>([function.FunctionName!])
+                        new EquatableArray<string>([result.Identity!])
                     )
                 );
             }
 
-            if (function.RequestTypeName is { } requestType && !requestTypes.Add(requestType))
+            if (result.ArgsTypeName is { } argsType && !argsTypes.Add(argsType))
             {
                 collisions.Add(
                     new(
-                        DiagnosticDescriptors.DuplicateRequestType,
+                        DiagnosticDescriptors.DuplicateArgumentType,
                         result.AttributeLocation,
-                        new EquatableArray<string>([requestType])
+                        new EquatableArray<string>([argsType])
                     )
                 );
             }
@@ -94,14 +94,14 @@ internal static class JobsRegistrationBuilder
     }
 
     private static EquatableArray<MiddlewareRegistrationModel> _ResolveMiddleware(
-        EquatableArray<JobFunctionModel> functions,
+        ImmutableArray<JobResult> jobs,
         EquatableArray<MiddlewareResult> middleware,
         EquatableArray<string> referencedFunctions,
         string assemblyName,
         List<DiagnosticInfo> diagnostics
     )
     {
-        var ownFunctions = new HashSet<string?>(functions.Select(x => x.FunctionName), StringComparer.Ordinal);
+        var ownFunctions = new HashSet<string?>(jobs.Select(x => x.Identity), StringComparer.Ordinal);
         var referenced = new HashSet<string>(referencedFunctions, StringComparer.Ordinal);
         var candidates = new List<MiddlewareDeclarationModel>();
 

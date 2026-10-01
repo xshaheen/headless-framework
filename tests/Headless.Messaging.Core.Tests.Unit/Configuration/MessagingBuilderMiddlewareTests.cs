@@ -72,14 +72,14 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
     }
 
     [Fact]
-    public void should_record_typed_consume_middleware_group_and_message_type()
+    public void should_record_typed_consume_middleware_message_type()
     {
         // given
         var services = new ServiceCollection();
         var builder = new MessagingBuilder(services);
 
         // when
-        builder.AddConsumeMiddlewareFor<TypedConsumeMiddleware, OrderPlaced>("checkout", MessageLane.Bus);
+        builder.AddConsumeMiddlewareFor<TypedConsumeMiddleware, OrderPlaced>(MessageLane.Bus);
 
         // then
         var descriptor = _GetRegistry(services)
@@ -87,23 +87,6 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
         descriptor.Scope.Should().Be(MiddlewareScope.Message);
         descriptor.Direction.Should().Be(MiddlewareDirection.Consume);
         descriptor.MessageType.Should().Be<OrderPlaced>();
-        descriptor.GroupName.Should().Be("checkout");
-    }
-
-    [Fact]
-    public void should_apply_configured_group_prefix_to_typed_consume_middleware_group()
-    {
-        // given
-        var services = new ServiceCollection();
-        var builder = services.AddHeadlessMessaging(options => options.Options.GroupNamePrefix = "tenant");
-
-        // when
-        builder.AddConsumeMiddlewareFor<TypedConsumeMiddleware, OrderPlaced>("checkout", MessageLane.Bus);
-
-        // then
-        var descriptor = _GetRegistry(services)
-            .Descriptors.Single(x => x.MiddlewareType == typeof(TypedConsumeMiddleware));
-        descriptor.GroupName.Should().Be("tenant.checkout");
     }
 
     [Fact]
@@ -122,7 +105,6 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
         descriptor.Scope.Should().Be(MiddlewareScope.Message);
         descriptor.Direction.Should().Be(MiddlewareDirection.Publish);
         descriptor.MessageType.Should().Be<OrderPlaced>();
-        descriptor.GroupName.Should().BeNull();
     }
 
     [Fact]

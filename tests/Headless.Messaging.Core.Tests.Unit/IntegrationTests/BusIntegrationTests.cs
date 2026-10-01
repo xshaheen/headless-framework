@@ -29,63 +29,15 @@ public sealed class IBusIntegrationTests : TestBase
     }
 
     [Fact]
-    public async Task should_dispatch_directly_to_consumer_without_transport()
-    {
-        // given - Test the dispatcher directly to verify consumer registration works
-        var services = new ServiceCollection();
-        services.AddLogging(x => x.AddProvider(LoggerProvider));
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Bus.ForMessage<DirectTestMessage>(message =>
-                message
-                    .Contract("direct-test-messageName")
-                    .Consumer<DirectTestConsumer>(consumer => consumer.StableContract("tests.bus-integration.primary"))
-            );
-            messaging.Options.DefaultGroupName = "test-group";
-            messaging.Options.Version = "v1";
-            messaging.UseInMemory();
-            messaging.UseProcessLocalInMemoryStorage();
-        });
-
-        await using var provider = services.BuildServiceProvider();
-
-        // Build consume context manually (bypasses transport and deserialization)
-        var message = new DirectTestMessage("direct-dispatch-value");
-        var context = new ConsumeContext<DirectTestMessage>
-        {
-            Lane = MessageLane.Bus,
-            Message = message,
-            MessageId = Guid.NewGuid().ToString(),
-            CorrelationId = null,
-            Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
-            Timestamp = DateTimeOffset.UtcNow,
-            MessageName = "direct-test-messageName",
-        };
-
-        // when
-        using var scope = provider.CreateScope();
-        var dispatcher = scope.ServiceProvider.GetRequiredService<IMessageDispatcher>();
-        await dispatcher.DispatchAsync(context, AbortToken);
-
-        // then
-        DirectTestConsumer.ReceivedMessages.Should().ContainSingle();
-        DirectTestConsumer.ReceivedMessages.First().Value.Should().Be("direct-dispatch-value");
-    }
-
-    [Fact]
     public async Task should_send_message_directly_to_transport_and_receive_by_consumer()
     {
         // given
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(LoggerProvider));
+        services.ConfigureMessaging(messaging => messaging.Message<DirectTestMessage>("direct-test-messageName"));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Bus.ForMessage<DirectTestMessage>(message =>
-                message
-                    .Contract("direct-test-messageName")
-                    .Consumer<DirectTestConsumer>(consumer => consumer.StableContract("tests.bus-integration.primary"))
-            );
-            messaging.Options.DefaultGroupName = "test-group";
+            messaging.AddConsumer<DirectTestConsumer>();
             messaging.Options.Version = "v1";
             messaging.UseInMemory();
             messaging.UseProcessLocalInMemoryStorage();
@@ -115,14 +67,10 @@ public sealed class IBusIntegrationTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(LoggerProvider));
+        services.ConfigureMessaging(messaging => messaging.Message<DirectTestMessage>("custom-messageName-name"));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Bus.ForMessage<DirectTestMessage>(message =>
-                message
-                    .Contract("custom-messageName-name")
-                    .Consumer<DirectTestConsumer>(consumer => consumer.StableContract("tests.bus-integration.primary"))
-            );
-            messaging.Options.DefaultGroupName = "test-group";
+            messaging.AddConsumer<DirectTestConsumer>();
             messaging.Options.Version = "v1";
             messaging.UseInMemory();
             messaging.UseProcessLocalInMemoryStorage();
@@ -151,19 +99,11 @@ public sealed class IBusIntegrationTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(LoggerProvider));
+        services.ConfigureMessaging(messaging => messaging.Message<DirectTestMessage>("multi-group-test"));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Bus.ForMessage<DirectTestMessage>(message =>
-            {
-                message.Contract("multi-group-test");
-                message.Consumer<DirectTestConsumer>(consumer =>
-                    consumer.StableContract("tests.bus-integration.primary").Group("direct.primary")
-                );
-                message.Consumer<DirectAnalyticsConsumer>(consumer =>
-                    consumer.StableContract("tests.bus-integration.analytics").Group("direct.analytics")
-                );
-            });
-            messaging.Options.DefaultGroupName = "test-group";
+            messaging.AddConsumer<DirectTestConsumer>();
+            messaging.AddConsumer<DirectAnalyticsConsumer>();
             messaging.Options.Version = "v1";
             messaging.UseInMemory();
             messaging.UseProcessLocalInMemoryStorage();
@@ -194,14 +134,10 @@ public sealed class IBusIntegrationTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(LoggerProvider));
+        services.ConfigureMessaging(messaging => messaging.Message<DirectTestMessage>("prefixed-test"));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Bus.ForMessage<DirectTestMessage>(message =>
-                message
-                    .Contract("prefixed-test")
-                    .Consumer<DirectTestConsumer>(consumer => consumer.StableContract("tests.bus-integration.primary"))
-            );
-            messaging.Options.DefaultGroupName = "test-group";
+            messaging.AddConsumer<DirectTestConsumer>();
             messaging.Options.Version = "v1";
             messaging.Options.MessageNamePrefix = "myapp";
             messaging.UseInMemory();
@@ -230,16 +166,10 @@ public sealed class IBusIntegrationTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(LoggerProvider));
+        services.ConfigureMessaging(messaging => messaging.Message<DirectTestMessage>("header-test-messageName"));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Bus.ForMessage<DirectTestMessage>(message =>
-                message
-                    .Contract("header-test-messageName")
-                    .Consumer<DirectTestConsumerWithHeaders>(consumer =>
-                        consumer.StableContract("tests.bus-integration.headers")
-                    )
-            );
-            messaging.Options.DefaultGroupName = "test-group";
+            messaging.AddConsumer<DirectTestConsumerWithHeaders>();
             messaging.Options.Version = "v1";
             messaging.UseInMemory();
             messaging.UseProcessLocalInMemoryStorage();
@@ -281,16 +211,10 @@ public sealed class IBusIntegrationTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(LoggerProvider));
+        services.ConfigureMessaging(messaging => messaging.Message<DirectTestMessage>("tenant-test-messageName"));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Bus.ForMessage<DirectTestMessage>(message =>
-                message
-                    .Contract("tenant-test-messageName")
-                    .Consumer<DirectTestConsumerWithHeaders>(consumer =>
-                        consumer.StableContract("tests.bus-integration.headers")
-                    )
-            );
-            messaging.Options.DefaultGroupName = "test-group";
+            messaging.AddConsumer<DirectTestConsumerWithHeaders>();
             messaging.Options.Version = "v1";
             messaging.UseInMemory();
             messaging.UseProcessLocalInMemoryStorage();
@@ -326,16 +250,10 @@ public sealed class IBusIntegrationTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(LoggerProvider));
+        services.ConfigureMessaging(messaging => messaging.Message<DirectTestMessage>("tenant-unset-messageName"));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Bus.ForMessage<DirectTestMessage>(message =>
-                message
-                    .Contract("tenant-unset-messageName")
-                    .Consumer<DirectTestConsumerWithHeaders>(consumer =>
-                        consumer.StableContract("tests.bus-integration.headers")
-                    )
-            );
-            messaging.Options.DefaultGroupName = "test-group";
+            messaging.AddConsumer<DirectTestConsumerWithHeaders>();
             messaging.Options.Version = "v1";
             messaging.UseInMemory();
             messaging.UseProcessLocalInMemoryStorage();
@@ -369,14 +287,10 @@ public sealed class IBusIntegrationTests : TestBase
 
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(LoggerProvider));
+        services.ConfigureMessaging(messaging => messaging.Message<DirectTestMessage>("sequential-test"));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Bus.ForMessage<DirectTestMessage>(message =>
-                message
-                    .Contract("sequential-test")
-                    .Consumer<DirectTestConsumer>(consumer => consumer.StableContract("tests.bus-integration.primary"))
-            );
-            messaging.Options.DefaultGroupName = "test-group";
+            messaging.AddConsumer<DirectTestConsumer>();
             messaging.Options.Version = "v1";
             messaging.UseInMemory();
             messaging.UseProcessLocalInMemoryStorage();
@@ -414,6 +328,7 @@ public sealed record DirectTestMessage(string Value);
 /// Test consumer that collects received messages using static state for assertions.
 /// Static state is required because DI creates its own instances of consumers.
 /// </summary>
+[BusConsumer("tests.bus-integration.primary")]
 public sealed class DirectTestConsumer : IConsume<DirectTestMessage>
 {
     private static readonly ConcurrentQueue<DirectTestMessage> _ReceivedMessages = new();
@@ -496,6 +411,7 @@ public sealed class DirectTestConsumer : IConsume<DirectTestMessage>
     }
 }
 
+[BusConsumer("tests.bus-integration.analytics")]
 public sealed class DirectAnalyticsConsumer : IConsume<DirectTestMessage>
 {
     private static readonly ConcurrentQueue<DirectTestMessage> _ReceivedMessages = new();
@@ -542,6 +458,7 @@ public sealed class DirectAnalyticsConsumer : IConsume<DirectTestMessage>
 /// Test consumer that captures headers using static state for assertions.
 /// Static state is required because DI creates its own instances of consumers.
 /// </summary>
+[BusConsumer("tests.bus-integration.headers")]
 public sealed class DirectTestConsumerWithHeaders : IConsume<DirectTestMessage>
 {
     private static readonly ConcurrentQueue<ConsumeContext<DirectTestMessage>> _ReceivedContexts = new();

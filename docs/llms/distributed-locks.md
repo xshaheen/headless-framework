@@ -166,6 +166,8 @@ TCP keepalive remains complementary, not redundant. Keepalive (`PostgreSqlDistri
 
 `DistributedLock` can publish `DistributedLockReleased` through `IBus` with `DeliveryMode.Direct` so waiters wake quickly without involving durable storage or an active unit of work. `DistributedLock` is a framework-internal singleton: its DI factory resolves the registered `IBus`, itself an autonomous singleton that never reads a caller's unit of work, so the notification is always autonomous regardless of any caller's transaction. The message is a best-effort hint; polling and lease expiry remain the correctness floor. The same message also nudges active lease monitors for that resource so loss validation can happen before the next polling cadence. Messaging is optional: when no bus is registered, lock acquisition and lease monitoring fall back to polling. This keeps distributed locks usable without forcing `Headless.Messaging`.
 
+The release signal is published as `headless.locks.released` (contract version `1`, `DistributedLockReleased.MessageName`), whatever naming conventions the host configures, and consumed by an [every-instance Bus consumer](messaging.md#every-instance-bus-delivery) with the identity `headless.distributed-locks.release`. A waiter lives in one process, so every process must receive every release: a competing subscription would hand the signal to one replica and leave the waiters in the others on their backoff. Delivery is at most once, and a release published while a process is not subscribed never arrives there; that waiter wakes on its next backoff poll (capped at 3 seconds plus up to 25% jitter), so the consumer needs no reconnect hook. The transport must support every-instance delivery: AWS SNS/SQS does not, and a host that combines distributed locks with it fails at startup naming the consumer and the provider. `ConsumeOnly` never filters every-instance consumers, so a host that limits its consumers still receives release signals.
+
 ### Observability
 
 The package emits OpenTelemetry metrics and traces under a single instrumentation name, `Headless.DistributedLocks` (used for both the `Meter` and the `ActivitySource`), exposed at compile time as `DistributedLocksDiagnostics.SourceName`. Register with the typed helpers — `tracing.AddDistributedLocksInstrumentation()` and `metrics.AddDistributedLocksInstrumentation()` (they surface in the `OpenTelemetry.Trace` / `OpenTelemetry.Metrics` namespaces and require only `OpenTelemetry.Api`) — or subscribe by name with `AddMeter(DistributedLocksDiagnostics.SourceName)` / `AddSource(DistributedLocksDiagnostics.SourceName)`; both paths are first-class. Cross-cutting naming, PII, and registration rules for all Headless instrumentation live in [OpenTelemetry instrumentation conventions](../solutions/conventions/opentelemetry-instrumentation-conventions.md).
@@ -452,13 +454,13 @@ Provides the `DistributedLock` implementation and setup extensions.
 - `IDistributedSemaphoreStorage` defines acquire, extend, validate, release, and holder-count operations for storage providers.
 - `DistributedLockOptions` configures key prefix, resource name length, waiter limits, and lease-monitor cadence fractions.
 - `AddHeadlessDistributedLocks(...)` is the single root registration entry point (it returns the `IServiceCollection` for chaining); provider packages contribute `Use...` methods on the `HeadlessDistributedLocksSetupBuilder`.
-- `AddHeadlessDistributedLocks(...)` auto-registers the optional `DistributedLockReleased` consumer descriptor.
+- `AddHeadlessDistributedLocks(...)` contributes the package's generated messaging module, which declares the every-instance `DistributedLockReleased` consumer (`headless.distributed-locks.release`) and the `headless.locks.released` message contract.
 - `IDistributedLocksOptionsExtension` is the setup-time hook used by provider packages to wire supported primitives.
 
 ### Design constraints
 
 - `IBus` is optional. When present, release notifications use `DeliveryMode.Direct` as best-effort wake-up hints; without it, waiters fall back to polling backoff and a warning is logged once when the provider is constructed.
-- When messaging is present, the release consumer is drained at messaging startup whether `AddHeadlessDistributedLocks(...)` runs before or after `AddHeadlessMessaging(...)`; without messaging, waiters fall back to polling.
+- When messaging is present, the release consumer registers at messaging startup whether `AddHeadlessDistributedLocks(...)` runs before or after `AddHeadlessMessaging(...)`; without messaging, waiters fall back to polling.
 - `TryAcquireAsync(..., new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero })` performs a single storage attempt with an internal safety deadline. If that deadline fires (lock-store stall, caller token never cancels), the acquire still returns `null` but emits the `TryOnceSafetyDeadlineFired` log event (`EventId = 24`, Warning) and tags the failure metric `reason=stalled`, distinguishing a stall from routine contention (`reason=contended`). Applies to mutex, reader-writer, and semaphore non-blocking acquires.
 - Lease monitors drain before dispose-time release, so monitoring does not add release retry latency during shutdown.
 
@@ -552,7 +554,7 @@ await using var lease = await lockProvider.AcquireAsync(
 - Redis and InMemory providers register `IDistributedLock`, `IDistributedReadWriteLock`, and `IDistributedSemaphoreProvider`.
 - PostgreSQL and SQL Server providers register `IDistributedLock` and `IDistributedReadWriteLock`.
 - Registers `TimeProvider.System` and `IGuidGenerator` when absent.
-- Auto-registers the shared `DistributedLockReleased` messaging consumer. The descriptor is inert when messaging is absent; waiters still use polling.
+- Auto-registers the shared, every-instance `DistributedLockReleased` messaging consumer through the package's generated messaging module. The contribution is inert when messaging is absent; waiters still use polling.
 
 ---
 

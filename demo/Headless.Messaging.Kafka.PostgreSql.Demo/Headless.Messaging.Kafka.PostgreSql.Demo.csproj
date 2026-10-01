@@ -9,6 +9,11 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference
+      Include="..\..\src\Headless.Messaging.SourceGenerator\Headless.Messaging.SourceGenerator.csproj"
+      OutputItemType="Analyzer"
+      ReferenceOutputAssembly="false"
+    />
     <ProjectReference Include="..\..\src\Headless.Messaging.Dashboard\Headless.Messaging.Dashboard.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Kafka\Headless.Messaging.Kafka.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Storage.PostgreSql\Headless.Messaging.Storage.PostgreSql.csproj" />

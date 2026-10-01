@@ -22,7 +22,13 @@ internal sealed partial class RelationalDataStorage
         CancellationToken cancellationToken = default
     )
     {
-        return _GetMessagesOfNeedRetryAsync(_publishedTable, lane, orphaned: false, cancellationToken);
+        return _GetMessagesOfNeedRetryAsync(
+            _publishedTable,
+            lane,
+            orphaned: false,
+            consumerIdentities: null,
+            cancellationToken
+        );
     }
 
     /// <summary>
@@ -31,26 +37,41 @@ internal sealed partial class RelationalDataStorage
     /// </summary>
     public ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
         MessageLane lane,
+        IReadOnlyCollection<string>? consumerIdentities,
         CancellationToken cancellationToken = default
     )
     {
-        return _GetMessagesOfNeedRetryAsync(_receivedTable, lane, orphaned: false, cancellationToken);
+        return _GetMessagesOfNeedRetryAsync(
+            _receivedTable,
+            lane,
+            orphaned: false,
+            consumerIdentities,
+            cancellationToken
+        );
     }
 
     public ValueTask<IEnumerable<MediumMessage>> GetReceivedInboxOrphansOfNeedRetryAsync(
         MessageLane lane,
+        IReadOnlyCollection<string>? consumerIdentities,
         CancellationToken cancellationToken = default
-    ) => _GetMessagesOfNeedRetryAsync(_receivedTable, lane, orphaned: true, cancellationToken);
+    ) => _GetMessagesOfNeedRetryAsync(_receivedTable, lane, orphaned: true, consumerIdentities, cancellationToken);
 
     private async ValueTask<IEnumerable<MediumMessage>> _GetMessagesOfNeedRetryAsync(
         string table,
         MessageLane lane,
         bool orphaned,
+        IReadOnlyCollection<string>? consumerIdentities,
         CancellationToken cancellationToken
     )
     {
         var received = _IsReceived(table);
         var orphanFilter = received ? $" AND {_t.IsInboxOrphaned} = {(orphaned ? _t.True : _t.False)}" : string.Empty;
+        // A host started with ConsumeOnly claims only the rows of the consumers it runs, inside the claim so the batch
+        // limit counts only those; a host without the filter keeps claiming rows of every consumer identity.
+        var filterConsumers = received && consumerIdentities is not null;
+        var consumerFilter = filterConsumers
+            ? $" AND {_dialect.InList(_t.ConsumerIdentity, "ConsumerIdentities", _IdentityType)}"
+            : string.Empty;
         // A received row starts a new inbox attempt with each claim, so a stale attempt is fenced out.
         var attemptAssignment = received
             ? $", {_t.AttemptId} = CASE WHEN {_t.IsInboxRecord} = {_t.True} THEN {_dialect.NewGuid()} ELSE NULL END"
@@ -68,7 +89,7 @@ internal sealed partial class RelationalDataStorage
             new SqlClaimNext(
                 table,
                 [_t.Id],
-                $"{_t.Retries} <= @Retries AND {_t.Version} = @Version AND {_t.IntentType} = @IntentType AND {_t.NextRetryAt} IS NOT NULL AND {_t.NextRetryAt} <= {SqlDialectTokens.Now} AND ({_t.LockedUntil} IS NULL OR {_t.LockedUntil} <= {SqlDialectTokens.Now}){orphanFilter} AND {_terminalGuard}",
+                $"{_t.Retries} <= @Retries AND {_t.Version} = @Version AND {_t.IntentType} = @IntentType AND {_t.NextRetryAt} IS NOT NULL AND {_t.NextRetryAt} <= {SqlDialectTokens.Now} AND ({_t.LockedUntil} IS NULL OR {_t.LockedUntil} <= {SqlDialectTokens.Now}){orphanFilter}{consumerFilter} AND {_terminalGuard}",
                 [_t.NextRetryAt, _t.Id],
                 $"{_t.LockedUntil} = {_dialect.ShiftByDuration(SqlDialectTokens.Now, "Lease")}, {_t.Owner} = @Owner{attemptAssignment}",
                 returning,
@@ -111,6 +132,16 @@ internal sealed partial class RelationalDataStorage
                                 );
                                 _dialect.AddDuration(command, "Lease", Options.RetryPolicy.DispatchTimeout);
                                 _BindOwner(command, "Owner", hasLease: true);
+
+                                if (filterConsumers)
+                                {
+                                    _dialect.AddListParameter(
+                                        command,
+                                        "ConsumerIdentities",
+                                        _IdentityType,
+                                        consumerIdentities!
+                                    );
+                                }
                             },
                             (reader, token) =>
                                 _ReadRetryClaimAsync(reader, table, lane, received, poisonMessages, token),

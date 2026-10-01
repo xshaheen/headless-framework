@@ -17,11 +17,23 @@ internal sealed class AzureServiceBusConsumerClient(
     IOptions<AzureServiceBusMessagingOptions> options,
     IServiceProvider serviceProvider,
     IAzureServiceBusClientPool clientPool,
-    MessageLane lane = MessageLane.Bus
+    MessageLane lane = MessageLane.Bus,
+    ConsumerSubscriptionKind kind = ConsumerSubscriptionKind.Competing
 ) : IConsumerClient
 {
     // Headless must settle only after durable receive storage and handler outcome are known.
     private const bool _AutoCompleteMessages = false;
+
+    /// <summary>
+    /// How long Azure keeps an every-instance subscription nobody receives from: the shortest idle period Azure allows,
+    /// and so the longest a crashed process leaves its subscription behind.
+    /// </summary>
+    internal static readonly TimeSpan EveryInstanceAutoDeleteOnIdle = TimeSpan.FromMinutes(5);
+
+    private readonly bool _everyInstance = kind is ConsumerSubscriptionKind.EveryInstance;
+    private int _recoveringSubscription;
+    private IReadOnlyList<string> _subscribedMessageNames = [];
+    private Func<CancellationToken, Task>? _onReestablished;
 
     private readonly AzureServiceBusMessagingOptions _asbOptions = Argument.IsNotNull(options.Value);
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
@@ -47,6 +59,11 @@ internal sealed class AzureServiceBusConsumerClient(
     {
         OnMessageCallback = onMessage;
         OnLogCallback = onLog;
+    }
+
+    public void AttachReestablishedCallback(Func<CancellationToken, Task>? onReestablished)
+    {
+        Volatile.Write(ref _onReestablished, onReestablished);
     }
 
     public BrokerAddress BrokerAddress =>
@@ -77,8 +94,88 @@ internal sealed class AzureServiceBusConsumerClient(
             return;
         }
 
-        // Get existing rules
+        var ruleNames = messageNames
+            .Concat(_asbOptions.SqlFilters.Select(o => o.Key))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
 
+        if (!_everyInstance)
+        {
+            await _SyncRulesAsync(ruleNames, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        _subscribedMessageNames = ruleNames;
+        await _ProvisionEveryInstanceSubscriptionAsync(ruleNames, cancellationToken).ConfigureAwait(false);
+    }
+
+    // An every-instance subscription belongs to this process, so it is created on first subscribe rather than when the
+    // client connects: the topology-only client the core creates and disposes never subscribes and leaves nothing.
+    // Returns whether this call created it, which only then means messages published meanwhile were lost.
+    private async Task<bool> _ProvisionEveryInstanceSubscriptionAsync(
+        IReadOnlyList<string> ruleNames,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            var created = false;
+
+            if (
+                !await _administrationClient!
+                    .SubscriptionExistsAsync(_asbOptions.TopicPath, subscriptionName, cancellationToken)
+                    .ConfigureAwait(false)
+            )
+            {
+                var subscription = new CreateSubscriptionOptions(_asbOptions.TopicPath, subscriptionName)
+                {
+                    RequiresSession = _asbOptions.EnableSessions,
+                    AutoDeleteOnIdle = EveryInstanceAutoDeleteOnIdle,
+                    LockDuration = _asbOptions.SubscriptionMessageLockDuration,
+                    DefaultMessageTimeToLive = _asbOptions.SubscriptionDefaultMessageTimeToLive,
+                    MaxDeliveryCount = _asbOptions.SubscriptionMaxDeliveryCount,
+                };
+
+                // Created with its first rule instead of the default match-all rule, so the subscription never
+                // receives messages this process does not consume.
+                if (ruleNames.Count == 0)
+                {
+                    await _administrationClient
+                        .CreateSubscriptionAsync(subscription, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    await _administrationClient
+                        .CreateSubscriptionAsync(
+                            subscription,
+                            new CreateRuleOptions { Name = ruleNames[0], Filter = _CreateRuleFilter(ruleNames[0]) },
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+                }
+
+                logger.SubscriptionCreated(_asbOptions.TopicPath, subscriptionName);
+                created = true;
+            }
+
+            await _SyncRulesAsync(ruleNames, cancellationToken).ConfigureAwait(false);
+
+            return created;
+        }
+        catch (UnauthorizedAccessException e)
+        {
+            throw new InvalidOperationException(
+                $"Azure Service Bus could not create the every-instance subscription '{subscriptionName}' on topic "
+                    + $"'{_asbOptions.TopicPath}': every-instance consumers need Manage rights on the namespace, because "
+                    + "each process creates and deletes a subscription of its own.",
+                e
+            );
+        }
+    }
+
+    private async Task _SyncRulesAsync(IReadOnlyCollection<string> ruleNames, CancellationToken cancellationToken)
+    {
         var allRuleNames = new List<string>();
 
         await foreach (
@@ -92,42 +189,13 @@ internal sealed class AzureServiceBusConsumerClient(
             allRuleNames.Add(rule.Name);
         }
 
-        var messageNamesList = messageNames.Concat(_asbOptions.SqlFilters.Select(o => o.Key)).ToList();
-
-        foreach (var newRule in messageNamesList.Except(allRuleNames, StringComparer.Ordinal))
+        foreach (var newRule in ruleNames.Except(allRuleNames, StringComparer.Ordinal))
         {
-            var isSqlRule =
-                _asbOptions
-                    .SqlFilters.FirstOrDefault(o => string.Equals(o.Key, newRule, StringComparison.Ordinal))
-                    .Value
-                is not null;
-
-            RuleFilter? currentRuleToAdd;
-
-            if (isSqlRule)
-            {
-                var sqlExpression = _asbOptions
-                    .SqlFilters.FirstOrDefault(o => string.Equals(o.Key, newRule, StringComparison.Ordinal))
-                    .Value;
-                currentRuleToAdd = new SqlRuleFilter(sqlExpression);
-            }
-            else
-            {
-                var correlationRule = new CorrelationRuleFilter { Subject = newRule };
-
-                foreach (var correlationHeader in _asbOptions.DefaultCorrelationHeaders)
-                {
-                    correlationRule.ApplicationProperties.Add(correlationHeader.Key, correlationHeader.Value);
-                }
-
-                currentRuleToAdd = correlationRule;
-            }
-
             await _administrationClient
                 .CreateRuleAsync(
                     _asbOptions.TopicPath,
                     subscriptionName,
-                    new CreateRuleOptions { Name = newRule, Filter = currentRuleToAdd },
+                    new CreateRuleOptions { Name = newRule, Filter = _CreateRuleFilter(newRule) },
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -135,7 +203,7 @@ internal sealed class AzureServiceBusConsumerClient(
             logger.RuleAdded(newRule);
         }
 
-        foreach (var oldRule in allRuleNames.Except(messageNamesList, StringComparer.Ordinal))
+        foreach (var oldRule in allRuleNames.Except(ruleNames, StringComparer.Ordinal))
         {
             await _administrationClient
                 .DeleteRuleAsync(_asbOptions.TopicPath, subscriptionName, oldRule, cancellationToken)
@@ -143,6 +211,27 @@ internal sealed class AzureServiceBusConsumerClient(
 
             logger.RuleRemoved(oldRule);
         }
+    }
+
+    private RuleFilter _CreateRuleFilter(string ruleName)
+    {
+        var sqlExpression = _asbOptions
+            .SqlFilters.FirstOrDefault(o => string.Equals(o.Key, ruleName, StringComparison.Ordinal))
+            .Value;
+
+        if (sqlExpression is not null)
+        {
+            return new SqlRuleFilter(sqlExpression);
+        }
+
+        var correlationRule = new CorrelationRuleFilter { Subject = ruleName };
+
+        foreach (var correlationHeader in _asbOptions.DefaultCorrelationHeaders)
+        {
+            correlationRule.ApplicationProperties.Add(correlationHeader.Key, correlationHeader.Value);
+        }
+
+        return correlationRule;
     }
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
@@ -299,7 +388,55 @@ internal sealed class AzureServiceBusConsumerClient(
 
         OnLogCallback!(logArgs);
 
-        return Task.CompletedTask;
+        return
+            _everyInstance
+            && args.Exception is ServiceBusException { Reason: ServiceBusFailureReason.MessagingEntityNotFound }
+            ? _RecoverEveryInstanceSubscriptionAsync(args.CancellationToken)
+            : Task.CompletedTask;
+    }
+
+    // Azure deletes an every-instance subscription nobody received from for the idle period, which a connection lost
+    // for that long causes. The processor then keeps failing on the missing entity, so the client recreates the
+    // subscription and reports it: whatever was published in between is gone.
+    private async Task _RecoverEveryInstanceSubscriptionAsync(CancellationToken cancellationToken)
+    {
+        if (
+            Volatile.Read(ref _disposed) != 0
+            || _administrationClient is null
+            || Interlocked.CompareExchange(ref _recoveringSubscription, 1, 0) != 0
+        )
+        {
+            return;
+        }
+
+        try
+        {
+            var recreated = await _ProvisionEveryInstanceSubscriptionAsync(_subscribedMessageNames, cancellationToken)
+                .ConfigureAwait(false);
+
+            // A missing-entity error while the subscription still exists (a transient lookup failure, or a sibling
+            // error already recovered it) lost nothing, so it must not make the consumer flush its state again.
+            var onReestablished = Volatile.Read(ref _onReestablished);
+            if (recreated && onReestablished is not null)
+            {
+                await onReestablished(cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (Exception e) when (e is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            // The processor reports the next failure, which retries the recovery.
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ExceptionReceived,
+                    Reason = $"Azure Service Bus could not recreate subscription '{subscriptionName}': {e.Message}",
+                }
+            );
+        }
+        finally
+        {
+            Volatile.Write(ref _recoveringSubscription, 0);
+        }
     }
 
     private async Task _ServiceBusProcessor_ProcessMessageAsync(ProcessMessageEventArgs arg)
@@ -440,8 +577,11 @@ internal sealed class AzureServiceBusConsumerClient(
                             logger.TopicCreated(topicPath);
                         }
 
+                        // An every-instance subscription is created by SubscribeAsync, and only on the topic the
+                        // processor reads, so the per-process name never lands on a topic nothing receives from.
                         if (
                             subscribe
+                            && !_everyInstance
                             && !await administrationClient
                                 .SubscriptionExistsAsync(topicPath, subscriptionName, cancellationToken)
                                 .ConfigureAwait(false)
@@ -570,15 +710,13 @@ internal sealed class AzureServiceBusConsumerClient(
 
     #region private methods
 
-    private Dictionary<string, string?> _ConvertHeaders(ServiceBusReceivedMessage message)
+    private static Dictionary<string, string?> _ConvertHeaders(ServiceBusReceivedMessage message)
     {
         var headers = message.ApplicationProperties.ToDictionary(
             x => x.Key,
             y => y.Value?.ToString(),
             StringComparer.Ordinal
         );
-
-        headers[Headers.Group] = subscriptionName;
 
         return headers;
     }

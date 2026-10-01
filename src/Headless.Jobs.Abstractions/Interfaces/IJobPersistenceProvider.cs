@@ -399,7 +399,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     #region Cron_Ticker_Core_Methods
 
     /// <summary>
-    /// Seeds and reconciles the cron definitions declared in code (via <c>[JobFunction]</c>) into durable storage
+    /// Seeds and reconciles the cron definitions declared in code (via <c>[Job]</c>) into durable storage
     /// at startup: inserts rows for newly declared functions, updates the expression in place when it changed, and
     /// deletes previously seeded rows — together with their occurrences — whose function no longer exists in code.
     /// </summary>

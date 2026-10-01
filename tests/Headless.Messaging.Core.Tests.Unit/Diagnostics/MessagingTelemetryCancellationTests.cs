@@ -351,7 +351,7 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
         {
             [Headers.MessageId] = Guid.NewGuid().ToString(),
             [Headers.MessageName] = name,
-            [Headers.Group] = "workers",
+            [Headers.ConsumerIdentity] = "workers",
         };
 
         return new Message(headers, value: null);
@@ -363,7 +363,7 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
         {
             [Headers.MessageId] = Guid.NewGuid().ToString(),
             [Headers.MessageName] = name,
-            [Headers.Group] = "workers",
+            [Headers.ConsumerIdentity] = "workers",
         };
 
         return new TransportMessage(headers, new byte[] { 1, 2, 3 });

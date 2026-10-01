@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Jobs.Base;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Exceptions;
 using Headless.Jobs.Interfaces;
@@ -20,7 +21,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
     private readonly IJobsHostScheduler _jobsHostScheduler;
     private readonly Func<Type, JobFunctionDescriptor?> _descriptorByRequestType;
     private readonly Func<string, JobFunctionDescriptor?> _descriptorByName;
-    private readonly Func<string, JobFunctionDescriptor?> _canonicalDescriptorByName;
+    private readonly Func<Type, JobFunctionDescriptor?> _descriptorByJobType;
     private readonly JobsRequestSerializationOptions _serializationOptions;
     private readonly int _maxChainDepth;
     private readonly TimeProvider? _timeProvider;
@@ -44,7 +45,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             functionRegistry.Descriptors.GetValueOrDefault,
             internalJobManager,
             jobsHostScheduler,
-            functionRegistry.CanonicalDescriptors.GetValueOrDefault,
+            functionRegistry.DescriptorsByJobType.GetValueOrDefault,
             serializationOptions,
             schedulerOptions?.MaxChainDepth ?? SchedulerOptionsBuilder.DefaultMaxChainDepth,
             timeProvider,
@@ -58,7 +59,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         Func<string, JobFunctionDescriptor?> descriptorByName,
         IInternalJobManager internalJobManager,
         IJobsHostScheduler jobsHostScheduler,
-        Func<string, JobFunctionDescriptor?>? canonicalDescriptorByName = null,
+        Func<Type, JobFunctionDescriptor?>? descriptorByJobType = null,
         JobsRequestSerializationOptions? serializationOptions = null,
         int maxChainDepth = SchedulerOptionsBuilder.DefaultMaxChainDepth,
         TimeProvider? timeProvider = null,
@@ -71,7 +72,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         _jobsHostScheduler = Argument.IsNotNull(jobsHostScheduler);
         _descriptorByRequestType = Argument.IsNotNull(descriptorByRequestType);
         _descriptorByName = Argument.IsNotNull(descriptorByName);
-        _canonicalDescriptorByName = canonicalDescriptorByName ?? descriptorByName;
+        _descriptorByJobType = descriptorByJobType ?? (static _ => null);
         _serializationOptions = serializationOptions ?? JobsRequestSerializationOptions.Default;
         _maxChainDepth = Argument.IsPositive(maxChainDepth);
         _timeProvider = timeProvider;
@@ -125,17 +126,14 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         return _ScheduleTimeAsync(_GetDescriptor<TArgs>(), request, executionTime: null, options, cancellationToken);
     }
 
-    public Task<Guid> EnqueueAsync(JobFunctionDescriptor descriptor, CancellationToken cancellationToken = default) =>
-        EnqueueAsync(descriptor, options: null, cancellationToken);
+    public Task<Guid> EnqueueAsync<TJob>(CancellationToken cancellationToken = default)
+        where TJob : IJob => EnqueueAsync<TJob>(options: null, cancellationToken);
 
-    public Task<Guid> EnqueueAsync(
-        JobFunctionDescriptor descriptor,
-        JobOptions? options,
-        CancellationToken cancellationToken = default
-    )
+    public Task<Guid> EnqueueAsync<TJob>(JobOptions? options, CancellationToken cancellationToken = default)
+        where TJob : IJob
     {
         return _ScheduleTimeAsync<object?>(
-            _GetRequestlessDescriptor(descriptor),
+            _GetJobDescriptor(typeof(TJob)),
             request: null,
             executionTime: null,
             options,
@@ -191,21 +189,18 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         );
     }
 
-    public Task<Guid> ScheduleAsync(
-        JobFunctionDescriptor descriptor,
-        DateTimeOffset executionTime,
-        CancellationToken cancellationToken = default
-    ) => ScheduleAsync(descriptor, executionTime, options: null, cancellationToken);
+    public Task<Guid> ScheduleAsync<TJob>(DateTimeOffset executionTime, CancellationToken cancellationToken = default)
+        where TJob : IJob => ScheduleAsync<TJob>(executionTime, options: null, cancellationToken);
 
-    public Task<Guid> ScheduleAsync(
-        JobFunctionDescriptor descriptor,
+    public Task<Guid> ScheduleAsync<TJob>(
         DateTimeOffset executionTime,
         JobOptions? options,
         CancellationToken cancellationToken = default
     )
+        where TJob : IJob
     {
         return _ScheduleTimeAsync<object?>(
-            _GetRequestlessDescriptor(descriptor),
+            _GetJobDescriptor(typeof(TJob)),
             request: null,
             executionTime.UtcDateTime,
             options,
@@ -229,19 +224,16 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
     ) => ScheduleAsync(request, _GetExecutionTime(delay), options, cancellationToken);
 
     /// <summary>Schedules an ordinary one-shot job relative to the configured application clock; delay must be non-negative.</summary>
-    public Task<Guid> ScheduleAfterAsync(
-        JobFunctionDescriptor descriptor,
-        TimeSpan delay,
-        CancellationToken cancellationToken = default
-    ) => ScheduleAfterAsync(descriptor, delay, options: null, cancellationToken);
+    public Task<Guid> ScheduleAfterAsync<TJob>(TimeSpan delay, CancellationToken cancellationToken = default)
+        where TJob : IJob => ScheduleAfterAsync<TJob>(delay, options: null, cancellationToken);
 
     /// <summary>Schedules an ordinary one-shot job relative to the configured application clock; delay must be non-negative.</summary>
-    public Task<Guid> ScheduleAfterAsync(
-        JobFunctionDescriptor descriptor,
+    public Task<Guid> ScheduleAfterAsync<TJob>(
         TimeSpan delay,
         JobOptions? options,
         CancellationToken cancellationToken = default
-    ) => ScheduleAsync(descriptor, _GetExecutionTime(delay), options, cancellationToken);
+    )
+        where TJob : IJob => ScheduleAsync<TJob>(_GetExecutionTime(delay), options, cancellationToken);
 
     private DateTimeOffset _GetExecutionTime(TimeSpan delay)
     {
@@ -273,21 +265,18 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         );
     }
 
-    public Task<Guid> ScheduleRecurringAsync(
-        JobFunctionDescriptor descriptor,
-        string cronExpression,
-        CancellationToken cancellationToken = default
-    ) => ScheduleRecurringAsync(descriptor, cronExpression, options: null, cancellationToken);
+    public Task<Guid> ScheduleRecurringAsync<TJob>(string cronExpression, CancellationToken cancellationToken = default)
+        where TJob : IJob => ScheduleRecurringAsync<TJob>(cronExpression, options: null, cancellationToken);
 
-    public Task<Guid> ScheduleRecurringAsync(
-        JobFunctionDescriptor descriptor,
+    public Task<Guid> ScheduleRecurringAsync<TJob>(
         string cronExpression,
         RecurringJobOptions? options,
         CancellationToken cancellationToken = default
     )
+        where TJob : IJob
     {
         return _ScheduleRecurringAsync<object?>(
-            _GetRequestlessDescriptor(descriptor),
+            _GetJobDescriptor(typeof(TJob)),
             request: null,
             Argument.IsNotNullOrWhiteSpace(cronExpression),
             options,
@@ -414,9 +403,9 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
 
     private JobFunctionDescriptor _ResolveNodeDescriptor(JobChainNode node)
     {
-        if (node.Descriptor is not null)
+        if (node.JobType is not null)
         {
-            return _GetRequestlessDescriptor(node.Descriptor);
+            return _GetJobDescriptor(node.JobType);
         }
 
         var requestType = node.PayloadType!;
@@ -429,22 +418,18 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         return _descriptorByRequestType(requestType) ?? throw new JobFunctionNotFoundException(requestType);
     }
 
-    private JobFunctionDescriptor _GetRequestlessDescriptor(JobFunctionDescriptor descriptor)
+    /// <summary>Resolves a job without arguments by its class; a job with arguments is addressed by its argument type.</summary>
+    private JobFunctionDescriptor _GetJobDescriptor(Type jobType)
     {
-        Argument.IsNotNull(descriptor);
-
+        var descriptor = _descriptorByJobType(jobType) ?? throw new JobFunctionNotFoundException(jobType);
         if (descriptor.RequestType != null)
         {
             throw new ArgumentException(
-                "Typed job functions must be scheduled through a typed request overload.",
-                nameof(descriptor)
+                $"Job '{descriptor.FunctionName}' takes arguments; schedule it through its argument type.",
+                nameof(jobType)
             );
         }
 
-        var registered = _descriptorByName(descriptor.FunctionName);
-        var canonical = _canonicalDescriptorByName(descriptor.FunctionName);
-        return canonical == descriptor && registered != null
-            ? registered
-            : throw new JobFunctionNotFoundException(descriptor.FunctionName);
+        return descriptor;
     }
 }

@@ -32,7 +32,7 @@ internal sealed class RuntimeSubscriber(
             {
                 return RuntimeSubscriptionHandle.Detached(
                     result.MessageName,
-                    result.Group,
+                    result.Identity,
                     result.HandlerId,
                     result.SubscriptionId
                 );
@@ -43,14 +43,14 @@ internal sealed class RuntimeSubscriber(
             logger.RuntimeSubscriptionAttached(
                 result.SubscriptionId,
                 result.MessageName,
-                result.Group,
+                result.Identity,
                 result.HandlerId
             );
 
             return RuntimeSubscriptionHandle.Attached(
                 result.SubscriptionId!,
                 result.MessageName,
-                result.Group,
+                result.Identity,
                 result.HandlerId,
                 async () => await UnsubscribeAsync(result.SubscriptionId!, CancellationToken.None).ConfigureAwait(false)
             );
@@ -97,13 +97,13 @@ internal static partial class RuntimeSubscriberLog
     [LoggerMessage(
         EventId = 3100,
         Level = LogLevel.Information,
-        Message = "Attached runtime subscription {SubscriptionId} for messageName {MessageName}, group {Group}, handler {HandlerId}."
+        Message = "Attached runtime subscription {SubscriptionId} for messageName {MessageName}, identity {Identity}, handler {HandlerId}."
     )]
     public static partial void RuntimeSubscriptionAttached(
         this ILogger logger,
         string? subscriptionId,
         string messageName,
-        string group,
+        string identity,
         string handlerId
     );
 

@@ -188,6 +188,12 @@ public sealed class SqlServerConformanceTests(SqlServerJobsCoordinationFixture f
     }
 
     [Fact]
+    public override Task should_seed_the_declared_time_zone_and_reposition_when_it_changes()
+    {
+        return base.should_seed_the_declared_time_zone_and_reposition_when_it_changes();
+    }
+
+    [Fact]
     public override Task should_retire_pending_seed_work_when_code_defined_expression_changes()
     {
         return base.should_retire_pending_seed_work_when_code_defined_expression_changes();

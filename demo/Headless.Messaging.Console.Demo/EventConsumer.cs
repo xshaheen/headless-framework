@@ -8,6 +8,7 @@ public record ShowTimeEvent(DateTime Date);
 
 public sealed record ShowTimeResponse(DateTime Date, string Display);
 
+[BusConsumer("console.showtime")]
 public sealed class EventConsumer : IConsume<ShowTimeEvent>
 {
     public ValueTask ConsumeAsync(ConsumeContext<ShowTimeEvent> context, CancellationToken cancellationToken)
@@ -18,6 +19,7 @@ public sealed class EventConsumer : IConsume<ShowTimeEvent>
     }
 }
 
+[BusConsumer("console.showtime-response")]
 public sealed class ShowTimeResponseConsumer : IConsume<ShowTimeResponse>
 {
     public ValueTask ConsumeAsync(ConsumeContext<ShowTimeResponse> context, CancellationToken cancellationToken)

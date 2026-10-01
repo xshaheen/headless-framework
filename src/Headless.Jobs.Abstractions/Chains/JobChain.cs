@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Jobs.Base;
 using Headless.Jobs.Models;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -13,9 +14,8 @@ namespace Headless.Jobs;
 /// <remarks>
 /// Author a chain with the <see cref="Start{TRequest}(TRequest, JobOptions?)"/> factories, extend it
 /// through the returned <see cref="JobChainBuilder"/>, then call <see cref="JobChainBuilder.Build"/> to obtain an
-/// immutable instance. The chain never references a handler contract (no <c>TJob</c>, <c>IJob&lt;TArgs&gt;</c>, or
-/// <c>ICronJob</c>): step identity is a generated <see cref="JobFunctionDescriptor"/>, resolved from the captured
-/// payload type where a step supplies a payload.
+/// immutable instance. A step that takes arguments is identified by its payload type, and a step without arguments
+/// by its <c>[Job]</c> class; both resolve to the generated descriptor at enqueue.
 /// Keyed scheduling/control, signals, joins, waits, compensation, mutable definitions, process state, and stream
 /// coordinates are not supported by this continuation-tree model.
 /// </remarks>
@@ -55,13 +55,7 @@ public sealed class JobChain
     {
         ArgumentNullException.ThrowIfNull(payload);
 
-        return new JobChainBuilder(
-            descriptor: null,
-            payload,
-            payloadType: typeof(TRequest),
-            options,
-            executionTime: null
-        );
+        return new JobChainBuilder(jobType: null, payload, payloadType: typeof(TRequest), options, executionTime: null);
     }
 
     /// <summary>Authors this step at an explicit execution instant.</summary>
@@ -74,7 +68,7 @@ public sealed class JobChain
     {
         ArgumentNullException.ThrowIfNull(payload);
 
-        return new JobChainBuilder(descriptor: null, payload, payloadType: typeof(TRequest), options, executionTime);
+        return new JobChainBuilder(jobType: null, payload, payloadType: typeof(TRequest), options, executionTime);
     }
 
     /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
@@ -89,28 +83,21 @@ public sealed class JobChain
             "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset."
         );
 
-    /// <summary>Starts a chain whose root is a requestless step identified by an explicit generated descriptor.</summary>
-    /// <param name="descriptor">The generated descriptor of the requestless root step.</param>
+    /// <summary>Starts a chain whose root runs a job that takes no arguments.</summary>
+    /// <typeparam name="TJob">The <c>[Job]</c> class of the root step.</typeparam>
     /// <param name="options">Optional per-step options.</param>
     /// <returns>A mutable builder positioned at the root; extend it and call <see cref="JobChainBuilder.Build"/>.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="descriptor"/> is <see langword="null"/>.</exception>
-    public static JobChainBuilder Start(JobFunctionDescriptor descriptor, JobOptions? options = null)
+    public static JobChainBuilder Start<TJob>(JobOptions? options = null)
+        where TJob : IJob
     {
-        ArgumentNullException.ThrowIfNull(descriptor);
-
-        return new JobChainBuilder(descriptor, payload: null, payloadType: null, options, executionTime: null);
+        return new JobChainBuilder(typeof(TJob), payload: null, payloadType: null, options, executionTime: null);
     }
 
     /// <summary>Authors this step at an explicit execution instant.</summary>
-    public static JobChainBuilder Start(
-        JobFunctionDescriptor descriptor,
-        DateTimeOffset executionTime,
-        JobOptions? options = null
-    )
+    public static JobChainBuilder Start<TJob>(DateTimeOffset executionTime, JobOptions? options = null)
+        where TJob : IJob
     {
-        ArgumentNullException.ThrowIfNull(descriptor);
-
-        return new JobChainBuilder(descriptor, payload: null, payloadType: null, options, executionTime);
+        return new JobChainBuilder(typeof(TJob), payload: null, payloadType: null, options, executionTime);
     }
 
     /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
@@ -119,11 +106,8 @@ public sealed class JobChain
         error: true
     )]
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-    public static JobChainBuilder Start(
-        JobFunctionDescriptor descriptor,
-        DateTime executionTime,
-        JobOptions? options = null
-    ) =>
+    public static JobChainBuilder Start<TJob>(DateTime executionTime, JobOptions? options = null)
+        where TJob : IJob =>
         throw new NotSupportedException(
             "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset."
         );

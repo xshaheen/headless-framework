@@ -7,13 +7,13 @@ namespace Headless.Jobs.SourceGenerator.Models;
 /// <summary>The complete input of the emitter for one assembly. Contains no locations or diagnostics.</summary>
 internal sealed record JobsRegistrationModel(
     string AssemblyName,
-    EquatableArray<JobFunctionModel> Functions,
+    EquatableArray<JobModel> Jobs,
     EquatableArray<MiddlewareRegistrationModel> Middleware
 );
 
 /// <summary>
 /// The combined outcome for one assembly. <see cref="Model"/> is <see langword="null"/> when nothing may be emitted,
-/// such as when function names or request types collide.
+/// such as when job identities or argument types collide.
 /// </summary>
 internal sealed record JobsGenerationResult(JobsRegistrationModel? Model, EquatableArray<DiagnosticInfo> Diagnostics)
 {

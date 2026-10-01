@@ -3,6 +3,7 @@
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Redis;
+using Headless.Messaging.Transport;
 using StackExchange.Redis;
 using Tests.Capabilities;
 
@@ -54,11 +55,100 @@ public sealed class RedisConsumerConformanceTests(RedisMessagingFixture fixture)
         base.should_bound_shutdown_while_handler_is_active();
 
     [Fact]
-    public Task should_deliver_one_bus_copy_per_group_while_replicas_compete() =>
-        TransportProviderConformance.AssertBusSubscriberGroupsAsync(
+    public Task should_deliver_one_bus_copy_per_consumer_identity_while_replicas_compete() =>
+        TransportProviderConformance.AssertBusConsumerIdentitiesAsync(
             new RedisProviderConformanceDriver(fixture),
             AbortToken
         );
+
+    [Fact]
+    public Task should_deliver_every_bus_message_to_every_every_instance_replica() =>
+        TransportProviderConformance.AssertBusEveryInstanceAsync(
+            new RedisProviderConformanceDriver(fixture),
+            AbortToken
+        );
+
+    [Fact]
+    public async Task should_fan_out_bus_message_to_every_instance_sessions_of_one_identity()
+    {
+        var destination = $"every-{Guid.NewGuid():N}";
+        var identity = $"group-{Guid.NewGuid():N}";
+        await using var first = await fixture.CreateSessionAsync(
+            MessageLane.Bus,
+            destination,
+            identity,
+            AbortToken,
+            ownsStream: true,
+            request: _EveryInstanceRequest(identity)
+        );
+        await using var second = await fixture.CreateSessionAsync(
+            MessageLane.Bus,
+            destination,
+            identity,
+            AbortToken,
+            ownsStream: false,
+            request: _EveryInstanceRequest(identity)
+        );
+
+        await TransportBusConformance.AssertEveryInstanceFanOutAsync(first, second, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_leave_no_consumer_group_after_every_instance_client_disposes()
+    {
+        // given
+        var destination = $"every-{Guid.NewGuid():N}";
+        var identity = $"group-{Guid.NewGuid():N}";
+        var stream = RedisPhysicalAddress.BusStream(destination);
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(fixture.ConnectionString);
+        var database = connection.GetDatabase();
+
+        try
+        {
+            var session = await fixture.CreateSessionAsync(
+                MessageLane.Bus,
+                destination,
+                identity,
+                AbortToken,
+                ownsStream: false,
+                request: _EveryInstanceRequest(identity)
+            );
+
+            try
+            {
+                await session.StartAsync(cancellationToken: AbortToken);
+                var message = new TransportMessage(
+                    new Dictionary<string, string?>(StringComparer.Ordinal)
+                    {
+                        [Headers.MessageId] = Guid.NewGuid().ToString("N"),
+                        [Headers.MessageName] = destination,
+                        [Headers.Intent] = nameof(MessageLane.Bus),
+                    },
+                    "every"u8.ToArray()
+                );
+                (await session.PublishAsync(message, AbortToken)).Succeeded.Should().BeTrue();
+                (await session.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken)).Message.Id.Should().Be(message.Id);
+            }
+            finally
+            {
+                // when
+                await session.DisposeAsync();
+            }
+
+            // then: the stream the publish created is shared, but no read left a group or pending entry on it
+            (await database.KeyExistsAsync(stream))
+                .Should()
+                .BeTrue();
+            (await database.StreamGroupInfoAsync(stream)).Should().BeEmpty();
+        }
+        finally
+        {
+            await database.KeyDeleteAsync(stream);
+        }
+    }
+
+    private static ConsumerClientRequest _EveryInstanceRequest(string identity) =>
+        new(identity, 1, MessageLane.Bus, ConsumerSubscriptionKind.EveryInstance, Guid.NewGuid());
 
     [Fact]
     public Task should_deliver_one_owned_queue_copy_across_replicas() =>

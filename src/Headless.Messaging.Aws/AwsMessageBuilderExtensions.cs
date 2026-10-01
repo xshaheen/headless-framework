@@ -7,7 +7,7 @@ using Headless.Messaging.Registration;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Messaging;
 
-/// <summary>Extension methods that attach AWS SQS provider-specific options to a message registration.</summary>
+/// <summary>Extension methods that attach AWS SQS provider-specific options to a message contract.</summary>
 [PublicAPI]
 public static class AwsMessageBuilderExtensions
 {
@@ -15,15 +15,11 @@ public static class AwsMessageBuilderExtensions
     /// Configures AWS SQS options for <typeparamref name="TMessage"/> publish operations.
     /// </summary>
     /// <typeparam name="TMessage">The message type being registered.</typeparam>
-    /// <param name="builder">The bus message builder.</param>
+    /// <param name="builder">The Bus route of the message contract.</param>
     /// <param name="configure">A delegate that configures the AWS SQS options.</param>
     /// <returns>The same <paramref name="builder"/> for chaining.</returns>
-    /// <remarks>
-    /// Requires the framework-provided <see cref="IBusMessageBuilder{TMessage}"/> from
-    /// <c>setup.Bus.ForMessage&lt;TMessage&gt;</c>; custom or mocked builder implementations are not supported.
-    /// </remarks>
-    public static IBusMessageBuilder<TMessage> UseAws<TMessage>(
-        this IBusMessageBuilder<TMessage> builder,
+    public static IBusContractBuilder<TMessage> UseAws<TMessage>(
+        this IBusContractBuilder<TMessage> builder,
         Action<AwsMessageConfigBuilder<TMessage>> configure
     )
         where TMessage : class
@@ -39,8 +35,8 @@ public static class AwsMessageBuilderExtensions
     }
 
     /// <summary>Configures AWS SQS options for <typeparamref name="TMessage"/> queue publish operations.</summary>
-    public static IQueueMessageBuilder<TMessage> UseAws<TMessage>(
-        this IQueueMessageBuilder<TMessage> builder,
+    public static IQueueContractBuilder<TMessage> UseAws<TMessage>(
+        this IQueueContractBuilder<TMessage> builder,
         Action<AwsMessageConfigBuilder<TMessage>> configure
     )
         where TMessage : class
@@ -93,6 +89,15 @@ internal sealed class AwsMessageConfig<TMessage>(Func<TMessage, string?>? messag
     : IProviderHeaderContributions
     where TMessage : class
 {
+    // A message contract merges with an identical redeclaration from another module, so two configs holding the same
+    // selector are equal and two different selectors conflict.
+    private readonly Func<TMessage, string?>? _selector = messageGroupIdSelector;
+
+    public override bool Equals(object? obj) =>
+        obj is AwsMessageConfig<TMessage> other && Equals(_selector, other._selector);
+
+    public override int GetHashCode() => _selector?.GetHashCode() ?? 0;
+
     private const int _MessageGroupIdMaxLength = 128;
 
     public IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; } =

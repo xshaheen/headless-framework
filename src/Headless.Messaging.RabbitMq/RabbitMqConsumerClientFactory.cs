@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
@@ -15,34 +16,47 @@ internal sealed class RabbitMqConsumerClientFactory(
 ) : IConsumerClientFactory
 {
     public async Task<IConsumerClient> CreateAsync(
-        string groupName,
-        byte groupConcurrent,
-        MessageLane lane,
+        ConsumerClientRequest request,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(request);
+
+        var subscriptionName = request.SubscriptionName;
+        var concurrency = request.Concurrency;
+        var lane = request.Lane;
+
         // Resolve outside the broker try/catch so config errors surface as InvalidOperationException,
         // not as a BrokerConnectionException.
-        var config = consumerRegistry?.ResolveConsumerConfig<RabbitMqConsumerConfig>(groupName, lane);
+        var config = consumerRegistry?.ResolveConsumerConfig<RabbitMqConsumerConfig>(subscriptionName, lane);
+
+        var client = new RabbitMqConsumerClient(
+            subscriptionName,
+            concurrency,
+            channelPool,
+            rabbitMqOptions,
+            serviceProvider,
+            config,
+            lane,
+            kind: request.Kind
+        );
 
         try
         {
-            var client = new RabbitMqConsumerClient(
-                groupName,
-                groupConcurrent,
-                channelPool,
-                rabbitMqOptions,
-                serviceProvider,
-                config,
-                lane
-            );
-
             await client.ConnectAsync(cancellationToken).ConfigureAwait(false);
 
             return client;
         }
-        catch (Exception e) when (e is not OperationCanceledException)
+        catch (Exception e)
         {
+            // An every-instance client may already own a connection; release it with the failed client.
+            await client.DisposeAsync().ConfigureAwait(false);
+
+            if (e is OperationCanceledException or BrokerConnectionException)
+            {
+                throw;
+            }
+
             throw new BrokerConnectionException(e);
         }
     }

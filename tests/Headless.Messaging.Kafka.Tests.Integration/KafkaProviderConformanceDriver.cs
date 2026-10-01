@@ -46,7 +46,7 @@ internal sealed class KafkaProviderConformanceDriver(KafkaFixture fixture) : Tra
         return fixture.CreateConformanceSessionAsync(
             cancellationToken,
             endpoint.LogicalName,
-            endpoint.SubscriberGroup,
+            endpoint.SubscriptionName,
             createReplacement: false
         );
     }

@@ -17,8 +17,8 @@ public class MessageView
     /// <summary>Gets or sets the messaging framework version that stored this row.</summary>
     public required string Version { get; set; }
 
-    /// <summary>Gets or sets the consumer group that the row is targeted at, or <see langword="null"/> for bus-broadcast rows without a pinned group.</summary>
-    public string? Group { get; set; }
+    /// <summary>Gets or sets the identity of the consumer a received row belongs to, or <see langword="null"/> for published rows.</summary>
+    public string? ConsumerIdentity { get; set; }
 
     /// <summary>Gets or sets the message name (topic or queue name) resolved at publish time.</summary>
     public required string Name { get; set; }

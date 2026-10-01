@@ -19,7 +19,7 @@ public sealed class IncrementalCachingTests : TestBase
 
     private static readonly string[] _TrackedSteps =
     [
-        "JobFunctions",
+        "Jobs",
         "ScheduleMiddleware",
         "ExecuteMiddleware",
         "AssemblyName",
@@ -52,27 +52,31 @@ public sealed class IncrementalCachingTests : TestBase
             public Task InvokeAsync(JobScheduleContext c, JobScheduleNext n, CancellationToken t) => n(t);
         }
 
-        public sealed class InvoiceJobs
+        [Job("invoice.send", Cron = "0 */5 * * * *")]
+        [JobExecuteMiddleware<AuditMiddleware>]
+        public sealed class SendInvoice : IJob<Invoice>
         {
-            [JobFunction("invoice.send", "0 */5 * * * *")]
-            [JobExecuteMiddleware<AuditMiddleware>]
-            public Task SendAsync(JobFunctionContext<Invoice> context, CancellationToken cancellationToken) =>
-                Task.CompletedTask;
+            public ValueTask ExecuteAsync(JobContext<Invoice> context, CancellationToken cancellationToken) => default;
+        }
 
-            [JobFunction("invoice.cleanup")]
-            public void Cleanup() { }
+        [Job("invoice.cleanup")]
+        public sealed class Cleanup : IJob
+        {
+            public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
         }
         """;
 
     private const string _ProducerSource = """
+        using System.Threading;
+        using System.Threading.Tasks;
         using Headless.Jobs.Base;
 
         namespace Upstream;
 
-        public sealed class ProducerJobs
+        [Job("producer.run")]
+        public sealed class ProducerJob : IJob
         {
-            [JobFunction("producer.run")]
-            public void Run() { }
+            public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
         }
         """;
 
@@ -107,7 +111,7 @@ public sealed class IncrementalCachingTests : TestBase
     }
 
     [Fact]
-    public void should_not_re_emit_source_when_an_edit_only_moves_job_functions()
+    public void should_not_re_emit_source_when_an_edit_only_moves_jobs()
     {
         var (driver, compilation) = _RunInitial();
 
@@ -125,7 +129,7 @@ public sealed class IncrementalCachingTests : TestBase
     }
 
     [Fact]
-    public void should_regenerate_when_a_job_function_changes()
+    public void should_regenerate_when_a_job_changes()
     {
         var (driver, compilation) = _RunInitial();
 
@@ -136,10 +140,7 @@ public sealed class IncrementalCachingTests : TestBase
         );
         var result = _Run(driver, edited);
 
-        IncrementalGeneratorAssertions
-            .StepReasons(result, "JobFunctions")
-            .Should()
-            .Contain(IncrementalStepRunReason.Modified);
+        IncrementalGeneratorAssertions.StepReasons(result, "Jobs").Should().Contain(IncrementalStepRunReason.Modified);
         IncrementalGeneratorAssertions
             .StepReasons(result, "RegistrationModel")
             .Should()
@@ -148,7 +149,7 @@ public sealed class IncrementalCachingTests : TestBase
     }
 
     [Fact]
-    public void should_revalidate_middleware_targets_when_a_referenced_function_is_renamed()
+    public void should_revalidate_middleware_targets_when_a_referenced_job_is_renamed()
     {
         var (driver, compilation) = _RunInitial();
         var renamedProducer = GeneratorTestHelper.EmitReference(

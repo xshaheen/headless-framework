@@ -60,6 +60,10 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     // independently — so the walk descends only through non-timed children to this depth.
     private readonly int _maxChainDepth;
 
+    // Which functions this host claims. Applied to every root claim, acquire, sweep, and next-occurrence read, never to
+    // an in-tree descendant, which runs with the root that claimed it.
+    private readonly JobsRunFilter _runFilter;
+
     public JobsInMemoryPersistenceProvider(IServiceProvider serviceProvider)
     {
         _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
@@ -68,6 +72,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         _ownerId = optionsBuilder?.NodeId ?? Environment.MachineName;
         _leaseDuration = optionsBuilder?.LeaseDuration ?? TimeSpan.FromMinutes(5);
         _maxChainDepth = optionsBuilder?.MaxChainDepth ?? SchedulerOptionsBuilder.DefaultMaxChainDepth;
+        _runFilter = serviceProvider.GetService<JobsRunFilter>() ?? JobsRunFilter.All;
     }
 
     // The #5 completion/claim fence (mirror of EF WhereOwnedBy): a row is touchable only when this node owns it and it
@@ -262,6 +267,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             .Values.Where(x =>
                 x.ExecutionTime != null
                 && _CanFallbackClaim(x.Status, x.LockedUntil, now)
+                && _runFilter.Allows(x.Function)
                 && x.ExecutionTime <= fallbackThreshold
                 && _ParentGateAllowsClaim(x) // The fallback claims timed rows directly, so it is gated too
             ) // Only tasks older than 1 second
@@ -281,6 +287,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 if (
                     existingTicker.UpdatedAt <= job.UpdatedAt
                     && _CanFallbackClaim(existingTicker.Status, existingTicker.LockedUntil, now)
+                    && _runFilter.Allows(existingTicker.Function)
                     && _ParentGateAllowsClaim(existingTicker)
                 )
                 {
@@ -1427,7 +1434,8 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 missedRunGraceSeconds,
                 onOverlap,
                 evaluationFingerprint,
-                contractVersion
+                contractVersion,
+                timeZoneId
             ) in cronJobs
         )
         {
@@ -1440,7 +1448,10 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             {
                 // Reseeding cannot upgrade the schema label of bytes already stored by an older writer.
                 // Existing function/version/request tuples change only through an explicit definition edit.
-                if (!string.Equals(existing.Expression, expression, StringComparison.Ordinal))
+                if (
+                    !string.Equals(existing.Expression, expression, StringComparison.Ordinal)
+                    || !string.Equals(existing.TimeZoneId, timeZoneId, StringComparison.Ordinal)
+                )
                 {
                     lock (_GetCronDefinitionLock(id))
                     {
@@ -1451,6 +1462,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
                         var updated = _CloneCronJob(current);
                         updated.Expression = expression;
+                        updated.TimeZoneId = timeZoneId;
                         updated.ScheduleRevision++;
                         updated.UpdatedAt = now;
 
@@ -1499,6 +1511,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 Function = function,
                 ContractVersion = contractVersion,
                 Expression = expression,
+                TimeZoneId = timeZoneId,
                 InitIdentifier = $"MemoryTicker_Seeded_{function}",
                 CreatedAt = now,
                 UpdatedAt = now,
@@ -1922,6 +1935,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     .Select(x =>
                         _cronJobs.TryGetValue(x.CronJobId, out var definition)
                         && _IsCronDispatchSelectable(definition)
+                        && _runFilter.Allows(definition.Function)
                         && definition.NextDueUtc == x.NextDueUtc
                             ? definition
                             : null
@@ -2663,6 +2677,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             {
                 if (
                     !_cronJobs.TryGetValue(context.Id, out var currentDefinition)
+                    || !_runFilter.Allows(currentDefinition.Function)
                     || currentDefinition.IsPaused
                     || context.IsPaused
                     || currentDefinition.ScheduleRevision != context.ScheduleRevision
@@ -2772,7 +2787,11 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         var fallbackThreshold = now.UtcDateTime.AddSeconds(-1); // Fallback picks up tasks older than main 1-second window
 
         var occurrencesToUpdate = _cronOccurrences
-            .Values.Where(x => _CanFallbackClaim(x.Status, x.LockedUntil, now) && x.ExecutionTime <= fallbackThreshold) // Only tasks older than 1 second
+            .Values.Where(x =>
+                _CanFallbackClaim(x.Status, x.LockedUntil, now)
+                && _runFilter.Allows(x.Function)
+                && x.ExecutionTime <= fallbackThreshold
+            ) // Only tasks older than 1 second
             .OrderBy(x => x.ExecutionTime)
             .ThenBy(x => x.Id)
             .Take(_MaxFallbackClaimBatchSize)
@@ -2787,6 +2806,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 if (
                     existingOccurrence.UpdatedAt <= occurrence.UpdatedAt
                     && _CanFallbackClaim(existingOccurrence.Status, existingOccurrence.LockedUntil, now)
+                    && _runFilter.Allows(existingOccurrence.Function)
                 )
                 {
                     var updatedOccurrence = _CloneCronOccurrence(existingOccurrence);
@@ -3441,6 +3461,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         var now = _timeProvider.GetUtcNow();
 
         return (job.Status == JobStatus.Idle || job.Status == JobStatus.Queued)
+            && _runFilter.Allows(job.Function)
             && (
                 string.Equals(job.OwnerId, _ownerId, StringComparison.Ordinal)
                 || job.LockedUntil == null
@@ -3456,6 +3477,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
         return _cronJobs.TryGetValue(occurrence.CronJobId, out var definition)
             && !definition.IsPaused
+            && _runFilter.Allows(occurrence.Function)
             && (occurrence.Status == JobStatus.Idle || occurrence.Status == JobStatus.Queued)
             && (
                 string.Equals(occurrence.OwnerId, _ownerId, StringComparison.Ordinal)

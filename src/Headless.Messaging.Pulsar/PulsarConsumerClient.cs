@@ -12,14 +12,15 @@ namespace Headless.Messaging.Pulsar;
 internal sealed class PulsarConsumerClient(
     IOptions<PulsarMessagingOptions> options,
     PulsarClient client,
-    string groupName,
-    byte groupConcurrent,
-    MessageLane lane = MessageLane.Bus,
+    ConsumerClientRequest request,
     TimeProvider? timeProvider = null,
     Func<IReadOnlyDictionary<string, string?>, byte[], TransportMessage>? transportMessageFactory = null
 ) : IConsumerClient
 {
-    private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
+    private readonly ConsumerClientRequest _request = Argument.IsNotNull(request);
+    private readonly byte _groupConcurrent = request.Concurrency;
+    private readonly bool _everyInstance = request.Kind is ConsumerSubscriptionKind.EveryInstance;
+    private readonly SemaphoreSlim _semaphore = new(request.Concurrency);
     private readonly ConsumerPauseGate _pauseGate = new();
 #pragma warning disable CA2213 // Disposing a transition gate can race queued pause/resume callers during shutdown.
     private readonly SemaphoreSlim _pauseResumeLock = new(1, 1);
@@ -31,6 +32,7 @@ internal sealed class PulsarConsumerClient(
     private CancellationTokenSource? _receiveCts = new();
     private readonly PulsarMessagingOptions _pulsarOptions = options.Value;
     private IConsumer<byte[]>? _consumerClient;
+    private Func<CancellationToken, Task>? _onReestablished;
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
 
@@ -40,6 +42,11 @@ internal sealed class PulsarConsumerClient(
     {
         OnMessageCallback = onMessage;
         OnLogCallback = onLog;
+    }
+
+    public void AttachReestablishedCallback(Func<CancellationToken, Task>? onReestablished)
+    {
+        Volatile.Write(ref _onReestablished, onReestablished);
     }
 
     public BrokerAddress BrokerAddress => new("pulsar", BrokerAddressDisplay.Format(_pulsarOptions.ServiceUrl));
@@ -54,14 +61,24 @@ internal sealed class PulsarConsumerClient(
         // timeout guard. Plan to migrate to DotPulsar (apache/pulsar-dotnet) when producer
         // batching ships: https://github.com/apache/pulsar-dotpulsar/issues/7
         var cts = TimeSpan.FromSeconds(30).ToCancellationTokenSource(cancellationToken);
-        var subscribeTask = client
+        var builder = client
             .NewConsumer()
-            .Topics(topics.Select(topic => PulsarPhysicalAddress.Topic(lane, topic)))
-            .SubscriptionName(GetSubscriptionName(groupName, lane))
+            .Topics(topics.Select(topic => PulsarPhysicalAddress.Topic(_request.Lane, topic)))
+            .SubscriptionName(PulsarPhysicalAddress.Subscription(_request))
             .ConsumerName(serviceName)
-            .SubscriptionType(SubscriptionType.Shared)
-            .NegativeAckRedeliveryDelay(_pulsarOptions.NegativeAckRedeliveryDelay)
-            .SubscribeAsync();
+            .NegativeAckRedeliveryDelay(_pulsarOptions.NegativeAckRedeliveryDelay);
+
+        // An every-instance subscription belongs to this process alone: exclusive, so no other consumer can attach to
+        // it, and non-durable, so the broker keeps no cursor for it once the consumer disconnects or the process dies.
+        // With no backlog to replay, it starts at the latest message.
+        builder = _everyInstance
+            ? builder
+                .SubscriptionType(SubscriptionType.Exclusive)
+                .SubscriptionMode(SubscriptionMode.NonDurable)
+                .SubscriptionInitialPosition(SubscriptionInitialPosition.Latest)
+            : builder.SubscriptionType(SubscriptionType.Shared);
+
+        var subscribeTask = builder.SubscribeAsync();
 
         try
         {
@@ -103,9 +120,9 @@ internal sealed class PulsarConsumerClient(
         }
     }
 
-    internal static string GetSubscriptionName(string groupName, MessageLane lane)
+    internal static string GetSubscriptionName(string subscriptionName, MessageLane lane)
     {
-        return PulsarPhysicalAddress.Subscription(lane, groupName);
+        return PulsarPhysicalAddress.Subscription(lane, subscriptionName);
     }
 
     public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
@@ -118,6 +135,8 @@ internal sealed class PulsarConsumerClient(
         var retryDelay = TimeSpan.FromMilliseconds(200);
         CancellationTokenSource? linkedReceiveCts = null;
         var receiveToken = CancellationToken.None;
+        using var monitorCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var reconnectMonitor = _StartReconnectMonitor(monitorCts.Token);
 
         try
         {
@@ -172,7 +191,7 @@ internal sealed class PulsarConsumerClient(
                     continue;
                 }
 
-                if (groupConcurrent > 0)
+                if (_groupConcurrent > 0)
                 {
                     try
                     {
@@ -224,8 +243,6 @@ internal sealed class PulsarConsumerClient(
                             headers.Add(header.Key, header.Value);
                         }
 
-                        headers[Headers.Group] = groupName;
-
                         message = transportMessageFactory is null
                             ? new TransportMessage(headers, currentMessage.Data)
                             : transportMessageFactory(headers, currentMessage.Data);
@@ -254,7 +271,34 @@ internal sealed class PulsarConsumerClient(
         finally
         {
             linkedReceiveCts?.Dispose();
+            await monitorCts.CancelAsync().ConfigureAwait(false);
+            await reconnectMonitor.ConfigureAwait(false);
         }
+    }
+
+    // Pulsar.Client recovers a lost connection on its own and resubscribes, but a non-durable subscription keeps nothing
+    // for the time it was away, so the core must learn about each recovery to tell the every-instance consumer.
+    private Task _StartReconnectMonitor(CancellationToken cancellationToken)
+    {
+        if (!_everyInstance || _consumerClient is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        return PulsarReconnectMonitor.RunAsync(
+            _consumerClient,
+            token => Volatile.Read(ref _onReestablished)?.Invoke(token) ?? Task.CompletedTask,
+            e =>
+                OnLogCallback?.Invoke(
+                    new LogMessageEventArgs
+                    {
+                        LogType = MqLogType.ConsumeError,
+                        Reason = $"Pulsar reconnect monitor failed: {e.Message}",
+                    }
+                ),
+            _timeProvider,
+            cancellationToken
+        );
     }
 
     public async ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
@@ -316,7 +360,7 @@ internal sealed class PulsarConsumerClient(
 
     private void _ReleaseSemaphore()
     {
-        if (groupConcurrent > 0)
+        if (_groupConcurrent > 0)
         {
             try
             {

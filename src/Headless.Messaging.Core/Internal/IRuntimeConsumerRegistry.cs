@@ -29,7 +29,7 @@ internal interface IRuntimeConsumerRegistry
 
     bool TryGetInvoker(
         string messageName,
-        string group,
+        string identity,
         string handlerId,
         MessageLane lane,
         [NotNullWhen(true)] out IRuntimeMessageHandlerInvoker? invoker
@@ -61,7 +61,7 @@ internal sealed class EmptyRuntimeConsumerRegistry : IRuntimeConsumerRegistry
 
     public bool TryGetInvoker(
         string messageName,
-        string group,
+        string identity,
         string handlerId,
         MessageLane lane,
         [NotNullWhen(true)] out IRuntimeMessageHandlerInvoker? invoker
@@ -82,7 +82,7 @@ internal sealed record RuntimeConsumerRegistrationResult(
     RuntimeConsumerRegistrationStatus Status,
     string? SubscriptionId,
     string MessageName,
-    string Group,
+    string Identity,
     string HandlerId,
     MessageLane Lane
 );
@@ -90,7 +90,7 @@ internal sealed record RuntimeConsumerRegistrationResult(
 internal sealed record RuntimeConsumerRegistration(
     string SubscriptionId,
     string MessageName,
-    string Group,
+    string Identity,
     string HandlerId,
     MessageLane Lane,
     ConsumerExecutorDescriptor Descriptor,
@@ -100,7 +100,8 @@ internal sealed record RuntimeConsumerRegistration(
 internal sealed class RuntimeConsumerRegistry(
     IOptions<MessagingOptions> options,
     IConsumerRegistry consumerRegistry,
-    ILogger<RuntimeConsumerRegistry> logger
+    ILogger<RuntimeConsumerRegistry> logger,
+    IMessageCapabilityGate? capabilityGate = null
 ) : IRuntimeConsumerRegistry
 {
     private readonly Lock _lock = new();
@@ -134,20 +135,42 @@ internal sealed class RuntimeConsumerRegistry(
         Argument.IsNotNull(handler);
 
         const MessageLane lane = MessageLane.Bus;
+        var everyInstance = options?.EveryInstance ?? false;
+
         var method = handler.Method;
         var handlerId = _ResolveHandlerId(method, typeof(TMessage), options?.HandlerId);
         var messageName = _ResolveMessageName(typeof(TMessage), lane, options?.MessageName);
-        var group = _ResolveGroup(handlerId, options?.Group);
+        var identity = string.IsNullOrWhiteSpace(options?.Identity)
+            ? MessagingConventions.NormalizeSegment(handlerId)
+            : options.Identity;
         var concurrency = Argument.IsPositive(options?.Concurrency ?? 1);
+
+        // Checked before the registration exists, so a transport without every-instance subscriptions rejects the
+        // subscription before any consumer client, and so any broker object, is created for it.
+        if (everyInstance)
+        {
+            (
+                capabilityGate ?? throw new InvalidOperationException("Messaging capabilities are not available.")
+            ).EnsureEveryInstanceSupported(identity);
+        }
+
         var invoker = new RuntimeMessageHandlerInvoker<TMessage>(handler);
-        var descriptor = _CreateDescriptor<TMessage>(method, messageName, group, handlerId, concurrency, lane);
+        var descriptor = _CreateDescriptor<TMessage>(
+            method,
+            messageName,
+            identity,
+            handlerId,
+            concurrency,
+            lane,
+            everyInstance
+        );
 
         lock (_lock)
         {
             var existing = _registrations.FirstOrDefault(x =>
                 x.Lane == lane
                 && string.Equals(x.MessageName, messageName, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(x.Group, group, StringComparison.Ordinal)
+                && string.Equals(x.Identity, identity, StringComparison.Ordinal)
             );
 
             if (existing != null)
@@ -155,23 +178,28 @@ internal sealed class RuntimeConsumerRegistry(
                 switch (options?.DuplicateBehavior ?? RuntimeSubscriptionDuplicateBehavior.Reject)
                 {
                     case RuntimeSubscriptionDuplicateBehavior.Ignore:
-                        logger.DuplicateRuntimeSubscriptionIgnored(messageName, group, handlerId);
+                        logger.DuplicateRuntimeSubscriptionIgnored(messageName, identity, handlerId);
                         return new RuntimeConsumerRegistrationResult(
                             Status: RuntimeConsumerRegistrationStatus.Ignored,
                             SubscriptionId: null,
                             MessageName: messageName,
-                            Group: group,
+                            Identity: identity,
                             HandlerId: existing.HandlerId,
                             Lane: lane
                         );
                     case RuntimeSubscriptionDuplicateBehavior.Replace:
                         _PublishSnapshot(_registrations.Remove(existing));
-                        logger.DuplicateRuntimeSubscriptionReplaced(messageName, group, existing.HandlerId, handlerId);
+                        logger.DuplicateRuntimeSubscriptionReplaced(
+                            messageName,
+                            identity,
+                            existing.HandlerId,
+                            handlerId
+                        );
                         break;
                     default:
                         throw new InvalidOperationException(
-                            "Duplicate runtime subscription detected for messageName/group: "
-                                + $"messageName='{messageName}', group='{group}', existingHandlerId='{existing.HandlerId}', "
+                            "Duplicate runtime subscription detected for message name and identity: "
+                                + $"messageName='{messageName}', identity='{identity}', existingHandlerId='{existing.HandlerId}', "
                                 + $"newHandlerId='{handlerId}'. "
                                 + "Set RuntimeSubscriptionOptions.DuplicateBehavior to Ignore or Replace to opt out."
                         );
@@ -182,7 +210,7 @@ internal sealed class RuntimeConsumerRegistry(
             var registration = new RuntimeConsumerRegistration(
                 subscriptionId,
                 messageName,
-                group,
+                identity,
                 handlerId,
                 lane,
                 descriptor,
@@ -194,7 +222,7 @@ internal sealed class RuntimeConsumerRegistry(
                 RuntimeConsumerRegistrationStatus.Attached,
                 subscriptionId,
                 messageName,
-                group,
+                identity,
                 handlerId,
                 lane
             );
@@ -222,14 +250,14 @@ internal sealed class RuntimeConsumerRegistry(
 
     public bool TryGetInvoker(
         string messageName,
-        string group,
+        string identity,
         string handlerId,
         MessageLane lane,
         [NotNullWhen(true)] out IRuntimeMessageHandlerInvoker? invoker
     )
     {
         // ReSharper disable once InconsistentlySynchronizedField
-        if (_invokers.TryGetValue(new RuntimeInvokerKey(lane, messageName, group, handlerId), out var registered))
+        if (_invokers.TryGetValue(new RuntimeInvokerKey(lane, messageName, identity, handlerId), out var registered))
         {
             invoker = registered;
             return true;
@@ -245,13 +273,13 @@ internal sealed class RuntimeConsumerRegistry(
     /// </summary>
     private void _PublishSnapshot(ImmutableArray<RuntimeConsumerRegistration> registrations)
     {
-        // Registration identity is unique on (lane, message name, group) — see the duplicate check in
+        // Registration identity is unique on (lane, message name, identity) — see the duplicate check in
         // Register — so adding the handler id to the key cannot collide.
         _invokers = registrations.ToFrozenDictionary(
             static registration => new RuntimeInvokerKey(
                 registration.Lane,
                 registration.MessageName,
-                registration.Group,
+                registration.Identity,
                 registration.HandlerId
             ),
             static registration => registration.Invoker,
@@ -273,11 +301,6 @@ internal sealed class RuntimeConsumerRegistry(
         }
 
         return _options.ApplyMessageNamePrefix(_options.Conventions.GetMessageName(messageType));
-    }
-
-    private string _ResolveGroup(string handlerId, string? explicitGroup)
-    {
-        return _options.ResolveGroupName(handlerId, explicitGroup);
     }
 
     private static string _ResolveHandlerId(
@@ -318,46 +341,25 @@ internal sealed class RuntimeConsumerRegistry(
     private static ConsumerExecutorDescriptor _CreateDescriptor<TMessage>(
         MethodInfo method,
         string messageName,
-        string group,
+        string identity,
         string handlerId,
         byte concurrency,
-        MessageLane lane
+        MessageLane lane,
+        bool everyInstance
     )
         where TMessage : class
     {
-        var declaringType = method.DeclaringType ?? typeof(RuntimeConsumerRegistry);
-
         return new ConsumerExecutorDescriptor
         {
-            ServiceTypeInfo = declaringType.GetTypeInfo(),
-            ImplTypeInfo = declaringType.GetTypeInfo(),
-            MethodInfo = method,
+            ConsumerType = method.DeclaringType ?? typeof(RuntimeConsumerRegistry),
+            MethodName = method.Name,
+            MessageType = typeof(TMessage),
             MessageName = messageName,
-            GroupName = group,
+            SubscriptionName = identity,
             Concurrency = concurrency,
             HandlerId = handlerId,
             Lane = lane,
-            Parameters =
-            [
-                new ParameterDescriptor
-                {
-                    Name = "context",
-                    ParameterType = typeof(ConsumeContext<TMessage>),
-                    IsFromMessaging = false,
-                },
-                new ParameterDescriptor
-                {
-                    Name = "services",
-                    ParameterType = typeof(IServiceProvider),
-                    IsFromMessaging = true,
-                },
-                new ParameterDescriptor
-                {
-                    Name = "cancellationToken",
-                    ParameterType = typeof(CancellationToken),
-                    IsFromMessaging = true,
-                },
-            ],
+            EveryInstance = everyInstance,
         };
     }
 
@@ -365,7 +367,7 @@ internal sealed class RuntimeConsumerRegistry(
     private readonly record struct RuntimeInvokerKey(
         MessageLane Lane,
         string MessageName,
-        string Group,
+        string Identity,
         string HandlerId
     );
 
@@ -377,7 +379,7 @@ internal sealed class RuntimeConsumerRegistry(
         {
             return x.Lane == y.Lane
                 && string.Equals(x.MessageName, y.MessageName, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(x.Group, y.Group, StringComparison.Ordinal)
+                && string.Equals(x.Identity, y.Identity, StringComparison.Ordinal)
                 && string.Equals(x.HandlerId, y.HandlerId, StringComparison.Ordinal);
         }
 
@@ -386,7 +388,7 @@ internal sealed class RuntimeConsumerRegistry(
             return HashCode.Combine(
                 obj.Lane,
                 StringComparer.OrdinalIgnoreCase.GetHashCode(obj.MessageName),
-                StringComparer.Ordinal.GetHashCode(obj.Group),
+                StringComparer.Ordinal.GetHashCode(obj.Identity),
                 StringComparer.Ordinal.GetHashCode(obj.HandlerId)
             );
         }
@@ -412,24 +414,24 @@ internal static partial class RuntimeConsumerRegistryLog
     [LoggerMessage(
         EventId = 3102,
         Level = LogLevel.Information,
-        Message = "Ignoring duplicate runtime subscription for messageName {MessageName}, group {Group}, handler {HandlerId}."
+        Message = "Ignoring duplicate runtime subscription for messageName {MessageName}, identity {Identity}, handler {HandlerId}."
     )]
     public static partial void DuplicateRuntimeSubscriptionIgnored(
         this ILogger logger,
         string messageName,
-        string group,
+        string identity,
         string handlerId
     );
 
     [LoggerMessage(
         EventId = 3103,
         Level = LogLevel.Warning,
-        Message = "Replacing runtime subscription for messageName {MessageName}, group {Group}. Previous handler {ExistingHandlerId}, new handler {HandlerId}."
+        Message = "Replacing runtime subscription for messageName {MessageName}, identity {Identity}. Previous handler {ExistingHandlerId}, new handler {HandlerId}."
     )]
     public static partial void DuplicateRuntimeSubscriptionReplaced(
         this ILogger logger,
         string messageName,
-        string group,
+        string identity,
         string existingHandlerId,
         string handlerId
     );

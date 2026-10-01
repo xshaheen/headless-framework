@@ -19,7 +19,7 @@ export interface MessageDetail {
   requestedDeliveryMode: DeliveryMode | null
   resolvedDeliveryMode: DeliveryMode | null
   isCoordinated: boolean | null
-  group?: string
+  consumerIdentity?: string
   exceptionInfo?: string
 }
 
@@ -249,16 +249,16 @@ async function copyContent() {
             {{ message.lane }}
           </v-chip>
 
-          <!-- Group (received only) -->
+          <!-- Consumer identity (received only) -->
           <v-chip
-            v-if="message.group"
+            v-if="message.consumerIdentity"
             size="small"
             color="secondary"
             variant="tonal"
             class="mr-1 mb-1"
           >
             <v-icon start size="x-small">mdi-group</v-icon>
-            {{ message.group }}
+            {{ message.consumerIdentity }}
           </v-chip>
 
           <!-- Exception indicator -->

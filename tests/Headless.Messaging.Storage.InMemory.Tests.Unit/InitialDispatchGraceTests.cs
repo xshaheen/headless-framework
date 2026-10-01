@@ -72,7 +72,9 @@ public sealed class InitialDispatchGraceTests : TestBase
         );
 
         // when — immediately poll (still inside the grace window).
-        var beforeGrace = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).ToList();
+        var beforeGrace = (
+            await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken)
+        ).ToList();
 
         // then — pickup query excludes the row.
         beforeGrace.Should().NotContain(m => m.StorageId == stored.StorageId);
@@ -81,7 +83,9 @@ public sealed class InitialDispatchGraceTests : TestBase
         fakeClock.Advance(_InitialDispatchGrace + TimeSpan.FromSeconds(1));
 
         // then — the same row is now eligible for pickup.
-        var afterGrace = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).ToList();
+        var afterGrace = (
+            await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken)
+        ).ToList();
         afterGrace.Should().Contain(m => m.StorageId == stored.StorageId);
     }
 

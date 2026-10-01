@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
@@ -15,27 +16,27 @@ internal sealed class RedisConsumerClientFactory(
 ) : IConsumerClientFactory
 {
     public Task<IConsumerClient> CreateAsync(
-        string groupName,
-        byte groupConcurrent,
-        MessageLane lane,
+        ConsumerClientRequest request,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(request);
+
+        var subscriptionName = request.SubscriptionName;
+        var concurrency = request.Concurrency;
+        var lane = request.Lane;
+
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (lane is not (MessageLane.Bus or MessageLane.Queue))
-        {
-            throw new ArgumentOutOfRangeException(nameof(lane), lane, message: null);
-        }
-
         var client = new RedisConsumerClient(
-            groupName,
-            groupConcurrent,
+            subscriptionName,
+            concurrency,
             redis,
             redisOptions,
             logger,
             lane,
-            messagingOptions.Value.RetryPolicy.DispatchTimeout
+            messagingOptions.Value.RetryPolicy.DispatchTimeout,
+            kind: request.Kind
         );
         return Task.FromResult<IConsumerClient>(client);
     }

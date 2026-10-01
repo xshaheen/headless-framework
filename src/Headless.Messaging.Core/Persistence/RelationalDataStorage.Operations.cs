@@ -631,8 +631,8 @@ internal sealed partial class RelationalDataStorage
         var hash = _CreateInboxKeyHash(row.Key with { Generation = childGeneration }, row.LifecycleId);
         var sql = $"""
             UPDATE {_receivedTable} SET {_t.IsCurrentGeneration}={_t.False} WHERE {_t.GenerationIncarnationId}=@ParentIncarnationId AND {_t.IsCurrentGeneration}={_t.True};
-            INSERT INTO {_receivedTable}({_t.Id},{_t.Version},{_t.Name},{_t.Group},{_t.GroupKey},{_t.Content},{_t.IntentType},{_t.Retries},{_t.InlineAttempts},{_t.Added},{_t.ExpiresAt},{_t.NextRetryAt},{_t.LockedUntil},{_t.Owner},{_t.StatusName},{_t.MessageId},{_t.ExceptionInfo},{_t.IsInboxRecord},{_t.TenantPresent},{_t.TenantId},{_t.ContractIdentity},{_t.ContractVersion},{_t.ConsumerIdentity},{_t.Generation},{_t.GenerationIncarnationId},{_t.LifecycleId},{_t.AttemptId},{_t.IsInboxOrphaned},{_t.IsCurrentGeneration},{_t.ReplayParentIncarnationId},{_t.ReplayOperationId},{_t.TerminalAt},{_t.EffectiveExpiresAt},{_t.IsHeld},{_t.HeldAt},{_t.HeldBy},{_t.HoldReason},{_t.HoldOperationId},{_t.InboxKeyHash},{_t.InboxRetentionSeconds})
-            SELECT @ChildStorageId,{_t.Version},{_t.Name},{_t.Group},{_t.GroupKey},{_t.Content},{_t.IntentType},0,0,@Instant,NULL,{_dialect.ShiftByDuration(
+            INSERT INTO {_receivedTable}({_t.Id},{_t.Version},{_t.Name},{_t.Content},{_t.IntentType},{_t.Retries},{_t.InlineAttempts},{_t.Added},{_t.ExpiresAt},{_t.NextRetryAt},{_t.LockedUntil},{_t.Owner},{_t.StatusName},{_t.MessageId},{_t.ExceptionInfo},{_t.IsInboxRecord},{_t.TenantPresent},{_t.TenantId},{_t.ContractIdentity},{_t.ContractVersion},{_t.ConsumerIdentity},{_t.Generation},{_t.GenerationIncarnationId},{_t.LifecycleId},{_t.AttemptId},{_t.IsInboxOrphaned},{_t.IsCurrentGeneration},{_t.ReplayParentIncarnationId},{_t.ReplayOperationId},{_t.TerminalAt},{_t.EffectiveExpiresAt},{_t.IsHeld},{_t.HeldAt},{_t.HeldBy},{_t.HoldReason},{_t.HoldOperationId},{_t.InboxKeyHash},{_t.InboxRetentionSeconds})
+            SELECT @ChildStorageId,{_t.Version},{_t.Name},{_t.Content},{_t.IntentType},0,0,@Instant,NULL,{_dialect.ShiftByDuration(
                 "@Instant",
                 "Grace"
             )},NULL,NULL,'{nameof(

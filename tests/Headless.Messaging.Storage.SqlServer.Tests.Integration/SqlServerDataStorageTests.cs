@@ -297,7 +297,9 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         _timeProvider.Advance(TimeSpan.FromMinutes(5));
 
         // when
-        var retryMessages = (await _storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).ToList();
+        var retryMessages = (
+            await _storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken)
+        ).ToList();
 
         // then
         retryMessages.Should().NotBeNull();

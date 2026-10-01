@@ -99,10 +99,11 @@ Each provider returns one of three states per permission:
 
 ### Reacting to a change
 
-`PermissionManager` publishes `PermissionGrantChangedMessage` over `IBus` after a successful `SetAsync` or `DeleteAsync`. The message tells an instance that a copied grant decision is stale, so the instance can re-read instead of polling. Consume it like any other message:
+`PermissionManager` publishes `PermissionGrantChangedMessage` over `IBus` after a successful `SetAsync` or `DeleteAsync`. The message tells an instance that a copied grant decision is stale, so the instance can re-read instead of polling. The state it refreshes lives in each process, so consume it with an [every-instance consumer](messaging.md#every-instance-bus-delivery): every process receives every announcement instead of one replica taking the only copy. Delivery is at most once, so reload after a gap in the subscription too. Wire contract: `AddHeadlessPermissions` declares the message as `headless.permissions.grant-changed`, contract version `1` (`PermissionGrantChangedMessage.MessageName`), so the consumer below needs no `Message<T>` declaration of its own. The host's naming conventions (`UseConventions`) do not rename it; only the host-wide `MessagingOptions.MessageNamePrefix` applies, as it does to every message.
 
 ```csharp
-public sealed class ReloadRolePermissions(MyPolicyCache cache) : IConsume<PermissionGrantChangedMessage>
+[BusConsumer("app.reload-role-permissions", EveryInstance = true)]
+public sealed class ReloadRolePermissions(MyPolicyCache cache) : IConsume<PermissionGrantChangedMessage>, IOnSubscriptionEstablished
 {
     public async ValueTask ConsumeAsync(ConsumeContext<PermissionGrantChangedMessage> context, CancellationToken ct)
     {
@@ -118,6 +119,15 @@ public sealed class ReloadRolePermissions(MyPolicyCache cache) : IConsume<Permis
         }
 
         if (message.PermissionNames.Any(cache.Tracks))
+        {
+            await cache.ReloadAsync(ct);
+        }
+    }
+
+    // Announcements published while this process was not subscribed never arrive.
+    public async ValueTask OnSubscriptionEstablishedAsync(SubscriptionEstablishedContext context, CancellationToken ct)
+    {
+        if (context.IsReconnect)
         {
             await cache.ReloadAsync(ct);
         }
@@ -138,6 +148,8 @@ This signal is separate from grant-cache coherence. A store-backed write evicts 
 The *static store* (`IStaticPermissionDefinitionStore`) builds the permission catalog once at startup by invoking all registered `IPermissionDefinitionProvider` instances. It is thread-safe and lazily initialized on first access.
 
 The *dynamic store* (`IDynamicPermissionDefinitionStore`) reads definitions from the database, caches them in-process with a configurable expiry (`DynamicDefinitionsMemoryCacheExpiration`, default 30 seconds), and coordinates cross-instance refreshes via a distributed cache stamp and a distributed lock. The dynamic store is disabled by default (`IsDynamicPermissionStoreEnabled = false`); enable it only when permission definitions must be edited at runtime without redeployment.
+
+When a save adds or updates definitions, the dynamic store publishes `DynamicPermissionDefinitionsChanged` over `IBus`, listing the added or updated names. Wire contract: `AddHeadlessPermissions` declares it as `headless.permissions.definitions-changed`, contract version `1` (`DynamicPermissionDefinitionsChanged.MessageName`). The host's naming conventions (`UseConventions`) do not rename it; only the host-wide `MessagingOptions.MessageNamePrefix` applies, as it does to every message.
 
 `IPermissionDefinitionManager` merges both stores. Static definitions take precedence over dynamic definitions of the same name.
 

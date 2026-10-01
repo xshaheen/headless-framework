@@ -33,7 +33,7 @@ public sealed class RabbitMqConsumerClientValidationTests : TestBase
     }
 
     [Fact]
-    public void should_accept_valid_group_name()
+    public void should_accept_valid_consumer_identity()
     {
         // given
         const string validGroupName = "valid-queue_name.123";
@@ -49,7 +49,7 @@ public sealed class RabbitMqConsumerClientValidationTests : TestBase
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void should_reject_null_or_whitespace_group_name(string? groupName)
+    public void should_reject_null_or_whitespace_subscription_name(string? groupName)
     {
         // given, When
         var action = () => new RabbitMqConsumerClient(groupName!, 1, _pool, _options, _serviceProvider);
@@ -59,29 +59,34 @@ public sealed class RabbitMqConsumerClientValidationTests : TestBase
     }
 
     [Fact]
-    public void should_reject_group_name_with_invalid_characters()
+    public void should_accept_bus_consumer_identity_with_characters_a_queue_name_rejects()
     {
-        // given
-        const string invalidGroupName = "invalid queue name";
+        // given - the identity is not a queue name; only the queue derived from it must be valid
+        const string identity = "billing ops.invoice/projection";
 
         // when
-        var action = () => new RabbitMqConsumerClient(invalidGroupName, 1, _pool, _options, _serviceProvider);
+        var action = () => new RabbitMqConsumerClient(identity, 1, _pool, _options, _serviceProvider);
 
         // then
-        action.Should().Throw<ArgumentException>().WithMessage("*alphanumeric*");
+        action.Should().NotThrow();
+        RabbitMqConsumerClient
+            .GetQueueName(identity, "orders.created", MessageLane.Bus)
+            .Should()
+            .MatchRegex("^bus\\.billing-ops\\.invoice-projection-[0-9a-f]{12}$");
     }
 
     [Fact]
-    public void should_reject_group_name_exceeding_max_length()
+    public void should_bound_bus_queue_to_max_length_when_consumer_identity_is_too_long()
     {
         // given
-        var tooLongName = new string('a', 256);
+        var identity = new string('a', 300);
 
         // when
-        var action = () => new RabbitMqConsumerClient(tooLongName, 1, _pool, _options, _serviceProvider);
+        var action = () => new RabbitMqConsumerClient(identity, 1, _pool, _options, _serviceProvider);
 
         // then
-        action.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*must not exceed 255 characters*");
+        action.Should().NotThrow();
+        RabbitMqConsumerClient.GetQueueName(identity, "orders.created", MessageLane.Bus).Should().HaveLength(255);
     }
 
     [Fact]

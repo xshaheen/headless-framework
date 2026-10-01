@@ -13,6 +13,7 @@ using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Tests.Helpers;
 
 namespace Tests;
 
@@ -322,14 +323,9 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
             setup.UseInMemory();
             UsePrimaryStorage<OrdersOutboxDbContext>(setup);
             configureOutboxes(setup);
-            setup.Bus.ForMessage<OutboxProbe>(message =>
-                message
-                    .Contract("tests.additional-outbox.probe")
-                    .Consumer<OutboxProbeConsumer>(consumer =>
-                        consumer.ConsumerIdentity("tests.additional-outbox.consumer").Group("tests.additional-outbox")
-                    )
-            );
+            setup.AddModule<AdditionalOutboxTestsModule>();
         });
+        services.ConfigureMessaging(messaging => messaging.Message<OutboxProbe>("tests.additional-outbox.probe"));
 
         return builder.Build();
     }
@@ -439,4 +435,23 @@ public abstract class AdditionalOutboxConformanceTests : TestBase
 
     /// <summary>A database with or without an additional outbox, depending on the test.</summary>
     public sealed class ShippingOutboxDbContext(DbContextOptions<ShippingOutboxDbContext> options) : DbContext(options);
+}
+
+/// <summary>The consumer every <see cref="AdditionalOutboxConformanceTests"/> host registers.</summary>
+public sealed class AdditionalOutboxTestsModule : IMessagingModule
+{
+    public static void Register(MessagingCatalogBuilder catalog)
+    {
+        catalog.AddBusConsumer<
+            AdditionalOutboxConformanceTests.OutboxProbeConsumer,
+            AdditionalOutboxConformanceTests.OutboxProbe
+        >(
+            "tests.additional-outbox.consumer",
+            everyInstance: false,
+            TestConsumerDispatch.FromServices<
+                AdditionalOutboxConformanceTests.OutboxProbeConsumer,
+                AdditionalOutboxConformanceTests.OutboxProbe
+            >()
+        );
+    }
 }

@@ -221,7 +221,7 @@ public sealed class NamedHybridCacheTests : TestBase
                 CorrelationId = null,
                 Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
                 Timestamp = _timeProvider.GetUtcNow(),
-                MessageName = nameof(CacheInvalidationMessage),
+                MessageName = CacheInvalidationMessage.MessageName,
             },
             AbortToken
         );

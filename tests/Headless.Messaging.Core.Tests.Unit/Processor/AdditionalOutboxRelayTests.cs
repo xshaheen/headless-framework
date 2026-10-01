@@ -28,6 +28,15 @@ public sealed class AdditionalOutboxRelayTests : TestBase
     private readonly MessagingOutbox _billing = AdditionalOutboxDoubles.CreateOutbox("billing");
     private readonly CancellationTokenSource _cancellation = new();
 
+    public AdditionalOutboxRelayTests()
+    {
+        // Every cycle also runs the primary's quadrant. Left unstubbed, the concurrent calls race on NSubstitute's
+        // auto-value and can hand the processor a null pickup, so tests that need primary rows override this.
+        _primary
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+    }
+
     protected override async ValueTask DisposeAsyncCore()
     {
         _cancellation.Dispose();

@@ -96,11 +96,6 @@ internal static class SqlServerMessagingSchemaContribution
                     [Id] [uniqueidentifier] NOT NULL,
                     [Version] [nvarchar](20) NOT NULL,
                     [Name] [nvarchar](200) NOT NULL,
-                    [Group] [nvarchar](200) NULL,
-                    -- The group a non-inbox row is deduplicated by: a missing group is the empty one, so redeliveries
-                    -- of a message without a group converge on one row (a filtered unique index on a nullable [Group]
-                    -- would admit one NULL only, and the storage matches the key by plain equality).
-                    [GroupKey] [nvarchar](200) NOT NULL CONSTRAINT [DF_{receivedPrefix}_GroupKey] DEFAULT N'',
                     [Content] [nvarchar](max) NULL,
                     [IntentType] [smallint] NOT NULL,
                     [Retries] [int] NOT NULL,
@@ -169,9 +164,9 @@ internal static class SqlServerMessagingSchemaContribution
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_InboxRootKey' AND object_id = OBJECT_ID(N'{received}'))
                 EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_InboxRootKey] ON {received} ([InboxKeyHash] ASC) WHERE [IsInboxRecord]=1 AND [ReplayParentIncarnationId] IS NULL');
 
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_NonInboxTransportIdentity' AND object_id = OBJECT_ID(N'{received}'))
-                EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_NonInboxTransportIdentity]
-                    ON {received} ([Version],[MessageId],[GroupKey],[IntentType]) WHERE [IsInboxRecord]=0');
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_NonInboxConsumerIdentity' AND object_id = OBJECT_ID(N'{received}'))
+                EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_NonInboxConsumerIdentity]
+                    ON {received} ([Version],[MessageId],[ConsumerIdentity],[IntentType]) WHERE [IsInboxRecord]=0');
 
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_GenerationIncarnationId' AND object_id = OBJECT_ID(N'{received}'))
                 EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_GenerationIncarnationId] ON {received} ([GenerationIncarnationId] ASC) WHERE [GenerationIncarnationId] IS NOT NULL');

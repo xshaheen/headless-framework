@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Json;
 using Headless.Messaging;
 using Headless.Messaging.Nats;
+using Headless.Messaging.Transport;
 using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -174,6 +176,61 @@ public sealed class NatsFixture : HeadlessNatsFixture
         );
     }
 
+    /// <summary>Opens a session whose consumer the production factory builds from <paramref name="endpoint"/>.</summary>
+    public ValueTask<TransportConsumerConformanceSession> CreateEndpointSessionAsync(
+        TransportConformanceEndpoint endpoint,
+        string streamName,
+        CancellationToken cancellationToken
+    )
+    {
+        return _CreateConformanceSessionAsync(
+            endpoint.Lane,
+            streamName,
+            endpoint.LogicalName,
+            endpoint.SubscriptionName,
+            createReplacement: false,
+            failEnvelopeBuild: false,
+            cancellationToken,
+            endpoint.ToRequest()
+        );
+    }
+
+    /// <summary>Counts the client subscriptions the server holds on exactly <paramref name="subject"/>.</summary>
+    public async Task<int> CountSubscriptionsAsync(string subject, CancellationToken cancellationToken)
+    {
+        using var http = new HttpClient();
+        using var response = await http.GetAsync(
+            new Uri($"{Container.GetManagementEndpoint().TrimEnd('/')}/connz?subs=1&limit=1024"),
+            cancellationToken
+        );
+        response.EnsureSuccessStatusCode();
+
+        using var document = await JsonDocument.ParseAsync(
+            await response.Content.ReadAsStreamAsync(cancellationToken),
+            cancellationToken: cancellationToken
+        );
+
+        var count = 0;
+
+        foreach (var connection in document.RootElement.GetProperty("connections").EnumerateArray())
+        {
+            if (!connection.TryGetProperty("subscriptions_list", out var subscriptions))
+            {
+                continue;
+            }
+
+            foreach (var subscription in subscriptions.EnumerateArray())
+            {
+                if (string.Equals(subscription.GetString(), subject, StringComparison.Ordinal))
+                {
+                    count++;
+                }
+            }
+        }
+
+        return count;
+    }
+
     public ValueTask<TransportConsumerConformanceSession> CreateMalformedSessionAsync(
         string streamName,
         string destination,
@@ -199,7 +256,8 @@ public sealed class NatsFixture : HeadlessNatsFixture
         string? group,
         bool createReplacement,
         bool failEnvelopeBuild,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        ConsumerClientRequest? request = null
     )
     {
         streamName ??= $"conf-{Guid.NewGuid():N}"[..29];
@@ -232,12 +290,27 @@ public sealed class NatsFixture : HeadlessNatsFixture
             options
         );
         var producer = new NatsTransport(NullLogger<NatsTransport>.Instance, pool, lane);
-        var consumer = new NatsConsumerClient(group, 1, options, services, lane: _ToMessageLane(lane));
 #pragma warning restore CA2000
+        IConsumerClient? consumer = null;
 
         try
         {
-            await consumer.ConnectAsync(cancellationToken);
+            if (request is null)
+            {
+#pragma warning disable CA2000 // False positive: the client transfers to consumer, which the session or the catch disposes.
+                var client = new NatsConsumerClient(group, 1, options, services, lane: _ToMessageLane(lane));
+#pragma warning restore CA2000
+                consumer = client;
+                await client.ConnectAsync(cancellationToken);
+            }
+            else
+            {
+                consumer = await new NatsConsumerClientFactory(options, services).CreateAsync(
+                    request,
+                    cancellationToken
+                );
+            }
+
             var topics = await consumer.FetchMessageNamesAsync([destination], cancellationToken);
             await consumer.SubscribeAsync(topics, cancellationToken);
 
@@ -267,7 +340,11 @@ public sealed class NatsFixture : HeadlessNatsFixture
         }
         catch
         {
-            await consumer.DisposeAsync();
+            if (consumer is not null)
+            {
+                await consumer.DisposeAsync();
+            }
+
             await pool.DisposeAsync();
             await services.DisposeAsync();
             throw;

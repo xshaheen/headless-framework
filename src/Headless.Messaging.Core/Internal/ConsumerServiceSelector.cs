@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Reflection;
 using System.Text.RegularExpressions;
 using Headless.Checks;
 using Headless.Messaging.Configuration;
@@ -27,10 +26,6 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
         List<RegexExecuteDescriptor<ConsumerExecutorDescriptor>>
     > _cacheList = new();
 
-    // Per-message-type MethodInfo cache. Each registered consumer message type otherwise pays a
-    // MakeGenericType + GetMethod hit on every cache rebuild (Invalidate -> SelectCandidates).
-    private static readonly ConcurrentDictionary<Type, MethodInfo> _ConsumeMethodCache = new();
-
     private readonly MessagingOptions _messagingOptions = serviceProvider
         .GetRequiredService<IOptions<MessagingOptions>>()
         .Value;
@@ -53,8 +48,6 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
 
         executorDescriptorList.AddRange(_FindConsumersFromInterfaceTypes(serviceProvider));
         executorDescriptorList.AddRange(_runtimeConsumerRegistry.GetDescriptors());
-
-        executorDescriptorList.AddRange(_FindConsumersFromControllerTypes());
 
         return executorDescriptorList.Distinct(new ConsumerExecutorDescriptorComparer(_logger)).ToList();
     }
@@ -101,28 +94,28 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
 
         foreach (var consumer in metadata)
         {
-            // Build ConsumerExecutorDescriptor from metadata
-            var consumeMethod = _ConsumeMethodCache.GetOrAdd(
-                consumer.MessageType,
-                static messageType =>
-                    typeof(IConsume<>).MakeGenericType(messageType).GetMethod(nameof(IConsume<>.ConsumeAsync))!
-            );
+            // ConsumeOnly narrows what this host consumes, not what it registers: a filtered-out consumer gets no
+            // client here, while its messages stay publishable. Every-instance consumers are exempt because they hold
+            // per-process state that every host must keep current.
+            if (!registry.ConsumeFilter.Allows(consumer))
+            {
+                continue;
+            }
 
             var descriptor = new ConsumerExecutorDescriptor
             {
-                ServiceTypeInfo = consumer.ConsumerType.GetTypeInfo(),
-                ImplTypeInfo = consumer.ConsumerType.GetTypeInfo(),
-                MethodInfo = consumeMethod,
+                ConsumerType = consumer.ConsumerType,
+                MessageType = consumer.MessageType,
                 MessageName = consumer.MessageName,
-                GroupName = _GetGroupName(consumer),
-                Parameters = _BuildParameters(consumeMethod),
-                MessageNamePrefix = _messagingOptions.MessageNamePrefix,
+                SubscriptionName = consumer.SubscriptionName,
                 Concurrency = consumer.Concurrency,
-                HandlerId = consumer.ResolvedHandlerId,
                 ConsumerIdentity = consumer.ConsumerIdentity,
                 MessageContractVersion = consumer.MessageContractVersion,
                 InboxRetention = consumer.InboxRetention,
                 Lane = consumer.Lane,
+                EveryInstance = consumer.EveryInstance,
+                Dispatch = consumer.Dispatch,
+                Middleware = consumer.Middleware,
             };
 
             results.Add(descriptor);
@@ -134,39 +127,6 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
     private void _DrainPendingMessageRegistrations()
     {
         SetupMessaging.DrainPendingMessageRegistrations(serviceProvider, _messagingOptions);
-    }
-
-    private string _GetGroupName(ConsumerMetadata metadata)
-    {
-        if (!string.IsNullOrWhiteSpace(metadata.Group))
-        {
-            return metadata.Group;
-        }
-
-        _messagingOptions.Conventions.Version = _messagingOptions.Version;
-        return _messagingOptions.Conventions.GetGroupName(metadata.ResolvedHandlerId);
-    }
-
-    private static List<ParameterDescriptor> _BuildParameters(MethodInfo method)
-    {
-        return
-        [
-            .. method
-                .GetParameters()
-                .Select(p => new ParameterDescriptor
-                {
-                    Name = p.Name,
-                    ParameterType = p.ParameterType,
-                    IsFromMessaging = p.ParameterType == typeof(CancellationToken),
-                }),
-        ];
-    }
-
-    private static IEnumerable<ConsumerExecutorDescriptor> _FindConsumersFromControllerTypes()
-    {
-        // Controller-based consumers are no longer supported with IConsume<T> pattern
-        // Use setup.Bus/Queue.ForMessage<TMessage>(...) instead.
-        return [];
     }
 
     private static ConsumerExecutorDescriptor? _MatchUsingName(
@@ -224,18 +184,18 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
 
     private static WildcardCacheKey _CreateWildcardCacheKey(IReadOnlyList<ConsumerExecutorDescriptor> executeDescriptor)
     {
-        var group = executeDescriptor[0].GroupName;
+        var subscription = executeDescriptor[0].SubscriptionName;
         var lane = executeDescriptor[0].Lane;
 
         for (var i = 1; i < executeDescriptor.Count; i++)
         {
             if (executeDescriptor[i].Lane != lane)
             {
-                return new WildcardCacheKey(group, Lane: null);
+                return new WildcardCacheKey(subscription, Lane: null);
             }
         }
 
-        return new WildcardCacheKey(group, lane);
+        return new WildcardCacheKey(subscription, lane);
     }
 
     private sealed class RegexExecuteDescriptor<T>
@@ -245,5 +205,5 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
         public required T Descriptor { get; init; }
     }
 
-    private readonly record struct WildcardCacheKey(string GroupName, MessageLane? Lane);
+    private readonly record struct WildcardCacheKey(string SubscriptionName, MessageLane? Lane);
 }

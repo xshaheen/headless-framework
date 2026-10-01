@@ -21,9 +21,10 @@ public sealed class MessagingCapabilityModelTests : TestBase
         var sideEffects = 0;
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(setup =>
-            setup.Bus.ForMessage<SharedContract>(message => message.Contract("orders").RequireRoutingAffinity())
+        services.ConfigureMessaging(messaging =>
+            messaging.Message<SharedContract>("orders").OnBus(route => route.RequireRoutingAffinity())
         );
+        services.AddHeadlessMessaging(_ => { });
         services.AddMessagingProviderCapabilities(_Transport("Unsupported", [MessageLane.Bus], true));
         services.AddMessagingProviderCapabilities(_Storage("InMemory"));
         services.AddSingleton<IStorageTableNames>(_ =>
@@ -57,9 +58,8 @@ public sealed class MessagingCapabilityModelTests : TestBase
         var sideEffects = 0;
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(setup =>
-            setup.Bus.ForMessage<SharedContract>(message => message.Contract("orders"))
-        );
+        services.ConfigureMessaging(messaging => messaging.Message<SharedContract>("orders"));
+        services.AddHeadlessMessaging(_ => { });
         services.AddMessagingProviderCapabilities(
             MessagingProviderCapabilities.Transport(
                 "Mapped",
@@ -241,41 +241,6 @@ public sealed class MessagingCapabilityModelTests : TestBase
     }
 
     [Fact]
-    public async Task should_reject_missing_durable_identity_before_storage_or_processors_start()
-    {
-        var storageFactoryCalls = 0;
-        var processingServerFactoryCalls = 0;
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddHeadlessMessaging(setup =>
-            setup.Bus.ForMessage<SharedContract>(message => message.Consumer<SharedConsumer>(static _ => { }))
-        );
-        services.AddMessagingProviderCapabilities(
-            _Transport("Transport", [MessageLane.Bus], independentLaneTopology: true)
-        );
-        services.AddMessagingProviderCapabilities(
-            _Storage("Transactional", MessagingInboxCapabilityTier.Transactional)
-        );
-        services.AddSingleton<IStorageTableNames>(_ =>
-        {
-            Interlocked.Increment(ref storageFactoryCalls);
-            return Substitute.For<IStorageTableNames>();
-        });
-        services.AddSingleton<IProcessingServer>(_ =>
-        {
-            Interlocked.Increment(ref processingServerFactoryCalls);
-            return new RecordingProcessingServer();
-        });
-
-        await using var provider = services.BuildServiceProvider();
-        var act = () => provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
-
-        await act.Should().ThrowAsync<MessagingConfigurationException>().WithMessage("*stable consumer identity*");
-        storageFactoryCalls.Should().Be(0);
-        processingServerFactoryCalls.Should().Be(0);
-    }
-
-    [Fact]
     public async Task should_start_with_explicit_durable_dedupe_only_opt_down_and_expose_tier()
     {
         var services = new ServiceCollection();
@@ -283,9 +248,7 @@ public sealed class MessagingCapabilityModelTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
-            setup.Bus.ForMessage<SharedContract>(message =>
-                message.Consumer<SharedConsumer>(consumer => consumer.ConsumerIdentity("orders-projection"))
-            );
+            setup.AddConsumer<SharedConsumer>();
         });
         services.AddMessagingProviderCapabilities(
             _Transport("Transport", [MessageLane.Bus], independentLaneTopology: true)
@@ -371,11 +334,8 @@ public sealed class MessagingCapabilityModelTests : TestBase
         var storageFactoryCalls = 0;
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(setup =>
-        {
-            setup.Bus.ForMessage<SharedContract>(message => message.Contract("orders.changed"));
-            setup.Queue.ForMessage<SharedContract>(message => message.Contract("orders.changed"));
-        });
+        services.ConfigureMessaging(messaging => messaging.Message<SharedContract>("orders.changed"));
+        services.AddHeadlessMessaging(_ => { });
         services.AddMessagingProviderCapabilities(
             _Transport("SharedTopology", [MessageLane.Bus, MessageLane.Queue], independentLaneTopology: false)
         );
@@ -393,57 +353,6 @@ public sealed class MessagingCapabilityModelTests : TestBase
             .ThrowAsync<MessagingConfigurationException>()
             .WithMessage("*SharedTopology*independent*lane*topology*");
         storageFactoryCalls.Should().Be(0);
-    }
-
-    [Fact]
-    public async Task should_validate_only_effective_lane_mapping_when_lane_override_replaces_global_fallback()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddHeadlessMessaging(setup =>
-        {
-            setup.WithMessageNameMapping<SharedContract>("orders.global");
-            setup.Bus.ForMessage<SharedContract>(message => message.Contract("orders.bus"));
-        });
-        services.AddMessagingProviderCapabilities(
-            _Transport("SharedTopology", [MessageLane.Bus, MessageLane.Queue], independentLaneTopology: false)
-        );
-        services.AddMessagingProviderCapabilities(_Storage("InMemory"));
-        services.RemoveAll<IProcessingServer>();
-        services.AddSingleton(Substitute.For<IStorageTableNames>());
-
-        await using var provider = services.BuildServiceProvider();
-        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
-
-        await bootstrapper.BootstrapAsync(AbortToken);
-
-        bootstrapper.IsStarted.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task should_check_message_name_collisions_using_effective_lane_mapping()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddHeadlessMessaging(setup =>
-        {
-            setup.WithMessageNameMapping<SharedContract>("orders.global");
-            setup.Bus.ForMessage<SharedContract>(message => message.Contract("orders.bus"));
-            setup.Bus.ForMessage<OtherContract>(message => message.Contract("orders.global"));
-        });
-        services.AddMessagingProviderCapabilities(
-            _Transport("IndependentTopology", [MessageLane.Bus, MessageLane.Queue], independentLaneTopology: true)
-        );
-        services.AddMessagingProviderCapabilities(_Storage("InMemory"));
-        services.RemoveAll<IProcessingServer>();
-        services.AddSingleton(Substitute.For<IStorageTableNames>());
-
-        await using var provider = services.BuildServiceProvider();
-        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
-
-        await bootstrapper.BootstrapAsync(AbortToken);
-
-        bootstrapper.IsStarted.Should().BeTrue();
     }
 
     [Fact]
@@ -673,6 +582,7 @@ public sealed class MessagingCapabilityModelTests : TestBase
 
     private sealed record OtherContract;
 
+    [BusConsumer("orders-projection")]
     private sealed class SharedConsumer : IConsume<SharedContract>
     {
         public ValueTask ConsumeAsync(ConsumeContext<SharedContract> context, CancellationToken cancellationToken)

@@ -136,7 +136,7 @@ internal sealed class RelationalMonitoringApi(
 
     /// <summary>
     /// Returns a paginated list of messages from either the published or received table,
-    /// filtered by the criteria in <paramref name="query"/> (status, name, group, content substring, intent type).
+    /// filtered by the criteria in <paramref name="query"/> (status, name, consumer identity, content substring, intent type).
     /// </summary>
     public async ValueTask<IndexPage<MessageView>> GetMessagesAsync(
         MessageQuery query,
@@ -145,9 +145,10 @@ internal sealed class RelationalMonitoringApi(
     {
         var publish = query.MessageType == MessageType.Publish;
         var tableName = publish ? _publishedTable : _receivedTable;
-        var group = publish ? $"NULL AS {_t.Group}" : _t.Group;
+        // Only received rows belong to a consumer; the published table has no identity column.
+        var consumerIdentity = publish ? $"NULL AS {_t.ConsumerIdentity}" : _t.ConsumerIdentity;
         var selectColumns =
-            $"{_t.Id},{_t.MessageId},{_t.Version},{_t.Name},{group},{_t.Content},{_t.IntentType},{_t.Retries},{_t.Added},{_t.ExpiresAt},{_t.StatusName},{_t.NextRetryAt},{_t.LockedUntil}";
+            $"{_t.Id},{_t.MessageId},{_t.Version},{_t.Name},{consumerIdentity},{_t.Content},{_t.IntentType},{_t.Retries},{_t.Added},{_t.ExpiresAt},{_t.StatusName},{_t.NextRetryAt},{_t.LockedUntil}";
         var where = $"{_t.IntentType} IN (0, 1)";
 
         if (query.StatusName is not null)
@@ -160,9 +161,9 @@ internal sealed class RelationalMonitoringApi(
             where += $" AND {_t.Name} = @Name";
         }
 
-        if (!string.IsNullOrEmpty(query.Group))
+        if (!publish && !string.IsNullOrEmpty(query.ConsumerIdentity))
         {
-            where += $" AND {_t.Group} = @Group";
+            where += $" AND {_t.ConsumerIdentity} = @ConsumerIdentity";
         }
 
         if (!string.IsNullOrEmpty(query.Content))
@@ -182,7 +183,7 @@ internal sealed class RelationalMonitoringApi(
         void bind(DbCommand command)
         {
             _dialect.AddParameter(command, "StatusName", SqlColumnType.Text(50), query.StatusName?.ToString("G"));
-            _dialect.AddParameter(command, "Group", SqlColumnType.Text(200), query.Group);
+            _dialect.AddParameter(command, "ConsumerIdentity", SqlColumnType.KeyText(200), query.ConsumerIdentity);
             _dialect.AddParameter(command, "Name", SqlColumnType.Text(200), query.Name);
             // Escaped so a literal %, _, [ or \\ in the user's search term matches literally instead of as a wildcard.
             _dialect.AddParameter(command, "Content", SqlColumnType.Text(-1), $"%{EscapeLike(query.Content)}%");
@@ -241,7 +242,7 @@ internal sealed class RelationalMonitoringApi(
                             MessageId = reader.GetString(1),
                             Version = reader.GetString(2),
                             Name = reader.GetString(3),
-                            Group = await _StringAsync(reader, 4, token).ConfigureAwait(false),
+                            ConsumerIdentity = await _StringAsync(reader, 4, token).ConfigureAwait(false),
                             Content = await _StringAsync(reader, 5, token).ConfigureAwait(false),
                             Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(6)),
                             Retries = reader.GetInt32(7),

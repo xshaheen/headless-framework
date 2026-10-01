@@ -194,7 +194,7 @@ internal sealed partial class RelationalDataStorage
     /// <returns><see langword="true"/> if a new row was inserted or an existing non-terminal row was updated.</returns>
     public async ValueTask<bool> StoreReceivedExceptionMessageAsync(
         string name,
-        string group,
+        string consumerIdentity,
         string content,
         string? exceptionInfo = null,
         CancellationToken cancellationToken = default
@@ -203,7 +203,7 @@ internal sealed partial class RelationalDataStorage
         var origin = _serializer.Deserialize(content)!;
         return await StoreReceivedExceptionMessageAsync(
                 name,
-                group,
+                consumerIdentity,
                 new MediumMessage
                 {
                     StorageId = Guid.Empty,
@@ -225,7 +225,7 @@ internal sealed partial class RelationalDataStorage
     /// <returns><see langword="true"/> if a new row was inserted or an existing non-terminal row was updated.</returns>
     public async ValueTask<bool> StoreReceivedExceptionMessageAsync(
         string name,
-        string group,
+        string consumerIdentity,
         MediumMessage message,
         string? exceptionInfo = null,
         CancellationToken cancellationToken = default
@@ -234,7 +234,7 @@ internal sealed partial class RelationalDataStorage
         var row = new ReceivedRow(
             _guidGenerator.Create(),
             name,
-            group,
+            consumerIdentity,
             string.IsNullOrEmpty(message.Content) ? _serializer.Serialize(message.Origin) : message.Content,
             message.Lane,
             message.Origin.Id,
@@ -251,14 +251,15 @@ internal sealed partial class RelationalDataStorage
     }
 
     /// <summary>
-    /// Persists an inbound message to the received table. Concurrent broker redeliveries of the same message collapse
-    /// to one row on its transport identity <c>(Version, MessageId, Group, IntentType)</c>, a missing group matching a
-    /// missing group; the terminal-row guard ensures already-completed rows are never overwritten.
+    /// Persists an inbound message to the received table. Concurrent broker redeliveries of the same message to one
+    /// consumer collapse to one row on <c>(Version, MessageId, ConsumerIdentity, IntentType)</c>, while each consumer
+    /// that receives the message keeps its own row; the terminal-row guard ensures already-completed rows are never
+    /// overwritten.
     /// </summary>
     /// <returns>The stored <c>MediumMessage</c> with its generated <c>StorageId</c> and timestamps populated.</returns>
     public async ValueTask<MediumMessage> StoreReceivedMessageAsync(
         string name,
-        string group,
+        string consumerIdentity,
         MediumMessage message,
         CancellationToken cancellationToken = default
     )
@@ -284,7 +285,7 @@ internal sealed partial class RelationalDataStorage
         var row = new ReceivedRow(
             mediumMessage.StorageId,
             name,
-            group,
+            consumerIdentity,
             mediumMessage.Content,
             mediumMessage.Lane,
             message.Origin.Id,
@@ -315,14 +316,14 @@ internal sealed partial class RelationalDataStorage
     /// <returns>The stored <c>MediumMessage</c> with its generated <c>StorageId</c> and timestamps populated.</returns>
     public ValueTask<MediumMessage> StoreReceivedMessageAsync(
         string name,
-        string group,
+        string consumerIdentity,
         Message message,
         CancellationToken cancellationToken = default
     )
     {
         return StoreReceivedMessageAsync(
             name,
-            group,
+            consumerIdentity,
             new MediumMessage
             {
                 StorageId = Guid.Empty,
@@ -340,7 +341,7 @@ internal sealed partial class RelationalDataStorage
     private sealed record ReceivedRow(
         Guid Id,
         string Name,
-        string? Group,
+        string ConsumerIdentity,
         string Content,
         MessageLane Lane,
         string MessageId,
@@ -355,8 +356,8 @@ internal sealed partial class RelationalDataStorage
     /// <summary>Inserts a received message, or rewrites its redelivered non-terminal, unleased row.</summary>
     /// <returns>The written row's id and database-stamped times, or <see langword="null"/> when a guard refused it.</returns>
     /// <remarks>
-    /// The transport identity is a partial unique index over non-inbox rows, the group coalesced to empty in its own
-    /// column, so a redelivery of a message without a group finds the same row. The first delivery is one insert. A
+    /// The row's identity is a partial unique index over non-inbox rows keyed by the consumer it was delivered to, so a
+    /// redelivery to the same consumer finds the same row. The first delivery is one insert. A
     /// redelivery locks the existing row and rewrites it only while it is neither terminal (a redelivered message must
     /// not turn a Succeeded row back to Failed and fire OnExhausted again) nor leased (releasing the lease of an
     /// in-flight attempt would let the retry processor pick the row up mid-attempt). The rewrite never resets the
@@ -375,7 +376,7 @@ internal sealed partial class RelationalDataStorage
         [
             new(_t.Version, "Version"),
             new(_t.MessageId, "MessageId"),
-            new(_t.GroupKey, "GroupKey"),
+            new(_t.ConsumerIdentity, "ConsumerIdentity"),
             new(_t.IntentType, "IntentType"),
         ];
         var nonInbox = $"{_t.IsInboxRecord} = {_t.False}";
@@ -387,7 +388,6 @@ internal sealed partial class RelationalDataStorage
                 [
                     _t.Id,
                     _t.Name,
-                    _t.Group,
                     _t.Content,
                     _t.Retries,
                     _t.InlineAttempts,
@@ -402,7 +402,6 @@ internal sealed partial class RelationalDataStorage
                 [
                     "@Id",
                     "@Name",
-                    "@Group",
                     "@Content",
                     "@Retries",
                     "@InlineAttempts",
@@ -433,7 +432,7 @@ internal sealed partial class RelationalDataStorage
         {
             _BindVersion(command);
             _dialect.AddParameter(command, "MessageId", _MessageIdType, row.MessageId);
-            _dialect.AddParameter(command, "GroupKey", _NameType, row.Group ?? string.Empty);
+            _dialect.AddParameter(command, "ConsumerIdentity", _IdentityType, row.ConsumerIdentity);
             _dialect.AddParameter(
                 command,
                 "IntentType",
@@ -477,7 +476,6 @@ internal sealed partial class RelationalDataStorage
                             bindValues(command);
                             _dialect.AddParameter(command, "Id", SqlColumnType.Guid, row.Id);
                             _dialect.AddParameter(command, "Name", _NameType, row.Name);
-                            _dialect.AddParameter(command, "Group", _NameType, row.Group);
                             _dialect.AddParameter(command, "Retries", SqlColumnType.Int32, row.Retries);
                             _dialect.AddParameter(command, "InlineAttempts", SqlColumnType.Int32, row.InlineAttempts);
                         },

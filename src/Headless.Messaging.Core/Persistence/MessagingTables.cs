@@ -31,8 +31,6 @@ internal sealed class MessagingTables
         Id = column("Id");
         Version = column("Version");
         Name = column("Name");
-        Group = column("Group");
-        GroupKey = column("GroupKey");
         Content = column("Content");
         IntentType = column("IntentType");
         Retries = column("Retries");
@@ -112,11 +110,6 @@ internal sealed class MessagingTables
     public string Version { get; }
 
     public string Name { get; }
-
-    public string Group { get; }
-
-    /// <summary>The group a non-inbox received row is deduplicated by: the group, or empty when there is none.</summary>
-    public string GroupKey { get; }
 
     public string Content { get; }
 

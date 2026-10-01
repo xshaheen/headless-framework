@@ -59,7 +59,7 @@ public sealed class JobSchedulerTests : TestBase
         await using var provider = services.BuildServiceProvider();
         var scheduler = provider.GetRequiredService<IJobScheduler>();
         var persistence = provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
-        var parent = new JobFunctionContext
+        var parent = new JobContext
         {
             Id = Guid.NewGuid(),
             FunctionName = "parent",
@@ -176,7 +176,7 @@ public sealed class JobSchedulerTests : TestBase
     }
 
     [Fact]
-    public async Task should_accept_the_public_canonical_descriptor_when_the_host_resolves_its_cron_token()
+    public async Task should_resolve_a_job_type_through_the_host_registry_that_resolved_its_cron_token()
     {
         var canonicalDescriptor = new JobFunctionDescriptor(
             "configured-requestless",
@@ -191,7 +191,19 @@ public sealed class JobSchedulerTests : TestBase
             )
             .Build();
         var registry = JobFunctionRegistryBuilder.Build(
-            [],
+            [
+                new KeyValuePair<string, JobFunctionRegistration>(
+                    canonicalDescriptor.FunctionName,
+                    new()
+                    {
+                        CronExpression = canonicalDescriptor.CronExpression,
+                        Priority = JobPriority.Normal,
+                        MaxConcurrency = 0,
+                        Delegate = (_, _, _) => Task.CompletedTask,
+                        JobType = typeof(ConfiguredJob),
+                    }
+                ),
+            ],
             [],
             [new KeyValuePair<string, JobFunctionDescriptor>(canonicalDescriptor.FunctionName, canonicalDescriptor)],
             configuration
@@ -210,9 +222,9 @@ public sealed class JobSchedulerTests : TestBase
             JobSchedulingPolicies.Empty
         );
 
-        await scheduler.EnqueueAsync(canonicalDescriptor, cancellationToken: AbortToken);
+        await scheduler.EnqueueAsync<ConfiguredJob>(AbortToken);
 
-        registry.Descriptors[canonicalDescriptor.FunctionName].CronExpression.Should().Be("0 */5 * * * *");
+        registry.DescriptorsByJobType[typeof(ConfiguredJob)].CronExpression.Should().Be("0 */5 * * * *");
         await timeManager
             .Received(1)
             .AddAsync(Arg.Is<TimeJobEntity>(job => job.Function == canonicalDescriptor.FunctionName), AbortToken);
@@ -234,7 +246,7 @@ public sealed class JobSchedulerTests : TestBase
                 return Task.FromResult(captured);
             });
 
-        var id = await scheduler.ScheduleAsync(_RequestlessDescriptor, executionTime, cancellationToken: AbortToken);
+        var id = await scheduler.ScheduleAsync<CleanupJob>(executionTime, cancellationToken: AbortToken);
 
         id.Should().Be(persistedId);
         captured.Should().NotBeNull();
@@ -324,8 +336,7 @@ public sealed class JobSchedulerTests : TestBase
                 return Task.FromResult(captured);
             });
 
-        await scheduler.ScheduleRecurringAsync(
-            _RequestlessDescriptor,
+        await scheduler.ScheduleRecurringAsync<CleanupJob>(
             "0 */5 * * * *",
             new RecurringJobOptions { TimeZoneId = "Etc/UTC" },
             AbortToken
@@ -343,26 +354,16 @@ public sealed class JobSchedulerTests : TestBase
         var (scheduler, timeManager, cronManager) = _CreateScheduler();
 
         var typed = async () => await scheduler.EnqueueAsync(new UnknownRequest(), cancellationToken: AbortToken);
-        var unknownDescriptor = async () =>
-            await scheduler.EnqueueAsync(
-                new JobFunctionDescriptor("unknown", null, "", JobPriority.Normal, 0),
-                cancellationToken: AbortToken
-            );
-        var staleDescriptor = async () =>
-            await scheduler.EnqueueAsync(
-                new JobFunctionDescriptor("requestless", null, "0 * * * * *", JobPriority.Normal, 0),
-                cancellationToken: AbortToken
-            );
-        var typedDescriptor = async () => await scheduler.EnqueueAsync(_TypedDescriptor, cancellationToken: AbortToken);
+        var unknownJob = async () => await scheduler.EnqueueAsync<UnregisteredJob>(AbortToken);
+        var jobWithArguments = async () => await scheduler.EnqueueAsync<MisregisteredTypedJob>(AbortToken);
 
         (await typed.Should().ThrowAsync<JobFunctionNotFoundException>())
             .Which.RequestType.Should()
             .Be<UnknownRequest>();
-        (await unknownDescriptor.Should().ThrowAsync<JobFunctionNotFoundException>())
-            .Which.FunctionName.Should()
-            .Be("unknown");
-        await staleDescriptor.Should().ThrowAsync<JobFunctionNotFoundException>();
-        await typedDescriptor.Should().ThrowAsync<ArgumentException>();
+        (await unknownJob.Should().ThrowAsync<JobFunctionNotFoundException>())
+            .Which.RequestType.Should()
+            .Be<UnregisteredJob>();
+        await jobWithArguments.Should().ThrowAsync<ArgumentException>();
         await timeManager.DidNotReceiveWithAnyArgs().AddAsync(default!, TestContext.Current.CancellationToken);
         await cronManager.DidNotReceiveWithAnyArgs().AddAsync(default!, TestContext.Current.CancellationToken);
     }
@@ -687,37 +688,47 @@ public sealed class JobSchedulerTests : TestBase
                     : null,
             Substitute.For<IInternalJobManager>(),
             Substitute.For<IJobsHostScheduler>(),
+            descriptorByJobType: jobType =>
+                jobType == typeof(CleanupJob) ? _RequestlessDescriptor
+                : jobType == typeof(MisregisteredTypedJob) ? _TypedDescriptor
+                : null,
             serializationOptions: serializationOptions
         );
 
         return (scheduler, timeManager, cronManager);
     }
 
+    /// <summary>
+    /// Asserts the options overload of one scheduling verb: the argument-typed form takes the argument first, and the
+    /// job-typed form names the job only as its type argument, constrained to <see cref="IJob"/>.
+    /// </summary>
     private static void _AssertOverload(
         MethodInfo[] methods,
         string name,
-        bool generic,
-        params Type[] middleParameterTypes
+        bool argumentTyped,
+        params Type[] trailingParameterTypes
     )
     {
+        var leading = argumentTyped ? 1 : 0;
         var method = methods.Single(candidate =>
             string.Equals(candidate.Name, name, StringComparison.Ordinal)
-            && candidate.IsGenericMethodDefinition == generic
-            && candidate.GetParameters().Length == middleParameterTypes.Length + 2
+            && candidate.IsGenericMethodDefinition
+            && candidate.GetParameters().Length == trailingParameterTypes.Length + leading + 1
+            && candidate.GetParameters()[0].ParameterType.IsGenericParameter == argumentTyped
         );
         var parameters = method.GetParameters();
+        var typeArgument = method.GetGenericArguments().Should().ContainSingle().Subject;
 
-        method.GetGenericArguments().Should().HaveCount(generic ? 1 : 0);
-        if (generic)
+        if (argumentTyped)
         {
-            parameters[0].ParameterType.IsGenericParameter.Should().BeTrue();
+            typeArgument.GetGenericParameterConstraints().Should().BeEmpty();
         }
         else
         {
-            parameters[0].ParameterType.Should().Be<JobFunctionDescriptor>();
+            typeArgument.GetGenericParameterConstraints().Should().Equal(typeof(IJob));
         }
 
-        parameters[1..^1].Select(parameter => parameter.ParameterType).Should().Equal(middleParameterTypes);
+        parameters[leading..^1].Select(parameter => parameter.ParameterType).Should().Equal(trailingParameterTypes);
         parameters[^2].HasDefaultValue.Should().BeFalse();
         parameters[^1].ParameterType.Should().Be<CancellationToken>();
         parameters[^1].HasDefaultValue.Should().BeTrue();
@@ -728,6 +739,21 @@ public sealed class JobSchedulerTests : TestBase
     private sealed record UnknownRequest;
 
     private sealed record UnsupportedRequest(Type Value);
+
+    private abstract class NoopJob : IJob
+    {
+        public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+    }
+
+    private sealed class CleanupJob : NoopJob;
+
+    private sealed class ConfiguredJob : NoopJob;
+
+    private sealed class UnregisteredJob : NoopJob;
+
+    /// <summary>A hand-written registration that maps a job class to a typed descriptor, which scheduling rejects.</summary>
+    private sealed class MisregisteredTypedJob : NoopJob;
 
     private sealed class CustomTimeJob : TimeJobEntity<CustomTimeJob>;
 

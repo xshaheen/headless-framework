@@ -113,6 +113,7 @@ Headless.Messaging.Pulsar
 Headless.Messaging.Queue.Abstractions
 Headless.Messaging.RabbitMq
 Headless.Messaging.Redis
+Headless.Messaging.SourceGenerator
 Headless.Messaging.Storage.InMemory
 Headless.Messaging.Storage.PostgreSql
 Headless.Messaging.Storage.PostgreSql.EntityFramework

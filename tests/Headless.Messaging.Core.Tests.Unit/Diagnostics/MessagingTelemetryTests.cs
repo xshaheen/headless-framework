@@ -3,7 +3,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -201,7 +200,7 @@ public sealed class MessagingTelemetryTests : TestBase
         consumeErrorTags
             .Select(tag => tag.Key)
             .Should()
-            .Contain(["messaging.operation", "messaging.system", "error.type", "messaging.consumer.group"]);
+            .Contain(["messaging.operation", "messaging.system", "error.type", "messaging.consumer.group.name"]);
     }
 
     [Fact]
@@ -399,15 +398,7 @@ public sealed class MessagingTelemetryTests : TestBase
 
     // --- Helpers --------------------------------------------------------------------------------------------
 
-    private static readonly MethodInfo _Method = typeof(MessagingTelemetryTests).GetMethod(
-        nameof(_SampleHandler),
-        BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly,
-        binder: null,
-        types: Type.EmptyTypes,
-        modifiers: null
-    )!;
-
-    private static void _SampleHandler() { }
+    private const string _Method = "HandleAsync";
 
     // Process-global callback: parallel tests' activities all land here — the collection must be thread-safe.
     private static ActivityListener _StartActivityListener(ConcurrentBag<Activity> captured)
@@ -519,7 +510,7 @@ public sealed class MessagingTelemetryTests : TestBase
         {
             [Headers.MessageId] = Guid.NewGuid().ToString(),
             [Headers.MessageName] = name,
-            [Headers.Group] = "workers",
+            [Headers.ConsumerIdentity] = "workers",
             [Headers.CorrelationId] = "corr-1",
             [Headers.ExecutionInstanceId] = "host-1",
         };
@@ -541,7 +532,7 @@ public sealed class MessagingTelemetryTests : TestBase
         {
             [Headers.MessageId] = Guid.NewGuid().ToString(),
             [Headers.MessageName] = name,
-            [Headers.Group] = "workers",
+            [Headers.ConsumerIdentity] = "workers",
         };
 
         return new Message(headers, value: null);

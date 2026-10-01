@@ -58,7 +58,7 @@ internal sealed class AmazonSnsBusTransport(
 
                 if (normalizeForAws.IsAwsFifoName())
                 {
-                    request.MessageGroupId = _ResolveMessageGroupId(message, affinityKey);
+                    request.MessageGroupId = _ResolveMessageGroupId(affinityKey);
 
                     if (
                         message.Headers.TryGetValue(Headers.MessageId, out var messageId)
@@ -104,14 +104,15 @@ internal sealed class AmazonSnsBusTransport(
         }
     }
 
-    private static string _ResolveMessageGroupId(TransportMessage message, string? messageGroupId)
+    // A FIFO destination requires a message group; without an affinity key every message shares one ordered group.
+    private static string _ResolveMessageGroupId(string? messageGroupId)
     {
         if (!string.IsNullOrWhiteSpace(messageGroupId))
         {
             return messageGroupId;
         }
 
-        return message.GetGroup() ?? "default";
+        return "default";
     }
 
     private async Task _FetchExistingTopicArns(CancellationToken cancellationToken = default)

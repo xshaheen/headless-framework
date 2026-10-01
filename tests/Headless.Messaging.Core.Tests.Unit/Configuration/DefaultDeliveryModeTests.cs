@@ -98,15 +98,10 @@ public sealed class DefaultDeliveryModeTests : TestBase
     {
         await using var provider = _CreateProvider(
             globalMode,
-            setup =>
-            {
-                setup.Bus.ForMessage<TestMessage>(message =>
-                    message.Contract("test.default-mode").WithDeliveryMode(typeMode)
-                );
-                setup.Queue.ForMessage<TestMessage>(message =>
-                    message.Contract("test.default-mode").WithDeliveryMode(typeMode)
-                );
-            }
+            contract =>
+                contract
+                    .OnBus(route => route.WithDeliveryMode(typeMode))
+                    .OnQueue(route => route.WithDeliveryMode(typeMode))
         );
 
         await _PublishAsync(provider, lane, new TestMessage("type-policy"), explicitMode: null);
@@ -128,15 +123,10 @@ public sealed class DefaultDeliveryModeTests : TestBase
         // The host default agrees with the type policy so only the per-call override can produce the outcome.
         await using var provider = _CreateProvider(
             typeMode,
-            setup =>
-            {
-                setup.Bus.ForMessage<TestMessage>(message =>
-                    message.Contract("test.default-mode").WithDeliveryMode(typeMode)
-                );
-                setup.Queue.ForMessage<TestMessage>(message =>
-                    message.Contract("test.default-mode").WithDeliveryMode(typeMode)
-                );
-            }
+            contract =>
+                contract
+                    .OnBus(route => route.WithDeliveryMode(typeMode))
+                    .OnQueue(route => route.WithDeliveryMode(typeMode))
         );
 
         await _PublishAsync(provider, lane, new TestMessage("explicit"), explicitMode);
@@ -149,15 +139,10 @@ public sealed class DefaultDeliveryModeTests : TestBase
     {
         await using var provider = _CreateProvider(
             DeliveryMode.Durable,
-            setup =>
-            {
-                setup.Bus.ForMessage<TestMessage>(message =>
-                    message.Contract("test.default-mode").WithDeliveryMode(DeliveryMode.Direct)
-                );
-                setup.Queue.ForMessage<TestMessage>(message =>
-                    message.Contract("test.default-mode").WithDeliveryMode(DeliveryMode.Durable)
-                );
-            }
+            contract =>
+                contract
+                    .OnBus(route => route.WithDeliveryMode(DeliveryMode.Direct))
+                    .OnQueue(route => route.WithDeliveryMode(DeliveryMode.Durable))
         );
 
         await _PublishAsync(provider, MessageLane.Bus, new TestMessage("bus"), explicitMode: null);
@@ -174,15 +159,10 @@ public sealed class DefaultDeliveryModeTests : TestBase
     {
         await using var provider = _CreateProvider(
             DeliveryMode.Durable,
-            setup =>
-            {
-                setup.Bus.ForMessage<TestMessage>(message =>
-                    message.Contract("test.default-mode").WithDeliveryMode(DeliveryMode.Direct)
-                );
-                setup.Queue.ForMessage<TestMessage>(message =>
-                    message.Contract("test.default-mode").WithDeliveryMode(DeliveryMode.Direct)
-                );
-            }
+            contract =>
+                contract
+                    .OnBus(route => route.WithDeliveryMode(DeliveryMode.Direct))
+                    .OnQueue(route => route.WithDeliveryMode(DeliveryMode.Direct))
         );
         var message = new TestMessage("delayed");
         var delay = TimeSpan.FromMinutes(1);
@@ -203,62 +183,19 @@ public sealed class DefaultDeliveryModeTests : TestBase
         await _AssertStoredCountAsync(provider, lane, 0);
     }
 
-    [Fact]
-    public async Task should_inherit_global_mode_for_an_assembly_scan_registration()
-    {
-        await using var provider = _CreateProvider(
-            DeliveryMode.Direct,
-            setup => setup.Bus.ForConsumersFromAssemblyContaining<DefaultDeliveryModeTests>(_ConfigureScannedConsumer)
-        );
-
-        await using var scope = provider.CreateAsyncScope();
-        await scope.ServiceProvider.GetRequiredService<IBus>().PublishAsync(new ScannedMessage("scan"), AbortToken);
-
-        await _AssertStoredCountAsync(provider, MessageLane.Bus, 0);
-    }
-
-    [Fact]
-    public async Task should_apply_explicit_type_policy_alongside_assembly_scan_registrations_for_the_same_type()
-    {
-        // Two scanned consumers share the (ScannedMessage, Bus) key; only the explicit registration carries a policy,
-        // so the publisher must build without a key collision and honor the explicit Direct policy.
-        await using var provider = _CreateProvider(
-            DeliveryMode.Durable,
-            setup =>
-            {
-                setup.Bus.ForConsumersFromAssemblyContaining<DefaultDeliveryModeTests>(_ConfigureScannedConsumer);
-                setup.Bus.ForMessage<ScannedMessage>(message => message.WithDeliveryMode(DeliveryMode.Direct));
-            }
-        );
-
-        await using var scope = provider.CreateAsyncScope();
-        await scope.ServiceProvider.GetRequiredService<IBus>().PublishAsync(new ScannedMessage("scan"), AbortToken);
-
-        await _AssertStoredCountAsync(provider, MessageLane.Bus, 0);
-    }
-
     [Theory]
     [InlineData(-1)]
     [InlineData(3)]
     public void should_reject_an_undefined_type_policy_at_registration(int mode)
     {
         var act = () =>
-            new ServiceCollection().AddHeadlessMessaging(setup =>
-                setup.Bus.ForMessage<TestMessage>(message => message.WithDeliveryMode((DeliveryMode)mode))
+            new ServiceCollection().ConfigureMessaging(messaging =>
+                messaging
+                    .Message<TestMessage>("test.default-mode")
+                    .OnBus(route => route.WithDeliveryMode((DeliveryMode)mode))
             );
 
         act.Should().Throw<ArgumentException>().WithMessage("*mode*");
-    }
-
-    private static void _ConfigureScannedConsumer(ScannedConsumerContext context, IScannedConsumerBuilder builder)
-    {
-        if (context.MessageType != typeof(ScannedMessage))
-        {
-            builder.Skip();
-            return;
-        }
-
-        builder.Contract("test.scanned").ConsumerIdentity($"tests.default-mode.{context.ConsumerType.Name}");
     }
 
     private static async Task _PublishAsync(
@@ -286,10 +223,25 @@ public sealed class DefaultDeliveryModeTests : TestBase
 
     private static ServiceProvider _CreateProvider(
         DeliveryMode mode,
-        Action<MessagingSetupBuilder>? registrations = null
+        Action<IMessageContractBuilder<TestMessage>>? contract = null
     )
     {
         var services = new ServiceCollection();
+        services.ConfigureMessaging(messaging =>
+        {
+            var declared = messaging.Message<TestMessage>("test.default-mode");
+            contract?.Invoke(declared);
+        });
+
+        return _CreateProvider(services, mode, registrations: null);
+    }
+
+    private static ServiceProvider _CreateProvider(
+        ServiceCollection services,
+        DeliveryMode mode,
+        Action<MessagingSetupBuilder>? registrations
+    )
+    {
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
@@ -297,15 +249,7 @@ public sealed class DefaultDeliveryModeTests : TestBase
             setup.UseInMemoryStorage();
             setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
             setup.Options.DefaultDeliveryMode = mode;
-            if (registrations is null)
-            {
-                setup.Bus.ForMessage<TestMessage>(message => message.Contract("test.default-mode"));
-                setup.Queue.ForMessage<TestMessage>(message => message.Contract("test.default-mode"));
-            }
-            else
-            {
-                registrations(setup);
-            }
+            registrations?.Invoke(setup);
         });
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
     }
@@ -328,18 +272,4 @@ public sealed class DefaultDeliveryModeTests : TestBase
     }
 
     private sealed record TestMessage(string Value);
-
-    private sealed record ScannedMessage(string Value);
-
-    private sealed class FirstScannedConsumer : IConsume<ScannedMessage>
-    {
-        public ValueTask ConsumeAsync(ConsumeContext<ScannedMessage> context, CancellationToken cancellationToken) =>
-            ValueTask.CompletedTask;
-    }
-
-    private sealed class SecondScannedConsumer : IConsume<ScannedMessage>
-    {
-        public ValueTask ConsumeAsync(ConsumeContext<ScannedMessage> context, CancellationToken cancellationToken) =>
-            ValueTask.CompletedTask;
-    }
 }

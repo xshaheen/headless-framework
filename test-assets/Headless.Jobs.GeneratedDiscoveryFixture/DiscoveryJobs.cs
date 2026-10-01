@@ -5,20 +5,48 @@ using Headless.Jobs.Enums;
 
 namespace Headless.Jobs.GeneratedDiscoveryFixture;
 
-public sealed record DiscoveryRequest;
+public sealed record DiscoveryRequest(string Value);
 
-public sealed class DiscoveryJobs
+/// <summary>Records what the generated invokers did, so a test can see each job ran with its dependencies.</summary>
+public sealed class DiscoveryProbe
+{
+    private readonly List<object> _executions = [];
+    private int _disposals;
+
+    public IReadOnlyList<object> Executions => _executions;
+
+    public int Disposals => Volatile.Read(ref _disposals);
+
+    public void RecordExecution(object value) => _executions.Add(value);
+
+    public void RecordDisposal() => Interlocked.Increment(ref _disposals);
+}
+
+[Job(FunctionName, Cron = "%Jobs:Discovery:Cron%", Priority = JobPriority.High, MaxConcurrency = 2)]
+[JobScheduleMiddleware<DiscoveryScheduleMiddleware>]
+public sealed class DiscoveryJobs(DiscoveryProbe probe) : IJob<DiscoveryRequest>
 {
     public const string FunctionName = "tests.discovery.generated";
 
-    [JobFunction(FunctionName, "%Jobs:Discovery:Cron%", JobPriority.High, 2)]
-    [JobScheduleMiddleware<DiscoveryScheduleMiddleware>]
-#pragma warning disable IDE0060 // The discovery generator requires the full job-function signature even when this fixture does no work.
-    public static Task RunAsync(JobFunctionContext<DiscoveryRequest> context, CancellationToken cancellationToken)
+    public ValueTask ExecuteAsync(JobContext<DiscoveryRequest> context, CancellationToken cancellationToken)
     {
-        return Task.CompletedTask;
+        probe.RecordExecution(context.Request);
+        return ValueTask.CompletedTask;
     }
-#pragma warning restore IDE0060
+}
+
+[Job(FunctionName)]
+public sealed class DiscoveryCloseDay(DiscoveryProbe probe) : IJob, IDisposable
+{
+    public const string FunctionName = "tests.discovery.close-day";
+
+    public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken)
+    {
+        probe.RecordExecution(this);
+        return ValueTask.CompletedTask;
+    }
+
+    public void Dispose() => probe.RecordDisposal();
 }
 
 public sealed class DiscoveryScheduleMiddleware : IJobScheduleMiddleware

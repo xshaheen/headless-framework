@@ -15,8 +15,8 @@ using Microsoft.Extensions.Options;
 namespace Headless.Messaging.Aws;
 
 internal sealed class AmazonSqsConsumerClient(
-    string groupId,
-    byte groupConcurrent,
+    string subscriptionName,
+    byte concurrency,
     IOptions<AmazonSqsMessagingOptions> options,
     ILogger<AmazonSqsConsumerClient> logger,
     MessageLane lane = MessageLane.Bus,
@@ -27,7 +27,7 @@ internal sealed class AmazonSqsConsumerClient(
     private readonly Lock _queueUrlsLock = new();
     private readonly AmazonSqsMessagingOptions _amazonSqsOptions = options.Value;
     private readonly ILogger _logger = logger;
-    private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
+    private readonly SemaphoreSlim _semaphore = new(concurrency);
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
@@ -166,7 +166,7 @@ internal sealed class AmazonSqsConsumerClient(
             }
             catch (Exception ex)
             {
-                _logger.SqsReceiveFailed(ex, groupId);
+                _logger.SqsReceiveFailed(ex, subscriptionName);
                 retryDelay = _NextBackoff(retryDelay);
                 await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
                 continue;
@@ -183,7 +183,7 @@ internal sealed class AmazonSqsConsumerClient(
 
                     foreach (var sqsMessage in response.Messages)
                     {
-                        if (groupConcurrent > 0)
+                        if (concurrency > 0)
                         {
                             await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
                             _ObserveBackgroundHandler(
@@ -235,10 +235,7 @@ internal sealed class AmazonSqsConsumerClient(
                 return;
             }
 
-            var message = new TransportMessage(header, body != null ? Encoding.UTF8.GetBytes(body) : null)
-            {
-                Headers = { [Headers.Group] = groupId },
-            };
+            var message = new TransportMessage(header, body != null ? Encoding.UTF8.GetBytes(body) : null);
 
             await OnMessageCallback!(message, new InflightSqsMessage(queueUrl, receiptHandle)).ConfigureAwait(false);
         }
@@ -303,7 +300,7 @@ internal sealed class AmazonSqsConsumerClient(
         var errorCode = string.IsNullOrWhiteSpace(exception.ErrorCode) ? "unknown" : exception.ErrorCode;
 
         return new InvalidOperationException(
-            $"AWS_MESSAGING_PROVISIONING_DENIED: Failed to {stage} for the {lane} lane and logical group '{groupId}' "
+            $"AWS_MESSAGING_PROVISIONING_DENIED: Failed to {stage} for the {lane} lane and subscription '{subscriptionName}' "
                 + $"({errorCode}). Verify region/service endpoints and grant the runtime identity only the required actions: "
                 + $"{requiredActions}. Auto-provisioning never widens IAM policy automatically."
         );
@@ -317,7 +314,7 @@ internal sealed class AmazonSqsConsumerClient(
                 var exception = completedTask.Exception?.GetBaseException();
                 if (exception is not null)
                 {
-                    _logger.SqsMessageConsumeFailed(exception, groupId);
+                    _logger.SqsMessageConsumeFailed(exception, subscriptionName);
                 }
             },
             CancellationToken.None,
@@ -360,7 +357,7 @@ internal sealed class AmazonSqsConsumerClient(
 
     private void _ReleaseSemaphore()
     {
-        if (groupConcurrent > 0)
+        if (concurrency > 0)
         {
             try
             {
@@ -432,7 +429,7 @@ internal sealed class AmazonSqsConsumerClient(
                     // Create or get existing queue URL asynchronously
                     var queueResponse = await _sqsClient
                         .CreateQueueAsync(
-                            AwsPhysicalAddress.BusGroupQueue(groupId).ToSqsCreateQueueRequest(),
+                            AwsPhysicalAddress.BusSubscriptionQueue(subscriptionName).ToSqsCreateQueueRequest(),
                             cancellationToken
                         )
                         .ConfigureAwait(false);
@@ -608,13 +605,21 @@ internal static partial class AmazonSqsConsumerClientLog
     )]
     public static partial void SqsMessageMissingRequiredHeaders(this ILogger logger);
 
-    [LoggerMessage(EventId = 4203, Level = LogLevel.Error, Message = "Error consuming message for group {GroupId}")]
-    public static partial void SqsMessageConsumeFailed(this ILogger logger, Exception exception, string groupId);
+    [LoggerMessage(
+        EventId = 4203,
+        Level = LogLevel.Error,
+        Message = "Error consuming message for subscription {SubscriptionName}"
+    )]
+    public static partial void SqsMessageConsumeFailed(
+        this ILogger logger,
+        Exception exception,
+        string subscriptionName
+    );
 
     [LoggerMessage(
         EventId = 4204,
         Level = LogLevel.Warning,
-        Message = "Failed to receive SQS messages for group {GroupId}; backing off before retry."
+        Message = "Failed to receive SQS messages for subscription {SubscriptionName}; backing off before retry."
     )]
-    public static partial void SqsReceiveFailed(this ILogger logger, Exception exception, string groupId);
+    public static partial void SqsReceiveFailed(this ILogger logger, Exception exception, string subscriptionName);
 }

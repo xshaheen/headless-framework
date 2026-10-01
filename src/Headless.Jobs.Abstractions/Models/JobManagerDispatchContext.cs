@@ -14,7 +14,7 @@ public class JobManagerDispatchContext(Guid id)
     /// <summary>Identifier of the cron job definition.</summary>
     public Guid Id { get; set; } = id;
 
-    /// <summary>Registered function name; must match a <c>[JobFunction]</c>-annotated method.</summary>
+    /// <summary>Registered function name; must match a <c>[Job]</c> class.</summary>
     public required string FunctionName { get; set; }
 
     /// <summary>Six-field NCrontab expression that governs occurrence generation.</summary>

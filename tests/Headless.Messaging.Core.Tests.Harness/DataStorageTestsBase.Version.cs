@@ -73,7 +73,7 @@ public abstract partial class DataStorageTestsBase
         (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .NotContain(m => m.StorageId == published.StorageId);
-        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken))
             .Should()
             .NotContain(m => m.StorageId == received.StorageId);
         options.Version = version;
@@ -81,7 +81,7 @@ public abstract partial class DataStorageTestsBase
         (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
             .ContainSingle(m => m.StorageId == published.StorageId);
-        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken))
             .Should()
             .ContainSingle(m => m.StorageId == received.StorageId);
 

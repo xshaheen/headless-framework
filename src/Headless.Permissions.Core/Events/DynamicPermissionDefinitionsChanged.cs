@@ -10,6 +10,13 @@ namespace Headless.Permissions.Events;
 public sealed class DynamicPermissionDefinitionsChanged
 {
     /// <summary>
+    /// The wire name this message is published and consumed under, at contract version <c>1</c>.
+    /// <c>AddHeadlessPermissions</c> declares it, so the topic stays the same whatever naming conventions the host
+    /// configures for its own messages.
+    /// </summary>
+    public const string MessageName = "headless.permissions.definitions-changed";
+
+    /// <summary>
     /// A unique identifier for this event instance, generated with <c>IGuidGenerator</c>. Allows consumers
     /// to deduplicate deliveries in at-least-once messaging topologies.
     /// </summary>

@@ -62,6 +62,12 @@ public sealed class JobChainEnqueueTests : TestBase
         [typeof(ReceiptRequest)] = _Receipt,
     };
 
+    private static readonly Dictionary<Type, JobFunctionDescriptor> _DescriptorsByJobType = new()
+    {
+        [typeof(CleanupJob)] = _Cleanup,
+        [typeof(MisregisteredOrderJob)] = _Order,
+    };
+
     private static readonly Dictionary<string, JobFunctionDescriptor> _DescriptorsByName = new(StringComparer.Ordinal)
     {
         ["order"] = _Order,
@@ -180,14 +186,14 @@ public sealed class JobChainEnqueueTests : TestBase
     }
 
     [Fact]
-    public async Task a_requestless_step_naming_a_typed_function_throws_actionably_before_persistence()
+    public async Task a_step_without_arguments_resolving_to_a_job_with_arguments_throws_actionably_before_persistence()
     {
         var (scheduler, timeManager) = _CreateScheduler();
-        var chain = JobChain.Start(_Order).Build();
+        var chain = JobChain.Start<MisregisteredOrderJob>().Build();
 
         var act = async () => await scheduler.EnqueueAsync(chain, AbortToken);
 
-        (await act.Should().ThrowAsync<ArgumentException>()).WithMessage("*typed request overload*");
+        (await act.Should().ThrowAsync<ArgumentException>()).WithMessage("*takes arguments*argument type*");
         await timeManager.DidNotReceiveWithAnyArgs().AddAsync(default!, AbortToken);
     }
 
@@ -286,7 +292,7 @@ public sealed class JobChainEnqueueTests : TestBase
         var orderRequest = new OrderRequest(7);
         var builder = JobChain.Start(orderRequest, rootOptions);
         builder.Root.Then(new ChargeRequest(8), chargeTime, chargeOptions);
-        builder.Root.Catch(_Cleanup);
+        builder.Root.Catch<CleanupJob>();
         var chain = builder.Build();
 
         await scheduler.EnqueueAsync(chain, AbortToken);
@@ -342,6 +348,7 @@ public sealed class JobChainEnqueueTests : TestBase
             _DescriptorsByName.GetValueOrDefault,
             Substitute.For<IInternalJobManager>(),
             Substitute.For<IJobsHostScheduler>(),
+            descriptorByJobType: _DescriptorsByJobType.GetValueOrDefault,
             serializationOptions: serializationOptions,
             maxChainDepth: maxChainDepth
         );
@@ -374,4 +381,15 @@ public sealed class JobChainEnqueueTests : TestBase
     private sealed record ReceiptRequest(int Id);
 
     private sealed record UnknownRequest;
+
+    private abstract class NoopJob : Headless.Jobs.Base.IJob
+    {
+        public ValueTask ExecuteAsync(Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+    }
+
+    private sealed class CleanupJob : NoopJob;
+
+    /// <summary>A hand-written registration that maps a job class to a descriptor with arguments.</summary>
+    private sealed class MisregisteredOrderJob : NoopJob;
 }

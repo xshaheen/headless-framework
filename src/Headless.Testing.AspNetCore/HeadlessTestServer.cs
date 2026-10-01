@@ -384,13 +384,14 @@ public sealed class HeadlessTestServer<TProgram>(
                 {
                     await initializer.WaitForInitializationAsync(cts.Token).ConfigureAwait(false);
                 }
-                catch (OperationCanceledException) when (cts.IsCancellationRequested)
+                catch (OperationCanceledException ex) when (cts.IsCancellationRequested)
                 {
                     throw new TimeoutException(
                         string.Create(
                             CultureInfo.InvariantCulture,
                             $"Initializer '{initializer.GetType().Name}' did not complete within {_initializerTimeout.TotalSeconds:F0}s."
-                        )
+                        ),
+                        ex
                     );
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
@@ -411,13 +412,14 @@ public sealed class HeadlessTestServer<TProgram>(
                 {
                     await check(factory.Services).WaitAsync(cts.Token).ConfigureAwait(false);
                 }
-                catch (OperationCanceledException) when (cts.IsCancellationRequested)
+                catch (OperationCanceledException ex) when (cts.IsCancellationRequested)
                 {
                     throw new TimeoutException(
                         string.Create(
                             CultureInfo.InvariantCulture,
                             $"Readiness check timed out after {timeout.TotalSeconds:F0}s."
-                        )
+                        ),
+                        ex
                     );
                 }
             }

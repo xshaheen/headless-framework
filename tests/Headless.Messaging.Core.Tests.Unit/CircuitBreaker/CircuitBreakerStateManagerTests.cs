@@ -94,7 +94,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // given
         var pauseCalled = false;
         await using var sut = _Create(failureThreshold: 5);
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch =>
             {
@@ -147,7 +147,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         var resumeCalled = false;
         var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch =>
@@ -174,7 +174,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // given
         var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch =>
@@ -207,15 +207,15 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             openDuration: TimeSpan.FromMinutes(1),
             timeProvider: timeProvider
         );
-        sut.RegisterGroupCallbacks(_Group, _ => ValueTask.CompletedTask, _ => ValueTask.CompletedTask);
+        sut.RegisterConsumerCallbacks(_Group, _ => ValueTask.CompletedTask, _ => ValueTask.CompletedTask);
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
 
         var decision = sut.GetRetryDecision(MessageLane.Bus, _Group);
 
         decision.Kind.Should().Be(CircuitRetryDecisionKind.Closed, "the lane-qualified group is independent");
 
-        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Bus, _Group);
-        sut.RegisterGroupCallbacks(laneGroup, _ => ValueTask.CompletedTask, _ => ValueTask.CompletedTask);
+        var laneGroup = CircuitBreakerKeys.For(MessageLane.Bus, _Group);
+        sut.RegisterConsumerCallbacks(laneGroup, _ => ValueTask.CompletedTask, _ => ValueTask.CompletedTask);
         await sut.ReportFailureAsync(laneGroup, new TimeoutException(), AbortToken);
 
         decision = sut.GetRetryDecision(MessageLane.Bus, _Group);
@@ -229,13 +229,13 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     {
         var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 8, 25, 12, 0, 0, TimeSpan.Zero));
         var resumed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Bus, _Group);
+        var laneGroup = CircuitBreakerKeys.For(MessageLane.Bus, _Group);
         await using var sut = _Create(
             failureThreshold: 1,
             openDuration: TimeSpan.FromMinutes(1),
             timeProvider: timeProvider
         );
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             laneGroup,
             _ => ValueTask.CompletedTask,
             _ =>
@@ -258,9 +258,9 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     public async Task retry_and_transport_share_one_halfopen_probe_generation_and_outcome()
     {
         var halfOpen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Bus, _Group);
+        var laneGroup = CircuitBreakerKeys.For(MessageLane.Bus, _Group);
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             laneGroup,
             _ => ValueTask.CompletedTask,
             _ =>
@@ -289,7 +289,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     public async Task halfopen_failure_reopens_pending_sibling_at_new_open_boundary()
     {
         var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 8, 25, 12, 0, 0, TimeSpan.Zero));
-        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Bus, _Group);
+        var laneGroup = CircuitBreakerKeys.For(MessageLane.Bus, _Group);
         await using var sut = _Create(
             failureThreshold: 1,
             openDuration: TimeSpan.FromMinutes(1),
@@ -316,7 +316,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     public async Task halfopen_probe_abort_reopens_pending_sibling_without_escalation()
     {
         var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 8, 25, 12, 0, 0, TimeSpan.Zero));
-        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Bus, _Group);
+        var laneGroup = CircuitBreakerKeys.For(MessageLane.Bus, _Group);
         await using var sut = _Create(
             failureThreshold: 1,
             openDuration: TimeSpan.FromMinutes(1),
@@ -340,7 +340,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     public async Task releasing_halfopen_probe_resolves_pending_sibling_as_uncertain()
     {
         var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 8, 25, 12, 0, 0, TimeSpan.Zero));
-        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Bus, _Group);
+        var laneGroup = CircuitBreakerKeys.For(MessageLane.Bus, _Group);
         await using var sut = _Create(
             failureThreshold: 1,
             openDuration: TimeSpan.FromMinutes(1),
@@ -359,9 +359,9 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     [Fact]
     public async Task stale_probe_release_does_not_clear_newer_halfopen_probe()
     {
-        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Bus, _Group);
+        var laneGroup = CircuitBreakerKeys.For(MessageLane.Bus, _Group);
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMinutes(1));
-        sut.RegisterGroupCallbacks(laneGroup, _ => ValueTask.CompletedTask, _ => ValueTask.CompletedTask);
+        sut.RegisterConsumerCallbacks(laneGroup, _ => ValueTask.CompletedTask, _ => ValueTask.CompletedTask);
         await sut.ReportFailureAsync(laneGroup, new TimeoutException(), AbortToken);
         _timeProvider.Advance(TimeSpan.FromMinutes(1));
 
@@ -383,9 +383,9 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     [Fact]
     public async Task closed_admission_release_does_not_clear_later_halfopen_probe()
     {
-        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Bus, _Group);
+        var laneGroup = CircuitBreakerKeys.For(MessageLane.Bus, _Group);
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMinutes(1));
-        sut.RegisterGroupCallbacks(laneGroup, _ => ValueTask.CompletedTask, _ => ValueTask.CompletedTask);
+        sut.RegisterConsumerCallbacks(laneGroup, _ => ValueTask.CompletedTask, _ => ValueTask.CompletedTask);
 
         var closedEpoch = sut.TryAcquireHalfOpenProbe(laneGroup);
         closedEpoch.Should().NotBeNull();
@@ -406,7 +406,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     public async Task disposing_manager_resolves_pending_sibling_as_uncertain()
     {
         var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 8, 25, 12, 0, 0, TimeSpan.Zero));
-        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Bus, _Group);
+        var laneGroup = CircuitBreakerKeys.For(MessageLane.Bus, _Group);
         var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMinutes(1), timeProvider: timeProvider);
         var sibling = await _OpenAndAcquireProbeWithPendingSiblingAsync(sut, laneGroup, timeProvider);
 
@@ -421,7 +421,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     public async Task removing_group_resolves_pending_sibling_as_uncertain()
     {
         var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 8, 25, 12, 0, 0, TimeSpan.Zero));
-        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Bus, _Group);
+        var laneGroup = CircuitBreakerKeys.For(MessageLane.Bus, _Group);
         await using var sut = _Create(
             failureThreshold: 1,
             openDuration: TimeSpan.FromMinutes(1),
@@ -429,7 +429,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         );
         var sibling = await _OpenAndAcquireProbeWithPendingSiblingAsync(sut, laneGroup, timeProvider);
 
-        await sut.RemoveGroupAsync(laneGroup);
+        await sut.RemoveConsumerAsync(laneGroup);
 
         var outcome = await sibling.ProbeOutcome!.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
         outcome.Kind.Should().Be(CircuitRetryProbeOutcomeKind.Uncertain);
@@ -447,7 +447,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         FakeTimeProvider timeProvider
     )
     {
-        sut.RegisterGroupCallbacks(laneGroup, _ => ValueTask.CompletedTask, _ => ValueTask.CompletedTask);
+        sut.RegisterConsumerCallbacks(laneGroup, _ => ValueTask.CompletedTask, _ => ValueTask.CompletedTask);
         await sut.ReportFailureAsync(laneGroup, new TimeoutException(), AbortToken);
         timeProvider.Advance(TimeSpan.FromMinutes(1));
 
@@ -467,7 +467,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // given
         var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch =>
@@ -497,7 +497,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
 
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch =>
             {
@@ -534,7 +534,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // given — non-transient failure in HalfOpen means the message is bad, dependency is healthy
         var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var sut = _Create(failureThreshold: 2, openDuration: TimeSpan.FromMilliseconds(30));
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch =>
@@ -572,7 +572,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             openDuration: TimeSpan.FromMilliseconds(20),
             maxOpenDuration: TimeSpan.FromMilliseconds(200)
         );
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch =>
@@ -621,7 +621,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             successfulCyclesToResetEscalation: 3,
             timeProvider: timeProvider
         );
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch =>
@@ -663,7 +663,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             successfulCyclesToResetEscalation: 3,
             timeProvider: timeProvider
         );
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch =>
@@ -716,7 +716,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             successfulCyclesToResetEscalation: 3,
             timeProvider: timeProvider
         );
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch =>
@@ -770,7 +770,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             openDuration: TimeSpan.FromMilliseconds(30),
             maxOpenDuration: TimeSpan.FromMilliseconds(500)
         );
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch =>
@@ -816,7 +816,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             openDuration: TimeSpan.FromMinutes(1),
             timeProvider: timeProvider
         );
-        sut.RegisterGroupCallbacks(_Group, _ => ValueTask.CompletedTask, _ => ValueTask.CompletedTask);
+        sut.RegisterConsumerCallbacks(_Group, _ => ValueTask.CompletedTask, _ => ValueTask.CompletedTask);
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
 
         timeProvider.Advance(TimeSpan.FromMinutes(1) - TimeSpan.FromTicks(1));
@@ -834,7 +834,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             openDuration: TimeSpan.FromMinutes(1),
             timeProvider: timeProvider
         );
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             _ => ValueTask.CompletedTask,
             _ =>
@@ -860,13 +860,13 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             openDuration: TimeSpan.FromMinutes(1),
             timeProvider: timeProvider
         );
-        sut.RegisterGroupCallbacks(_Group, _ => ValueTask.CompletedTask, _ => ValueTask.CompletedTask);
+        sut.RegisterConsumerCallbacks(_Group, _ => ValueTask.CompletedTask, _ => ValueTask.CompletedTask);
         await sut.ReportFailureAsync(_Group, new TimeoutException(), AbortToken);
 
         // There is no production path that leaves an armed timer alive after ForceOpen; move the
         // state's epoch directly to exercise the timer callback's last defense against a race.
         var groupsValue = typeof(CircuitBreakerStateManager)
-            .GetField("_groups", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
+            .GetField("_circuits", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
             .GetValue(sut)!;
 
         var groupsType = groupsValue.GetType();
@@ -890,7 +890,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             openDuration: TimeSpan.FromMinutes(1),
             timeProvider: timeProvider
         );
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             _ => ValueTask.CompletedTask,
             _ =>
@@ -913,7 +913,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // given
         var pauseInvoked = false;
         await using var sut = _Create(failureThreshold: 1);
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch =>
             {
@@ -937,7 +937,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         var resumeInvoked = false;
         var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch =>
@@ -965,7 +965,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         var resumeEpoch = 0L;
         var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(20));
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch =>
             {
@@ -994,7 +994,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     public async Task retry_decision_launches_resume_with_new_epoch()
     {
         // given
-        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Queue, _Group);
+        var laneGroup = CircuitBreakerKeys.For(MessageLane.Queue, _Group);
         var pauseEpoch = 0L;
         var resumeEpoch = 0L;
         var resumeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1005,7 +1005,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             openDuration: TimeSpan.FromMinutes(1),
             timeProvider: timeProvider
         );
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             laneGroup,
             onPause: epoch =>
             {
@@ -1045,7 +1045,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         var resumeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseResume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var sut = _Create(failureThreshold: 1);
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch =>
             {
@@ -1082,7 +1082,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     public async Task dispose_waits_for_every_blocked_resume()
     {
         // given
-        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Queue, _Group);
+        var laneGroup = CircuitBreakerKeys.For(MessageLane.Queue, _Group);
         var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1093,7 +1093,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             openDuration: TimeSpan.FromMinutes(1),
             timeProvider: timeProvider
         );
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             laneGroup,
             onPause: _ => ValueTask.CompletedTask,
             onResume: async epoch =>
@@ -1136,7 +1136,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     public async Task remove_group_waits_for_in_flight_resume_and_bumps_epoch()
     {
         // given
-        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Queue, _Group);
+        var laneGroup = CircuitBreakerKeys.For(MessageLane.Queue, _Group);
         var openEpochBeforeRemove = 0L;
         var resumeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseResume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1146,7 +1146,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             openDuration: TimeSpan.FromMinutes(1),
             timeProvider: timeProvider
         );
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             laneGroup,
             onPause: epoch =>
             {
@@ -1166,7 +1166,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         await resumeStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // when
-        var removal = sut.RemoveGroupAsync(laneGroup).AsTask();
+        var removal = sut.RemoveConsumerAsync(laneGroup).AsTask();
         removal.IsCompleted.Should().BeFalse();
         releaseResume.TrySetResult();
         await removal.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
@@ -1175,7 +1175,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         sut.TryGetOpenEpoch(laneGroup, out _).Should().BeFalse();
 
         var epochAfterReopen = 0L;
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             laneGroup,
             onPause: epoch =>
             {
@@ -1192,7 +1192,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     public async Task current_resume_failure_reopens_and_pauses()
     {
         // given
-        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Queue, _Group);
+        var laneGroup = CircuitBreakerKeys.For(MessageLane.Queue, _Group);
         var pauseCount = 0;
         var reopened = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var timeProvider = new FakeTimeProvider();
@@ -1201,7 +1201,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             openDuration: TimeSpan.FromMinutes(1),
             timeProvider: timeProvider
         );
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             laneGroup,
             onPause: _ =>
             {
@@ -1231,7 +1231,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     public async Task stale_resume_failure_does_not_reopen_or_pause_again()
     {
         // given
-        var laneGroup = CircuitBreakerGroupKeys.For(MessageLane.Queue, _Group);
+        var laneGroup = CircuitBreakerKeys.For(MessageLane.Queue, _Group);
         var staleResumeEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseStaleResume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var staleResumeFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1242,7 +1242,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             openDuration: TimeSpan.FromMinutes(1),
             timeProvider: timeProvider
         );
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             laneGroup,
             onPause: _ =>
             {
@@ -1292,7 +1292,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // given
         await using var sut = _Create(failureThreshold: 1);
         const string circuitGroup = "1:test.group";
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             circuitGroup,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch => ValueTask.CompletedTask
@@ -1325,7 +1325,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // given — trip circuit to Open
         await using var sut = _Create(failureThreshold: 2);
         var pauseCount = 0;
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch =>
             {
@@ -1353,7 +1353,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         var pauseCount = 0;
         var reopenedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(100));
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch =>
             {
@@ -1383,7 +1383,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         const int parallelTasks = 50;
         var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch =>
@@ -1432,7 +1432,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             openDuration: TimeSpan.FromSeconds(1),
             maxOpenDuration: TimeSpan.FromSeconds(4)
         );
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch => ValueTask.CompletedTask
@@ -1473,7 +1473,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         for (var i = 0; i < 200; i++)
         {
             await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(1));
-            sut.RegisterGroupCallbacks(
+            sut.RegisterConsumerCallbacks(
                 _Group,
                 onPause: epoch => ValueTask.CompletedTask,
                 onResume: epoch => ValueTask.CompletedTask
@@ -1508,7 +1508,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     {
         // given — register group by reporting a non-transient failure (stays Closed)
         await using var sut = _Create(failureThreshold: 5);
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch => ValueTask.CompletedTask
@@ -1528,7 +1528,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     {
         // given — trip circuit to Open
         await using var sut = _Create(failureThreshold: 1);
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch => ValueTask.CompletedTask
@@ -1557,7 +1557,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             openDuration: TimeSpan.FromMilliseconds(20),
             maxOpenDuration: TimeSpan.FromSeconds(60)
         );
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch =>
@@ -1593,7 +1593,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // given — trip circuit to Open
         var resumeCalledOnReset = false;
         await using var sut = _Create(failureThreshold: 1);
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch =>
@@ -1677,7 +1677,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     {
         // given — register the group via callbacks
         using var sut = _Create();
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch => ValueTask.CompletedTask
@@ -1702,7 +1702,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     {
         // given — trip circuit to Open
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromSeconds(30));
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch => ValueTask.CompletedTask
@@ -1728,7 +1728,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // given — trip circuit with a known open duration
         var openDuration = TimeSpan.FromSeconds(10);
         await using var sut = _Create(failureThreshold: 1, openDuration: openDuration);
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch => ValueTask.CompletedTask
@@ -1758,7 +1758,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     // -------------------------------------------------------------------------
-    // RegisterKnownGroups guard tests
+    // RegisterKnownConsumers guard tests
     // -------------------------------------------------------------------------
 
     [Fact]
@@ -1766,7 +1766,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     {
         // given — register known groups
         await using var sut = _Create(failureThreshold: 1);
-        sut.RegisterKnownGroups(["group.a", "group.b"]);
+        sut.RegisterKnownConsumers(["group.a", "group.b"]);
 
         // when — report failure for an unknown group
         await sut.ReportFailureAsync("unknown.group", new TimeoutException(), AbortToken);
@@ -1789,7 +1789,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // when — register exactly MaxTrackedGroups (1000) groups via ReportFailureAsync
         for (var i = 0; i < 1000; i++)
         {
-            sut.RegisterGroupCallbacks(
+            sut.RegisterConsumerCallbacks(
                 $"group.{i}",
                 onPause: epoch => ValueTask.CompletedTask,
                 onResume: epoch => ValueTask.CompletedTask
@@ -1869,7 +1869,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     {
         // given — 3 transient failures below threshold of 5
         await using var sut = _Create(failureThreshold: 5);
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch => ValueTask.CompletedTask
@@ -1891,7 +1891,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     {
         // given — trip circuit so escalation level > 0
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromSeconds(10));
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch => ValueTask.CompletedTask
@@ -1917,7 +1917,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // given
         var pauseInvoked = false;
         await using var sut = _Create(failureThreshold: 5);
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch =>
             {
@@ -1945,7 +1945,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // given — trip circuit then wait for HalfOpen
         var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch =>
@@ -1973,7 +1973,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     {
         // given — trip circuit to Open
         await using var sut = _Create(failureThreshold: 1);
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch => ValueTask.CompletedTask
@@ -1994,7 +1994,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     {
         // given — circuit is closed with escalation level 0
         await using var sut = _Create(failureThreshold: 5);
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch => ValueTask.CompletedTask
@@ -2052,7 +2052,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     {
         // given — a registered, Closed circuit
         await using var sut = _Create();
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch => ValueTask.CompletedTask
@@ -2071,7 +2071,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     // -------------------------------------------------------------------------
-    // KnownGroups returns empty set before registration
+    // KnownConsumers returns empty set before registration
     // -------------------------------------------------------------------------
 
     [Fact]
@@ -2081,8 +2081,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         using var sut = _Create();
 
         // when & then
-        sut.KnownGroups.Should().NotBeNull();
-        sut.KnownGroups.Should().BeEmpty();
+        sut.KnownConsumers.Should().NotBeNull();
+        sut.KnownConsumers.Should().BeEmpty();
     }
 
     [Fact]
@@ -2090,12 +2090,12 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     {
         // given
         using var sut = _Create();
-        sut.RegisterKnownGroups(["group.a", "group.b"]);
+        sut.RegisterKnownConsumers(["group.a", "group.b"]);
 
         // when & then
-        sut.KnownGroups.Should().HaveCount(2);
-        sut.KnownGroups.Should().Contain("group.a");
-        sut.KnownGroups.Should().Contain("group.b");
+        sut.KnownConsumers.Should().HaveCount(2);
+        sut.KnownConsumers.Should().Contain("group.a");
+        sut.KnownConsumers.Should().Contain("group.b");
     }
 
     // -------------------------------------------------------------------------
@@ -2108,7 +2108,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // given — trip circuit and wait for HalfOpen
         var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch =>
@@ -2140,7 +2140,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     {
         // given
         await using var sut = _Create(failureThreshold: 1);
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: epoch => ValueTask.CompletedTask
@@ -2165,7 +2165,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         var resumeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(20));
-        sut.RegisterGroupCallbacks(
+        sut.RegisterConsumerCallbacks(
             _Group,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: async epoch =>

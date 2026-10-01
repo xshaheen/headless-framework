@@ -15,6 +15,10 @@ namespace Headless.Jobs.Models;
 /// <param name="OnOverlap">Overlap policy to seed at creation.</param>
 /// <param name="EvaluationFingerprint">Current evaluator fingerprint stamped with a new or repositioned seed.</param>
 /// <param name="ContractVersion">Registered payload version stamped only on newly created definitions.</param>
+/// <param name="TimeZoneId">
+/// IANA zone the expression is evaluated in, or <see langword="null"/> for the scheduler's default zone. Like the
+/// expression it is part of the declared schedule, so a changed zone repositions an existing definition.
+/// </param>
 /// <remarks>
 /// The recovery and overlap settings are already resolved by the caller — attribute value, else the scheduler-wide setting, else
 /// the framework default — so the provider persists a concrete value rather than re-deriving one. That matters because
@@ -38,5 +42,6 @@ public readonly record struct CronSeedDefinition(
     int MissedRunGraceSeconds,
     CronOverlapPolicy OnOverlap,
     string? EvaluationFingerprint = null,
-    string ContractVersion = JobContract.InitialVersion
+    string ContractVersion = JobContract.InitialVersion,
+    string? TimeZoneId = null
 );

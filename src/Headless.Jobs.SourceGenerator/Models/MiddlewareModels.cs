@@ -8,7 +8,7 @@ namespace Headless.Jobs.SourceGenerator.Models;
 internal enum MiddlewarePlacement
 {
     Assembly,
-    Method,
+    Class,
 }
 
 /// <summary>
@@ -16,8 +16,8 @@ internal enum MiddlewarePlacement
 /// Target resolution and duplicate detection need the whole assembly, so they happen after collection.
 /// </summary>
 /// <param name="Function">
-/// The target function: the <c>Function</c> property for assembly placement, or the neighboring
-/// <c>[JobFunction]</c> name for method placement.
+/// The target job identity: the <c>Function</c> property for assembly placement, or the
+/// <c>[Job]</c> identity of the decorated class for class placement.
 /// </param>
 /// <param name="TypeIdentity">The middleware's metadata identity, prefixed with the assembly name when registered.</param>
 /// <param name="ImplementsInterface">
@@ -39,7 +39,7 @@ internal sealed record MiddlewareDeclarationModel(
 
 /// <summary>
 /// Transform output for one attributed declaration: the middleware it declares plus diagnostics that need no
-/// cross-assembly context (for example, method placement without a <c>[JobFunction]</c>).
+/// cross-assembly context (for example, class placement without <c>[Job]</c>).
 /// </summary>
 internal sealed record MiddlewareResult(
     EquatableArray<MiddlewareDeclarationModel> Declarations,

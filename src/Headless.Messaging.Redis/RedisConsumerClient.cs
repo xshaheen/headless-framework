@@ -9,24 +9,30 @@ using StackExchange.Redis;
 namespace Headless.Messaging.Redis;
 
 internal sealed class RedisConsumerClient(
-    string groupId,
-    byte groupConcurrent,
+    string subscriptionName,
+    byte concurrency,
     IRedisStreamManager redis,
     IOptions<RedisMessagingOptions> options,
     ILogger<RedisConsumerClient> logger,
     MessageLane lane = MessageLane.Queue,
     TimeSpan? stalePendingClaimMinIdleTime = null,
-    TimeProvider? timeProvider = null
+    TimeProvider? timeProvider = null,
+    ConsumerSubscriptionKind kind = ConsumerSubscriptionKind.Competing
 ) : IConsumerClient
 {
-    private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
+    private readonly string _groupName = RedisPhysicalAddress.ConsumerGroup(lane, subscriptionName);
+    private readonly SemaphoreSlim _semaphore = new(concurrency);
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly TimeSpan _stalePendingClaimMinIdleTime = stalePendingClaimMinIdleTime ?? TimeSpan.FromMinutes(5);
-    private readonly string _consumerName = $"{groupId}:{Environment.MachineName}:{Guid.NewGuid():N}";
+    private readonly string _consumerName =
+        $"{RedisPhysicalAddress.ConsumerGroup(lane, subscriptionName)}:{Environment.MachineName}:{Guid.NewGuid():N}";
     private int _disposed;
     private string[] _messageNames = null!;
+
+    // Where an every-instance client's group-less reads start: each stream's tail when it subscribed.
+    private StreamPosition[] _everyInstanceStart = [];
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
 
@@ -49,10 +55,21 @@ internal sealed class RedisConsumerClient(
 
         var arr = messageNames.Select(messageName => RedisPhysicalAddress.ForLane(lane, messageName)).ToArray();
 
+        if (kind is ConsumerSubscriptionKind.EveryInstance)
+        {
+            // An every-instance client reads the streams without a consumer group, so it creates nothing on the
+            // server and a crashed process leaves nothing behind. Fixing the start at each stream's current tail,
+            // rather than reading from "$" later, makes readiness exact: every entry added from here on is read.
+            _everyInstanceStart = await redis.GetStreamTailPositionsAsync(arr, cancellationToken).ConfigureAwait(false);
+            _messageNames = arr;
+            _ready.TrySetResult();
+            return;
+        }
+
         foreach (var messageName in arr)
         {
             await redis
-                .CreateStreamWithConsumerGroupAsync(messageName, groupId, cancellationToken)
+                .CreateStreamWithConsumerGroupAsync(messageName, _groupName, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -67,7 +84,17 @@ internal sealed class RedisConsumerClient(
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        _ObserveBackgroundHandler(_ListeningForMessagesAsync(timeout, cancellationToken));
+        // An every-instance client resumes from the last id it read after a lost connection, so it misses nothing
+        // the stream still holds and has no gap to report through the re-established callback.
+        _ObserveBackgroundHandler(
+            kind is ConsumerSubscriptionKind.EveryInstance
+                ? _ConsumeMessages(
+                    redis.PollStreamsFromAsync(_everyInstanceStart, timeout, cancellationToken),
+                    StreamPosition.NewMessages,
+                    cancellationToken
+                )
+                : _ListeningForMessagesAsync(timeout, cancellationToken)
+        );
 
         try
         {
@@ -126,7 +153,7 @@ internal sealed class RedisConsumerClient(
 
     private void _ReleaseSemaphore()
     {
-        if (groupConcurrent > 0)
+        if (concurrency > 0)
         {
             try
             {
@@ -144,7 +171,7 @@ internal sealed class RedisConsumerClient(
         //first time, we want to read our pending messages, in case we crashed and are recovering.
         var pendingMsgs = redis.PollStreamsPendingMessagesAsync(
             _messageNames,
-            groupId,
+            _groupName,
             _consumerName,
             timeout,
             cancellationToken
@@ -154,7 +181,7 @@ internal sealed class RedisConsumerClient(
 
         var stalePendingMsgs = redis.PollStreamsStalePendingMessagesAsync(
             _messageNames,
-            groupId,
+            _groupName,
             _consumerName,
             _stalePendingClaimMinIdleTime,
             timeout,
@@ -165,7 +192,7 @@ internal sealed class RedisConsumerClient(
         //Once we consumed our history, we can start getting new messages.
         var newMsgs = redis.PollStreamsLatestMessagesAsync(
             _messageNames,
-            groupId,
+            _groupName,
             _consumerName,
             timeout,
             cancellationToken
@@ -192,7 +219,7 @@ internal sealed class RedisConsumerClient(
                         return;
                     }
 
-                    if (groupConcurrent > 0)
+                    if (concurrency > 0)
                     {
                         await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
                         _ObserveBackgroundHandler(
@@ -227,12 +254,12 @@ internal sealed class RedisConsumerClient(
                 TransportMessage message;
                 try
                 {
-                    message = RedisMessage.Create(entry, groupId);
+                    message = RedisMessage.Create(entry);
                 }
                 catch (Exception ex)
                 {
                     var errorContext = _CreateMalformedEntryErrorContext(ex, entry);
-                    logger.InvalidRedisEntry(errorContext.Exception, entry.Id, stream.Key, position, groupId);
+                    logger.InvalidRedisEntry(errorContext.Exception, entry.Id, stream.Key, position, _groupName);
 
                     var logArgs = new LogMessageEventArgs
                     {
@@ -253,19 +280,30 @@ internal sealed class RedisConsumerClient(
                     finally
                     {
                         OnLogCallback?.Invoke(logArgs);
-                        await redis
-                            .Ack(stream.Key.ToString(), groupId, entry.Id.ToString(), CancellationToken.None)
-                            .ConfigureAwait(false);
+
+                        // A group-less read keeps no pending entry, so there is nothing to acknowledge.
+                        if (kind is ConsumerSubscriptionKind.Competing)
+                        {
+                            await redis
+                                .Ack(stream.Key.ToString(), _groupName, entry.Id.ToString(), CancellationToken.None)
+                                .ConfigureAwait(false);
+                        }
                     }
 
                     return;
                 }
 
-                await OnMessageCallback!(
-                    message,
-                    new RedisConsumerDelivery(stream.Key.ToString(), groupId, entry.Id.ToString(), [.. entry.Values])
-                )
-                    .ConfigureAwait(false);
+                object delivery =
+                    kind is ConsumerSubscriptionKind.EveryInstance
+                        ? new RedisEveryInstanceDelivery(stream.Key.ToString(), entry.Id.ToString())
+                        : new RedisConsumerDelivery(
+                            stream.Key.ToString(),
+                            _groupName,
+                            entry.Id.ToString(),
+                            [.. entry.Values]
+                        );
+
+                await OnMessageCallback!(message, delivery).ConfigureAwait(false);
             }
             finally
             {
@@ -310,7 +348,7 @@ internal sealed class RedisConsumerClient(
                 var exception = completedTask.Exception?.GetBaseException();
                 if (exception is not null)
                 {
-                    logger.RedisBackgroundHandlerFailed(exception, groupId);
+                    logger.RedisBackgroundHandlerFailed(exception, _groupName);
                 }
             },
             CancellationToken.None,
@@ -339,6 +377,12 @@ internal sealed class RedisConsumerClient(
 }
 
 internal readonly record struct RedisConsumerDelivery(string Stream, string Group, string Id, NameValueEntry[] Entries);
+
+/// <summary>
+/// The settlement token of a group-less read. CommitAsync and RejectAsync ignore it: the read left no pending entry to
+/// acknowledge, and an every-instance delivery is never redelivered.
+/// </summary>
+internal readonly record struct RedisEveryInstanceDelivery(string Stream, string Id);
 
 internal static partial class RedisConsumerClientLog
 {

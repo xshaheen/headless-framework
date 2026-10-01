@@ -29,19 +29,19 @@ public interface IConsumerRegistry
     /// </remarks>
     IReadOnlyList<ConsumerMetadata> GetAll();
 
-    /// <summary>
-    /// Finds a consumer by message name and optional group.
-    /// </summary>
+    /// <summary>Finds a consumer by message name and optional subscription name.</summary>
     /// <param name="messageName">The message name to search for.</param>
-    /// <param name="group">Optional consumer group name. If null, returns first match by message name only.</param>
+    /// <param name="subscriptionName">
+    /// Optional subscription name: the consumer identity on the Bus lane, the message name on the Queue lane. If null,
+    /// returns the first match by message name only.
+    /// </param>
     /// <returns>
-    /// The matching consumer metadata, or null if no consumer is registered for the message-name/group combination.
+    /// The matching consumer metadata, or null if no consumer is registered for the message name and subscription.
     /// </returns>
     /// <remarks>
-    /// When multiple consumers are registered for the same message name with different groups,
-    /// the group parameter must be specified to disambiguate.
+    /// When several Bus consumers subscribe to the same message name, pass the subscription name to disambiguate.
     /// </remarks>
-    ConsumerMetadata? FindByMessageName(string messageName, string? group = null);
+    ConsumerMetadata? FindByMessageName(string messageName, string? subscriptionName = null);
 
     /// <summary>
     /// Finds all consumers that handle a specific message type.
@@ -50,7 +50,7 @@ public interface IConsumerRegistry
     /// <returns>An enumerable of consumer metadata for all consumers handling the specified message type.</returns>
     /// <remarks>
     /// Multiple consumers can handle the same message type if they subscribe to different message names
-    /// or belong to different consumer groups.
+    /// or declare different consumer identities.
     /// </remarks>
     IReadOnlyList<ConsumerMetadata> FindByMessageType<TMessage>();
 
@@ -61,7 +61,7 @@ public interface IConsumerRegistry
     /// <returns>A read-only list of consumer metadata for all consumers handling the specified message type.</returns>
     /// <remarks>
     /// Multiple consumers can handle the same message type if they subscribe to different message names
-    /// or belong to different consumer groups.
+    /// or declare different consumer identities.
     /// </remarks>
     IReadOnlyList<ConsumerMetadata> FindByMessageType(Type messageType);
 

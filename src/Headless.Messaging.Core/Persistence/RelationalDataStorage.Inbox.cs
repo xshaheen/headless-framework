@@ -20,7 +20,6 @@ internal sealed partial class RelationalDataStorage
 
     public async ValueTask<InboxAdmissionResult> AdmitReceivedMessageAsync(
         string name,
-        string group,
         string consumerIdentity,
         string contractVersion,
         MediumMessage message,
@@ -57,8 +56,6 @@ internal sealed partial class RelationalDataStorage
                     _t.Id,
                     _t.Version,
                     _t.Name,
-                    _t.Group,
-                    _t.GroupKey,
                     _t.Content,
                     _t.IntentType,
                     _t.Retries,
@@ -89,8 +86,6 @@ internal sealed partial class RelationalDataStorage
                     "@Id",
                     "@Version",
                     "@Name",
-                    "@Group",
-                    "@GroupKey",
                     "@Content",
                     "@IntentType",
                     "0",
@@ -139,8 +134,6 @@ internal sealed partial class RelationalDataStorage
                                 _dialect.AddParameter(command, "Id", SqlColumnType.Guid, storageId);
                                 _BindVersion(command);
                                 _dialect.AddParameter(command, "Name", _NameType, name);
-                                _dialect.AddParameter(command, "Group", _NameType, group);
-                                _dialect.AddParameter(command, "GroupKey", _NameType, group ?? string.Empty);
                                 _dialect.AddParameter(command, "Content", _ContentType, content);
                                 _dialect.AddDuration(command, "Grace", Options.RetryPolicy.InitialDispatchGrace);
                                 _dialect.AddParameter(command, "StatusName", _StatusType, nameof(StatusName.Scheduled));
@@ -215,7 +208,7 @@ internal sealed partial class RelationalDataStorage
             SqlColumnType.KeyText(_ContractVersionMaxLength),
             key.ContractVersion
         );
-        _dialect.AddParameter(command, "ConsumerIdentity", SqlColumnType.KeyText(_NameMaxLength), key.ConsumerIdentity);
+        _dialect.AddParameter(command, "ConsumerIdentity", _IdentityType, key.ConsumerIdentity);
         _dialect.AddParameter(command, "Generation", SqlColumnType.Int64, key.Generation);
     }
 

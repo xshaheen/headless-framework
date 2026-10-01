@@ -27,15 +27,15 @@ public static class JobMiddlewarePriority
     public const int Late = 1000;
 }
 
-/// <summary>Declares schedule middleware globally or beside a local <c>[JobFunction]</c> method.</summary>
+/// <summary>Declares schedule middleware globally or on a <c>[Job]</c> class in the same assembly.</summary>
 [PublicAPI]
-[AttributeUsage(AttributeTargets.Assembly | AttributeTargets.Method, AllowMultiple = true)]
+[AttributeUsage(AttributeTargets.Assembly | AttributeTargets.Class, AllowMultiple = true)]
 public sealed class JobScheduleMiddlewareAttribute<TMiddleware> : Attribute
     where TMiddleware : IJobScheduleMiddleware
 {
     /// <summary>
     /// Targets a function declared in another assembly. Omit for global assembly middleware or
-    /// method-local middleware, whose target is derived from its neighboring <c>[JobFunction]</c>.
+    /// class-level middleware, whose target is the <c>[Job]</c> class it decorates.
     /// </summary>
     public string? Function { get; init; }
 
@@ -43,15 +43,15 @@ public sealed class JobScheduleMiddlewareAttribute<TMiddleware> : Attribute
     public int Priority { get; init; }
 }
 
-/// <summary>Declares execute middleware globally or beside a local <c>[JobFunction]</c> method.</summary>
+/// <summary>Declares execute middleware globally or on a <c>[Job]</c> class in the same assembly.</summary>
 [PublicAPI]
-[AttributeUsage(AttributeTargets.Assembly | AttributeTargets.Method, AllowMultiple = true)]
+[AttributeUsage(AttributeTargets.Assembly | AttributeTargets.Class, AllowMultiple = true)]
 public sealed class JobExecuteMiddlewareAttribute<TMiddleware> : Attribute
     where TMiddleware : IJobExecuteMiddleware
 {
     /// <summary>
     /// Targets a function declared in another assembly. Omit for global assembly middleware or
-    /// method-local middleware, whose target is derived from its neighboring <c>[JobFunction]</c>.
+    /// class-level middleware, whose target is the <c>[Job]</c> class it decorates.
     /// </summary>
     public string? Function { get; init; }
 
@@ -127,7 +127,7 @@ public sealed class JobScheduleContext(JobFunctionDescriptor descriptor, BaseJob
 public sealed class JobExecuteContext(
     JobFunctionDescriptor descriptor,
     JobExecutionState execution,
-    JobFunctionContext functionContext,
+    JobContext functionContext,
     int attempt,
     IServiceProvider services
 )
@@ -139,7 +139,7 @@ public sealed class JobExecuteContext(
     public JobExecutionState Execution { get; } = execution;
 
     /// <summary>The existing handler context for this attempt.</summary>
-    public JobFunctionContext FunctionContext { get; } = functionContext;
+    public JobContext FunctionContext { get; } = functionContext;
 
     /// <summary>Zero-based retry attempt number.</summary>
     public int Attempt { get; } = attempt;
@@ -148,151 +148,116 @@ public sealed class JobExecuteContext(
     public IServiceProvider Services { get; } = services;
 }
 
-/// <summary>Frozen generated callback registry for Jobs middleware dispatch.</summary>
-[System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-public static class JobMiddlewareRegistry
+/// <summary>
+/// One host's frozen middleware chain, ordered by priority and then by stable middleware identity. Built once with the
+/// host's job registry, so two hosts in one process never share or reorder each other's middleware.
+/// </summary>
+internal sealed class JobMiddlewarePipeline
 {
-    private static bool _frozen;
-    private static int _tenancyMiddlewareReserved;
-    private static readonly List<ScheduleRegistration> _ScheduleRegistrations = [];
-    private static readonly List<ExecuteRegistration> _ExecuteRegistrations = [];
-    private static ScheduleRegistration[] _schedule = [];
-    private static ExecuteRegistration[] _execute = [];
+    internal static readonly JobMiddlewarePipeline Empty = new([], []);
 
-    /// <summary>
-    /// Reserves the one-shot, process-global insertion of the framework tenancy middleware pair. Returns
-    /// <see langword="true"/> for the first caller of the current registry generation; later callers (overlapping host
-    /// configuration, a post-freeze ExistingCatalog host) get <see langword="false"/> so the middleware is never
-    /// inserted — and therefore dispatched — twice. Reset alongside the generated registrations by
-    /// <see cref="ResetUnderProviderLock"/> so unit tests that rebuild the catalog re-register cleanly.
-    /// </summary>
-    internal static bool TryReserveTenancyRegistration() =>
-        Interlocked.Exchange(ref _tenancyMiddlewareReserved, 1) == 0;
+    private readonly ApplicableMiddleware<JobScheduleMiddlewareRegistration> _schedule;
+    private readonly ApplicableMiddleware<JobExecuteMiddlewareRegistration> _execute;
 
-    /// <summary>Registers generated schedule dispatch before <see cref="JobFunctionProvider.Build"/>.</summary>
-    /// <exception cref="InvalidOperationException">Jobs discovery has completed or the catalog is frozen.</exception>
-    public static void RegisterSchedule(
-        string identity,
-        string? function,
-        int priority,
-        JobScheduleMiddlewareDispatch dispatch
+    private JobMiddlewarePipeline(
+        JobScheduleMiddlewareRegistration[] schedule,
+        JobExecuteMiddlewareRegistration[] execute
     )
     {
-        JobFunctionProvider.RegisterMiddleware(() =>
-            _ScheduleRegistrations.Add(new(identity, function, priority, dispatch))
-        );
+        _schedule = new(schedule);
+        _execute = new(execute);
     }
 
-    /// <summary>Registers generated execute dispatch before <see cref="JobFunctionProvider.Build"/>.</summary>
-    /// <exception cref="InvalidOperationException">Jobs discovery has completed or the catalog is frozen.</exception>
-    public static void RegisterExecute(
-        string identity,
-        string? function,
-        int priority,
-        JobExecuteMiddlewareDispatch dispatch
-    )
-    {
-        JobFunctionProvider.RegisterMiddleware(() =>
-            _ExecuteRegistrations.Add(new(identity, function, priority, dispatch))
-        );
-    }
+    internal static JobMiddlewarePipeline Create(
+        IEnumerable<JobScheduleMiddlewareRegistration> schedule,
+        IEnumerable<JobExecuteMiddlewareRegistration> execute
+    ) => new(_Order(schedule), _Order(execute));
 
-    internal static Task DispatchScheduleAsync(
-        JobScheduleContext context,
-        JobScheduleNext next,
-        CancellationToken cancellationToken
-    ) => _DispatchSchedule(context, next, cancellationToken);
-
-    internal static Task DispatchExecuteAsync(
-        JobExecuteContext context,
-        JobExecuteNext next,
-        CancellationToken cancellationToken
-    ) => _DispatchExecute(context, next, cancellationToken);
-
-    internal static void FreezeUnderProviderLock()
-    {
-        _schedule = _Order(_ScheduleRegistrations);
-        _execute = _Order(_ExecuteRegistrations);
-        _frozen = true;
-    }
-
-    // The generated registrations are process-global. Unit tests that exercise alternate generated chains reset this
-    // state inside the non-parallel Jobs helper collection, keeping the production API frozen after startup.
-    internal static void ResetUnderProviderLock()
-    {
-        _frozen = false;
-        _tenancyMiddlewareReserved = 0;
-        _ScheduleRegistrations.Clear();
-        _ExecuteRegistrations.Clear();
-        _schedule = [];
-        _execute = [];
-    }
-
-    private static Task _DispatchSchedule(
+    internal Task DispatchScheduleAsync(
         JobScheduleContext context,
         JobScheduleNext next,
         CancellationToken cancellationToken
     )
     {
-        var registrations = _frozen ? _schedule : _Order(_ScheduleRegistrations);
+        var registrations = _schedule.For(context.Descriptor.FunctionName);
         var current = next;
         for (var index = registrations.Length - 1; index >= 0; index--)
         {
             var registration = registrations[index];
             var previous = current;
-            current = token =>
-                registration.Function is null
-                || string.Equals(registration.Function, context.Descriptor.FunctionName, StringComparison.Ordinal)
-                    ? registration.Dispatch(context, previous, token)
-                    : previous(token);
+            current = token => registration.Dispatch(context, previous, token);
         }
 
         return current(cancellationToken);
     }
 
-    private static Task _DispatchExecute(
+    internal Task DispatchExecuteAsync(
         JobExecuteContext context,
         JobExecuteNext next,
         CancellationToken cancellationToken
     )
     {
-        var registrations = _frozen ? _execute : _Order(_ExecuteRegistrations);
+        var registrations = _execute.For(context.Descriptor.FunctionName);
         var current = next;
         for (var index = registrations.Length - 1; index >= 0; index--)
         {
             var registration = registrations[index];
             var previous = current;
-            current = token =>
-                registration.Function is null
-                || string.Equals(registration.Function, context.Descriptor.FunctionName, StringComparison.Ordinal)
-                    ? registration.Dispatch(context, previous, token)
-                    : previous(token);
+            current = token => registration.Dispatch(context, previous, token);
         }
 
         return current(cancellationToken);
     }
 
     private static T[] _Order<T>(IEnumerable<T> registrations)
-        where T : IRegistration =>
+        where T : IJobMiddlewareRegistration =>
         [.. registrations.OrderBy(x => x.Priority).ThenBy(x => x.Identity, StringComparer.Ordinal)];
 
-    private interface IRegistration
+    /// <summary>
+    /// The ordered middleware that applies to each job, resolved once when the pipeline is built so a dispatch neither
+    /// filters nor wraps middleware limited to other jobs.
+    /// </summary>
+    private sealed class ApplicableMiddleware<T>(T[] ordered)
+        where T : IJobMiddlewareRegistration
     {
-        string Identity { get; }
-        int Priority { get; }
+        // A job no middleware names gets only the global middleware, so only the named jobs need their own chain.
+        private readonly T[] _global = [.. ordered.Where(x => x.Function is null)];
+
+        private readonly FrozenDictionary<string, T[]> _byFunction = ordered
+            .Where(x => x.Function is not null)
+            .Select(x => x.Function!)
+            .Distinct(StringComparer.Ordinal)
+            .ToFrozenDictionary(
+                function => function,
+                function =>
+                    ordered
+                        .Where(x => x.Function is null || string.Equals(x.Function, function, StringComparison.Ordinal))
+                        .ToArray(),
+                StringComparer.Ordinal
+            );
+
+        public T[] For(string function) =>
+            _byFunction.TryGetValue(function, out var registrations) ? registrations : _global;
     }
-
-    private sealed record ScheduleRegistration(
-        string Identity,
-        string? Function,
-        int Priority,
-        JobScheduleMiddlewareDispatch Dispatch
-    ) : IRegistration;
-
-    private sealed record ExecuteRegistration(
-        string Identity,
-        string? Function,
-        int Priority,
-        JobExecuteMiddlewareDispatch Dispatch
-    ) : IRegistration;
 }
+
+internal interface IJobMiddlewareRegistration
+{
+    string Identity { get; }
+    string? Function { get; }
+    int Priority { get; }
+}
+
+internal sealed record JobScheduleMiddlewareRegistration(
+    string Identity,
+    string? Function,
+    int Priority,
+    JobScheduleMiddlewareDispatch Dispatch
+) : IJobMiddlewareRegistration;
+
+internal sealed record JobExecuteMiddlewareRegistration(
+    string Identity,
+    string? Function,
+    int Priority,
+    JobExecuteMiddlewareDispatch Dispatch
+) : IJobMiddlewareRegistration;

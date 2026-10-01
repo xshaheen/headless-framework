@@ -345,6 +345,52 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_use_queue_message_name_as_the_same_consumer_group_on_every_host()
+    {
+        // given - two hosts consuming one Queue message
+        var groupIds = new List<string?>();
+
+        await using var first = new KafkaConsumerClient(
+            "orders.created",
+            1,
+            _options,
+            _serviceProvider,
+            consumerFactory: config =>
+            {
+                groupIds.Add(config.GroupId);
+                return Substitute.For<IConsumer<string, byte[]>>();
+            }
+        );
+        await using var second = new KafkaConsumerClient(
+            "orders.created",
+            1,
+            _options,
+            _serviceProvider,
+            consumerFactory: config =>
+            {
+                groupIds.Add(config.GroupId);
+                return Substitute.For<IConsumer<string, byte[]>>();
+            }
+        );
+
+        // when
+        first.Connect();
+        second.Connect();
+
+        // then
+        groupIds.Should().Equal("orders.created", "orders.created");
+    }
+
+    [Fact]
+    public void should_derive_legal_stable_group_id_when_subscription_name_is_not_a_legal_topic_name()
+    {
+        var groupId = KafkaConsumerClient.GroupId("billing ops/orders.created");
+
+        groupId.Should().MatchRegex("^billing-ops-orders\\.created-[0-9a-f]{12}$");
+        KafkaConsumerClient.GroupId("billing ops/orders.created").Should().Be(groupId);
+    }
+
+    [Fact]
     public async Task should_process_messages_concurrently_when_listening_async_concurrency_is_requested()
     {
         // given

@@ -9,7 +9,7 @@ namespace Headless.Messaging.CircuitBreaker;
 /// </summary>
 /// <remarks>
 /// These options control the sensitivity and recovery behavior of the circuit breaker.
-/// They apply globally to all consumer groups unless overridden per consumer via
+/// They apply globally to all consumers unless overridden per consumer via
 /// <c>ConsumerCircuitBreakerOptions</c>.
 /// </remarks>
 [PublicAPI]

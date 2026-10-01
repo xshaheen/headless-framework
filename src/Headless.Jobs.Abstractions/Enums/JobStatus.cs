@@ -33,7 +33,7 @@ public enum JobStatus
     /// <summary>The job function threw an unhandled exception and exhausted its retry budget.</summary>
     Failed = 5,
 
-    /// <summary>Execution was cancelled cooperatively via <c>JobFunctionContext.RequestCancellation</c> or an external cancel signal.</summary>
+    /// <summary>Execution was cancelled cooperatively via <c>JobContext.RequestCancellation</c> or an external cancel signal.</summary>
     Cancelled = 6,
 
     /// <summary>

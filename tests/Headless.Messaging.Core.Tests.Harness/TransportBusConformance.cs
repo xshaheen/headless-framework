@@ -16,6 +16,25 @@ public static class TransportBusConformance
     )
     {
         second.Destination.Should().Be(first.Destination, "Bus fan-out sessions must share one broker destination");
+        await _AssertBothReceiveAsync(first, second, cancellationToken);
+    }
+
+    /// <summary>
+    /// The every-instance variant of <see cref="AssertFanOutAsync"/>: both sessions receive the message, but each reads
+    /// through a subscription of its own, so they need not share a broker destination.
+    /// </summary>
+    public static Task AssertEveryInstanceFanOutAsync(
+        TransportConsumerConformanceSession first,
+        TransportConsumerConformanceSession second,
+        CancellationToken cancellationToken
+    ) => _AssertBothReceiveAsync(first, second, cancellationToken);
+
+    private static async Task _AssertBothReceiveAsync(
+        TransportConsumerConformanceSession first,
+        TransportConsumerConformanceSession second,
+        CancellationToken cancellationToken
+    )
+    {
         await first.StartAsync(cancellationToken: cancellationToken);
         await second.StartAsync(cancellationToken: cancellationToken);
 

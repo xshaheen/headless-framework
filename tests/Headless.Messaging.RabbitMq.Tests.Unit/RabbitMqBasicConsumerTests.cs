@@ -28,7 +28,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     {
         // given
         const byte concurrent = 2;
-        const string groupName = "test-group";
         var consumeFailed = _CreateSignal();
         var exceptionThrown = false;
         var consumeCallCount = 0;
@@ -46,7 +45,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             concurrent,
-            groupName,
             msgCallback,
             args => _RecordLog(args, consumeFailed),
             null,
@@ -84,7 +82,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     {
         // given
         const byte concurrent = 2;
-        const string groupName = "test-group";
         var consumeFailed = _CreateSignal();
 
         static Task callback(TransportMessage transportMessage, object? o) =>
@@ -95,7 +92,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             concurrent,
-            groupName,
             callback,
             args => _RecordLog(args, consumeFailed),
             null,
@@ -134,7 +130,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     {
         // given
         const byte concurrent = 2;
-        const string groupName = "test-group";
         var consumeFailed = _CreateSignal();
 
         static Task callback(TransportMessage transportMessage, object? o) =>
@@ -145,7 +140,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             concurrent,
-            groupName,
             callback,
             args => _RecordLog(args, consumeFailed),
             null,
@@ -183,7 +177,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     {
         // given
         const byte concurrent = 2;
-        const string groupName = "test-group";
         var callbackCompleted = _CreateSignal();
         var consumeCallCount = 0;
 
@@ -198,7 +191,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             concurrent,
-            groupName,
             callback,
             args => _loggedEvents.Add(args),
             null,
@@ -231,7 +223,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     {
         // given
         const byte concurrent = 0;
-        const string groupName = "test-group";
         var consumeCallCount = 0;
 
         Task callback(TransportMessage transportMessage, object? o)
@@ -244,7 +235,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             concurrent,
-            groupName,
             callback,
             args => _loggedEvents.Add(args),
             null,
@@ -275,7 +265,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     {
         // given
         const byte concurrent = 0;
-        const string groupName = "test-group";
 
         static Task callback(TransportMessage transportMessage, object? o) =>
             throw new InvalidOperationException("Simulated consumption error");
@@ -283,7 +272,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             concurrent,
-            groupName,
             callback,
             args => _loggedEvents.Add(args),
             null,
@@ -319,7 +307,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
-            "test-group",
             (msg, sender) =>
             {
                 receivedMessage = msg;
@@ -349,8 +336,9 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
 
         // then
         receivedMessage.Should().NotBeNull();
-        receivedMessage.Value.Headers.Should().ContainKey(Headers.Group);
-        receivedMessage.Value.Headers[Headers.Group].Should().Be("test-group");
+        receivedMessage.Value.Headers["TestHeader"].Should().Be("TestValue");
+        // The consumer identity is stamped by the messaging core once the delivery is routed, never by the transport.
+        receivedMessage.Value.Headers.Should().NotContainKey(Headers.ConsumerIdentity);
         receivedSender.Should().Be(42UL);
     }
 
@@ -363,7 +351,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
-            "test-group",
             (msg, _) =>
             {
                 receivedMessage = msg;
@@ -403,7 +390,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
-            "test-group",
             (msg, _) =>
             {
                 receivedMessage = msg;
@@ -448,7 +434,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
-            "test-group",
             (msg, _) =>
             {
                 receivedMessage = msg;
@@ -488,7 +473,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
-            "test-group",
             (_, _) => Task.CompletedTask,
             args => _loggedEvents.Add(args),
             throwingBuilder,
@@ -523,7 +507,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             1,
-            "test-group",
             (_, _) => Task.CompletedTask,
             _ => { },
             null,
@@ -545,7 +528,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             1,
-            "test-group",
             (_, _) => Task.CompletedTask,
             _ => { },
             null,
@@ -567,7 +549,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             1,
-            "test-group",
             (_, _) => Task.CompletedTask,
             _ => { },
             null,
@@ -589,7 +570,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             1,
-            "test-group",
             (_, _) => Task.CompletedTask,
             _ => { },
             null,
@@ -613,7 +593,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
-            "test-group",
             (_, _) => Task.CompletedTask,
             args => loggedEvent = args,
             null,
@@ -637,7 +616,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
-            "test-group",
             (_, _) => Task.CompletedTask,
             args => loggedEvent = args,
             null,
@@ -661,7 +639,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
-            "test-group",
             (_, _) => Task.CompletedTask,
             args => loggedEvent = args,
             null,
@@ -690,7 +667,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
-            "test-group",
             (msg, _) =>
             {
                 receivedMessage = msg;
@@ -728,7 +704,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         var consumer = new RabbitMqBasicConsumer(
             _channel,
             1,
-            "test-group",
             (_, _) => Task.CompletedTask,
             _ => { },
             null,
@@ -752,7 +727,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
-            "test-group",
             (msg, _) =>
             {
                 receivedMessage = msg;
@@ -797,7 +771,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             2,
-            "test-group",
             (_, _) =>
             {
                 callbackInvoked = true;
@@ -869,7 +842,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
-            "test-group",
             (_, _) =>
             {
                 callbackInvoked = true;
@@ -906,7 +878,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             2,
-            "test-group",
             (_, _) => Task.CompletedTask,
             _ => { },
             null,
@@ -930,7 +901,6 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         using var consumer = new RabbitMqBasicConsumer(
             _channel,
             2,
-            "test-group",
             (_, _) => Task.CompletedTask,
             _ => { },
             null,

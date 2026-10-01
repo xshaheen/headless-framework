@@ -7,7 +7,7 @@ namespace Headless.Jobs;
 
 /// <summary>
 /// Delegate type for job function handlers. The source generator emits implementations of this signature
-/// that instantiate the job class from DI and invoke its <c>[JobFunction]</c>-annotated method.
+/// that construct a <c>[Job]</c> class from the run's scope and invoke its <c>ExecuteAsync</c>.
 /// </summary>
 /// <param name="serviceProvider">The scoped service provider for this execution.</param>
 /// <param name="context">Scheduling metadata and cooperative-cancel hook for this execution.</param>
@@ -15,6 +15,6 @@ namespace Headless.Jobs;
 [PublicAPI]
 public delegate Task JobFunctionDelegate(
     IServiceProvider serviceProvider,
-    JobFunctionContext context,
+    JobContext context,
     CancellationToken cancellationToken
 );

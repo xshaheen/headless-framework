@@ -235,11 +235,10 @@ public sealed class RetryBehaviorTests : TestBase
     [Fact]
     public async Task execute_task_async_composes_cross_assembly_execute_middleware_once_per_attempt_and_observes_errors()
     {
-        JobFunctionProvider.ResetForTests();
-        try
         {
+            var catalog = new JobsCatalogBuilder();
             var descriptor = new JobFunctionDescriptor("TestFunction", null, "", JobPriority.Normal, 0);
-            JobFunctionProvider.RegisterFunctions(
+            catalog.AddFunctions(
                 new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
                 {
                     [descriptor.FunctionName] = new()
@@ -251,7 +250,7 @@ public sealed class RetryBehaviorTests : TestBase
                     },
                 }
             );
-            JobFunctionProvider.RegisterDescriptors(
+            catalog.AddDescriptors(
                 new Dictionary<string, JobFunctionDescriptor>(StringComparer.Ordinal)
                 {
                     [descriptor.FunctionName] = descriptor,
@@ -261,7 +260,7 @@ public sealed class RetryBehaviorTests : TestBase
             var attempts = new List<(int Attempt, RetryScopeMarker Scope, CancellationToken Token)>();
             var observedErrors = new List<string>();
             var terminalInvocations = 0;
-            JobMiddlewareRegistry.RegisterExecute(
+            catalog.AddExecuteMiddleware(
                 "Consumer:ConsumerMiddleware",
                 null,
                 10,
@@ -285,7 +284,7 @@ public sealed class RetryBehaviorTests : TestBase
                     }
                 }
             );
-            JobMiddlewareRegistry.RegisterExecute(
+            catalog.AddExecuteMiddleware(
                 "Producer:ProducerMiddleware",
                 null,
                 -10,
@@ -302,8 +301,7 @@ public sealed class RetryBehaviorTests : TestBase
                     }
                 }
             );
-            JobFunctionProvider.MarkDiscoveryComplete();
-            JobFunctionProvider.Build();
+            var registry = catalog.Build([], [], configuration: null);
 
             var options = _ZeroDelayRetryOptions();
             var (handler, context, manager, _) = _SetupRetryTestFixture(
@@ -311,7 +309,7 @@ public sealed class RetryBehaviorTests : TestBase
                 retries: 1,
                 retryOptions: options,
                 configureServices: static services => services.AddScoped<RetryScopeMarker>(),
-                functionRegistry: JobFunctionProvider.CreateHostRegistry(configuration: null)
+                functionRegistry: registry
             );
             context.CachedDelegate = (_, functionContext, _) =>
             {
@@ -328,10 +326,6 @@ public sealed class RetryBehaviorTests : TestBase
             observedErrors.Should().Equal("consumer", "producer");
             context.Status.Should().Be(JobStatus.DueDone);
             await manager.Received(2).UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>());
-        }
-        finally
-        {
-            JobFunctionProvider.ResetForTests();
         }
     }
 

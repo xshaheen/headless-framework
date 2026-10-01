@@ -24,7 +24,7 @@ public sealed class PostgreSqlCancellationProcessSmokeTests(PostgreSqlJobsCoordi
         var jobId = Guid.NewGuid();
         await fixture.SeedTimeJobAsync(
             jobId,
-            "CancellationProcessSmoke",
+            "tests.cancellation-process-smoke",
             (int)JobStatus.Idle,
             ownerId: null,
             cancellationToken: cancellationToken

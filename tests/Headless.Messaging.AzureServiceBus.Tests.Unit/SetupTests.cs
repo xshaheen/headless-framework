@@ -28,8 +28,10 @@ public sealed class SetupTests : TestBase
                     "Endpoint=sb://mynamespace.servicebus.windows.net/;SharedAccessKeyName=myPolicy;SharedAccessKey=myKey";
                 options.EnableSessions = sessions;
             });
-            setup.Queue.ForMessage<AffinityContract>(message => message.Contract("orders").RequireRoutingAffinity());
         });
+        services.ConfigureMessaging(messaging =>
+            messaging.Message<AffinityContract>("orders").OnQueue(queue => queue.RequireRoutingAffinity())
+        );
         services.AddSingleton<IAzureServiceBusClientPool>(_ =>
         {
             effects++;

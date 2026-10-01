@@ -14,4 +14,10 @@ namespace Headless.Messaging.Exceptions;
 /// </remarks>
 [PublicAPI]
 public sealed class MessageDeserializationException(string message, Exception? innerException = null)
-    : Exception(message, innerException);
+    : Exception(message, innerException)
+{
+    // One text for an empty body whether it is caught on arrival or when a persisted retry is dispatched, so operators
+    // and tests match a single message.
+    internal static string EmptyBody(Type messageType) =>
+        $"Failed to deserialize message of type {messageType.Name}: the message body is empty.";
+}

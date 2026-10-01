@@ -50,15 +50,15 @@ public sealed class ProviderConformanceEvidenceTests(LocalStackTestFixture fixtu
                 nameof(AmazonSqsConsumerClientConformanceTests.should_shutdown_idle_consumer_within_bound)
             ),
             _Bind(
-                TransportConformanceScenario.BusSubscriberGroupFanOut,
+                TransportConformanceScenario.BusConsumerIdentityFanOut,
                 nameof(
-                    AmazonSqsConsumerClientConformanceTests.should_deliver_one_bus_copy_per_group_while_replicas_compete
+                    AmazonSqsConsumerClientConformanceTests.should_deliver_one_bus_copy_per_consumer_identity_while_replicas_compete
                 )
             ),
             _Bind(
                 TransportConformanceScenario.BusReplicaCompetition,
                 nameof(
-                    AmazonSqsConsumerClientConformanceTests.should_deliver_one_bus_copy_per_group_while_replicas_compete
+                    AmazonSqsConsumerClientConformanceTests.should_deliver_one_bus_copy_per_consumer_identity_while_replicas_compete
                 )
             ),
             _Bind(

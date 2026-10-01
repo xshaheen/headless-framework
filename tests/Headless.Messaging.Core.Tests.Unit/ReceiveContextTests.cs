@@ -18,7 +18,7 @@ public sealed class ReceiveContextTests
         // then
         context.MessageId.Should().Be("message-1");
         context.MessageName.Should().Be("order.placed");
-        context.GroupName.Should().Be("checkout");
+        context.ConsumerIdentity.Should().Be("checkout");
         context.Lane.Should().Be(MessageLane.Bus);
         context.MessageType.Should().Be<OrderPlaced>();
         context.ConsumerContractVersion.Should().Be("1.3");
@@ -106,7 +106,7 @@ public sealed class ReceiveContextTests
     [Theory]
     [InlineData(Headers.MessageId)]
     [InlineData(Headers.MessageName)]
-    [InlineData(Headers.Group)]
+    [InlineData(Headers.ConsumerIdentity)]
     [InlineData(Headers.Exception)]
     public void should_throw_when_writing_an_identity_header_before_completion(string key)
     {
@@ -125,7 +125,7 @@ public sealed class ReceiveContextTests
     [Theory]
     [InlineData(Headers.MessageId)]
     [InlineData(Headers.MessageName)]
-    [InlineData(Headers.Group)]
+    [InlineData(Headers.ConsumerIdentity)]
     [InlineData(Headers.Exception)]
     public void should_throw_when_writing_an_identity_header_after_completion(string key)
     {
@@ -296,7 +296,7 @@ public sealed class ReceiveContextTests
         {
             [Headers.MessageId] = "message-1",
             [Headers.MessageName] = "order.placed",
-            [Headers.Group] = "checkout",
+            [Headers.ConsumerIdentity] = "checkout",
             ["x-custom"] = "kept",
             ["x-removed"] = "gone",
         };

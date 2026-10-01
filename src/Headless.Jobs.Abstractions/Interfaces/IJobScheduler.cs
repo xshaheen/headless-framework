@@ -1,12 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Jobs.Base;
 using Headless.Jobs.Models;
 
 namespace Headless.Jobs.Interfaces;
 
 /// <summary>
-/// Schedules generated <c>[JobFunction]</c> handlers without requiring callers to construct persistence entities or
-/// copy durable function-name strings.
+/// Schedules generated <c>[Job]</c> classes without requiring callers to construct persistence entities or
+/// copy durable job identities. A job with arguments is addressed by its argument type, and a job without arguments
+/// by its class.
 /// </summary>
 [PublicAPI]
 public interface IJobScheduler
@@ -42,31 +44,6 @@ public interface IJobScheduler
         error: true
     )]
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-    Task<Guid> ScheduleAsync(
-        JobFunctionDescriptor descriptor,
-        DateTime executionTime,
-        CancellationToken cancellationToken = default
-    );
-
-    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
-    [Obsolete(
-        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
-        error: true
-    )]
-    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-    Task<Guid> ScheduleAsync(
-        JobFunctionDescriptor descriptor,
-        DateTime executionTime,
-        JobOptions? options,
-        CancellationToken cancellationToken = default
-    );
-
-    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
-    [Obsolete(
-        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
-        error: true
-    )]
-    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     Task<JobScheduleResult> ScheduleKeyedAsync<TArgs>(
         JobKey key,
         TArgs request,
@@ -83,33 +60,6 @@ public interface IJobScheduler
     Task<JobScheduleResult> ScheduleKeyedAsync<TArgs>(
         JobKey key,
         TArgs request,
-        DateTime executionTime,
-        JobOptions? options,
-        CancellationToken cancellationToken = default
-    );
-
-    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
-    [Obsolete(
-        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
-        error: true
-    )]
-    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-    Task<JobScheduleResult> ScheduleKeyedAsync(
-        JobKey key,
-        JobFunctionDescriptor descriptor,
-        DateTime executionTime,
-        CancellationToken cancellationToken = default
-    );
-
-    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
-    [Obsolete(
-        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
-        error: true
-    )]
-    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-    Task<JobScheduleResult> ScheduleKeyedAsync(
-        JobKey key,
-        JobFunctionDescriptor descriptor,
         DateTime executionTime,
         JobOptions? options,
         CancellationToken cancellationToken = default
@@ -139,35 +89,6 @@ public interface IJobScheduler
         JobKey key,
         long expectedGeneration,
         TArgs request,
-        DateTime executionTime,
-        JobOptions? options,
-        CancellationToken cancellationToken = default
-    );
-
-    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
-    [Obsolete(
-        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
-        error: true
-    )]
-    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-    Task<JobScheduleResult> ReplaceKeyedAsync(
-        JobKey key,
-        long expectedGeneration,
-        JobFunctionDescriptor descriptor,
-        DateTime executionTime,
-        CancellationToken cancellationToken = default
-    );
-
-    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
-    [Obsolete(
-        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
-        error: true
-    )]
-    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-    Task<JobScheduleResult> ReplaceKeyedAsync(
-        JobKey key,
-        long expectedGeneration,
-        JobFunctionDescriptor descriptor,
         DateTime executionTime,
         JobOptions? options,
         CancellationToken cancellationToken = default
@@ -196,29 +117,6 @@ public interface IJobScheduler
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Schedules a requestless durable keyed intent at an absolute instant.</summary>
-    /// <remarks>
-    /// Within the key scope, intent consists of contract version, exact durable request bytes after middleware,
-    /// and the UTC due instant truncated to microseconds.
-    /// Retry and node-death policy differences, including explicit overrides, preserve the existing generation's
-    /// captured policy. Options validation still applies.
-    /// </remarks>
-    Task<JobScheduleResult> ScheduleKeyedAsync(
-        JobKey key,
-        JobFunctionDescriptor descriptor,
-        DateTimeOffset executionTime,
-        CancellationToken cancellationToken = default
-    );
-
-    /// <inheritdoc cref="ScheduleKeyedAsync(JobKey, JobFunctionDescriptor, DateTimeOffset, CancellationToken)"/>
-    Task<JobScheduleResult> ScheduleKeyedAsync(
-        JobKey key,
-        JobFunctionDescriptor descriptor,
-        DateTimeOffset executionTime,
-        JobOptions? options,
-        CancellationToken cancellationToken = default
-    );
-
     /// <summary>Replaces or reschedules only a pending, unclaimed observed generation. A replay cannot advance another generation.</summary>
     /// <remarks>A successful replacement captures the call's resolved execution policy in generation N+1, even when its intent equals generation N.</remarks>
     Task<JobScheduleResult> ReplaceKeyedAsync<TArgs>(
@@ -234,26 +132,6 @@ public interface IJobScheduler
         JobKey key,
         long expectedGeneration,
         TArgs request,
-        DateTimeOffset executionTime,
-        JobOptions? options,
-        CancellationToken cancellationToken = default
-    );
-
-    /// <summary>Replaces or reschedules a requestless pending, unclaimed observed generation.</summary>
-    /// <remarks>A successful replacement captures the call's resolved execution policy in generation N+1, even when its intent equals generation N.</remarks>
-    Task<JobScheduleResult> ReplaceKeyedAsync(
-        JobKey key,
-        long expectedGeneration,
-        JobFunctionDescriptor descriptor,
-        DateTimeOffset executionTime,
-        CancellationToken cancellationToken = default
-    );
-
-    /// <inheritdoc cref="ReplaceKeyedAsync(JobKey, long, JobFunctionDescriptor, DateTimeOffset, CancellationToken)"/>
-    Task<JobScheduleResult> ReplaceKeyedAsync(
-        JobKey key,
-        long expectedGeneration,
-        JobFunctionDescriptor descriptor,
         DateTimeOffset executionTime,
         JobOptions? options,
         CancellationToken cancellationToken = default
@@ -295,15 +173,6 @@ public interface IJobScheduler
 
     Task<Guid> EnqueueAsync<TArgs>(TArgs request, JobOptions? options, CancellationToken cancellationToken = default);
 
-    /// <summary>Enqueues a requestless job for immediate execution and returns its persisted entity identifier.</summary>
-    Task<Guid> EnqueueAsync(JobFunctionDescriptor descriptor, CancellationToken cancellationToken = default);
-
-    Task<Guid> EnqueueAsync(
-        JobFunctionDescriptor descriptor,
-        JobOptions? options,
-        CancellationToken cancellationToken = default
-    );
-
     /// <summary>
     /// Enqueues a typed <see cref="JobChain"/>: resolves every node's generated descriptor, enforces the configured
     /// maximum chain depth, and persists the root together with its whole descendant tree atomically through the
@@ -335,41 +204,12 @@ public interface IJobScheduler
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Schedules a requestless one-shot job and returns its persisted entity identifier.</summary>
-    Task<Guid> ScheduleAsync(
-        JobFunctionDescriptor descriptor,
-        DateTimeOffset executionTime,
-        CancellationToken cancellationToken = default
-    );
-
-    Task<Guid> ScheduleAsync(
-        JobFunctionDescriptor descriptor,
-        DateTimeOffset executionTime,
-        JobOptions? options,
-        CancellationToken cancellationToken = default
-    );
-
     /// <summary>Schedules an ordinary one-shot job relative to the configured application clock; delay must be non-negative.</summary>
     Task<Guid> ScheduleAfterAsync<TArgs>(TArgs request, TimeSpan delay, CancellationToken cancellationToken = default);
 
     /// <summary>Schedules an ordinary one-shot job relative to the configured application clock; delay must be non-negative.</summary>
     Task<Guid> ScheduleAfterAsync<TArgs>(
         TArgs request,
-        TimeSpan delay,
-        JobOptions? options,
-        CancellationToken cancellationToken = default
-    );
-
-    /// <summary>Schedules an ordinary one-shot job relative to the configured application clock; delay must be non-negative.</summary>
-    Task<Guid> ScheduleAfterAsync(
-        JobFunctionDescriptor descriptor,
-        TimeSpan delay,
-        CancellationToken cancellationToken = default
-    );
-
-    /// <summary>Schedules an ordinary one-shot job relative to the configured application clock; delay must be non-negative.</summary>
-    Task<Guid> ScheduleAfterAsync(
-        JobFunctionDescriptor descriptor,
         TimeSpan delay,
         JobOptions? options,
         CancellationToken cancellationToken = default
@@ -389,17 +229,174 @@ public interface IJobScheduler
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Creates a requestless recurring definition and returns the persisted cron-definition identifier.</summary>
-    Task<Guid> ScheduleRecurringAsync(
-        JobFunctionDescriptor descriptor,
-        string cronExpression,
-        CancellationToken cancellationToken = default
-    );
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    Task<Guid> ScheduleAsync<TJob>(DateTime executionTime, CancellationToken cancellationToken = default)
+        where TJob : IJob;
 
-    Task<Guid> ScheduleRecurringAsync(
-        JobFunctionDescriptor descriptor,
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    Task<Guid> ScheduleAsync<TJob>(
+        DateTime executionTime,
+        JobOptions? options,
+        CancellationToken cancellationToken = default
+    )
+        where TJob : IJob;
+
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    Task<JobScheduleResult> ScheduleKeyedAsync<TJob>(
+        JobKey key,
+        DateTime executionTime,
+        CancellationToken cancellationToken = default
+    )
+        where TJob : IJob;
+
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    Task<JobScheduleResult> ScheduleKeyedAsync<TJob>(
+        JobKey key,
+        DateTime executionTime,
+        JobOptions? options,
+        CancellationToken cancellationToken = default
+    )
+        where TJob : IJob;
+
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    Task<JobScheduleResult> ReplaceKeyedAsync<TJob>(
+        JobKey key,
+        long expectedGeneration,
+        DateTime executionTime,
+        CancellationToken cancellationToken = default
+    )
+        where TJob : IJob;
+
+    /// <summary>Rejects implicit DateTime conversion; supply an explicit DateTimeOffset instant.</summary>
+    [Obsolete(
+        "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset.",
+        error: true
+    )]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    Task<JobScheduleResult> ReplaceKeyedAsync<TJob>(
+        JobKey key,
+        long expectedGeneration,
+        DateTime executionTime,
+        JobOptions? options,
+        CancellationToken cancellationToken = default
+    )
+        where TJob : IJob;
+
+    /// <summary>Enqueues a job that takes no arguments for immediate execution and returns its persisted entity identifier.</summary>
+    /// <typeparam name="TJob">The <c>[Job]</c> class to run.</typeparam>
+    /// <exception cref="Exceptions.JobFunctionNotFoundException"><typeparamref name="TJob"/> is not a registered job.</exception>
+    Task<Guid> EnqueueAsync<TJob>(CancellationToken cancellationToken = default)
+        where TJob : IJob;
+
+    /// <inheritdoc cref="EnqueueAsync{TJob}(CancellationToken)"/>
+    Task<Guid> EnqueueAsync<TJob>(JobOptions? options, CancellationToken cancellationToken = default)
+        where TJob : IJob;
+
+    /// <summary>Schedules a one-shot run of a job that takes no arguments and returns its persisted entity identifier.</summary>
+    /// <typeparam name="TJob">The <c>[Job]</c> class to run.</typeparam>
+    /// <exception cref="Exceptions.JobFunctionNotFoundException"><typeparamref name="TJob"/> is not a registered job.</exception>
+    Task<Guid> ScheduleAsync<TJob>(DateTimeOffset executionTime, CancellationToken cancellationToken = default)
+        where TJob : IJob;
+
+    /// <inheritdoc cref="ScheduleAsync{TJob}(DateTimeOffset, CancellationToken)"/>
+    Task<Guid> ScheduleAsync<TJob>(
+        DateTimeOffset executionTime,
+        JobOptions? options,
+        CancellationToken cancellationToken = default
+    )
+        where TJob : IJob;
+
+    /// <summary>Schedules a one-shot run of a job that takes no arguments relative to the configured application clock; delay must be non-negative.</summary>
+    /// <typeparam name="TJob">The <c>[Job]</c> class to run.</typeparam>
+    Task<Guid> ScheduleAfterAsync<TJob>(TimeSpan delay, CancellationToken cancellationToken = default)
+        where TJob : IJob;
+
+    /// <inheritdoc cref="ScheduleAfterAsync{TJob}(TimeSpan, CancellationToken)"/>
+    Task<Guid> ScheduleAfterAsync<TJob>(
+        TimeSpan delay,
+        JobOptions? options,
+        CancellationToken cancellationToken = default
+    )
+        where TJob : IJob;
+
+    /// <summary>Creates a recurring definition for a job that takes no arguments and returns the persisted cron-definition identifier.</summary>
+    /// <typeparam name="TJob">The <c>[Job]</c> class to run.</typeparam>
+    Task<Guid> ScheduleRecurringAsync<TJob>(string cronExpression, CancellationToken cancellationToken = default)
+        where TJob : IJob;
+
+    /// <inheritdoc cref="ScheduleRecurringAsync{TJob}(string, CancellationToken)"/>
+    Task<Guid> ScheduleRecurringAsync<TJob>(
         string cronExpression,
         RecurringJobOptions? options,
         CancellationToken cancellationToken = default
-    );
+    )
+        where TJob : IJob;
+
+    /// <summary>Schedules a durable keyed intent for a job that takes no arguments at an absolute instant.</summary>
+    /// <remarks>
+    /// Within the key scope, intent consists of contract version, exact durable request bytes after middleware,
+    /// and the UTC due instant truncated to microseconds.
+    /// Retry and node-death policy differences, including explicit overrides, preserve the existing generation's
+    /// captured policy. Options validation still applies.
+    /// </remarks>
+    Task<JobScheduleResult> ScheduleKeyedAsync<TJob>(
+        JobKey key,
+        DateTimeOffset executionTime,
+        CancellationToken cancellationToken = default
+    )
+        where TJob : IJob;
+
+    /// <inheritdoc cref="ScheduleKeyedAsync{TJob}(JobKey, DateTimeOffset, CancellationToken)"/>
+    Task<JobScheduleResult> ScheduleKeyedAsync<TJob>(
+        JobKey key,
+        DateTimeOffset executionTime,
+        JobOptions? options,
+        CancellationToken cancellationToken = default
+    )
+        where TJob : IJob;
+
+    /// <summary>Replaces or reschedules a pending, unclaimed observed generation of a job that takes no arguments.</summary>
+    /// <remarks>A successful replacement captures the call's resolved execution policy in generation N+1, even when its intent equals generation N.</remarks>
+    Task<JobScheduleResult> ReplaceKeyedAsync<TJob>(
+        JobKey key,
+        long expectedGeneration,
+        DateTimeOffset executionTime,
+        CancellationToken cancellationToken = default
+    )
+        where TJob : IJob;
+
+    /// <inheritdoc cref="ReplaceKeyedAsync{TJob}(JobKey, long, DateTimeOffset, CancellationToken)"/>
+    Task<JobScheduleResult> ReplaceKeyedAsync<TJob>(
+        JobKey key,
+        long expectedGeneration,
+        DateTimeOffset executionTime,
+        JobOptions? options,
+        CancellationToken cancellationToken = default
+    )
+        where TJob : IJob;
 }

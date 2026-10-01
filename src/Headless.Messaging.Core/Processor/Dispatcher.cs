@@ -1289,9 +1289,13 @@ internal sealed class Dispatcher
             {
                 linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_tasksCts.Token, cancellationToken);
             }
-            catch (ObjectDisposedException)
+            catch (ObjectDisposedException ex)
             {
-                throw new OperationCanceledException("Dispatcher was disposed during write.", _DispatcherStoppedToken);
+                throw new OperationCanceledException(
+                    "Dispatcher was disposed during write.",
+                    ex,
+                    _DispatcherStoppedToken
+                );
             }
 
             try

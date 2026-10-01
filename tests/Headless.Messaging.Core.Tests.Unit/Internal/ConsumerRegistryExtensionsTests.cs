@@ -10,7 +10,7 @@ public sealed class ConsumerRegistryExtensionsTests
     [Fact]
     public void should_return_null_when_no_consumer_has_the_requested_config_type()
     {
-        // given — consumer in the group has no provider config of the requested type
+        // given — consumer in the subscription has no provider config of the requested type
         var registry = new ConsumerRegistry();
         registry.Register(_Metadata("orders", MessageLane.Bus, "order.created", providerConfigs: []));
 
@@ -44,9 +44,9 @@ public sealed class ConsumerRegistryExtensionsTests
     }
 
     [Fact]
-    public void should_return_config_when_multiple_consumers_in_group_share_identical_config()
+    public void should_return_config_when_multiple_consumers_in_subscription_share_identical_config()
     {
-        // given — two message types in the same consumer group, both with the same record config
+        // given — two message types under the same identity, both with the same record config
         // (record value equality → Distinct deduplicates to one)
         var config = new FakeConsumerConfig("value-a");
         var registry = new ConsumerRegistry();
@@ -75,9 +75,9 @@ public sealed class ConsumerRegistryExtensionsTests
     }
 
     [Fact]
-    public void should_throw_when_multiple_consumers_in_group_have_conflicting_configs()
+    public void should_throw_when_multiple_consumers_in_subscription_have_conflicting_configs()
     {
-        // given — two message types in the same consumer group, but with different configs
+        // given — two message types under the same identity, but with different configs
         var registry = new ConsumerRegistry();
         registry.Register(
             _Metadata(
@@ -104,9 +104,9 @@ public sealed class ConsumerRegistryExtensionsTests
     }
 
     [Fact]
-    public void should_ignore_consumers_in_a_different_group()
+    public void should_ignore_consumers_in_a_different_subscription()
     {
-        // given — config is in "logistics" group, not "orders"
+        // given — config belongs to the "logistics" subscription, not "orders"
         var config = new FakeConsumerConfig("value-a");
         var registry = new ConsumerRegistry();
         registry.Register(
@@ -147,21 +147,15 @@ public sealed class ConsumerRegistryExtensionsTests
         result.Should().BeNull();
     }
 
+    // A Bus consumer subscribes under its identity, so consumers sharing an identity share one subscription.
     private static ConsumerMetadata _Metadata(
-        string group,
+        string identity,
         MessageLane lane,
         string messageName,
         Dictionary<Type, object> providerConfigs
     )
     {
-        var consumerIdentity = messageName switch
-        {
-            "order.created" => "tests.registry-extensions.order-created",
-            "order.shipped" => "tests.registry-extensions.order-shipped",
-            _ => throw new ArgumentOutOfRangeException(nameof(messageName), messageName, "Unknown test contract."),
-        };
-
-        return new(typeof(TestMessage), typeof(TestConsumer), messageName, group, 1, lane, consumerIdentity, "v1")
+        return new(typeof(TestMessage), typeof(TestConsumer), messageName, 1, lane, identity, "v1")
         {
             ProviderConfigs = providerConfigs,
         };

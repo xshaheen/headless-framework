@@ -80,10 +80,9 @@ public sealed class PublisherFacadeLifetimeTests : TestBase
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<Placed>("tests.facade-lifetime.placed"));
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<Placed>(message => message.Contract("tests.facade-lifetime.placed"));
-            setup.Queue.ForMessage<Placed>(message => message.Contract("tests.facade-lifetime.placed"));
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
         });

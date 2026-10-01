@@ -144,4 +144,21 @@ public interface IConsumerClient : IAsyncDisposable
     /// <param name="onMessage">The callback invoked for each received message, or <see langword="null"/> for a client that does not consume (e.g., topology-only usage).</param>
     /// <param name="onLog">The callback invoked for transport log events, or <see langword="null"/> to drop them.</param>
     void AttachCallbacks(Func<TransportMessage, object?, Task>? onMessage, Action<LogMessageEventArgs>? onLog);
+
+    /// <summary>
+    /// Attaches the callback a client invokes after it re-established its broker subscription on its own, without the
+    /// messaging core rebuilding it, replacing any previously attached callback (<see langword="null"/> detaches).
+    /// </summary>
+    /// <remarks>
+    /// The core attaches it to every-instance clients (<see cref="ConsumerSubscriptionKind.EveryInstance"/>), whose
+    /// subscriptions have no backlog: a consumer that mirrors state must learn that messages published while the
+    /// subscription was down never reached it. A client that recovers its connection internally, such as through a
+    /// client library's automatic topology recovery, invokes the callback once the recovered subscription receives
+    /// again. A client that never recovers internally, and instead fails so that the core rebuilds it, can keep this
+    /// default no-op: the core raises the same signal after every rebuild.
+    /// </remarks>
+    /// <param name="onReestablished">
+    /// The callback to invoke after an internal re-establishment, or <see langword="null"/> to detach it.
+    /// </param>
+    void AttachReestablishedCallback(Func<CancellationToken, Task>? onReestablished) { }
 }

@@ -12,7 +12,7 @@ namespace Headless.Messaging;
 /// <para>
 /// There is no typed payload at this stage, so the context is non-generic; a typed registration
 /// (<c>AddReceiveMiddlewareFor&lt;TMiddleware, TMessage&gt;</c>) already expresses the payload-type
-/// match. Identity (<see cref="MessageId"/>, <see cref="MessageName"/>, <see cref="GroupName"/>,
+/// match. Identity (<see cref="MessageId"/>, <see cref="MessageName"/>, <see cref="ConsumerIdentity"/>,
 /// <see cref="Lane"/>) is immutable and enforced: writes to the identity headers through
 /// <see cref="SetHeader"/> or <see cref="RemoveHeader"/> always throw, even before completion.
 /// </para>
@@ -39,7 +39,7 @@ public sealed class ReceiveContext
     internal ReceiveContext(
         string messageId,
         string messageName,
-        string? groupName,
+        string consumerIdentity,
         MessageLane lane,
         Type messageType,
         string? consumerContractVersion,
@@ -50,7 +50,7 @@ public sealed class ReceiveContext
     {
         MessageId = Argument.IsNotNullOrWhiteSpace(messageId);
         MessageName = Argument.IsNotNullOrWhiteSpace(messageName);
-        GroupName = groupName;
+        ConsumerIdentity = Argument.IsNotNullOrWhiteSpace(consumerIdentity);
         Lane = lane;
         MessageType = Argument.IsNotNull(messageType);
         ConsumerContractVersion = consumerContractVersion;
@@ -66,8 +66,8 @@ public sealed class ReceiveContext
     /// <summary>Gets the message name that routed this delivery to its consumer.</summary>
     public string MessageName { get; }
 
-    /// <summary>Gets the consumer group receiving this delivery, when one applies.</summary>
-    public string? GroupName { get; }
+    /// <summary>Gets the identity of the consumer this delivery was routed to.</summary>
+    public string ConsumerIdentity { get; }
 
     /// <summary>
     /// Gets the delivery lane that produced this delivery: <see cref="MessageLane.Bus"/> for
@@ -129,7 +129,7 @@ public sealed class ReceiveContext
     /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is null or whitespace.</exception>
     /// <exception cref="InvalidOperationException">
     /// Thrown when <paramref name="key"/> is one of the identity headers (<see cref="Messaging.Headers.MessageId"/>,
-    /// <see cref="Messaging.Headers.MessageName"/>, <see cref="Messaging.Headers.Group"/>, <see cref="Messaging.Headers.Exception"/>),
+    /// <see cref="Messaging.Headers.MessageName"/>, <see cref="Messaging.Headers.ConsumerIdentity"/>, <see cref="Messaging.Headers.Exception"/>),
     /// or when called after the receive pipeline has completed.
     /// </exception>
     public void SetHeader(string key, string? value)
@@ -153,7 +153,7 @@ public sealed class ReceiveContext
     /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is null or whitespace.</exception>
     /// <exception cref="InvalidOperationException">
     /// Thrown when <paramref name="key"/> is one of the identity headers (<see cref="Messaging.Headers.MessageId"/>,
-    /// <see cref="Messaging.Headers.MessageName"/>, <see cref="Messaging.Headers.Group"/>, <see cref="Messaging.Headers.Exception"/>),
+    /// <see cref="Messaging.Headers.MessageName"/>, <see cref="Messaging.Headers.ConsumerIdentity"/>, <see cref="Messaging.Headers.Exception"/>),
     /// or when called after the receive pipeline has completed.
     /// </exception>
     public void RemoveHeader(string key)
@@ -258,7 +258,7 @@ public sealed class ReceiveContext
         return key
             is Messaging.Headers.MessageId
                 or Messaging.Headers.MessageName
-                or Messaging.Headers.Group
+                or Messaging.Headers.ConsumerIdentity
                 or Messaging.Headers.Exception;
     }
 }

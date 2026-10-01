@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Jobs.Base;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
@@ -36,23 +37,23 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
             cancellationToken
         );
 
-    public Task<JobScheduleResult> ScheduleKeyedAsync(
+    public Task<JobScheduleResult> ScheduleKeyedAsync<TJob>(
         JobKey key,
-        JobFunctionDescriptor descriptor,
         DateTimeOffset executionTime,
         CancellationToken cancellationToken = default
-    ) => ScheduleKeyedAsync(key, descriptor, executionTime, options: null, cancellationToken);
+    )
+        where TJob : IJob => ScheduleKeyedAsync<TJob>(key, executionTime, options: null, cancellationToken);
 
-    public Task<JobScheduleResult> ScheduleKeyedAsync(
+    public Task<JobScheduleResult> ScheduleKeyedAsync<TJob>(
         JobKey key,
-        JobFunctionDescriptor descriptor,
         DateTimeOffset executionTime,
         JobOptions? options,
         CancellationToken cancellationToken = default
-    ) =>
+    )
+        where TJob : IJob =>
         _ScheduleKeyedAsync<object?>(
             key,
-            _GetRequestlessDescriptor(descriptor),
+            _GetJobDescriptor(typeof(TJob)),
             request: null,
             executionTime,
             options,
@@ -86,25 +87,26 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
             cancellationToken
         );
 
-    public Task<JobScheduleResult> ReplaceKeyedAsync(
+    public Task<JobScheduleResult> ReplaceKeyedAsync<TJob>(
         JobKey key,
         long expectedGeneration,
-        JobFunctionDescriptor descriptor,
         DateTimeOffset executionTime,
         CancellationToken cancellationToken = default
-    ) => ReplaceKeyedAsync(key, expectedGeneration, descriptor, executionTime, options: null, cancellationToken);
+    )
+        where TJob : IJob =>
+        ReplaceKeyedAsync<TJob>(key, expectedGeneration, executionTime, options: null, cancellationToken);
 
-    public Task<JobScheduleResult> ReplaceKeyedAsync(
+    public Task<JobScheduleResult> ReplaceKeyedAsync<TJob>(
         JobKey key,
         long expectedGeneration,
-        JobFunctionDescriptor descriptor,
         DateTimeOffset executionTime,
         JobOptions? options,
         CancellationToken cancellationToken = default
-    ) =>
+    )
+        where TJob : IJob =>
         _ScheduleKeyedAsync<object?>(
             key,
-            _GetRequestlessDescriptor(descriptor),
+            _GetJobDescriptor(typeof(TJob)),
             request: null,
             executionTime,
             options,

@@ -27,20 +27,6 @@ namespace Tests;
 [Collection<JobsHelperCollection>]
 public sealed class JobsActivationBarrierStartupTests : TestBase
 {
-    // AddHeadlessJobs reads the process-wide JobFunctionProvider registry, so these tests need it empty; sibling
-    // classes in this collection register functions that would otherwise leak in.
-    public JobsActivationBarrierStartupTests()
-    {
-        JobFunctionProvider.ResetForTests(discoveryComplete: false);
-    }
-
-    protected override ValueTask DisposeAsyncCore()
-    {
-        JobFunctionProvider.ResetForTests();
-
-        return base.DisposeAsyncCore();
-    }
-
     [Fact]
     public async Task should_not_select_any_work_until_activation_completes_when_the_loops_start_before_the_initializer()
     {

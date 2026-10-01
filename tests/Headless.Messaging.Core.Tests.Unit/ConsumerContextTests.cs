@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Messages;
 using Headless.Testing.Tests;
@@ -82,19 +81,12 @@ public sealed class ConsumerContextTests : TestBase
 
     private static ConsumerExecutorDescriptor _CreateDescriptor()
     {
-        var methodInfo = typeof(ConsumerContextTestConsumer).GetMethod(
-            nameof(ConsumerContextTestConsumer.Consume),
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            [typeof(ContextTestMessage), typeof(CancellationToken)]
-        )!;
-
         return new ConsumerExecutorDescriptor
         {
             Lane = MessageLane.Bus,
-            MethodInfo = methodInfo,
-            ImplTypeInfo = typeof(ConsumerContextTestConsumer).GetTypeInfo(),
+            ConsumerType = typeof(ConsumerContextTestConsumer),
             MessageName = "test.messageName",
-            GroupName = "test-group",
+            SubscriptionName = "test-group",
         };
     }
 
@@ -122,14 +114,8 @@ public sealed class ConsumerContextTests : TestBase
 
 public sealed record ContextTestMessage(string Value);
 
-#pragma warning disable MA0036 // MA0036: registered as a consumer by type via reflection (ImplTypeInfo); a static class can't be used there.
-public sealed class ConsumerContextTestConsumer
+public sealed class ConsumerContextTestConsumer : IConsume<ContextTestMessage>
 {
-    public static ValueTask Consume(ContextTestMessage message, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        Console.WriteLine($"Consumed message with value: {message.Value}");
-        return ValueTask.CompletedTask;
-    }
+    public ValueTask ConsumeAsync(ConsumeContext<ContextTestMessage> context, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
 }
-#pragma warning restore MA0036

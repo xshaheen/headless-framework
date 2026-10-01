@@ -146,40 +146,6 @@ public sealed class ProviderHeaderContributionTests
         prepared.Message.Headers.Should().NotContainKey(_ProviderHeader);
     }
 
-    [Fact]
-    public void should_not_apply_consumer_side_provider_config_at_publish()
-    {
-        // given
-        var consumerConfig = new FakeProviderConfig(_ProviderHeader, static message => message.Key);
-        var registration = new MessageRegistration(
-            typeof(TestMessage),
-            MessageLane.Bus,
-            null,
-            null,
-            new Dictionary<Type, object>(),
-            [
-                new MessageConsumerRegistration(
-                    typeof(TestConsumer),
-                    MessageLane.Bus,
-                    IsAssemblyScan: false,
-                    Group: null,
-                    Concurrency: 1,
-                    HandlerId: null,
-                    ConsumerIdentity: "tests.provider-header",
-                    CircuitBreakerOverride: null,
-                    ProviderConfigs: _Configs(consumerConfig)
-                ),
-            ]
-        );
-        var factory = _CreateFactory(registration);
-
-        // when
-        var prepared = factory.Create(new TestMessage("tenant-1"));
-
-        // then
-        prepared.Message.Headers.Should().NotContainKey(_ProviderHeader);
-    }
-
     private static MessagePublishRequestFactory _CreateFactory(params object[] providerConfigs)
     {
         return _CreateFactory(
@@ -209,20 +175,7 @@ public sealed class ProviderHeaderContributionTests
         );
     }
 
-    private static IReadOnlyDictionary<Type, object> _Configs(object config)
-    {
-        return new Dictionary<Type, object> { [config.GetType()] = config };
-    }
-
     private sealed record TestMessage(string Key);
-
-    private sealed class TestConsumer : IConsume<TestMessage>
-    {
-        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
-        {
-            return ValueTask.CompletedTask;
-        }
-    }
 
     private sealed class FakeProviderConfig(string headerName, Func<TestMessage, string?> selector)
         : IProviderHeaderContributions

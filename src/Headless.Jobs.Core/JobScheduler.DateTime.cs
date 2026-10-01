@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Jobs.Base;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Models;
 
@@ -46,11 +47,8 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
         error: true
     )]
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-    public Task<Guid> ScheduleAsync(
-        JobFunctionDescriptor descriptor,
-        DateTime executionTime,
-        CancellationToken cancellationToken = default
-    ) =>
+    public Task<Guid> ScheduleAsync<TJob>(DateTime executionTime, CancellationToken cancellationToken = default)
+        where TJob : IJob =>
         throw new NotSupportedException(
             "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset."
         );
@@ -61,12 +59,12 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
         error: true
     )]
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-    public Task<Guid> ScheduleAsync(
-        JobFunctionDescriptor descriptor,
+    public Task<Guid> ScheduleAsync<TJob>(
         DateTime executionTime,
         JobOptions? options,
         CancellationToken cancellationToken = default
-    ) =>
+    )
+        where TJob : IJob =>
         throw new NotSupportedException(
             "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset."
         );
@@ -110,12 +108,12 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
         error: true
     )]
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-    public Task<JobScheduleResult> ScheduleKeyedAsync(
+    public Task<JobScheduleResult> ScheduleKeyedAsync<TJob>(
         JobKey key,
-        JobFunctionDescriptor descriptor,
         DateTime executionTime,
         CancellationToken cancellationToken = default
-    ) =>
+    )
+        where TJob : IJob =>
         throw new NotSupportedException(
             "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset."
         );
@@ -126,13 +124,13 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
         error: true
     )]
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-    public Task<JobScheduleResult> ScheduleKeyedAsync(
+    public Task<JobScheduleResult> ScheduleKeyedAsync<TJob>(
         JobKey key,
-        JobFunctionDescriptor descriptor,
         DateTime executionTime,
         JobOptions? options,
         CancellationToken cancellationToken = default
-    ) =>
+    )
+        where TJob : IJob =>
         throw new NotSupportedException(
             "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset."
         );
@@ -178,13 +176,13 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
         error: true
     )]
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-    public Task<JobScheduleResult> ReplaceKeyedAsync(
+    public Task<JobScheduleResult> ReplaceKeyedAsync<TJob>(
         JobKey key,
         long expectedGeneration,
-        JobFunctionDescriptor descriptor,
         DateTime executionTime,
         CancellationToken cancellationToken = default
-    ) =>
+    )
+        where TJob : IJob =>
         throw new NotSupportedException(
             "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset."
         );
@@ -195,14 +193,14 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
         error: true
     )]
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-    public Task<JobScheduleResult> ReplaceKeyedAsync(
+    public Task<JobScheduleResult> ReplaceKeyedAsync<TJob>(
         JobKey key,
         long expectedGeneration,
-        JobFunctionDescriptor descriptor,
         DateTime executionTime,
         JobOptions? options,
         CancellationToken cancellationToken = default
-    ) =>
+    )
+        where TJob : IJob =>
         throw new NotSupportedException(
             "Pass an explicit DateTimeOffset instant. Convert wall-clock times with an explicit time zone or offset."
         );

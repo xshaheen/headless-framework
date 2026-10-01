@@ -14,7 +14,7 @@ namespace Headless.Messaging;
 /// or <see cref="ReceiveContext.Reject"/> before returning — a return with neither is treated as a
 /// reject. Register via <c>MessagingBuilder.AddReceiveMiddleware&lt;T&gt;</c> to intercept every
 /// delivery, or <c>AddReceiveMiddlewareFor&lt;TMiddleware, TMessage&gt;</c> to target a specific payload
-/// type, consumer group, and lane.
+/// type and lane.
 /// </remarks>
 [PublicAPI]
 public interface IReceiveMiddleware

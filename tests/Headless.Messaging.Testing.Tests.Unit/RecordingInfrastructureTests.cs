@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Globalization;
-using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
@@ -65,14 +64,9 @@ public sealed class RecordingInfrastructureTests : TestBase
         var descriptor = new ConsumerExecutorDescriptor
         {
             Lane = MessageLane.Bus,
-            MethodInfo = typeof(RecordingInfrastructureTests).GetMethod(
-                nameof(_MakeConsumerContext),
-                BindingFlags.NonPublic | BindingFlags.Static,
-                [typeof(MediumMessage)]
-            )!,
-            ImplTypeInfo = typeof(RecordingInfrastructureTests).GetTypeInfo(),
+            ConsumerType = typeof(RecordingInfrastructureTests),
             MessageName = medium.Origin.Headers[Headers.MessageName]!,
-            GroupName = "test-group",
+            SubscriptionName = "test-group",
         };
 
         return new ConsumerContext(descriptor, medium);

@@ -2,32 +2,18 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Registration;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
 public sealed class RabbitMqMessageBuilderExtensionsTests
 {
     [Fact]
-    public void should_store_consumer_prefetch_config()
+    public void should_store_consumer_config_when_tuning_a_declared_consumer()
     {
-        var builder = new BusMessageBuilder<TestMessage>(new ServiceCollection());
+        var tuning = new ConsumerTuningBuilder("tests.rabbitmq.tuned");
 
-        builder.Consumer<TestConsumer>(consumer =>
-            consumer.ConsumerIdentity("tests.rabbitmq.consumer-config").UseRabbitMq(rabbit => rabbit.PrefetchCount(20))
-        );
-        var config = builder.Build().Consumers.Single().ProviderConfigs.Values.Single();
+        tuning.UseRabbitMq(rabbit => rabbit.PrefetchCount(20));
 
-        config.Should().BeEquivalentTo(new RabbitMqConsumerConfig(20));
-    }
-
-    private sealed record TestMessage(string TenantId);
-
-    private sealed class TestConsumer : IConsume<TestMessage>
-    {
-        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
-        {
-            return ValueTask.CompletedTask;
-        }
+        tuning.Build().ProviderConfigs.Values.Single().Should().BeEquivalentTo(new RabbitMqConsumerConfig(20));
     }
 }

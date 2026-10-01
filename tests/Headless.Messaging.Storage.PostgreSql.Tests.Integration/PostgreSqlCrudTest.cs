@@ -290,7 +290,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                INSERT INTO headless.messaging_received ("id","version","name","group","content","intent_type","retries","added","expires_at","next_retry_at","status_name","message_id")
+                INSERT INTO headless.messaging_received ("id","version","name","consumer_identity","content","intent_type","retries","added","expires_at","next_retry_at","status_name","message_id")
                 VALUES (@Id,'v1','test.topic','test.group',@Content,0,0,@Added,NULL,@NextRetryAt,'Failed',@MessageId)
                 """,
                 new
@@ -306,7 +306,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         );
 
         // when
-        var messages = (await _storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)).ToList();
+        var messages = (await _storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken)).ToList();
 
         // then
         messages.Should().NotBeEmpty();
