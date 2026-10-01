@@ -4,6 +4,7 @@ using System.Data.Common;
 using System.Globalization;
 using Headless.Sql;
 using Headless.Testing.Tests;
+using Nito.AsyncEx;
 
 namespace Tests;
 
@@ -13,6 +14,9 @@ namespace Tests;
 /// </summary>
 public abstract class SqlDialectConformanceTests : TestBase
 {
+    // Bounds every wait on the other party, so a call that fails before its rendezvous fails the test, never hangs it.
+    private static readonly TimeSpan _RendezvousTimeout = TimeSpan.FromSeconds(30);
+
     private int _table;
 
     protected abstract ISqlDialect Dialect { get; }
@@ -27,6 +31,12 @@ public abstract class SqlDialectConformanceTests : TestBase
     /// the engine dooms rather than rolls back: the last batch's write must be refused.
     /// </summary>
     protected abstract IReadOnlyList<string> DoomThenWriteBatches(string insertAfter);
+
+    /// <summary>
+    /// A statement, run first inside a transaction, that makes the engine pick the other transaction as the victim of
+    /// any deadlock this one joins, so a test can force a deadlock on every attempt of an autonomous call.
+    /// </summary>
+    protected abstract string DeadlockSurvivorSql { get; }
 
     private string _Column(string pascal) => Dialect.Quote(Dialect.Name(pascal));
 
@@ -233,6 +243,208 @@ public abstract class SqlDialectConformanceTests : TestBase
         last.Should().NotBeNull("the write ran on a transaction the engine had already doomed");
         Dialect.Classify(last!).Should().Be(SqlErrorKind.TransactionAborted);
         (await _ReadValueAsync(table, "after")).Should().BeNull();
+    }
+
+    public virtual async Task should_retry_engine_chosen_deadlock_victims_and_apply_each_call_once()
+    {
+        const int pairs = 4;
+        var table = await _CreateTableAsync();
+        var deadlocks = 0;
+
+        for (var pair = 0; pair < pairs; pair++)
+        {
+            _ = await _UpsertAsync(table, $"p{pair}-a", increment: 0, guardBelow: null);
+            _ = await _UpsertAsync(table, $"p{pair}-b", increment: 0, guardBelow: null);
+        }
+
+        // Each pair locks its two rows in opposite orders and meets at a rendezvous between the two updates, so on the
+        // first attempt both hold one row and wait for the other: a deadlock the engine must break by picking a victim.
+        // Retries skip the rendezvous; the survivor already holds both rows, so the victim's retry only waits for it.
+        var calls = Enumerable
+            .Range(0, pairs)
+            .SelectMany(pair =>
+            {
+                var rendezvous = new AsyncCountdownEvent(2);
+
+                return new[]
+                {
+                    _AutonomousIncrementAsync(
+                        table,
+                        $"p{pair}-a",
+                        $"p{pair}-b",
+                        rendezvous,
+                        () => Interlocked.Increment(ref deadlocks)
+                    ),
+                    _AutonomousIncrementAsync(
+                        table,
+                        $"p{pair}-b",
+                        $"p{pair}-a",
+                        rendezvous,
+                        () => Interlocked.Increment(ref deadlocks)
+                    ),
+                };
+            })
+            .ToArray();
+
+        var committedOnAttempt = await Task.WhenAll(calls);
+
+        Volatile.Read(ref deadlocks).Should().Be(pairs, "the engine breaks each pair's deadlock with one victim");
+        committedOnAttempt.Count(a => a == 1).Should().Be(pairs, "each pair's survivor commits its first attempt");
+        committedOnAttempt.Count(a => a == 2).Should().Be(pairs, "each victim commits its first retry");
+
+        for (var pair = 0; pair < pairs; pair++)
+        {
+            // Two calls touch each row once each; a victim's rolled-back attempt leaking into the total would make 3.
+            (await _ReadValueAsync(table, $"p{pair}-a"))
+                .Should()
+                .Be(2);
+            (await _ReadValueAsync(table, $"p{pair}-b")).Should().Be(2);
+        }
+    }
+
+    public virtual async Task should_surface_the_deadlock_after_the_attempt_cap_and_apply_nothing()
+    {
+        var table = await _CreateTableAsync();
+        _ = await _UpsertAsync(table, "cap-a", increment: 0, guardBelow: null);
+        _ = await _UpsertAsync(table, "cap-b", increment: 0, guardBelow: null);
+        var attempts = 0;
+        var deadlocks = 0;
+        var survivors = new List<Task>();
+
+        // Every attempt meets a fresh survivor transaction that locks the rows in the opposite order and is protected
+        // from being the victim, so every attempt deadlocks and the call runs out of attempts.
+        var act = async () =>
+            await SqlAutonomousTransaction.RunAsync(
+                () => Dialect.CreateConnection(ConnectionString),
+                async (connection, transaction, cancellationToken) =>
+                {
+                    attempts++;
+                    var callLocked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    var survivorLocked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    survivors.Add(_RunDeadlockSurvivorAsync(table, callLocked.Task, survivorLocked));
+
+                    try
+                    {
+                        await _IncrementAsync(connection, transaction, table, "cap-a", cancellationToken);
+                        callLocked.SetResult();
+                        await survivorLocked.Task.WaitAsync(_RendezvousTimeout, cancellationToken);
+                        await _IncrementAsync(connection, transaction, table, "cap-b", cancellationToken);
+
+                        return attempts;
+                    }
+                    catch (DbException e) when (Dialect.Classify(e) == SqlErrorKind.Deadlock)
+                    {
+                        deadlocks++;
+
+                        throw;
+                    }
+                },
+                TimeProvider.System,
+                AbortToken
+            );
+
+        var thrown = await act.Should().ThrowAsync<DbException>();
+        await Task.WhenAll(survivors);
+
+        Dialect
+            .Classify(thrown.Which)
+            .Should()
+            .Be(SqlErrorKind.Deadlock, "the last attempt's fault surfaces unchanged");
+        attempts.Should().Be(3, "a transient fault is retried until the attempt cap and no further");
+        deadlocks.Should().Be(3, "the engine chose the call as the victim on every attempt");
+        (await _ReadValueAsync(table, "cap-a")).Should().Be(3, "only the three survivors' writes committed");
+        (await _ReadValueAsync(table, "cap-b")).Should().Be(3, "only the three survivors' writes committed");
+    }
+
+    private Task<int> _AutonomousIncrementAsync(
+        string table,
+        string firstKey,
+        string secondKey,
+        AsyncCountdownEvent rendezvous,
+        Action onDeadlock
+    )
+    {
+        var attempts = 0;
+
+        return Task.Run(
+            async () =>
+                await SqlAutonomousTransaction.RunAsync(
+                    () => Dialect.CreateConnection(ConnectionString),
+                    async (connection, transaction, cancellationToken) =>
+                    {
+                        var attempt = ++attempts;
+
+                        try
+                        {
+                            await _IncrementAsync(connection, transaction, table, firstKey, cancellationToken);
+
+                            if (attempt == 1)
+                            {
+                                rendezvous.Signal();
+                                await rendezvous
+                                    .WaitAsync(cancellationToken)
+                                    .WaitAsync(_RendezvousTimeout, cancellationToken);
+                            }
+
+                            await _IncrementAsync(connection, transaction, table, secondKey, cancellationToken);
+
+                            return attempt;
+                        }
+                        catch (DbException e) when (Dialect.Classify(e) == SqlErrorKind.Deadlock)
+                        {
+                            onDeadlock();
+
+                            throw;
+                        }
+                    },
+                    TimeProvider.System,
+                    AbortToken
+                ),
+            AbortToken
+        );
+    }
+
+    private async Task _RunDeadlockSurvivorAsync(string table, Task callLocked, TaskCompletionSource survivorLocked)
+    {
+        // Unpooled, so the survivor's session settings never reach a pooled connection a later test reuses.
+        var builder = new DbConnectionStringBuilder { ConnectionString = ConnectionString };
+        builder["Pooling"] = false;
+
+        await using var connection = Dialect.CreateConnection(builder.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+
+        await using (var protect = connection.CreateCommand())
+        {
+            protect.Transaction = transaction;
+            protect.CommandText = DeadlockSurvivorSql;
+            await protect.ExecuteNonQueryAsync(AbortToken);
+        }
+
+        await _IncrementAsync(connection, transaction, table, "cap-b", AbortToken);
+        survivorLocked.SetResult();
+        await callLocked.WaitAsync(_RendezvousTimeout, AbortToken);
+
+        // Waits on the call's row until the engine kills the call, then commits.
+        await _IncrementAsync(connection, transaction, table, "cap-a", AbortToken);
+        await transaction.CommitAsync(AbortToken);
+    }
+
+    private async Task _IncrementAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        string table,
+        string key,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            $"UPDATE {table} SET {_Column("Value")} = {_Column("Value")} + 1 WHERE {_Column("Key")} = @k";
+        Dialect.AddParameter(command, "k", SqlColumnType.KeyText(64), key);
+
+        (await command.ExecuteNonQueryAsync(cancellationToken)).Should().Be(1);
     }
 
     private async Task<SqlUpserted<long>> _UpsertAsync(string table, string key, long increment, long? guardBelow)

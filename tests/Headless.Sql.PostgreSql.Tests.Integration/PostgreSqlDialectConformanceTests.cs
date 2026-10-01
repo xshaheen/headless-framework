@@ -28,6 +28,9 @@ public sealed class PostgreSqlDialectConformanceTests(NpgsqlTestFixture fixture)
             """;
     }
 
+    // PostgreSQL aborts whichever waiter's deadlock_timeout fires first, so a long one keeps this transaction alive.
+    protected override string DeadlockSurvivorSql => "SET LOCAL deadlock_timeout = '10s'";
+
     // An error aborts the whole transaction; every later statement on it fails with 25P02.
     protected override IReadOnlyList<string> DoomThenWriteBatches(string insertAfter)
     {
@@ -80,5 +83,17 @@ public sealed class PostgreSqlDialectConformanceTests(NpgsqlTestFixture fixture)
     public override Task should_fail_loudly_once_the_engine_has_doomed_the_callers_transaction()
     {
         return base.should_fail_loudly_once_the_engine_has_doomed_the_callers_transaction();
+    }
+
+    [Fact]
+    public override Task should_retry_engine_chosen_deadlock_victims_and_apply_each_call_once()
+    {
+        return base.should_retry_engine_chosen_deadlock_victims_and_apply_each_call_once();
+    }
+
+    [Fact]
+    public override Task should_surface_the_deadlock_after_the_attempt_cap_and_apply_nothing()
+    {
+        return base.should_surface_the_deadlock_after_the_attempt_cap_and_apply_nothing();
     }
 }
