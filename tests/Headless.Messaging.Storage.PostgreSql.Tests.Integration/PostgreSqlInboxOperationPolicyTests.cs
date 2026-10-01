@@ -122,7 +122,7 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
         await blocker.OpenAsync(AbortToken);
         await using var transaction = await blocker.BeginTransactionAsync(AbortToken);
         await using var operationLock = new NpgsqlCommand(
-            "SELECT pg_advisory_xact_lock(hashtextextended(@OperationId::text,0));",
+            "SELECT pg_advisory_xact_lock(hashtextextended('headless.messaging.inbox.operation.' || @OperationId::text,0));",
             blocker,
             transaction
         );

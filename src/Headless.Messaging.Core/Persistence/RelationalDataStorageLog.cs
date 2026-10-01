@@ -2,9 +2,9 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Messaging.Storage.PostgreSql;
+namespace Headless.Messaging.Persistence;
 
-internal static partial class PostgreSqlLoggerExtensions
+internal static partial class RelationalDataStorageLog
 {
     [LoggerMessage(
         EventId = 2,

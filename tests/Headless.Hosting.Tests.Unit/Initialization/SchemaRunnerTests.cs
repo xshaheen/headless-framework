@@ -110,11 +110,26 @@ public sealed class SchemaRunnerTests : TestBase
             .Be(3, "history, step, and history row are three batches");
     }
 
+    [Fact]
+    public async Task should_export_an_export_only_contribution_but_never_open_its_database_when_applying_or_verifying()
+    {
+        var runner = new SchemaRunner([_Contribution("Alpha", "s1", [new("1", "a", "ALPHA 1;")], exportOnly: true)]);
+
+        runner.ExportScript(FakeDialect.Instance).Should().Contain("ALPHA 1;").And.Contain("INSERT s1 'Alpha' '1'");
+        // The contribution's connection factory throws, so reaching its database would fail these calls.
+        (await runner.ApplyAsync(AbortToken))
+            .AppliedSteps.Should()
+            .BeEmpty();
+        (await runner.VerifyAsync(AbortToken)).Should().BeEmpty();
+        (await runner.RunAsync(SchemaRunnerMode.Verify, AbortToken)).Should().BeEmpty();
+    }
+
     private static SchemaContribution _Contribution(
         string feature,
         string schema,
         IReadOnlyList<SchemaStep> steps,
-        ISchemaDialect? dialect = null
+        ISchemaDialect? dialect = null,
+        bool exportOnly = false
     )
     {
         return new SchemaContribution(
@@ -122,7 +137,8 @@ public sealed class SchemaRunnerTests : TestBase
             dialect ?? FakeDialect.Instance,
             () => throw new NotSupportedException("Export never opens a connection."),
             schema,
-            steps
+            steps,
+            exportOnly: exportOnly
         );
     }
 

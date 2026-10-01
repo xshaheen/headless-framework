@@ -328,6 +328,10 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         _serviceProvider = services.BuildServiceProvider();
         _testScope = _serviceProvider.CreateAsyncScope();
 
+        // No host starts here, so the hosted schema runner never runs: apply the storage's schema before bootstrap,
+        // as a host would.
+        await _serviceProvider.ApplyMessagingSchemaAsync(AbortToken);
+
         // Bootstrap the messaging system
         await Bootstrapper.BootstrapAsync(AbortToken);
     }

@@ -34,7 +34,7 @@ public sealed class SetupTests : TestBase
         await using var provider = services.BuildServiceProvider();
 
         provider.GetRequiredService<MessageStorageMarkerService>().Name.Should().Be("PostgreSql");
-        provider.GetRequiredService<IStorageTableNames>().Should().BeOfType<PostgreSqlStorageTableNames>();
+        provider.GetRequiredService<IStorageTableNames>().Should().BeOfType<RelationalStorageTableNames>();
         // The provider runs no DDL itself: its tables reach the database as a schema-runner contribution.
         provider
             .GetRequiredService<SchemaRunner>()
@@ -42,7 +42,7 @@ public sealed class SetupTests : TestBase
             .ContainSingle(c => c.Feature == PostgreSqlMessagingSchemaContribution.Feature)
             .Which.Schema.Should()
             .Be(HeadlessStorageDefaults.Schema);
-        provider.GetRequiredService<IDataStorage>().Should().BeOfType<PostgreSqlDataStorage>();
+        provider.GetRequiredService<IDataStorage>().Should().BeOfType<RelationalDataStorage>();
 
         var options = provider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value;
         options.ConnectionString.Should().Be("Host=localhost;Database=test");

@@ -6,6 +6,7 @@ using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Persistence;
 using Headless.Messaging.Runtime;
 using Headless.Messaging.Storage.PostgreSql;
 using Headless.Messaging.Storage.PostgreSql.EntityFramework;
@@ -115,7 +116,7 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
                         serviceProvider.GetRequiredService<TContext>(),
                         serviceProvider.GetRequiredService<IUnitOfWorkFactory>(),
                         serviceProvider.GetRequiredService<IDeliveryCoordinationResolver>(),
-                        serviceProvider.GetRequiredService<PostgreSqlDataStorage>(),
+                        serviceProvider.GetRequiredService<RelationalDataStorage>(),
                         serviceProvider
                             .GetRequiredService<ILoggerFactory>()
                             .CreateLogger<PostgreSqlInboxTransactionRunner<TContext>>()
@@ -158,7 +159,7 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
         TContext context,
         IUnitOfWorkFactory unitOfWorkFactory,
         IDeliveryCoordinationResolver coordinationResolver,
-        PostgreSqlDataStorage storage,
+        RelationalDataStorage storage,
         ILogger logger
     ) : IInboxTransactionRunner
         where TContext : DbContext

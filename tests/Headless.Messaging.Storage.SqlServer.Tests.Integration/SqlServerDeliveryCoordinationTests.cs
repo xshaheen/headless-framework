@@ -73,16 +73,16 @@ public sealed class SqlServerDeliveryCoordinationTests(SqlServerTestFixture fixt
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<CoordinationDbContext>();
         var factory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
-        IDeliveryCoordinationResolver storage = new SqlServerDataStorage(
+        IDeliveryCoordinationResolver storage = new RelationalDataStorage(
+            provider.GetRequiredService<IOptions<SqlServerOptions>>().Value.ToStorage(),
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
-            provider.GetRequiredService<IOptions<SqlServerOptions>>(),
             TestStorageOptions.For(),
             provider.GetRequiredService<IStorageTableNames>(),
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             new NullNodeMembership(),
-            NullLogger<SqlServerDataStorage>.Instance
+            NullLogger<RelationalDataStorage>.Instance
         );
 
         await using var unit = await factory.BeginAsync(db, cancellationToken: AbortToken);

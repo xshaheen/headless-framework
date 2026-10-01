@@ -33,16 +33,16 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
         _sqlServerOptions = Options.Create(new SqlServerOptions { ConnectionString = fixture.ConnectionString });
         _tableNames = TestStorageOptions.TableNames(_schema);
         _table = _tableNames.GetReceivedTableName();
-        _storage = new SqlServerDataStorage(
+        _storage = new RelationalDataStorage(
+            _sqlServerOptions.Value.ToStorage(),
             messagingOptions,
-            _sqlServerOptions,
             TestStorageOptions.For(_schema),
             _tableNames,
             new JsonUtf8Serializer(messagingOptions),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             new NullNodeMembership(),
-            NullLogger<SqlServerDataStorage>.Instance
+            NullLogger<RelationalDataStorage>.Instance
         );
         await TestMessagingSchema.ApplyAsync(_sqlServerOptions.Value, _schema, AbortToken);
     }
@@ -85,18 +85,19 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
         (await _storage!.DeleteExpiresAsync(_tableNames.GetReceivedTableName(), DateTimeOffset.UtcNow, 3, AbortToken))
             .Should()
             .Be(3);
-        // Replay the exact executed batch with actual-plan reporting; an outer transaction rolls the replay back.
+        // Replay the exact executed selection of expired inbox generations with actual-plan reporting; an outer
+        // transaction rolls the replay back.
         var sql = await connection.QueryFirstAsync<string>(
             new CommandDefinition(
                 """
                 SELECT TOP (1) t.text
                 FROM sys.dm_exec_query_stats s
                 CROSS APPLY sys.dm_exec_sql_text(s.sql_handle) t
-                WHERE t.text LIKE '%DECLARE @Candidates TABLE%' AND t.text LIKE '%retention_expired%'
+                WHERE CHARINDEX(@InboxBranch,t.text)>0 AND CHARINDEX(N'READPAST',t.text)>0
                   AND t.text NOT LIKE '%sys.dm_exec_query_stats%' AND CHARINDEX(@Table,t.text)>0
                 ORDER BY s.last_execution_time DESC;
                 """,
-                new { Table = _table },
+                new { Table = _table, InboxBranch = "[EffectiveExpiresAt] < @Instant" },
                 cancellationToken: AbortToken
             )
         );
@@ -107,7 +108,7 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
             )
         );
         // The plan cache prefixes parameter declarations; SqlCommand supplies those separately.
-        sql = sql[sql.IndexOf("SET NOCOUNT ON;", StringComparison.Ordinal)..];
+        sql = sql[sql.IndexOf("DECLARE @now", StringComparison.Ordinal)..];
         var baseline = await _ReadCleanupPlanAsync(connection, sql);
         // The runner never re-runs a recorded step, so forget the Messaging steps to have the tables step recreate the
         // dropped index through its IF NOT EXISTS guards; a second apply must then be a no-op.
@@ -231,7 +232,7 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
             .Where(node =>
                 ((string?)node.Attribute("StatementText"))
                     ?.TrimStart()
-                    .StartsWith("INSERT INTO @Candidates", StringComparison.Ordinal) == true
+                    .StartsWith("SELECT TOP", StringComparison.Ordinal) == true
             )
             .SelectMany(node => node.Descendants(ns + "RunTimeCountersPerThread"))
             .Sum(node => (long?)node.Attribute("ActualRowsRead") ?? 0);
@@ -246,8 +247,8 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
         XDocument? plan = null;
         await using (var command = new SqlCommand(sql, connection, transaction))
         {
-            command.Parameters.AddWithValue("@timeout", DateTimeOffset.UtcNow);
-            command.Parameters.AddWithValue("@batchCount", 3);
+            command.Parameters.AddWithValue("@Instant", DateTimeOffset.UtcNow);
+            command.Parameters.AddWithValue("@BatchCount", 3);
             await using var reader = await command.ExecuteReaderAsync(AbortToken);
             do
             {
@@ -257,7 +258,7 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
                         reader.FieldCount == 1
                         && reader.GetValue(0) is string xml
                         && xml.Contains("<ShowPlanXML", StringComparison.Ordinal)
-                        && xml.Contains("INSERT INTO @Candidates", StringComparison.Ordinal)
+                        && xml.Contains("SELECT TOP", StringComparison.Ordinal)
                     )
                     {
                         plan = XDocument.Parse(xml);

@@ -649,7 +649,7 @@ public sealed partial class SchemaRunner(
     {
         var groups = new List<DatabaseGroup>();
 
-        foreach (var contribution in Contributions.Where(c => !applyingOnly || c.ApplyOnStartup))
+        foreach (var contribution in Contributions.Where(c => !c.ExportOnly && (!applyingOnly || c.ApplyOnStartup)))
         {
             // Identity comes from the unopened connection's settings, so features that each build their own
             // connection to one database still share one group, one lock, and one pass.

@@ -65,6 +65,8 @@
     <ProjectReference Include="..\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Queue.Abstractions\Headless.Messaging.Queue.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
+    <ProjectReference Include="..\Headless.Sql.Abstractions\Headless.Sql.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Sql.Core\Headless.Sql.Core.csproj" />
     <ProjectReference Include="..\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />
   </ItemGroup>
 </Project>

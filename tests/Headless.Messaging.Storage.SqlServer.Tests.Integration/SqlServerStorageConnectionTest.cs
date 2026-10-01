@@ -19,7 +19,7 @@ namespace Tests;
 [Collection<SqlServerTestFixture>]
 public sealed class SqlServerStorageConnectionTest(SqlServerTestFixture fixture) : TestBase
 {
-    private SqlServerDataStorage _storage = null!;
+    private RelationalDataStorage _storage = null!;
 
     public override async ValueTask InitializeAsync()
     {
@@ -38,16 +38,16 @@ public sealed class SqlServerStorageConnectionTest(SqlServerTestFixture fixture)
         var provider = services.BuildServiceProvider();
         var tableNames = provider.GetRequiredService<IStorageTableNames>();
         await provider.ApplyMessagingSchemaAsync();
-        _storage = new SqlServerDataStorage(
+        _storage = new RelationalDataStorage(
+            provider.GetRequiredService<IOptions<SqlServerOptions>>().Value.ToStorage(),
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
-            provider.GetRequiredService<IOptions<SqlServerOptions>>(),
             TestStorageOptions.For(),
             tableNames,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             new NullNodeMembership(),
-            NullLogger<SqlServerDataStorage>.Instance
+            NullLogger<RelationalDataStorage>.Instance
         );
 
         await base.InitializeAsync();

@@ -57,6 +57,52 @@ public interface ISqlDialect
     string NextSequenceValue(string qualifiedSequence);
 
     /// <summary>
+    /// Returns the literal of <paramref name="value" /> that compares with a boolean column: <c>TRUE</c> or
+    /// <c>FALSE</c> on PostgreSQL, <c>1</c> or <c>0</c> on SQL Server.
+    /// </summary>
+    /// <remarks>
+    /// A literal rather than a parameter, so a filtered index whose filter names the same literal stays usable: SQL
+    /// Server never matches a parameterized predicate to an index filter.
+    /// </remarks>
+    string BooleanLiteral(bool value);
+
+    /// <summary>Returns an expression that draws a new random <see cref="SqlColumnKind.Guid" /> for each row it is evaluated for.</summary>
+    string NewGuid();
+
+    /// <summary>
+    /// Returns <paramref name="instant" /> moved forward by <paramref name="seconds" />, an integer expression such as
+    /// a column, which must fit a 32-bit integer.
+    /// </summary>
+    string ShiftBySeconds(string instant, string seconds);
+
+    /// <summary>
+    /// Returns the clause that follows an <c>ORDER BY</c> and keeps at most <c>@</c><paramref name="limitParameter" />
+    /// rows, after skipping <c>@</c><paramref name="offsetParameter" /> rows when one is given.
+    /// </summary>
+    /// <remarks>The statement must order its rows: SQL Server accepts the clause only after an <c>ORDER BY</c>.</remarks>
+    string Limit(string limitParameter, string? offsetParameter = null);
+
+    /// <summary>
+    /// Returns a predicate that <paramref name="expression" /> matches the <c>LIKE</c> pattern bound under
+    /// <paramref name="patternParameter" />, whose escape character is a backslash, without regard to case.
+    /// </summary>
+    /// <remarks>
+    /// PostgreSQL matches with <c>ILIKE</c>. SQL Server's <c>LIKE</c> follows the column's collation, which ignores case
+    /// under the default collations.
+    /// </remarks>
+    string LikeIgnoringCase(string expression, string patternParameter);
+
+    /// <summary>
+    /// Returns a reference to <paramref name="table" /> for a plain read, such as a dashboard query, that never waits on
+    /// a row another transaction has locked.
+    /// </summary>
+    /// <remarks>
+    /// PostgreSQL never blocks a plain read and returns a locked row as last committed. SQL Server skips a locked row
+    /// (<c>READPAST</c>), with or without read committed snapshot isolation, so the read can miss a row being written.
+    /// </remarks>
+    string ReadWithoutWaiting(string table);
+
+    /// <summary>
     /// Returns <paramref name="instant" /> moved by the duration bound with <see cref="AddDuration" /> under
     /// <paramref name="parameter" />, backward when <paramref name="subtract" /> is set.
     /// </summary>
@@ -147,6 +193,15 @@ public interface ISqlDialect
     /// <summary>Renders <see cref="SqlClockedStatement" />.</summary>
     string Render(SqlClockedStatement statement);
 
+    /// <summary>Renders <see cref="SqlInsert" />.</summary>
+    string Render(SqlInsert statement);
+
+    /// <summary>Renders <see cref="SqlLockBatch" />.</summary>
+    string Render(SqlLockBatch statement);
+
+    /// <summary>Renders <see cref="SqlTransactionLock" />.</summary>
+    string Render(SqlTransactionLock statement);
+
     /// <summary>Classifies a failure the engine's driver raised.</summary>
     SqlErrorKind Classify(Exception exception);
 }
@@ -167,7 +222,9 @@ public static class SqlDialectTokens
 
 /// <summary>A column's storage type, portable across dialects.</summary>
 /// <param name="Kind">The kind of value.</param>
-/// <param name="MaxLength">The maximum length of a text column; ignored for other kinds.</param>
+/// <param name="MaxLength">
+/// The maximum length of a text column, or the exact length of a fixed-length binary column; ignored for other kinds.
+/// </param>
 [PublicAPI]
 [StructLayout(LayoutKind.Auto)]
 public readonly record struct SqlColumnType(SqlColumnKind Kind, int MaxLength = 0)
@@ -191,6 +248,12 @@ public readonly record struct SqlColumnType(SqlColumnKind Kind, int MaxLength = 
     public static SqlColumnType Timestamp => new(SqlColumnKind.Timestamp);
 
     public static SqlColumnType Binary => new(SqlColumnKind.Binary);
+
+    /// <summary>
+    /// Bytes of exactly <paramref name="length" />: <c>binary(length)</c> on SQL Server, so a comparison with a
+    /// fixed-length column keeps its index; <c>bytea</c> on PostgreSQL.
+    /// </summary>
+    public static SqlColumnType FixedBinary(int length) => new(SqlColumnKind.Binary, length);
 
     /// <summary>A 16-byte identifier: <c>uuid</c> on PostgreSQL, <c>uniqueidentifier</c> on SQL Server.</summary>
     public static SqlColumnType Guid => new(SqlColumnKind.Guid);

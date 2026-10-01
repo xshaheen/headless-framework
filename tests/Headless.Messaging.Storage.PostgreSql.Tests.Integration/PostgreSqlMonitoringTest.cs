@@ -97,7 +97,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
     public async Task should_return_monitoring_api_of_correct_type()
     {
         var monitoringApi = _storage!.GetMonitoringApi();
-        monitoringApi.Should().BeOfType<PostgreSqlMonitoringApi>();
+        monitoringApi.Should().BeOfType<RelationalMonitoringApi>();
     }
 
     [Fact]
@@ -634,16 +634,16 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
 
         _tableNames = TestStorageOptions.TableNames();
 
-        _storage = new PostgreSqlDataStorage(
-            postgreSqlOptions,
-            TestStorageOptions.For(),
+        _storage = new RelationalDataStorage(
+            postgreSqlOptions.Value.ToStorage(),
             messagingOptions,
+            TestStorageOptions.For(),
             _tableNames,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             TimeProvider.System,
             new NullNodeMembership(),
-            NullLogger<PostgreSqlDataStorage>.Instance
+            NullLogger<RelationalDataStorage>.Instance
         );
     }
 }
