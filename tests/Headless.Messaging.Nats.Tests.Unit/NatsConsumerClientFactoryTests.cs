@@ -38,10 +38,28 @@ public sealed class NatsConsumerClientFactoryTests : TestBase
         var factory = new NatsConsumerClientFactory(_options, _serviceProvider);
 
         // ConnectAsync must fail without depending on local port state.
-        var act = async () => await factory.CreateAsync("test-group", 1, MessageLane.Queue);
+        var act = async () => await factory.CreateAsync(new ConsumerClientRequest("test-group", 1, MessageLane.Queue));
 
         var exception = await act.Should().ThrowAsync<BrokerConnectionException>();
         exception.Which.InnerException.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task should_create_every_instance_client_instead_of_refusing_it()
+    {
+        var factory = new NatsConsumerClientFactory(_options, _serviceProvider);
+        var request = new ConsumerClientRequest(
+            "billing.cache",
+            1,
+            MessageLane.Bus,
+            ConsumerSubscriptionKind.EveryInstance,
+            Guid.NewGuid()
+        );
+
+        // The unreachable server fails the connect, which proves the factory accepted the kind and got that far.
+        var act = async () => await factory.CreateAsync(request, AbortToken);
+
+        await act.Should().ThrowAsync<BrokerConnectionException>();
     }
 
     [Fact]
@@ -51,7 +69,8 @@ public sealed class NatsConsumerClientFactoryTests : TestBase
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var act = async () => await factory.CreateAsync("test-group", 1, MessageLane.Queue, cts.Token);
+        var act = async () =>
+            await factory.CreateAsync(new ConsumerClientRequest("test-group", 1, MessageLane.Queue), cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }

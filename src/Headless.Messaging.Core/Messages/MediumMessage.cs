@@ -11,7 +11,7 @@ namespace Headless.Messaging.Messages;
 /// </summary>
 /// <remarks>
 /// Not sealed: storage providers may extend it with backend-specific row state
-/// (e.g., the in-memory provider's message row adds name/group/status columns).
+/// (e.g., the in-memory provider's message row adds name/consumer identity/status columns).
 /// </remarks>
 [PublicAPI]
 public class MediumMessage

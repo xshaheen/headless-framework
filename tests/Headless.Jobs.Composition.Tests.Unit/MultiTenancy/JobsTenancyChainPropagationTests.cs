@@ -26,8 +26,6 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
 
     private const string _Function = "chain-tenancy-fn";
 
-    public JobsTenancyChainPropagationTests() => _RegisterFunction();
-
     protected override ValueTask DisposeAsyncCore()
     {
         foreach (var worker in _workers)
@@ -35,7 +33,6 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
             worker.Dispose();
         }
 
-        JobFunctionProvider.ResetForTests();
         return base.DisposeAsyncCore();
     }
 
@@ -363,7 +360,7 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
             dispatcher,
             new CronScheduleCache(TimeZoneInfo.Utc),
             signals,
-            JobFunctionProvider.CreateHostRegistry(configuration: null),
+            _Registry(),
             Substitute.For<ILogger<JobsManager<TimeJobEntity, CronJobEntity>>>(),
             currentTenant: tenant,
             tenancyOptions: Options.Create(new JobsTenancyOptions { RejectCrossTenantEnqueue = rejectCrossTenant })
@@ -376,22 +373,21 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
         return (facade, persistence);
     }
 
-    private static void _RegisterFunction()
-    {
-        JobFunctionProvider.ResetForTests(discoveryComplete: false);
-        JobFunctionProvider.RegisterFunctions(
-            new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
-            {
-                [_Function] = new JobFunctionRegistration
-                {
-                    CronExpression = "",
-                    Priority = Headless.Jobs.Enums.JobPriority.Normal,
-                    Delegate = (_, _, _) => Task.CompletedTask,
-                    MaxConcurrency = 0,
-                },
-            }
+    private static JobFunctionRegistry _Registry() =>
+        JobFunctionRegistryBuilder.Build(
+            [
+                new KeyValuePair<string, JobFunctionRegistration>(
+                    _Function,
+                    new JobFunctionRegistration
+                    {
+                        CronExpression = "",
+                        Priority = Headless.Jobs.Enums.JobPriority.Normal,
+                        Delegate = (_, _, _) => Task.CompletedTask,
+                        MaxConcurrency = 0,
+                    }
+                ),
+            ],
+            [],
+            []
         );
-        JobFunctionProvider.MarkDiscoveryComplete();
-        JobFunctionProvider.Build();
-    }
 }

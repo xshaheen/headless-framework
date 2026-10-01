@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
@@ -29,17 +30,18 @@ internal sealed class PulsarConsumerClientFactory : IConsumerClientFactory
     }
 
     public async Task<IConsumerClient> CreateAsync(
-        string groupName,
-        byte groupConcurrent,
-        MessageLane lane,
+        ConsumerClientRequest request,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(request);
+
         try
         {
+            // Creating the client touches no broker object: the subscription, every-instance or competing, is opened by
+            // SubscribeAsync, so the topology-only client the core creates and disposes leaves nothing behind.
             var client = await _connection.RentClientAsync(cancellationToken).ConfigureAwait(false);
-            var consumerClient = new PulsarConsumerClient(_pulsarOptions, client, groupName, groupConcurrent, lane);
-            return consumerClient;
+            return new PulsarConsumerClient(_pulsarOptions, client, request);
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {

@@ -6,18 +6,18 @@ namespace Headless.Jobs;
 
 internal static class JobCausalContext
 {
-    private static readonly AsyncLocal<JobFunctionContext?> _Current = new();
+    private static readonly AsyncLocal<JobContext?> _Current = new();
 
-    internal static JobFunctionContext? Current => _Current.Value;
+    internal static JobContext? Current => _Current.Value;
 
-    internal static IDisposable Enter(JobFunctionContext context)
+    internal static IDisposable Enter(JobContext context)
     {
         var previous = _Current.Value;
         _Current.Value = context;
         return new Scope(previous);
     }
 
-    private sealed class Scope(JobFunctionContext? previous) : IDisposable
+    private sealed class Scope(JobContext? previous) : IDisposable
     {
         public void Dispose() => _Current.Value = previous;
     }

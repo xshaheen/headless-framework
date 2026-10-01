@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Exceptions;
@@ -15,6 +14,7 @@ using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Tests.Helpers;
 
 #pragma warning disable MA0015 // Specify the parameter name in ArgumentException
 namespace Tests;
@@ -29,7 +29,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         {
             [Headers.MessageId] = Guid.NewGuid().ToString(),
             [Headers.MessageName] = "test.messageName",
-            [Headers.Group] = "test-group",
+            [Headers.ConsumerIdentity] = CancellationExecutorTestConsumer.Identity,
         };
 
         return new MediumMessage
@@ -44,33 +44,15 @@ public sealed class SubscribeExecutorRetryTests : TestBase
 
     private static ConsumerExecutorDescriptor _CreateDescriptor()
     {
-        var consumeMethod = typeof(IConsume<CancellationExecutorTestMessage>).GetMethod(
-            nameof(IConsume<>.ConsumeAsync),
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            [typeof(ConsumeContext<CancellationExecutorTestMessage>), typeof(CancellationToken)],
-            null
-        )!;
-
         return new ConsumerExecutorDescriptor
         {
             Lane = MessageLane.Bus,
-            ServiceTypeInfo = typeof(CancellationExecutorTestConsumer).GetTypeInfo(),
-            ImplTypeInfo = typeof(CancellationExecutorTestConsumer).GetTypeInfo(),
-            MethodInfo = consumeMethod,
+            ConsumerType = typeof(CancellationExecutorTestConsumer),
+            MessageType = typeof(CancellationExecutorTestMessage),
             MessageName = "test.messageName",
-            GroupName = "test-group",
-            ConsumerIdentity = "tests.subscribe-retry",
+            SubscriptionName = "test-group",
+            ConsumerIdentity = CancellationExecutorTestConsumer.Identity,
             MessageContractVersion = "1",
-            Parameters = consumeMethod
-                .GetParameters()
-                .Select(p => new ParameterDescriptor
-                {
-                    Name = p.Name!,
-                    ParameterType = p.ParameterType,
-                    IsFromMessaging = p.ParameterType == typeof(CancellationToken),
-                })
-                .ToList(),
         };
     }
 
@@ -109,15 +91,12 @@ public sealed class SubscribeExecutorRetryTests : TestBase
 
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging =>
+            messaging.Message<CancellationExecutorTestMessage>("test.messageName")
+        );
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Bus.ForMessage<CancellationExecutorTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<CancellationExecutorTestConsumer>(consumer =>
-                        consumer.StableContract("tests.subscribe-retry").Group("test-group")
-                    )
-            );
+            setup.AddConsumer<CancellationExecutorTestConsumer>();
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
         });
@@ -129,7 +108,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     }
 
     [Fact]
-    public async Task persisted_inbox_retry_should_resolve_by_stable_identity_after_group_refactor()
+    public async Task persisted_inbox_retry_should_resolve_by_inbox_key_not_by_the_identity_header()
     {
         var storage = Substitute.For<IDataStorage>();
         var invoker = Substitute.For<ISubscribeInvoker>();
@@ -142,14 +121,14 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             new MessagingOptions { RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly }
         );
         var message = _CreateMediumMessage();
-        message.Origin.Headers[Headers.Group] = "obsolete-group";
+        message.Origin.Headers[Headers.ConsumerIdentity] = "obsolete.consumer";
         message.InboxKey = new InboxKey(
             TenantId: null,
             message.Origin.Id,
             MessageLane.Bus,
             "test.messageName",
             "1",
-            "tests.subscribe-retry",
+            CancellationExecutorTestConsumer.Identity,
             Generation: 0
         );
 
@@ -159,7 +138,9 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         await invoker
             .Received(1)
             .InvokeAsync(
-                Arg.Is<ConsumerContext>(context => context.ConsumerDescriptor.GroupName == "test-group"),
+                Arg.Is<ConsumerContext>(context =>
+                    context.ConsumerDescriptor.ConsumerIdentity == CancellationExecutorTestConsumer.Identity
+                ),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -180,7 +161,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             MessageLane.Bus,
             "test.messageName",
             "v1",
-            "tests.subscribe-retry",
+            CancellationExecutorTestConsumer.Identity,
             Generation: 0
         );
         var runner = Substitute.For<IInboxTransactionRunner>();
@@ -235,7 +216,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             MessageLane.Bus,
             "test.messageName",
             "v1",
-            "tests.subscribe-retry",
+            CancellationExecutorTestConsumer.Identity,
             Generation: 0
         );
         var runner = Substitute.For<IInboxTransactionRunner>();

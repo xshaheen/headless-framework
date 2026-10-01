@@ -21,12 +21,12 @@ public sealed class ScheduledRevocationTests : TestBase
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<Reminder>("test.revocation"));
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
             setup.UseInMemoryStorage();
             setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
-            setup.Bus.ForMessage<Reminder>(message => message.Contract("test.revocation"));
         });
         await using var provider = services.BuildServiceProvider();
         var storage = provider.GetRequiredService<IDataStorage>();

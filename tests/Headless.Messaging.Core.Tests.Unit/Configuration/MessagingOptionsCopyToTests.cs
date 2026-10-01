@@ -161,8 +161,6 @@ public sealed class MessagingOptionsCopyToTests : TestBase
 
     private static void _SetNonDefaultValues(MessagingOptions options)
     {
-        options.DefaultGroupName = "test.group";
-        options.GroupNamePrefix = "prefix";
         options.MessageNamePrefix = "messageName-prefix";
         options.Version = "v99";
         options.SucceedMessageExpiredAfter = 1;

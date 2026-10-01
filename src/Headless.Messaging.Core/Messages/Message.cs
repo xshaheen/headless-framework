@@ -11,7 +11,7 @@ namespace Headless.Messaging.Messages;
 /// <remarks>
 /// A message consists of:
 /// <list type="bullet">
-/// <item><description>Headers: Metadata about the message (ID, name, group, correlation tracking, etc.)</description></item>
+/// <item><description>Headers: Metadata about the message (ID, name, consumer identity, correlation tracking, etc.)</description></item>
 /// <item><description>Value: The actual message payload that may be serialized to/from JSON</description></item>
 /// </list>
 /// The class requires a parameterless constructor and public property setters for System.Text.Json serialization support.
@@ -32,7 +32,7 @@ public sealed class Message
     /// Initializes a new instance of the <see cref="Message"/> class with specified headers and value.
     /// </summary>
     /// <param name="headers">
-    /// A dictionary of message metadata headers (e.g., MessageId, MessageName, Group).
+    /// A dictionary of message metadata headers (e.g., MessageId, MessageName, ConsumerIdentity).
     /// This dictionary is used directly, not copied.
     /// </param>
     /// <param name="value">
@@ -93,13 +93,12 @@ public static class MessageExtensions
         }
 
         /// <summary>
-        /// Attempts to retrieve the consumer group name from the message headers.
-        /// The group name identifies which subscriber group should consume the message.
+        /// Attempts to retrieve the identity of the consumer that received the message from the message headers.
         /// </summary>
-        /// <returns>The consumer group name, or null if not specified in the headers.</returns>
-        public string? GetGroup()
+        /// <returns>The consumer identity, or null if not specified in the headers.</returns>
+        public string? GetConsumerIdentity()
         {
-            message.Headers.TryGetValue(Headers.Group, out var value);
+            message.Headers.TryGetValue(Headers.ConsumerIdentity, out var value);
             return value;
         }
 

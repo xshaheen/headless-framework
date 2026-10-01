@@ -16,7 +16,7 @@ public class BaseJobEntity
 
     /// <summary>
     /// The registered function name that binds this job to its handler delegate. Must match a name
-    /// registered via <c>JobFunctionAttribute</c>.
+    /// registered via <c>JobAttribute</c>.
     /// </summary>
     public virtual string Function { get; set; } = null!;
 

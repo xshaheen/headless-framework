@@ -45,22 +45,22 @@ public sealed class InMemoryBusTransportTests : TestBase
         var received = new ConcurrentDictionary<string, int>(StringComparer.Ordinal);
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        Task onMessage(TransportMessage message, object? __)
-        {
-            var group = message.Headers[Headers.Group]!;
-            received.AddOrUpdate(group, 1, (_, count) => count + 1);
-
-            if (received.Values.Sum() == 3)
+        Func<TransportMessage, object?, Task> onMessage(string subscription) =>
+            (_, _) =>
             {
-                tcs.TrySetResult();
-            }
+                received.AddOrUpdate(subscription, 1, (_, count) => count + 1);
 
-            return Task.CompletedTask;
-        }
+                if (received.Values.Sum() == 3)
+                {
+                    tcs.TrySetResult();
+                }
 
-        client1.OnMessageCallback = onMessage;
-        client2.OnMessageCallback = onMessage;
-        client3.OnMessageCallback = onMessage;
+                return Task.CompletedTask;
+            };
+
+        client1.OnMessageCallback = onMessage("group-1");
+        client2.OnMessageCallback = onMessage("group-2");
+        client3.OnMessageCallback = onMessage("group-3");
 
         using var cts = new CancellationTokenSource();
         var listen1 = Task.Run(() => _ListenAsync(client1, cts.Token), AbortToken);

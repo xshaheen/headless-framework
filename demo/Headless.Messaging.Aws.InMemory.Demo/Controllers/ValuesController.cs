@@ -20,6 +20,7 @@ public class ValuesController(IBus producer) : Controller
 
 public record AmazonSqsMessage(DateTime Value);
 
+[BusConsumer("aws-demo.sqs-message")]
 public sealed class AmazonSqsMessageConsumer : IConsume<AmazonSqsMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<AmazonSqsMessage> context, CancellationToken cancellationToken)

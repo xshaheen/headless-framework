@@ -15,7 +15,8 @@ internal sealed record CronDefinitionRelationalMapping(
     string Table,
     string Id,
     string IsPaused,
-    string ScheduleRevision
+    string ScheduleRevision,
+    string Function
 )
 {
     public static CronDefinitionRelationalMapping Create<TDbContext, TCronJob>(TDbContext dbContext)
@@ -47,7 +48,8 @@ internal sealed record CronDefinitionRelationalMapping(
             sql.DelimitIdentifier(tableName, entity.GetSchema()),
             Column(nameof(CronJobEntity.Id)),
             Column(nameof(CronJobEntity.IsPaused)),
-            Column(nameof(CronJobEntity.ScheduleRevision))
+            Column(nameof(CronJobEntity.ScheduleRevision)),
+            Column(nameof(CronJobEntity.Function))
         );
     }
 }
@@ -155,7 +157,8 @@ internal sealed record TimeJobRelationalMapping(
     string UpdatedAt,
     string ExecutionTime,
     string ParentId,
-    string RunCondition
+    string RunCondition,
+    string Function
 )
 {
     public static TimeJobRelationalMapping Create<TDbContext, TTimeJob>(TDbContext dbContext)
@@ -193,7 +196,8 @@ internal sealed record TimeJobRelationalMapping(
             Column(nameof(TimeJobEntity.UpdatedAt)),
             Column(nameof(TimeJobEntity.ExecutionTime)),
             Column(nameof(TimeJobEntity.ParentId)),
-            Column(nameof(TimeJobEntity.RunCondition))
+            Column(nameof(TimeJobEntity.RunCondition)),
+            Column(nameof(TimeJobEntity.Function))
         );
     }
 }

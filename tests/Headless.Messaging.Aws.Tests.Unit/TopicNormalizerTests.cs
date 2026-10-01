@@ -20,24 +20,46 @@ public sealed class TopicNormalizerTests
     {
         AwsPhysicalAddress.BusTopic(first).Should().NotBe(AwsPhysicalAddress.BusTopic(second));
         AwsPhysicalAddress.QueueDestination(first).Should().NotBe(AwsPhysicalAddress.QueueDestination(second));
-        AwsPhysicalAddress.BusGroupQueue(first).Should().NotBe(AwsPhysicalAddress.BusGroupQueue(second));
+        AwsPhysicalAddress.BusSubscriptionQueue(first).Should().NotBe(AwsPhysicalAddress.BusSubscriptionQueue(second));
     }
 
     [Fact]
-    public void should_bind_bus_group_queue_to_logical_name_and_group()
+    public void should_name_bus_subscription_queue_after_consumer_identity()
     {
-        AwsPhysicalAddress.BusGroupQueue("billing").Should().Be("bus-billing");
-        AwsPhysicalAddress.BusGroupQueue("shipping").Should().Be("bus-shipping");
+        AwsPhysicalAddress.BusSubscriptionQueue("billing").Should().Be("bus-billing");
+        AwsPhysicalAddress.BusSubscriptionQueue("shipping").Should().Be("bus-shipping");
+    }
+
+    [Fact]
+    public void should_build_valid_sqs_name_when_consumer_identity_contains_dots()
+    {
+        var name = AwsPhysicalAddress.BusSubscriptionQueue("billing.invoice-projection");
+
+        name.Should().MatchRegex("^bus-billing-invoice-projection-[0-9a-f]{12}$");
+    }
+
+    [Fact]
+    public void should_keep_fifo_suffix_within_sqs_limit_when_fifo_identity_is_long()
+    {
+        var identity = "billing." + new string('a', 107) + ".fifo";
+
+        var name = AwsPhysicalAddress.BusSubscriptionQueue(identity);
+
+        identity.Should().HaveLength(120);
+        name.Should().HaveLength(80);
+        name.Should().EndWith(".fifo");
+        name[..^".fifo".Length].Should().MatchRegex("^bus-[A-Za-z0-9_-]+$");
+        AwsPhysicalAddress.BusSubscriptionQueue(identity).Should().Be(name);
     }
 
     [Fact]
     public void should_bound_and_stabilize_lane_qualified_names()
     {
         var logicalName = new string('a', 180);
-        var group = new string('b', 180);
+        var identity = new string('b', 180);
 
-        var first = AwsPhysicalAddress.BusGroupQueue(group);
-        var second = AwsPhysicalAddress.BusGroupQueue(group);
+        var first = AwsPhysicalAddress.BusSubscriptionQueue(identity);
+        var second = AwsPhysicalAddress.BusSubscriptionQueue(identity);
 
         first.Should().Be(second);
         first.Should().HaveLength(80);

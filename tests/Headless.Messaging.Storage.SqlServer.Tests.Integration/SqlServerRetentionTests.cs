@@ -65,6 +65,7 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
                 DROP TYPE IF EXISTS [{_schema}].HeadlessMessagingIdList;
                 DROP TYPE IF EXISTS [{_schema}].HeadlessMessagingOwnerList;
                 DROP TYPE IF EXISTS [{_schema}].HeadlessMessagingPoisonMessageList;
+                DROP TYPE IF EXISTS [{_schema}].HeadlessMessagingConsumerIdentityList;
                 DROP SCHEMA IF EXISTS [{_schema}];
                 """,
                 cancellationToken: AbortToken

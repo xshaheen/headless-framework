@@ -1578,7 +1578,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     /// every sweep, forever — and because the store applies the batch limit BEFORE the per-candidate confirmation
     /// above, those permanent false positives crowd genuinely stale definitions out of the batch and starve them
     /// indefinitely. The zones in use come from the store rather than from the declared functions because a runtime
-    /// definition may name a zone no <c>[JobFunction]</c> mentions.
+    /// definition may name a zone no <c>[Job]</c> mentions.
     /// </remarks>
     private async Task<HashSet<string>> _CurrentFingerprintsAsync(CancellationToken cancellationToken)
     {

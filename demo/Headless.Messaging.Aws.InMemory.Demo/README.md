@@ -4,7 +4,7 @@ ASP.NET Core demo for wiring the AWS messaging transport with in-memory storage.
 
 ## Shows
 
-- Lane-scoped assembly scanning with `Bus.ForConsumersFromAssembly(...)`.
+- A `[BusConsumer]` consumer registered through the generated module with `AddModule<…MessagingModule>()`.
 - AWS transport setup through `UseAws(...)`.
 - In-memory storage through `UseInMemoryStorage()`.
 - Messaging dashboard registration with `WithNoAuth()`.

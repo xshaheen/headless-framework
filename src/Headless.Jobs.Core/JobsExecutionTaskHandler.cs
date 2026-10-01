@@ -260,7 +260,7 @@ internal sealed class JobsExecutionTaskHandler
             _cancellationRegistry.TrySignalHostShutdown(cancellationRegistration)
         );
 
-        var jobFunctionContext = new JobFunctionContext
+        var jobFunctionContext = new JobContext
         {
             FunctionName = context.FunctionName,
             ContractVersion = context.ContractVersion,
@@ -558,8 +558,8 @@ internal sealed class JobsExecutionTaskHandler
                             {
                                 Task terminal(CancellationToken token) =>
                                     context.CachedDelegate(scope.ServiceProvider, jobFunctionContext, token);
-                                await JobMiddlewareRegistry
-                                    .DispatchExecuteAsync(
+                                await _functionRegistry
+                                    .Middleware.DispatchExecuteAsync(
                                         new(descriptor, context, jobFunctionContext, retryCount, scope.ServiceProvider),
                                         terminal,
                                         attemptToken

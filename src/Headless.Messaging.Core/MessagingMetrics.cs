@@ -13,7 +13,7 @@ namespace Headless.Messaging;
 /// OpenTelemetry metric instruments for messaging operations, registered against
 /// <see cref="MessagingDiagnostics.Meter"/>. Instrument names and standard dimensions follow the OpenTelemetry
 /// messaging semantic conventions verbatim (<c>messaging.publish.messages</c>, <c>messaging.consume.duration</c>,
-/// dims <c>messaging.operation</c> / <c>messaging.system</c> / <c>messaging.consumer.group</c> /
+/// dims <c>messaging.operation</c> / <c>messaging.system</c> / <c>messaging.consumer.group.name</c> /
 /// <c>error.type</c>); see docs/solutions/conventions/opentelemetry-instrumentation-conventions.md.
 /// </summary>
 /// <remarks>
@@ -45,16 +45,21 @@ internal static class MessagingMetrics
     internal const string InboxCapabilitiesName = "messaging.inbox.capabilities";
     internal const string OperatorOperationsName = "messaging.operator.operations";
     internal const string ReceiveOutcomesName = "messaging.receive.outcomes";
+    internal const string EveryInstanceDeliveriesName = "messaging.every_instance.deliveries";
 
     // --- Dimension (tag) names --------------------------------------------------------------------------------
 
     internal const string TagOperation = "messaging.operation";
     internal const string TagSystem = "messaging.system";
-    internal const string TagConsumerGroup = "messaging.consumer.group";
+
+    // The semantic-convention name for the consumer group; its value is the consumer identity, which is what a broker
+    // subscription is named after.
+    internal const string TagConsumerGroupName = "messaging.consumer.group.name";
     internal const string TagErrorType = "error.type";
     internal const string TagSubscriber = "messaging.subscriber";
     internal const string TagPersistenceType = "messaging.persistence.type";
     internal const string TagReceiveOutcome = "messaging.receive.outcome";
+    internal const string TagEveryInstanceOutcome = "messaging.every_instance.outcome";
 
     // --- Instruments ------------------------------------------------------------------------------------------
 
@@ -136,6 +141,10 @@ internal static class MessagingMetrics
         ReceiveOutcomesName
     );
 
+    private static readonly Counter<long> _EveryInstanceDeliveries = MessagingDiagnostics.Meter.CreateCounter<long>(
+        EveryInstanceDeliveriesName
+    );
+
     /// <summary>Whether any messaging instrument currently has a subscribed listener.</summary>
     internal static bool AnyEnabled =>
         _MessagesPublished.Enabled
@@ -156,7 +165,8 @@ internal static class MessagingMetrics
         || _InboxReplays.Enabled
         || _InboxRetention.Enabled
         || _InboxCapabilities.Enabled
-        || _ReceiveOutcomes.Enabled;
+        || _ReceiveOutcomes.Enabled
+        || _EveryInstanceDeliveries.Enabled;
 
     internal static void RecordInbox(
         InboxMetricKind kind,
@@ -269,11 +279,11 @@ internal static class MessagingMetrics
     internal static void RecordConsume(
         string operation,
         string brokerName,
-        string? consumerGroup = null,
+        string? consumerIdentity = null,
         long? elapsedMs = null
     )
     {
-        var group = consumerGroup ?? "";
+        var identity = consumerIdentity ?? "";
 
         if (_MessagesConsumed.Enabled)
         {
@@ -283,7 +293,7 @@ internal static class MessagingMetrics
                 {
                     { TagOperation, operation },
                     { TagSystem, brokerName },
-                    { TagConsumerGroup, group },
+                    { TagConsumerGroupName, identity },
                 }
             );
         }
@@ -296,7 +306,7 @@ internal static class MessagingMetrics
                 {
                     { TagOperation, operation },
                     { TagSystem, brokerName },
-                    { TagConsumerGroup, group },
+                    { TagConsumerGroupName, identity },
                 }
             );
         }
@@ -306,7 +316,7 @@ internal static class MessagingMetrics
         string operation,
         string brokerName,
         string errorType,
-        string? consumerGroup = null
+        string? consumerIdentity = null
     )
     {
         if (!_ConsumeErrors.Enabled)
@@ -321,7 +331,7 @@ internal static class MessagingMetrics
                 { TagOperation, operation },
                 { TagSystem, brokerName },
                 { TagErrorType, errorType },
-                { TagConsumerGroup, consumerGroup ?? "" },
+                { TagConsumerGroupName, consumerIdentity ?? "" },
             }
         );
     }
@@ -414,6 +424,29 @@ internal static class MessagingMetrics
         }
 
         _ReceiveOutcomes.Add(1, new TagList { { TagReceiveOutcome, outcome } });
+    }
+
+    /// <summary>
+    /// Records one every-instance delivery, which has no inbox row to count it: <c>succeeded</c> when the consumer
+    /// returned, <c>failed</c> when it threw (with <c>error.type</c>), <c>dropped</c> when the message never reached it or
+    /// faulted outside it (no consumer on the subscription, a receive-stage reject, a core or transport fault, or a NATS
+    /// channel overflow with <c>error.type</c> = <c>overflow</c>), and <c>skipped</c> when receive middleware skipped it.
+    /// Every outcome commits the message, except where the transport itself discarded it.
+    /// </summary>
+    internal static void RecordEveryInstanceDelivery(string consumerIdentity, string outcome, string? errorType = null)
+    {
+        if (!_EveryInstanceDeliveries.Enabled)
+        {
+            return;
+        }
+
+        var tags = new TagList { { TagConsumerGroupName, consumerIdentity }, { TagEveryInstanceOutcome, outcome } };
+        if (errorType is not null)
+        {
+            tags.Add(TagErrorType, errorType);
+        }
+
+        _EveryInstanceDeliveries.Add(1, tags);
     }
 
     private static TagList _CreateDeliveryTags(

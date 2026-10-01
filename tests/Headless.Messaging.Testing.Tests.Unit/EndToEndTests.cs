@@ -86,7 +86,7 @@ public sealed class EndToEndTests : TestBase
 {
     private static Task<MessagingTestHarness> _CreateHarnessAsync(Action<MessagingSetupBuilder>? configure = null)
     {
-        return _CreateHarnessAsync((_, setup) => configure?.Invoke(setup));
+        return _CreateHarnessAsync((services, setup) => configure?.Invoke(setup));
     }
 
     private static Task<MessagingTestHarness> _CreateHarnessAsync(
@@ -112,15 +112,13 @@ public sealed class EndToEndTests : TestBase
     {
         // given
         await using var harness = await _CreateHarnessAsync(
-            (_, setup) =>
+            (services, setup) =>
             {
-                setup.Bus.ForMessage<OrderCreatedEvent>(message =>
-                    message
-                        .Contract("order-created")
-                        .Consumer<OrderCreatedConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.messaging-testing.order-created")
-                        )
-                );
+                services.ConfigureMessaging(messaging =>
+                {
+                    messaging.Message<OrderCreatedEvent>("order-created");
+                    messaging.AddModule<OrderCreatedModule>();
+                });
             }
         );
 
@@ -150,15 +148,13 @@ public sealed class EndToEndTests : TestBase
     {
         // given
         await using var harness = await _CreateHarnessAsync(
-            (_, setup) =>
+            (services, setup) =>
             {
-                setup.Bus.ForMessage<OrderCreatedEvent>(message =>
-                    message
-                        .Contract("order-created")
-                        .Consumer<FailingConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.messaging-testing.failing")
-                        )
-                );
+                services.ConfigureMessaging(messaging =>
+                {
+                    messaging.Message<OrderCreatedEvent>("order-created");
+                    messaging.AddModule<FailingModule>();
+                });
             }
         );
 
@@ -189,13 +185,11 @@ public sealed class EndToEndTests : TestBase
                     options.UseInMemory();
                     options.UseInMemoryStorage();
                     options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
-                    options.Bus.ForMessage<OrderCreatedEvent>(message =>
-                        message
-                            .Contract("order-created")
-                            .Consumer<TestConsumer<OrderCreatedEvent>>(consumer =>
-                                consumer.ConsumerIdentity("tests.messaging-testing.test-consumer")
-                            )
-                    );
+                    services.ConfigureMessaging(messaging =>
+                    {
+                        messaging.Message<OrderCreatedEvent>("order-created");
+                        messaging.AddModule<TestConsumerModule>();
+                    });
                 });
             },
             AbortToken
@@ -246,28 +240,24 @@ public sealed class EndToEndTests : TestBase
     {
         // given
         await using var harness1 = await _CreateHarnessAsync(
-            (_, setup) =>
+            (services, setup) =>
             {
-                setup.Bus.ForMessage<OrderCreatedEvent>(message =>
-                    message
-                        .Contract("order-created")
-                        .Consumer<OrderCreatedConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.messaging-testing.order-created")
-                        )
-                );
+                services.ConfigureMessaging(messaging =>
+                {
+                    messaging.Message<OrderCreatedEvent>("order-created");
+                    messaging.AddModule<OrderCreatedModule>();
+                });
             }
         );
 
         await using var harness2 = await _CreateHarnessAsync(
-            (_, setup) =>
+            (services, setup) =>
             {
-                setup.Bus.ForMessage<OrderCreatedEvent>(message =>
-                    message
-                        .Contract("order-created")
-                        .Consumer<OrderCreatedConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.messaging-testing.order-created")
-                        )
-                );
+                services.ConfigureMessaging(messaging =>
+                {
+                    messaging.Message<OrderCreatedEvent>("order-created");
+                    messaging.AddModule<OrderCreatedModule>();
+                });
             }
         );
 
@@ -298,13 +288,11 @@ public sealed class EndToEndTests : TestBase
                     options.UseInMemory();
                     options.UseInMemoryStorage();
                     options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
-                    options.Bus.ForMessage<OrderCreatedEvent>(message =>
-                        message
-                            .Contract("order-created")
-                            .Consumer<NotifyingConsumer>(consumer =>
-                                consumer.ConsumerIdentity("tests.messaging-testing.notifying")
-                            )
-                    );
+                    services.ConfigureMessaging(messaging =>
+                    {
+                        messaging.Message<OrderCreatedEvent>("order-created");
+                        messaging.AddModule<NotifyingModule>();
+                    });
                 });
             },
             AbortToken
@@ -328,23 +316,14 @@ public sealed class EndToEndTests : TestBase
                 services.AddSingleton<LaneRecorder>();
                 services.AddHeadlessMessaging(options =>
                 {
-                    options.Bus.ForMessage<OrderCreatedEvent>(message =>
-                        message
-                            .Contract("order-created")
-                            .Consumer<BusLaneConsumer>(consumer =>
-                                consumer.ConsumerIdentity("tests.messaging-testing.bus-lane").Group("bus-workers")
-                            )
-                    );
-                    options.Queue.ForMessage<OrderCreatedEvent>(message =>
-                        message
-                            .Contract("order-created")
-                            .Consumer<QueueLaneConsumer>(consumer =>
-                                consumer.ConsumerIdentity("tests.messaging-testing.queue-lane").Group("queue-workers")
-                            )
-                    );
                     options.UseInMemory();
                     options.UseInMemoryStorage();
                     options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+                });
+                services.ConfigureMessaging(messaging =>
+                {
+                    messaging.Message<OrderCreatedEvent>("order-created");
+                    messaging.AddModule<LaneModule>();
                 });
             },
             AbortToken
@@ -414,27 +393,14 @@ public sealed class EndToEndTests : TestBase
                 services.AddSingleton<LaneRecorder>();
                 services.AddHeadlessMessaging(options =>
                 {
-                    options.Bus.ForMessage<OrderCreatedEvent>(message =>
-                        message
-                            .Contract("durable-order-created")
-                            .Consumer<BusLaneConsumer>(consumer =>
-                                consumer
-                                    .ConsumerIdentity("tests.messaging-testing.durable-bus-lane")
-                                    .Group("durable-bus")
-                            )
-                    );
-                    options.Queue.ForMessage<OrderCreatedEvent>(message =>
-                        message
-                            .Contract("durable-order-created")
-                            .Consumer<QueueLaneConsumer>(consumer =>
-                                consumer
-                                    .ConsumerIdentity("tests.messaging-testing.durable-queue-lane")
-                                    .Group("durable-queue")
-                            )
-                    );
                     options.UseInMemory();
                     options.UseInMemoryStorage();
                     options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+                });
+                services.ConfigureMessaging(messaging =>
+                {
+                    messaging.Message<OrderCreatedEvent>("durable-order-created");
+                    messaging.AddModule<DurableLaneModule>();
                 });
             },
             AbortToken
@@ -570,9 +536,7 @@ public sealed class EndToEndTests : TestBase
     private sealed class UnusedConsumerClientFactory : IConsumerClientFactory
     {
         public Task<IConsumerClient> CreateAsync(
-            string groupName,
-            byte groupConcurrent,
-            MessageLane lane,
+            ConsumerClientRequest request,
             CancellationToken cancellationToken = default
         )
         {
@@ -593,13 +557,11 @@ public sealed class EndToEndTests : TestBase
             options.UseInMemory();
             options.UseInMemoryStorage();
             options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
-            options.Bus.ForMessage<OrderCreatedEvent>(message =>
-                message
-                    .Contract("order-created")
-                    .Consumer<OrderCreatedConsumer>(consumer =>
-                        consumer.ConsumerIdentity("tests.messaging-testing.order-created")
-                    )
-            );
+            services.ConfigureMessaging(messaging =>
+            {
+                messaging.Message<OrderCreatedEvent>("order-created");
+                messaging.AddModule<OrderCreatedModule>();
+            });
         });
 
         // Register the test harness via extension method (hosted mode)
@@ -635,13 +597,11 @@ public sealed class EndToEndTests : TestBase
         await using var harness = await _CreateHarnessAsync(
             (services, options) =>
             {
-                options.Bus.ForMessage<OrderCreatedEvent>(message =>
-                    message
-                        .Contract("order-created")
-                        .Consumer<FailingConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.messaging-testing.failing")
-                        )
-                );
+                services.ConfigureMessaging(messaging =>
+                {
+                    messaging.Message<OrderCreatedEvent>("order-created");
+                    messaging.AddModule<FailingModule>();
+                });
                 options.Options.RetryPolicy.MaxPersistedRetries = 0;
                 options.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions
                 {
@@ -687,13 +647,11 @@ public sealed class EndToEndTests : TestBase
         await using var harness = await _CreateHarnessAsync(
             (services, options) =>
             {
-                options.Bus.ForMessage<OrderCreatedEvent>(message =>
-                    message
-                        .Contract("order-created")
-                        .Consumer<FailingConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.messaging-testing.failing")
-                        )
-                );
+                services.ConfigureMessaging(messaging =>
+                {
+                    messaging.Message<OrderCreatedEvent>("order-created");
+                    messaging.AddModule<FailingModule>();
+                });
                 options.Options.RetryPolicy.MaxPersistedRetries = 0;
                 options.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions
                 {

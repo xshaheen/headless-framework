@@ -37,7 +37,7 @@ public sealed class CronRecoveryContextPropagationTests : TestBase
         {
             typeof(CronJobOccurrenceEntity<CronJobEntity>),
             typeof(JobExecutionState),
-            typeof(JobFunctionContext),
+            typeof(JobContext),
         };
 
         foreach (var carrier in carriers)
@@ -85,7 +85,7 @@ public sealed class CronRecoveryContextPropagationTests : TestBase
         var source = _Context(_EarliestMissed);
         source.Lateness = TimeSpan.FromMinutes(150);
 
-        var typed = new JobFunctionContext<string>(source, "payload");
+        var typed = new JobContext<string>(source, "payload");
 
         typed.RecoveredFromUtc.Should().Be(_EarliestMissed, "the copy constructor must carry every base member");
         typed.IsRecoveryRun.Should().BeTrue();
@@ -141,7 +141,7 @@ public sealed class CronRecoveryContextPropagationTests : TestBase
     public async Task normal_execution_reports_no_recovery_and_clamps_negative_lateness_to_zero()
     {
         var now = new DateTimeOffset(_EarliestMissed, TimeSpan.Zero);
-        JobFunctionContext? observed = null;
+        JobContext? observed = null;
         var state = _ExecutionState(
             recoveredFrom: null,
             retries: 0,
@@ -209,7 +209,7 @@ public sealed class CronRecoveryContextPropagationTests : TestBase
             CachedDelegate = function,
         };
 
-    private static JobFunctionContext _Context(DateTime? recoveredFrom) =>
+    private static JobContext _Context(DateTime? recoveredFrom) =>
         new()
         {
             FunctionName = "ctx",

@@ -41,7 +41,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
                 {
                     [Headers.MessageId] = "logical-rec-456",
                     [Headers.MessageName] = "orders.received",
-                    [Headers.Group] = "workers",
+                    [Headers.ConsumerIdentity] = "billing.invoice-projection",
                 },
                 new { Data = "received" }
             ),
@@ -105,7 +105,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
                     MessageId = "logical-rec-456",
                     Version = "v1",
                     Name = "orders.received",
-                    Group = "workers",
+                    ConsumerIdentity = "billing.invoice-projection",
                     Lane = MessageLane.Queue,
                     RequestedDeliveryMode = DeliveryMode.Direct,
                     ResolvedDeliveryMode = DeliveryMode.Direct,
@@ -131,7 +131,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
 
         // when
         var response = await client.GetAsync(
-            "/api/received/Failed?currentPage=1&perPage=10&group=workers&lane=Queue",
+            "/api/received/Failed?currentPage=1&perPage=10&consumerIdentity=billing.invoice-projection&lane=Queue",
             AbortToken
         );
 
@@ -151,7 +151,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         var item = payload["items"].EnumerateArray().Should().ContainSingle().Subject;
         item.GetProperty("storageId").GetString().Should().Be("11111111-1111-1111-1111-111111111456");
         item.GetProperty("messageId").GetString().Should().Be("logical-rec-456");
-        item.GetProperty("group").GetString().Should().Be("workers");
+        item.GetProperty("consumerIdentity").GetString().Should().Be("billing.invoice-projection");
         item.GetProperty("lane").GetString().Should().Be(nameof(MessageLane.Queue));
         item.GetProperty("requestedDeliveryMode").GetString().Should().Be(nameof(DeliveryMode.Direct));
         item.GetProperty("resolvedDeliveryMode").GetString().Should().Be(nameof(DeliveryMode.Direct));
@@ -162,7 +162,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
                 Arg.Is<MessageQuery>(query =>
                     query.MessageType == MessageType.Subscribe
                     && query.StatusName == StatusName.Failed
-                    && query.Group == "workers"
+                    && query.ConsumerIdentity == "billing.invoice-projection"
                     && query.Lane == MessageLane.Queue
                     && query.CurrentPage == 0
                     && query.PageSize == 10
@@ -187,7 +187,10 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         using var client = app.GetTestClient();
 
         // when — lane omitted from query string
-        var response = await client.GetAsync("/api/received/Failed?currentPage=1&perPage=10&group=workers", AbortToken);
+        var response = await client.GetAsync(
+            "/api/received/Failed?currentPage=1&perPage=10&consumerIdentity=billing.invoice-projection",
+            AbortToken
+        );
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -198,7 +201,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
                 Arg.Is<MessageQuery>(query =>
                     query.MessageType == MessageType.Subscribe
                     && query.StatusName == StatusName.Failed
-                    && query.Group == "workers"
+                    && query.ConsumerIdentity == "billing.invoice-projection"
                     && query.Lane == null
                     && query.CurrentPage == 0
                     && query.PageSize == 10

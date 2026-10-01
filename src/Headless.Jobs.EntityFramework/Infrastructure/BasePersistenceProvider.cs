@@ -24,7 +24,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     SchedulerOptionsBuilder optionsBuilder,
     ICache? cache,
     IJobsClaimStrategy<TTimeJob, TCronJob> claimStrategy,
-    ILogger logger
+    ILogger logger,
+    JobsRunFilter? runFilter = null
 )
     where TDbContext : DbContext
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
@@ -33,6 +34,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     protected IDbContextFactory<TDbContext> DbContextFactory { get; } = dbContextFactory;
 
     protected ILogger Logger { get; } = logger;
+
+    // Which functions this host claims. Applied to every root claim, acquire, and next-occurrence read, never to an
+    // in-tree descendant, which runs with the root that claimed it.
+    protected JobsRunFilter RunFilter { get; } = runFilter ?? JobsRunFilter.All;
 
     // Pickup-lease deadline window: every acquire stamps LockedUntil = now + LeaseDuration.
     protected TimeSpan LeaseDuration { get; } = optionsBuilder.LeaseDuration;
@@ -230,6 +235,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .AsNoTracking()
             .Where(x => x.ExecutionTime != null)
             .Where(x => x.ExecutionTime >= oneSecondAgo) // Ignore old jobs (fallback handles them)
+            .WhereRunnable(RunFilter)
             .WhereCanAcquireUsingDatabaseClock(owner)
             // A timed descendant surfaces here as its own candidate (excluded from the in-tree walk); the
             // parent gate keeps it out of the peek until its parent reached its matching terminal state.
@@ -928,6 +934,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var affected = await dbContext
             .Set<TTimeJob>()
             .Where(x => ((IEnumerable<Guid>)ids).Contains(x.Id))
+            .WhereRunnable(RunFilter)
             .WhereCanAcquireUsingDatabaseClock(owner)
             // Gate the immediate-acquire path too — a timed descendant is claimable only once its parent
             // reached its matching terminal state. Roots (ParentId == null) pass trivially.
@@ -1228,6 +1235,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     x.OnOverlap,
                     x.EvaluationFingerprint,
                     x.ContractVersion,
+                    x.TimeZoneId,
                     Id: existingByFunction.TryGetValue(x.Function, out var existingDefinition)
                         ? existingDefinition.Id
                         : JobsSeedId.ForCronSeed(x.Function)
@@ -1248,6 +1256,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 onOverlap,
                 evaluationFingerprint,
                 contractVersion,
+                timeZoneId,
                 _
             ) in orderedCronJobs
         )
@@ -1256,8 +1265,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             {
                 // Reseeding cannot upgrade the schema label of bytes already stored by an older writer.
                 // Existing function/version/request tuples change only through an explicit definition edit.
-                // Update expression if it changed
-                if (!string.Equals(cron.Expression, expression, StringComparison.Ordinal))
+                // Update the schedule if its expression or zone changed
+                if (
+                    !string.Equals(cron.Expression, expression, StringComparison.Ordinal)
+                    || !string.Equals(cron.TimeZoneId, timeZoneId, StringComparison.Ordinal)
+                )
                 {
                     await cronSet
                         .Where(x => x.Id == cron.Id)
@@ -1268,9 +1280,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .ConfigureAwait(false);
                     await dbContext.Entry(cron).ReloadAsync(cancellationToken).ConfigureAwait(false);
 
-                    if (!string.Equals(cron.Expression, expression, StringComparison.Ordinal))
+                    if (
+                        !string.Equals(cron.Expression, expression, StringComparison.Ordinal)
+                        || !string.Equals(cron.TimeZoneId, timeZoneId, StringComparison.Ordinal)
+                    )
                     {
                         cron.Expression = expression;
+                        cron.TimeZoneId = timeZoneId;
                         cron.ScheduleRevision++;
                         cron.UpdatedAt = now;
 
@@ -1300,6 +1316,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     Function = function,
                     ContractVersion = contractVersion,
                     Expression = expression,
+                    TimeZoneId = timeZoneId,
                     InitIdentifier = $"MemoryTicker_Seeded_{function}",
                     CreatedAt = now,
                     UpdatedAt = now,
@@ -1965,7 +1982,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var selectable = dbContext
             .Set<TCronJob>()
             .AsNoTracking()
-            .Where(x => !x.IsPaused && x.FingerprintRetryAfterUtc == null);
+            .Where(x => !x.IsPaused && x.FingerprintRetryAfterUtc == null)
+            .WhereDefinitionRunnable(RunFilter);
 
         if (after is { } cursor)
         {
@@ -2688,6 +2706,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Where(x => ids.Length == 0 || ((IEnumerable<Guid>)ids).Contains(x.CronJobId))
             .Where(x => !x.CronJob.IsPaused)
             .Where(x => x.ExecutionTime >= mainSchedulerThreshold) // Only items within the 1-second main scheduler window
+            .WhereRunnable(RunFilter)
             .WhereCanAcquireUsingDatabaseClock(owner)
             .OrderBy(x => x.ExecutionTime)
             .Select(MappingExtensions.ForLatestQueuedCronJobOccurrence<CronJobOccurrenceEntity<TCronJob>, TCronJob>())

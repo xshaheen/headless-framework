@@ -414,7 +414,7 @@ internal sealed partial class InMemoryDataStorage
             Content = parent.Content,
             Lane = parent.Lane,
             Name = parent.Name,
-            Group = parent.Group,
+            ConsumerIdentity = parent.ConsumerIdentity,
             Version = parent.Version,
             Added = now,
             NextRetryAt = now.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),

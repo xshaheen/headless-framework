@@ -15,7 +15,7 @@ public enum JobPriority
     /// <summary>
     /// Standard priority dispatched to the Jobs thread pool after <see cref="High"/> work. This is the
     /// default value (<c>default(JobPriority)</c>) and the default for functions declared with
-    /// <c>JobFunctionAttribute</c>.
+    /// <c>JobAttribute</c>.
     /// </summary>
     Normal = 0,
 

@@ -1,12 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
+using Headless.Messaging.Exceptions;
 using Headless.Messaging.RabbitMq;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
 
 namespace Tests;
 
@@ -107,6 +109,287 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         // then
         await _channel.Received(1).BasicQosAsync(0, 20, false, Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task should_open_every_instance_client_on_its_own_connection_without_declaring_a_queue()
+    {
+        // given
+        var ownedConnection = Substitute.For<IConnection>();
+        ownedConnection
+            .CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_channel);
+        _pool.CreateNonRecoveringConnectionAsync(Arg.Any<CancellationToken>()).Returns(ownedConnection);
+        await using var client = _CreateEveryInstanceClient();
+
+        // when
+        await client.ConnectAsync(AbortToken);
+
+        // then: the topology-only client the core opens stops here, so nothing per process may exist yet
+        await _pool.DidNotReceive().GetConnectionAsync(Arg.Any<CancellationToken>());
+        await ownedConnection
+            .Received(1)
+            .CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>());
+        await _channel
+            .DidNotReceiveWithAnyArgs()
+            .QueueDeclareAsync(default!, default, default, default, default, default, default, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_bind_every_routing_key_to_one_server_named_exclusive_queue_when_every_instance_subscribes()
+    {
+        // given
+        var ownedConnection = Substitute.For<IConnection>();
+        ownedConnection
+            .CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_channel);
+        _pool.CreateNonRecoveringConnectionAsync(Arg.Any<CancellationToken>()).Returns(ownedConnection);
+        _channel
+            .QueueDeclareAsync(
+                Arg.Any<string>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<IDictionary<string, object?>?>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(new QueueDeclareOk("amq.gen-every", 0, 0));
+        await using var client = _CreateEveryInstanceClient();
+
+        // when
+        await client.SubscribeAsync(["orders.created", "orders.cancelled"], AbortToken);
+
+        // then
+        await _channel
+            .Received(1)
+            .QueueDeclareAsync(
+                string.Empty,
+                false, // durable
+                true, // exclusive
+                false, // autoDelete: pausing cancels the only consumer and must not delete the queue
+                Arg.Is<IDictionary<string, object?>?>(d => d != null && d.Count == 1 && d.ContainsKey("x-message-ttl")),
+                false,
+                false,
+                Arg.Any<CancellationToken>()
+            );
+        await _channel
+            .Received(1)
+            .QueueBindAsync(
+                "amq.gen-every",
+                "test.exchange.bus",
+                "bus.orders.created",
+                Arg.Any<IDictionary<string, object?>?>(),
+                Arg.Any<bool>(),
+                Arg.Any<CancellationToken>()
+            );
+        await _channel
+            .Received(1)
+            .QueueBindAsync(
+                "amq.gen-every",
+                "test.exchange.bus",
+                "bus.orders.cancelled",
+                Arg.Any<IDictionary<string, object?>?>(),
+                Arg.Any<bool>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_close_its_own_connection_when_every_instance_client_disposes()
+    {
+        // given
+        var ownedConnection = Substitute.For<IConnection>();
+        ownedConnection
+            .CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_channel);
+        _pool.CreateNonRecoveringConnectionAsync(Arg.Any<CancellationToken>()).Returns(ownedConnection);
+        var client = _CreateEveryInstanceClient();
+        await client.ConnectAsync(AbortToken);
+
+        // when
+        await client.DisposeAsync();
+
+        // then
+        await ownedConnection
+            .Received(1)
+            .CloseAsync(
+                Arg.Any<ushort>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<bool>(),
+                Arg.Any<CancellationToken>()
+            );
+        await ownedConnection.Received(1).DisposeAsync();
+    }
+
+    [Fact]
+    public async Task should_declare_every_instance_queue_with_a_one_minute_ttl_whatever_the_competing_queue_arguments()
+    {
+        // given - competing queue arguments that must not reach a per-process queue
+        var options = Options.Create(
+            new RabbitMqMessagingOptions
+            {
+                HostName = "localhost",
+                UserName = "test_user",
+                Password = "test_pass",
+                QueueArguments = new RabbitMqMessagingOptions.QueueArgumentsOptions
+                {
+                    MessageTTL = 864000000,
+                    QueueMode = "lazy",
+                    QueueType = "quorum",
+                },
+            }
+        );
+        _UseOwnedConnectionWithServerNamedQueue();
+        await using var client = new RabbitMqConsumerClient(
+            "billing.cache",
+            1,
+            _pool,
+            options,
+            _serviceProvider,
+            lane: MessageLane.Bus,
+            kind: ConsumerSubscriptionKind.EveryInstance
+        );
+
+        // when
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+
+        // then - a stalled or paused queue never replays more than a minute of per-process state
+        await _channel
+            .Received(1)
+            .QueueDeclareAsync(
+                string.Empty,
+                false,
+                true,
+                false,
+                Arg.Is<IDictionary<string, object?>?>(d =>
+                    d != null && d.Count == 1 && Equals(d["x-message-ttl"], 60_000)
+                ),
+                false,
+                false,
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_fail_every_instance_listening_for_a_rebuild_when_its_channel_shuts_down()
+    {
+        // given
+        _UseOwnedConnectionWithServerNamedQueue();
+        var client = _CreateEveryInstanceClient();
+
+        try
+        {
+            client.AttachCallbacks(onMessage: (_, _) => Task.CompletedTask, onLog: _ => { });
+            await client.SubscribeAsync(["orders.created"], AbortToken);
+            var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), AbortToken).AsTask();
+            await client.WaitUntilReadyAsync(AbortToken).AsTask().WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+            // when
+            _channel.ChannelShutdownAsync += Raise.Event<AsyncEventHandler<ShutdownEventArgs>>(
+                _channel,
+                new ShutdownEventArgs(ShutdownInitiator.Peer, 320, "CONNECTION_FORCED")
+            );
+
+            // then
+            var act = () => listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            (await act.Should().ThrowAsync<BrokerConnectionException>())
+                .WithInnerException<InvalidOperationException>()
+                .WithMessage("*CONNECTION_FORCED*");
+        }
+        finally
+        {
+            await client.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task should_fail_every_instance_listening_for_a_rebuild_when_the_broker_cancels_its_consumer()
+    {
+        // given
+        _UseOwnedConnectionWithServerNamedQueue();
+        var client = _CreateEveryInstanceClient();
+
+        try
+        {
+            client.AttachCallbacks(onMessage: (_, _) => Task.CompletedTask, onLog: _ => { });
+            await client.SubscribeAsync(["orders.created"], AbortToken);
+            var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), AbortToken).AsTask();
+            await client.WaitUntilReadyAsync(AbortToken).AsTask().WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            var consumer = _channel
+                .ReceivedCalls()
+                .First(c =>
+                    string.Equals(c.GetMethodInfo().Name, nameof(IChannel.BasicConsumeAsync), StringComparison.Ordinal)
+                )
+                .GetArguments()
+                .OfType<IAsyncBasicConsumer>()
+                .Single();
+
+            // when - an operator deleted the queue: the broker cancels the consumer and the channel stays open
+            await consumer.HandleBasicCancelAsync("amq.ctag-every", AbortToken);
+
+            // then
+            var act = () => listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            (await act.Should().ThrowAsync<BrokerConnectionException>())
+                .WithInnerException<InvalidOperationException>()
+                .WithMessage("*amq.ctag-every*");
+        }
+        finally
+        {
+            await client.DisposeAsync();
+        }
+    }
+
+    private void _UseOwnedConnectionWithServerNamedQueue()
+    {
+        var ownedConnection = Substitute.For<IConnection>();
+        ownedConnection
+            .CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_channel);
+        _pool.CreateNonRecoveringConnectionAsync(Arg.Any<CancellationToken>()).Returns(ownedConnection);
+        _channel.IsClosed.Returns(false);
+        _channel
+            .QueueDeclareAsync(
+                Arg.Any<string>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<IDictionary<string, object?>?>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(new QueueDeclareOk("amq.gen-every", 0, 0));
+    }
+
+    [Fact]
+    public void should_refuse_every_instance_client_on_the_queue_lane()
+    {
+        var act = () =>
+            new RabbitMqConsumerClient(
+                "orders.created",
+                1,
+                _pool,
+                _options,
+                _serviceProvider,
+                lane: MessageLane.Queue,
+                kind: ConsumerSubscriptionKind.EveryInstance
+            );
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    private RabbitMqConsumerClient _CreateEveryInstanceClient() =>
+        new(
+            "billing.cache",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            lane: MessageLane.Bus,
+            kind: ConsumerSubscriptionKind.EveryInstance
+        );
 
     [Fact]
     public async Task should_declare_queue_with_default_options()
@@ -261,9 +544,18 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void should_use_group_queue_for_bus_intent()
+    public void should_use_consumer_identity_queue_for_bus_intent()
     {
         RabbitMqConsumerClient.GetQueueName("workers", "orders.created", MessageLane.Bus).Should().Be("bus.workers");
+    }
+
+    [Fact]
+    public void should_keep_consumer_identity_unchanged_when_it_is_a_valid_queue_name()
+    {
+        RabbitMqConsumerClient
+            .GetQueueName("billing.invoice-projection", "orders.created", MessageLane.Bus)
+            .Should()
+            .Be("bus.billing.invoice-projection");
     }
 
     [Fact]

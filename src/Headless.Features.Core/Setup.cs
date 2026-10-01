@@ -13,6 +13,7 @@ using Headless.Features.Seeders;
 using Headless.Features.ValueProviders;
 using Headless.Features.Values;
 using Headless.Hosting.Initialization;
+using Headless.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -147,6 +148,10 @@ public static class SetupFeatures
         // The definition store keys its cross-instance lock on the application name and the manager stamps
         // its change announcements with the instance id; a host that never registered an identity gets one.
         services.AddHeadlessHostIdentity();
+
+        // The change announcement's wire name is declared rather than convention-derived, so services sharing a
+        // broker agree on it whatever naming conventions each configures. Inert when the host does not use messaging.
+        services.AddMessageContract<FeatureChangedMessage>(FeatureChangedMessage.MessageName, "1");
 
         services.AddSingleton<IFeatureErrorsDescriptor, DefaultFeatureErrorsDescriptor>();
 

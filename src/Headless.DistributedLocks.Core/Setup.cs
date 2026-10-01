@@ -157,11 +157,9 @@ internal static class DistributedLockCoreServiceCollectionExtensions
             )
         );
 
-        // Auto-register the shared lock-released consumer. AddHeadlessMessaging drains the
-        // registration into its consumer registry once, so distributed-lock setup must run before
-        // AddHeadlessMessaging when release wake-ups are needed. When messaging is never added,
-        // the emitted descriptors are inert.
-        DistributedLockConsumerRegistration.TryAddLockReleasedConsumer(services);
+        // Auto-register the shared lock-released consumer. Messaging applies the contribution when it
+        // starts, so it may come before or after AddHeadlessMessaging; without messaging it stays inert.
+        DistributedLockConsumerRegistration.AddLockReleasedConsumer(services);
 
         return services;
     }
@@ -235,7 +233,7 @@ internal static class DistributedSemaphoreCoreServiceCollectionExtensions
             )
         );
 
-        DistributedLockConsumerRegistration.TryAddLockReleasedConsumer(services);
+        DistributedLockConsumerRegistration.AddLockReleasedConsumer(services);
 
         return services;
     }

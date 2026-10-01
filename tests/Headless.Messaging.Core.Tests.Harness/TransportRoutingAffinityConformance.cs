@@ -33,17 +33,17 @@ public static class TransportRoutingAffinityConformance
         {
             configureTransport(setup);
             setup.UseInMemoryStorage();
+        });
+        services.ConfigureMessaging(messaging =>
+        {
+            var contract = messaging.Message<RoutingAffinityProbe>(destination);
             if (lane == MessageLane.Queue)
             {
-                setup.Queue.ForMessage<RoutingAffinityProbe>(message =>
-                    message.Contract(destination).RequireRoutingAffinity()
-                );
+                contract.OnQueue(queue => queue.RequireRoutingAffinity());
             }
             else
             {
-                setup.Bus.ForMessage<RoutingAffinityProbe>(message =>
-                    message.Contract(destination).RequireRoutingAffinity()
-                );
+                contract.OnBus(bus => bus.RequireRoutingAffinity());
             }
         });
         await using var provider = services.BuildServiceProvider();

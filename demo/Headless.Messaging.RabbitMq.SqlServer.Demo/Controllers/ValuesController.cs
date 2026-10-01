@@ -180,6 +180,7 @@ public class ValuesController(IBus producer, IUnitOfWorkFactory unitOfWork) : Co
     }
 }
 
+[BusConsumer("rabbitmq-sqlserver.person")]
 public sealed class PersonConsumer : IConsume<Person>
 {
     public ValueTask ConsumeAsync(ConsumeContext<Person> context, CancellationToken cancellationToken)

@@ -246,7 +246,7 @@ public sealed class MalformedMessageTests(LocalStackTestFixture fixture) : TestB
     private async Task<string> _CreateQueueAsync(string queueName)
     {
         using var sqsClient = _CreateSqsClient();
-        var response = await sqsClient.CreateQueueAsync(AwsPhysicalAddress.BusGroupQueue(queueName));
+        var response = await sqsClient.CreateQueueAsync(AwsPhysicalAddress.BusSubscriptionQueue(queueName));
         return response.QueueUrl;
     }
 
@@ -305,6 +305,6 @@ public sealed class MalformedMessageTests(LocalStackTestFixture fixture) : TestB
         var logger = services.BuildServiceProvider().GetRequiredService<ILogger<AmazonSqsConsumerClient>>();
 
         var factory = new AmazonSqsConsumerClientFactory(options, logger);
-        return await factory.CreateAsync(groupId, 0, MessageLane.Bus, AbortToken);
+        return await factory.CreateAsync(new ConsumerClientRequest(groupId, 0, MessageLane.Bus), AbortToken);
     }
 }

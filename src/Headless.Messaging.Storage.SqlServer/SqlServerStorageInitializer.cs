@@ -46,8 +46,8 @@ internal sealed class SqlServerStorageInitializer(
     }
 
     /// <summary>
-    /// Creates the messaging schema, tables, indexes, and the <c>HeadlessMessagingIdList</c>
-    /// table-valued parameter type if they do not already exist. Concurrent initializers are serialized
+    /// Creates the messaging schema, tables, indexes, and the table-valued parameter types
+    /// (<c>HeadlessMessagingIdList</c> and its siblings) if they do not already exist. Concurrent initializers are serialized
     /// with a session-scoped <c>sp_getapplock</c>; each DDL block remains independently idempotent so a
     /// later initialization can repair a partially completed schema. History-table indexes are built as
     /// separate commands under <see cref="SqlServerOptions.DdlCommandTimeout"/> before inbox readiness is
@@ -294,6 +294,14 @@ internal sealed class SqlServerStorageInitializer(
             END CATCH;
 
             BEGIN TRY
+                IF TYPE_ID(N'{schema}.HeadlessMessagingConsumerIdentityList') IS NULL
+                    CREATE TYPE [{schema}].[HeadlessMessagingConsumerIdentityList] AS TABLE ([ConsumerIdentity] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL PRIMARY KEY);
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() <> 2714 THROW;
+            END CATCH;
+
+            BEGIN TRY
                 IF TYPE_ID(N'{schema}.HeadlessMessagingPoisonMessageList') IS NULL
                     CREATE TYPE [{schema}].[HeadlessMessagingPoisonMessageList] AS TABLE (
                         [Id] [uniqueidentifier] NOT NULL PRIMARY KEY,
@@ -330,11 +338,6 @@ internal sealed class SqlServerStorageInitializer(
                         [Id] [uniqueidentifier] NOT NULL,
                         [Version] [nvarchar](20) NOT NULL,
                         [Name] [nvarchar](200) NOT NULL,
-                        [Group] [nvarchar](200) NULL,
-                        -- #19 — PERSISTED ISNULL collapses a NULL [Group] to '' so the unique index below
-                        -- converges NULL-group redeliveries to one row, matching the PostgreSQL
-                        -- COALESCE("Group", '') index (a plain nullable [Group] treats each NULL as distinct).
-                        [GroupCoalesced] AS ISNULL([Group], N'') PERSISTED,
                         [Content] [nvarchar](max) NULL,
                         [IntentType] [smallint] NOT NULL,
                         [Retries] [int] NOT NULL,
@@ -417,9 +420,9 @@ internal sealed class SqlServerStorageInitializer(
             END CATCH;
 
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_NonInboxTransportIdentity' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
-                    EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_NonInboxTransportIdentity]
-                        ON {GetReceivedTableName()} ([Version],[MessageId],[GroupCoalesced],[IntentType]) WHERE [IsInboxRecord]=0');
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_{receivedPrefix}_NonInboxConsumerIdentity' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                    EXEC(N'CREATE UNIQUE NONCLUSTERED INDEX [UX_{receivedPrefix}_NonInboxConsumerIdentity]
+                        ON {GetReceivedTableName()} ([Version],[MessageId],[ConsumerIdentity],[IntentType]) WHERE [IsInboxRecord]=0');
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;

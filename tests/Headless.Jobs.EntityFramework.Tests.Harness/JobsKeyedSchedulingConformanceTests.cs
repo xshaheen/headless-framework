@@ -391,6 +391,7 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
         builder.Services.AddHeadlessJobs(options =>
         {
             options.DisableBackgroundServices();
+            options.AddModule<CoordinatedJobsModule>();
             options.UseEntityFramework(ef =>
                 ef.UseApplicationDbContext<TContext>(ConfigurationType.IgnoreModelCustomizer)
             );

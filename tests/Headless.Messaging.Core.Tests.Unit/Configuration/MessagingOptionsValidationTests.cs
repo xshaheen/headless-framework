@@ -183,6 +183,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
         options.TransportPublishTimeout.Should().Be(TimeSpan.FromSeconds(10));
         options.CommandTimeout.Should().Be(TimeSpan.FromSeconds(30));
         options.ShutdownTimeout.Should().Be(TimeSpan.FromSeconds(30));
+        options.SubscriptionEstablishedTimeout.Should().Be(TimeSpan.FromSeconds(30));
         options.RetryPolicy.RetryStrategy.BackoffType.Should().Be(DelayBackoffType.Exponential);
         options.RetryPolicy.RetryStrategy.ShouldHandle.Should().NotBeNull();
     }
@@ -360,6 +361,16 @@ public sealed class MessagingOptionsValidationTests : TestBase
             .Validate(new MessagingOptions { CommandTimeout = TimeSpan.FromMinutes(6) })
             .IsValid.Should()
             .BeFalse();
+
+        new MessagingOptionsValidator()
+            .Validate(new MessagingOptions { SubscriptionEstablishedTimeout = TimeSpan.Zero })
+            .IsValid.Should()
+            .BeFalse();
+
+        new MessagingOptionsValidator()
+            .Validate(new MessagingOptions { SubscriptionEstablishedTimeout = TimeSpan.FromMinutes(6) })
+            .IsValid.Should()
+            .BeFalse();
     }
 
     [Fact]
@@ -523,12 +534,9 @@ public sealed class MessagingOptionsValidationTests : TestBase
             options.CreateConsumerMetadata(
                 typeof(TestConsumer),
                 typeof(TestMessage),
-                "orders.created",
-                mappedMessageName: null,
-                group: "orders",
-                concurrency: 1,
-                consumerIdentity: consumerIdentity,
-                messageContractVersion: contractVersion,
+                mappedMessageName: "orders.created",
+                consumerIdentity: consumerIdentity!,
+                messageContractVersion: contractVersion!,
                 lane: MessageLane.Bus
             );
 

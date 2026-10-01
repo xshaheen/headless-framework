@@ -11,13 +11,11 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Services.ConfigureMessaging(messaging => messaging.Message<Person>("test-message"));
+
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.Queue.ForMessage<Person>(message =>
-        message
-            .Contract("test-message")
-            .Consumer<PersonConsumer>(consumer => consumer.ConsumerIdentity("redis-sqlserver.person"))
-    );
+    setup.AddModule<Headless.Messaging.Redis.SqlServer.Demo.MessagingModule>();
 
     setup.UseRedis(redis =>
     {

@@ -30,8 +30,10 @@ public sealed class SetupTests : TestBase
                 options.Servers = "localhost:9092";
                 options.MainConfig["partitioner"] = partitioner;
             });
-            setup.Queue.ForMessage<KafkaBusContract>(message => message.Contract("orders").RequireRoutingAffinity());
         });
+        services.ConfigureMessaging(messaging =>
+            messaging.Message<KafkaBusContract>("orders").OnQueue(queue => queue.RequireRoutingAffinity())
+        );
         services.AddSingleton<IKafkaConnectionPool>(_ =>
         {
             effects++;
@@ -64,7 +66,11 @@ public sealed class SetupTests : TestBase
         services.AddHeadlessMessaging(options =>
         {
             options.UseKafka("localhost:9092");
-            options.Bus.ForMessage<KafkaBusContract>(message => message.Contract("orders.changed"));
+        });
+        services.ConfigureMessaging(messaging =>
+        {
+            messaging.Message<KafkaBusContract>("orders.changed");
+            messaging.AddModule<KafkaBusConsumerModule>();
         });
         services.AddMessagingProviderCapabilities(
             MessagingProviderCapabilities.Storage(
@@ -81,8 +87,43 @@ public sealed class SetupTests : TestBase
 
         await act.Should()
             .ThrowAsync<MessagingConfigurationException>()
-            .WithMessage("*Kafka*does not support Bus*Supported lanes: Queue*setup.Queue.ForMessage*");
+            .WithMessage("*Kafka*does not support Bus*Supported lanes: Queue*");
         storageInitializeCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_accept_message_contract_at_startup_when_transport_carries_only_the_queue()
+    {
+        // A contract names the message on both lanes, so startup must skip the Bus lane Kafka does not carry. The
+        // storage initializer runs right after that validation and stops the bootstrap before any processor starts.
+        var storageInitializeCalls = 0;
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(options => options.UseKafka("localhost:9092"));
+        services.ConfigureMessaging(messaging => messaging.Message<KafkaBusContract>("orders.changed", "v1"));
+        services.AddMessagingProviderCapabilities(
+            MessagingProviderCapabilities.Storage(
+                "TestStorage",
+                [MessageLane.Bus, MessageLane.Queue],
+                supportsDelayedScheduling: true,
+                inboxCapability: MessagingInboxCapabilityTier.Transactional
+            )
+        );
+        // Bootstrap resolves the processing servers, and so the storage they write to, before it initializes storage.
+        services.AddSingleton(Substitute.For<IDataStorage>());
+        services.AddSingleton<IStorageInitializer>(
+            new RecordingStorageInitializer(() =>
+            {
+                storageInitializeCalls++;
+                throw new StorageInitializationReachedException();
+            })
+        );
+
+        await using var provider = services.BuildServiceProvider();
+        var act = () => provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+
+        await act.Should().ThrowAsync<StorageInitializationReachedException>();
+        storageInitializeCalls.Should().Be(1);
     }
 
     [Fact]
@@ -182,6 +223,25 @@ public sealed class SetupTests : TestBase
     }
 
     private sealed record KafkaBusContract;
+
+    // A Bus consumer is what puts a message on the Bus lane, which Kafka does not have.
+    private sealed class KafkaBusConsumer : IConsume<KafkaBusContract>
+    {
+        public ValueTask ConsumeAsync(ConsumeContext<KafkaBusContract> context, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+    }
+
+    private sealed class KafkaBusConsumerModule : IMessagingModule
+    {
+        public static void Register(MessagingCatalogBuilder catalog) =>
+            catalog.AddBusConsumer<KafkaBusConsumer, KafkaBusContract>(
+                "tests.kafka.bus-consumer",
+                everyInstance: false,
+                static (_, _, _) => ValueTask.CompletedTask
+            );
+    }
+
+    private sealed class StorageInitializationReachedException : Exception;
 
     private sealed class RecordingStorageInitializer(Action initialize) : IStorageInitializer
     {

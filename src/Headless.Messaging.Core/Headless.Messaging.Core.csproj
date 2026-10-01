@@ -7,8 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Messaging.Aws" />
-    <InternalsVisibleTo Include="Headless.Caching.Hybrid" />
-    <InternalsVisibleTo Include="Headless.DistributedLocks.Core" />
     <InternalsVisibleTo Include="Headless.Messaging.AzureServiceBus" />
     <InternalsVisibleTo Include="Headless.Messaging.Dashboard" />
     <InternalsVisibleTo Include="Headless.Messaging.InMemory" />
@@ -25,6 +23,7 @@
     <InternalsVisibleTo Include="Headless.Messaging.Storage.SqlServer.EntityFramework" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.InMemory" />
     <InternalsVisibleTo Include="Headless.Messaging.Core.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.SourceGenerator.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.EntityFramework.Messaging.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.Messaging.Core.Tests.Harness" />
     <InternalsVisibleTo Include="Headless.Messaging.Benchmarks" />
@@ -66,5 +65,15 @@
     <ProjectReference Include="..\Headless.Messaging.Queue.Abstractions\Headless.Messaging.Queue.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
     <ProjectReference Include="..\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />
+  </ItemGroup>
+  <Target Name="CopyAnalyzer" AfterTargets="Build">
+    <MakeDir Directories="$(OutputPath)analyzers/dotnet/cs" />
+  </Target>
+  <ItemGroup>
+    <None
+      Include="..\Headless.Messaging.SourceGenerator\bin\$(Configuration)\netstandard2.0\Headless.Messaging.SourceGenerator.dll"
+      Pack="true"
+      PackagePath="analyzers/dotnet/cs"
+    />
   </ItemGroup>
 </Project>

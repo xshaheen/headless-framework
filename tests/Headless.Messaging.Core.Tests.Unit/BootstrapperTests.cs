@@ -368,7 +368,7 @@ public sealed class BootstrapperTests : TestBase
         bootstrapper.IsStarted.Should().BeTrue();
         billing.IsInitialized.Should().BeTrue();
         shipping.IsInitialized.Should().BeFalse();
-        captured.Should().Contain(e => e.Level == LogLevel.Error && e.EventId.Id == 103);
+        captured.Should().Contain(e => e.Level == LogLevel.Error && e.EventId.Id == 106);
         await ((IHostedService)bootstrapper).StopAsync(AbortToken);
     }
 
@@ -724,11 +724,6 @@ public sealed class BootstrapperTests : TestBase
         {
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
-            setup.UseConventions(c =>
-            {
-                c.UseApplicationId("bootstrap-tests");
-                c.UseVersion("v1");
-            });
         });
 
         builderAction?.Invoke(messagingBuilder);

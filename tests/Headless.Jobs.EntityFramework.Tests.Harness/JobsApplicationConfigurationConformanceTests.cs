@@ -26,6 +26,7 @@ public abstract class JobsApplicationConfigurationConformanceTests<TFixture>(TFi
         builder.Services.AddHeadlessJobs(jobs =>
         {
             jobs.DisableBackgroundServices();
+            jobs.AddModule<CoordinatedJobsModule>();
             fixture.ConfigureApplicationJobs<ApplicationContext>(
                 jobs,
                 coordination =>

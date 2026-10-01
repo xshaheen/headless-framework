@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
@@ -162,7 +161,7 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
     {
         var services = new ServiceCollection();
         services.AddSingleton(recorder);
-        services.AddSingleton<IMessageDispatcher>(new RecordingMiddlewareDispatcher(recorder));
+        services.AddSingleton(new RecordingMiddlewareDispatcher(recorder));
         return services;
     }
 
@@ -177,16 +176,12 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
         var descriptor = new ConsumerExecutorDescriptor
         {
             Lane = MessageLane.Bus,
-            MethodInfo = typeof(ConsumeMiddlewarePipelineTests).GetMethod(
-                nameof(_BuildConsumerContext),
-                BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly,
-                binder: null,
-                types: Type.EmptyTypes,
-                modifiers: null
-            )!,
-            ImplTypeInfo = typeof(ConsumeMiddlewarePipelineTests).GetTypeInfo(),
+            ConsumerType = typeof(ConsumeMiddlewarePipelineTests),
+            MessageType = typeof(MiddlewarePayload),
+            Dispatch = static (services, _, cancellationToken) =>
+                services.GetRequiredService<RecordingMiddlewareDispatcher>().DispatchAsync(cancellationToken),
             MessageName = "test.messageName",
-            GroupName = "test-group",
+            SubscriptionName = "test-group",
         };
 
         var origin = new Message(
@@ -286,38 +281,16 @@ internal sealed class SwallowingOuterCancellationConsumeMiddleware(CancellationT
     }
 }
 
-internal sealed class RecordingMiddlewareDispatcher(MiddlewareCallRecorder recorder) : IMessageDispatcher
+internal sealed class RecordingMiddlewareDispatcher(MiddlewareCallRecorder recorder)
 {
-    public Task DispatchAsync<TMessage>(ConsumeContext<TMessage> context, CancellationToken cancellationToken)
-        where TMessage : class
-    {
-        return DispatchInScopeAsync(serviceProvider: null!, context, cancellationToken);
-    }
-
-    public Task DispatchInScopeAsync<TMessage>(
-        IServiceProvider serviceProvider,
-        ConsumeContext<TMessage> context,
-        CancellationToken cancellationToken
-    )
-        where TMessage : class
+    public ValueTask DispatchAsync(CancellationToken cancellationToken)
     {
         if (cancellationToken.IsCancellationRequested)
         {
-            return Task.FromCanceled(cancellationToken);
+            return ValueTask.FromCanceled(cancellationToken);
         }
 
         recorder.Record("dispatcher");
-        return Task.CompletedTask;
-    }
-
-    public Task DispatchInScopeAsync<TMessage>(
-        IServiceProvider serviceProvider,
-        ConsumerExecutorDescriptor descriptor,
-        ConsumeContext<TMessage> context,
-        CancellationToken cancellationToken
-    )
-        where TMessage : class
-    {
-        return DispatchInScopeAsync(serviceProvider, context, cancellationToken);
+        return ValueTask.CompletedTask;
     }
 }

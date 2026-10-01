@@ -2,6 +2,7 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Kafka;
+using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -21,7 +22,8 @@ public sealed class KafkaConsumerClientFactoryTests : TestBase
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var act = async () => await factory.CreateAsync("test-group", 1, MessageLane.Queue, cts.Token);
+        var act = async () =>
+            await factory.CreateAsync(new ConsumerClientRequest("test-group", 1, MessageLane.Queue), cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -34,7 +36,10 @@ public sealed class KafkaConsumerClientFactoryTests : TestBase
         var factory = new KafkaConsumerClientFactory(_options, serviceProvider);
 
         // when
-        var client = await factory.CreateAsync("test-consumer-group", 1, MessageLane.Queue, AbortToken);
+        var client = await factory.CreateAsync(
+            new ConsumerClientRequest("test-consumer-group", 1, MessageLane.Queue),
+            AbortToken
+        );
 
         // then
         client.Should().NotBeNull();
@@ -50,7 +55,10 @@ public sealed class KafkaConsumerClientFactoryTests : TestBase
         var factory = new KafkaConsumerClientFactory(_options, serviceProvider);
 
         // when
-        var client = await factory.CreateAsync("test-consumer-group", 5, MessageLane.Queue, AbortToken);
+        var client = await factory.CreateAsync(
+            new ConsumerClientRequest("test-consumer-group", 5, MessageLane.Queue),
+            AbortToken
+        );
 
         // then
         client.Should().NotBeNull();
@@ -65,8 +73,8 @@ public sealed class KafkaConsumerClientFactoryTests : TestBase
         var factory = new KafkaConsumerClientFactory(_options, serviceProvider);
 
         // when
-        var client1 = await factory.CreateAsync("group-1", 1, MessageLane.Queue, AbortToken);
-        var client2 = await factory.CreateAsync("group-2", 1, MessageLane.Queue, AbortToken);
+        var client1 = await factory.CreateAsync(new ConsumerClientRequest("group-1", 1, MessageLane.Queue), AbortToken);
+        var client2 = await factory.CreateAsync(new ConsumerClientRequest("group-2", 1, MessageLane.Queue), AbortToken);
 
         // then
         client1.Should().NotBeSameAs(client2);
@@ -82,7 +90,10 @@ public sealed class KafkaConsumerClientFactoryTests : TestBase
         var factory = new KafkaConsumerClientFactory(_options, serviceProvider);
 
         // when
-        var client = await factory.CreateAsync("test-group", 1, MessageLane.Queue, AbortToken);
+        var client = await factory.CreateAsync(
+            new ConsumerClientRequest("test-group", 1, MessageLane.Queue),
+            AbortToken
+        );
 
         // then
         client.BrokerAddress.Name.Should().Be("kafka");
@@ -98,7 +109,7 @@ public sealed class KafkaConsumerClientFactoryTests : TestBase
         var factory = new KafkaConsumerClientFactory(_options, serviceProvider);
 
         // when
-        var act = async () => await factory.CreateAsync("test-group", 1, MessageLane.Bus);
+        var act = async () => await factory.CreateAsync(new ConsumerClientRequest("test-group", 1, MessageLane.Bus));
 
         // then
         await act.Should().ThrowAsync<NotSupportedException>();

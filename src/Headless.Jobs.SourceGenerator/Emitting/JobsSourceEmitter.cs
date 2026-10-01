@@ -4,7 +4,6 @@ using System.Globalization;
 using System.Text;
 using Headless.Jobs.SourceGenerator.Models;
 using Headless.SourceGenerators;
-using Microsoft.CodeAnalysis.CSharp;
 
 namespace Headless.Jobs.SourceGenerator.Emitting;
 
@@ -22,14 +21,13 @@ internal static class JobsSourceEmitter
     public static string Emit(JobsRegistrationModel model)
     {
         var writer = new SourceCodeBuilder();
-        var functions = model.Functions;
-        var hasTypedFunctions = functions.Any(function => function.UsesGenericContext);
+        var jobs = _OrderedByIdentity(model.Jobs).ToList();
 
-        _WriteHeader(writer, model.AssemblyName, hasTypedFunctions);
-        foreach (var function in _OrderedByName(functions))
+        _WriteHeader(writer, model.AssemblyName);
+        foreach (var job in jobs)
         {
             writer.AppendLine(
-                $"[assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute({_Literal(function.FunctionName)}, {_Literal(function.ContractVersion)})]"
+                $"[assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute({HandlerSource.Literal(job.Identity)}, {HandlerSource.Literal(job.ContractVersion)})]"
             );
         }
 
@@ -38,7 +36,7 @@ internal static class JobsSourceEmitter
         // Public so the host assembly can name it in AddModule<T>(); the registration itself is an explicit interface
         // implementation, reachable only through that call, which runs it once per process.
         writer.AppendLine(
-            "/// <summary>Generated Jobs registration for this assembly. Add it with <c>AddModule&lt;JobsModule&gt;()</c> inside <c>AddHeadlessJobs</c>.</summary>"
+            "/// <summary>Generated Jobs registration for this assembly. Add it with <c>AddModule&lt;JobsModule&gt;()</c>.</summary>"
         );
         writer.AppendLine($"public sealed class {ModuleClassName} : global::Headless.Jobs.IJobsModule");
         writer.OpenBracket();
@@ -46,20 +44,15 @@ internal static class JobsSourceEmitter
         var members = new List<Action<SourceCodeBuilder>>
         {
             w => w.AppendLine($"private {ModuleClassName}() {{ }}"),
-            w => _WriteRegister(w, model),
-            w => _WriteDescriptorRegistration(w, functions),
+            w => _WriteRegister(w, model, jobs),
+            w => _WriteDescriptorRegistration(w, jobs),
+            w => _WriteRequestTypeRegistration(w, jobs),
         };
-        foreach (var jobClass in _ConstructedClasses(functions))
+        foreach (var job in jobs)
         {
-            members.Add(w => _WriteFactoryMethod(w, jobClass));
+            members.Add(w => _WriteInvoker(w, job));
         }
 
-        if (hasTypedFunctions)
-        {
-            members.Add(_WriteGenericContextHelper);
-        }
-
-        members.Add(w => _WriteRequestTypeRegistration(w, model));
         for (var index = 0; index < members.Count; index++)
         {
             if (index > 0)
@@ -72,12 +65,11 @@ internal static class JobsSourceEmitter
 
         writer.CloseBracket();
         writer.CloseBracket();
-        _WriteAppJobs(writer, functions, model.AssemblyName);
 
         return writer.ToString();
     }
 
-    private static void _WriteHeader(SourceCodeBuilder writer, string assemblyName, bool hasTypedFunctions)
+    private static void _WriteHeader(SourceCodeBuilder writer, string assemblyName)
     {
         writer.AppendLine("//Jobs readonly auto-generated file.");
         writer.AppendLine("#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member");
@@ -89,10 +81,6 @@ internal static class JobsSourceEmitter
         writer.AppendLine("using Microsoft.Extensions.DependencyInjection;");
         writer.AppendLine("using Headless.Jobs;");
         writer.AppendLine("using Headless.Jobs.Enums;");
-        if (hasTypedFunctions)
-        {
-            writer.AppendLine("using Headless.Jobs.Base;");
-        }
 
         if (!string.IsNullOrEmpty(assemblyName))
         {
@@ -102,100 +90,86 @@ internal static class JobsSourceEmitter
         writer.NewLine();
     }
 
-    private static void _WriteRegister(SourceCodeBuilder writer, JobsRegistrationModel model)
+    private static void _WriteRegister(SourceCodeBuilder writer, JobsRegistrationModel model, List<JobModel> jobs)
     {
-        var functions = model.Functions;
-        writer.AppendLine("static void global::Headless.Jobs.IJobsModule.Register()");
+        writer.AppendLine(
+            "static void global::Headless.Jobs.IJobsModule.Register(global::Headless.Jobs.JobsCatalogBuilder catalog)"
+        );
         writer.OpenBracket();
 
-        if (functions.Count > 0)
+        if (jobs.Count > 0)
         {
-            writer.AppendLine(
-                $"var jobFunctionDelegateDict = new Dictionary<string, JobFunctionRegistration>({functions.Count});"
-            );
-            foreach (var function in functions)
+            writer.AppendLine($"var functions = new Dictionary<string, JobFunctionRegistration>({jobs.Count});");
+            foreach (var job in jobs)
             {
-                _WriteFunctionRegistration(writer, function);
+                _WriteJobRegistration(writer, job);
             }
 
-            writer.AppendLine($"JobFunctionProvider.RegisterFunctions(jobFunctionDelegateDict, {functions.Count});");
+            writer.AppendLine("catalog.AddFunctions(functions);");
         }
 
-        writer.AppendLine("RegisterRequestTypes();");
-        writer.AppendLine("RegisterDescriptors();");
+        writer.AppendLine("RegisterRequestTypes(catalog);");
+        writer.AppendLine("RegisterDescriptors(catalog);");
         foreach (var entry in model.Middleware)
         {
-            var function = entry.Function is null ? "null" : _Literal(entry.Function);
-            var registrationMethod = entry.IsSchedule ? "RegisterSchedule" : "RegisterExecute";
+            var function = entry.Function is null ? "null" : HandlerSource.Literal(entry.Function);
+            var registrationMethod = entry.IsSchedule ? "AddScheduleMiddleware" : "AddExecuteMiddleware";
             writer.AppendLine(
-                $"JobMiddlewareRegistry.{registrationMethod}({_Literal(entry.Identity)}, {function}, {entry.Priority}, static (context, next, cancellationToken) => context.Services.GetRequiredService<{entry.TypeName}>().InvokeAsync(context, next, cancellationToken));"
+                $"catalog.{registrationMethod}({HandlerSource.Literal(entry.Identity)}, {function}, {entry.Priority}, static (context, next, cancellationToken) => context.Services.GetRequiredService<{entry.TypeName}>().InvokeAsync(context, next, cancellationToken));"
             );
         }
 
         writer.CloseBracket();
     }
 
-    private static void _WriteFunctionRegistration(SourceCodeBuilder writer, JobFunctionModel function)
+    private static void _WriteJobRegistration(SourceCodeBuilder writer, JobModel job)
     {
-        // Only async when the body awaits: the typed-context conversion or an awaitable method.
-        var asyncFlag = function.UsesGenericContext || function.IsAwaitable ? "async " : "";
-        var cronExpression = string.IsNullOrEmpty(function.CronExpression)
-            ? "string.Empty"
-            : _Literal(function.CronExpression);
+        // Bind to the named JobFunctionRegistration record rather than a positional tuple so new per-job knobs stay
+        // additive for already-generated code.
+        var registration = new StringBuilder()
+            .Append("functions.Add(")
+            .Append(HandlerSource.Literal(job.Identity))
+            .Append(", new JobFunctionRegistration { CronExpression = ")
+            .Append(HandlerSource.Literal(job.CronExpression ?? string.Empty))
+            .Append(", Priority = (JobPriority)")
+            .Append(job.Priority.ToString(CultureInfo.InvariantCulture))
+            .Append(", Delegate = ")
+            .Append(job.InvokerName)
+            .Append(", MaxConcurrency = ")
+            .Append(job.MaxConcurrency.ToString(CultureInfo.InvariantCulture))
+            .Append(", JobType = typeof(")
+            .Append(job.TypeName)
+            .Append(')');
 
-        // Bind to the named JobFunctionRegistration record rather than a positional tuple so new per-function knobs
-        // stay additive for already-generated code.
-        writer.AppendLine(
-            $"jobFunctionDelegateDict.Add({_Literal(function.FunctionName)}, new JobFunctionRegistration {{ CronExpression = {cronExpression}, Priority = (JobPriority){function.Priority}, Delegate = new JobFunctionDelegate({asyncFlag}(serviceProvider, context, cancellationToken) =>"
-        );
-        writer.OpenBracket();
-
-        if (function.UsesGenericContext)
+        if (job.TimeZone is not null)
         {
-            writer.AppendLine(
-                $"var genericContext = await ToGenericContextWithRequest<{function.RequestTypeName}>(context, cancellationToken);"
-            );
+            registration.Append(", TimeZoneId = ").Append(HandlerSource.Literal(job.TimeZone));
         }
 
-        var call = $"{_Receiver(function)}.{function.MethodName}({string.Join(", ", function.InvocationArguments)})";
-        if (function.IsAwaitable)
-        {
-            writer.AppendLine($"await {call};");
-        }
-        else if (function.UsesGenericContext)
-        {
-            // The lambda is already async for the typed-context conversion, so it completes without returning a task.
-            writer.AppendLine($"{call};");
-        }
-        else
-        {
-            writer.AppendLine($"{call};");
-            writer.AppendLine("return Task.CompletedTask;");
-        }
-
-        writer.AppendLine($"}}), MaxConcurrency = {function.MaxConcurrency}{_RecoveryKnobs(function)} }});");
+        registration.Append(_RecoveryKnobs(job)).Append(" });");
+        writer.AppendLine(registration.ToString());
     }
 
     /// <summary>
     /// Emits a recovery knob only when the attribute set it. Emitting an unset knob would pin every definition to the
     /// framework default at creation and make the scheduler-wide setting unreachable.
     /// </summary>
-    private static string _RecoveryKnobs(JobFunctionModel function)
+    private static string _RecoveryKnobs(JobModel job)
     {
         var knobs = new StringBuilder();
-        if (function.OnMissedRun is { } onMissedRun)
+        if (job.OnMissedRun is { } onMissedRun)
         {
             knobs
                 .Append(", OnMissedRun = (MissedRunPolicy)")
                 .Append(onMissedRun.ToString(CultureInfo.InvariantCulture));
         }
 
-        if (function.MissedRunGraceSeconds is { } graceSeconds)
+        if (job.MissedRunGraceSeconds is { } graceSeconds)
         {
             knobs.Append(", MissedRunGraceSeconds = ").Append(graceSeconds.ToString(CultureInfo.InvariantCulture));
         }
 
-        if (function.OnOverlap is { } onOverlap)
+        if (job.OnOverlap is { } onOverlap)
         {
             knobs.Append(", OnOverlap = (CronOverlapPolicy)").Append(onOverlap.ToString(CultureInfo.InvariantCulture));
         }
@@ -203,188 +177,99 @@ internal static class JobsSourceEmitter
         return knobs.ToString();
     }
 
-    /// <summary>The call receiver: the class for static methods, otherwise the generated factory.</summary>
-    private static string _Receiver(JobFunctionModel function) =>
-        function.IsStaticMethod ? function.Class.TypeName : $"{function.Class.FactoryMethodName}(serviceProvider)";
-
-    private static void _WriteDescriptorRegistration(
-        SourceCodeBuilder writer,
-        EquatableArray<JobFunctionModel> functions
-    )
-    {
-        writer.AppendLine("private static void RegisterDescriptors()");
-        writer.OpenBracket();
-
-        if (functions.Count > 0)
-        {
-            writer.AppendLine($"var descriptors = new Dictionary<string, JobFunctionDescriptor>({functions.Count});");
-            foreach (var function in _OrderedByName(functions))
-            {
-                var functionName = _Literal(function.FunctionName);
-                var value = function.RequestTypeName is null
-                    ? $"AppJobs.{_GetHandleName(function.FunctionName ?? string.Empty)}"
-                    : $"new JobFunctionDescriptor({functionName}, typeof({function.RequestTypeName}), {_Literal(function.CronExpression ?? string.Empty)}, (JobPriority){function.Priority}, {function.MaxConcurrency}, {_Literal(function.ContractVersion)})";
-                writer.AppendLine($"descriptors.Add({functionName}, {value});");
-            }
-
-            writer.AppendLine($"JobFunctionProvider.RegisterDescriptors(descriptors, {functions.Count});");
-        }
-
-        writer.CloseBracket();
-    }
-
-    private static void _WriteFactoryMethod(SourceCodeBuilder writer, JobClassModel jobClass)
+    /// <summary>
+    /// Emits the typed invoker for one job: it builds the job from the run's scope, so constructor dependencies
+    /// resolve like any scoped service, calls <c>ExecuteAsync</c> through the job interface so an explicit
+    /// implementation works too, and releases the instance it created.
+    /// </summary>
+    private static void _WriteInvoker(SourceCodeBuilder writer, JobModel job)
     {
         writer.AppendLine(
-            $"private static {jobClass.TypeName} {jobClass.FactoryMethodName}(IServiceProvider serviceProvider)"
+            $"private static async Task {job.InvokerName}(IServiceProvider serviceProvider, global::Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken)"
         );
         writer.OpenBracket();
-        foreach (var parameter in jobClass.ConstructorParameters)
-        {
-            if (parameter.TypeName is null)
-            {
-                continue;
-            }
 
+        string contextExpression;
+        string jobInterface;
+        if (job.HasArgs)
+        {
             writer.AppendLine(
-                parameter.ServiceKey is null
-                    ? $"var {parameter.Name} = serviceProvider.GetService<{parameter.TypeName}>();"
-                    : $"var {parameter.Name} = serviceProvider.GetKeyedService<{parameter.TypeName}>({parameter.ServiceKey});"
+                $"var request = await JobsRequestProvider.GetRequestAsync<{job.ArgsTypeName}>(context, cancellationToken).ConfigureAwait(false);"
             );
+            contextExpression = $"new global::Headless.Jobs.Base.JobContext<{job.ArgsTypeName}>(context, request)";
+            jobInterface = $"global::Headless.Jobs.Base.IJob<{job.ArgsTypeName}>";
+        }
+        else
+        {
+            contextExpression = "context";
+            jobInterface = "global::Headless.Jobs.Base.IJob";
         }
 
-        writer.AppendLine(
-            $"return new {jobClass.TypeName}({string.Join(", ", jobClass.ConstructorParameters.Select(x => x.Name))});"
+        writer.AppendHandlerInstance(
+            job.Disposal,
+            "job",
+            $"ActivatorUtilities.CreateInstance<{job.TypeName}>(serviceProvider)",
+            "job.ConfigureAwait(false)",
+            w => _WriteExecute(w, jobInterface, contextExpression)
         );
+
         writer.CloseBracket();
     }
 
-    private static void _WriteGenericContextHelper(SourceCodeBuilder writer)
-    {
+    private static void _WriteExecute(SourceCodeBuilder writer, string jobInterface, string contextExpression) =>
         writer.AppendLine(
-            "private static async Task<JobFunctionContext<T>> ToGenericContextWithRequest<T>(JobFunctionContext context, CancellationToken cancellationToken)"
+            $"await (({jobInterface})job).ExecuteAsync({contextExpression}, cancellationToken).ConfigureAwait(false);"
         );
-        writer.OpenBracket();
-        writer.AppendLine("var request = await JobsRequestProvider.GetRequestAsync<T>(context, cancellationToken);");
-        writer.AppendLine("return new JobFunctionContext<T>(context, request);");
-        writer.CloseBracket();
-    }
 
-    private static void _WriteRequestTypeRegistration(SourceCodeBuilder writer, JobsRegistrationModel model)
+    private static void _WriteDescriptorRegistration(SourceCodeBuilder writer, List<JobModel> jobs)
     {
-        var typedFunctions = model.Functions.Where(function => function.UsesGenericContext).ToList();
-
-        writer.AppendLine("private static void RegisterRequestTypes()");
+        writer.AppendLine("private static void RegisterDescriptors(global::Headless.Jobs.JobsCatalogBuilder catalog)");
         writer.OpenBracket();
 
-        if (typedFunctions.Count > 0)
+        if (jobs.Count > 0)
         {
-            writer.AppendLine($"var requestTypes = new Dictionary<string, (string, Type)>({typedFunctions.Count});");
-            foreach (var function in typedFunctions)
+            writer.AppendLine($"var descriptors = new Dictionary<string, JobFunctionDescriptor>({jobs.Count});");
+            foreach (var job in jobs)
             {
-                var typeName = function.RequestTypeName;
+                var identity = HandlerSource.Literal(job.Identity);
+                var argsType = job.ArgsTypeName is null ? "null" : $"typeof({job.ArgsTypeName})";
                 writer.AppendLine(
-                    $"requestTypes.Add({_Literal(function.FunctionName)}, (typeof({typeName}).FullName, typeof({typeName})));"
+                    $"descriptors.Add({identity}, new JobFunctionDescriptor({identity}, {argsType}, {HandlerSource.Literal(job.CronExpression ?? string.Empty)}, (JobPriority){job.Priority.ToString(CultureInfo.InvariantCulture)}, {job.MaxConcurrency.ToString(CultureInfo.InvariantCulture)}, {HandlerSource.Literal(job.ContractVersion)}));"
                 );
             }
 
-            writer.AppendLine($"JobFunctionProvider.RegisterRequestType(requestTypes, {typedFunctions.Count});");
+            writer.AppendLine("catalog.AddDescriptors(descriptors);");
         }
 
         writer.CloseBracket();
     }
 
-    private static void _WriteAppJobs(
-        SourceCodeBuilder writer,
-        EquatableArray<JobFunctionModel> functions,
-        string assemblyName
-    )
+    private static void _WriteRequestTypeRegistration(SourceCodeBuilder writer, List<JobModel> jobs)
     {
-        var requestless = _OrderedByName(functions).Where(function => function.RequestTypeName is null).ToList();
-        if (requestless.Count == 0)
-        {
-            return;
-        }
+        var typedJobs = jobs.Where(job => job.HasArgs).ToList();
 
-        writer.NewLine();
-        writer.AppendLine($"namespace {assemblyName}");
+        writer.AppendLine("private static void RegisterRequestTypes(global::Headless.Jobs.JobsCatalogBuilder catalog)");
         writer.OpenBracket();
-        writer.AppendLine("/// <summary>Canonical generated handles for this assembly's requestless jobs.</summary>");
-        writer.AppendLine("public static class AppJobs");
-        writer.OpenBracket();
-        foreach (var function in requestless)
+
+        if (typedJobs.Count > 0)
         {
-            var functionName = function.FunctionName ?? string.Empty;
-            writer.AppendLine("/// <summary>A canonical requestless job descriptor.</summary>");
-            writer.AppendLine(
-                $"public static JobFunctionDescriptor {_GetHandleName(functionName)} {{ get; }} = new JobFunctionDescriptor({_Literal(functionName)}, null, {_Literal(function.CronExpression ?? string.Empty)}, (JobPriority){function.Priority}, {function.MaxConcurrency}, {_Literal(function.ContractVersion)});"
-            );
+            writer.AppendLine($"var requestTypes = new Dictionary<string, (string, Type)>({typedJobs.Count});");
+            foreach (var job in typedJobs)
+            {
+                var typeName = job.ArgsTypeName;
+                writer.AppendLine(
+                    $"requestTypes.Add({HandlerSource.Literal(job.Identity)}, (typeof({typeName}).FullName, typeof({typeName})));"
+                );
+            }
+
+            writer.AppendLine("catalog.AddRequestTypes(requestTypes);");
         }
 
         writer.CloseBracket();
-        writer.CloseBracket();
     }
 
-    /// <summary>Distinct constructed classes in first-use order; static classes need no factory.</summary>
-    private static IEnumerable<JobClassModel> _ConstructedClasses(EquatableArray<JobFunctionModel> functions)
-    {
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var function in functions)
-        {
-            if (!function.Class.IsStatic && seen.Add(function.Class.TypeName))
-            {
-                yield return function.Class;
-            }
-        }
-    }
-
-    private static IEnumerable<JobFunctionModel> _OrderedByName(EquatableArray<JobFunctionModel> functions) =>
-        functions.OrderBy(function => function.FunctionName, StringComparer.Ordinal);
-
-    private static string _Literal(string? value) =>
-        value is null ? "null" : SymbolDisplay.FormatLiteral(value, quote: true);
-
-    private static string _GetHandleName(string contract)
-    {
-        // Encode underscores too, so literal escape-looking contracts cannot collide with encoded punctuation.
-        // Reserved members encode their first character, which cannot collide with a valid unescaped identifier.
-        var reserved =
-            contract
-            is "AppJobs"
-                or "Equals"
-                or "ReferenceEquals"
-                or "GetHashCode"
-                or "GetType"
-                or "ToString"
-                or "MemberwiseClone"
-                or "Finalize";
-        var result = new StringBuilder();
-        for (var index = 0; index < contract.Length; index++)
-        {
-            var character = contract[index];
-            if (
-                (
-                    (character >= 'A' && character <= 'Z')
-                    || (character >= 'a' && character <= 'z')
-                    || (index > 0 && character >= '0' && character <= '9')
-                ) && !(reserved && index == 0)
-            )
-            {
-                result.Append(character);
-            }
-            else
-            {
-                result.Append("_u").Append(((int)character).ToString("X4", CultureInfo.InvariantCulture)).Append('_');
-            }
-        }
-
-        var identifier = result.ToString();
-        return
-            SyntaxFacts.GetKeywordKind(identifier) != SyntaxKind.None
-            || SyntaxFacts.GetContextualKeywordKind(identifier) != SyntaxKind.None
-            ? "@" + identifier
-            : identifier;
-    }
+    private static IEnumerable<JobModel> _OrderedByIdentity(EquatableArray<JobModel> jobs) =>
+        jobs.OrderBy(job => job.Identity, StringComparer.Ordinal);
 }
 
 #pragma warning restore MA0076

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reflection;
 using FluentValidation;
 using Headless.Abstractions;
 using Headless.Checks;
@@ -27,34 +26,7 @@ namespace Headless.Messaging.Configuration;
 [PublicAPI]
 public sealed class MessagingOptions
 {
-#pragma warning disable IDE0032
-    private string _defaultGroupName =
-        "headless.queue." + Assembly.GetEntryAssembly()?.GetName().Name!.ToLower(CultureInfo.InvariantCulture);
-#pragma warning restore IDE0032
-
     internal MessagingConventions Conventions { get; set; } = new();
-
-    /// <summary>
-    /// Gets or sets the default consumer group name for subscribers.
-    /// In Kafka, this corresponds to the consumer group name; in RabbitMQ, it corresponds to the queue name.
-    /// Default value is "headless.queue." followed by the entry assembly name in lowercase.
-    /// </summary>
-    public string DefaultGroupName
-    {
-        get => _defaultGroupName;
-        set
-        {
-            _defaultGroupName = value;
-            IsDefaultGroupNameConfigured = true;
-        }
-    }
-
-    internal bool IsDefaultGroupNameConfigured { get; set; }
-
-    /// <summary>
-    /// Gets or sets an optional prefix to be prepended to all consumer group names.
-    /// </summary>
-    public string? GroupNamePrefix { get; set; }
 
     /// <summary>
     /// Gets or sets an optional prefix to be prepended to all message names.
@@ -258,6 +230,17 @@ public sealed class MessagingOptions
     public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// Gets or sets how long one <see cref="IOnSubscriptionEstablished"/> hook may run before the framework stops
+    /// waiting for it. Default is 30 seconds.
+    /// </summary>
+    /// <remarks>
+    /// Host startup waits for the hooks of every every-instance subscription, so a hook that never returns would
+    /// otherwise hold startup forever. When the bound expires the hook's token is canceled, the expiry is logged, and
+    /// startup and later establishments continue without it.
+    /// </remarks>
+    public TimeSpan SubscriptionEstablishedTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// Gets or sets the cadence of the dead-owner recovery reconcile backstop. Default is 1 minute.
     /// </summary>
     /// <remarks>
@@ -304,9 +287,9 @@ public sealed class MessagingOptions
     public int? MaxPoisonEnvelopeBytes { get; set; } = 1024 * 1024;
 
     /// <summary>
-    /// Gets the global circuit breaker configuration that applies to all consumer groups.
+    /// Gets the global circuit breaker configuration that applies to every consumer.
     /// Individual consumers may override specific properties via
-    /// <see cref="IConsumerBuilderBase{TConsumer,TBuilder}.WithCircuitBreaker"/>.
+    /// <see cref="ConsumerTuningBuilder.CircuitBreaker"/>.
     /// </summary>
     public CircuitBreakerOptions CircuitBreaker { get; } = new();
 
@@ -337,9 +320,6 @@ public sealed class MessagingOptions
     /// </remarks>
     internal void CopyTo(MessagingOptions target)
     {
-        target.DefaultGroupName = DefaultGroupName;
-        target.IsDefaultGroupNameConfigured = IsDefaultGroupNameConfigured;
-        target.GroupNamePrefix = GroupNamePrefix;
         target.MessageNamePrefix = MessageNamePrefix;
         target.Version = Version;
         target.Conventions = Conventions;
@@ -365,6 +345,7 @@ public sealed class MessagingOptions
         target.TransportPublishTimeout = TransportPublishTimeout;
         target.CommandTimeout = CommandTimeout;
         target.ShutdownTimeout = ShutdownTimeout;
+        target.SubscriptionEstablishedTimeout = SubscriptionEstablishedTimeout;
         target.DeadNodeReconcileInterval = DeadNodeReconcileInterval;
         target.RequiredInboxCapability = RequiredInboxCapability;
         target.DefaultDeliveryMode = DefaultDeliveryMode;
@@ -424,13 +405,6 @@ public sealed class MessagingOptions
         Argument.IsNotNullOrWhiteSpace(messageName);
 
         return string.IsNullOrWhiteSpace(MessageNamePrefix) ? messageName : $"{MessageNamePrefix}.{messageName}";
-    }
-
-    internal string ApplyGroupNamePrefix(string group)
-    {
-        Argument.IsNotNullOrWhiteSpace(group);
-
-        return string.IsNullOrWhiteSpace(GroupNamePrefix) ? group : $"{GroupNamePrefix}.{group}";
     }
 
     internal static void ValidateMessageName(string messageName)
@@ -511,14 +485,10 @@ public sealed class MessagingOptions
     internal ConsumerMetadata CreateConsumerMetadata(
         Type consumerType,
         Type messageType,
-        string? messageName,
         string? mappedMessageName,
-        string? group,
-        byte concurrency,
-        string? handlerId = null,
-        string? consumerIdentity = null,
-        string? messageContractVersion = null,
-        MessageLane lane = MessageLane.Bus
+        string consumerIdentity,
+        string messageContractVersion,
+        MessageLane lane
     )
     {
         if (string.IsNullOrWhiteSpace(consumerIdentity))
@@ -538,7 +508,7 @@ public sealed class MessagingOptions
         string validatedMessageContractVersion;
         try
         {
-            validatedMessageContractVersion = ValidateContractVersion(messageContractVersion ?? string.Empty);
+            validatedMessageContractVersion = ValidateContractVersion(messageContractVersion);
         }
         catch (ArgumentException exception)
         {
@@ -548,41 +518,17 @@ public sealed class MessagingOptions
             );
         }
 
-        var conventions = Conventions;
-        conventions.Version = Version;
-
-        var finalHandlerId = handlerId ?? MessagingConventions.GetDefaultHandlerId(consumerType, messageType);
-        var resolvedMessageName =
-            messageName ?? mappedMessageName ?? conventions.GetMessageName(messageType) ?? messageType.Name;
-        var finalMessageName = ApplyMessageNamePrefix(resolvedMessageName);
-        var finalGroup = ResolveGroupName(finalHandlerId, group);
+        var resolvedMessageName = mappedMessageName ?? Conventions.GetMessageName(messageType);
 
         return new ConsumerMetadata(
             messageType,
             consumerType,
-            finalMessageName,
-            finalGroup,
-            concurrency,
+            ApplyMessageNamePrefix(resolvedMessageName),
+            Concurrency: 1,
             lane,
             consumerIdentity,
-            validatedMessageContractVersion,
-            finalHandlerId
+            validatedMessageContractVersion
         );
-    }
-
-    internal string ResolveGroupName(string handlerId, string? explicitGroup = null)
-    {
-        Argument.IsNotNullOrWhiteSpace(handlerId);
-
-        Conventions.Version = Version;
-
-        var resolvedGroup =
-            !string.IsNullOrWhiteSpace(explicitGroup) ? explicitGroup
-            : !string.IsNullOrWhiteSpace(Conventions.DefaultGroup) ? Conventions.DefaultGroup
-            : IsDefaultGroupNameConfigured ? DefaultGroupName
-            : Conventions.GetGroupName(handlerId);
-
-        return ApplyGroupNamePrefix(resolvedGroup);
     }
 }
 
@@ -613,6 +559,11 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
             .WithMessage("ShutdownTimeout must be greater than zero.")
             .LessThanOrEqualTo(TimeSpan.FromMinutes(5))
             .WithMessage("ShutdownTimeout must not exceed 5 minutes.");
+        RuleFor(x => x.SubscriptionEstablishedTimeout)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("SubscriptionEstablishedTimeout must be greater than zero.")
+            .LessThanOrEqualTo(TimeSpan.FromMinutes(5))
+            .WithMessage("SubscriptionEstablishedTimeout must not exceed 5 minutes.");
         // No upper bound: the reconcile is a backstop cadence, not a correctness deadline (the per-row
         // LockedUntil floor recovers rows independently), so a long interval is a legitimate choice.
         RuleFor(x => x.DeadNodeReconcileInterval)
@@ -675,7 +626,7 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
             }
 
             throw new MessagingConfigurationException(
-                $"Middleware `{descriptor.MiddlewareType.FullName}` is registered at bus scope but declares typed context `{descriptor.ContextType.FullName}`. Typed middleware must use AddConsumeMiddlewareFor<...>(group) or AddPublishMiddlewareFor<...>()."
+                $"Middleware `{descriptor.MiddlewareType.FullName}` is registered at bus scope but declares typed context `{descriptor.ContextType.FullName}`. Typed middleware must use AddConsumeMiddlewareFor<...>(lane) or AddPublishMiddlewareFor<...>(lane)."
             );
         }
     }

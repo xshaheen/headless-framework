@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 namespace Headless.Messaging.CircuitBreaker;
 
 /// <summary>
-/// Manages per-consumer-group circuit breaker state, tracking failure rates and coordinating
+/// Manages per-consumer circuit breaker state, tracking failure rates and coordinating
 /// Open/HalfOpen/Closed transitions. Intended as an internal singleton service.
 /// </summary>
 internal interface ICircuitBreakerStateManager : ICircuitBreakerMonitor
@@ -14,81 +14,85 @@ internal interface ICircuitBreakerStateManager : ICircuitBreakerMonitor
     /// Atomically classifies a claimed persisted retry against the lane-qualified circuit and,
     /// when eligible, reserves the same HalfOpen probe slot used by transport deliveries.
     /// </summary>
-    CircuitRetryDecision GetRetryDecision(MessageLane lane, string groupName);
+    CircuitRetryDecision GetRetryDecision(MessageLane lane, string consumerIdentity);
 
     /// <summary>
-    /// Freezes the set of valid consumer group names. After this call, unrecognized group names
+    /// Freezes the set of valid consumer names. After this call, unrecognized consumer names
     /// receive a no-op circuit state to prevent unbounded OTel cardinality. Should be called once
     /// during startup after all consumers are registered.
     /// </summary>
-    /// <param name="groups">The known consumer group names.</param>
-    void RegisterKnownGroups(IEnumerable<string> groups);
+    /// <param name="consumers">The known consumer names.</param>
+    void RegisterKnownConsumers(IEnumerable<string> consumers);
 
     /// <summary>
-    /// Registers pause and resume callbacks for a consumer group.
+    /// Registers pause and resume callbacks for a consumer.
     /// The <paramref name="onPause"/> callback is invoked when the circuit opens;
     /// <paramref name="onResume"/> is invoked when the circuit transitions to half-open.
     /// </summary>
-    /// <param name="groupName">The consumer group name.</param>
+    /// <param name="consumerKey">The consumer name.</param>
     /// <param name="onPause">Invoked when the circuit transitions to <see cref="CircuitBreakerState.Open"/>.</param>
     /// <param name="onResume">Invoked when the circuit transitions to <see cref="CircuitBreakerState.HalfOpen"/>.</param>
-    void RegisterGroupCallbacks(string groupName, Func<long, ValueTask> onPause, Func<long, ValueTask> onResume);
+    void RegisterConsumerCallbacks(string consumerKey, Func<long, ValueTask> onPause, Func<long, ValueTask> onResume);
 
     /// <summary>
-    /// Reports a failure for the specified consumer group. If the exception is transient and
+    /// Reports a failure for the specified consumer. If the exception is transient and
     /// the failure threshold is reached, the circuit will open and <c>onPause</c> will be invoked.
     /// </summary>
-    /// <param name="groupName">The consumer group name.</param>
+    /// <param name="consumerKey">The consumer name.</param>
     /// <param name="exception">The exception that caused the failure.</param>
     /// <param name="cancellationToken">Token to cancel the operation (e.g. transport pause callback).</param>
-    ValueTask ReportFailureAsync(string groupName, Exception exception, CancellationToken cancellationToken = default);
+    ValueTask ReportFailureAsync(
+        string consumerKey,
+        Exception exception,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
-    /// Attempts to acquire the single HalfOpen probe slot for the specified group.
+    /// Attempts to acquire the single HalfOpen probe slot for the specified consumer.
     /// Returns the current admission epoch when the probe slot was acquired successfully
-    /// or when the group is not HalfOpen; returns <see langword="null"/> when the probe slot is already held.
+    /// or when the consumer is not HalfOpen; returns <see langword="null"/> when the probe slot is already held.
     /// </summary>
-    /// <param name="groupName">The consumer group name.</param>
+    /// <param name="consumerKey">The consumer name.</param>
     /// <returns>The admission epoch if admitted, or <see langword="null"/> if the probe is taken.</returns>
-    long? TryAcquireHalfOpenProbe(string groupName);
+    long? TryAcquireHalfOpenProbe(string consumerKey);
 
     /// <summary>
     /// Releases a previously acquired HalfOpen probe slot without changing circuit state.
     /// Intended for failures that occur before a probe reaches the normal success/failure
     /// reporting path.
     /// </summary>
-    /// <param name="groupName">The consumer group name.</param>
-    void ReleaseHalfOpenProbe(string groupName, long epoch);
+    /// <param name="consumerKey">The consumer name.</param>
+    void ReleaseHalfOpenProbe(string consumerKey, long epoch);
 
     /// <summary>
-    /// Reports a successful message processing for the specified consumer group.
+    /// Reports a successful message processing for the specified consumer.
     /// Resets the consecutive failure counter and, if in half-open state, closes the circuit.
     /// </summary>
-    /// <param name="groupName">The consumer group name.</param>
+    /// <param name="consumerKey">The consumer name.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
-    ValueTask ReportSuccessAsync(string groupName, CancellationToken cancellationToken = default);
+    ValueTask ReportSuccessAsync(string consumerKey, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Removes all tracked state for the specified group, including timers and callbacks.
+    /// Removes all tracked state for the specified consumer, including timers and callbacks.
     /// Intended for consumer teardown/restart paths.
     /// </summary>
-    /// <param name="groupName">The consumer group name.</param>
-    ValueTask RemoveGroupAsync(string groupName);
+    /// <param name="consumerKey">The consumer name.</param>
+    ValueTask RemoveConsumerAsync(string consumerKey);
 
     /// <summary>
-    /// Called during transport restart when a group is in <see cref="CircuitBreakerState.HalfOpen"/>.
+    /// Called during transport restart when a consumer is in <see cref="CircuitBreakerState.HalfOpen"/>.
     /// Invalidates the aborted probe and transitions back to <see cref="CircuitBreakerState.Open"/>,
     /// preserving all failure and escalation history. Does NOT invoke the pause callback — the caller
     /// is responsible for pausing the new transport.
     /// </summary>
-    /// <param name="groupName">The consumer group name.</param>
-    ValueTask AbortHalfOpenProbeAsync(string groupName);
+    /// <param name="consumerKey">The consumer name.</param>
+    ValueTask AbortHalfOpenProbeAsync(string consumerKey);
 
     /// <summary>
-    /// Returns the epoch of the group's current Open state. Restart uses it to apply the
+    /// Returns the epoch of the consumer's current Open state. Restart uses it to apply the
     /// replacement transport's pre-pause through the same fence that judges later intents.
     /// </summary>
-    bool TryGetOpenEpoch(string groupName, out long epoch);
+    bool TryGetOpenEpoch(string consumerKey, out long epoch);
 }
 
 internal enum CircuitRetryDecisionKind

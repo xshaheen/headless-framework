@@ -14,7 +14,6 @@ public sealed class ConsumerMetadataTests : TestBase
         var messageType = typeof(MetadataTestMessage);
         var consumerType = typeof(MetadataTestConsumer);
         const string messageName = "test.messageName";
-        const string group = "test-group";
         const byte concurrency = 5;
 
         // when
@@ -22,7 +21,6 @@ public sealed class ConsumerMetadataTests : TestBase
             messageType,
             consumerType,
             messageName,
-            group,
             concurrency,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "test-consumer",
@@ -33,29 +31,45 @@ public sealed class ConsumerMetadataTests : TestBase
         metadata.MessageType.Should().Be(messageType);
         metadata.ConsumerType.Should().Be(consumerType);
         metadata.MessageName.Should().Be(messageName);
-        metadata.Group.Should().Be(group);
         metadata.Concurrency.Should().Be(concurrency);
         metadata.ConsumerIdentity.Should().Be("test-consumer");
         metadata.MessageContractVersion.Should().Be("v1");
     }
 
     [Fact]
-    public void should_allow_null_group()
+    public void should_subscribe_a_bus_consumer_under_its_identity()
     {
         // when
         var metadata = new ConsumerMetadata(
             typeof(MetadataTestMessage),
             typeof(MetadataTestConsumer),
             "test.messageName",
-            null,
             1,
             Lane: MessageLane.Bus,
-            ConsumerIdentity: "tests.metadata.null-group",
+            ConsumerIdentity: "tests.metadata.bus-subscription",
             MessageContractVersion: "v1"
         );
 
         // then
-        metadata.Group.Should().BeNull();
+        metadata.SubscriptionName.Should().Be("tests.metadata.bus-subscription");
+    }
+
+    [Fact]
+    public void should_subscribe_a_queue_consumer_under_its_message_name()
+    {
+        // when
+        var metadata = new ConsumerMetadata(
+            typeof(MetadataTestMessage),
+            typeof(MetadataTestConsumer),
+            "test.messageName",
+            1,
+            Lane: MessageLane.Queue,
+            ConsumerIdentity: "tests.metadata.queue-subscription",
+            MessageContractVersion: "v1"
+        );
+
+        // then
+        metadata.SubscriptionName.Should().Be("test.messageName");
     }
 
     [Fact]
@@ -66,7 +80,6 @@ public sealed class ConsumerMetadataTests : TestBase
             typeof(MetadataTestMessage),
             typeof(MetadataTestConsumer),
             "original.messageName",
-            "group",
             1,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.metadata.topic",
@@ -83,34 +96,8 @@ public sealed class ConsumerMetadataTests : TestBase
         updated.MessageName.Should().Be("new.messageName");
         updated.MessageType.Should().Be(original.MessageType);
         updated.ConsumerType.Should().Be(original.ConsumerType);
-        updated.Group.Should().Be(original.Group);
+        updated.SubscriptionName.Should().Be(original.SubscriptionName);
         updated.Concurrency.Should().Be(original.Concurrency);
-    }
-
-    [Fact]
-    public void should_support_with_expression_for_group()
-    {
-        // given
-        var original = new ConsumerMetadata(
-            typeof(MetadataTestMessage),
-            typeof(MetadataTestConsumer),
-            "messageName",
-            "original-group",
-            1,
-            Lane: MessageLane.Bus,
-            ConsumerIdentity: "tests.metadata.group",
-            MessageContractVersion: "v1"
-        );
-
-        // when
-        var updated = original with
-        {
-            Group = "new-group",
-        };
-
-        // then
-        updated.Group.Should().Be("new-group");
-        updated.MessageName.Should().Be(original.MessageName);
     }
 
     [Fact]
@@ -121,7 +108,6 @@ public sealed class ConsumerMetadataTests : TestBase
             typeof(MetadataTestMessage),
             typeof(MetadataTestConsumer),
             "messageName",
-            "group",
             1,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.metadata.concurrency",
@@ -146,7 +132,6 @@ public sealed class ConsumerMetadataTests : TestBase
             typeof(MetadataTestMessage),
             typeof(MetadataTestConsumer),
             "messageName",
-            "group",
             5,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.metadata.equality",
@@ -156,7 +141,6 @@ public sealed class ConsumerMetadataTests : TestBase
             typeof(MetadataTestMessage),
             typeof(MetadataTestConsumer),
             "messageName",
-            "group",
             5,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.metadata.equality",
@@ -176,7 +160,6 @@ public sealed class ConsumerMetadataTests : TestBase
             typeof(MetadataTestMessage),
             typeof(MetadataTestConsumer),
             "messageName",
-            "group",
             5,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.metadata.difference",
@@ -186,7 +169,6 @@ public sealed class ConsumerMetadataTests : TestBase
             typeof(MetadataTestMessage),
             typeof(MetadataTestConsumer),
             "different-messageName",
-            "group",
             5,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.metadata.difference",
@@ -199,26 +181,22 @@ public sealed class ConsumerMetadataTests : TestBase
     }
 
     [Fact]
-    public void durable_identity_is_independent_from_handler_and_topology_metadata()
+    public void durable_identity_is_independent_from_consumer_class_and_message_name()
     {
         var original = new ConsumerMetadata(
             typeof(MetadataTestMessage),
             typeof(MetadataTestConsumer),
             "orders.placed",
-            "orders-primary",
             1,
             MessageLane.Bus,
             ConsumerIdentity: "orders-projection",
-            MessageContractVersion: "v3",
-            HandlerId: "Tests.OriginalHandler"
+            MessageContractVersion: "v3"
         );
 
         var refactored = original with
         {
             ConsumerType = typeof(RefactoredMetadataTestConsumer),
             MessageName = "orders.v2.placed",
-            Group = "orders-refactored",
-            HandlerId = "Tests.RefactoredHandler",
         };
 
         refactored.ConsumerIdentity.Should().Be("orders-projection");

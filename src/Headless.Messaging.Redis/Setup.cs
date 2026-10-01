@@ -126,7 +126,8 @@ public static class SetupRedisMessaging
                 MessagingProviderCapabilities.Transport(
                     "Redis",
                     [MessageLane.Bus, MessageLane.Queue],
-                    supportsIndependentLaneTopology: true
+                    supportsIndependentLaneTopology: true,
+                    supportsEveryInstance: true
                 )
             );
             services.AddSingleton<IRedisStreamManager, RedisStreamManager>();

@@ -10,13 +10,13 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 namespace Headless.Jobs.SourceGenerator.Parsing;
 
 /// <summary>
-/// Turns the Jobs middleware attributes on one declaration (the assembly, via a compilation unit, or a method) into
+/// Turns the Jobs middleware attributes on one declaration (the assembly, via a compilation unit, or a job class) into
 /// value models. Checks that need the whole assembly, such as target resolution and duplicates, run later.
 /// </summary>
 internal static class MiddlewareParser
 {
     public static bool IsCandidate(SyntaxNode node, CancellationToken _) =>
-        node is CompilationUnitSyntax or MethodDeclarationSyntax { Parent: ClassDeclarationSyntax };
+        node is CompilationUnitSyntax or ClassDeclarationSyntax or RecordDeclarationSyntax;
 
     public static MiddlewareResult Parse(GeneratorAttributeSyntaxContext context, CancellationToken cancellationToken)
     {
@@ -44,9 +44,9 @@ internal static class MiddlewareParser
                 }
             }
         }
-        else if (context.TargetSymbol is IMethodSymbol method)
+        else if (context.TargetSymbol is INamedTypeSymbol jobClass)
         {
-            var jobFunction = method.GetAttributes().FirstOrDefault(SourceGeneratorUtilities.IsJobFunctionAttribute);
+            var job = jobClass.GetAttributes().FirstOrDefault(_IsJobAttribute);
             foreach (var attribute in context.Attributes)
             {
                 if (!_TryGetMiddleware(attribute, out var middlewareType, out var isSchedule))
@@ -62,26 +62,24 @@ internal static class MiddlewareParser
                 )
                 {
                     diagnostics.Add(
-                        DiagnosticInfo.Create(DiagnosticDescriptors.MethodMiddlewareFunctionTarget, location)
+                        DiagnosticInfo.Create(DiagnosticDescriptors.ClassMiddlewareFunctionTarget, location)
                     );
                     continue;
                 }
 
-                if (jobFunction is null)
+                if (job is null)
                 {
-                    diagnostics.Add(
-                        DiagnosticInfo.Create(DiagnosticDescriptors.MethodMiddlewareRequiresJobFunction, location)
-                    );
+                    diagnostics.Add(DiagnosticInfo.Create(DiagnosticDescriptors.ClassMiddlewareRequiresJob, location));
                     continue;
                 }
 
                 if (
-                    jobFunction.ConstructorArguments.Length == 0
-                    || jobFunction.ConstructorArguments[0].Value is not string target
-                    || string.IsNullOrWhiteSpace(target)
+                    job.ConstructorArguments.Length == 0
+                    || job.ConstructorArguments[0].Value is not string target
+                    || !HandlerIdentity.IsValid(target)
                 )
                 {
-                    // HF004 already reports the missing function name on the [JobFunction] attribute itself.
+                    // HF004 already reports the invalid identity on the [Job] attribute itself.
                     continue;
                 }
 
@@ -91,7 +89,7 @@ internal static class MiddlewareParser
                         attribute,
                         middlewareType,
                         isSchedule,
-                        MiddlewarePlacement.Method,
+                        MiddlewarePlacement.Class,
                         target
                     )
                 );
@@ -101,7 +99,7 @@ internal static class MiddlewareParser
         return new(declarations.ToEquatableArray(), diagnostics.ToEquatableArray());
     }
 
-    /// <summary>Reads the durable function names that referenced assemblies publish through generated metadata.</summary>
+    /// <summary>Reads the durable job identities that referenced assemblies publish through generated metadata.</summary>
     public static EquatableArray<string> GetReferencedFunctionNames(
         Compilation compilation,
         CancellationToken cancellationToken
@@ -204,6 +202,13 @@ internal static class MiddlewareParser
         middlewareType = typeArgument;
         return true;
     }
+
+    private static bool _IsJobAttribute(AttributeData attribute) =>
+        string.Equals(
+            attribute.AttributeClass?.ToDisplayString(),
+            SourceGeneratorConstants.JobAttributeMetadataName,
+            StringComparison.Ordinal
+        );
 
     private static bool _IsAccessibleFromGeneratedCode(INamedTypeSymbol middlewareType)
     {

@@ -24,6 +24,6 @@ EF converters validate normal writes. Database columns are required and bounded,
 
 ## Verification
 
-The PostgreSQL and SQL Server claim conformance suites create tables from the production EF mappings. They verify ordinal identity, UTF-16 boundaries, requestless round trips, required versions without database defaults, invalid new writes, and occurrence payload preservation after parent edits and restart. Custom providers must retain these guarantees and reject unsupported executable versions before deserializing payloads.
+The PostgreSQL and SQL Server claim conformance suites create tables from the production EF mappings. They verify ordinal identity, UTF-16 boundaries, round trips of jobs without arguments, required versions without database defaults, invalid new writes, and occurrence payload preservation after parent edits and restart. Custom providers must retain these guarantees and reject unsupported executable versions before deserializing payloads.
 
 See [keyed scheduling storage](jobs-keyed-scheduling.md) for key generations and database constraints.

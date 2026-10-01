@@ -7,16 +7,14 @@ using Microsoft.Extensions.Hosting;
 namespace Headless.Jobs.Console.Demo;
 
 // Simple sample job
-public static class ConsoleSampleJobs
+[Job("console-demo.hello-world")]
+public sealed class HelloWorldJob : IJob
 {
-    internal const string FunctionName = "ConsoleSample_HelloWorld";
-
-    [JobFunction(FunctionName)]
-    public static Task HelloWorldAsync(JobFunctionContext context, CancellationToken cancellationToken)
+    public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         System.Console.WriteLine($"[Console] Hello from Jobs! Id={context.Id}, ScheduledFor={context.ScheduledFor:O}");
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 }
 
@@ -29,9 +27,7 @@ public class SampleScheduler(IJobScheduler scheduler) : IHostedService
         Guid jobId;
         try
         {
-            var descriptor = AppJobs.ConsoleSample_u005F_HelloWorld;
-            jobId = await scheduler.EnqueueAsync(
-                descriptor,
+            jobId = await scheduler.EnqueueAsync<HelloWorldJob>(
                 new JobOptions { Description = "Sample console demo job" },
                 cancellationToken
             );

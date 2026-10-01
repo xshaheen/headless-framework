@@ -686,7 +686,7 @@ internal sealed partial class PostgreSqlDataStorage(
     /// <returns><see langword="true"/> if a new row was inserted or an existing non-terminal row was updated.</returns>
     public async ValueTask<bool> StoreReceivedExceptionMessageAsync(
         string name,
-        string group,
+        string consumerIdentity,
         string content,
         string? exceptionInfo = null,
         CancellationToken cancellationToken = default
@@ -695,7 +695,7 @@ internal sealed partial class PostgreSqlDataStorage(
         var origin = serializer.Deserialize(content)!;
         return await StoreReceivedExceptionMessageAsync(
                 name,
-                group,
+                consumerIdentity,
                 new MediumMessage
                 {
                     StorageId = Guid.Empty,
@@ -717,7 +717,7 @@ internal sealed partial class PostgreSqlDataStorage(
     /// <returns><see langword="true"/> if a new row was inserted or an existing non-terminal row was updated.</returns>
     public async ValueTask<bool> StoreReceivedExceptionMessageAsync(
         string name,
-        string group,
+        string consumerIdentity,
         MediumMessage message,
         string? exceptionInfo = null,
         CancellationToken cancellationToken = default
@@ -727,7 +727,7 @@ internal sealed partial class PostgreSqlDataStorage(
         [
             new NpgsqlParameter("@Id", guidGenerator.Create()),
             new NpgsqlParameter("@Name", name),
-            new NpgsqlParameter("@Group", NpgsqlDbType.Varchar) { Value = (object?)group ?? DBNull.Value },
+            new NpgsqlParameter("@ConsumerIdentity", NpgsqlDbType.Varchar) { Value = consumerIdentity },
             new NpgsqlParameter(
                 "@Content",
                 string.IsNullOrEmpty(message.Content) ? serializer.Serialize(message.Origin) : message.Content
@@ -755,13 +755,13 @@ internal sealed partial class PostgreSqlDataStorage(
     /// <summary>
     /// Persists an inbound message to the <c>received</c> table using an atomic upsert. Concurrent
     /// broker redeliveries of the same message are collapsed to a single row via the unique index on
-    /// <c>(Version, MessageId, COALESCE(Group, ''), IntentType)</c>; the terminal-row guard ensures
+    /// <c>(Version, MessageId, ConsumerIdentity, IntentType)</c>; the terminal-row guard ensures
     /// already-succeeded rows are never overwritten.
     /// </summary>
     /// <returns>The stored <c>MediumMessage</c> with its generated <c>StorageId</c> and timestamps populated.</returns>
     public async ValueTask<MediumMessage> StoreReceivedMessageAsync(
         string name,
-        string group,
+        string consumerIdentity,
         MediumMessage message,
         CancellationToken cancellationToken = default
     )
@@ -786,7 +786,7 @@ internal sealed partial class PostgreSqlDataStorage(
         [
             new NpgsqlParameter("@Id", mediumMessage.StorageId),
             new NpgsqlParameter("@Name", name),
-            new NpgsqlParameter("@Group", NpgsqlDbType.Varchar) { Value = (object?)group ?? DBNull.Value },
+            new NpgsqlParameter("@ConsumerIdentity", NpgsqlDbType.Varchar) { Value = consumerIdentity },
             new NpgsqlParameter("@Content", mediumMessage.Content),
             new NpgsqlParameter("@IntentType", MessageLaneCompatibility.ToPersistedValue(mediumMessage.Lane)),
             new NpgsqlParameter("@Retries", mediumMessage.Retries),
@@ -820,14 +820,14 @@ internal sealed partial class PostgreSqlDataStorage(
     /// <returns>The stored <c>MediumMessage</c> with its generated <c>StorageId</c> and timestamps populated.</returns>
     public ValueTask<MediumMessage> StoreReceivedMessageAsync(
         string name,
-        string group,
+        string consumerIdentity,
         Message message,
         CancellationToken cancellationToken = default
     )
     {
         return StoreReceivedMessageAsync(
             name,
-            group,
+            consumerIdentity,
             new MediumMessage
             {
                 StorageId = Guid.Empty,
@@ -983,17 +983,31 @@ internal sealed partial class PostgreSqlDataStorage(
     /// </summary>
     public async ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
         MessageLane lane,
+        IReadOnlyCollection<string>? consumerIdentities,
         CancellationToken cancellationToken = default
     )
     {
-        return await _GetMessagesOfNeedRetryAsync(_receivedTable, lane, cancellationToken: cancellationToken)
+        return await _GetMessagesOfNeedRetryAsync(
+                _receivedTable,
+                lane,
+                consumerIdentities: consumerIdentities,
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
     }
 
     public ValueTask<IEnumerable<MediumMessage>> GetReceivedInboxOrphansOfNeedRetryAsync(
         MessageLane lane,
+        IReadOnlyCollection<string>? consumerIdentities,
         CancellationToken cancellationToken = default
-    ) => _GetMessagesOfNeedRetryAsync(_receivedTable, lane, orphaned: true, cancellationToken: cancellationToken);
+    ) =>
+        _GetMessagesOfNeedRetryAsync(
+            _receivedTable,
+            lane,
+            orphaned: true,
+            consumerIdentities: consumerIdentities,
+            cancellationToken: cancellationToken
+        );
 
     /// <summary>
     /// Shortens the remaining lease on received messages owned by nodes in <paramref name="deadOwners"/>
@@ -1574,12 +1588,10 @@ internal sealed partial class PostgreSqlDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        // Atomic upsert via INSERT ... ON CONFLICT ON CONSTRAINT against the partial unique index
-        // (MessageId, COALESCE("group", '')) created by PostgreSqlStorageInitializer. The COALESCE
-        // expression collapses NULL groups to the empty string so NULL-Group rows participate in
-        // the uniqueness check (a plain ("message_id","group") unique constraint treats NULLs as
-        // distinct, which would let two concurrent broker redeliveries of a no-group message both
-        // insert and produce duplicate rows).
+        // Atomic upsert via INSERT ... ON CONFLICT against the partial unique index
+        // ("version","message_id","consumer_identity","intent_type") created by PostgreSqlStorageInitializer:
+        // concurrent broker redeliveries to one consumer collapse to one row, while each consumer that receives the
+        // message keeps its own row.
         //
         // The terminal-row guard moves into the ON CONFLICT DO UPDATE WHERE clause: a row that is
         // already Succeeded/Failed with no scheduled retry is left untouched so a redelivered
@@ -1593,8 +1605,8 @@ internal sealed partial class PostgreSqlDataStorage(
         //                      differs from the freshly-generated @Id — so callers must adopt this value.
         //   no row returned  → ON CONFLICT matched but the DO UPDATE WHERE guard blocked the update
         //                      (terminal-row guard or active-lease guard) → returns null ("not modified").
-        // Use the inference form `ON CONFLICT (col, expression)` so the planner matches the
-        // unique expression index by structure rather than
+        // Use the inference form `ON CONFLICT (cols)` so the planner matches the
+        // partial unique index by structure rather than
         // requiring a named constraint (a `CREATE UNIQUE INDEX` is an index, not a constraint;
         // `ON CONFLICT ON CONSTRAINT` would error out against it).
         // #3 — additionally skip rows whose lease is still active (LockedUntil in the future). A
@@ -1608,9 +1620,9 @@ internal sealed partial class PostgreSqlDataStorage(
         // redelivery collapse never resets the durable retry counters.
         // Mirrors the matching guard in SqlServerDataStorage._StoreReceivedMessage.
         var sql = $"""
-            INSERT INTO {_receivedTable}("id","version","name","group","content","intent_type","retries","inline_attempts","added","expires_at","next_retry_at","locked_until","owner","status_name","message_id","exception_info")
-            VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Group,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId,@ExceptionInfo)
-            ON CONFLICT ("version", "message_id", (COALESCE("group", '')), "intent_type")
+            INSERT INTO {_receivedTable}("id","version","name","consumer_identity","content","intent_type","retries","inline_attempts","added","expires_at","next_retry_at","locked_until","owner","status_name","message_id","exception_info")
+            VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@ConsumerIdentity,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId,@ExceptionInfo)
+            ON CONFLICT ("version", "message_id", "consumer_identity", "intent_type")
             WHERE NOT "is_inbox_record"
             DO UPDATE SET
                 "status_name"=EXCLUDED."status_name",
@@ -1763,6 +1775,7 @@ internal sealed partial class PostgreSqlDataStorage(
         string tableName,
         MessageLane lane,
         bool orphaned = false,
+        IReadOnlyCollection<string>? consumerIdentities = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -1771,6 +1784,11 @@ internal sealed partial class PostgreSqlDataStorage(
         var orphanFilter = isReceivedTable
             ? (orphaned ? "AND message.\"is_inbox_orphaned\" = TRUE" : "AND message.\"is_inbox_orphaned\" = FALSE")
             : string.Empty;
+        // Empty for an unfiltered host, so it keeps claiming rows of every consumer identity.
+        var consumerFilter =
+            isReceivedTable && consumerIdentities is not null
+                ? "AND message.\"consumer_identity\" = ANY(@ConsumerIdentities)"
+                : string.Empty;
         var attemptAssignment = isReceivedTable
             ? ",\n                \"attempt_id\" = CASE WHEN message.\"is_inbox_record\" THEN gen_random_uuid() ELSE NULL END"
             : string.Empty;
@@ -1804,6 +1822,7 @@ internal sealed partial class PostgreSqlDataStorage(
                   AND "next_retry_at" IS NOT NULL AND "next_retry_at" <= @Now
                   AND ("locked_until" IS NULL OR "locked_until" <= statement_timestamp())
                   {orphanFilter}
+                  {consumerFilter}
                   AND {_TerminalRowGuardSimple}
                 ORDER BY "next_retry_at", "id"
                 LIMIT @BatchSize
@@ -1818,7 +1837,7 @@ internal sealed partial class PostgreSqlDataStorage(
                 {inboxProjection};
             """;
 
-        object[] sqlParams =
+        List<object> sqlParams =
         [
             new NpgsqlParameter(
                 "@BatchSize",
@@ -1834,6 +1853,15 @@ internal sealed partial class PostgreSqlDataStorage(
                 Value = nodeMembership.GetOwnerTag() ?? (object)DBNull.Value,
             },
         ];
+        if (consumerFilter.Length != 0)
+        {
+            sqlParams.Add(
+                new NpgsqlParameter("@ConsumerIdentities", consumerIdentities as string[] ?? [.. consumerIdentities!])
+                {
+                    DataTypeName = "text[]",
+                }
+            );
+        }
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -1927,7 +1955,7 @@ internal sealed partial class PostgreSqlDataStorage(
                 },
                 transaction: transaction,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams: sqlParams,
+                sqlParams: [.. sqlParams],
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);

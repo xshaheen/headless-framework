@@ -578,6 +578,7 @@ public sealed class SqlServerClaimStrategyTests(SqlServerJobsCoordinationFixture
         builder.Services.AddHeadlessJobs(options =>
         {
             options.DisableBackgroundServices();
+            options.AddModule<CoordinatedJobsModule>();
             options.UseEntityFramework(ef =>
             {
                 ef.UseJobsDbContext<JobsDbContext>(db =>

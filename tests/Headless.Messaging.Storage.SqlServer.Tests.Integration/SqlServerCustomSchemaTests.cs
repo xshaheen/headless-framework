@@ -79,6 +79,7 @@ public sealed class SqlServerCustomSchemaTests(SqlServerTestFixture fixture) : T
                 DROP TYPE IF EXISTS [{_Schema}].[HeadlessMessagingIdList];
                 DROP TYPE IF EXISTS [{_Schema}].[HeadlessMessagingOwnerList];
                 DROP TYPE IF EXISTS [{_Schema}].[HeadlessMessagingPoisonMessageList];
+                DROP TYPE IF EXISTS [{_Schema}].[HeadlessMessagingConsumerIdentityList];
                 DROP SCHEMA IF EXISTS [{_Schema}];
                 """
             );

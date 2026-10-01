@@ -4,7 +4,9 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.RabbitMq;
+using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute.ExceptionExtensions;
@@ -40,11 +42,68 @@ public sealed class RabbitMqConsumerClientFactoryTests : TestBase
         var factory = new RabbitMqConsumerClientFactory(options, pool, serviceProvider);
 
         // when
-        var client = await factory.CreateAsync("test-group", 5, MessageLane.Queue, AbortToken);
+        var client = await factory.CreateAsync(
+            new ConsumerClientRequest("test-group", 5, MessageLane.Queue),
+            AbortToken
+        );
 
         // then
         client.Should().NotBeNull();
         client.Should().BeOfType<RabbitMqConsumerClient>();
+    }
+
+    [Fact]
+    public async Task should_declare_every_instance_support_on_the_transport_capability()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup => setup.UseRabbitMq(options => options.HostName = "localhost"));
+        await using var provider = services.BuildServiceProvider();
+
+        provider
+            .GetServices<MessagingProviderCapabilities>()
+            .Single(x => x.Role == MessagingProviderRole.Transport)
+            .SupportsEveryInstance.Should()
+            .BeTrue();
+    }
+
+    [Fact]
+    public async Task should_release_owned_connection_when_every_instance_client_fails_to_connect()
+    {
+        // given
+        var pool = Substitute.For<IConnectionChannelPool>();
+        var ownedConnection = Substitute.For<IConnection>();
+        pool.Exchange.Returns("test.exchange");
+        pool.CreateNonRecoveringConnectionAsync(Arg.Any<CancellationToken>()).Returns(ownedConnection);
+        ownedConnection
+            .CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("channel failed"));
+        var factory = new RabbitMqConsumerClientFactory(
+            Options.Create(
+                new RabbitMqMessagingOptions
+                {
+                    HostName = "localhost",
+                    UserName = "test_user",
+                    Password = "test_pass",
+                }
+            ),
+            pool,
+            Substitute.For<IServiceProvider>()
+        );
+        var request = new ConsumerClientRequest(
+            "billing.cache",
+            1,
+            MessageLane.Bus,
+            ConsumerSubscriptionKind.EveryInstance,
+            Guid.NewGuid()
+        );
+
+        // when
+        var act = () => factory.CreateAsync(request, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<BrokerConnectionException>();
+        await ownedConnection.Received(1).DisposeAsync();
     }
 
     [Fact]
@@ -70,7 +129,7 @@ public sealed class RabbitMqConsumerClientFactoryTests : TestBase
         var factory = new RabbitMqConsumerClientFactory(options, pool, serviceProvider);
 
         // when
-        var act = () => factory.CreateAsync("test-group", 5, MessageLane.Queue);
+        var act = () => factory.CreateAsync(new ConsumerClientRequest("test-group", 5, MessageLane.Queue));
 
         // then
         await act.Should().ThrowAsync<BrokerConnectionException>();
@@ -99,7 +158,7 @@ public sealed class RabbitMqConsumerClientFactoryTests : TestBase
         var factory = new RabbitMqConsumerClientFactory(options, pool, serviceProvider);
 
         // when
-        var act = () => factory.CreateAsync("test-group", 5, MessageLane.Queue);
+        var act = () => factory.CreateAsync(new ConsumerClientRequest("test-group", 5, MessageLane.Queue));
 
         // then
         var exception = await act.Should().ThrowAsync<BrokerConnectionException>();
@@ -132,7 +191,7 @@ public sealed class RabbitMqConsumerClientFactoryTests : TestBase
         var factory = new RabbitMqConsumerClientFactory(options, pool, serviceProvider);
 
         // when
-        await factory.CreateAsync("test-group", 5, MessageLane.Queue, AbortToken);
+        await factory.CreateAsync(new ConsumerClientRequest("test-group", 5, MessageLane.Queue), AbortToken);
 
         // then - verify connection was retrieved during factory.CreateAsync
         await pool.Received(1).GetConnectionAsync(Arg.Any<CancellationToken>());
@@ -161,7 +220,7 @@ public sealed class RabbitMqConsumerClientFactoryTests : TestBase
         );
         using var cts = new CancellationTokenSource();
 
-        await factory.CreateAsync("test-group", 1, MessageLane.Queue, cts.Token);
+        await factory.CreateAsync(new ConsumerClientRequest("test-group", 1, MessageLane.Queue), cts.Token);
 
         await pool.Received(1).GetConnectionAsync(cts.Token);
     }
@@ -188,7 +247,8 @@ public sealed class RabbitMqConsumerClientFactoryTests : TestBase
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var act = async () => await factory.CreateAsync("test-group", 1, MessageLane.Queue, cts.Token);
+        var act = async () =>
+            await factory.CreateAsync(new ConsumerClientRequest("test-group", 1, MessageLane.Queue), cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -218,7 +278,7 @@ public sealed class RabbitMqConsumerClientFactoryTests : TestBase
         var hostShutdownTimeout = TimeSpan.FromSeconds(1);
         using var hostCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
 
-        var startup = factory.CreateAsync("test-group", 1, MessageLane.Queue, hostCts.Token);
+        var startup = factory.CreateAsync(new ConsumerClientRequest("test-group", 1, MessageLane.Queue), hostCts.Token);
         var act = async () => await startup.WaitAsync(hostShutdownTimeout, AbortToken);
 
         await act.Should().ThrowAsync<OperationCanceledException>();

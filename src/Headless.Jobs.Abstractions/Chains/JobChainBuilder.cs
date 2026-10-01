@@ -15,14 +15,14 @@ namespace Headless.Jobs;
 public sealed class JobChainBuilder
 {
     internal JobChainBuilder(
-        JobFunctionDescriptor? descriptor,
+        Type? jobType,
         object? payload,
         Type? payloadType,
         JobOptions? options,
         DateTimeOffset? executionTime
     )
     {
-        Root = new JobChainNodeBuilder(this, descriptor, payload, payloadType, options, executionTime);
+        Root = new JobChainNodeBuilder(this, jobType, payload, payloadType, options, executionTime);
     }
 
     /// <summary>The handle to the root step; attach continuations to it with <c>Then</c> / <c>Catch</c>.</summary>
@@ -89,7 +89,7 @@ public sealed class JobChainBuilder
         var onFailure = node.OnFailureNode is null ? null : _Freeze(node.OnFailureNode);
 
         return new JobChainNode(
-            node.Descriptor,
+            node.JobType,
             node.Payload,
             node.PayloadType,
             node.Options,

@@ -114,7 +114,7 @@ internal sealed class AwsProviderConformanceDriver(LocalStackTestFixture fixture
         {
             await topology.SubscribeAsync(topics, cancellationToken);
             queueUrl = (
-                await client.GetQueueUrlAsync(AwsPhysicalAddress.BusGroupQueue(group), cancellationToken)
+                await client.GetQueueUrlAsync(AwsPhysicalAddress.BusSubscriptionQueue(group), cancellationToken)
             ).QueueUrl;
             await TransportRoutingAffinityConformance.AssertPublisherPathsAsync(
                 ConfigureRoutingAffinityTransport,
@@ -168,7 +168,7 @@ internal sealed class AwsProviderConformanceDriver(LocalStackTestFixture fixture
             endpoint with
             {
                 LogicalName = endpoint.LogicalName + ".fifo",
-                SubscriberGroup = endpoint.SubscriberGroup + ".fifo",
+                SubscriptionName = endpoint.SubscriptionName + ".fifo",
             },
             cancellationToken
         );
@@ -186,14 +186,14 @@ internal sealed class AwsProviderConformanceDriver(LocalStackTestFixture fixture
         {
             MessageLane.Bus => fixture.CreateBusSessionAsync(
                 endpoint.LogicalName,
-                endpoint.SubscriberGroup,
+                endpoint.SubscriptionName,
                 cancellationToken,
                 ownsQueue
             ),
             MessageLane.Queue => fixture.CreateConformanceSessionAsync(
                 cancellationToken,
                 endpoint.LogicalName,
-                endpoint.SubscriberGroup,
+                endpoint.SubscriptionName,
                 ownsQueue
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(endpoint), endpoint.Lane, null),

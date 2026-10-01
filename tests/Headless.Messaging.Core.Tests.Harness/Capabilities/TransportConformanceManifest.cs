@@ -21,7 +21,7 @@ public enum TransportConformanceScenario
     StaleSettlement,
     HandlerFailureRedelivery,
     BoundedGracefulShutdown,
-    BusSubscriberGroupFanOut,
+    BusConsumerIdentityFanOut,
     BusReplicaCompetition,
     QueueOwnership,
     SameNameLaneIsolation,
@@ -239,7 +239,7 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.BusSubscriberGroupFanOut, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BusConsumerIdentityFanOut, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusReplicaCompetition, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.QueueOwnership, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.SameNameLaneIsolation, ConformanceSupport.Supported)
@@ -269,7 +269,7 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.BusSubscriberGroupFanOut, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BusConsumerIdentityFanOut, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusReplicaCompetition, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.QueueOwnership, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.SameNameLaneIsolation, ConformanceSupport.Supported)
@@ -303,7 +303,7 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.BusSubscriberGroupFanOut, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BusConsumerIdentityFanOut, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusReplicaCompetition, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.QueueOwnership, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.SameNameLaneIsolation, ConformanceSupport.Supported)
@@ -337,7 +337,7 @@ public static class TransportConformanceManifest
                     )
                 )
                 .WithScenario(
-                    TransportConformanceScenario.BusSubscriberGroupFanOut,
+                    TransportConformanceScenario.BusConsumerIdentityFanOut,
                     ConformanceSupport.NotApplicable("Kafka is a Queue-only transport.")
                 )
                 .WithScenario(
@@ -385,7 +385,7 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.BusSubscriberGroupFanOut, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BusConsumerIdentityFanOut, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusReplicaCompetition, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.QueueOwnership, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.SameNameLaneIsolation, ConformanceSupport.Supported)
@@ -414,7 +414,7 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.BusSubscriberGroupFanOut, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BusConsumerIdentityFanOut, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusReplicaCompetition, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.QueueOwnership, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.SameNameLaneIsolation, ConformanceSupport.Supported)
@@ -439,7 +439,7 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.BusSubscriberGroupFanOut, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BusConsumerIdentityFanOut, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusReplicaCompetition, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.QueueOwnership, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.SameNameLaneIsolation, ConformanceSupport.Supported)
@@ -469,7 +469,7 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
-                .WithScenario(TransportConformanceScenario.BusSubscriberGroupFanOut, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.BusConsumerIdentityFanOut, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BusReplicaCompetition, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.QueueOwnership, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.SameNameLaneIsolation, ConformanceSupport.Supported)

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Jobs;
+using Headless.Jobs.Base;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
@@ -11,7 +12,6 @@ namespace Tests;
 public sealed class JobSchedulerExtensionsTests : TestBase
 {
     private static readonly Request _Request = new();
-    private static readonly JobFunctionDescriptor _Descriptor = new("requestless", null, "", JobPriority.Normal, 0);
     private static readonly DateTimeOffset _ExecutionTime = new(2026, 9, 5, 18, 0, 0, TimeSpan.FromHours(3));
     private static readonly TimeSpan _Delay = TimeSpan.FromMinutes(5);
 
@@ -59,9 +59,14 @@ public sealed class JobSchedulerExtensionsTests : TestBase
         captured!.WithRetries(9).WithRetryIntervals(99);
         var call = scheduler.ReceivedCalls().Should().ContainSingle().Which;
         call.GetMethodInfo().Name.Should().Be(methodName);
-        call.GetMethodInfo().IsGenericMethod.Should().Be(typed);
+        call.GetMethodInfo().GetGenericArguments().Should().Equal(typed ? typeof(Request) : typeof(CleanupJob));
         var arguments = call.GetArguments();
-        arguments[0].Should().BeSameAs(typed ? _Request : _Descriptor);
+        if (typed)
+        {
+            arguments[0].Should().BeSameAs(_Request);
+        }
+
+        var instantIndex = typed ? 1 : 0;
         arguments.Should().HaveElementAt(arguments.Length - 1, AbortToken);
         var options = arguments[^2].Should().BeOfType<JobOptions>().Which;
         options
@@ -81,11 +86,11 @@ public sealed class JobSchedulerExtensionsTests : TestBase
             );
         if (methodName is nameof(IJobScheduler.ScheduleAsync))
         {
-            arguments.Should().HaveElementAt(1, _ExecutionTime);
+            arguments.Should().HaveElementAt(instantIndex, _ExecutionTime);
         }
         else if (methodName is nameof(IJobScheduler.ScheduleAfterAsync))
         {
-            arguments.Should().HaveElementAt(1, _Delay);
+            arguments.Should().HaveElementAt(instantIndex, _Delay);
         }
     }
 
@@ -151,8 +156,7 @@ public sealed class JobSchedulerExtensionsTests : TestBase
         JobOptionsBuilder? first = null;
         JobOptionsBuilder? second = null;
         await scheduler.EnqueueAsync(_Request, options => first = options, AbortToken);
-        await scheduler.EnqueueAsync(
-            _Descriptor,
+        await scheduler.EnqueueAsync<CleanupJob>(
             configure: options =>
             {
                 second = options;
@@ -162,9 +166,9 @@ public sealed class JobSchedulerExtensionsTests : TestBase
         );
         first.Should().NotBeSameAs(second);
         await scheduler.EnqueueAsync(_Request, AbortToken);
-        await scheduler.EnqueueAsync(_Descriptor, cancellationToken: AbortToken);
+        await scheduler.EnqueueAsync<CleanupJob>(cancellationToken: AbortToken);
         await scheduler.EnqueueAsync(_Request, options: null, AbortToken);
-        await scheduler.EnqueueAsync(_Descriptor, null, AbortToken);
+        await scheduler.EnqueueAsync<CleanupJob>(options: null, AbortToken);
         await scheduler.EnqueueAsync(_Request, default, AbortToken);
         await scheduler.EnqueueAsync(_Request, new JobOptions(), AbortToken);
     }
@@ -178,11 +182,11 @@ public sealed class JobSchedulerExtensionsTests : TestBase
         operation switch
         {
             0 => scheduler.EnqueueAsync(_Request, configure, cancellationToken),
-            1 => scheduler.EnqueueAsync(_Descriptor, configure, cancellationToken),
+            1 => scheduler.EnqueueAsync<CleanupJob>(configure, cancellationToken),
             2 => scheduler.ScheduleAsync(_Request, _ExecutionTime, configure, cancellationToken),
-            3 => scheduler.ScheduleAsync(_Descriptor, _ExecutionTime, configure, cancellationToken),
+            3 => scheduler.ScheduleAsync<CleanupJob>(_ExecutionTime, configure, cancellationToken),
             4 => scheduler.ScheduleAfterAsync(_Request, _Delay, configure, cancellationToken),
-            5 => scheduler.ScheduleAfterAsync(_Descriptor, _Delay, configure, cancellationToken),
+            5 => scheduler.ScheduleAfterAsync<CleanupJob>(_Delay, configure, cancellationToken),
             _ => throw new ArgumentOutOfRangeException(nameof(operation)),
         };
 
@@ -190,22 +194,28 @@ public sealed class JobSchedulerExtensionsTests : TestBase
     {
         var scheduler = Substitute.For<IJobScheduler>();
         scheduler.EnqueueAsync(_Request, Arg.Any<JobOptions>(), Arg.Any<CancellationToken>()).Returns(result);
-        scheduler.EnqueueAsync(_Descriptor, Arg.Any<JobOptions>(), Arg.Any<CancellationToken>()).Returns(result);
+        scheduler.EnqueueAsync<CleanupJob>(Arg.Any<JobOptions>(), Arg.Any<CancellationToken>()).Returns(result);
         scheduler
             .ScheduleAsync(_Request, _ExecutionTime, Arg.Any<JobOptions>(), Arg.Any<CancellationToken>())
             .Returns(result);
         scheduler
-            .ScheduleAsync(_Descriptor, _ExecutionTime, Arg.Any<JobOptions>(), Arg.Any<CancellationToken>())
+            .ScheduleAsync<CleanupJob>(_ExecutionTime, Arg.Any<JobOptions>(), Arg.Any<CancellationToken>())
             .Returns(result);
         scheduler
             .ScheduleAfterAsync(_Request, _Delay, Arg.Any<JobOptions>(), Arg.Any<CancellationToken>())
             .Returns(result);
         scheduler
-            .ScheduleAfterAsync(_Descriptor, _Delay, Arg.Any<JobOptions>(), Arg.Any<CancellationToken>())
+            .ScheduleAfterAsync<CleanupJob>(_Delay, Arg.Any<JobOptions>(), Arg.Any<CancellationToken>())
             .Returns(result);
         scheduler.ClearReceivedCalls();
         return scheduler;
     }
 
     private sealed record Request;
+
+    private sealed class CleanupJob : IJob
+    {
+        public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+    }
 }

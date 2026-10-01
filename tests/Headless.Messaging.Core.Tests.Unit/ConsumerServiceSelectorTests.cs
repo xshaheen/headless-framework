@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -18,16 +17,10 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<SelectorTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Bus.ForMessage<SelectorTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<SelectorTestConsumer>(consumer =>
-                        consumer.StableContract("tests.selector.primary").Group("test-group")
-                    )
-            );
-            messaging.Options.DefaultGroupName = "default";
+            messaging.AddConsumer<SelectorTestConsumer>();
             messaging.Options.Version = "v1";
         });
 
@@ -42,79 +35,9 @@ public sealed class ConsumerServiceSelectorTests
         candidates.Should().ContainSingle();
 
         var descriptor = candidates[0];
-        descriptor.ServiceTypeInfo.Should().Be(typeof(SelectorTestConsumer).GetTypeInfo());
-        descriptor.ImplTypeInfo.Should().Be(typeof(SelectorTestConsumer).GetTypeInfo());
-        descriptor.MethodInfo.Name.Should().Be(nameof(IConsume<>.ConsumeAsync));
+        descriptor.ConsumerType.Should().Be<SelectorTestConsumer>();
+        descriptor.MethodName.Should().Be(nameof(IConsume<>.ConsumeAsync));
         descriptor.MessageName.Should().Be("test.messageName");
-    }
-
-    [Fact]
-    public void should_use_explicit_group_without_appending_convention_suffixes()
-    {
-        // given
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Bus.ForMessage<SelectorTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<SelectorTestConsumer>(consumer =>
-                        consumer.StableContract("tests.selector.primary").Group("test-group")
-                    )
-            );
-            messaging.UseConventions(conventions =>
-            {
-                conventions.UseApplicationId("my-app");
-                conventions.UseVersion("v2");
-            });
-        });
-
-        using var provider = services.BuildServiceProvider();
-        var selector = provider.GetRequiredService<IConsumerServiceSelector>();
-
-        // when
-        var candidates = selector.SelectCandidates();
-
-        // then
-        var descriptor = candidates[0];
-        descriptor.GroupName.Should().Be("test-group");
-    }
-
-    [Fact]
-    public void should_use_default_group_when_not_specified()
-    {
-        // given
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Bus.ForMessage<SelectorTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<SelectorTestConsumer>(consumer => consumer.StableContract("tests.selector.primary"))
-            );
-            messaging.UseConventions(conventions =>
-            {
-                conventions.UseApplicationId("default-app");
-                conventions.UseVersion("v1");
-            });
-        });
-
-        using var provider = services.BuildServiceProvider();
-        var selector = provider.GetRequiredService<IConsumerServiceSelector>();
-
-        // when
-        var candidates = selector.SelectCandidates();
-
-        // then
-        var descriptor = candidates[0];
-        var conventions = new MessagingConventions().UseApplicationId("default-app").UseVersion("v1");
-        var handlerId = MessagingConventions.GetDefaultHandlerId(
-            typeof(SelectorTestConsumer),
-            typeof(SelectorTestMessage)
-        );
-        descriptor.GroupName.Should().Be(conventions.GetGroupName(handlerId));
     }
 
     [Fact]
@@ -123,15 +46,11 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<SelectorTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Bus.ForMessage<SelectorTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<SelectorTestConsumer>(consumer => consumer.StableContract("tests.selector.primary"))
-            );
+            messaging.AddConsumer<SelectorTestConsumer>();
             messaging.Options.MessageNamePrefix = "my-app";
-            messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
         });
 
@@ -143,7 +62,7 @@ public sealed class ConsumerServiceSelectorTests
 
         // then
         var descriptor = candidates[0];
-        descriptor.MessageNamePrefix.Should().Be("my-app");
+        descriptor.MessageName.Should().Be("my-app.test.messageName");
     }
 
     [Fact]
@@ -152,19 +71,12 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<SelectorTestMessage>("orders.placed"));
+        services.ConfigureMessaging(messaging => messaging.Message<AnotherSelectorTestMessage>("orders.cancelled"));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Bus.ForMessage<SelectorTestMessage>(message =>
-                message
-                    .Contract("orders.placed")
-                    .Consumer<SelectorTestConsumer>(consumer => consumer.StableContract("tests.selector.primary"))
-            );
-            messaging.Bus.ForMessage<AnotherSelectorTestMessage>(message =>
-                message
-                    .Contract("orders.cancelled")
-                    .Consumer<AnotherSelectorConsumer>(consumer => consumer.StableContract("tests.selector.another"))
-            );
-            messaging.Options.DefaultGroupName = "default";
+            messaging.AddConsumer<SelectorTestConsumer>();
+            messaging.AddConsumer<AnotherSelectorConsumer>();
             messaging.Options.Version = "v1";
         });
 
@@ -178,7 +90,7 @@ public sealed class ConsumerServiceSelectorTests
         // then
         best.Should().NotBeNull();
         best.MessageName.Should().Be("orders.placed");
-        best.ImplTypeInfo.Should().Be(typeof(SelectorTestConsumer).GetTypeInfo());
+        best.ConsumerType.Should().Be<SelectorTestConsumer>();
     }
 
     [Fact]
@@ -187,14 +99,10 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<SelectorTestMessage>("orders.placed"));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Bus.ForMessage<SelectorTestMessage>(message =>
-                message
-                    .Contract("orders.placed")
-                    .Consumer<SelectorTestConsumer>(consumer => consumer.StableContract("tests.selector.primary"))
-            );
-            messaging.Options.DefaultGroupName = "default";
+            messaging.AddConsumer<SelectorTestConsumer>();
             messaging.Options.Version = "v1";
         });
 
@@ -215,21 +123,22 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Options.DefaultGroupName = "default";
-            messaging.Options.Version = "v1";
-            messaging.RegisterConsumer(
-                typeof(SelectorTestConsumer),
-                typeof(SelectorTestMessage),
-                "orders.*",
-                group: null,
-                concurrency: 1,
-                lane: MessageLane.Bus,
-                consumerIdentity: "tests.selector-wildcard",
-                messageContractVersion: "v1"
+        services.AddHeadlessMessaging(messaging => messaging.Options.Version = "v1");
+
+        // A wildcard subscription has no message contract, so it is registered straight into the registry.
+        SetupMessaging
+            .GetOrAddConsumerRegistry(services)
+            .Register(
+                new ConsumerMetadata(
+                    typeof(SelectorTestMessage),
+                    typeof(SelectorTestConsumer),
+                    "orders.*",
+                    1,
+                    MessageLane.Bus,
+                    "tests.selector-wildcard",
+                    "v1"
+                )
             );
-        });
 
         using var provider = services.BuildServiceProvider();
         var selector = provider.GetRequiredService<IConsumerServiceSelector>();
@@ -249,19 +158,11 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<SelectorTestMessage>("orders.placed"));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Bus.ForMessage<SelectorTestMessage>(message =>
-            {
-                message.Contract("orders.placed");
-                message.Consumer<SelectorTestConsumer>(consumer =>
-                    consumer.StableContract("tests.selector.primary").Group("group1")
-                );
-                message.Consumer<SecondSelectorConsumer>(consumer =>
-                    consumer.StableContract("tests.selector.secondary").Group("group2")
-                );
-            });
-            messaging.Options.DefaultGroupName = "default";
+            messaging.AddConsumer<SelectorTestConsumer>();
+            messaging.AddConsumer<SecondSelectorConsumer>();
             messaging.Options.Version = "v1";
         });
 
@@ -280,19 +181,15 @@ public sealed class ConsumerServiceSelectorTests
     }
 
     [Fact]
-    public void should_build_parameters_for_consume_method()
+    public void should_describe_the_consumed_message_type()
     {
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<SelectorTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Bus.ForMessage<SelectorTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<SelectorTestConsumer>(consumer => consumer.StableContract("tests.selector.primary"))
-            );
-            messaging.Options.DefaultGroupName = "default";
+            messaging.AddConsumer<SelectorTestConsumer>();
             messaging.Options.Version = "v1";
         });
 
@@ -304,11 +201,7 @@ public sealed class ConsumerServiceSelectorTests
         var descriptor = candidates[0];
 
         // then
-        descriptor.Parameters.Should().HaveCount(2);
-        descriptor
-            .Parameters.Should()
-            .Contain(p => p.ParameterType == typeof(ConsumeContext<SelectorTestMessage>) && !p.IsFromMessaging);
-        descriptor.Parameters.Should().Contain(p => p.ParameterType == typeof(CancellationToken) && p.IsFromMessaging);
+        descriptor.MessageType.Should().Be<SelectorTestMessage>();
     }
 
     [Fact]
@@ -319,7 +212,6 @@ public sealed class ConsumerServiceSelectorTests
         services.AddLogging();
         services.Configure<MessagingOptions>(opt =>
         {
-            opt.DefaultGroupName = "default";
             opt.Version = "v1";
         });
         services.TryAddSingleton<IConsumerServiceSelector, ConsumerServiceSelector>();
@@ -340,16 +232,11 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<SelectorTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Bus.ForMessage<SelectorTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<SelectorTestConsumer>(consumer =>
-                        consumer.StableContract("tests.selector.primary").Concurrency(5)
-                    )
-            );
-            messaging.Options.DefaultGroupName = "default";
+            messaging.AddConsumer<SelectorTestConsumer>();
+            messaging.Tune("tests.selector.primary", consumer => consumer.Concurrency(5));
             messaging.Options.Version = "v1";
         });
 
@@ -370,14 +257,10 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<SelectorTestMessage>("test.messageName"));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Bus.ForMessage<SelectorTestMessage>(message =>
-                message
-                    .Contract("test.messageName")
-                    .Consumer<SelectorTestConsumer>(consumer => consumer.StableContract("tests.selector.primary"))
-            );
-            messaging.Options.DefaultGroupName = "default";
+            messaging.AddConsumer<SelectorTestConsumer>();
             messaging.Options.Version = "v1";
         });
 
@@ -398,6 +281,7 @@ public sealed record SelectorTestMessage(string Id);
 
 public sealed record AnotherSelectorTestMessage(string Id);
 
+[BusConsumer("tests.selector.primary")]
 public sealed class SelectorTestConsumer : IConsume<SelectorTestMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<SelectorTestMessage> context, CancellationToken cancellationToken)
@@ -406,6 +290,7 @@ public sealed class SelectorTestConsumer : IConsume<SelectorTestMessage>
     }
 }
 
+[BusConsumer("tests.selector.secondary")]
 public sealed class SecondSelectorConsumer : IConsume<SelectorTestMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<SelectorTestMessage> context, CancellationToken cancellationToken)
@@ -414,6 +299,7 @@ public sealed class SecondSelectorConsumer : IConsume<SelectorTestMessage>
     }
 }
 
+[BusConsumer("tests.selector.another")]
 public sealed class AnotherSelectorConsumer : IConsume<AnotherSelectorTestMessage>
 {
     public ValueTask ConsumeAsync(

@@ -182,9 +182,6 @@ public static partial class JobsCoordinationFixtureExtensions
     public static readonly TimeSpan DeadThreshold = TimeSpan.FromMilliseconds(1200);
     public static readonly TimeSpan DeadRetentionWindow = TimeSpan.FromMilliseconds(1200);
 
-    /// <summary>Registers the generated-equivalent job functions used by the relational conformance suite.</summary>
-    public static void RegisterJobFunctions() => CoordinatedEnqueueJobsRegistration.Initialize();
-
     /// <summary>
     /// Builds (but does not start) a host wired the way a production Jobs node is: a Coordination provider
     /// registered <em>before</em> the durable Jobs store so the require-a-provider check is satisfied.
@@ -284,6 +281,7 @@ public static partial class JobsCoordinationFixtureExtensions
             // The scheduler is disabled so it never races the tests' direct persistence calls. Dead-node recovery
             // is driven by the MembershipRecoveryBridge + coordination heartbeat, both of which still run.
             options.DisableBackgroundServices();
+            options.AddModule<CoordinatedJobsModule>();
             configureJobs?.Invoke(options);
             options.ConfigureStorage(storage => storage.Schema = schema);
             if (leaseDuration is not null)
@@ -424,6 +422,7 @@ public static partial class JobsCoordinationFixtureExtensions
         builder.Services.AddHeadlessJobs(options =>
         {
             options.DisableBackgroundServices();
+            options.AddModule<CoordinatedJobsModule>();
             options.ConfigureStorage(storage => storage.Schema = schema);
             options.UseEntityFramework(ef =>
                 ef.UseJobsDbContext<TDbContext>(db =>
@@ -1092,15 +1091,22 @@ public sealed class CustomSchemaJobsDbContext(DbContextOptions<CustomSchemaJobsD
 /// <summary>Typed payload registered as a generated-equivalent job-function request by the relational harness.</summary>
 public sealed record CoordinatedFacadeRequest(Guid Id, string Value);
 
+/// <summary>
+/// The class the plain coordinated registration names, so scheduling code can address that job without arguments by
+/// its type.
+/// </summary>
+internal sealed class CoordinatedJob : IJob
+{
+    public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+}
+
 internal static class CoordinatedEnqueueJobs
 {
 #pragma warning disable IDE0060 // These methods are registered as job-function delegates, whose context and token are part of the required signature.
-    public static Task RunAsync(JobFunctionContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+    public static Task RunAsync(JobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
 
-    public static Task RunAsync(
-        JobFunctionContext<CoordinatedFacadeRequest> context,
-        CancellationToken cancellationToken
-    ) => Task.CompletedTask;
+    public static Task RunAsync(JobContext<CoordinatedFacadeRequest> context, CancellationToken cancellationToken) =>
+        Task.CompletedTask;
 #pragma warning restore IDE0060
 }
 
@@ -1111,11 +1117,17 @@ internal sealed class JobsScheduleMiddlewareProbe
     public void Record() => Calls++;
 }
 
-internal static class CoordinatedEnqueueJobsRegistration
+/// <summary>
+/// The hand-written equivalent of a generated <c>JobsModule</c> for the relational conformance suite. Every harness host
+/// adds it, because each host builds its own job catalog.
+/// </summary>
+public sealed class CoordinatedJobsModule : IJobsModule
 {
-    internal static void Initialize()
+    private CoordinatedJobsModule() { }
+
+    static void IJobsModule.Register(JobsCatalogBuilder catalog)
     {
-        JobMiddlewareRegistry.RegisterSchedule(
+        catalog.AddScheduleMiddleware(
             "Tests:CoordinatedScheduleProbe",
             JobsCoordinationFixtureExtensions.CoordinatedFunctionName,
             JobMiddlewarePriority.Default,
@@ -1125,7 +1137,7 @@ internal static class CoordinatedEnqueueJobsRegistration
                 return next(cancellationToken);
             }
         );
-        JobFunctionProvider.RegisterFunctions(
+        catalog.AddFunctions(
             new Dictionary<string, JobFunctionRegistration>(StringComparer.Ordinal)
             {
                 [JobsCoordinationFixtureExtensions.CoordinatedFunctionName] = new JobFunctionRegistration
@@ -1135,6 +1147,7 @@ internal static class CoordinatedEnqueueJobsRegistration
                     Delegate = (_, context, cancellationToken) =>
                         CoordinatedEnqueueJobs.RunAsync(context, cancellationToken),
                     MaxConcurrency = 1,
+                    JobType = typeof(CoordinatedJob),
                 },
                 [JobsCoordinationFixtureExtensions.CoordinatedFacadeFunctionName] = new JobFunctionRegistration
                 {
@@ -1146,17 +1159,14 @@ internal static class CoordinatedEnqueueJobsRegistration
                             .GetRequestAsync<CoordinatedFacadeRequest>(context, cancellationToken)
                             .ConfigureAwait(false);
                         await CoordinatedEnqueueJobs
-                            .RunAsync(
-                                new JobFunctionContext<CoordinatedFacadeRequest>(context, request),
-                                cancellationToken
-                            )
+                            .RunAsync(new JobContext<CoordinatedFacadeRequest>(context, request), cancellationToken)
                             .ConfigureAwait(false);
                     },
                     MaxConcurrency = 1,
                 },
             }
         );
-        JobFunctionProvider.RegisterRequestType(
+        catalog.AddRequestTypes(
             new Dictionary<string, (string, Type)>(StringComparer.Ordinal)
             {
                 [JobsCoordinationFixtureExtensions.CoordinatedFacadeFunctionName] = (
@@ -1165,7 +1175,7 @@ internal static class CoordinatedEnqueueJobsRegistration
                 ),
             }
         );
-        JobFunctionProvider.RegisterDescriptors(
+        catalog.AddDescriptors(
             new Dictionary<string, JobFunctionDescriptor>(StringComparer.Ordinal)
             {
                 [JobsCoordinationFixtureExtensions.CoordinatedFunctionName] = new(

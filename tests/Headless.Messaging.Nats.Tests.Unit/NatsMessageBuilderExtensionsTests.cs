@@ -3,7 +3,6 @@
 using Headless.Messaging;
 using Headless.Messaging.Nats;
 using Headless.Messaging.Registration;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
@@ -12,11 +11,11 @@ public sealed class NatsMessageBuilderExtensionsTests
     [Fact]
     public void should_store_subject_shard_header_contribution()
     {
-        var builder = new BusMessageBuilder<TestMessage>(new ServiceCollection());
+        var builder = new MessageContractBuilder<TestMessage>("tests.nats.message", "v1");
 
-        builder.UseNats(nats => nats.SubjectShard(static message => message.TenantId));
+        builder.OnBus(bus => bus.UseNats(nats => nats.SubjectShard(static message => message.TenantId)));
         var contribution = (
-            (IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single()
+            (IProviderHeaderContributions)builder.Build().Bus.ProviderConfigs.Values.Single()
         ).HeaderContributions.Single();
 
         contribution.HeaderName.Should().Be(NatsMessagingHeaders.SubjectShard);
@@ -33,10 +32,10 @@ public sealed class NatsMessageBuilderExtensionsTests
     [InlineData("tenant\t")]
     public void should_reject_invalid_subject_shard_tokens(string shard)
     {
-        var builder = new BusMessageBuilder<TestMessage>(new ServiceCollection());
-        builder.UseNats(nats => nats.SubjectShard(_ => shard));
+        var builder = new MessageContractBuilder<TestMessage>("tests.nats.message", "v1");
+        builder.OnBus(bus => bus.UseNats(nats => nats.SubjectShard(_ => shard)));
         var contribution = (
-            (IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single()
+            (IProviderHeaderContributions)builder.Build().Bus.ProviderConfigs.Values.Single()
         ).HeaderContributions.Single();
 
         var act = () => contribution.Selector(new TestMessage("tenant-a"));
@@ -68,6 +67,16 @@ public sealed class NatsMessageBuilderExtensionsTests
     {
         var act = () => NatsSubjectShard.Validate(new string('a', 257));
         act.Should().Throw<InvalidOperationException>().WithMessage("*SubjectShard*");
+    }
+
+    [Fact]
+    public void should_store_consumer_config_when_tuning_a_declared_consumer()
+    {
+        var tuning = new ConsumerTuningBuilder("tests.nats.tuned");
+
+        tuning.UseNats(nats => nats.Sharded());
+
+        tuning.Build().ProviderConfigs.Values.Single().Should().BeEquivalentTo(new NatsConsumerConfig(IsSharded: true));
     }
 
     private sealed record TestMessage(string TenantId);

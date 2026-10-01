@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -140,15 +139,12 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
         var services = _CreateServices(recorder);
         var builder = new MessagingBuilder(services);
         builder.AddBusConsumeMiddleware<RecordingBusConsumeMiddleware>();
-        builder.AddConsumeMiddlewareFor<RecordingTypedConsumeMiddleware, MigratedConsumeMessage>(
-            "checkout",
-            MessageLane.Bus
-        );
+        builder.AddConsumeMiddlewareFor<RecordingTypedConsumeMiddleware, MigratedConsumeMessage>(MessageLane.Bus);
         var pipeline = _BuildPipeline(services);
 
         // when
         await pipeline.ExecuteAsync(
-            _BuildConsumerContext(groupName: "checkout"),
+            _BuildConsumerContext(),
             new MigratedConsumeMessage("order-1"),
             typeof(MigratedConsumeMessage),
             AbortToken
@@ -172,7 +168,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
 
         // when
         await pipeline.ExecuteAsync(
-            _BuildConsumerContext(groupName: "checkout"),
+            _BuildConsumerContext(),
             new MigratedConsumeMessage("order-1"),
             typeof(MigratedConsumeMessage),
             AbortToken
@@ -185,69 +181,19 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
     }
 
     [Fact]
-    public async Task should_keep_direct_bus_consume_middleware_when_typed_descriptor_group_does_not_match()
-    {
-        // given
-        var recorder = new MigratedConsumeRecorder();
-        var services = _CreateServices(recorder);
-        services.AddScoped<IConsumeMiddleware<ConsumeContext>, RecordingBusConsumeMiddleware>();
-        new MessagingBuilder(services).AddConsumeMiddlewareFor<RecordingTypedConsumeMiddleware, MigratedConsumeMessage>(
-            "checkout",
-            MessageLane.Bus
-        );
-        var pipeline = _BuildPipeline(services);
-
-        // when
-        await pipeline.ExecuteAsync(
-            _BuildConsumerContext(groupName: "reporting"),
-            new MigratedConsumeMessage("order-1"),
-            typeof(MigratedConsumeMessage),
-            AbortToken
-        );
-
-        // then
-        recorder.Calls.Should().Equal("bus.before", "dispatcher", "bus.after");
-    }
-
-    [Fact]
-    public async Task should_skip_typed_consume_middleware_for_other_group()
-    {
-        // given
-        var recorder = new MigratedConsumeRecorder();
-        var services = _CreateServices(recorder);
-        new MessagingBuilder(services).AddConsumeMiddlewareFor<RecordingTypedConsumeMiddleware, MigratedConsumeMessage>(
-            "checkout",
-            MessageLane.Bus
-        );
-        var pipeline = _BuildPipeline(services);
-
-        // when
-        await pipeline.ExecuteAsync(
-            _BuildConsumerContext(groupName: "reporting"),
-            new MigratedConsumeMessage("order-1"),
-            typeof(MigratedConsumeMessage),
-            AbortToken
-        );
-
-        // then
-        recorder.Calls.Should().Equal("dispatcher");
-    }
-
-    [Fact]
     public async Task should_skip_typed_consume_middleware_for_other_message_type()
     {
         // given
         var recorder = new MigratedConsumeRecorder();
         var services = _CreateServices(recorder);
         new MessagingBuilder(services).AddConsumeMiddlewareFor<RecordingTypedConsumeMiddleware, MigratedConsumeMessage>(
-            "checkout",
             MessageLane.Bus
         );
         var pipeline = _BuildPipeline(services);
 
         // when
         await pipeline.ExecuteAsync(
-            _BuildConsumerContext(groupName: "checkout"),
+            _BuildConsumerContext(),
             new OtherMigratedConsumeMessage("other"),
             typeof(OtherMigratedConsumeMessage),
             AbortToken
@@ -289,7 +235,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
     {
         var services = new ServiceCollection();
         services.AddSingleton(recorder);
-        services.AddSingleton<IMessageDispatcher>(new MigratedConsumeDispatcher(recorder, shouldThrow));
+        services.AddSingleton(new MigratedConsumeDispatcher(recorder, shouldThrow));
         return services;
     }
 
@@ -308,7 +254,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
         );
     }
 
-    private static ConsumerContext _BuildConsumerContext(string groupName = "checkout", string? tenantHeader = null)
+    private static ConsumerContext _BuildConsumerContext(string? tenantHeader = null)
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -324,16 +270,12 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
         var descriptor = new ConsumerExecutorDescriptor
         {
             Lane = MessageLane.Bus,
-            MethodInfo = typeof(ConsumeMiddlewarePipelineMigratedTests).GetMethod(
-                nameof(_BuildConsumerContext),
-                BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly,
-                binder: null,
-                types: [typeof(string), typeof(string)],
-                modifiers: null
-            )!,
-            ImplTypeInfo = typeof(ConsumeMiddlewarePipelineMigratedTests).GetTypeInfo(),
+            ConsumerType = typeof(ConsumeMiddlewarePipelineMigratedTests),
+            MessageType = typeof(MigratedConsumeMessage),
+            Dispatch = static (services, _, cancellationToken) =>
+                services.GetRequiredService<MigratedConsumeDispatcher>().DispatchAsync(cancellationToken),
             MessageName = "orders",
-            GroupName = groupName,
+            SubscriptionName = "checkout",
         };
 
         return new ConsumerContext(
@@ -468,31 +410,8 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
     }
 
     private sealed class MigratedConsumeDispatcher(MigratedConsumeRecorder recorder, bool shouldThrow)
-        : IMessageDispatcher
     {
-        public Task DispatchAsync<TMessage>(ConsumeContext<TMessage> context, CancellationToken cancellationToken)
-            where TMessage : class
-        {
-            return DispatchInScopeAsync(serviceProvider: null!, context, cancellationToken);
-        }
-
-        public Task DispatchInScopeAsync<TMessage>(
-            IServiceProvider serviceProvider,
-            ConsumeContext<TMessage> context,
-            CancellationToken cancellationToken
-        )
-            where TMessage : class
-        {
-            return DispatchInScopeAsync(serviceProvider, descriptor: null!, context, cancellationToken);
-        }
-
-        public Task DispatchInScopeAsync<TMessage>(
-            IServiceProvider serviceProvider,
-            ConsumerExecutorDescriptor descriptor,
-            ConsumeContext<TMessage> context,
-            CancellationToken cancellationToken
-        )
-            where TMessage : class
+        public ValueTask DispatchAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -503,7 +422,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
             }
 
             recorder.Record("dispatcher");
-            return Task.CompletedTask;
+            return ValueTask.CompletedTask;
         }
     }
 }

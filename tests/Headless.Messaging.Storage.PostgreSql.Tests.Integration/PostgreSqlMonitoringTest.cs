@@ -447,8 +447,9 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
     {
         var ids = Enumerable.Range(0, 205).Select(_ => Guid.NewGuid()).ToArray();
         var now = TimeProvider.System.GetUtcNow();
-        var receivedColumns = messageType == MessageType.Subscribe ? ", \"group\", \"exception_info\"" : string.Empty;
-        var receivedValues = messageType == MessageType.Subscribe ? ", 'unknown-lane-group', NULL" : string.Empty;
+        var receivedColumns =
+            messageType == MessageType.Subscribe ? ", \"consumer_identity\", \"exception_info\"" : string.Empty;
+        var receivedValues = messageType == MessageType.Subscribe ? ", 'unknown-lane-consumer', NULL" : string.Empty;
 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
@@ -521,8 +522,9 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
     {
         var id = Guid.NewGuid();
         var now = TimeProvider.System.GetUtcNow();
-        var receivedColumns = messageType == MessageType.Subscribe ? ", \"group\", \"exception_info\"" : string.Empty;
-        var receivedValues = messageType == MessageType.Subscribe ? ", 'unknown-lane-group', NULL" : string.Empty;
+        var receivedColumns =
+            messageType == MessageType.Subscribe ? ", \"consumer_identity\", \"exception_info\"" : string.Empty;
+        var receivedValues = messageType == MessageType.Subscribe ? ", 'unknown-lane-consumer', NULL" : string.Empty;
 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);

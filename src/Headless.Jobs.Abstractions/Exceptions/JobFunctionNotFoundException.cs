@@ -2,11 +2,11 @@
 
 namespace Headless.Jobs.Exceptions;
 
-/// <summary>Thrown when a scheduling request cannot be mapped to generated <c>[JobFunction]</c> metadata.</summary>
+/// <summary>Thrown when a scheduling request cannot be mapped to generated <c>[Job]</c> metadata.</summary>
 [PublicAPI]
 public sealed class JobFunctionNotFoundException : Exception
 {
-    /// <summary>Creates an exception for an unmapped typed request payload.</summary>
+    /// <summary>Creates an exception for an unmapped argument type or job class.</summary>
     public JobFunctionNotFoundException(Type requestType)
         : base(_Message(requestType))
     {
@@ -28,7 +28,7 @@ public sealed class JobFunctionNotFoundException : Exception
         FunctionName = functionName;
     }
 
-    /// <summary>The unmapped typed request payload, when the lookup was type-based.</summary>
+    /// <summary>The unmapped argument type or job class, when the lookup was type-based.</summary>
     public Type? RequestType { get; }
 
     /// <summary>The unknown durable function name, when the lookup was descriptor-based.</summary>
@@ -37,6 +37,6 @@ public sealed class JobFunctionNotFoundException : Exception
     private static string _Message(Type requestType)
     {
         ArgumentNullException.ThrowIfNull(requestType);
-        return $"No job function is registered for request type '{requestType.FullName ?? requestType.Name}'.";
+        return $"No job is registered for type '{requestType.FullName ?? requestType.Name}'.";
     }
 }

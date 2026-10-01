@@ -968,11 +968,20 @@ public sealed class DistributedLock(
     /// blocked acquirers to be woken immediately after a release rather than waiting for the next
     /// backoff poll interval.
     /// </summary>
+    /// <remarks>
+    /// Every-instance: the waiters live in each process, so every process must see every release instead of sharing one
+    /// copy with its replicas. Delivery is at most once and needs no reconnect hook, because a waiter that misses a
+    /// release still wakes on its next backoff poll.
+    /// </remarks>
+    [BusConsumer(Identity, EveryInstance = true)]
     internal sealed class LockReleasedConsumer(
         IEnumerable<ICanReceiveLockReleased> receivers,
         ILogger<LockReleasedConsumer> logger
     ) : IConsume<DistributedLockReleased>
     {
+        /// <summary>The consumer identity that <c>Tune</c> and <c>ConsumeOnly</c> refer to.</summary>
+        public const string Identity = "headless.distributed-locks.release";
+
         /// <summary>
         /// Fans the release signal to all registered receivers and returns synchronously.
         /// Cancellation is honoured before dispatch; if <paramref name="cancellationToken"/>

@@ -52,10 +52,11 @@ public sealed class RuntimeSubscriptionOptions
     public string? MessageName { get; init; }
 
     /// <summary>
-    /// Gets or sets the explicit consumer group.
-    /// When omitted, the group is resolved from conventions using the deterministic handler identity.
+    /// Gets or sets the subscription's consumer identity, which is also its Bus subscription name: runtime subscriptions
+    /// with the same identity compete for each message, in whatever process attaches them.
+    /// When omitted, the identity is derived from <see cref="HandlerId"/>.
     /// </summary>
-    public string? Group { get; init; }
+    public string? Identity { get; init; }
 
     /// <summary>
     /// Gets or sets the concurrency limit for the runtime handler.
@@ -64,7 +65,8 @@ public sealed class RuntimeSubscriptionOptions
     public byte Concurrency { get; init; } = 1;
 
     /// <summary>
-    /// Gets or sets the explicit handler identity to use for diagnostics and default group generation.
+    /// Gets or sets the deterministic identity of the handler delegate, used for diagnostics, duplicate detection, and the
+    /// default <see cref="Identity"/>.
     /// This is required for anonymous or compiler-generated delegates because the default policy fails fast when the identity is not deterministic.
     /// </summary>
     public string? HandlerId { get; init; }
@@ -75,6 +77,17 @@ public sealed class RuntimeSubscriptionOptions
     /// </summary>
     public RuntimeSubscriptionDuplicateBehavior DuplicateBehavior { get; init; } =
         RuntimeSubscriptionDuplicateBehavior.Reject;
+
+    /// <summary>
+    /// Gets or sets whether this process receives every published message through a subscription of its own, instead of
+    /// competing with the other processes that attach the same handler. Defaults to <see langword="false"/>.
+    /// </summary>
+    /// <remarks>
+    /// Delivery is at most once and only while the subscription is attached: there is no backlog, no inbox row, and no
+    /// retry, and a handler failure is logged and the message dropped. The transport must support every-instance
+    /// subscriptions. The per-process subscription name is derived from <see cref="Identity"/>.
+    /// </remarks>
+    public bool EveryInstance { get; init; }
 }
 
 /// <summary>
@@ -87,7 +100,7 @@ public sealed class RuntimeSubscriptionHandle(Func<ValueTask> unsubscribe) : IAs
 
     internal static RuntimeSubscriptionHandle Detached(
         string messageName,
-        string group,
+        string identity,
         string handlerId,
         string? subscriptionId = null
     )
@@ -95,7 +108,7 @@ public sealed class RuntimeSubscriptionHandle(Func<ValueTask> unsubscribe) : IAs
         return new(() => ValueTask.CompletedTask)
         {
             MessageName = messageName,
-            Group = group,
+            Identity = identity,
             HandlerId = handlerId,
             SubscriptionId = subscriptionId,
             IsAttached = false,
@@ -105,7 +118,7 @@ public sealed class RuntimeSubscriptionHandle(Func<ValueTask> unsubscribe) : IAs
     internal static RuntimeSubscriptionHandle Attached(
         string subscriptionId,
         string messageName,
-        string group,
+        string identity,
         string handlerId,
         Func<ValueTask> unsubscribe
     )
@@ -113,7 +126,7 @@ public sealed class RuntimeSubscriptionHandle(Func<ValueTask> unsubscribe) : IAs
         return new(unsubscribe)
         {
             MessageName = messageName,
-            Group = group,
+            Identity = identity,
             HandlerId = handlerId,
             SubscriptionId = subscriptionId,
             IsAttached = true,
@@ -131,9 +144,9 @@ public sealed class RuntimeSubscriptionHandle(Func<ValueTask> unsubscribe) : IAs
     public string MessageName { get; private init; } = string.Empty;
 
     /// <summary>
-    /// Gets the resolved group for the runtime handler.
+    /// Gets the resolved consumer identity of the runtime handler, which is also its Bus subscription name.
     /// </summary>
-    public string Group { get; private init; } = string.Empty;
+    public string Identity { get; private init; } = string.Empty;
 
     /// <summary>
     /// Gets the deterministic handler identity for the runtime handler.
@@ -176,7 +189,7 @@ public interface IRuntimeSubscriber
     /// </summary>
     /// <typeparam name="TMessage">The message type handled by the runtime delegate.</typeparam>
     /// <param name="handler">The runtime delegate to execute for matching messages.</param>
-    /// <param name="options">Optional overrides for message name, group, concurrency, handler identity, and duplicate behavior.</param>
+    /// <param name="options">Optional overrides for message name, identity, concurrency, handler identity, and duplicate behavior.</param>
     /// <param name="cancellationToken">The cancellation token for the registration operation.</param>
     /// <returns>A handle that can be disposed to detach the runtime subscription.</returns>
     /// <remarks>

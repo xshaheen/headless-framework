@@ -40,19 +40,7 @@ await using (var connection = new SqlConnection(AppDbContext.ConnectionString))
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.Bus.ForConsumersFromAssembly(
-        typeof(Program).Assembly,
-        (context, consumer) =>
-            consumer.ConsumerIdentity(
-                context.ConsumerType switch
-                {
-                    { Name: "PersonConsumer" } => "rabbitmq-sqlserver.person",
-                    { Name: "XSlowProcessingReceiver" } => "rabbitmq-sqlserver.slow-processing",
-                    { Name: "VeryFastProcessingReceiver" } => "rabbitmq-sqlserver.fast-processing",
-                    _ => throw new InvalidOperationException($"Missing durable identity for {context.ConsumerType}."),
-                }
-            )
-    );
+    setup.AddModule<Headless.Messaging.RabbitMq.SqlServer.Demo.MessagingModule>();
     setup.UseEntityFramework<AppDbContext>();
     setup.UseRabbitMq("127.0.0.1");
     setup.UseDashboard(d => d.WithNoAuth());

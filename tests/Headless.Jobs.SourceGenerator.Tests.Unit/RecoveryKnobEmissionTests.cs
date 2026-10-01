@@ -5,7 +5,7 @@ using Microsoft.CodeAnalysis;
 namespace Tests;
 
 /// <summary>
-/// The generator is the only route from a <c>[JobFunction]</c> attribute to runtime, so a knob it does not emit does
+/// The generator is the only route from a <c>[Job]</c> attribute to runtime, so a knob it does not emit does
 /// not exist however carefully the rest of the chain carries it. These assert the emitted registration text directly
 /// rather than through a snapshot, because the distinction that matters — omitted versus explicitly written — is a
 /// single clause that a large snapshot makes easy to miss in review.
@@ -20,8 +20,13 @@ public sealed class RecoveryKnobEmissionTests
 
         namespace Demo;
 
-        public sealed class Jobs
+        """;
+
+    private const string _JobClass = """
+        public sealed class KnobJob : IJob
         {
+            public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
+        }
         """;
 
     [Fact]
@@ -30,9 +35,8 @@ public sealed class RecoveryKnobEmissionTests
         var generated = _Generate(
             $$"""
             {{_Prelude}}
-                [JobFunction("unset", "0 * * * * *")]
-                public Task RunAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-            }
+                [Job("demo.unset", Cron = "0 * * * * *")]
+            {{_JobClass}}
             """
         );
 
@@ -53,9 +57,8 @@ public sealed class RecoveryKnobEmissionTests
         var generated = _Generate(
             $$"""
             {{_Prelude}}
-                [JobFunction("skip", "0 * * * * *", OnMissedRun = MissedRunPolicy.Skip)]
-                public Task RunAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-            }
+                [Job("demo.skip", Cron = "0 * * * * *", OnMissedRun = MissedRunPolicy.Skip)]
+            {{_JobClass}}
             """
         );
 
@@ -70,9 +73,8 @@ public sealed class RecoveryKnobEmissionTests
         var generated = _Generate(
             $$"""
             {{_Prelude}}
-                [JobFunction("grace", "0 * * * * *", MissedRunGraceSeconds = 300)]
-                public Task RunAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-            }
+                [Job("demo.grace", Cron = "0 * * * * *", MissedRunGraceSeconds = 300)]
+            {{_JobClass}}
             """
         );
 
@@ -86,9 +88,8 @@ public sealed class RecoveryKnobEmissionTests
         var generated = _Generate(
             $$"""
             {{_Prelude}}
-                [JobFunction("both", "0 * * * * *", OnMissedRun = MissedRunPolicy.Skip, MissedRunGraceSeconds = 120)]
-                public Task RunAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-            }
+                [Job("demo.both", Cron = "0 * * * * *", OnMissedRun = MissedRunPolicy.Skip, MissedRunGraceSeconds = 120)]
+            {{_JobClass}}
             """
         );
 
@@ -104,14 +105,11 @@ public sealed class RecoveryKnobEmissionTests
         var driver = GeneratorTestHelper.Run(
             $$"""
             {{_Prelude}}
-                [JobFunction(
-                    "invalid",
-                    "0 * * * * *",
+                [Job("demo.invalid", Cron = "0 * * * * *",
                     OnMissedRun = (MissedRunPolicy)999,
                     MissedRunGraceSeconds = {{graceSeconds}}
                 )]
-                public Task RunAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-            }
+            {{_JobClass}}
             """
         );
 
@@ -126,9 +124,8 @@ public sealed class RecoveryKnobEmissionTests
         var generated = _Generate(
             $$"""
             {{_Prelude}}
-                [JobFunction("overlap", "0 * * * * *", OnOverlap = CronOverlapPolicy.Skip)]
-                public Task RunAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-            }
+                [Job("demo.overlap", Cron = "0 * * * * *", OnOverlap = CronOverlapPolicy.Skip)]
+            {{_JobClass}}
             """
         );
 
@@ -142,9 +139,8 @@ public sealed class RecoveryKnobEmissionTests
         var driver = GeneratorTestHelper.Run(
             $$"""
             {{_Prelude}}
-                [JobFunction("invalid", "0 * * * * *", OnOverlap = (CronOverlapPolicy)999)]
-                public Task RunAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-            }
+                [Job("demo.invalid", Cron = "0 * * * * *", OnOverlap = (CronOverlapPolicy)999)]
+            {{_JobClass}}
             """
         );
 

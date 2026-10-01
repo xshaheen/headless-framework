@@ -75,10 +75,11 @@ The *static store* (`IStaticSettingDefinitionStore`) builds the setting catalog 
 
 ### Reacting to a change
 
-`SettingManager` publishes one `SettingChangedMessage` over `IBus` after each successful `SetAsync` or `DeleteAsync`, listing every name that call changed, so an instance holding a resolved value learns it is stale instead of polling for it. Consume it like any other message:
+`SettingManager` publishes one `SettingChangedMessage` over `IBus` after each successful `SetAsync` or `DeleteAsync`, listing every name that call changed, so an instance holding a resolved value learns it is stale instead of polling for it. The state it refreshes lives in each process, so consume it with an [every-instance consumer](messaging.md#every-instance-bus-delivery): every process receives every announcement instead of one replica taking the only copy. Delivery is at most once, so reload after a gap in the subscription too. Wire contract: `AddHeadlessSettings` declares the message as `headless.settings.changed`, contract version `1` (`SettingChangedMessage.MessageName`), so the consumer below needs no `Message<T>` declaration of its own. The host's naming conventions (`UseConventions`) do not rename it; only the host-wide `MessagingOptions.MessageNamePrefix` applies, as it does to every message.
 
 ```csharp
-public sealed class ReloadLimits(MyPolicyCache cache) : IConsume<SettingChangedMessage>
+[BusConsumer("app.reload-limits", EveryInstance = true)]
+public sealed class ReloadLimits(MyPolicyCache cache) : IConsume<SettingChangedMessage>, IOnSubscriptionEstablished
 {
     public async ValueTask ConsumeAsync(ConsumeContext<SettingChangedMessage> context, CancellationToken ct)
     {
@@ -91,6 +92,15 @@ public sealed class ReloadLimits(MyPolicyCache cache) : IConsume<SettingChangedM
         }
 
         if (message.SettingNames.Any(cache.Tracks))
+        {
+            await cache.ReloadAsync(ct);
+        }
+    }
+
+    // Announcements published while this process was not subscribed never arrive.
+    public async ValueTask OnSubscriptionEstablishedAsync(SubscriptionEstablishedContext context, CancellationToken ct)
+    {
+        if (context.IsReconnect)
         {
             await cache.ReloadAsync(ct);
         }

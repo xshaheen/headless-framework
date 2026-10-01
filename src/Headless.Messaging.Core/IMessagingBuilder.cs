@@ -7,8 +7,9 @@ namespace Headless.Messaging;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The messaging builder configures infrastructure and global behavior. Explicit and assembly-scanned message
-/// consumers are registered from the <c>AddHeadlessMessaging(...)</c> setup callback.
+/// The messaging builder configures infrastructure and global behavior. Consumers declare themselves with
+/// <see cref="BusConsumerAttribute"/> or <see cref="QueueConsumerAttribute"/> and register through their assembly's
+/// generated <see cref="IMessagingModule"/>.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -43,7 +44,7 @@ public interface IMessagingBuilder
         where TMessage : class;
 
     /// <summary>
-    /// Configures convention-based message name naming and default consumer settings.
+    /// Configures convention-based message naming.
     /// </summary>
     /// <param name="configure">A delegate to configure the messaging conventions.</param>
     /// <returns>The current <see cref="IMessagingBuilder"/> instance for method chaining.</returns>
@@ -61,8 +62,6 @@ public interface IMessagingBuilder
     ///     c.UseKebabCaseMessageNames(); // OrderCreated → order-created
     ///     c.WithMessageNamePrefix("prod."); // → prod.order-created
     ///     c.WithMessageNameSuffix(".v1"); // → prod.order-created.v1
-    ///     c.UseApplicationId("my-service");
-    ///     c.UseVersion("v1");
     /// });
     /// </code>
     /// </para>

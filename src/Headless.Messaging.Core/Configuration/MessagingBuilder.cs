@@ -82,7 +82,7 @@ internal sealed class MessageQueueMarkerService(string name)
 
 /// <summary>
 /// Provides a fluent API for fine-grained configuration of messaging services within a dependency injection container.
-/// This builder allows registration of middleware, custom subscriber assembly scanning, and other messaging extensions.
+/// This builder allows registration of middleware and other messaging extensions.
 /// </summary>
 /// <remarks>
 /// The <see cref="MessagingBuilder"/> is typically obtained through the <c>AddHeadlessMessaging()</c> extension method on <see cref="IServiceCollection"/>,
@@ -93,7 +93,7 @@ internal sealed class MessageQueueMarkerService(string name)
 /// </remarks>
 /// <param name="services">The <see cref="IServiceCollection"/> where messaging services are being configured.</param>
 [PublicAPI]
-public sealed class MessagingBuilder(IServiceCollection services, MessagingOptions? options = null)
+public sealed class MessagingBuilder(IServiceCollection services)
 {
     /// <summary>
     /// Gets the <see cref="IServiceCollection"/> where messaging services are registered and configured.
@@ -122,7 +122,6 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
             serviceType,
             contextType,
             messageType: null,
-            groupName: null,
             lane: MessageLane.Bus
         );
     }
@@ -145,7 +144,6 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
             serviceType,
             contextType,
             messageType: null,
-            groupName: null,
             lane: MessageLane.Bus
         );
     }
@@ -167,27 +165,25 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
             serviceType,
             contextType,
             typeof(TMessage),
-            groupName: null,
             lane
         );
     }
 
-    /// <summary>Registers consume middleware that intercepts consume operations for a specific message type and consumer group.</summary>
+    /// <summary>Registers consume middleware that intercepts consume operations for a specific message type.</summary>
     /// <typeparam name="TMiddleware">The middleware implementation type.</typeparam>
     /// <typeparam name="TMessage">The message type whose consume pipeline this middleware targets.</typeparam>
-    /// <param name="groupName">The consumer group name this middleware is scoped to. Must not be null or whitespace.</param>
     /// <param name="lane">The message lane this middleware targets.</param>
     /// <returns>A <see cref="MiddlewareRegistration"/> handle for chaining priority configuration.</returns>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="groupName"/> is null or whitespace.</exception>
-    public MiddlewareRegistration AddConsumeMiddlewareFor<TMiddleware, TMessage>(string groupName, MessageLane lane)
+    /// <remarks>
+    /// The middleware runs for every consumer of <typeparamref name="TMessage"/> on <paramref name="lane"/>. To run
+    /// middleware for one consumer only, attach it with <c>Tune(identity, consumer =&gt; consumer.UseMiddleware&lt;T&gt;())</c>.
+    /// </remarks>
+    public MiddlewareRegistration AddConsumeMiddlewareFor<TMiddleware, TMessage>(MessageLane lane)
         where TMiddleware : class, IConsumeMiddleware<ConsumeContext<TMessage>>
         where TMessage : class
     {
-        Argument.IsNotNullOrWhiteSpace(groupName);
-
         var contextType = typeof(ConsumeContext<TMessage>);
         var serviceType = typeof(IConsumeMiddleware<>).MakeGenericType(contextType);
-        var resolvedGroupName = options?.ApplyGroupNamePrefix(groupName) ?? groupName;
 
         return _AddMiddleware<TMiddleware>(
             MiddlewareDirection.Consume,
@@ -195,7 +191,6 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
             serviceType,
             contextType,
             typeof(TMessage),
-            resolvedGroupName,
             lane
         );
     }
@@ -217,37 +212,25 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
             typeof(IReceiveMiddleware),
             typeof(ReceiveContext),
             messageType: null,
-            groupName: null,
             lane: MessageLane.Bus
         );
     }
 
-    /// <summary>Registers receive middleware that intercepts inbound deliveries for a specific payload type, consumer group, and lane.</summary>
+    /// <summary>Registers receive middleware that intercepts inbound deliveries for a specific payload type and lane.</summary>
     /// <typeparam name="TMiddleware">The middleware implementation type.</typeparam>
     /// <typeparam name="TMessage">The consumer payload type this middleware targets.</typeparam>
-    /// <param name="groupName">The consumer group name this middleware is scoped to. Must not be null or whitespace.</param>
     /// <param name="lane">The message lane this middleware targets.</param>
     /// <returns>A <see cref="MiddlewareRegistration"/> handle for chaining priority configuration.</returns>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="groupName"/> is null or whitespace.</exception>
-    /// <remarks>
-    /// The group name is matched against the consumer's registration-derived group after the host's
-    /// configured group-name prefix (if any) is applied, mirroring <c>AddConsumeMiddlewareFor</c>.
-    /// </remarks>
-    public MiddlewareRegistration AddReceiveMiddlewareFor<TMiddleware, TMessage>(string groupName, MessageLane lane)
+    public MiddlewareRegistration AddReceiveMiddlewareFor<TMiddleware, TMessage>(MessageLane lane)
         where TMiddleware : class, IReceiveMiddleware
         where TMessage : class
     {
-        Argument.IsNotNullOrWhiteSpace(groupName);
-
-        var resolvedGroupName = options?.ApplyGroupNamePrefix(groupName) ?? groupName;
-
         return _AddMiddleware<TMiddleware>(
             MiddlewareDirection.Receive,
             MiddlewareScope.Message,
             typeof(IReceiveMiddleware),
             typeof(ReceiveContext),
             typeof(TMessage),
-            resolvedGroupName,
             lane
         );
     }
@@ -258,7 +241,6 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
         Type serviceType,
         Type contextType,
         Type? messageType,
-        string? groupName,
         MessageLane lane
     )
         where TMiddleware : class
@@ -274,7 +256,6 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
                     serviceType,
                     contextType,
                     messageType,
-                    groupName,
                     lane
                 )
             );

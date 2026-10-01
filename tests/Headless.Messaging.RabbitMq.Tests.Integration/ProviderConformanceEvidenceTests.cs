@@ -57,15 +57,15 @@ public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : 
                 nameof(RabbitMqConsumerClientConformanceTests.should_shutdown_idle_consumer_within_bound)
             ),
             _Bind(
-                TransportConformanceScenario.BusSubscriberGroupFanOut,
+                TransportConformanceScenario.BusConsumerIdentityFanOut,
                 nameof(
-                    RabbitMqConsumerClientConformanceTests.should_fan_out_one_bus_copy_per_group_while_replicas_compete
+                    RabbitMqConsumerClientConformanceTests.should_fan_out_one_bus_copy_per_consumer_identity_while_replicas_compete
                 )
             ),
             _Bind(
                 TransportConformanceScenario.BusReplicaCompetition,
                 nameof(
-                    RabbitMqConsumerClientConformanceTests.should_fan_out_one_bus_copy_per_group_while_replicas_compete
+                    RabbitMqConsumerClientConformanceTests.should_fan_out_one_bus_copy_per_consumer_identity_while_replicas_compete
                 )
             ),
             _Bind(

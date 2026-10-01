@@ -52,23 +52,23 @@ public sealed class ConsumerRegisterTests : TestBase
 
         client.ResumeAsync(Arg.Any<CancellationToken>()).Returns(_ => ValueTask.FromException(expected));
 
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         var handle = Activator.CreateInstance(handleType, nonPublic: true)!;
         using var cts = new CancellationTokenSource();
         handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
         handleType.GetProperty("Cts")!.SetValue(handle, cts);
-        handleType.GetProperty("GroupName")!.SetValue(handle, "payments");
+        handleType.GetProperty("SubscriptionName")!.SetValue(handle, "payments");
         handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task>());
 
         var addClient = handleType.GetMethod("AddClientAsync")!;
         await (ValueTask)addClient.Invoke(handle, [client])!;
 
         var resumeGroup = typeof(ConsumerRegister).GetMethod(
-            "_ResumeGroupAsync",
+            "_ApplySubscriptionIntentAsync",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
 
-        var act = async () => await (ValueTask)resumeGroup.Invoke(register, [handle, 1L])!;
+        var act = async () => await (ValueTask)resumeGroup.Invoke(register, [handle, false, 1L])!;
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("resume failed");
     }
@@ -81,12 +81,12 @@ public sealed class ConsumerRegisterTests : TestBase
         var client = Substitute.For<IConsumerClient>();
         client.ResumeAsync(Arg.Any<CancellationToken>()).Returns(ValueTask.CompletedTask);
 
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         var handle = Activator.CreateInstance(handleType, nonPublic: true)!;
         using var cts = new CancellationTokenSource();
         handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
         handleType.GetProperty("Cts")!.SetValue(handle, cts);
-        handleType.GetProperty("GroupName")!.SetValue(handle, "payments");
+        handleType.GetProperty("SubscriptionName")!.SetValue(handle, "payments");
         handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task>());
 
         var addClient = handleType.GetMethod("AddClientAsync")!;
@@ -98,11 +98,11 @@ public sealed class ConsumerRegisterTests : TestBase
         ((IProcessingServerShutdown)register).Quiesce();
 
         var resumeGroup = typeof(ConsumerRegister).GetMethod(
-            "_ResumeGroupAsync",
+            "_ApplySubscriptionIntentAsync",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
 
-        await (ValueTask)resumeGroup.Invoke(register, [handle, 1L])!;
+        await (ValueTask)resumeGroup.Invoke(register, [handle, false, 1L])!;
 
         ((bool)handleType.GetProperty("IsPaused")!.GetValue(handle)!)
             .Should()
@@ -119,12 +119,12 @@ public sealed class ConsumerRegisterTests : TestBase
         client.PauseAsync(Arg.Any<CancellationToken>()).Returns(_ => ValueTask.FromException(expected));
         client.DisposeAsync().Returns(ValueTask.CompletedTask);
 
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         var handle = Activator.CreateInstance(handleType, nonPublic: true)!;
         using var cts = new CancellationTokenSource();
         handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
         handleType.GetProperty("Cts")!.SetValue(handle, cts);
-        handleType.GetProperty("GroupName")!.SetValue(handle, "payments");
+        handleType.GetProperty("SubscriptionName")!.SetValue(handle, "payments");
         handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task>());
         handleType.GetProperty("IsPaused")!.SetValue(handle, true);
 
@@ -162,12 +162,12 @@ public sealed class ConsumerRegisterTests : TestBase
                 return new ValueTask(release.Task);
             });
 
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         var handle = Activator.CreateInstance(handleType, nonPublic: true)!;
         using var cts = new CancellationTokenSource();
         handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
         handleType.GetProperty("Cts")!.SetValue(handle, cts);
-        handleType.GetProperty("GroupName")!.SetValue(handle, "payments");
+        handleType.GetProperty("SubscriptionName")!.SetValue(handle, "payments");
         handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task>());
         var addClient = handleType.GetMethod("AddClientAsync")!;
         await (ValueTask)addClient.Invoke(handle, [first])!;
@@ -193,19 +193,14 @@ public sealed class ConsumerRegisterTests : TestBase
         await register.StartAsync(hostCts.Token);
 
         // Swap _selector with a MethodMatcherCache whose selector returns one candidate so
-        // ExecuteAsync enters the intent-aware foreach loop and calls the factory.
+        // subscription startup enters the intent-aware foreach loop and calls the factory.
         var selectorSub = Substitute.For<IConsumerServiceSelector>();
         var fakeDescriptor = new ConsumerExecutorDescriptor
         {
             Lane = MessageLane.Bus,
-            MethodInfo = typeof(object).GetMethod(
-                nameof(ToString),
-                BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-                Type.EmptyTypes
-            )!,
-            ImplTypeInfo = typeof(object).GetTypeInfo(),
+            ConsumerType = typeof(object),
             MessageName = "fake-messageName",
-            GroupName = "fake-group",
+            SubscriptionName = "fake-group",
         };
         selectorSub.SelectCandidates().Returns([fakeDescriptor]);
         var fakeCache = new MethodMatcherCache(selectorSub);
@@ -215,10 +210,10 @@ public sealed class ConsumerRegisterTests : TestBase
             .SetValue(register, fakeCache);
 
         // Swap _consumerClientFactory with one that throws a non-BrokerConnectionException
-        // so the exception propagates out of ExecuteAsync.
+        // so the exception propagates out of subscription startup.
         var factorySub = Substitute.For<IConsumerClientFactory>();
         factorySub
-            .CreateAsync(Arg.Any<string>(), Arg.Any<byte>(), Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .CreateAsync(Arg.Any<ConsumerClientRequest>(), Arg.Any<CancellationToken>())
             .Returns<Task<IConsumerClient>>(_ => throw new InvalidOperationException("boom"));
 
         typeof(ConsumerRegister)
@@ -228,7 +223,7 @@ public sealed class ConsumerRegisterTests : TestBase
             )!
             .SetValue(register, factorySub);
 
-        // when — ReStartAsync should propagate the exception from ExecuteAsync.
+        // when — ReStartAsync should propagate the exception from subscription startup.
         var act = async () => await register.ReStartAsync(force: true, AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("boom");
@@ -259,14 +254,14 @@ public sealed class ConsumerRegisterTests : TestBase
                 return true;
             });
         mockCb.AbortHalfOpenProbeAsync(handleName).Returns(ValueTask.CompletedTask);
-        mockCb.RemoveGroupAsync(Arg.Any<string>()).Returns(ValueTask.CompletedTask);
-        mockCb.RegisterKnownGroups(Arg.Any<IEnumerable<string>>());
+        mockCb.RemoveConsumerAsync(Arg.Any<string>()).Returns(ValueTask.CompletedTask);
+        mockCb.RegisterKnownConsumers(Arg.Any<IEnumerable<string>>());
 
         await using var provider = _CreateProvider(mockCb);
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
         using var hostCts = new CancellationTokenSource();
 
-        // Start normally — in-memory queue has no subscribers so ExecuteAsync is a no-op
+        // Start normally — in-memory queue has no subscribers so subscription startup is a no-op
         await register.StartAsync(hostCts.Token);
 
         // Inject mock CB into the field (StartAsync resolves ICircuitBreakerStateManager via GetService)
@@ -276,19 +271,14 @@ public sealed class ConsumerRegisterTests : TestBase
         )!;
         cbField.SetValue(register, mockCb);
 
-        // Swap selector with a fake that has one group so ExecuteAsync enters the per-group loop
+        // Swap selector with a fake that has one group so subscription startup enters the per-group loop
         var selectorSub = Substitute.For<IConsumerServiceSelector>();
         var fakeDescriptor = new ConsumerExecutorDescriptor
         {
             Lane = MessageLane.Bus,
-            MethodInfo = typeof(object).GetMethod(
-                nameof(ToString),
-                BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-                Type.EmptyTypes
-            )!,
-            ImplTypeInfo = typeof(object).GetTypeInfo(),
+            ConsumerType = typeof(object),
             MessageName = "fake-messageName",
-            GroupName = groupName,
+            SubscriptionName = groupName,
         };
         selectorSub.SelectCandidates().Returns([fakeDescriptor]);
         var fakeCache = new MethodMatcherCache(selectorSub);
@@ -297,12 +287,12 @@ public sealed class ConsumerRegisterTests : TestBase
             .SetValue(register, fakeCache);
 
         // Swap factory: first call returns a metadata client; per-thread calls return a
-        // ready listener so ExecuteAsync can finish and expose the paused handle state.
+        // ready listener so subscription startup can finish and expose the paused handle state.
         await using var readyClient = new ReadyListeningConsumerClient();
         var callCount = 0;
         var factorySub = Substitute.For<IConsumerClientFactory>();
         factorySub
-            .CreateAsync(Arg.Any<string>(), Arg.Any<byte>(), Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
+            .CreateAsync(Arg.Any<ConsumerClientRequest>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 if (Interlocked.Increment(ref callCount) == 1)
@@ -323,22 +313,22 @@ public sealed class ConsumerRegisterTests : TestBase
             )!
             .SetValue(register, factorySub);
 
-        // when — call ExecuteAsync directly (the internal path ReStartAsync uses after PulseAsync)
-        var executeAsync = typeof(ConsumerRegister).GetMethod(
-            nameof(ConsumerRegister.ExecuteAsync),
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+        // when — start the subscriptions directly (the internal path ReStartAsync uses after PulseAsync)
+        var startSubscriptionsAsync = typeof(ConsumerRegister).GetMethod(
+            "_StartSubscriptionsAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
             binder: null,
             Type.EmptyTypes,
             modifiers: null
         )!;
-        await (ValueTask)executeAsync.Invoke(register, null)!;
+        await (ValueTask<IReadOnlyCollection<Task>>)startSubscriptionsAsync.Invoke(register, null)!;
 
         // then — AbortHalfOpenProbeAsync was called for the group
         await mockCb.Received(1).AbortHalfOpenProbeAsync(handleName);
 
         // then — the handle for the group has IsPaused = true because TryGetOpenEpoch returned true
         var groupHandlesField = typeof(ConsumerRegister).GetField(
-            "_groupHandles",
+            "_subscriptionHandles",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
         var handles = groupHandlesField.GetValue(register)!;
@@ -358,10 +348,10 @@ public sealed class ConsumerRegisterTests : TestBase
         // A recovery callback launched before the restart bump arrives after the replacement
         // handle applied epoch 7 and must not reopen transport.
         var resumeGroup = typeof(ConsumerRegister).GetMethod(
-            "_ResumeGroupAsync",
+            "_ApplySubscriptionIntentAsync",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
-        await (ValueTask)resumeGroup.Invoke(register, [handleObj, 6L])!;
+        await (ValueTask)resumeGroup.Invoke(register, [handleObj, false, 6L])!;
         readyClient.ResumeCount.Should().Be(0);
 
         await register.DisposeAsync();
@@ -399,19 +389,11 @@ public sealed class ConsumerRegisterTests : TestBase
         await using var provider = _CreateProvider(
             configureMessaging: setup =>
             {
-                setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
-                    message
-                        .Contract("ready-messageName")
-                        .Consumer<BootstrapReadyConsumer>(consumer =>
-                            consumer
-                                .StableContract("tests.consumer-register.bootstrap-ready")
-                                .Group("ready-group")
-                                .Concurrency(1)
-                        )
-                );
+                setup.AddConsumer<BootstrapReadyConsumer>();
             },
             configureServices: services =>
             {
+                services.ConfigureMessaging(messaging => messaging.Message<BootstrapReadyMessage>("ready-messageName"));
                 services.AddSingleton<IConsumerClientFactory>(factory);
                 services.AddSingleton<BootstrapReadyConsumer>();
             }
@@ -451,16 +433,11 @@ public sealed class ConsumerRegisterTests : TestBase
         await using var provider = _CreateProvider(
             configureMessaging: setup =>
             {
-                setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
-                    message
-                        .Contract("ready-messageName")
-                        .Consumer<BootstrapReadyConsumer>(consumer =>
-                            consumer.StableContract("tests.consumer-register.inbox").Group("ready-group").Concurrency(1)
-                        )
-                );
+                setup.AddConsumer<BootstrapReadyConsumer>();
             },
             configureServices: services =>
             {
+                services.ConfigureMessaging(messaging => messaging.Message<BootstrapReadyMessage>("ready-messageName"));
                 services.AddSingleton(dispatcher);
                 services.AddSingleton<BootstrapReadyConsumer>();
             }
@@ -474,7 +451,6 @@ public sealed class ConsumerRegisterTests : TestBase
             {
                 [Headers.MessageId] = "inbox-delivery",
                 [Headers.MessageName] = "ready-messageName",
-                [Headers.Group] = "ready-group",
             },
             new BootstrapReadyMessage()
         );
@@ -518,16 +494,13 @@ public sealed class ConsumerRegisterTests : TestBase
         await using var provider = _CreateProvider(
             configureMessaging: setup =>
             {
-                setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
-                    message
-                        .Contract("ready-messageName", "2")
-                        .Consumer<BootstrapReadyConsumer>(consumer =>
-                            consumer.StableContract("tests.consumer-register.contract-v2").Group("ready-group")
-                        )
-                );
+                setup.AddConsumer<BootstrapReadyConsumer>();
             },
             configureServices: services =>
             {
+                services.ConfigureMessaging(messaging =>
+                    messaging.Message<BootstrapReadyMessage>("ready-messageName", "2")
+                );
                 services.AddSingleton(dispatcher);
                 services.AddSingleton<BootstrapReadyConsumer>();
             }
@@ -540,7 +513,6 @@ public sealed class ConsumerRegisterTests : TestBase
             {
                 [Headers.MessageId] = "contract-mismatch",
                 [Headers.MessageName] = "ready-messageName",
-                [Headers.Group] = "ready-group",
                 [Headers.ContractVersion] = "1",
             },
             "{}"u8.ToArray()
@@ -591,19 +563,11 @@ public sealed class ConsumerRegisterTests : TestBase
         await using var provider = _CreateProvider(
             configureMessaging: setup =>
             {
-                setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
-                    message
-                        .Contract("ready-messageName")
-                        .Consumer<BootstrapReadyConsumer>(consumer =>
-                            consumer
-                                .StableContract("tests.consumer-register.bootstrap-ready")
-                                .Group("ready-group")
-                                .Concurrency(1)
-                        )
-                );
+                setup.AddConsumer<BootstrapReadyConsumer>();
             },
             configureServices: services =>
             {
+                services.ConfigureMessaging(messaging => messaging.Message<BootstrapReadyMessage>("ready-messageName"));
                 services.AddSingleton<IConsumerClientFactory>(factory);
                 services.AddSingleton<BootstrapReadyConsumer>();
             }
@@ -635,7 +599,7 @@ public sealed class ConsumerRegisterTests : TestBase
         parameters
             .Select(parameter => parameter.ParameterType)
             .Should()
-            .Equal(typeof(string), typeof(byte), typeof(MessageLane), typeof(CancellationToken));
+            .Equal(typeof(ConsumerClientRequest), typeof(CancellationToken));
     }
 
     [Fact]
@@ -648,12 +612,12 @@ public sealed class ConsumerRegisterTests : TestBase
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
 
         var stillRunning = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         var handle = Activator.CreateInstance(handleType, nonPublic: true)!;
         using var handleCts = new CancellationTokenSource();
         handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
         handleType.GetProperty("Cts")!.SetValue(handle, handleCts);
-        handleType.GetProperty("GroupName")!.SetValue(handle, "payments");
+        handleType.GetProperty("SubscriptionName")!.SetValue(handle, "payments");
         handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task> { stillRunning.Task });
         var client = Substitute.For<IConsumerClient>();
         TimeSpan? receivedShutdownTimeout = null;
@@ -668,7 +632,7 @@ public sealed class ConsumerRegisterTests : TestBase
         await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
 
         var groupHandlesField = typeof(ConsumerRegister).GetField(
-            "_groupHandles",
+            "_subscriptionHandles",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
         var groupHandles = (IDictionary)groupHandlesField.GetValue(register)!;
@@ -695,7 +659,7 @@ public sealed class ConsumerRegisterTests : TestBase
     {
         var register = _CreateRegister();
         var client = Substitute.For<IConsumerClient>();
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         var handle = _CreateHandle(handleType);
 
         await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
@@ -721,7 +685,7 @@ public sealed class ConsumerRegisterTests : TestBase
                 return new ValueTask(releaseResume.Task);
             });
 
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         var handle = _CreateHandle(handleType);
         await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
 
@@ -740,11 +704,57 @@ public sealed class ConsumerRegisterTests : TestBase
     }
 
     [Fact]
+    public async Task shared_client_resumes_only_when_no_other_consumer_circuit_is_open()
+    {
+        // given — one client delivers to two identities, and the second identity's circuit is still Open
+        var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
+        circuitBreaker.GetState("0:billing.b").Returns(CircuitBreakerState.Open);
+        var register = _CreateRegister();
+        typeof(ConsumerRegister)
+            .GetField(
+                "_circuitBreakerStateManager",
+                BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+            )!
+            .SetValue(register, circuitBreaker);
+        var client = Substitute.For<IConsumerClient>();
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
+        var handle = _CreateHandle(handleType);
+        handleType
+            .GetProperty("CircuitKeys")!
+            .SetValue(handle, new[] { "0:billing.a", "0:billing.b" }.ToFrozenSet(StringComparer.Ordinal));
+        await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
+        var handles = (IDictionary)
+            typeof(ConsumerRegister)
+                .GetField(
+                    "_subscriptionHandles",
+                    BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+                )!
+                .GetValue(register)!;
+        handles["0:shared"] = handle;
+        var applyCircuitIntent = typeof(ConsumerRegister).GetMethod(
+            "_ApplyCircuitIntentAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            binder: null,
+            types: [typeof(string), typeof(bool), typeof(long)],
+            modifiers: null
+        )!;
+        await (ValueTask)applyCircuitIntent.Invoke(register, ["0:billing.a", true, 1L])!;
+
+        // when — the first identity recovers
+        await (ValueTask)applyCircuitIntent.Invoke(register, ["0:billing.a", false, 2L])!;
+
+        // then — the client stays paused for the identity that is still tripped
+        await client.Received(1).PauseAsync(Arg.Any<CancellationToken>());
+        await client.DidNotReceive().ResumeAsync(Arg.Any<CancellationToken>());
+        _GetIsPaused(handleType, handle).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task equal_epoch_pause_is_reapplied()
     {
         var register = _CreateRegister();
         var client = Substitute.For<IConsumerClient>();
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         var handle = _CreateHandle(handleType);
         await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
 
@@ -764,7 +774,7 @@ public sealed class ConsumerRegisterTests : TestBase
         var expected = new InvalidOperationException("resume failed");
         failingClient.ResumeAsync(Arg.Any<CancellationToken>()).Returns(_ => ValueTask.FromException(expected));
 
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         var handle = _CreateHandle(handleType);
         await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [failingClient])!;
         await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [healthyClient])!;
@@ -794,7 +804,7 @@ public sealed class ConsumerRegisterTests : TestBase
                 return new ValueTask(releasePause.Task);
             });
 
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         var handle = _CreateHandle(handleType);
         await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
 
@@ -817,9 +827,9 @@ public sealed class ConsumerRegisterTests : TestBase
     {
         var logs = new List<(LogLevel Level, EventId EventId)>();
         var mockCircuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
-        mockCircuitBreaker.TryAcquireHalfOpenProbe("0:ready-group").Returns(4L);
+        mockCircuitBreaker.TryAcquireHalfOpenProbe($"0:{BootstrapReadyConsumer.Identity}").Returns(4L);
         mockCircuitBreaker
-            .TryGetOpenEpoch("0:ready-group", out Arg.Any<long>())
+            .TryGetOpenEpoch($"0:{BootstrapReadyConsumer.Identity}", out Arg.Any<long>())
             .Returns(callInfo =>
             {
                 callInfo[1] = 7L;
@@ -828,15 +838,11 @@ public sealed class ConsumerRegisterTests : TestBase
 
         await using var provider = _CreateProvider(
             mockCircuitBreaker,
-            configureMessaging: setup =>
-                setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
-                    message
-                        .Contract("ready-messageName")
-                        .Consumer<BootstrapReadyConsumer>(consumer =>
-                            consumer.StableContract("tests.consumer-register.open-admission").Group("ready-group")
-                        )
-                ),
-            configureServices: services => services.AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(logs))
+            configureMessaging: setup => setup.AddConsumer<BootstrapReadyConsumer>(),
+            configureServices: services =>
+                services
+                    .ConfigureMessaging(messaging => messaging.Message<BootstrapReadyMessage>("ready-messageName"))
+                    .AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(logs))
         );
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
         typeof(ConsumerRegister)
@@ -855,7 +861,6 @@ public sealed class ConsumerRegisterTests : TestBase
             {
                 [Headers.MessageId] = "open-admission-latency",
                 [Headers.MessageName] = "ready-messageName",
-                [Headers.Group] = "ready-group",
             },
             new BootstrapReadyMessage()
         );
@@ -876,9 +881,9 @@ public sealed class ConsumerRegisterTests : TestBase
     {
         var logs = new List<(LogLevel Level, EventId EventId)>();
         var mockCircuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
-        mockCircuitBreaker.TryAcquireHalfOpenProbe("0:ready-group").Returns(4L);
+        mockCircuitBreaker.TryAcquireHalfOpenProbe($"0:{BootstrapReadyConsumer.Identity}").Returns(4L);
         mockCircuitBreaker
-            .TryGetOpenEpoch("0:ready-group", out Arg.Any<long>())
+            .TryGetOpenEpoch($"0:{BootstrapReadyConsumer.Identity}", out Arg.Any<long>())
             .Returns(callInfo =>
             {
                 callInfo[1] = 7L;
@@ -887,18 +892,14 @@ public sealed class ConsumerRegisterTests : TestBase
 
         await using var provider = _CreateProvider(
             mockCircuitBreaker,
-            configureMessaging: setup =>
-                setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
-                    message
-                        .Contract("ready-messageName")
-                        .Consumer<BootstrapReadyConsumer>(consumer =>
-                            consumer.StableContract("tests.consumer-register.open-admission").Group("ready-group")
-                        )
-                ),
-            configureServices: services => services.AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(logs))
+            configureMessaging: setup => setup.AddConsumer<BootstrapReadyConsumer>(),
+            configureServices: services =>
+                services
+                    .ConfigureMessaging(messaging => messaging.Message<BootstrapReadyMessage>("ready-messageName"))
+                    .AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(logs))
         );
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         typeof(ConsumerRegister)
             .GetField(
                 "_circuitBreakerStateManager",
@@ -906,26 +907,28 @@ public sealed class ConsumerRegisterTests : TestBase
             )!
             .SetValue(register, mockCircuitBreaker);
         var handle = _CreateHandle(handleType);
-        handleType.GetProperty("GroupName")!.SetValue(handle, "ready-group");
+        handleType.GetProperty("SubscriptionName")!.SetValue(handle, BootstrapReadyConsumer.Identity);
         await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [Substitute.For<IConsumerClient>()])!;
         await _InvokePauseAsync(register, handle, 7);
 
         var groupHandles = (IDictionary)
             typeof(ConsumerRegister)
-                .GetField("_groupHandles", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
+                .GetField(
+                    "_subscriptionHandles",
+                    BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+                )!
                 .GetValue(register)!;
-        groupHandles["0:ready-group"] = handle;
+        groupHandles[$"0:{BootstrapReadyConsumer.Identity}"] = handle;
         await using var client = new InboxConsumerClient();
         var serializer = provider.GetRequiredService<Headless.Messaging.Serialization.ISerializer>();
         var dispatcher = provider.GetRequiredService<IDispatcher>();
-        _AttachInboxProcessor(provider, register, client, dispatcher, serializer);
+        _AttachInboxProcessor(provider, register, client, dispatcher, serializer, clientHandle: handle);
 
         var origin = new Message(
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 [Headers.MessageId] = "open-admission-after-pause",
                 [Headers.MessageName] = "ready-messageName",
-                [Headers.Group] = "ready-group",
             },
             new BootstrapReadyMessage()
         );
@@ -976,7 +979,12 @@ public sealed class ConsumerRegisterTests : TestBase
 
         public List<MediumMessage> ReceivedRows { get; } = [];
 
-        public List<(string Name, string Group, string ConsumerIdentity)> Admissions { get; } = [];
+        public List<(
+            string Name,
+            string ConsumerIdentity,
+            string ContractVersion,
+            MediumMessage Message
+        )> Admissions { get; } = [];
 
         public List<Message> DispatchedOrigins { get; } = [];
 
@@ -1025,10 +1033,10 @@ public sealed class ConsumerRegisterTests : TestBase
                     name,
                     nameof(Headless.Messaging.Persistence.IDataStorage.AdmitReceivedMessageAsync),
                     StringComparison.Ordinal
-                ) && args is { Length: >= 3 }
+                ) && args is { Length: >= 4 }
             )
             {
-                Admissions.Add(((string)args[0]!, (string)args[1]!, (string)args[2]!));
+                Admissions.Add(((string)args[0]!, (string)args[1]!, (string)args[2]!, (MediumMessage)args[3]!));
             }
 
             var result = targetMethod!.Invoke(Inner, args);
@@ -1090,7 +1098,8 @@ public sealed class ConsumerRegisterTests : TestBase
         byte[] body,
         Action<MessagingOptions>? configureOptions = null,
         Func<FailedInfo, CancellationToken, Task>? onExhausted = null,
-        ICircuitBreakerStateManager? circuitBreaker = null
+        ICircuitBreakerStateManager? circuitBreaker = null,
+        IReadOnlyDictionary<string, string?>? publisherHeaders = null
     )
     {
         await using var client = new InboxConsumerClient();
@@ -1115,22 +1124,12 @@ public sealed class ConsumerRegisterTests : TestBase
             builder.SetMinimumLevel(LogLevel.Debug);
         });
 
+        services.ConfigureMessaging(messaging => messaging.Message<BootstrapReadyMessage>("ready-messageName"));
         var messagingBuilder = services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
-            setup.UseConventions(c =>
-            {
-                c.UseApplicationId("messaging-tests");
-                c.UseVersion("v1");
-            });
-            setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
-                message
-                    .Contract("ready-messageName")
-                    .Consumer<BootstrapReadyConsumer>(consumer =>
-                        consumer.StableContract("tests.consumer-register.receive-ring").Group("ready-group")
-                    )
-            );
+            setup.AddConsumer<BootstrapReadyConsumer>();
             configureOptions?.Invoke(setup.Options);
             if (onExhausted is not null)
             {
@@ -1140,10 +1139,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
         if (middleware is not null)
         {
-            messagingBuilder.AddReceiveMiddlewareFor<RecordingReceiveMiddleware, BootstrapReadyMessage>(
-                "ready-group",
-                MessageLane.Bus
-            );
+            messagingBuilder.AddReceiveMiddleware<RecordingReceiveMiddleware>();
 
             // The builder's TryAddEnumerable registers a fresh RecordingReceiveMiddleware instance;
             // replace every IReceiveMiddleware registration with the test's instance so the ring
@@ -1188,15 +1184,17 @@ public sealed class ConsumerRegisterTests : TestBase
         );
         _AttachInboxProcessor(provider, register, client, dispatcher, serializer, storage);
 
-        var transport = new TransportMessage(
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                [Headers.MessageId] = messageId,
-                [Headers.MessageName] = "ready-messageName",
-                [Headers.Group] = "ready-group",
-            },
-            body
-        );
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = messageId,
+            [Headers.MessageName] = "ready-messageName",
+        };
+        foreach (var (key, value) in publisherHeaders ?? new Dictionary<string, string?>(StringComparer.Ordinal))
+        {
+            headers[key] = value;
+        }
+
+        var transport = new TransportMessage(headers, body);
 
         await client.OnMessageCallback!(transport, null);
 
@@ -1223,6 +1221,96 @@ public sealed class ConsumerRegisterTests : TestBase
                 Arg.Any<CancellationToken>()
             );
         run.Storage.Admissions.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task startup_keys_circuits_by_consumer_identity_and_pauses_its_clients_on_open()
+    {
+        // given
+        await using var provider = _CreateProvider(
+            configureMessaging: setup => setup.AddConsumer<BootstrapReadyConsumer>(),
+            configureServices: services =>
+                services
+                    .ConfigureMessaging(messaging => messaging.Message<BootstrapReadyMessage>("ready-messageName"))
+                    .AddSingleton<BootstrapReadyConsumer>()
+        );
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        var monitor = provider.GetRequiredService<ICircuitBreakerMonitor>();
+        using var hostCts = new CancellationTokenSource();
+
+        await register.StartAsync(hostCts.Token);
+
+        try
+        {
+            // then — the circuit is registered under the identity
+            monitor.GetState(MessageLane.Bus, BootstrapReadyConsumer.Identity).Should().Be(CircuitBreakerState.Closed);
+            monitor.KnownConsumers.Should().Equal($"{MessageLane.Bus:D}:{BootstrapReadyConsumer.Identity}");
+
+            // when — the identity's circuit opens
+            (await monitor.ForceOpenAsync(MessageLane.Bus, BootstrapReadyConsumer.Identity, AbortToken))
+                .Should()
+                .BeTrue();
+
+            // then — the clients delivering to that identity are paused
+            var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
+            var handles = (IDictionary)
+                typeof(ConsumerRegister)
+                    .GetField(
+                        "_subscriptionHandles",
+                        BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+                    )!
+                    .GetValue(register)!;
+            handles
+                .Values.Cast<object>()
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Match(handle => _GetIsPaused(handleType, handle));
+            monitor.GetState(MessageLane.Bus, BootstrapReadyConsumer.Identity).Should().Be(CircuitBreakerState.Open);
+        }
+        finally
+        {
+            await register.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task receive_admits_under_the_consumer_identity_and_stamps_it_over_a_publisher_value()
+    {
+        // given — the publisher tries to claim another consumer's identity
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "receive-identity",
+            "{}"u8.ToArray(),
+            publisherHeaders: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.ConsumerIdentity] = "someone.else",
+            }
+        );
+
+        // then — storage keys the row by the routed consumer's identity, not the client's subscription name
+        var admission = run.Storage.Admissions.Should().ContainSingle().Subject;
+        admission.ConsumerIdentity.Should().Be(BootstrapReadyConsumer.Identity);
+        admission.Message.Origin.GetConsumerIdentity().Should().Be(BootstrapReadyConsumer.Identity);
+    }
+
+    [Fact]
+    public async Task receive_keys_the_circuit_by_consumer_identity_not_subscription()
+    {
+        // given
+        var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
+        circuitBreaker.TryAcquireHalfOpenProbe(Arg.Any<string>()).Returns(1L);
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "receive-circuit-key",
+            "{}"u8.ToArray(),
+            circuitBreaker: circuitBreaker
+        );
+
+        // then
+        circuitBreaker.Received(1).TryAcquireHalfOpenProbe($"{MessageLane.Bus:D}:{BootstrapReadyConsumer.Identity}");
     }
 
     [Fact]
@@ -1558,7 +1646,7 @@ public sealed class ConsumerRegisterTests : TestBase
 #pragma warning disable CA2000 // The GroupHandle owns the source once it is assigned.
         handleType.GetProperty("Cts")!.SetValue(handle, new CancellationTokenSource());
 #pragma warning restore CA2000
-        handleType.GetProperty("GroupName")!.SetValue(handle, "payments");
+        handleType.GetProperty("SubscriptionName")!.SetValue(handle, "payments");
         handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task>());
         return handle;
     }
@@ -1571,7 +1659,7 @@ public sealed class ConsumerRegisterTests : TestBase
     private static async ValueTask _InvokePauseAsync(ConsumerRegister register, object handle, long epoch)
     {
         var method = typeof(ConsumerRegister).GetMethod(
-            "_PauseGroupAsync",
+            "_PauseSubscriptionAsync",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
         await (ValueTask)method.Invoke(register, [handle, epoch])!;
@@ -1580,10 +1668,10 @@ public sealed class ConsumerRegisterTests : TestBase
     private static async ValueTask _InvokeResumeAsync(ConsumerRegister register, object handle, long epoch)
     {
         var method = typeof(ConsumerRegister).GetMethod(
-            "_ResumeGroupAsync",
+            "_ApplySubscriptionIntentAsync",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
-        await (ValueTask)method.Invoke(register, [handle, epoch])!;
+        await (ValueTask)method.Invoke(register, [handle, false, epoch])!;
     }
 
     private ServiceProvider _CreateProvider(
@@ -1603,18 +1691,13 @@ public sealed class ConsumerRegisterTests : TestBase
         {
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
-            setup.UseConventions(c =>
-            {
-                c.UseApplicationId("messaging-tests");
-                c.UseVersion("v1");
-            });
 
             configureMessaging?.Invoke(setup);
         });
 
         // Run service overrides AFTER AddHeadlessMessaging so test-supplied registrations (e.g. a fake
         // IConsumerClientFactory) win last-writer-wins over the InMemory transport's defaults. Consumer
-        // registration belongs in configureMessaging via setup.Bus/Queue.ForMessage, which runs inside the callback.
+        // registration belongs in configureMessaging via setup.AddConsumer, which runs inside the callback.
         configureServices?.Invoke(services);
 
         if (circuitBreakerStateManager is not null)
@@ -1631,9 +1714,12 @@ public sealed class ConsumerRegisterTests : TestBase
         IConsumerClient client,
         IDispatcher dispatcher,
         Headless.Messaging.Serialization.ISerializer serializer,
-        Headless.Messaging.Persistence.IDataStorage? storage = null
+        Headless.Messaging.Persistence.IDataStorage? storage = null,
+        object? clientHandle = null,
+        ConsumerSubscriptionKey? groupKey = null
     )
     {
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         typeof(ConsumerRegister)
             .GetMethod(
                 "_RegisterMessageProcessor",
@@ -1642,14 +1728,21 @@ public sealed class ConsumerRegisterTests : TestBase
                 types:
                 [
                     typeof(IConsumerClient),
-                    typeof(string),
-                    typeof(string),
-                    typeof(MessageLane),
+                    typeof(ConsumerSubscriptionKey),
+                    handleType,
                     typeof(CancellationToken),
                 ],
                 modifiers: null
             )!
-            .Invoke(register, [client, "ready-group", "0:ready-group", MessageLane.Bus, CancellationToken.None]);
+            .Invoke(
+                register,
+                [
+                    client,
+                    groupKey ?? new ConsumerSubscriptionKey(BootstrapReadyConsumer.Identity, MessageLane.Bus),
+                    clientHandle ?? _CreateHandle(handleType),
+                    CancellationToken.None,
+                ]
+            );
 
         foreach (
             var (fieldName, value) in new (string FieldName, object Value)[]
@@ -1658,6 +1751,7 @@ public sealed class ConsumerRegisterTests : TestBase
                 ("_dispatcher", dispatcher),
                 ("_serializer", serializer),
                 ("_storage", storage ?? provider.GetRequiredService<Headless.Messaging.Persistence.IDataStorage>()),
+                ("_subscribeInvoker", provider.GetRequiredService<ISubscribeInvoker>()),
             }
         )
         {
@@ -1667,8 +1761,11 @@ public sealed class ConsumerRegisterTests : TestBase
         }
     }
 
+    [BusConsumer(Identity)]
     private sealed class BootstrapReadyConsumer : IConsume<BootstrapReadyMessage>
     {
+        public const string Identity = "tests.consumer-register.ready";
+
         public ValueTask ConsumeAsync(
             ConsumeContext<BootstrapReadyMessage> context,
             CancellationToken cancellationToken
@@ -1704,19 +1801,11 @@ public sealed class ConsumerRegisterTests : TestBase
         await using var provider = _CreateProvider(
             configureMessaging: setup =>
             {
-                setup.Bus.ForMessage<BootstrapReadyMessage>(message =>
-                    message
-                        .Contract("ready-messageName")
-                        .Consumer<BootstrapReadyConsumer>(consumer =>
-                            consumer
-                                .StableContract("tests.consumer-register.bootstrap-ready")
-                                .Group("ready-group")
-                                .Concurrency(1)
-                        )
-                );
+                setup.AddConsumer<BootstrapReadyConsumer>();
             },
             configureServices: services =>
             {
+                services.ConfigureMessaging(messaging => messaging.Message<BootstrapReadyMessage>("ready-messageName"));
                 services.AddSingleton<IConsumerClientFactory>(factory);
                 services.AddSingleton<BootstrapReadyConsumer>();
             }
@@ -1748,9 +1837,7 @@ public sealed class ConsumerRegisterTests : TestBase
         private int _createCount;
 
         public async Task<IConsumerClient> CreateAsync(
-            string groupName,
-            byte groupConcurrent,
-            MessageLane lane,
+            ConsumerClientRequest request,
             CancellationToken cancellationToken = default
         )
         {
@@ -1865,9 +1952,7 @@ public sealed class ConsumerRegisterTests : TestBase
         private readonly Queue<IConsumerClient> _clients = new(clients);
 
         public Task<IConsumerClient> CreateAsync(
-            string groupName,
-            byte groupConcurrent,
-            MessageLane lane,
+            ConsumerClientRequest request,
             CancellationToken cancellationToken = default
         )
         {

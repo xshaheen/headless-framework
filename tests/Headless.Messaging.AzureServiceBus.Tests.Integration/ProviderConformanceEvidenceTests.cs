@@ -57,15 +57,15 @@ public sealed class ProviderConformanceEvidenceTests(AzureServiceBusFixture fixt
                 nameof(AzureServiceBusConsumerClientHarnessTests.should_shutdown_idle_consumer_within_bound)
             ),
             _Bind(
-                TransportConformanceScenario.BusSubscriberGroupFanOut,
+                TransportConformanceScenario.BusConsumerIdentityFanOut,
                 nameof(
-                    AzureServiceBusConsumerClientHarnessTests.should_deliver_one_bus_copy_per_group_while_replicas_compete
+                    AzureServiceBusConsumerClientHarnessTests.should_deliver_one_bus_copy_per_consumer_identity_while_replicas_compete
                 )
             ),
             _Bind(
                 TransportConformanceScenario.BusReplicaCompetition,
                 nameof(
-                    AzureServiceBusConsumerClientHarnessTests.should_deliver_one_bus_copy_per_group_while_replicas_compete
+                    AzureServiceBusConsumerClientHarnessTests.should_deliver_one_bus_copy_per_consumer_identity_while_replicas_compete
                 )
             ),
             _Bind(

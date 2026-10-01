@@ -127,20 +127,9 @@ public abstract class JobsIdempotentEnqueueConformanceTests<TFixture>(TFixture f
                 _Options("shared-key"),
                 ct
             );
-            // Different descriptor: the plain (requestless) coordinated function is a second registered function
-            // in this host; its descriptor must match the registered canonical shape exactly.
-            var plain = await scheduler.EnqueueAsync(
-                new JobFunctionDescriptor(
-                    JobsCoordinationFixtureExtensions.CoordinatedFunctionName,
-                    requestType: null,
-                    cronExpression: string.Empty,
-                    JobPriority.LongRunning,
-                    maxConcurrency: 1,
-                    contractVersion: JobContract.InitialVersion
-                ),
-                _Options("shared-key"),
-                ct
-            );
+            // Different job: the plain coordinated job takes no arguments and is a second registered job in this
+            // host, addressed by its class.
+            var plain = await scheduler.EnqueueAsync<CoordinatedJob>(_Options("shared-key"), ct);
             plain.Should().NotBe(facade, "a different function is a different reservation identity");
 
             // Same facade function + same key in system scope: a hit against the first facade call (payload is

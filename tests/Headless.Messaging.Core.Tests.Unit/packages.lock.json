@@ -891,7 +891,8 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
-          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
         }
       },
       "headless.messaging.bus.abstractions": {
@@ -938,6 +939,12 @@
           "Testcontainers": "[4.15.0, )",
           "xunit.v3.assert": "[4.0.0, )",
           "xunit.v3.extensibility.core": "[4.0.0, )"
+        }
+      },
+      "headless.messaging.generatedmodulefixture": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Messaging.Core": "[1.0.0, )"
         }
       },
       "headless.messaging.inmemory": {

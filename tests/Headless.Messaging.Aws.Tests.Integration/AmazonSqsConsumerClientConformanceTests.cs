@@ -95,10 +95,10 @@ public sealed class AmazonSqsConsumerClientConformanceTests(LocalStackTestFixtur
     }
 
     [Fact]
-    public Task should_deliver_one_bus_copy_per_group_while_replicas_compete()
+    public Task should_deliver_one_bus_copy_per_consumer_identity_while_replicas_compete()
     {
         var driver = new AwsProviderConformanceDriver(fixture);
-        return TransportProviderConformance.AssertBusSubscriberGroupsAsync(driver, AbortToken);
+        return TransportProviderConformance.AssertBusConsumerIdentitiesAsync(driver, AbortToken);
     }
 
     [Fact]

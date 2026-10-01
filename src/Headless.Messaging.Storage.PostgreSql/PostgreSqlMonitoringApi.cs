@@ -130,7 +130,7 @@ internal sealed class PostgreSqlMonitoringApi(
 
     /// <summary>
     /// Returns a paginated list of messages from either the published or received table,
-    /// filtered by the criteria in <paramref name="query"/> (status, name, group, content substring, intent type).
+    /// filtered by the criteria in <paramref name="query"/> (status, name, consumer identity, content substring, intent type).
     /// </summary>
     public async ValueTask<IndexPage<MessageView>> GetMessagesAsync(
         MessageQuery query,
@@ -140,8 +140,8 @@ internal sealed class PostgreSqlMonitoringApi(
         var tableName = query.MessageType == MessageType.Publish ? _publishedTable : _receivedTable;
         var selectColumns =
             query.MessageType == MessageType.Publish
-                ? @"""id"",""message_id"",""version"",""name"",CAST(NULL AS VARCHAR(200)) AS ""group"",""content"",""intent_type"",""retries"",""added"",""expires_at"",""status_name"",""next_retry_at"",""locked_until"""
-                : @"""id"",""message_id"",""version"",""name"",""group"",""content"",""intent_type"",""retries"",""added"",""expires_at"",""status_name"",""next_retry_at"",""locked_until""";
+                ? @"""id"",""message_id"",""version"",""name"",CAST(NULL AS VARCHAR(200)) AS ""consumer_identity"",""content"",""intent_type"",""retries"",""added"",""expires_at"",""status_name"",""next_retry_at"",""locked_until"""
+                : @"""id"",""message_id"",""version"",""name"",""consumer_identity"",""content"",""intent_type"",""retries"",""added"",""expires_at"",""status_name"",""next_retry_at"",""locked_until""";
         var where = " AND \"intent_type\" IN (0, 1)";
 
         if (query.StatusName is not null)
@@ -154,9 +154,10 @@ internal sealed class PostgreSqlMonitoringApi(
             where += " AND \"name\" = @Name";
         }
 
-        if (!string.IsNullOrEmpty(query.Group))
+        // Only received rows belong to a consumer; the published table has no identity column to filter on.
+        if (query.MessageType == MessageType.Subscribe && !string.IsNullOrEmpty(query.ConsumerIdentity))
         {
-            where += " AND \"group\" = @Group";
+            where += " AND \"consumer_identity\" = @ConsumerIdentity";
         }
 
         if (!string.IsNullOrEmpty(query.Content))
@@ -189,7 +190,7 @@ internal sealed class PostgreSqlMonitoringApi(
         object[] sqlParams =
         [
             new NpgsqlParameter("@StatusName", query.StatusName?.ToString("G") ?? string.Empty),
-            new NpgsqlParameter("@Group", query.Group ?? string.Empty),
+            new NpgsqlParameter("@ConsumerIdentity", query.ConsumerIdentity ?? string.Empty),
             new NpgsqlParameter("@Name", query.Name ?? string.Empty),
             new NpgsqlParameter("@Content", contentLike),
             new NpgsqlParameter(
@@ -230,7 +231,7 @@ internal sealed class PostgreSqlMonitoringApi(
                             MessageId = reader.GetString(index++),
                             Version = reader.GetString(index++),
                             Name = reader.GetString(index++),
-                            Group = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
+                            ConsumerIdentity = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
                                 ? null
                                 : reader.GetString(index - 1),
                             Content = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)

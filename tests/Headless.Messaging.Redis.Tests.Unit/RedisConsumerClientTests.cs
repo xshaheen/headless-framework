@@ -67,6 +67,122 @@ public sealed class RedisConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_start_every_instance_reads_at_stream_tails_without_creating_a_consumer_group()
+    {
+        // given
+        var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
+        var tails = new[]
+        {
+            new StreamPosition("headless:messaging:bus:orders.created", "5-0"),
+            new StreamPosition("headless:messaging:bus:orders.cancelled", StreamPosition.Beginning),
+        };
+        _mockStreamManager
+            .GetStreamTailPositionsAsync(Arg.Any<string[]>(), Arg.Any<CancellationToken>())
+            .Returns(tails);
+        await using var client = _CreateEveryInstanceClient(logger);
+
+        // when
+        await client.SubscribeAsync(["orders.created", "orders.cancelled"], AbortToken);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token);
+        await cts.CancelAsync();
+        await listening;
+
+        // then
+        await _mockStreamManager
+            .Received(1)
+            .GetStreamTailPositionsAsync(
+                Arg.Is<string[]>(x =>
+                    x.SequenceEqual(
+                        new[] { "headless:messaging:bus:orders.created", "headless:messaging:bus:orders.cancelled" }
+                    )
+                ),
+                Arg.Any<CancellationToken>()
+            );
+        _mockStreamManager
+            .Received(1)
+            .PollStreamsFromAsync(tails, TimeSpan.FromMilliseconds(10), Arg.Any<CancellationToken>());
+        await _mockStreamManager
+            .DidNotReceiveWithAnyArgs()
+            .CreateStreamWithConsumerGroupAsync(default!, default!, AbortToken);
+        _mockStreamManager
+            .DidNotReceiveWithAnyArgs()
+            .PollStreamsLatestMessagesAsync(default!, default!, default!, default, AbortToken);
+        await client.WaitUntilReadyAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_hand_every_instance_delivery_to_the_core_and_never_acknowledge_it()
+    {
+        // given
+        const string stream = "headless:messaging:bus:orders.created";
+        var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
+        _mockStreamManager
+            .GetStreamTailPositionsAsync(Arg.Any<string[]>(), Arg.Any<CancellationToken>())
+            .Returns([new StreamPosition(stream, StreamPosition.Beginning)]);
+        _mockStreamManager
+            .PollStreamsFromAsync(Arg.Any<StreamPosition[]>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(_Batches(new RedisStreamMessages(stream, [_ValidEntry("1-0")])));
+        await using var client = _CreateEveryInstanceClient(logger);
+        var delivered = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.AttachCallbacks(
+            (_, sender) =>
+            {
+                delivered.TrySetResult(sender);
+                return Task.CompletedTask;
+            },
+            onLog: null
+        );
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token);
+
+        // when
+        var sender = await delivered.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await client.CommitAsync(sender, AbortToken);
+        await client.RejectAsync(sender, AbortToken);
+        await cts.CancelAsync();
+        await listening;
+
+        // then
+        sender.Should().Be(new RedisEveryInstanceDelivery(stream, "1-0"));
+        await _mockStreamManager.DidNotReceiveWithAnyArgs().Ack(default!, default!, default!, AbortToken);
+        await _mockStreamManager
+            .DidNotReceiveWithAnyArgs()
+            .RequeueAndAck(default!, default!, default!, default!, AbortToken);
+    }
+
+    private RedisConsumerClient _CreateEveryInstanceClient(ILogger<RedisConsumerClient> logger) =>
+        new(
+            "billing.cache",
+            1,
+            _mockStreamManager,
+            _options,
+            logger,
+            MessageLane.Bus,
+            kind: ConsumerSubscriptionKind.EveryInstance
+        );
+
+    private static StreamEntry _ValidEntry(string id) =>
+        new(
+            id,
+            [
+                new NameValueEntry(
+                    "headers",
+                    $$"""{"{{Headers.MessageId}}":"{{Guid.NewGuid():N}}","{{Headers.MessageName}}":"orders.created"}"""
+                ),
+                new NameValueEntry("body", "\"cGF5bG9hZA==\""),
+            ]
+        );
+
+#pragma warning disable CS1998 // The async iterator yields canned batches without awaiting.
+    private static async IAsyncEnumerable<IEnumerable<RedisStreamMessages>> _Batches(params RedisStreamMessages[] batch)
+    {
+        yield return batch;
+    }
+#pragma warning restore CS1998
+
+    [Fact]
     public async Task should_propagate_exact_token_when_subscribing()
     {
         var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();

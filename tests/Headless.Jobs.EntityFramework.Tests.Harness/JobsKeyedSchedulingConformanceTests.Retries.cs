@@ -148,6 +148,7 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>
         builder.Services.AddHeadlessJobs<RetryTimeJob, CronJobEntity>(options =>
         {
             options.DisableBackgroundServices();
+            options.AddModule<CoordinatedJobsModule>();
             options.UseEntityFramework(ef =>
                 ef.UseJobsDbContext<RetryJobsDbContext>(db =>
                 {

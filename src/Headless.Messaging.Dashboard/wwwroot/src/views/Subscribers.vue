@@ -17,41 +17,47 @@
 
       <TableSkeleton v-if="isLoading" :rows="6" :columns="4" />
 
-      <div v-else-if="groups.length === 0" class="no-data">
+      <div v-else-if="consumers.length === 0" class="no-data">
         <v-icon size="48" color="grey">mdi-account-group-outline</v-icon>
         <p class="mt-3">No subscribers found</p>
       </div>
 
       <div v-else class="groups-list">
-        <v-card v-for="group in groups" :key="group.group" class="group-card mb-4">
-          <v-card-title class="group-header" @click="toggleGroup(group.group)">
+        <v-card
+          v-for="consumer in consumers"
+          :key="consumer.consumerIdentity"
+          class="group-card mb-4"
+        >
+          <v-card-title class="group-header" @click="toggleConsumer(consumer.consumerIdentity)">
             <div class="group-title-row">
               <v-icon class="mr-2">mdi-account-group</v-icon>
-              <span class="group-name">{{ group.group }}</span>
+              <span class="group-name">{{ consumer.consumerIdentity }}</span>
               <v-chip size="x-small" color="primary" variant="tonal" class="ml-2">
-                {{ group.childCount }} subscriber{{ group.childCount !== 1 ? 's' : '' }}
+                {{ consumer.childCount }} subscriber{{ consumer.childCount !== 1 ? 's' : '' }}
               </v-chip>
               <v-spacer />
-              <v-icon :class="{ rotated: expandedGroups.has(group.group) }">
+              <v-icon :class="{ rotated: expandedConsumers.has(consumer.consumerIdentity) }">
                 mdi-chevron-right
               </v-icon>
             </div>
           </v-card-title>
 
           <v-expand-transition>
-            <div v-show="expandedGroups.has(group.group)">
+            <div v-show="expandedConsumers.has(consumer.consumerIdentity)">
               <v-divider />
               <v-table density="comfortable" class="subscribers-table">
                 <thead>
                   <tr>
                     <th>Message name</th>
+                    <th>Lane</th>
                     <th>Implementation</th>
                     <th>Method</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(sub, index) in group.values" :key="index">
+                  <tr v-for="(sub, index) in consumer.values" :key="index">
                     <td>{{ sub.messageName }}</td>
+                    <td>{{ sub.lane }}</td>
                     <td class="text-caption">{{ sub.implName }}</td>
                     <td>
                       <code class="method-name" v-html="sub.methodEscaped"></code>
@@ -76,26 +82,27 @@ import TableSkeleton from '@/components/common/TableSkeleton.vue'
 
 interface SubscriberValue {
   messageName: string
+  lane: string
   implName: string
   methodEscaped: string
 }
 
-interface SubscriberGroup {
-  group: string
+interface SubscriberConsumer {
+  consumerIdentity: string
   childCount: number
   values: SubscriberValue[]
 }
 
 const alertStore = useAlertStore()
 const isLoading = ref(false)
-const groups = ref<SubscriberGroup[]>([])
-const expandedGroups = reactive(new Set<string>())
+const consumers = ref<SubscriberConsumer[]>([])
+const expandedConsumers = reactive(new Set<string>())
 
 async function loadSubscribers() {
   isLoading.value = true
   try {
-    const data = await httpService.get<SubscriberGroup[]>('/subscriber')
-    groups.value = data || []
+    const data = await httpService.get<SubscriberConsumer[]>('/subscriber')
+    consumers.value = data || []
   } catch (error) {
     console.error('Failed to load subscribers:', error)
     alertStore.showError('Failed to load subscribers')
@@ -104,11 +111,11 @@ async function loadSubscribers() {
   }
 }
 
-function toggleGroup(group: string) {
-  if (expandedGroups.has(group)) {
-    expandedGroups.delete(group)
+function toggleConsumer(consumerIdentity: string) {
+  if (expandedConsumers.has(consumerIdentity)) {
+    expandedConsumers.delete(consumerIdentity)
   } else {
-    expandedGroups.add(group)
+    expandedConsumers.add(consumerIdentity)
   }
 }
 

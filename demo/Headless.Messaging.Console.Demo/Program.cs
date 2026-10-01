@@ -14,22 +14,19 @@ container.AddLogging(x => x.AddConsole());
 container
     .AddHeadlessMessaging(setup =>
     {
-        setup.Bus.ForMessage<ShowTimeEvent>(message =>
-            message
-                .Contract("sample.console.showtime")
-                .Consumer<EventConsumer>(consumer => consumer.ConsumerIdentity("console.showtime"))
-        );
-        setup.Bus.ForMessage<ShowTimeResponse>(message =>
-            message
-                .Contract("sample.console.showtime.response")
-                .Consumer<ShowTimeResponseConsumer>(consumer => consumer.ConsumerIdentity("console.showtime-response"))
-        );
+        setup.AddModule<Headless.Messaging.Console.Demo.MessagingModule>();
         // Console app does not support dashboard
         setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
         setup.UseInMemoryStorage();
         setup.UseInMemory();
     })
     .AddBusConsumeMiddleware<CustomConsumerMiddleware>();
+
+container.ConfigureMessaging(messaging =>
+{
+    messaging.Message<ShowTimeEvent>("sample.console.showtime");
+    messaging.Message<ShowTimeResponse>("sample.console.showtime.response");
+});
 
 var sp = container.BuildServiceProvider();
 

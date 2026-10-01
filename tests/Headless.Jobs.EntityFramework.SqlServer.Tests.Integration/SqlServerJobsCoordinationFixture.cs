@@ -71,6 +71,7 @@ public sealed class SqlServerJobsCoordinationFixture
         + "IF TYPE_ID(N'headless.HeadlessMessagingIdList') IS NOT NULL DROP TYPE [headless].[HeadlessMessagingIdList];"
         + "IF TYPE_ID(N'headless.HeadlessMessagingOwnerList') IS NOT NULL DROP TYPE [headless].[HeadlessMessagingOwnerList];"
         + "IF TYPE_ID(N'headless.HeadlessMessagingPoisonMessageList') IS NOT NULL DROP TYPE [headless].[HeadlessMessagingPoisonMessageList];"
+        + "IF TYPE_ID(N'headless.HeadlessMessagingConsumerIdentityList') IS NOT NULL DROP TYPE [headless].[HeadlessMessagingConsumerIdentityList];"
         + "DROP TABLE IF EXISTS [jobs_probe];"
         + "DROP TABLE IF EXISTS [coordination_liveness];"
         + "DROP TABLE IF EXISTS [coordination_descriptor];"

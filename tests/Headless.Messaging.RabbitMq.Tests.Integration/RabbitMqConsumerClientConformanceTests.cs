@@ -67,9 +67,143 @@ public sealed class RabbitMqConsumerClientConformanceTests(RabbitMqFixture fixtu
     }
 
     [Fact]
-    public Task should_fan_out_one_bus_copy_per_group_while_replicas_compete()
+    public Task should_deliver_every_bus_message_to_every_every_instance_replica()
     {
-        return TransportProviderConformance.AssertBusSubscriberGroupsAsync(
+        return TransportProviderConformance.AssertBusEveryInstanceAsync(
+            new RabbitMqProviderConformanceDriver(fixture),
+            AbortToken
+        );
+    }
+
+    [Fact]
+    public async Task should_fan_out_bus_message_to_every_instance_sessions_of_one_identity()
+    {
+        var exchangeName = $"bus-{Guid.NewGuid():N}";
+        var destination = $"message-{Guid.NewGuid():N}";
+        var identity = $"group-{Guid.NewGuid():N}";
+        await using var first = await fixture.CreateEndpointSessionAsync(
+            _EveryInstanceEndpoint(destination, identity, "replica-1"),
+            exchangeName,
+            AbortToken
+        );
+        await using var second = await fixture.CreateEndpointSessionAsync(
+            _EveryInstanceEndpoint(destination, identity, "replica-2"),
+            exchangeName,
+            AbortToken
+        );
+
+        await TransportBusConformance.AssertEveryInstanceFanOutAsync(first, second, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_leave_no_queue_after_every_instance_client_disposes()
+    {
+        // given
+        var session = await fixture.CreateEndpointSessionAsync(
+            _EveryInstanceEndpoint($"message-{Guid.NewGuid():N}", $"group-{Guid.NewGuid():N}", "replica-1"),
+            $"bus-{Guid.NewGuid():N}",
+            AbortToken
+        );
+        string queueName;
+
+        try
+        {
+            await session.StartAsync(cancellationToken: AbortToken);
+            queueName = ((Headless.Messaging.RabbitMq.RabbitMqConsumerClient)session.Consumer).QueueNames.Single();
+
+            // Positive control: the queue exists and is exclusive to the client's own connection, so the broker
+            // refuses even a passive declare from any other connection.
+            (await _ProbeQueueAsync(queueName))
+                .Should()
+                .Be(405);
+        }
+        finally
+        {
+            // when
+            await session.DisposeAsync();
+        }
+
+        // then
+        (await _ProbeQueueAsync(queueName))
+            .Should()
+            .Be(404, "the broker deletes the exclusive queue with its connection");
+    }
+
+    [Fact]
+    public async Task should_fail_every_instance_listening_for_a_rebuild_when_an_operator_deletes_its_queue()
+    {
+        // given
+        await using var session = await fixture.CreateEndpointSessionAsync(
+            _EveryInstanceEndpoint($"message-{Guid.NewGuid():N}", $"group-{Guid.NewGuid():N}", "replica-1"),
+            $"bus-{Guid.NewGuid():N}",
+            AbortToken
+        );
+        var consumer = session.Consumer;
+        consumer.AttachCallbacks(onMessage: (_, _) => Task.CompletedTask, onLog: _ => { });
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listening = consumer.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
+
+        try
+        {
+            await consumer.WaitUntilReadyAsync(AbortToken);
+            var queueName = ((Headless.Messaging.RabbitMq.RabbitMqConsumerClient)consumer).QueueNames.Single();
+
+            // when - the broker cancels the consumer and leaves its channel open
+            await fixture.DeleteQueueAsOperatorAsync(queueName, AbortToken);
+
+            // then - the listener fails so the core rebuilds the client with a new queue
+            var act = () => listening.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+            await act.Should().ThrowAsync<Headless.Messaging.Exceptions.BrokerConnectionException>();
+        }
+        finally
+        {
+            await cts.CancelAsync();
+#pragma warning disable ERP022 // The assertion above already observed the listener's outcome; this only joins it.
+            try
+            {
+                await listening;
+            }
+            catch
+            {
+                // ignored
+            }
+#pragma warning restore ERP022
+        }
+    }
+
+    // Returns the AMQP reply code of a passive declare from another connection: 200 when the queue is visible to it,
+    // 405 RESOURCE_LOCKED when another connection holds it exclusively, and 404 NOT_FOUND when it does not exist.
+    private async Task<int> _ProbeQueueAsync(string queueName)
+    {
+        var connection = await fixture.GetConnectionAsync();
+        await using var channel = await connection.CreateChannelAsync(cancellationToken: AbortToken);
+
+        try
+        {
+            await channel.QueueDeclarePassiveAsync(queueName, AbortToken);
+            return 200;
+        }
+        catch (RabbitMQ.Client.Exceptions.OperationInterruptedException e) when (e.ShutdownReason is not null)
+        {
+            return e.ShutdownReason.ReplyCode;
+        }
+    }
+
+    private static TransportConformanceEndpoint _EveryInstanceEndpoint(
+        string destination,
+        string identity,
+        string replica
+    ) =>
+        new(MessageLane.Bus, destination, identity, replica)
+        {
+            Kind = Headless.Messaging.Transport.ConsumerSubscriptionKind.EveryInstance,
+            InstanceId = Guid.NewGuid(),
+        };
+
+    [Fact]
+    public Task should_fan_out_one_bus_copy_per_consumer_identity_while_replicas_compete()
+    {
+        return TransportProviderConformance.AssertBusConsumerIdentitiesAsync(
             new RabbitMqProviderConformanceDriver(fixture),
             AbortToken
         );

@@ -34,11 +34,11 @@ public static class Headers
     public const string RoutingAffinityKey = "headless-routing-affinity-key";
 
     /// <summary>
-    /// The consumer group that should receive this message.
-    /// In Kafka, this maps to the consumer group; in RabbitMQ, it maps to the queue name.
-    /// Value: "headless-msg-group"
+    /// The identity of the consumer that received this message. Stamped on receipt from the consumer the delivery
+    /// was routed to, so a value set by the publisher is always replaced.
+    /// Value: "headless-msg-consumer-identity"
     /// </summary>
-    public const string Group = "headless-msg-group";
+    public const string ConsumerIdentity = "headless-msg-consumer-identity";
 
     /// <summary>
     /// The .NET type name of the message value/payload.

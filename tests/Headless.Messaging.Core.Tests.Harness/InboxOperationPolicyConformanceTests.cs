@@ -512,13 +512,12 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
             {
                 [Headers.MessageId] = Guid.NewGuid().ToString(),
                 [Headers.MessageName] = "operations.contract",
-                [Headers.Group] = "operations.group",
+                [Headers.ConsumerIdentity] = "operations.consumer",
             },
             "payload"
         );
         var admission = await storage.AdmitReceivedMessageAsync(
             "operations.contract",
-            "operations.group",
             "operations.consumer",
             "v1",
             new MediumMessage

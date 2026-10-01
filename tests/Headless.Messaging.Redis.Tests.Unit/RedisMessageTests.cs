@@ -103,7 +103,7 @@ public sealed class RedisMessageTests : TestBase
     }
 
     [Fact]
-    public void should_add_group_to_headers_when_provided()
+    public void should_not_stamp_consumer_identity_on_the_entry()
     {
         // given
         var headersJson = JsonSerializer.Serialize(
@@ -119,33 +119,10 @@ public sealed class RedisMessageTests : TestBase
         var streamEntry = new StreamEntry("1234567-0", values);
 
         // when
-        var message = RedisMessage.Create(streamEntry, "my-consumer-group");
+        var message = RedisMessage.Create(streamEntry);
 
-        // then
-        message.GetGroup().Should().Be("my-consumer-group");
-    }
-
-    [Fact]
-    public void should_not_add_group_when_null_or_empty()
-    {
-        // given
-        var headersJson = JsonSerializer.Serialize(
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                [Headers.MessageId] = "id",
-                [Headers.MessageName] = "name",
-            }
-        );
-        var bodyJson = JsonSerializer.Serialize(Array.Empty<byte>());
-
-        var values = new NameValueEntry[] { new("headers", headersJson), new("body", bodyJson) };
-        var streamEntry = new StreamEntry("1234567-0", values);
-
-        // when
-        var message = RedisMessage.Create(streamEntry, null);
-
-        // then
-        message.GetGroup().Should().BeNull();
+        // then — the messaging core stamps the identity once the delivery is routed to a consumer
+        message.GetConsumerIdentity().Should().BeNull();
     }
 
     [Fact]

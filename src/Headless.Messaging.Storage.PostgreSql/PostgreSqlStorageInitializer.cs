@@ -637,7 +637,6 @@ internal sealed class PostgreSqlStorageInitializer(
                 "id" UUID PRIMARY KEY NOT NULL,
                 "version" VARCHAR(20) NOT NULL,
             	"name" VARCHAR(200) NOT NULL,
-            	"group" VARCHAR(200) NULL,
             	"content" TEXT NULL,
                 "intent_type" SMALLINT NOT NULL,
                 "retries" INT NOT NULL,
@@ -715,8 +714,8 @@ internal sealed class PostgreSqlStorageInitializer(
                 ("lifecycle_id","generation") WHERE "is_inbox_record";
             CREATE UNIQUE INDEX IF NOT EXISTS "uq_messaging_received_generation_incarnation" ON {GetReceivedTableName()} ("generation_incarnation_id")
                 WHERE "generation_incarnation_id" IS NOT NULL;
-            CREATE UNIQUE INDEX IF NOT EXISTS "uq_messaging_received_non_inbox_transport_identity" ON {GetReceivedTableName()}
-                ("version","message_id",(COALESCE("group",'')),"intent_type") WHERE NOT "is_inbox_record";
+            CREATE UNIQUE INDEX IF NOT EXISTS "uq_messaging_received_non_inbox_consumer_identity" ON {GetReceivedTableName()}
+                ("version","message_id","consumer_identity","intent_type") WHERE NOT "is_inbox_record";
             CREATE INDEX IF NOT EXISTS "idx_messaging_received_inbox_retention" ON {GetReceivedTableName()} ("effective_expires_at","id")
                 INCLUDE ("status_name","next_retry_at","intent_type") WHERE "is_inbox_record" AND NOT "is_held";
             CREATE INDEX IF NOT EXISTS "idx_messaging_received_expires_at_status_name" ON {GetReceivedTableName()} ("expires_at","status_name");

@@ -54,8 +54,10 @@ public sealed class CoordinatedHarnessTests : TestBase
             {
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
-                setup.Bus.ForMessage<CoordinatedOrderPlaced>(message => message.Contract("coordinated-order-placed"));
             });
+            services.ConfigureMessaging(messaging =>
+                messaging.Message<CoordinatedOrderPlaced>("coordinated-order-placed")
+            );
         });
     }
 
@@ -68,13 +70,11 @@ public sealed class CoordinatedHarnessTests : TestBase
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
                 setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
-                setup.Bus.ForMessage<StandaloneOrderPlaced>(message =>
-                    message
-                        .Contract("standalone-order-placed")
-                        .Consumer<StandaloneOrderPlacedConsumer>(consumer =>
-                            consumer.ConsumerIdentity("tests.messaging-testing.standalone-order-placed")
-                        )
-                );
+                services.ConfigureMessaging(messaging =>
+                {
+                    messaging.Message<StandaloneOrderPlaced>("standalone-order-placed");
+                    messaging.AddModule<StandaloneOrderPlacedModule>();
+                });
             });
         });
     }
@@ -190,13 +190,11 @@ public sealed class CoordinatedHarnessTests : TestBase
                     setup.UseInMemory();
                     setup.UseInMemoryStorage();
                     setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
-                    setup.Bus.ForMessage<CoordinatedOrderPlaced>(message =>
-                        message
-                            .Contract("coordinated-order-placed")
-                            .Consumer<CoordinatedOrderPlacedConsumer>(consumer =>
-                                consumer.ConsumerIdentity("tests.messaging-testing.coordinated-order-placed")
-                            )
-                    );
+                    services.ConfigureMessaging(messaging =>
+                    {
+                        messaging.Message<CoordinatedOrderPlaced>("coordinated-order-placed");
+                        messaging.AddModule<CoordinatedOrderPlacedModule>();
+                    });
                 });
             },
             AbortToken

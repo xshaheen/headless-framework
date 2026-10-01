@@ -110,6 +110,18 @@ public sealed partial class HybridCache(
             : null;
 
     /// <summary>
+    /// Drops this process's whole L1 each time the invalidation subscription is established. Delivery is at most once,
+    /// so any entry cached while no subscription was live may have missed its invalidation; L2 stays the source of truth
+    /// and refills L1.
+    /// Nothing is published, since peers had no gap of their own.
+    /// </summary>
+    internal async ValueTask FlushLocalAfterSubscriptionGapAsync(long generation, CancellationToken ct)
+    {
+        await LocalCache.FlushAsync(ct).ConfigureAwait(false);
+        _logger.LogFlushedLocalCacheAfterSubscriptionGap(generation);
+    }
+
+    /// <summary>
     /// Handles incoming cache invalidation message from other instances.
     /// Called by <see cref="HybridCacheInvalidationConsumer"/>.
     /// </summary>

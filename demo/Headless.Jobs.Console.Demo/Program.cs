@@ -22,7 +22,7 @@ var host = Host.CreateDefaultBuilder(args)
             // Configure Jobs with a PostgreSQL operational store.
             services.AddHeadlessJobs(options =>
             {
-                // Registers this project's [JobFunction] methods; add one module per assembly that declares jobs.
+                // Registers this project's [Job] classes; add one module per assembly that declares jobs.
                 options.AddModule<Headless.Jobs.Console.Demo.JobsModule>();
                 options.UseEntityFramework(efOptions =>
                 {
