@@ -3,7 +3,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -353,15 +352,7 @@ public sealed class MessagingTelemetryTests : TestBase
 
     // --- Helpers --------------------------------------------------------------------------------------------
 
-    private static readonly MethodInfo _Method = typeof(MessagingTelemetryTests).GetMethod(
-        nameof(_SampleHandler),
-        BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly,
-        binder: null,
-        types: Type.EmptyTypes,
-        modifiers: null
-    )!;
-
-    private static void _SampleHandler() { }
+    private const string _Method = "HandleAsync";
 
     // Process-global callback: parallel tests' activities all land here — the collection must be thread-safe.
     private static ActivityListener _StartActivityListener(ConcurrentBag<Activity> captured)

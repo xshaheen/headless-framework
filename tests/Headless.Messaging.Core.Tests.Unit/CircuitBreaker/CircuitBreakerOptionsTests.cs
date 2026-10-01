@@ -442,11 +442,11 @@ public sealed class RetryProcessorOptionsTests : TestBase
 public sealed class ConsumerCircuitBreakerRegistryTests : TestBase
 {
     // -------------------------------------------------------------------------
-    // WithCircuitBreaker via ConsumerBuilder (MessagingOptions path)
+    // Registry storage of per-consumer overrides
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void with_circuit_breaker_stores_options_in_registry()
+    public void register_stores_options_in_registry()
     {
         var registry = new ConsumerCircuitBreakerRegistry();
         var opts = new ConsumerCircuitBreakerOptions { FailureThreshold = 3 };
@@ -460,7 +460,7 @@ public sealed class ConsumerCircuitBreakerRegistryTests : TestBase
     }
 
     [Fact]
-    public void try_get_returns_false_for_unknown_group()
+    public void try_get_returns_false_for_unknown_consumer()
     {
         var registry = new ConsumerCircuitBreakerRegistry();
 
@@ -496,23 +496,11 @@ public sealed class ConsumerCircuitBreakerRegistryTests : TestBase
     }
 
     // -------------------------------------------------------------------------
-    // WithCircuitBreaker via MessagingOptions.Subscribe path
+    // Override values
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void with_circuit_breaker_on_consumer_builder_registers_per_group()
-    {
-        // Simulates: setup.Bus.ForMessage<Message>().Consumer<Handler>(c => c.WithCircuitBreaker(...))
-        var cbRegistry = new ConsumerCircuitBreakerRegistry();
-        cbRegistry.Register("orders.group", new ConsumerCircuitBreakerOptions { FailureThreshold = 2 });
-
-        cbRegistry.TryGet("orders.group", out var perGroup).Should().BeTrue();
-        perGroup!.FailureThreshold.Should().Be(2);
-        perGroup.Enabled.Should().BeTrue();
-    }
-
-    [Fact]
-    public void with_circuit_breaker_can_disable_circuit_for_consumer()
+    public void register_can_disable_circuit_for_consumer()
     {
         var cbRegistry = new ConsumerCircuitBreakerRegistry();
         cbRegistry.Register("best-effort.group", new ConsumerCircuitBreakerOptions { Enabled = false });

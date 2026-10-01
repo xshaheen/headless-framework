@@ -29,50 +29,6 @@ public sealed class IBusIntegrationTests : TestBase
     }
 
     [Fact]
-    public async Task should_dispatch_directly_to_consumer_without_transport()
-    {
-        // given - Test the dispatcher directly to verify consumer registration works
-        var services = new ServiceCollection();
-        services.AddLogging(x => x.AddProvider(LoggerProvider));
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Bus.ForMessage<DirectTestMessage>(message =>
-                message
-                    .Contract("direct-test-messageName")
-                    .Consumer<DirectTestConsumer>(consumer => consumer.StableContract("tests.bus-integration.primary"))
-            );
-            messaging.Options.DefaultGroupName = "test-group";
-            messaging.Options.Version = "v1";
-            messaging.UseInMemory();
-            messaging.UseProcessLocalInMemoryStorage();
-        });
-
-        await using var provider = services.BuildServiceProvider();
-
-        // Build consume context manually (bypasses transport and deserialization)
-        var message = new DirectTestMessage("direct-dispatch-value");
-        var context = new ConsumeContext<DirectTestMessage>
-        {
-            Lane = MessageLane.Bus,
-            Message = message,
-            MessageId = Guid.NewGuid().ToString(),
-            CorrelationId = null,
-            Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
-            Timestamp = DateTimeOffset.UtcNow,
-            MessageName = "direct-test-messageName",
-        };
-
-        // when
-        using var scope = provider.CreateScope();
-        var dispatcher = scope.ServiceProvider.GetRequiredService<IMessageDispatcher>();
-        await dispatcher.DispatchAsync(context, AbortToken);
-
-        // then
-        DirectTestConsumer.ReceivedMessages.Should().ContainSingle();
-        DirectTestConsumer.ReceivedMessages.First().Value.Should().Be("direct-dispatch-value");
-    }
-
-    [Fact]
     public async Task should_send_message_directly_to_transport_and_receive_by_consumer()
     {
         // given

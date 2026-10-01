@@ -35,30 +35,6 @@ public sealed class MessagingBuilderTests
     }
 
     [Fact]
-    public void should_register_consumer_in_di_as_scoped()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        services.AddHeadlessMessaging(static setup =>
-            setup.Bus.ForMessage<TestOrderMessage>(message =>
-                message
-                    .Contract("orders.placed")
-                    .Consumer<TestOrderConsumer>(consumer => consumer.StableContract("tests.messaging-builder.orders"))
-            )
-        );
-
-        using var provider = services.BuildServiceProvider();
-
-        // then
-        using var scope = provider.CreateScope();
-        var consumer = scope.ServiceProvider.GetService<IConsume<TestOrderMessage>>();
-        consumer.Should().NotBeNull();
-        consumer.Should().BeOfType<TestOrderConsumer>();
-    }
-
-    [Fact]
     public async Task should_register_runtime_and_bootstrap_services()
     {
         // given
@@ -136,61 +112,6 @@ public sealed class MessagingBuilderTests
     }
 
     [Fact]
-    public void should_use_explicit_default_group_name_when_configured()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Bus.ForMessage<TestOrderMessage>(message =>
-                message
-                    .Contract("orders.placed")
-                    .Consumer<TestOrderConsumer>(consumer => consumer.StableContract("tests.messaging-builder.orders"))
-            );
-            messaging.Options.DefaultGroupName = "shared-group";
-        });
-
-        using var provider = services.BuildServiceProvider();
-        var registry = provider.GetDrainedConsumerRegistry();
-
-        // then
-        registry.GetAll().Single().Group.Should().Be("shared-group");
-    }
-
-    [Fact]
-    public void should_apply_group_name_prefix_to_generated_groups()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Bus.ForMessage<TestOrderMessage>(message =>
-                message
-                    .Contract("orders.placed")
-                    .Consumer<TestOrderConsumer>(consumer => consumer.StableContract("tests.messaging-builder.orders"))
-            );
-            messaging.Options.GroupNamePrefix = "tenant-a";
-            messaging.UseConventions(conventions =>
-            {
-                conventions.UseApplicationId("orders");
-                conventions.UseVersion("v1");
-            });
-        });
-
-        using var provider = services.BuildServiceProvider();
-        var registry = provider.GetDrainedConsumerRegistry();
-
-        // then
-        var handlerId = MessagingConventions.GetDefaultHandlerId(typeof(TestOrderConsumer), typeof(TestOrderMessage));
-        var conventions = new MessagingConventions().UseApplicationId("orders").UseVersion("v1");
-        registry.GetAll().Single().Group.Should().Be($"tenant-a.{conventions.GetGroupName(handlerId)}");
-    }
-
-    [Fact]
     public void should_replace_messaging_lock_provider_when_use_distributed_lock_called_twice()
     {
         // given — last-wins semantics: second registration must supersede the first
@@ -217,38 +138,6 @@ public sealed class MessagingBuilderTests
         using var provider = services.BuildServiceProvider();
         var resolved = provider.GetRequiredKeyedService<IDistributedLock>(MessagingKeys.LockProvider);
         resolved.Should().BeSameAs(secondProvider, "the second registration must win under last-wins semantics");
-    }
-
-    [Fact]
-    public void with_circuit_breaker_keys_the_override_by_consumer_identity()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        services.AddHeadlessMessaging(static setup =>
-            setup.Bus.ForMessage<TestOrderMessage>(message =>
-                message
-                    .Contract("orders.placed")
-                    .Consumer<TestOrderConsumer>(consumer =>
-                        consumer
-                            .StableContract("tests.messaging-builder.orders")
-                            .WithCircuitBreaker(cb => cb.FailureThreshold = 3)
-                            .Group("final-group")
-                    )
-            )
-        );
-
-        using var provider = services.BuildServiceProvider();
-        provider.GetDrainedConsumerRegistry();
-        var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
-
-        // then
-        cbRegistry
-            .TryGet(_CircuitKey(MessageLane.Bus, "tests.messaging-builder.orders"), out var opts)
-            .Should()
-            .BeTrue();
-        opts!.FailureThreshold.Should().Be(3);
     }
 }
 

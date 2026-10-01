@@ -62,7 +62,7 @@ public sealed class EveryInstanceDeliveryTests : TestBase
                     .GetDrainedConsumerRegistry()
                     .GetAll()
                     .Single(x => x.ConsumerType == typeof(StockProjection))
-                    .Group!
+                    .SubscriptionName
             )
             .Should()
             .Be(3, "competing subscriptions keep one client per consumer thread");
@@ -183,28 +183,34 @@ public sealed class EveryInstanceDeliveryTests : TestBase
     }
 
     [Fact]
-    public async Task should_reject_an_every_instance_runtime_subscription_with_an_explicit_group()
+    public async Task should_name_an_every_instance_runtime_subscription_after_its_explicit_identity()
     {
         // given
         var factory = new RecordingFactory();
         await using var provider = _BuildHost(factory);
-        var subscriber = provider.GetRequiredService<IRuntimeSubscriber>();
+        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
 
         // when
-        var act = async () =>
-            await subscriber.SubscribeAsync<PriceChanged>(
+        await using var handle = await provider
+            .GetRequiredService<IRuntimeSubscriber>()
+            .SubscribeAsync<PriceChanged>(
                 (_, _, _) => ValueTask.CompletedTask,
                 new RuntimeSubscriptionOptions
                 {
                     HandlerId = "tests.runtime-price",
-                    Group = "shared-group",
+                    Identity = "tests.shared-price",
                     EveryInstance = true,
                 },
                 AbortToken
             );
 
-        // then
-        (await act.Should().ThrowAsync<ArgumentException>()).WithMessage("*'shared-group'*EveryInstance*");
+        // then: the identity names the subscription, and each process still derives its own broker object from it.
+        handle.Identity.Should().Be("tests.shared-price");
+        factory
+            .Requests.Where(x => x.Kind is ConsumerSubscriptionKind.EveryInstance)
+            .Should()
+            .NotBeEmpty()
+            .And.OnlyContain(x => x.SubscriptionName == "tests.shared-price");
     }
 
     [Fact]
@@ -242,7 +248,7 @@ public sealed class EveryInstanceDeliveryTests : TestBase
         factory
             .Requests.Where(x => x.Kind is ConsumerSubscriptionKind.EveryInstance)
             .Should()
-            .OnlyContain(x => x.SubscriptionName == handle.Group);
+            .OnlyContain(x => x.SubscriptionName == handle.Identity);
         storage.ReceivedWrites.Should().BeEmpty();
     }
 

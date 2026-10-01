@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Exceptions;
@@ -45,33 +44,15 @@ public sealed class SubscribeExecutorRetryTests : TestBase
 
     private static ConsumerExecutorDescriptor _CreateDescriptor()
     {
-        var consumeMethod = typeof(IConsume<CancellationExecutorTestMessage>).GetMethod(
-            nameof(IConsume<>.ConsumeAsync),
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            [typeof(ConsumeContext<CancellationExecutorTestMessage>), typeof(CancellationToken)],
-            null
-        )!;
-
         return new ConsumerExecutorDescriptor
         {
             Lane = MessageLane.Bus,
-            ServiceTypeInfo = typeof(CancellationExecutorTestConsumer).GetTypeInfo(),
-            ImplTypeInfo = typeof(CancellationExecutorTestConsumer).GetTypeInfo(),
-            MethodInfo = consumeMethod,
+            ConsumerType = typeof(CancellationExecutorTestConsumer),
+            MessageType = typeof(CancellationExecutorTestMessage),
             MessageName = "test.messageName",
             SubscriptionName = "test-group",
             ConsumerIdentity = CancellationExecutorTestConsumer.Identity,
             MessageContractVersion = "1",
-            Parameters = consumeMethod
-                .GetParameters()
-                .Select(p => new ParameterDescriptor
-                {
-                    Name = p.Name!,
-                    ParameterType = p.ParameterType,
-                    IsFromMessaging = p.ParameterType == typeof(CancellationToken),
-                })
-                .ToList(),
         };
     }
 

@@ -3,7 +3,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
@@ -138,31 +137,13 @@ public sealed class ConsumeTelemetryPipelineTests : TestBase
 
     private static ConsumerExecutorDescriptor _CreateDescriptor()
     {
-        var consumeMethod = typeof(IConsume<PipelineTestMessage>).GetMethod(
-            nameof(IConsume<>.ConsumeAsync),
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            [typeof(ConsumeContext<PipelineTestMessage>), typeof(CancellationToken)],
-            null
-        )!;
-
         return new ConsumerExecutorDescriptor
         {
             Lane = MessageLane.Bus,
-            ServiceTypeInfo = typeof(PipelineTestConsumer).GetTypeInfo(),
-            ImplTypeInfo = typeof(PipelineTestConsumer).GetTypeInfo(),
-            MethodInfo = consumeMethod,
+            ConsumerType = typeof(PipelineTestConsumer),
+            MessageType = typeof(PipelineTestMessage),
             MessageName = "test.pipeline.messageName",
             SubscriptionName = "test",
-            Parameters = consumeMethod
-                .GetParameters()
-                .Select(p => new ParameterDescriptor
-                {
-                    Name = p.Name!,
-                    ParameterType = p.ParameterType,
-                    IsFromMessaging = p.ParameterType == typeof(CancellationToken),
-                })
-                .ToList(),
         };
     }
 

@@ -2,7 +2,6 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Reflection;
 using Headless.Abstractions;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
@@ -59,7 +58,7 @@ public sealed class MessagingLaneSplitTests : TestBase
     }
 
     [Fact]
-    public void should_allow_same_topic_group_across_different_lanes_when_consumer_registry()
+    public void should_allow_same_topic_subscription_across_different_lanes_when_consumer_registry()
     {
         var registry = new ConsumerRegistry();
 
@@ -68,7 +67,6 @@ public sealed class MessagingLaneSplitTests : TestBase
                 typeof(TestMessage),
                 typeof(TestBusConsumer),
                 "orders",
-                "workers",
                 1,
                 Lane: MessageLane.Bus,
                 ConsumerIdentity: "tests.lane-split.bus-registry",
@@ -80,7 +78,6 @@ public sealed class MessagingLaneSplitTests : TestBase
                 typeof(TestMessage),
                 typeof(TestQueueConsumer),
                 "orders",
-                "workers",
                 1,
                 Lane: MessageLane.Queue,
                 ConsumerIdentity: "tests.lane-split.queue-registry",
@@ -101,7 +98,6 @@ public sealed class MessagingLaneSplitTests : TestBase
                 typeof(TestMessage),
                 typeof(TestQueueConsumer),
                 "jobs.orders",
-                "workers",
                 1,
                 Lane: MessageLane.Queue,
                 ConsumerIdentity: "tests.lane-split.queue-bootstrap-failure",
@@ -147,7 +143,6 @@ public sealed class MessagingLaneSplitTests : TestBase
                 typeof(TestMessage),
                 typeof(TestBusConsumer),
                 "events.orders",
-                "workers",
                 1,
                 Lane: MessageLane.Bus,
                 ConsumerIdentity: "tests.lane-split.bus-bootstrap-failure",
@@ -196,7 +191,6 @@ public sealed class MessagingLaneSplitTests : TestBase
                 typeof(TestMessage),
                 typeof(TestQueueConsumer),
                 "jobs.orders",
-                "workers",
                 1,
                 Lane: MessageLane.Queue,
                 ConsumerIdentity: "tests.lane-split.queue-bootstrap",
@@ -443,28 +437,20 @@ public sealed class MessagingLaneSplitTests : TestBase
     }
 
     [Fact]
-    public void should_treat_bus_and_queue_with_same_topic_group_as_distinct_when_descriptor_comparer()
+    public void should_treat_bus_and_queue_with_same_topic_subscription_as_distinct_when_descriptor_comparer()
     {
         var comparer = new ConsumerExecutorDescriptorComparer(NullLogger<ConsumerExecutorDescriptorComparer>.Instance);
-        var implTypeInfo = typeof(TestBusConsumer).GetTypeInfo();
-        var methodInfo = typeof(TestBusConsumer).GetMethod(
-            nameof(TestBusConsumer.ConsumeAsync),
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            [typeof(ConsumeContext<TestMessage>), typeof(CancellationToken)]
-        )!;
 
         var busDescriptor = new ConsumerExecutorDescriptor
         {
-            MethodInfo = methodInfo,
-            ImplTypeInfo = implTypeInfo,
+            ConsumerType = typeof(TestBusConsumer),
             MessageName = "orders.created",
             SubscriptionName = "workers",
             Lane = MessageLane.Bus,
         };
         var queueDescriptor = new ConsumerExecutorDescriptor
         {
-            MethodInfo = methodInfo,
-            ImplTypeInfo = implTypeInfo,
+            ConsumerType = typeof(TestBusConsumer),
             MessageName = "orders.created",
             SubscriptionName = "workers",
             Lane = MessageLane.Queue,
@@ -475,28 +461,20 @@ public sealed class MessagingLaneSplitTests : TestBase
     }
 
     [Fact]
-    public void should_treat_same_topic_group_and_lane_as_equal_when_descriptor_comparer()
+    public void should_treat_same_topic_subscription_and_lane_as_equal_when_descriptor_comparer()
     {
         var comparer = new ConsumerExecutorDescriptorComparer(NullLogger<ConsumerExecutorDescriptorComparer>.Instance);
-        var implTypeInfo = typeof(TestBusConsumer).GetTypeInfo();
-        var methodInfo = typeof(TestBusConsumer).GetMethod(
-            nameof(TestBusConsumer.ConsumeAsync),
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            [typeof(ConsumeContext<TestMessage>), typeof(CancellationToken)]
-        )!;
 
         var first = new ConsumerExecutorDescriptor
         {
-            MethodInfo = methodInfo,
-            ImplTypeInfo = implTypeInfo,
+            ConsumerType = typeof(TestBusConsumer),
             MessageName = "orders.created",
             SubscriptionName = "workers",
             Lane = MessageLane.Bus,
         };
         var second = new ConsumerExecutorDescriptor
         {
-            MethodInfo = methodInfo,
-            ImplTypeInfo = implTypeInfo,
+            ConsumerType = typeof(TestBusConsumer),
             MessageName = "orders.created",
             SubscriptionName = "workers",
             Lane = MessageLane.Bus,

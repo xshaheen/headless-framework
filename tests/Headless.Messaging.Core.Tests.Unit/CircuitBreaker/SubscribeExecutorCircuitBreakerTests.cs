@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
@@ -55,31 +54,13 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
 
     private static ConsumerExecutorDescriptor _CreateDescriptor()
     {
-        var consumeMethod = typeof(IConsume<CbTestMessage>).GetMethod(
-            nameof(IConsume<>.ConsumeAsync),
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            [typeof(ConsumeContext<CbTestMessage>), typeof(CancellationToken)],
-            null
-        )!;
-
         return new ConsumerExecutorDescriptor
         {
             Lane = MessageLane.Bus,
-            ServiceTypeInfo = typeof(CbTestConsumer).GetTypeInfo(),
-            ImplTypeInfo = typeof(CbTestConsumer).GetTypeInfo(),
-            MethodInfo = consumeMethod,
+            ConsumerType = typeof(CbTestConsumer),
+            MessageType = typeof(CbTestMessage),
             MessageName = _MessageName,
             SubscriptionName = _SubscriptionName,
-            Parameters = consumeMethod
-                .GetParameters()
-                .Select(p => new ParameterDescriptor
-                {
-                    Name = p.Name!,
-                    ParameterType = p.ParameterType,
-                    IsFromMessaging = p.ParameterType == typeof(CancellationToken),
-                })
-                .ToList(),
         };
     }
 

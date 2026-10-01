@@ -34,11 +34,11 @@ public sealed class RuntimeSubscriberTests : TestBase
         result.MessageName.Should().Be("runtime.message");
         registry.GetDescriptors().Should().ContainSingle().Which.Lane.Should().Be(MessageLane.Bus);
         registry
-            .TryGetInvoker(result.MessageName, result.Group, result.HandlerId, MessageLane.Bus, out _)
+            .TryGetInvoker(result.MessageName, result.Identity, result.HandlerId, MessageLane.Bus, out _)
             .Should()
             .BeTrue();
         registry
-            .TryGetInvoker(result.MessageName, result.Group, result.HandlerId, MessageLane.Queue, out _)
+            .TryGetInvoker(result.MessageName, result.Identity, result.HandlerId, MessageLane.Queue, out _)
             .Should()
             .BeFalse();
     }
@@ -49,7 +49,6 @@ public sealed class RuntimeSubscriberTests : TestBase
         await using var provider = _CreateProvider();
         var runtimeSubscriber = provider.GetRequiredService<IRuntimeSubscriber>();
         var conventions = provider.GetRequiredService<IOptions<MessagingOptions>>().Value.Conventions;
-        conventions.UseVersion("v1");
 
         var handler = provider.GetRequiredService<NamedRuntimeHandler>();
 
@@ -69,7 +68,7 @@ public sealed class RuntimeSubscriberTests : TestBase
                     typeof(RuntimeMessage)
                 )
             );
-        handle.Group.Should().Be(conventions.GetGroupName(handle.HandlerId));
+        handle.Identity.Should().Be(MessagingConventions.NormalizeSegment(handle.HandlerId));
         handle.SubscriptionId.Should().NotBeNullOrEmpty();
 
         await handle.DisposeAsync();
@@ -104,7 +103,7 @@ public sealed class RuntimeSubscriberTests : TestBase
 
         var first = await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(
             firstHandler.HandleAsync,
-            new RuntimeSubscriptionOptions { MessageName = "runtime.duplicate", Group = "runtime.group" },
+            new RuntimeSubscriptionOptions { MessageName = "runtime.duplicate", Identity = "runtime.group" },
             AbortToken
         );
 
@@ -113,7 +112,7 @@ public sealed class RuntimeSubscriberTests : TestBase
             new RuntimeSubscriptionOptions
             {
                 MessageName = "runtime.duplicate",
-                Group = "runtime.group",
+                Identity = "runtime.group",
                 DuplicateBehavior = RuntimeSubscriptionDuplicateBehavior.Ignore,
             },
             AbortToken
@@ -126,7 +125,7 @@ public sealed class RuntimeSubscriberTests : TestBase
             new RuntimeSubscriptionOptions
             {
                 MessageName = "runtime.duplicate",
-                Group = "runtime.group",
+                Identity = "runtime.group",
                 DuplicateBehavior = RuntimeSubscriptionDuplicateBehavior.Replace,
             },
             AbortToken
@@ -152,7 +151,7 @@ public sealed class RuntimeSubscriberTests : TestBase
 
         var first = await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(
             firstHandler.HandleAsync,
-            new RuntimeSubscriptionOptions { MessageName = "runtime.*", Group = "runtime.wildcard" },
+            new RuntimeSubscriptionOptions { MessageName = "runtime.*", Identity = "runtime.wildcard" },
             AbortToken
         );
 
@@ -165,7 +164,7 @@ public sealed class RuntimeSubscriberTests : TestBase
             new RuntimeSubscriptionOptions
             {
                 MessageName = "runtime.*",
-                Group = "runtime.wildcard",
+                Identity = "runtime.wildcard",
                 DuplicateBehavior = RuntimeSubscriptionDuplicateBehavior.Replace,
             },
             AbortToken
@@ -196,7 +195,7 @@ public sealed class RuntimeSubscriberTests : TestBase
                         new RuntimeSubscriptionOptions
                         {
                             MessageName = $"runtime.concurrent.{index}",
-                            Group = "runtime.concurrent",
+                            Identity = "runtime.concurrent",
                         },
                         AbortToken
                     )
@@ -232,10 +231,6 @@ public sealed class RuntimeSubscriberTests : TestBase
         {
             options.UseInMemory();
             options.UseProcessLocalInMemoryStorage();
-            options.UseConventions(c =>
-            {
-                c.UseVersion("v1");
-            });
         });
 
         return services.BuildServiceProvider();

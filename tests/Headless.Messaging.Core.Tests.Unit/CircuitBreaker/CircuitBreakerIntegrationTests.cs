@@ -764,10 +764,6 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         {
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
-            setup.UseConventions(conventions =>
-            {
-                conventions.UseVersion("v1");
-            });
         });
 
         return services.BuildServiceProvider();
@@ -775,7 +771,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
 
     private static async ValueTask<object> _CreateHandleAsync(string groupName, IConsumerClient client)
     {
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         var handle = Activator.CreateInstance(handleType, nonPublic: true)!;
         handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
 #pragma warning disable CA2000 // The GroupHandle owns the source once it is assigned.

@@ -55,28 +55,29 @@ public sealed class MethodMatcherCacheInboxTests : TestBase
         var services = new ServiceCollection();
         services.AddLogging();
         services.ConfigureMessaging(messaging => messaging.Message<SelectorTestMessage>("orders"));
-        services.AddHeadlessMessaging(setup =>
-        {
-            // Shares the declared consumer's subscription, which is named after its identity.
-            setup.RegisterConsumer(
-                typeof(AnotherSelectorConsumer),
-                typeof(AnotherSelectorTestMessage),
-                "orders.*",
-                _ConsumerIdentity,
-                1,
-                MessageLane.Bus,
-                "other-consumer",
-                "1"
+        services.AddHeadlessMessaging(setup => setup.AddConsumer<BusInboxConsumer>());
+
+        // A wildcard subscription has no message contract, so it is registered straight into the registry.
+        SetupMessaging
+            .GetOrAddConsumerRegistry(services)
+            .Register(
+                new ConsumerMetadata(
+                    typeof(AnotherSelectorTestMessage),
+                    typeof(AnotherSelectorConsumer),
+                    "orders.*",
+                    1,
+                    MessageLane.Bus,
+                    "other-consumer",
+                    "1"
+                )
             );
-            setup.AddConsumer<BusInboxConsumer>();
-        });
         using var provider = services.BuildServiceProvider();
         var cache = provider.GetRequiredService<MethodMatcherCache>();
 
         cache
             .TryGetMessageNameExecutor(
                 "orders.created",
-                new ConsumerSubscriptionKey(_ConsumerIdentity, MessageLane.Bus),
+                new ConsumerSubscriptionKey("other-consumer", MessageLane.Bus),
                 out var subscription
             )
             .Should()

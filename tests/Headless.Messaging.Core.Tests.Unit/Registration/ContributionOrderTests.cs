@@ -5,6 +5,7 @@ using Headless.Messaging.Registration;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Tests.Helpers;
 
 namespace Tests.Registration;
 
@@ -89,11 +90,10 @@ public sealed class ContributionOrderTests : TestBase
         consumer.ConsumerType.Should().Be<ContributedBusHandler>();
         consumer.ConsumerIdentity.Should().Be(_BeforeIdentity);
         consumer.Concurrency.Should().Be(2);
-        services.Count(descriptor => descriptor.ServiceType == typeof(IConsume<ContributedBusMessage>)).Should().Be(1);
     }
 
     [Fact]
-    public void should_fail_at_startup_naming_both_contributions_when_one_handler_conflicts()
+    public void should_apply_the_later_tuning_when_contributions_tune_one_consumer_differently()
     {
         // given
         var services = new ServiceCollection();
@@ -103,13 +103,10 @@ public sealed class ContributionOrderTests : TestBase
         using var provider = services.BuildServiceProvider();
 
         // when
-        var drain = () => provider.GetDrainedConsumerRegistry();
+        var consumer = provider.GetDrainedConsumerRegistry().GetAll().Should().ContainSingle().Subject;
 
-        // then
-        drain
-            .Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage($"*{nameof(ContributedBusHandler)}*conflicting*concurrency 2*concurrency 7*");
+        // then: tuning is a deployment setting layered in registration order, so the later value wins.
+        consumer.Concurrency.Should().Be(7);
     }
 
     [Fact]
@@ -118,22 +115,12 @@ public sealed class ContributionOrderTests : TestBase
         // given
         var services = new ServiceCollection();
         services.ConfigureMessaging(messaging =>
-            messaging.AddConsumerContribution<ContributedBusMessage, ContributedBusHandler>(
-                MessageLane.Bus,
-                _BeforeIdentity,
-                messageContractVersion: "1",
-                messageName: "tests.contributions.bus"
-            )
-        );
+        {
+            messaging.Message<ContributedBusMessage>("tests.contributions.bus");
+            messaging.AddConsumer<ContributedBusHandler>();
+        });
         _AddMessagingHost(services);
-        services.ConfigureMessaging(messaging =>
-            messaging.AddConsumerContribution<ContributedBusMessage, OtherContributedBusHandler>(
-                MessageLane.Bus,
-                _BeforeIdentity,
-                messageContractVersion: "1",
-                messageName: "tests.contributions.bus"
-            )
-        );
+        services.ConfigureMessaging(messaging => messaging.AddConsumer<OtherContributedBusHandler>());
         using var provider = services.BuildServiceProvider();
 
         // when
@@ -187,38 +174,11 @@ public sealed class ContributionOrderTests : TestBase
         configure.Should().Throw<ArgumentNullException>();
     }
 
-    [Fact]
-    public void should_still_reject_a_message_type_registered_twice_on_one_lane_across_setup_calls()
-    {
-        // given
-        var services = new ServiceCollection();
-        _AddMessagingHost(services, messaging => _ForBusMessage(messaging.Bus));
-
-        // when
-        var addAgain = () => services.AddHeadlessMessaging(setup => _ForBusMessage(setup.Bus));
-
-        // then
-        addAgain.Should().Throw<InvalidOperationException>().WithMessage("*registered more than once on lane Bus*");
-    }
-
     private static void _ContributeBusHandler(MessagingContributionBuilder messaging, byte concurrency)
     {
-        messaging.AddConsumerContribution<ContributedBusMessage, ContributedBusHandler>(
-            MessageLane.Bus,
-            _BeforeIdentity,
-            messageContractVersion: "1",
-            messageName: "tests.contributions.bus",
-            concurrency: concurrency
-        );
-    }
-
-    private static void _ForBusMessage(IBusRegistrationBuilder bus)
-    {
-        bus.ForMessage<ContributedBusMessage>(message =>
-            message
-                .Contract("tests.contributions.bus")
-                .Consumer<ContributedBusHandler>(consumer => consumer.ConsumerIdentity(_BeforeIdentity))
-        );
+        messaging.Message<ContributedBusMessage>("tests.contributions.bus");
+        messaging.AddConsumer<ContributedBusHandler>();
+        messaging.Tune(_BeforeIdentity, consumer => consumer.Concurrency(concurrency));
     }
 
     private static void _AddMessagingHost(
@@ -247,6 +207,7 @@ public sealed class ContributionOrderTests : TestBase
         ) => ValueTask.CompletedTask;
     }
 
+    [BusConsumer(_BeforeIdentity)]
     public sealed class OtherContributedBusHandler : IConsume<ContributedBusMessage>
     {
         public ValueTask ConsumeAsync(

@@ -241,41 +241,6 @@ public sealed class MessagingCapabilityModelTests : TestBase
     }
 
     [Fact]
-    public async Task should_reject_missing_durable_identity_before_storage_or_processors_start()
-    {
-        var storageInitializerCalls = 0;
-        var processingServerFactoryCalls = 0;
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddHeadlessMessaging(setup =>
-            setup.Bus.ForMessage<SharedContract>(message => message.Consumer<SharedConsumer>(static _ => { }))
-        );
-        services.AddMessagingProviderCapabilities(
-            _Transport("Transport", [MessageLane.Bus], independentLaneTopology: true)
-        );
-        services.AddMessagingProviderCapabilities(
-            _Storage("Transactional", MessagingInboxCapabilityTier.Transactional)
-        );
-        services.AddSingleton<IStorageInitializer>(_ =>
-        {
-            Interlocked.Increment(ref storageInitializerCalls);
-            return new RecordingStorageInitializer(static () => { });
-        });
-        services.AddSingleton<IProcessingServer>(_ =>
-        {
-            Interlocked.Increment(ref processingServerFactoryCalls);
-            return new RecordingProcessingServer();
-        });
-
-        await using var provider = services.BuildServiceProvider();
-        var act = () => provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
-
-        await act.Should().ThrowAsync<MessagingConfigurationException>().WithMessage("*stable consumer identity*");
-        storageInitializerCalls.Should().Be(0);
-        processingServerFactoryCalls.Should().Be(0);
-    }
-
-    [Fact]
     public async Task should_start_with_explicit_durable_dedupe_only_opt_down_and_expose_tier()
     {
         var storageInitializeCalls = 0;
@@ -392,61 +357,6 @@ public sealed class MessagingCapabilityModelTests : TestBase
             .ThrowAsync<MessagingConfigurationException>()
             .WithMessage("*SharedTopology*independent*lane*topology*");
         storageInitializerCalls.Should().Be(0);
-    }
-
-    [Fact]
-    public async Task should_validate_only_effective_lane_mapping_when_lane_override_replaces_global_fallback()
-    {
-        var storageInitializeCalls = 0;
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddHeadlessMessaging(setup =>
-        {
-            setup.WithMessageNameMapping<SharedContract>("orders.global");
-            setup.Bus.ForMessage<SharedContract>(message => message.Contract("orders.bus"));
-        });
-        services.AddMessagingProviderCapabilities(
-            _Transport("SharedTopology", [MessageLane.Bus, MessageLane.Queue], independentLaneTopology: false)
-        );
-        services.AddMessagingProviderCapabilities(_Storage("InMemory"));
-        services.RemoveAll<IProcessingServer>();
-        services.AddSingleton<IStorageInitializer>(
-            new RecordingStorageInitializer(() => Interlocked.Increment(ref storageInitializeCalls))
-        );
-
-        await using var provider = services.BuildServiceProvider();
-        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
-
-        await bootstrapper.BootstrapAsync(AbortToken);
-
-        bootstrapper.IsStarted.Should().BeTrue();
-        storageInitializeCalls.Should().Be(1);
-    }
-
-    [Fact]
-    public async Task should_check_message_name_collisions_using_effective_lane_mapping()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddHeadlessMessaging(setup =>
-        {
-            setup.WithMessageNameMapping<SharedContract>("orders.global");
-            setup.Bus.ForMessage<SharedContract>(message => message.Contract("orders.bus"));
-            setup.Bus.ForMessage<OtherContract>(message => message.Contract("orders.global"));
-        });
-        services.AddMessagingProviderCapabilities(
-            _Transport("IndependentTopology", [MessageLane.Bus, MessageLane.Queue], independentLaneTopology: true)
-        );
-        services.AddMessagingProviderCapabilities(_Storage("InMemory"));
-        services.RemoveAll<IProcessingServer>();
-        services.AddSingleton<IStorageInitializer>(new RecordingStorageInitializer(static () => { }));
-
-        await using var provider = services.BuildServiceProvider();
-        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
-
-        await bootstrapper.BootstrapAsync(AbortToken);
-
-        bootstrapper.IsStarted.Should().BeTrue();
     }
 
     [Fact]

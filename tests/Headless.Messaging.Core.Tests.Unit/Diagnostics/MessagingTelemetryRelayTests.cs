@@ -2,7 +2,6 @@
 
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
@@ -287,15 +286,7 @@ public sealed class MessagingTelemetryRelayTests : TestBase
 
     // --- Helpers --------------------------------------------------------------------------------------------
 
-    private static readonly MethodInfo _Method = typeof(MessagingTelemetryRelayTests).GetMethod(
-        nameof(_SampleHandler),
-        BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly,
-        binder: null,
-        types: Type.EmptyTypes,
-        modifiers: null
-    )!;
-
-    private static void _SampleHandler() { }
+    private const string _Method = "HandleAsync";
 
     private static void _UseW3CPropagator()
     {

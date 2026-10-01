@@ -45,7 +45,7 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
             new RuntimeSubscriptionOptions
             {
                 MessageName = "scope.runtime",
-                Group = "scope.runtime",
+                Identity = "scope.runtime",
                 HandlerId = "Tests.IntegrationTests.SharedConsumeScopeIntegrationTests.RuntimeHandler",
             },
             AbortToken
@@ -82,10 +82,6 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
                 options.AddConsumer<ScopedClassConsumer>();
                 options.UseInMemory();
                 options.UseProcessLocalInMemoryStorage();
-                options.UseConventions(c =>
-                {
-                    c.UseVersion("v1");
-                });
             })
             .AddBusConsumeMiddleware<ScopedExecutionMiddleware>();
 

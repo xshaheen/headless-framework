@@ -52,7 +52,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
         client.ResumeAsync(Arg.Any<CancellationToken>()).Returns(_ => ValueTask.FromException(expected));
 
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         var handle = Activator.CreateInstance(handleType, nonPublic: true)!;
         using var cts = new CancellationTokenSource();
         handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
@@ -81,7 +81,7 @@ public sealed class ConsumerRegisterTests : TestBase
         var client = Substitute.For<IConsumerClient>();
         client.ResumeAsync(Arg.Any<CancellationToken>()).Returns(ValueTask.CompletedTask);
 
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         var handle = Activator.CreateInstance(handleType, nonPublic: true)!;
         using var cts = new CancellationTokenSource();
         handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
@@ -119,7 +119,7 @@ public sealed class ConsumerRegisterTests : TestBase
         client.PauseAsync(Arg.Any<CancellationToken>()).Returns(_ => ValueTask.FromException(expected));
         client.DisposeAsync().Returns(ValueTask.CompletedTask);
 
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         var handle = Activator.CreateInstance(handleType, nonPublic: true)!;
         using var cts = new CancellationTokenSource();
         handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
@@ -162,7 +162,7 @@ public sealed class ConsumerRegisterTests : TestBase
                 return new ValueTask(release.Task);
             });
 
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         var handle = Activator.CreateInstance(handleType, nonPublic: true)!;
         using var cts = new CancellationTokenSource();
         handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
@@ -198,12 +198,7 @@ public sealed class ConsumerRegisterTests : TestBase
         var fakeDescriptor = new ConsumerExecutorDescriptor
         {
             Lane = MessageLane.Bus,
-            MethodInfo = typeof(object).GetMethod(
-                nameof(ToString),
-                BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-                Type.EmptyTypes
-            )!,
-            ImplTypeInfo = typeof(object).GetTypeInfo(),
+            ConsumerType = typeof(object),
             MessageName = "fake-messageName",
             SubscriptionName = "fake-group",
         };
@@ -281,12 +276,7 @@ public sealed class ConsumerRegisterTests : TestBase
         var fakeDescriptor = new ConsumerExecutorDescriptor
         {
             Lane = MessageLane.Bus,
-            MethodInfo = typeof(object).GetMethod(
-                nameof(ToString),
-                BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-                Type.EmptyTypes
-            )!,
-            ImplTypeInfo = typeof(object).GetTypeInfo(),
+            ConsumerType = typeof(object),
             MessageName = "fake-messageName",
             SubscriptionName = groupName,
         };
@@ -338,7 +328,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
         // then — the handle for the group has IsPaused = true because TryGetOpenEpoch returned true
         var groupHandlesField = typeof(ConsumerRegister).GetField(
-            "_groupHandles",
+            "_subscriptionHandles",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
         var handles = groupHandlesField.GetValue(register)!;
@@ -622,7 +612,7 @@ public sealed class ConsumerRegisterTests : TestBase
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
 
         var stillRunning = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         var handle = Activator.CreateInstance(handleType, nonPublic: true)!;
         using var handleCts = new CancellationTokenSource();
         handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
@@ -642,7 +632,7 @@ public sealed class ConsumerRegisterTests : TestBase
         await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
 
         var groupHandlesField = typeof(ConsumerRegister).GetField(
-            "_groupHandles",
+            "_subscriptionHandles",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
         var groupHandles = (IDictionary)groupHandlesField.GetValue(register)!;
@@ -669,7 +659,7 @@ public sealed class ConsumerRegisterTests : TestBase
     {
         var register = _CreateRegister();
         var client = Substitute.For<IConsumerClient>();
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         var handle = _CreateHandle(handleType);
 
         await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
@@ -695,7 +685,7 @@ public sealed class ConsumerRegisterTests : TestBase
                 return new ValueTask(releaseResume.Task);
             });
 
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         var handle = _CreateHandle(handleType);
         await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
 
@@ -727,7 +717,7 @@ public sealed class ConsumerRegisterTests : TestBase
             )!
             .SetValue(register, circuitBreaker);
         var client = Substitute.For<IConsumerClient>();
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         var handle = _CreateHandle(handleType);
         handleType
             .GetProperty("CircuitKeys")!
@@ -735,7 +725,10 @@ public sealed class ConsumerRegisterTests : TestBase
         await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
         var handles = (IDictionary)
             typeof(ConsumerRegister)
-                .GetField("_groupHandles", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
+                .GetField(
+                    "_subscriptionHandles",
+                    BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+                )!
                 .GetValue(register)!;
         handles["0:shared"] = handle;
         var applyCircuitIntent = typeof(ConsumerRegister).GetMethod(
@@ -761,7 +754,7 @@ public sealed class ConsumerRegisterTests : TestBase
     {
         var register = _CreateRegister();
         var client = Substitute.For<IConsumerClient>();
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         var handle = _CreateHandle(handleType);
         await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
 
@@ -781,7 +774,7 @@ public sealed class ConsumerRegisterTests : TestBase
         var expected = new InvalidOperationException("resume failed");
         failingClient.ResumeAsync(Arg.Any<CancellationToken>()).Returns(_ => ValueTask.FromException(expected));
 
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         var handle = _CreateHandle(handleType);
         await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [failingClient])!;
         await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [healthyClient])!;
@@ -811,7 +804,7 @@ public sealed class ConsumerRegisterTests : TestBase
                 return new ValueTask(releasePause.Task);
             });
 
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         var handle = _CreateHandle(handleType);
         await (ValueTask)handleType.GetMethod("AddClientAsync")!.Invoke(handle, [client])!;
 
@@ -906,7 +899,7 @@ public sealed class ConsumerRegisterTests : TestBase
                     .AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(logs))
         );
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         typeof(ConsumerRegister)
             .GetField(
                 "_circuitBreakerStateManager",
@@ -920,7 +913,10 @@ public sealed class ConsumerRegisterTests : TestBase
 
         var groupHandles = (IDictionary)
             typeof(ConsumerRegister)
-                .GetField("_groupHandles", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
+                .GetField(
+                    "_subscriptionHandles",
+                    BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+                )!
                 .GetValue(register)!;
         groupHandles[$"0:{BootstrapReadyConsumer.Identity}"] = handle;
         await using var client = new InboxConsumerClient();
@@ -1133,10 +1129,6 @@ public sealed class ConsumerRegisterTests : TestBase
         {
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
-            setup.UseConventions(c =>
-            {
-                c.UseVersion("v1");
-            });
             setup.AddConsumer<BootstrapReadyConsumer>();
             configureOptions?.Invoke(setup.Options);
             if (onExhausted is not null)
@@ -1260,11 +1252,11 @@ public sealed class ConsumerRegisterTests : TestBase
                 .BeTrue();
 
             // then — the clients delivering to that identity are paused
-            var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+            var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
             var handles = (IDictionary)
                 typeof(ConsumerRegister)
                     .GetField(
-                        "_groupHandles",
+                        "_subscriptionHandles",
                         BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
                     )!
                     .GetValue(register)!;
@@ -1699,10 +1691,6 @@ public sealed class ConsumerRegisterTests : TestBase
         {
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
-            setup.UseConventions(c =>
-            {
-                c.UseVersion("v1");
-            });
 
             configureMessaging?.Invoke(setup);
         });
@@ -1731,7 +1719,7 @@ public sealed class ConsumerRegisterTests : TestBase
         ConsumerSubscriptionKey? groupKey = null
     )
     {
-        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("SubscriptionHandle", BindingFlags.NonPublic)!;
         typeof(ConsumerRegister)
             .GetMethod(
                 "_RegisterMessageProcessor",

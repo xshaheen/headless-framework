@@ -5,6 +5,7 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Registration;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Tests.Helpers;
 
 namespace Tests.Registration;
 
@@ -21,16 +22,8 @@ public sealed class MessageContractTests : TestBase
         _AddMessagingHost(services);
         services.ConfigureMessaging(messaging =>
         {
-            messaging.AddConsumerContribution<OrderPlaced, OrderPlacedBusHandler>(
-                MessageLane.Bus,
-                "billing.order-placed",
-                messageContractVersion: "1"
-            );
-            messaging.AddConsumerContribution<OrderPlaced, OrderPlacedQueueHandler>(
-                MessageLane.Queue,
-                "shipping.order-placed",
-                messageContractVersion: "1"
-            );
+            messaging.AddConsumer<OrderPlacedBusHandler>();
+            messaging.AddConsumer<OrderPlacedQueueHandler>();
         });
         using var provider = services.BuildServiceProvider();
 
@@ -132,6 +125,76 @@ public sealed class MessageContractTests : TestBase
     }
 
     [Fact]
+    public void should_apply_a_provider_setting_to_the_lane_that_declares_it_only()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.ConfigureMessaging(messaging =>
+            messaging
+                .Message<OrderPlaced>(_OrderPlacedName, "1")
+                .OnBus(bus => _SetProviderConfig(bus, new PartitionSetting("customer")))
+        );
+        _AddMessagingHost(services);
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var routes = provider.GetRequiredService<IMessageMetadataRegistry>().GetAll();
+
+        // then
+        routes
+            .Single(route => route.Route.Lane == MessageLane.Bus)
+            .ProviderConfigs.Should()
+            .ContainSingle()
+            .Which.Value.Should()
+            .Be(new PartitionSetting("customer"));
+        routes.Single(route => route.Route.Lane == MessageLane.Queue).ProviderConfigs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_merge_declarations_that_carry_equal_provider_settings()
+    {
+        // given
+        var services = new ServiceCollection();
+        void declare(MessagingContributionBuilder messaging) =>
+            messaging
+                .Message<OrderPlaced>(_OrderPlacedName, "1")
+                .OnQueue(queue => _SetProviderConfig(queue, new PartitionSetting("customer")));
+
+        // when
+        services.ConfigureMessaging(declare);
+        services.ConfigureMessaging(declare);
+
+        // then
+        services.Count(descriptor => descriptor.ImplementationInstance is MessageContract).Should().Be(1);
+    }
+
+    [Fact]
+    public void should_fail_when_declarations_differ_only_in_provider_settings()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.ConfigureMessaging(messaging =>
+            messaging
+                .Message<OrderPlaced>(_OrderPlacedName, "1")
+                .OnQueue(queue => _SetProviderConfig(queue, new PartitionSetting("customer")))
+        );
+
+        // when
+        var declareAgain = () =>
+            services.ConfigureMessaging(messaging =>
+                messaging
+                    .Message<OrderPlaced>(_OrderPlacedName, "1")
+                    .OnQueue(queue => _SetProviderConfig(queue, new PartitionSetting("region")))
+            );
+
+        // then
+        declareAgain
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage($"*conflicting*Queue: provider settings {nameof(PartitionSetting)}*");
+    }
+
+    [Fact]
     public void should_apply_queue_settings_to_the_queue_route_only()
     {
         // given
@@ -181,41 +244,6 @@ public sealed class MessageContractTests : TestBase
         _DeliveryModes(services)
             .Should()
             .BeEquivalentTo([(MessageLane.Bus, DeliveryMode.Direct), (MessageLane.Queue, (DeliveryMode?)null)]);
-    }
-
-    [Fact]
-    public void should_reject_a_contract_for_a_message_already_declared_through_for_message()
-    {
-        // given
-        var services = new ServiceCollection();
-        _AddMessagingHost(
-            services,
-            setup => setup.Bus.ForMessage<OrderPlaced>(message => message.Contract(_OrderPlacedName))
-        );
-
-        // when
-        var declare = () =>
-            services.ConfigureMessaging(messaging => messaging.Message<OrderPlaced>(_OrderPlacedName, "1"));
-
-        // then
-        declare.Should().Throw<InvalidOperationException>().WithMessage("*already declared on lane Bus*ForMessage*");
-    }
-
-    [Fact]
-    public void should_reject_for_message_for_a_message_already_declared_by_a_contract()
-    {
-        // given
-        var services = new ServiceCollection();
-        services.ConfigureMessaging(messaging => messaging.Message<OrderPlaced>(_OrderPlacedName, "1"));
-
-        // when
-        var declare = () =>
-            services.ConfigureMessaging(messaging =>
-                messaging.Queue.ForMessage<OrderPlaced>(message => message.Contract(_OrderPlacedName))
-            );
-
-        // then
-        declare.Should().Throw<InvalidOperationException>().WithMessage("*more than once on lane Queue*Message<T>*");
     }
 
     [Fact]
@@ -313,6 +341,10 @@ public sealed class MessageContractTests : TestBase
             .Select(static registration => (registration.Lane, registration.DeliveryMode));
     }
 
+    // Provider packages reach a lane's route through this seam; a record stands in for their settings here.
+    private static void _SetProviderConfig<TLane>(TLane lane, object config) =>
+        ((IMessageProviderConfigBuilder<OrderPlaced>)lane!).SetMessageProviderConfig(config);
+
     private static void _AddMessagingHost(
         IServiceCollection services,
         Action<Headless.Messaging.Configuration.MessagingSetupBuilder>? configure = null
@@ -330,12 +362,16 @@ public sealed class MessageContractTests : TestBase
 
     public sealed record OtherOrderPlaced(string OrderId);
 
+    private sealed record PartitionSetting(string Key);
+
+    [BusConsumer("billing.order-placed")]
     public sealed class OrderPlacedBusHandler : IConsume<OrderPlaced>
     {
         public ValueTask ConsumeAsync(ConsumeContext<OrderPlaced> context, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
     }
 
+    [QueueConsumer("shipping.order-placed")]
     public sealed class OrderPlacedQueueHandler : IConsume<OrderPlaced>
     {
         public ValueTask ConsumeAsync(ConsumeContext<OrderPlaced> context, CancellationToken cancellationToken) =>

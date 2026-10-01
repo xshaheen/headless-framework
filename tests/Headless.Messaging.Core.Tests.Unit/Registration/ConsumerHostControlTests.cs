@@ -40,7 +40,7 @@ public sealed class ConsumerHostControlTests : TestBase
 
         // then
         ledger.Should().HaveCount(2);
-        ledger.Should().AllSatisfy(x => x.Group.Should().Be(Fixture.LedgerProjection.Identity));
+        ledger.Should().AllSatisfy(x => x.SubscriptionName.Should().Be(Fixture.LedgerProjection.Identity));
         subscriptions[new ConsumerSubscriptionKey(Fixture.LedgerProjection.Identity, MessageLane.Bus)]
             .Select(x => x.MessageName)
             .Should()
@@ -303,6 +303,27 @@ public sealed class ConsumerHostControlTests : TestBase
     [InlineData("Headless:Messaging:Consumers:billing.invoice-projection:Concurrency", "many", "*1 to 255*")]
     [InlineData("Headless:Messaging:Consumers:billing.invoice-projection:Group", "x", "*not a consumer setting*")]
     [InlineData("Headless:Messaging:Consumers:billing.unknown:Concurrency", "2", "*'billing.unknown'*")]
+    [InlineData(
+        "Headless:Messaging:Consumers:billing.invoice-projection:InboxRetention",
+        "00:00:00.5",
+        "*whole-second*"
+    )]
+    [InlineData("Headless:Messaging:Consumers:billing.invoice-projection:InboxRetention", "soon", "*whole-second*")]
+    [InlineData(
+        "Headless:Messaging:Consumers:billing.invoice-projection:CircuitBreaker:FailureThreshold",
+        "0",
+        "*positive*"
+    )]
+    [InlineData(
+        "Headless:Messaging:Consumers:billing.invoice-projection:CircuitBreaker:OpenDuration",
+        "-00:00:01",
+        "*positive*"
+    )]
+    [InlineData(
+        "Headless:Messaging:Consumers:billing.invoice-projection:CircuitBreaker:Mode",
+        "x",
+        "*not a circuit breaker setting*"
+    )]
     public void should_fail_startup_when_configuration_tuning_is_invalid(string key, string value, string expected)
     {
         // given

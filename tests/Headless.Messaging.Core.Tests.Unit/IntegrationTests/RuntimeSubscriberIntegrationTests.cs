@@ -24,7 +24,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
 
         await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(
             probe.HandleAsync,
-            new RuntimeSubscriptionOptions { MessageName = "runtime.integration", Group = "runtime.integration" },
+            new RuntimeSubscriptionOptions { MessageName = "runtime.integration", Identity = "runtime.integration" },
             AbortToken
         );
 
@@ -55,7 +55,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
 
         var handle = await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(
             probe.HandleAsync,
-            new RuntimeSubscriptionOptions { MessageName = "runtime.blocking", Group = "runtime.blocking" },
+            new RuntimeSubscriptionOptions { MessageName = "runtime.blocking", Identity = "runtime.blocking" },
             AbortToken
         );
 
@@ -97,7 +97,11 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
 
         await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(
             probe.HandleAsync,
-            new RuntimeSubscriptionOptions { MessageName = "runtime.mid-bootstrap", Group = "runtime.mid-bootstrap" },
+            new RuntimeSubscriptionOptions
+            {
+                MessageName = "runtime.mid-bootstrap",
+                Identity = "runtime.mid-bootstrap",
+            },
             AbortToken
         );
 
@@ -126,7 +130,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
 
         await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(
             probe.HandleAsync,
-            new RuntimeSubscriptionOptions { MessageName = "runtime.race.initial", Group = "runtime.race" },
+            new RuntimeSubscriptionOptions { MessageName = "runtime.race.initial", Identity = "runtime.race" },
             AbortToken
         );
         await bootstrapper.BootstrapAsync(AbortToken);
@@ -135,7 +139,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
         var restartTask = runtimeSubscriber
             .SubscribeAsync<RuntimeMessage>(
                 probe.HandleAsync,
-                new RuntimeSubscriptionOptions { MessageName = "runtime.race.replacement", Group = "runtime.race" },
+                new RuntimeSubscriptionOptions { MessageName = "runtime.race.replacement", Identity = "runtime.race" },
                 AbortToken
             )
             .AsTask();
@@ -162,7 +166,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
 
         await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(
             probe.HandleAsync,
-            new RuntimeSubscriptionOptions { MessageName = "runtime.race.initial", Group = "runtime.race" },
+            new RuntimeSubscriptionOptions { MessageName = "runtime.race.initial", Identity = "runtime.race" },
             AbortToken
         );
         await bootstrapper.BootstrapAsync(AbortToken);
@@ -171,7 +175,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
         var restartTask = runtimeSubscriber
             .SubscribeAsync<RuntimeMessage>(
                 probe.HandleAsync,
-                new RuntimeSubscriptionOptions { MessageName = "runtime.race.replacement", Group = "runtime.race" },
+                new RuntimeSubscriptionOptions { MessageName = "runtime.race.replacement", Identity = "runtime.race" },
                 AbortToken
             )
             .AsTask();
@@ -198,7 +202,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
 
         await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(
             probe.HandleAsync,
-            new RuntimeSubscriptionOptions { MessageName = "runtime.timeout.initial", Group = "runtime.timeout" },
+            new RuntimeSubscriptionOptions { MessageName = "runtime.timeout.initial", Identity = "runtime.timeout" },
             AbortToken
         );
         await bootstrapper.BootstrapAsync(AbortToken);
@@ -210,7 +214,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
                 new RuntimeSubscriptionOptions
                 {
                     MessageName = "runtime.timeout.replacement",
-                    Group = "runtime.timeout",
+                    Identity = "runtime.timeout",
                 },
                 AbortToken
             )
@@ -256,10 +260,6 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
             {
                 options.UseInMemory();
                 options.UseProcessLocalInMemoryStorage();
-                options.UseConventions(c =>
-                {
-                    c.UseVersion("v1");
-                });
             })
             .AddBusConsumeMiddleware<RecordingConsumeMiddleware>();
 

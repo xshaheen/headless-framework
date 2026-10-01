@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -242,33 +241,15 @@ public sealed class SubscribeExecutorCallbackPublishTests : TestBase
 
     private static ConsumerExecutorDescriptor _CreateDescriptor()
     {
-        var consumeMethod = typeof(IConsume<CallbackOrderShipped>).GetMethod(
-            nameof(IConsume<>.ConsumeAsync),
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            [typeof(ConsumeContext<CallbackOrderShipped>), typeof(CancellationToken)],
-            null
-        )!;
-
         return new ConsumerExecutorDescriptor
         {
             Lane = MessageLane.Bus,
-            ServiceTypeInfo = typeof(CallbackOrderShippedConsumer).GetTypeInfo(),
-            ImplTypeInfo = typeof(CallbackOrderShippedConsumer).GetTypeInfo(),
-            MethodInfo = consumeMethod,
+            ConsumerType = typeof(CallbackOrderShippedConsumer),
+            MessageType = typeof(CallbackOrderShipped),
             MessageName = "test.messageName",
             SubscriptionName = "test-group",
             ConsumerIdentity = "tests.subscribe-callback",
             MessageContractVersion = "1",
-            Parameters = consumeMethod
-                .GetParameters()
-                .Select(p => new ParameterDescriptor
-                {
-                    Name = p.Name!,
-                    ParameterType = p.ParameterType,
-                    IsFromMessaging = p.ParameterType == typeof(CancellationToken),
-                })
-                .ToList(),
         };
     }
 

@@ -523,12 +523,9 @@ public sealed class MessagingOptionsValidationTests : TestBase
             options.CreateConsumerMetadata(
                 typeof(TestConsumer),
                 typeof(TestMessage),
-                "orders.created",
-                mappedMessageName: null,
-                group: "orders",
-                concurrency: 1,
-                consumerIdentity: consumerIdentity,
-                messageContractVersion: contractVersion,
+                mappedMessageName: "orders.created",
+                consumerIdentity: consumerIdentity!,
+                messageContractVersion: contractVersion!,
                 lane: MessageLane.Bus
             );
 

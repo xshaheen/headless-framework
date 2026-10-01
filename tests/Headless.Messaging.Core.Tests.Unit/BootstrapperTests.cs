@@ -687,10 +687,6 @@ public sealed class BootstrapperTests : TestBase
         {
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
-            setup.UseConventions(c =>
-            {
-                c.UseVersion("v1");
-            });
         });
 
         builderAction?.Invoke(messagingBuilder);

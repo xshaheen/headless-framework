@@ -15,7 +15,6 @@ public sealed class ConsumerRegistryTests : TestBase
             typeof(TestMessage),
             typeof(TestConsumer),
             "test.messageName",
-            "test.group",
             2,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.registry.register",
@@ -41,7 +40,6 @@ public sealed class ConsumerRegistryTests : TestBase
                 typeof(TestMessage),
                 typeof(TestConsumer),
                 "test",
-                null,
                 1,
                 MessageLane.Bus,
                 "tests.registry.freeze",
@@ -57,7 +55,6 @@ public sealed class ConsumerRegistryTests : TestBase
                     typeof(TestMessage),
                     typeof(TestConsumer),
                     "test2",
-                    null,
                     1,
                     MessageLane.Bus,
                     "tests.registry.freeze-late",
@@ -80,7 +77,6 @@ public sealed class ConsumerRegistryTests : TestBase
             typeof(TestMessage),
             typeof(TestConsumer),
             "original",
-            null,
             1,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.registry.update",
@@ -90,7 +86,6 @@ public sealed class ConsumerRegistryTests : TestBase
             typeof(TestMessage),
             typeof(TestConsumer),
             "updated",
-            "group1",
             5,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.registry.update",
@@ -106,7 +101,6 @@ public sealed class ConsumerRegistryTests : TestBase
         all.Should().ContainSingle();
         all.Should().HaveElementAt(0, updated);
         all[0].MessageName.Should().Be("updated");
-        all[0].Group.Should().Be("group1");
         all[0].Concurrency.Should().Be(5);
     }
 
@@ -119,7 +113,6 @@ public sealed class ConsumerRegistryTests : TestBase
             typeof(TestMessage),
             typeof(TestConsumer),
             "original",
-            null,
             1,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.registry.no-match-original",
@@ -134,7 +127,6 @@ public sealed class ConsumerRegistryTests : TestBase
                 typeof(TestMessage),
                 typeof(OtherConsumer),
                 "new",
-                null,
                 1,
                 MessageLane.Bus,
                 "tests.registry.no-match",
@@ -158,7 +150,6 @@ public sealed class ConsumerRegistryTests : TestBase
                 typeof(TestMessage),
                 typeof(TestConsumer),
                 "test",
-                null,
                 1,
                 MessageLane.Bus,
                 "tests.registry.frozen-update",
@@ -175,7 +166,6 @@ public sealed class ConsumerRegistryTests : TestBase
                     typeof(TestMessage),
                     typeof(TestConsumer),
                     "updated",
-                    null,
                     1,
                     Lane: MessageLane.Bus,
                     ConsumerIdentity: "tests.registry.frozen-update-new",
@@ -199,7 +189,6 @@ public sealed class ConsumerRegistryTests : TestBase
                 typeof(TestMessage),
                 typeof(TestConsumer),
                 "test",
-                null,
                 1,
                 MessageLane.Bus,
                 "tests.registry.readonly",
@@ -230,7 +219,6 @@ public sealed class ConsumerRegistryTests : TestBase
                     typeof(TestMessage),
                     typeof(TestConsumer),
                     $"messageName.{i}",
-                    $"group.{i}",
                     (byte)((i % 10) + 1),
                     MessageLane.Bus,
                     $"tests.registry.sequential-registration.{i}",
@@ -250,7 +238,7 @@ public sealed class ConsumerRegistryTests : TestBase
     }
 
     [Fact]
-    public void should_reject_duplicate_topic_and_group_even_when_handler_ids_differ()
+    public void should_allow_two_bus_consumers_of_one_message_under_different_identities()
     {
         // given
         var registry = new ConsumerRegistry();
@@ -259,12 +247,10 @@ public sealed class ConsumerRegistryTests : TestBase
                 typeof(TestMessage),
                 typeof(TestConsumer),
                 "orders.placed",
-                "billing",
                 1,
                 Lane: MessageLane.Bus,
                 ConsumerIdentity: "tests.registry.topic-collision.first",
-                MessageContractVersion: "v1",
-                HandlerId: "Tests.ConsumerA"
+                MessageContractVersion: "v1"
             )
         );
 
@@ -275,23 +261,19 @@ public sealed class ConsumerRegistryTests : TestBase
                     typeof(TestMessage),
                     typeof(OtherConsumer),
                     "orders.placed",
-                    "billing",
                     1,
                     Lane: MessageLane.Bus,
                     ConsumerIdentity: "tests.registry.topic-collision.second",
-                    MessageContractVersion: "v1",
-                    HandlerId: "Tests.ConsumerB"
+                    MessageContractVersion: "v1"
                 )
             );
 
-        // then
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("*Duplicate consumer registration detected for messageName/group identity*");
+        // then: each Bus identity is its own subscription, so both consumers receive the message.
+        act.Should().NotThrow();
     }
 
     [Fact]
-    public void should_reject_updates_that_collide_on_topic_and_group()
+    public void should_reject_updates_that_give_a_queue_message_a_second_consumer()
     {
         // given
         var registry = new ConsumerRegistry();
@@ -300,12 +282,10 @@ public sealed class ConsumerRegistryTests : TestBase
                 typeof(TestMessage),
                 typeof(TestConsumer),
                 "orders.placed",
-                "billing",
                 1,
-                Lane: MessageLane.Bus,
+                Lane: MessageLane.Queue,
                 ConsumerIdentity: "tests.registry.update-collision.first",
-                MessageContractVersion: "v1",
-                HandlerId: "Tests.ConsumerA"
+                MessageContractVersion: "v1"
             )
         );
         registry.Register(
@@ -313,12 +293,10 @@ public sealed class ConsumerRegistryTests : TestBase
                 typeof(TestMessage),
                 typeof(OtherConsumer),
                 "orders.cancelled",
-                "analytics",
                 1,
-                Lane: MessageLane.Bus,
+                Lane: MessageLane.Queue,
                 ConsumerIdentity: "tests.registry.update-collision.second",
-                MessageContractVersion: "v1",
-                HandlerId: "Tests.ConsumerB"
+                MessageContractVersion: "v1"
             )
         );
 
@@ -330,19 +308,17 @@ public sealed class ConsumerRegistryTests : TestBase
                     typeof(TestMessage),
                     typeof(OtherConsumer),
                     "orders.placed",
-                    "billing",
                     1,
-                    Lane: MessageLane.Bus,
+                    Lane: MessageLane.Queue,
                     ConsumerIdentity: "tests.registry.update-collision.second",
-                    MessageContractVersion: "v1",
-                    HandlerId: "Tests.ConsumerB"
+                    MessageContractVersion: "v1"
                 )
             );
 
         // then
         act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*Duplicate consumer registration detected for messageName/group identity*");
+            .WithMessage("*Queue message 'orders.placed' has two consumers*");
     }
 
     [Fact]
@@ -355,7 +331,6 @@ public sealed class ConsumerRegistryTests : TestBase
                 typeof(TestMessage),
                 typeof(TestConsumer),
                 "test",
-                null,
                 1,
                 MessageLane.Bus,
                 "tests.registry.concurrent-freeze",
@@ -377,7 +352,6 @@ public sealed class ConsumerRegistryTests : TestBase
                             typeof(TestMessage),
                             typeof(TestConsumer),
                             "test2",
-                            null,
                             1,
                             Lane: MessageLane.Bus,
                             ConsumerIdentity: "tests.registry.concurrent-freeze-late",
@@ -411,7 +385,6 @@ public sealed class ConsumerRegistryTests : TestBase
                 typeof(TestMessage),
                 typeof(TestConsumer),
                 "original",
-                null,
                 1,
                 MessageLane.Bus,
                 "tests.registry.sequential-update",
@@ -429,7 +402,6 @@ public sealed class ConsumerRegistryTests : TestBase
                     typeof(TestMessage),
                     typeof(TestConsumer),
                     $"messageName.{i}",
-                    $"group.{i}",
                     (byte)((i % 10) + 1),
                     MessageLane.Bus,
                     "tests.registry.sequential-update",
@@ -480,7 +452,6 @@ public sealed class ConsumerRegistryTests : TestBase
                                         typeof(TestMessage),
                                         typeof(TestConsumer),
                                         $"messageName.{index}",
-                                        $"group.{index}",
                                         1,
                                         Lane: MessageLane.Bus,
                                         ConsumerIdentity: $"tests.registry.concurrent-registration.{index}",
@@ -549,7 +520,6 @@ public sealed class ConsumerRegistryTests : TestBase
                     typeof(TestMessage),
                     typeof(TestConsumer),
                     "original",
-                    null,
                     1,
                     Lane: MessageLane.Bus,
                     ConsumerIdentity: "tests.registry.concurrent-update",
@@ -570,7 +540,6 @@ public sealed class ConsumerRegistryTests : TestBase
                                 typeof(TestMessage),
                                 typeof(TestConsumer),
                                 "updated",
-                                "group1",
                                 5,
                                 Lane: MessageLane.Bus,
                                 ConsumerIdentity: "tests.registry.concurrent-update",
@@ -643,7 +612,6 @@ public sealed class ConsumerRegistryTests : TestBase
             typeof(TestMessage),
             typeof(TestConsumer),
             "test.messageName",
-            null,
             2,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.registry.find-topic",
@@ -660,7 +628,7 @@ public sealed class ConsumerRegistryTests : TestBase
     }
 
     [Fact]
-    public void should_find_consumer_by_topic_and_group()
+    public void should_find_consumer_by_topic_and_subscription()
     {
         // given
         var registry = new ConsumerRegistry();
@@ -668,7 +636,6 @@ public sealed class ConsumerRegistryTests : TestBase
             typeof(TestMessage),
             typeof(TestConsumer),
             "test.messageName",
-            "group1",
             2,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.registry.find-group.first",
@@ -678,7 +645,6 @@ public sealed class ConsumerRegistryTests : TestBase
             typeof(TestMessage),
             typeof(OtherConsumer),
             "test.messageName",
-            "group2",
             3,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.registry.find-group.second",
@@ -688,7 +654,7 @@ public sealed class ConsumerRegistryTests : TestBase
         registry.Register(metadata2);
 
         // when
-        var found = registry.FindByMessageName("test.messageName", "group2");
+        var found = registry.FindByMessageName("test.messageName", "tests.registry.find-group.second");
 
         // then
         found.Should().NotBeNull();
@@ -706,7 +672,6 @@ public sealed class ConsumerRegistryTests : TestBase
                 typeof(TestMessage),
                 typeof(TestConsumer),
                 "test.messageName",
-                null,
                 1,
                 Lane: MessageLane.Bus,
                 ConsumerIdentity: "tests.registry.topic-not-found",
@@ -722,7 +687,7 @@ public sealed class ConsumerRegistryTests : TestBase
     }
 
     [Fact]
-    public void should_return_null_when_topic_found_but_group_not_found()
+    public void should_return_null_when_topic_found_but_subscription_not_found()
     {
         // given
         var registry = new ConsumerRegistry();
@@ -731,7 +696,6 @@ public sealed class ConsumerRegistryTests : TestBase
                 typeof(TestMessage),
                 typeof(TestConsumer),
                 "test.messageName",
-                "group1",
                 1,
                 Lane: MessageLane.Bus,
                 ConsumerIdentity: "tests.registry.group-not-found",
@@ -740,7 +704,7 @@ public sealed class ConsumerRegistryTests : TestBase
         );
 
         // when
-        var found = registry.FindByMessageName("test.messageName", "group2");
+        var found = registry.FindByMessageName("test.messageName", "tests.registry.find-group.second");
 
         // then
         found.Should().BeNull();
@@ -755,7 +719,6 @@ public sealed class ConsumerRegistryTests : TestBase
             typeof(TestMessage),
             typeof(TestConsumer),
             "topic1",
-            null,
             1,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.registry.type-generic.first",
@@ -765,7 +728,6 @@ public sealed class ConsumerRegistryTests : TestBase
             typeof(TestMessage),
             typeof(OtherConsumer),
             "topic2",
-            null,
             2,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.registry.type-generic.second",
@@ -775,7 +737,6 @@ public sealed class ConsumerRegistryTests : TestBase
             typeof(OtherMessage),
             typeof(OtherMessageConsumer),
             "topic3",
-            null,
             3,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.registry.type-generic.third",
@@ -804,7 +765,6 @@ public sealed class ConsumerRegistryTests : TestBase
             typeof(TestMessage),
             typeof(TestConsumer),
             "topic1",
-            null,
             1,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.registry.type-non-generic.first",
@@ -814,7 +774,6 @@ public sealed class ConsumerRegistryTests : TestBase
             typeof(OtherMessage),
             typeof(OtherMessageConsumer),
             "topic2",
-            null,
             2,
             Lane: MessageLane.Bus,
             ConsumerIdentity: "tests.registry.type-non-generic.second",
@@ -841,7 +800,6 @@ public sealed class ConsumerRegistryTests : TestBase
                 typeof(TestMessage),
                 typeof(TestConsumer),
                 "topic1",
-                null,
                 1,
                 MessageLane.Bus,
                 "tests.registry.missing-type",
@@ -1131,7 +1089,6 @@ public sealed class ConsumerRegistryTests : TestBase
             typeof(TestMessage),
             typeof(TestConsumer),
             "orders.invalid",
-            "invalid",
             1,
             MessageLane.Bus,
             consumerIdentity,
@@ -1160,7 +1117,6 @@ public sealed class ConsumerRegistryTests : TestBase
             typeof(TestMessage),
             typeof(TestConsumer),
             "orders.invalid",
-            "invalid",
             1,
             MessageLane.Bus,
             consumerIdentity,
@@ -1183,7 +1139,6 @@ public sealed class ConsumerRegistryTests : TestBase
             typeof(TestMessage),
             typeof(TestConsumer),
             messageName,
-            group,
             1,
             lane,
             ConsumerIdentity: "orders-projection",
@@ -1197,7 +1152,6 @@ public sealed class ConsumerRegistryTests : TestBase
             typeof(TestMessage),
             consumerType,
             "orders.issue-invoice-command",
-            identity,
             1,
             MessageLane.Queue,
             identity,

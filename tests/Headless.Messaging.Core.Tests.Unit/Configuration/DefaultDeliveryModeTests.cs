@@ -183,40 +183,6 @@ public sealed class DefaultDeliveryModeTests : TestBase
         await _AssertStoredCountAsync(provider, lane, 0);
     }
 
-    [Fact]
-    public async Task should_inherit_global_mode_for_an_assembly_scan_registration()
-    {
-        await using var provider = _CreateProvider(
-            DeliveryMode.Direct,
-            setup => setup.Bus.ForConsumersFromAssemblyContaining<DefaultDeliveryModeTests>(_ConfigureScannedConsumer)
-        );
-
-        await using var scope = provider.CreateAsyncScope();
-        await scope.ServiceProvider.GetRequiredService<IBus>().PublishAsync(new ScannedMessage("scan"), AbortToken);
-
-        await _AssertStoredCountAsync(provider, MessageLane.Bus, 0);
-    }
-
-    [Fact]
-    public async Task should_apply_explicit_type_policy_alongside_assembly_scan_registrations_for_the_same_type()
-    {
-        // Two scanned consumers share the (ScannedMessage, Bus) key; only the explicit registration carries a policy,
-        // so the publisher must build without a key collision and honor the explicit Direct policy.
-        await using var provider = _CreateProvider(
-            DeliveryMode.Durable,
-            setup =>
-            {
-                setup.Bus.ForConsumersFromAssemblyContaining<DefaultDeliveryModeTests>(_ConfigureScannedConsumer);
-                setup.Bus.ForMessage<ScannedMessage>(message => message.WithDeliveryMode(DeliveryMode.Direct));
-            }
-        );
-
-        await using var scope = provider.CreateAsyncScope();
-        await scope.ServiceProvider.GetRequiredService<IBus>().PublishAsync(new ScannedMessage("scan"), AbortToken);
-
-        await _AssertStoredCountAsync(provider, MessageLane.Bus, 0);
-    }
-
     [Theory]
     [InlineData(-1)]
     [InlineData(3)]
@@ -230,17 +196,6 @@ public sealed class DefaultDeliveryModeTests : TestBase
             );
 
         act.Should().Throw<ArgumentException>().WithMessage("*mode*");
-    }
-
-    private static void _ConfigureScannedConsumer(ScannedConsumerContext context, IScannedConsumerBuilder builder)
-    {
-        if (context.MessageType != typeof(ScannedMessage))
-        {
-            builder.Skip();
-            return;
-        }
-
-        builder.Contract("test.scanned").ConsumerIdentity($"tests.default-mode.{context.ConsumerType.Name}");
     }
 
     private static async Task _PublishAsync(
@@ -320,18 +275,4 @@ public sealed class DefaultDeliveryModeTests : TestBase
     }
 
     private sealed record TestMessage(string Value);
-
-    private sealed record ScannedMessage(string Value);
-
-    private sealed class FirstScannedConsumer : IConsume<ScannedMessage>
-    {
-        public ValueTask ConsumeAsync(ConsumeContext<ScannedMessage> context, CancellationToken cancellationToken) =>
-            ValueTask.CompletedTask;
-    }
-
-    private sealed class SecondScannedConsumer : IConsume<ScannedMessage>
-    {
-        public ValueTask ConsumeAsync(ConsumeContext<ScannedMessage> context, CancellationToken cancellationToken) =>
-            ValueTask.CompletedTask;
-    }
 }

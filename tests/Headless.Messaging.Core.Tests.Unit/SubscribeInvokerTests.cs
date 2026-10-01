@@ -239,7 +239,7 @@ public sealed class SubscribeInvokerTests : TestBase
     }
 
     [Fact]
-    public async Task should_throw_when_consumer_method_missing_consume_context_parameter()
+    public async Task should_throw_when_the_descriptor_declares_no_message_type()
     {
         // given
         var services = new ServiceCollection();
@@ -256,22 +256,13 @@ public sealed class SubscribeInvokerTests : TestBase
         var message = new InvokerTestMessage("test");
         var mediumMessage = _CreateMediumMessage(message, "test.messageName");
 
-        // Manually create descriptor with wrong method
+        // A descriptor without a message type cannot be deserialized into.
         var badDescriptor = new ConsumerExecutorDescriptor
         {
             Lane = MessageLane.Bus,
-            ServiceTypeInfo = typeof(InvokerTestConsumer).GetTypeInfo(),
-            ImplTypeInfo = typeof(InvokerTestConsumer).GetTypeInfo(),
-            MethodInfo = typeof(InvokerTestConsumer).GetMethod(
-                nameof(InvokerTestConsumer.BadMethod),
-                BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-                null,
-                Type.EmptyTypes,
-                null
-            )!,
+            ConsumerType = typeof(InvokerTestConsumer),
             MessageName = "test.messageName",
             SubscriptionName = "test",
-            Parameters = [],
         };
 
         var context = new ConsumerContext(badDescriptor, mediumMessage);
@@ -282,7 +273,7 @@ public sealed class SubscribeInvokerTests : TestBase
         // then
         await act.Should()
             .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*Consumer method must have a ConsumeContext<T> parameter*");
+            .WithMessage("*InvokerTestConsumer*declares no message type*");
     }
 
     [Fact]
@@ -829,11 +820,6 @@ public sealed class InvokerTestConsumer : IConsume<InvokerTestMessage>
     {
         LastConsumed = context;
         return ValueTask.CompletedTask;
-    }
-
-    public void BadMethod()
-    {
-        // Missing ConsumeContext parameter
     }
 }
 

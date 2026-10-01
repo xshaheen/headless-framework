@@ -1,9 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Registration;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -117,11 +115,9 @@ public sealed class EveryInstanceContractTests : TestBase
     }
 
     [Theory]
-    [InlineData(EveryInstanceConflict.QueueLane, "*Queue lane*")]
-    [InlineData(EveryInstanceConflict.ExplicitGroup, "*explicit group 'shared'*")]
     [InlineData(EveryInstanceConflict.InboxRetention, "*inbox retention*")]
     [InlineData(EveryInstanceConflict.CircuitBreaker, "*circuit breaker*")]
-    public void should_fail_at_startup_when_an_every_instance_consumer_carries_a_durable_setting(
+    public void should_fail_at_startup_when_tuning_gives_an_every_instance_consumer_a_durable_setting(
         EveryInstanceConflict conflict,
         string expectedMessage
     )
@@ -129,37 +125,27 @@ public sealed class EveryInstanceContractTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton<EveryInstanceProbe>();
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
-        });
-        var lane = conflict is EveryInstanceConflict.QueueLane ? MessageLane.Queue : MessageLane.Bus;
-        services.AddSingleton(
-            MessageRegistration.ConsumerOnly(
-                typeof(PriceChanged),
-                lane,
-                messageName: null,
-                new MessageConsumerRegistration(
-                    typeof(PriceCache),
-                    lane,
-                    IsAssemblyScan: false,
-                    Group: conflict is EveryInstanceConflict.ExplicitGroup ? "shared" : null,
-                    Concurrency: 1,
-                    HandlerId: null,
-                    PriceCache.Identity,
-                    CircuitBreakerOverride: conflict is EveryInstanceConflict.CircuitBreaker
-                        ? new ConsumerCircuitBreakerOptions()
-                        : null,
-                    ProviderConfigs: new Dictionary<Type, object>(),
-                    InboxRetention: conflict is EveryInstanceConflict.InboxRetention ? TimeSpan.FromDays(1) : null
-                )
+            setup.AddModule<PriceCacheModule>();
+            setup.Tune(
+                PriceCache.Identity,
+                consumer =>
                 {
-                    EveryInstance = true,
-                },
-                MessageOptions.InitialContractVersion
-            )
-        );
+                    if (conflict is EveryInstanceConflict.InboxRetention)
+                    {
+                        consumer.InboxRetention(TimeSpan.FromDays(1));
+                    }
+                    else
+                    {
+                        consumer.CircuitBreaker(options => options.FailureThreshold = 3);
+                    }
+                }
+            );
+        });
         using var provider = services.BuildServiceProvider();
 
         // when
@@ -173,45 +159,13 @@ public sealed class EveryInstanceContractTests : TestBase
     }
 
     [Fact]
-    public void should_fail_at_startup_when_a_framework_every_instance_consumer_names_a_group()
-    {
-        // given
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddFrameworkConsumerRegistration<PriceChanged, PriceCache>(
-            MessageLane.Bus,
-            PriceCache.Identity,
-            MessageOptions.InitialContractVersion,
-            group: "shared",
-            everyInstance: true
-        );
-        services.AddHeadlessMessaging(setup =>
-        {
-            setup.UseInMemory();
-            setup.UseProcessLocalInMemoryStorage();
-        });
-        using var provider = services.BuildServiceProvider();
-
-        // when
-        var act = () => provider.GetDrainedConsumerRegistry();
-
-        // then
-        act.Should().Throw<InvalidOperationException>().WithMessage("*explicit group 'shared'*");
-    }
-
-    [Fact]
-    public void should_carry_every_instance_from_a_framework_registration_to_its_descriptor()
+    public void should_carry_every_instance_from_a_module_declaration_to_its_descriptor()
     {
         // given
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<EveryInstanceProbe>();
-        services.AddFrameworkConsumerRegistration<PriceChanged, PriceCache>(
-            MessageLane.Bus,
-            PriceCache.Identity,
-            MessageOptions.InitialContractVersion,
-            everyInstance: true
-        );
+        services.ConfigureMessaging(messaging => messaging.AddModule<PriceCacheModule>());
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
@@ -228,9 +182,7 @@ public sealed class EveryInstanceContractTests : TestBase
 
     public enum EveryInstanceConflict
     {
-        QueueLane = 0,
-        ExplicitGroup = 1,
-        InboxRetention = 2,
-        CircuitBreaker = 3,
+        InboxRetention = 0,
+        CircuitBreaker = 1,
     }
 }
