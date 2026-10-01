@@ -74,7 +74,7 @@ public sealed class JobTuningBuilder
     }
 
     /// <summary>
-    /// Overrides the host's retry, node-death, and atomic-enlistment defaults for this job. A value supplied on a
+    /// Overrides the host's retry and node-death defaults for this job. A value supplied on a
     /// scheduling call still wins over this one.
     /// </summary>
     /// <param name="options">Startup policy settings; invocation metadata is not accepted.</param>
@@ -87,7 +87,7 @@ public sealed class JobTuningBuilder
         return this;
     }
 
-    /// <summary>Authors the retry, node-death, and atomic-enlistment overrides for this job.</summary>
+    /// <summary>Authors the retry and node-death overrides for this job.</summary>
     /// <remarks>Invokes the callback once, synchronously, with a fresh builder.</remarks>
     /// <param name="configure">Authors startup policy settings; invocation metadata is not accepted.</param>
     /// <returns>This builder, for chaining.</returns>
