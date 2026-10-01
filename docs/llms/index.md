@@ -59,7 +59,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 
 | Task | Read |
 | --- | --- |
-| Publish or consume messages; configure transports, outbox/inbox, retries, or ordering | [Messaging](messaging.md) |
+| Publish or consume messages; declare consumers and message contracts; tune consumers; configure transports, outbox/inbox, retries, or ordering | [Messaging](messaging.md) |
 | Schedule or execute background jobs and recurring work | [Jobs](jobs.md) |
 | Name a failure policy type that a consumer or job declares | [Reliability](reliability.md) |
 | Acquire distributed locks, reader/writer locks, or semaphores, or fence stale writes with fencing tokens | [Distributed Locks](distributed-locks.md) |

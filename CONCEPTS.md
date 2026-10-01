@@ -73,16 +73,22 @@ failover even if it can serve approximate dashboard views.
 
 ### Relationships
 
-A **message contract** is a plain serializable class, record, or interface. The invoked operation and
-lane-scoped registration select its **Message lane**: `IBus.PublishAsync` for broadcast or
-`IQueue.EnqueueAsync` for point-to-point delivery. **Delivery mode** is orthogonal to lane: it decides
-whether the message is atomic with the caller's transaction, durable on its own, or sent straight to transport.
+A **message contract** is a plain serializable class, record, or interface, named once for both lanes
+with `Message<T>(name, version)`. The publisher verb selects its **Message lane**: `IBus.PublishAsync`
+for broadcast or `IQueue.EnqueueAsync` for point-to-point delivery. A consumer class declares its lane
+and its **Consumer identity** with one attribute, `[BusConsumer]` or `[QueueConsumer]`, and a
+**Messaging module** carries an assembly's consumers into a host. **Delivery mode** is orthogonal to
+lane: it decides whether the message is durable on its own or sent straight to transport, and the
+receiver (`IBus`/`IQueue` or the [enlisted outbox](#enlisted-outbox)) decides whether it joins the
+caller's transaction.
 
 ### Message lane
-The semantic channel of a message: bus (broadcast — every subscriber group gets a copy) or queue
-(point-to-point — competing consumers, one worker per message). The same CLR contract may use both
-lanes intentionally, but each lane has an independent registration, route, runtime key, and storage
-discriminator; physical topology is independent only when the provider declares that capability.
+The semantic channel of a message: bus (broadcast — every consumer identity gets one copy, and the
+processes that register an identity compete for it) or queue (point-to-point — one consumer per
+message, whose destination is keyed by the message name, with competing replicas). The same CLR
+contract may use both lanes intentionally, but each lane has an independent route, consumers, runtime
+key, and storage discriminator; physical topology is independent only when the provider declares that
+capability.
 Use `MessageLane.Bus` / `MessageLane.Queue` in public APIs, runtime state, monitoring, dashboard
 projections, and new writing. Persisted columns retain the legacy `IntentType` name and the wire
 header retains the `headless-intent` literal with stable numeric values: `Bus = 0`, `Queue = 1`.
@@ -92,17 +98,20 @@ fails explicitly and never falls back to Bus.
 ### Verb-conveyed lane model
 The decided messaging model (2026-07-13): the operation conveys semantics. Publishing through `IBus`
 uses the Bus lane; enqueueing through `IQueue` uses the Queue lane. Message contracts implement no
-framework classification marker. Consumer configuration is structurally lane-scoped through
-`setup.Bus.ForMessage<T>` / `setup.Queue.ForMessage<T>`, and registry identity is
-`(MessageType, MessageName, MessageLane)`. The same contract and logical name may be registered on
-both lanes with independent consumers and runtime state when the selected transport can keep their
-physical topology separate.
+framework classification marker and carry no Headless attribute; one `Message<T>(name, version)`
+declaration names the message on both lanes. A consumer's lane is its attribute: `[BusConsumer]` or
+`[QueueConsumer]`. A consumer is keyed by `(MessageLane, ConsumerIdentity, MessageName,
+ContractVersion)`, so one identity covers every message its class handles. A message has at most one
+Queue consumer, while any number of Bus consumer identities may consume it. The same contract and
+logical name may carry Bus and Queue consumers with independent runtime state when the selected
+transport can keep their physical topology separate.
 
 Provider support is declared by immutable transport, storage, and coordination capability
 descriptors. Startup and per-call gates reject unsupported lanes, scheduling, or dual-lane topology
 before readiness, middleware, storage writes, client creation, or transport I/O. Every built-in
 dual-lane transport declares independent physical topology for the same contract/name. Kafka
-remains Queue-only and rejects Bus registration before readiness or provider side effects.
+remains Queue-only: it rejects a Bus consumer before readiness or provider side effects and a Bus
+publish when attempted, while message contracts are validated only on the lanes a transport carries.
 
 Callback responses always use the Bus delivery lane, even when the request arrived on Queue. Queue
 remains the request's origin metadata; the declared callback contract selects typed middleware while
@@ -111,7 +120,7 @@ the concrete response type remains payload metadata.
 ### Delivery mode
 The delivery choices on an autonomous publish/enqueue are `Durable` and `Direct`. Precedence is per
 call (`PublishOptions.DeliveryMode` / `QueueOptions.DeliveryMode`), then per message type
-(`WithDeliveryMode(...)` on the lane registration), then the host
+(`WithDeliveryMode(...)` on the contract's `OnBus`/`OnQueue` builder), then the host
 `MessagingOptions.DefaultDeliveryMode`, which defaults to `Durable`. No mode sends directly by
 omission. Whether the durable row lands inside the caller's transaction is not an option at all: it
 is decided by the receiver — `IBus`/`IQueue` never enlist, the [enlisted outbox](#enlisted-outbox)
@@ -156,7 +165,7 @@ is still pending but ineligible for dispatch-now (`Active`); revoke has no lease
 ### Circuit epoch
 A monotonic per-lane-qualified-circuit counter assigned to each pause/resume intent change. Callbacks,
 timers, retry decisions, and probe releases carry the epoch captured when their work was scheduled.
-The consumer-group apply gate rejects epochs older than its last completed apply, so an in-flight
+Each consumer client's apply gate rejects epochs older than its last completed apply, so an in-flight
 recovery cannot undo a newer Open state.
 
 ### Poison-on-arrival
@@ -167,14 +176,44 @@ in a received-exception row, commits (acks) the transport delivery, and invokes 
 contract-version mismatch, deserialization failure, and (with receive middleware) an explicit
 or defaulted Reject outcome.
 
-### Every-instance subscription
-A Bus subscription that belongs to one running process instead of being shared by every process that
-registers the consumer identity. Declared with `[BusConsumer(identity, EveryInstance = true)]` or
-`RuntimeSubscriptionOptions.EveryInstance`. Each process derives its own broker subscription from the
-identity and its `MessagingInstanceId`, so every process receives every message, and the broker removes
+### Consumer identity
+The durable `owner.name` name a consumer class declares in `[BusConsumer(identity)]` or
+`[QueueConsumer(identity)]`, for example `billing.invoice-projection`: at most 200 characters, first
+segment naming the owning module. On the Bus lane it is the broker subscription name, so every
+process that registers the identity competes for the same copy, and a module keeps its subscription
+when it moves to another process. It also keys the consumer's inbox rows, circuit breaker, metrics
+(the `messaging.consumer.group.name` tag carries it), `Tune` and configuration, and `ConsumeOnly`.
+On the Queue lane the subscription is the message name instead, because a message has one Queue
+consumer. Renaming an identity starts a new consumer with no inbox history. Runtime subscriptions
+carry one too (`RuntimeSubscriptionOptions.Identity`). *Avoid:* "consumer group" for this concept;
+the phrase names only a broker's native object (a Kafka `group.id`, a Redis Streams group).
+
+### Messaging module
+The generated `<AssemblyName>.MessagingModule` of one assembly: every `[BusConsumer]` and
+`[QueueConsumer]` class in it, with typed dispatch. Nothing registers implicitly and nothing is
+found by scanning. A host adds a module with `AddModule<T>()`, and a feature module contributes it,
+with its message contracts, through `services.ConfigureMessaging(...)` from its own entry point
+without calling `AddHeadlessMessaging`. Contributions from all modules freeze into one registry per
+host at startup; cross-module conflicts fail there, naming both sources.
+
+### Consumer tuning and consume filter
+Host-side controls keyed by consumer identity. `Tune(identity, ...)`, then
+`Headless:Messaging:Consumers:{identity}` configuration, change a declared consumer's deployment
+settings (concurrency, inbox retention, circuit breaker, failure policy, middleware, provider
+consumer settings) and never its identity, lane, or messages. `ConsumeOnly(...)` limits which
+competing consumers a host runs, by exact identity or `owner.*` pattern; filtered consumers stay
+registered and publishable, and every-instance consumers always run.
+
+### Every-instance consumer
+A Bus consumer whose subscription belongs to one running process instead of being shared by every
+process that registers the consumer identity. Declared with
+`[BusConsumer(identity, EveryInstance = true)]` or `RuntimeSubscriptionOptions.EveryInstance`; the
+Queue lane cannot express it. Each process derives its own broker subscription from the identity and
+its `MessagingInstanceId`, so every process receives every message, and the broker removes
 the subscription once the process no longer holds it. Delivery is at most once and only while the process
 is subscribed: no backlog, no inbox row, no retry, and a consumer failure is logged and committed. A
-consumer that mirrors state resynchronizes through `IOnSubscriptionEstablished`. The opposite kind,
+consumer that mirrors state resynchronizes through `IOnSubscriptionEstablished`. `ConsumeOnly` never
+filters it, and an inbox retention or circuit breaker tuned onto it fails startup. The opposite kind,
 the default, is a **competing** subscription: durable and shared, one copy per identity.
 
 ## Flagged ambiguities

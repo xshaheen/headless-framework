@@ -9,11 +9,38 @@ packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Ab
 
 ## Orientation
 
-Use `Headless.Messaging.Core` as the composition package, then add exactly one transport provider and one storage provider for a production host. `IBus.PublishAsync` selects broadcast Bus semantics and `IQueue.EnqueueAsync` selects point-to-point Queue semantics; message contracts remain plain classes, records, or interfaces. Consumers implement `IConsume<TMessage>` and are registered from `setup.Bus` or `setup.Queue`.
+Use `Headless.Messaging.Core` as the composition package, then add exactly one transport provider and one storage provider for a production host. `IBus.PublishAsync` selects broadcast Bus semantics and `IQueue.EnqueueAsync` selects point-to-point Queue semantics; message types remain plain classes, records, or interfaces.
 
-The current registration surface is message-first:
+Registration has three parts. A consumer class declares itself with `[BusConsumer(identity)]` or `[QueueConsumer(identity)]` and implements `IConsume<T>` for each message it handles. The Messaging source generator emits one `MessagingModule` per assembly, and the module that owns the consumers contributes it, together with its message contracts, through `services.ConfigureMessaging(...)`. The host calls `AddHeadlessMessaging(...)` once for transport, storage, and options, and tunes consumers by identity.
 
 ```csharp
+// Orders assembly: message, consumer, and the module entry point.
+public sealed record OrderPlaced(Guid OrderId);
+
+[BusConsumer(Identity)]
+public sealed class OrderProjection(IOrderReadModel readModel) : IConsume<OrderPlaced>
+{
+    public const string Identity = "orders.projection";
+
+    public ValueTask ConsumeAsync(ConsumeContext<OrderPlaced> context, CancellationToken cancellationToken) =>
+        readModel.ApplyAsync(context.Message, cancellationToken);
+}
+
+public static class OrdersMessaging
+{
+    public static IServiceCollection AddOrders(this IServiceCollection services)
+    {
+        services.ConfigureMessaging(messaging =>
+        {
+            messaging.AddModule<Orders.MessagingModule>(); // generated for the Orders assembly
+            messaging.Message<OrderPlaced>("orders.placed").CorrelateBy(order => order.OrderId.ToString());
+        });
+
+        return services;
+    }
+}
+
+// Host: one AddHeadlessMessaging call, then the modules, in any order.
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("App"))
 );
@@ -29,36 +56,32 @@ builder.Services.AddHeadlessMessaging(setup =>
     // EF-backed storage declares the Transactional inbox tier that durable consumers require by default.
     setup.UseEntityFramework<AppDbContext>();
 
-    setup.Bus.ForMessage<OrderPlaced>(message =>
-        message
-            .Contract("orders.placed")
-            .CorrelationFrom(order => order.OrderId.ToString())
-            .Consumer<OrderProjection>(consumer =>
-                consumer
-                    .ConsumerIdentity("orders.projection")
-                    .Group("orders-projection")
-                    .Concurrency(4)
-                    .UseRabbitMq(rabbit => rabbit.PrefetchCount(20))
-            )
-    );
+    setup.Tune(OrderProjection.Identity, consumer => consumer
+        .Concurrency(4)
+        .UseRabbitMq(rabbit => rabbit.PrefetchCount(20)));
 });
+
+builder.Services.AddOrders();
 ```
 
-This is the production default: `Headless.Messaging.RabbitMq` for transport and `Headless.Messaging.Storage.PostgreSql.EntityFramework` for storage over the application's `DbContext`. Every consumer needs a stable `ConsumerIdentity(...)`. The raw `UsePostgreSql(...)` and `UseSqlServer(...)` storages declare only the `DurableDedupeOnly` inbox tier, so a host with durable consumers on them must opt down through `setup.Options.RequiredInboxCapability`.
+This is the production default: `Headless.Messaging.RabbitMq` for transport and `Headless.Messaging.Storage.PostgreSql.EntityFramework` for storage over the application's `DbContext`. The consumer identity (`orders.projection`) is the consumer's durable name: it is the Bus subscription name and keys its inbox rows, circuit breaker, metrics, and tuning. The raw `UsePostgreSql(...)` and `UseSqlServer(...)` storages declare only the `DurableDedupeOnly` inbox tier, so a host with durable consumers on them must opt down through `setup.Options.RequiredInboxCapability`.
 
 ## Agent Rules
 
 - **App install pattern**: install `Messaging.Core` + exactly one transport + exactly one storage. Bootstrap fails when zero or multiple storage providers are configured. Core brings shared/bus/queue abstractions transitively for applications.
-- **Library contract pattern**: install `Messaging.Abstractions`, `Messaging.Bus.Abstractions`, or `Messaging.Queue.Abstractions` directly only when a library exposes consumers/envelopes or publisher interfaces without bootstrapping Core.
+- **Library contract pattern**: install `Messaging.Abstractions`, `Messaging.Bus.Abstractions`, or `Messaging.Queue.Abstractions` directly only when a library exposes envelopes or publisher interfaces without bootstrapping Core. A library that declares consumers references `Messaging.Core`, which carries the source generator and `ConfigureMessaging`, and still never calls `AddHeadlessMessaging`.
 - **Use `InMemory` + `InMemoryStorage` only for dev/testing**, never in production. Data is lost on restart.
 - **OpenTelemetry is native to `Messaging.Core`** (no satellite package). Subscribe traces/metrics with `AddMessagingInstrumentation()` on the `TracerProviderBuilder`/`MeterProviderBuilder`, and configure enrichers/suppression via `setup.Instrumentation` inside `AddHeadlessMessaging(...)`.
 - **Add `Messaging.Testing`** in test projects for integration testing with awaitable assertions. Use `AddMessagingTestHarness()` to decorate an existing host's DI container (WebApplicationFactory, IHost), or `MessagingTestHarness.CreateAsync()` for standalone harness.
 - **Add `Messaging.Dashboard`** when monitoring UI is needed; it exposes operational message actions and requires an explicit authentication choice (the host fails to start otherwise), so configure `WithBasicAuth`, `WithApiKey`, `WithHostAuthentication`, or `WithCustomAuth` — and `SetCorsOrigins` if the SPA is served cross-origin — before production exposure.
-- **Messages are type-safe and lane-owned**: Define plain class, record, or interface contracts. Register their stable logical name and schema version with `Contract(name, version)` under `setup.Bus.ForMessage<TMessage>(...)` or `setup.Queue.ForMessage<TMessage>(...)`, then call `Consumer<TConsumer>(...)` with its durable consumer settings. Assembly scans also start from a lane root (`ForConsumersFromAssembly*`); callbacks configure contract metadata, identity, group, concurrency, handler id, circuit breaker, or `Skip()`, never the lane.
-- **Contract and consumer identity are separate**: `Contract(name, version)` belongs to the message schema. Every durable consumer declares only an operator-stable `ConsumerIdentity(...)`, which is independent from CLR type, group, destination, or display name. Intentional reprocessing uses an explicit linked inbox generation; changing a schema version is not a dedupe-reset mechanism.
-- **Modules contribute with `services.ConfigureMessaging(...)`, never a second `AddHeadlessMessaging`**: the host calls `AddHeadlessMessaging(...)` once for transports, storage, and options. A module registers its consumers from its own `Add{Module}` entry point through `services.ConfigureMessaging(messaging => messaging.Bus.ForMessage<T>(...))` (or `messaging.Queue`), before or after the host's call. Each contribution is recorded as an immutable descriptor and bootstrap drains all of them in registration order through the same lane-scoped pipeline as the setup callback. Identical registrations of one consumer merge; conflicting ones fail at startup and name both settings, and two consumers sharing one identity fail naming both types. A message type still has one declaring `ForMessage<T>` registration per lane across the setup callback and every contribution. Framework consumers (HybridCache invalidation, distributed-lock release) use the same deferred path. In a host that never calls `AddHeadlessMessaging`, contributions stay inert.
-- **The same contract can use both lanes**: an identical contract and logical name may have independent Bus and Queue registrations, metadata, middleware, circuits, retry/backpressure state, and transport selection. Every built-in dual-lane transport now declares and proves independent physical lane topology; Kafka remains Queue-only and rejects Bus registration before readiness or side effects.
-- **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers.
+- **Consumers declare themselves with one lane attribute**: put exactly one of `[BusConsumer("owner.name")]` or `[QueueConsumer("owner.name")]` on a class that implements `IConsume<T>`. The messages it handles are exactly the `IConsume<T>` interfaces it implements; one class may handle several. `[BusConsumer]` also takes `EveryInstance = true` (see [Every-instance Bus delivery](#every-instance-bus-delivery)); both take `Policy = typeof(TPolicy)` naming an `IFailurePolicy`. No fluent call declares a consumer, and nothing registers a consumer by scanning assemblies at runtime.
+- **The consumer identity is the consumer's durable name**: `owner.name` form, at most 200 characters, first segment naming the owning module. On the Bus lane it is the broker subscription name, so processes that register the same identity compete for each message wherever the module runs. It also keys the consumer's inbox rows, circuit breaker, metrics, `Tune`, configuration, and `ConsumeOnly`. Renaming it starts a new consumer with empty inbox history. Intentional reprocessing uses an explicit linked inbox generation; changing a schema version is not a dedupe-reset mechanism.
+- **A message has at most one Queue consumer**: the Queue lane is point-to-point and its destination is keyed by the message name. A second Queue consumer for one message fails the build (HM004) within an assembly and fails startup across assemblies. Use `[BusConsumer]` for fan-out.
+- **Modules contribute with `services.ConfigureMessaging(...)`, never a second `AddHeadlessMessaging`**: the host calls `AddHeadlessMessaging(...)` once for transports, storage, and options. A module calls `services.ConfigureMessaging(m => { m.AddModule<X.MessagingModule>(); m.Message<T>(...); })` from its own `Add{Module}` entry point, before or after the host's call. Nothing registers until some call adds the generated module; adding it twice registers it once. Identical contributions merge; one identity on two consumer classes in the same lane, or a conflicting contract, fails startup naming both sources. Framework consumers (HybridCache invalidation, distributed-lock release) use the same path. In a host that never calls `AddHeadlessMessaging`, contributions stay inert.
+- **Declare a message contract once, for both lanes**: `m.Message<T>(name, version = "1")` sets the logical name and schema version that publishing and consuming resolve `T` to on both lanes. Chain `.CorrelateBy(...)`, `.OnBus(b => ...)`, and `.OnQueue(q => ...)` for correlation, routing affinity, delivery mode, and provider settings. The message type needs no attribute and no Headless reference. Identical declarations from several modules merge; a different name, version, correlation selector, or lane setting fails startup naming both. Selectors compare by delegate, so share one declaration method rather than writing the same lambda twice.
+- **Host controls are keyed by identity**: `Tune(identity, c => ...)` changes a declared consumer's deployment settings (concurrency, inbox retention, circuit breaker, failure policy, middleware, provider consumer settings); `Headless:Messaging:Consumers:{identity}` configuration applies after every `Tune`; `ConsumeOnly(...)` limits which competing consumers a host runs. An identity no registered consumer declares fails startup.
+- **The same message can use both lanes**: one contract names the message on both lanes. A Bus consumer and a Queue consumer of the same message have independent subscriptions, inbox rows, middleware, circuits, and retry/backpressure state. Every built-in dual-lane transport declares independent physical lane topology. Startup validates contract routes only on lanes the transport carries, so Kafka (Queue-only) accepts every contract; a Bus consumer on Kafka still fails startup, and a Bus publish on Kafka fails when attempted.
+- **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates on the Bus lane. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers. `RuntimeSubscriptionOptions.Identity` is the subscription's consumer identity and Bus subscription name.
 - **The publisher verb selects the lane**: Use `IBus.PublishAsync` for broadcast Bus delivery and `IQueue.EnqueueAsync` for point-to-point Queue delivery.
 - **Use typed routing affinity**: set `RoutingAffinityKey`; reserve `headless-routing-affinity-key`. Validate registered route support from frozen capabilities before startup effects, and typed/native conflicts before durable writes. Provider session/FIFO topology still requires broker evidence.
 - **The receiver decides enlistment; the mode decides durability**: `IBus`/`IQueue` are autonomous — their rows are standalone and survive the caller's rollback, whatever unit of work is active. `unit.Outbox` is enlisted — its row is written inside that unit's transaction and discarded with it. Pick by which one you call; no option, per-type policy, or host default moves a publish between them. `DeliveryMode` (`Durable` default, `Direct`) applies to the autonomous surface only and is set per call (`PublishOptions.DeliveryMode` / `QueueOptions.DeliveryMode`), per type (`WithDeliveryMode`), or per host (`MessagingOptions.DefaultDeliveryMode`); `Direct` bypasses storage and rejects `Delay`/`ScheduledAt`. An enlisted publish is durable by construction and consults none of the three. See [Delivery Modes](#delivery-modes).
@@ -66,19 +89,19 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 - **Durable inbox guarantees fail closed**: durable consumers require `MessagingOptions.RequiredInboxCapability`, which defaults to `Transactional`. Selecting `DurableDedupeOnly` is an explicit opt-down when duplicate suppression may commit separately from application state; selecting `ProcessLocal` is reserved for process-local development storage. Bootstrap validates the declared storage tier before subscription creation or retry pickup.
 - **The lane discriminator remains wire-compatible**: public/runtime APIs use `MessageLane`, while storage columns use the `IntentType` name and the `headless-intent` header retains its stable literal and `0`/`1` values. Retry drainers dispatch Bus rows through `IBusTransport` and Queue rows through `IQueueTransport`. A persisted row whose value has no matching capability fails terminally; undefined values never default to Bus.
 - **Do NOT use raw transport client libraries** (e.g., `RabbitMQ.Client`, `Confluent.Kafka`) directly -- always use the `Headless.Messaging` abstraction layer.
-- **Ordering depends on transport**: Kafka orders by partition key. Azure Service Bus orders by session. RabbitMQ has no ordering with multiple consumers. Set `ConsumerThreadCount = 1` for strict ordering.
+- **Ordering depends on transport**: Kafka orders by partition key. Azure Service Bus orders by session. RabbitMQ has no ordering with multiple consumers. Set `ConsumerThreadCount = 1` and leave the consumer's `Concurrency` at 1 for strict ordering.
 - **RabbitMQ credentials**: The framework rejects default `guest`/`guest` credentials. Always configure explicit username/password.
 - **AWS SQS redrive is external**: Configure a dead-letter queue and redrive policy with a bounded receive count for handler failures. Headless terminally deletes malformed transport envelopes to prevent requeue storms and does not provision redrive infrastructure.
-- **Message-name mapping**: Map message types to lane-specific logical names via `setup.Bus.ForMessage<TMessage>(x => x.Contract("message.name"))` or the Queue equivalent. `IMessagingBuilder.WithMessageNameMapping<TMessage>("message.name")` remains a global convention fallback when no lane-specific mapping exists.
-- **Fail-fast defaults**: Duplicate consumer or runtime registrations are rejected by default. Anonymous runtime delegates must provide `HandlerId`.
+- **Message-name mapping**: `m.Message<TMessage>("message.name")` is the normal way to name a message. `setup.WithMessageNameMapping<TMessage>("message.name")` is a type-global name mapping without a version or lane settings; with neither, the name comes from `UseConventions(...)` (the type name by default).
+- **Fail-fast defaults**: Duplicate consumer identities and duplicate runtime subscriptions are rejected by default. Anonymous runtime delegates must set `RuntimeSubscriptionOptions.HandlerId`.
 - **Telemetry parity**: Existing diagnostic listener and metric names stay stable across direct publish, outbox publish, and runtime subscriptions.
 - **Inbox telemetry is bounded**: inbox counters use registered consumer identity plus finite lane, outcome, tier, and provider dimensions. Message/replay IDs, payloads, and headers are never metric labels. `setup.Instrumentation.IncludeTenantIdInMetricTags` is an explicit, default-off cardinality opt-in.
-- **Retention resets identity after purge or expiry**: terminal generations are retained for 30 days by default; configure `InboxRetention(...)` per consumer. Direct admission suppresses duplicates while its root is retained. Once that root expires or is purged, readmission creates a fresh lifecycle, even if older replay descendants remain held. Replay generation numbers are local to their lifecycle; explicit admission generations remain independent. Holds, mutations, and operation receipts target immutable generation incarnations. Relational inbox schema v4 requires lifecycle identity and separate admission/replay uniqueness; startup rejects retained older inbox rows whose lifecycle identity cannot be reconstructed safely.
+- **Retention resets identity after purge or expiry**: terminal generations are retained for 30 days by default; configure it per consumer with `Tune(identity, c => c.InboxRetention(...))` or `Headless:Messaging:Consumers:{identity}:InboxRetention`. Direct admission suppresses duplicates while its root is retained. Once that root expires or is purged, readmission creates a fresh lifecycle, even if older replay descendants remain held. Replay generation numbers are local to their lifecycle; explicit admission generations remain independent. Holds, mutations, and operation receipts target immutable generation incarnations. Relational inbox schema v4 requires lifecycle identity and separate admission/replay uniqueness; startup rejects retained older inbox rows whose lifecycle identity cannot be reconstructed safely.
 - **Poison inbox retention**: recovery of an unreadable inbox envelope records a terminal failure and clears the attempt fence in the claim transaction. Terminal retention starts from the database clock using the row's persisted retention duration. Terminal redeliveries are suppressed without deserializing or replacing the retained payload; expiry then allows fresh admission.
 - Recover missing registrations with the exact consumer identity, logical contract name/version, and lane. Known orphans use independent probe capacity and consume no handler failure retries during deferral. They do not expire automatically; holds do not pause recovery. Unclaimed orphans allow Hold/ReleaseHold and unheld Purge, while live claims block these actions and ForceReprocess remains terminal-only.
 - Configure all four inbox history residence durations before enabling collection if existing evidence needs longer retention. Receipt replay and conflict detection last only while the receipt exists; deletion permits a new evaluation of the same operation ID. Audit references can extend receipt lifetime, but history deletion never releases a hold. History ages from original timestamps using the provider clock, and changing retention affects existing records.
 - **SQL Server pooled isolation**: monitoring, expiry cleanup, and delayed scheduling preserve skip-locked behavior with `READ_COMMITTED_SNAPSHOT` on or off, even after pooled Serializable inbox admission. Received-message cleanup and delayed scheduling explicitly use ReadCommitted transactions without weakening inbox admission.
-- **Consumer lifecycle semantics**: `IConsumerLifecycle` runs per delivery on the scoped consumer instance. Do not treat it as application startup or shutdown.
+- **Consumer lifecycle semantics**: consumers are not registered in DI. Each delivery builds the consumer class with `ActivatorUtilities` from the delivery's scope, through generated typed dispatch (no reflection, no compiled expressions), and disposes it afterwards. `IConsumerLifecycle` runs per delivery on that instance. Do not treat it as application startup or shutdown.
 - **Consumer startup is host-cancellable**: consumer factory creation, metadata provisioning, and subscription receive the host-stopping token. Provider implementations preserve `OperationCanceledException`; do not wrap shutdown cancellation as a broker failure.
 - **Core handles outbox automatically** when paired with EF Core -- messages are stored in database before being dispatched to transport.
 - **The EF adapter packages** (`Headless.Messaging.Storage.PostgreSql.EntityFramework` / `.SqlServer.EntityFramework`) let an enlisted publish join a unit of work open on `TContext`: `setup.UseEntityFramework<TContext>()` registers `Headless.UnitOfWork` (`AddEntityFrameworkUnitOfWork()`), but no interceptor opens that unit of work for the caller. Open it with `factory.RunAsync(db, ...)` (`Headless.UnitOfWork.EntityFramework`) or a manual `BeginAsync`/`CompleteAsync` pair, then publish through that unit's `Outbox`; an `IBus.PublishAsync` inside the same block still stores a standalone durable row that survives a rollback. `setup.UseEntityFramework<TContext>(o => o.EnableTransactionalOutbox = false)` (default `true`) is a separate switch that disables the EF inbox-transaction runner and its `Transactional` inbox-capability promotion — the receive side, not the publish-side unit-of-work requirement above. The raw storage packages expose only `UsePostgreSql` / `UseSqlServer` and have no EF or `Headless.UnitOfWork` dependency.
@@ -89,8 +112,8 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 - **Retry pressure is quadrant-isolated**: Published-Bus, Published-Queue, Received-Bus, and Received-Queue own independent atomic claims, workers, lock resources, counters, failure state, cadence, and adaptive interval. `IRetryProcessorMonitor` remains an aggregate compatibility projection (maximum interval, backed off when any quadrant is backed off, reset all four); that aggregate never drives runtime scheduling or lock TTL.
 - **Distributed lock**: see [Distributed Lock Integration](#distributed-lock-integration) for when to enable, when to skip, and the two-layer model (per-row `LockedUntil` lease + coarse-grained distributed lock).
 - **Never write framework metadata through provider hatches**. For publish options, use typed properties; raw `Headers.TenantId` is accepted only by the tenant-integrity path and should not be authored directly.
-- **Treat provider hatches as physical broker routing/configuration**. Producer-side hatches live on `IBusMessageBuilder<TMessage>` and/or `IQueueMessageBuilder<TMessage>` according to the selected provider capability; consumer-side hatches live on the matching lane consumer builder only when that provider exposes consumer settings.
-- **Kafka, RabbitMQ, and NATS currently expose consumer-side hatches**. AWS and Azure Service Bus currently expose producer-side hatches only.
+- **Treat provider hatches as physical broker routing/configuration**. Message-side hatches live only on the lane builders of a contract: `.OnBus(b => b.UseNats(...) / .UseAzureServiceBus(...) / .UseAws(...))` and `.OnQueue(q => q.UseNats(...) / .UseAzureServiceBus(...) / .UseAws(...) / .UseKafka(...))`. Consumer-side hatches live only on `Tune(identity, c => ...)`: `c.UseRabbitMq(...)`, `c.UseKafka(...)`, and `c.UseNats(...)`.
+- **Kafka, RabbitMQ, and NATS expose consumer-side hatches**. AWS and Azure Service Bus expose message-side hatches only.
 - **Keep this canonical guide aligned with public messaging behavior.** Package READMEs remain small discovery pages and do not mirror this reference.
 
 ## Core Concepts
@@ -99,20 +122,21 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 - **Delivery semantics — at-least-once, consumer idempotency required**: the framework never promises exactly-once. The commit-edge drain and the relay sweep can both deliver the same message in a narrow window (the `LockedUntil` lease and the Succeeded/Failed terminal-row guard minimize but do not eliminate duplicates), and a crash between broker accept and the success-mark write redelivers. Consumers must be idempotent — dedupe by business key or message id.
 - **Transactional inbox scope**: the transactional tier atomically commits the current fenced inbox outcome, compatible enlisted application state, and captured durable Bus/Queue work. Each Messaging attempt owns one DI scope shared by the EF runner, consume middleware, and handler, with the configured scoped `TContext` alive through commit or rollback. The runner saves tracked changes after the handler returns; explicit handler saves roll back if inbox completion rejects the attempt fence. A subsequent Messaging attempt gets a fresh scope. This does not make handler entry, `Direct`, or external/non-enlisted effects exactly once.
 - **Transactional inbox retries**: EF execution strategies may retry transaction setup before handler entry. Every failure after entry, including save, commit, rollback, and scope/transaction disposal, returns to Messaging's fenced retry path rather than replaying the handler inside the reserved attempt. The adapter still probes ambiguous commit outcomes to recognize a durable commit.
-- **Message lane**: Bus is broadcast/pub-sub and Queue is point-to-point. Registration, monitoring, dashboard JSON, testing, and runtime APIs use `MessageLane`; only intentional compatibility boundaries retain the `IntentType` database column, `headless-intent` header, and stable `0`/`1` values. Received-message identity includes the lane so the two paths do not collapse into one storage row.
+- **Message lane**: Bus is broadcast/pub-sub and Queue is point-to-point. The publisher verb selects the lane (`IBus.PublishAsync` or `IQueue.EnqueueAsync`) and the consumer attribute selects the consumer's lane (`[BusConsumer]` or `[QueueConsumer]`). On the Bus lane every consumer identity gets one copy, shared by the processes that register it; on the Queue lane a message has one consumer and one destination keyed by the message name. Monitoring, dashboard JSON, testing, and runtime APIs use `MessageLane`; only intentional compatibility boundaries retain the `IntentType` database column, `headless-intent` header, and stable `0`/`1` values. Received-message identity includes the lane so the two paths do not collapse into one storage row.
+- **Consumer identity**: the `owner.name` string on the consumer attribute (at most 200 characters, `ConsumerMetadata.ConsumerIdentityMaxLength`). It is independent of the CLR type name, so a consumer class can be renamed or moved without losing its inbox history. On the Bus lane it is the broker subscription name; `ConsumerMetadata.SubscriptionName` is the identity on the Bus lane and the message name on the Queue lane. A consumer is keyed by lane, identity, message name, and contract version, so one identity covers every message its class handles.
 - **Envelope**: All transport messages carry framework headers such as message id, message-contract version, root correlation id, optional immediate causation id, message name, type, sent time, intent, and optional tenant id.
 - **Reserved headers**: `MessageId`, `ContractVersion`, `CorrelationId`, `CausationId`, `CorrelationSequence`, `CallbackName`, `MessageName`, `Type`, `SentTime`, `DelayTime`, and `Intent` are rejected in custom publish headers and provider contributions. `TenantId` is also framework-owned; provider contributions cannot write it, while raw publish headers are handled by the stricter tenant-integrity policy for compatibility.
 - **Header validation**: custom header names, custom header values, and framework/provider-stamped header values all reject control characters before publish. This includes explicit `MessageId`, `CorrelationId`, `CallbackName`, and typed `TenantId`.
 - **Explicit message names**: `PublishOptions.MessageName` follows the same validator as registered message mappings. Invalid dot shapes and invalid characters are rejected before publish.
-- **Contract version**: `Contract(name, version)` is the normal authority and defaults to version `"1"`. `PublishOptions.ContractVersion` is an explicit per-send override for controlled compatibility work. Consumers validate the header before deserialization, expose it through `ConsumeContext.ContractVersion`, and treat a missing header as version `"1"` for legacy or external producers.
-- **Correlation and causation**: `PublishOptions.CorrelationId` wins. If absent, `CorrelationFrom(...)` runs against the payload. If absent, publishes inside a consumer preserve ambient `ConsumeContext.CorrelationId`. If absent, the message id becomes the root correlation id. `PublishOptions.CausationId` wins for the immediate parent; otherwise an ambient consume context contributes its current message id. Consumers read it from `ConsumeContext.CausationId`.
+- **Contract version**: `Message<T>(name, version)` is the normal authority and defaults to version `"1"`. `PublishOptions.ContractVersion` is an explicit per-send override for controlled compatibility work. Consumers validate the header before deserialization, expose it through `ConsumeContext.ContractVersion`, and treat a missing header as version `"1"` for legacy or external producers.
+- **Correlation and causation**: `PublishOptions.CorrelationId` wins. If absent, the contract's `CorrelateBy(...)` selector runs against the payload. If absent, publishes inside a consumer preserve ambient `ConsumeContext.CorrelationId`. If absent, the message id becomes the root correlation id. `PublishOptions.CausationId` wins for the immediate parent; otherwise an ambient consume context contributes its current message id. Consumers read it from `ConsumeContext.CausationId`.
 - **Tenant integrity**: use `MessageOptions.TenantId` or ambient tenancy. Do not write `Headers.TenantId` directly.
 - **Captured business context**: `MessageOptions.SuppressAmbientBusinessContext = true` disables ambient consume correlation/causation and tenant fallback when forwarding an emission snapshot. Explicit options and registered contract/selector resolution remain authoritative; `Activity` trace propagation is unchanged. A captured null tenant still fails when `TenantContextRequired` is enabled. The EF bridge sets this option and maps the captured occurrence ID to `MessageId`; it never allocates a replacement message identity at drain.
-- **Provider config bag**: provider packages attach opaque config objects keyed by config type. Consumer config overlays message config for the same provider type. Repeated message metadata registrations are deterministic: later metadata for the same message/config type overrides earlier metadata.
-- **Declared-contract authority**: lane-scoped registration selects the declared contract used for logical name and typed middleware; assignable-type fallback does not silently bind a concrete payload to another registration. The concrete payload or callback-response type is preserved separately for serialization and typed values. Explicit publish options still override their corresponding envelope fields.
-- **Provider header contributions**: producer-side provider hatches compute typed payload values before the payload is erased to bytes. Core validates contributed header names and values, then transports map those headers to native broker fields.
+- **Provider config bag**: provider packages attach opaque config objects keyed by config type. Message configs belong to one lane's route of a contract (`OnBus` or `OnQueue`); consumer configs come from `Tune`, where a later `Tune` for the same identity and config type replaces the earlier one. Two contract declarations with provider settings merge only when the settings are equal, which for a selector means the same delegate instance.
+- **Declared-contract authority**: the declared contract selects the logical name and typed middleware; assignable-type fallback does not silently bind a concrete payload to another registration. The concrete payload or callback-response type is preserved separately for serialization and typed values. Explicit publish options still override their corresponding envelope fields.
+- **Provider header contributions**: message-side provider hatches compute typed payload values before the payload is erased to bytes. Core validates contributed header names and values, then transports map those headers to native broker fields.
 - **Azure Service Bus sessions**: when sessions are enabled and a publish config sets `PartitionKey` without a `SessionId`, the provider falls back to that partition key as the session id before it falls back to the framework message id.
-- **NATS shard coverage**: wildcard subject coverage is added only for consumers that declare `.UseNats(c => c.Sharded())`; unsharded consumers no longer subscribe to broad `messageName.>` subjects. Shard symmetry is enforced at startup: if a message uses `SubjectShard(...)` on the producer side, every registered consumer for that message must also declare `.Sharded()`. NATS delivers zero messages with no error when a FilterSubject does not match any shard subject, so the invariant prevents silent data loss.
+- **NATS shard coverage**: a consumer of a message whose contract, declared in this host, uses `SubjectShard(...)` filters on the `{subject}.>` shard wildcard automatically. Unsharded consumers do not subscribe to the wildcard. When the producer shards a message that this host declares without `SubjectShard(...)`, add `Tune(identity, c => c.UseNats(n => n.Sharded()))`: NATS delivers zero messages with no error to a filter subject that matches no shard subject.
 - **Ambient consume context**: `IConsumeContextAccessor` is AsyncLocal-backed and restored in a `finally` block after each consume pipeline execution.
 
 ### Delivery Modes
@@ -125,7 +149,7 @@ Two independent questions, answered by two different things. **Durability** — 
 | `IBus` / `IQueue`, `Direct` | straight to the transport, no storage | same | same |
 | `unit.Outbox` (always durable) | row inside that unit's transaction, dispatched after commit, discarded on rollback | **throws** before any effect | not reachable — the unit is the receiver |
 
-- **Precedence (`DeliveryMode`)**: per-call `PublishOptions.DeliveryMode` / `QueueOptions.DeliveryMode`, then the per-type policy registered with `WithDeliveryMode(...)` on `setup.Bus.ForMessage<T>(...)` / `setup.Queue.ForMessage<T>(...)`, then `MessagingOptions.DefaultDeliveryMode` (`Durable`). `Direct` bypasses storage and rejects a per-call `Delay` or `ScheduledAt`, because scheduling requires storage.
+- **Precedence (`DeliveryMode`)**: per-call `PublishOptions.DeliveryMode` / `QueueOptions.DeliveryMode`, then the per-type, per-lane policy declared with `WithDeliveryMode(...)` on the contract's lane builder (`m.Message<T>(...).OnBus(b => b.WithDeliveryMode(...))` / `.OnQueue(q => q.WithDeliveryMode(...))`), then `MessagingOptions.DefaultDeliveryMode` (`Durable`). `Direct` bypasses storage and rejects a per-call `Delay` or `ScheduledAt`, because scheduling requires storage.
 - **An enlisted publish consults none of that.** `OutboxOptions` carries no delivery mode, and the resolver fixes the mode to `Durable` before reading the per-type policy or the host default — durable capture is the mechanism the row joins the transaction through. This is deliberate: under the previous model a type pinned `Direct` with `WithDeliveryMode` made every coordinated publish of that type fail, because `Direct` and enlistment are contradictory. Delay and schedule still work, and `Direct` delivery combined with a coordination requirement throws ("Direct delivery cannot be coordinated with a unit of work; durable delivery is required to write inside its transaction") — a state only framework-internal callers can construct.
 - **Whether a storage can join a unit is the storage's own answer.** The relational storages join only an `IRelationalUnitOfWorkResource` whose transaction is live and on the same database, decided by the shared `RelationalDatabaseIdentity` check the Jobs store uses too (see [unit-of-work.md § Database identity](unit-of-work.md#database-identity-and-several-databases)). In-memory storage joins any active unit, including a resource-less one opened with `IUnitOfWorkFactory.BeginAsync()` (test hosts), through its buffered-promotion seam. A relational storage against a resource-less unit, a unit on another database, a completed transaction, or another provider's resource cannot join, and an enlisted publish throws naming the mismatch: `Publishing 'OrderPlaced' cannot join the active unit of work ({Mismatch}): {detail}. {advice}` — for example "the active unit of work exposes no relational resource for the messaging storage to write into. Begin the unit of work over a relational resource for the messaging database, or publish without coordination."
 - **The refusal belongs to the enlisted surface only.** `IBus`/`IQueue` hand the publisher no unit at all, so there is nothing for a storage to reject: a durable autonomous publish always writes standalone, including inside a unit of work whose transaction the storage could have joined. The mismatch throw above is reachable only through `unit.Outbox`.
@@ -138,7 +162,7 @@ Two independent questions, answered by two different things. **Durability** — 
   ```
 - **An enlisted publish ends execution-strategy replay only where a replay would not re-run it.** Replay re-runs the block that *owns* the unit. Inside `factory.RunAsync(db, …)` (owned mode) that block is yours: a transient failure anywhere in it replays the whole block with a fresh transaction and unit, the first attempt's row rolls back with its transaction, and the replayed block publishes again — so an enlisted publish there leaves the unit replayable, and a `RunAsync` block that publishes stays retriable under `EnableRetryOnFailure`. The exception is the `HeadlessDbContext` save pipeline's *own* save (no caller transaction): it enlists in observed mode, retains the completed domain-event drain across the strategy's replays, and so replays without re-running the handler that published. An enlisted publish into an observed-mode unit therefore calls `IUnitOfWork.PreventRetry()` before it writes, and that save is surfaced without replay; a fresh context and aggregate graph are needed to retry it. A `SaveChangesAsync` inside your own block that dispatched domain or integration events ends replay as well: its success clears the aggregate's events, so a replayed block would re-insert the aggregate with nothing left to dispatch and commit it without the handlers' rows; the save calls `PreventRetry()` before clearing them.
 - **The entity-emitted integration-event path is exempt even there.** `PreventRetry()` is also skipped when the publish carries `MessageOptions.IsRetainedForTransactionReplay`, which is `internal` and set only by `OutboxIntegrationEventDispatcher` — the bridge that publishes the integration events an entity emitted during `SaveChangesAsync`. The save pipeline retains those captured occurrences and re-publishes them on a replayed attempt, so a pipeline-owned save whose only enlisted publishes came from emitted integration events stays retriable. Application code cannot set the flag. A pipeline-owned save that mixes both — emitted integration events plus a `unit.Outbox` publish from a domain-event handler — is not retriable, because the handler's publish marked the unit.
-- **The default costs one storage write.** A `Durable` autonomous publish is stored first and dispatched by the relay, so high-rate events pay a storage write and a relay hop per message. Opt out per type with `WithDeliveryMode(DeliveryMode.Direct)` or per host with `DefaultDeliveryMode = DeliveryMode.Direct`; `Direct` gives up durability and atomicity and returns a receipt with no `StorageId`.
+- **The default costs one storage write.** A `Durable` autonomous publish is stored first and dispatched by the relay, so high-rate events pay a storage write and a relay hop per message. Opt out per type and lane with `.OnBus(b => b.WithDeliveryMode(DeliveryMode.Direct))` (or `.OnQueue(...)`) on the contract, or per host with `DefaultDeliveryMode = DeliveryMode.Direct`; `Direct` gives up durability and atomicity and returns a receipt with no `StorageId`.
 - **Storage is mandatory**, so "no storage" is a configuration error raised by startup validation rather than another matrix column.
 - **Telemetry**: `headless.messaging.delivery.requested` and `headless.messaging.delivery.resolved` emit `durable` or `direct` only, and the `headless-delivery-requested` / `headless-delivery-resolved` headers carry the same names. Whether the row was written inside a transaction travels separately, in the framework-reserved `headless-delivery-coordinated` header, as the literal `"true"` or `"false"`. It is a three-state fact: an **absent** header means unrecorded, never "not coordinated" — rows written before this header existed read as unknown. The dashboard's message detail shows it as "Transaction coordinated" (`Yes` / `No` / `Not recorded`), `MessageView.IsCoordinated` is the monitoring projection, and `RecordedMessage.IsCoordinated` exposes it to tests. All three are `bool?`.
 - **Jobs is the exception that keeps the enum.** `TransactionEnlistment { Optional, Required }` still lives in `Headless.UnitOfWork.Abstractions` and still drives `JobOptions.Enlistment` / `RecurringJobOptions.Enlistment` as the guard that makes the autonomous receivers refuse a function. It has nothing to do with Messaging. See [Enlisted Enqueue](jobs.md#enlisted-enqueue-atomic-enqueue).
@@ -152,27 +176,27 @@ Two unit-of-work behaviors are documented, not defects. `IUnitOfWork.OnCompleted
 | --- | --- | --- | --- |
 | InMemory | Local development, unit tests, demos | Production durability or multi-process delivery | No external dependency, no durability |
 | RabbitMQ | General-purpose broker, routing keys, queue semantics | Strict partitioned ordering across large streams | Mature routing model, topology must match custom routing keys |
-| Kafka | Ordered partitions, consumer groups, high-throughput streams | Broadcast Bus semantics through this package | Queue-only provider; partition key has no framework length cap |
+| Kafka | Ordered partitions, high-throughput streams | Broadcast Bus semantics through this package | Queue-only provider; partition key has no framework length cap |
 | Azure Service Bus | Azure-hosted topics/queues, sessions, managed operations | Non-Azure deployments | PartitionKey is limited to 128 chars and must match SessionId when sessions are enabled |
 | AWS SNS/SQS | AWS-native pub-sub and queue workloads | Non-AWS deployments | FIFO entities use MessageGroupId and deduplication ids |
 | NATS | Subject-based routing, lightweight broker, JetStream | Complex per-consumer storage-specific routing | Subject shards must be a single safe token |
 | Pulsar | Pulsar-native durable transport with shared subscriptions | Projects not already on Pulsar | Requires Pulsar topic and subscription provisioning |
-| Redis | Redis Streams transport with consumer groups | Workloads requiring a broker-native dead-letter queue | Durable streams, pending-entry reclaim, and application-owned retention |
+| Redis | Redis Streams transport | Workloads requiring a broker-native dead-letter queue | Durable streams, pending-entry reclaim, and application-owned retention |
 
 ## Provider Capabilities
 
-| Provider | Bus | Queue | Same-name lane isolation | Producer hatch | Consumer hatch |
+| Provider | Bus | Queue | Same-name lane isolation | Message hatch (`OnBus`/`OnQueue`) | Consumer hatch (`Tune`) |
 | --- | --- | --- | --- | --- | --- |
-| AWS | SNS topic to one SQS queue per consumer identity | Direct SQS destination | Yes | `MessageGroupId(...)` | None |
-| Azure Service Bus | Topic/subscription | Queue | Yes | `PartitionKey(...)` | None |
+| AWS | SNS topic to one SQS queue per consumer identity | Direct SQS destination | Yes | `UseAws(a => a.MessageGroupId(...))` | None |
+| Azure Service Bus | Topic/subscription per consumer identity | Queue | Yes | `UseAzureServiceBus(a => a.PartitionKey(...))` | None |
 | InMemory | One copy per consumer identity | One owned copy | Yes | None | None |
-| Kafka | No | Consumer group | Not applicable; Queue-only | `PartitionBy(...)` | `WithIsolationLevel(...)` |
-| NATS | Interest-retained lane stream | Work-queue-retained lane stream | Yes | `SubjectShard(...)` | `Sharded()` |
+| Kafka | No | Topic; Kafka consumer group named after the message | Not applicable; Queue-only | `OnQueue` only: `UseKafka(k => k.PartitionBy(...))` | `UseKafka(k => k.WithIsolationLevel(...))` |
+| NATS | Interest-retained lane stream, one durable per consumer identity | Work-queue-retained lane stream | Yes | `UseNats(n => n.SubjectShard(...))` | `UseNats(n => n.Sharded())` |
 | Pulsar | Lane topic + identity subscription | Lane topic + owned subscription | Yes | None | None |
-| RabbitMQ | Lane topic exchange | Lane direct exchange | Yes | None | `PrefetchCount(...)` |
-| Redis | Lane Redis Stream + identity consumer group | Lane Redis Stream + owned group | Yes | None | None |
+| RabbitMQ | Lane topic exchange, one queue per consumer identity | Lane direct exchange | Yes | None | `UseRabbitMq(r => r.PrefetchCount(...))` |
+| Redis | Lane Redis Stream + Redis consumer group named after the identity | Lane Redis Stream + Redis consumer group named after the message | Yes | None | None |
 
-The shipped immutable descriptors are the runtime authority, not this table or raw DI shape. The dashboard `/api/meta` projection exposes those descriptors and their lanes. Executable provider conformance tests prove consumer-identity fan-out, replica competition, Queue ownership, and same-name isolation at each provider's supported tier. Kafka is intentionally Queue-only and rejects Bus registration during bootstrap before provider or storage side effects.
+The shipped immutable descriptors are the runtime authority, not this table or raw DI shape. The dashboard `/api/meta` projection exposes those descriptors and their lanes. Executable provider conformance tests prove consumer-identity fan-out, replica competition, Queue ownership, and same-name isolation at each provider's supported tier. Kafka is intentionally Queue-only: a Bus consumer fails startup before provider or storage side effects, and a Bus publish fails when attempted.
 
 ### Bus subscription names
 
@@ -189,7 +213,7 @@ On the Bus lane a consumer identity is the broker subscription name. Every provi
 | RabbitMQ | Queue `bus.{identity}` | 255 characters; letters, digits, `.`, `-`, `_` | Virtual host |
 | Redis | Consumer group `{identity}` on each stream | No limit; printable ASCII without spaces | Stream keys follow the message names; database or ACL |
 
-Broker-backed providers keep names ASCII and replace whitespace and control characters even where the broker allows them. When `GroupNamePrefix` is set, it prefixes the identity before the name is derived. Separate systems or environments on one broker are isolated by the broker's namespace in the last column.
+Broker-backed providers keep names ASCII and replace whitespace and control characters even where the broker allows them. No host-level prefix is added: the identity alone names the subscription, so a module keeps its subscriptions when it moves to another process. Separate systems or environments on one broker are isolated by the broker's namespace in the last column, or by distinct identities.
 
 **Routing affinity:** register the logical destination, optionally require support with `RequireRoutingAffinity()`, and supply one `RoutingAffinityKey` on publish/enqueue options. Required-route checks run before startup clients/processors; per-call validation runs before persistence and transport effects. Inert option snapshots establish local support, not remote broker-topology proof. Unknown keyed overrides are rejected even if the provider could auto-create an unkeyed destination.
 
@@ -208,8 +232,11 @@ services.AddHeadlessMessaging(setup =>
 {
     setup.UseKafka("localhost:9092");
     setup.UseInMemoryStorage();
-    setup.Queue.ForMessage<OrderChanged>(message => message.Contract("orders.changed").RequireRoutingAffinity());
 });
+
+services.ConfigureMessaging(messaging =>
+    messaging.Message<OrderChanged>("orders.changed").OnQueue(queue => queue.RequireRoutingAffinity())
+);
 
 await queue.EnqueueAsync(order, new QueueOptions
 {
@@ -249,13 +276,13 @@ A runtime subscription sets `RuntimeSubscriptionOptions.EveryInstance = true`.
 - **At most once, no backlog**: a process receives only what is published while it is subscribed. Nothing is stored for the delivery: no inbox row or admission, no reservation or lease, no retry pipeline, no circuit breaker, and no dashboard row. Receive middleware, the contract-version check, and deserialization still run, and the consumer runs in a fresh scope with the consume middleware, then the message is committed.
 - **Failures are logged and committed**: a consumer exception, a receive-stage reject, and a message no consumer on the subscription handles are logged, counted in `messaging.every_instance.deliveries` (`messaging.every_instance.outcome` = `succeeded`, `failed`, `dropped`, or `skipped`; `error.type` on failures), and committed. None is requeued and `RetryPolicy.OnExhausted` is not called.
 - **Reconnect signal**: a consumer that implements `IOnSubscriptionEstablished` is called once its subscription receives: at host start (`IsReconnect = false`, `Generation = 1`), after every rebuild of the host's consumer clients (a broker failure, or a runtime subscription changing the topology), and after the transport re-establishes the subscription on its own. `IsReconnect = true` means messages may have been missed; a mirror of state should flush or reload. The hook runs on a new consumer instance in its own scope, host startup waits for it, and a failing hook is logged without stopping the subscription. Runtime subscriptions have no hook.
-- **Startup rules**: an every-instance consumer on a transport without every-instance support fails startup before any consumer client or broker object is created, with a `MessagingConfigurationException` that names the consumer and the provider; a runtime subscription is checked the same way before it attaches. Combining every-instance delivery with an inbox retention, a circuit breaker, an explicit group, or the Queue lane fails startup, because none of them means anything for a per-process, at-most-once subscription. A host whose only consumers are every-instance does not need an inbox tier from storage.
+- **Startup rules**: an every-instance consumer on a transport without every-instance support fails startup before any consumer client or broker object is created, with a `MessagingConfigurationException` that names the consumer and the provider; a runtime subscription is checked the same way before it attaches. Tuning an inbox retention or a circuit breaker onto an every-instance consumer, through `Tune` or configuration, fails startup, because neither means anything for a per-process, at-most-once subscription. `EveryInstance` exists only on `[BusConsumer]`, so the Queue lane cannot express it. A host whose only consumers are every-instance does not need an inbox tier from storage.
 - **`ConsumeOnly` does not apply**: a host started with `ConsumeOnly` still starts every every-instance consumer, because each process must keep its own state current. A `ConsumeOnly` entry that matches only every-instance consumers fails startup, since it would have no effect. Runtime subscriptions are not filtered either.
 - **Choose it for derived state only**: every-instance delivery refreshes what a process can rebuild. Work that must happen once, or must not be lost, stays on a competing consumer.
 
 | Provider | Every-instance primitive | Left behind after a crash |
 | --- | --- | --- |
-| InMemory | A group per identity and instance id | Nothing |
+| InMemory | A subscription per identity and instance id | Nothing |
 | NATS | Core subscription on the Bus subject, not a JetStream consumer | Nothing |
 | RabbitMQ | Server-named exclusive, non-durable queue bound to the Bus exchange, on a connection of its own without automatic recovery | Nothing |
 | Redis | Group-less polled stream read from each stream's tail at subscribe time, then from the last id read | Nothing |
@@ -273,11 +300,11 @@ Transports declare support with `MessagingProviderCapabilities.Transport(..., su
 | AWS | Bus consumer identities own distinct SQS queues subscribed to SNS; Queue sends directly to SQS | LocalStack fan-out, competition, isolation, policy shape, and malformed deletion | Grant the scoped runtime and provisioning actions below |
 | Azure Service Bus | Native topics/subscriptions for Bus and queues for Queue | Credential-gated real namespace conformance | Supply a namespace with the required permissions and session configuration |
 | InMemory | Process-local channels | Shared in-process conformance | Restart loses all state |
-| Kafka | Queue-only topics and consumer groups | Ownership, startup rejection, and bounded poison-offset advancement | Bus configuration is invalid; configure partitions for the workload |
+| Kafka | Queue-only topics; one Kafka consumer group per message | Ownership, startup rejection, and bounded poison-offset advancement | A Bus consumer fails startup; configure partitions for the workload |
 | NATS | Lane-qualified subjects, streams, retention, and durables | Identity/replica isolation and malformed terminal ACK | Grant stream and consumer provisioning permissions |
 | Pulsar | Lane-qualified topics and Bus subscriptions | Identity/replica isolation and malformed terminal ACK | Grant topic and subscription creation permissions |
 | RabbitMQ | Lane-qualified exchanges, routing keys, and owned queues | Identity/replica isolation and malformed terminal reject | Grant exchange and queue provisioning permissions |
-| Redis | Lane-qualified Streams for both lanes | Routing, ownership, settlement, and poison handling | Configure retained stream storage and consumer groups |
+| Redis | Lane-qualified Streams for both lanes | Routing, ownership, settlement, and poison handling | Configure retained stream storage; the provider creates the Redis consumer groups |
 
 #### AWS least-privilege handoff
 
@@ -287,11 +314,11 @@ Transports declare support with `MessagingProviderCapabilities.Transport(..., su
 | --- | --- | --- | --- |
 | Bus publisher workload role | `sns:ListTopics`, `sns:Publish` | `sns:CreateTopic` when a `bus-*` topic is absent | `sns:ListTopics` requires `Resource: "*"`; scope create/publish to `arn:${Partition}:sns:${Region}:${Account}:bus-*` |
 | Queue publisher workload role | `sqs:SendMessage` | `sqs:CreateQueue` on first use in each process, including for a pre-created queue because the provider uses the idempotent create call to resolve its URL | Scope both actions to `arn:${Partition}:sqs:${Region}:${Account}:queue-*` |
-| Bus consumer workload role | `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:ChangeMessageVisibility` | `sns:CreateTopic`, `sqs:CreateQueue`, `sqs:GetQueueAttributes`, `sqs:SetQueueAttributes`, `sns:Subscribe` | Scope SNS actions to the exact generated `arn:${Partition}:sns:${Region}:${Account}:bus-*` topics and SQS actions to the exact generated `arn:${Partition}:sqs:${Region}:${Account}:bus-*` group queues |
+| Bus consumer workload role | `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:ChangeMessageVisibility` | `sns:CreateTopic`, `sqs:CreateQueue`, `sqs:GetQueueAttributes`, `sqs:SetQueueAttributes`, `sns:Subscribe` | Scope SNS actions to the exact generated `arn:${Partition}:sns:${Region}:${Account}:bus-*` topics and SQS actions to the exact generated `arn:${Partition}:sqs:${Region}:${Account}:bus-*` consumer-identity queues |
 | Queue consumer workload role | `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:ChangeMessageVisibility` | `sqs:CreateQueue` on startup | Scope all actions to the consumer-owned `arn:${Partition}:sqs:${Region}:${Account}:queue-*` destinations |
-| SNS service principal; queue resource-policy owner is the Bus consumer deployment | `sqs:SendMessage` | None | The provider writes the Bus queue policy for principal `sns.amazonaws.com`, resource = that group queue ARN, and `aws:SourceArn` = the subscribing `bus-*` topic ARN |
+| SNS service principal; queue resource-policy owner is the Bus consumer deployment | `sqs:SendMessage` | None | The provider writes the Bus queue policy for principal `sns.amazonaws.com`, resource = that consumer-identity queue ARN, and `aws:SourceArn` = the subscribing `bus-*` topic ARN |
 
-The deployment owner owns the workload-role policies and the provider-created queue resource policy. Consumer topology failures from AWS surface as `AWS_MESSAGING_PROVISIONING_DENIED` with the lane, logical group, AWS error code, and the aggregate action set for that stage; use the denied AWS API operation to identify the exact missing action. Publisher denials return a failed `OperateResult` with the AWS exception message and retain the service exception as the inner exception, while receive denials are logged and retried with backoff. Do not grant delete, wildcard SNS/SQS administration, or unrelated IAM actions: the current transport does not call them.
+The deployment owner owns the workload-role policies and the provider-created queue resource policy. Consumer topology failures from AWS surface as `AWS_MESSAGING_PROVISIONING_DENIED` with the lane, subscription name, AWS error code, and the aggregate action set for that stage; use the denied AWS API operation to identify the exact missing action. Publisher denials return a failed `OperateResult` with the AWS exception message and retain the service exception as the inner exception, while receive denials are logged and retried with backoff. Do not grant delete, wildcard SNS/SQS administration, or unrelated IAM actions: the current transport does not call them.
 
 Conformance tests exercise the provider behavior; a deployment must still configure its own credentials, resource permissions, retention, and restart policy.
 
@@ -303,7 +330,7 @@ Use matching versions of the `Headless.Messaging.*` packages. The package-family
 - `PublishAsync` and `EnqueueAsync`, including callback overloads, now return `Task<PublishReceipt>`. Existing `await` statements and `Func<Task>` adapters can ignore the result because `Task<PublishReceipt>` derives from `Task`. Custom `IBus`/`IQueue` implementations and test doubles must update their return signatures and supply a receipt; recompile consumers for this binary API break. Use `var receipt = await bus.PublishAsync(message, cancellationToken);` to retain the returned identity.
 
 Omit an unused cancellation token, or pass `default` or `cancellationToken: default` to select the existing token overload. Supplying `default` followed by a cancellation token selects the options overload. Use `options:` and `configure:` to make record and callback intent explicit.
-- Register consumers through `setup.Bus` or `setup.Queue`; public APIs use `MessageLane`.
+- Declare consumers with `[BusConsumer]` or `[QueueConsumer]` and contribute the generated module with `AddModule<…MessagingModule>()`; public APIs use `MessageLane`.
 - Dashboard and monitoring JSON expose `lane`, `requestedDeliveryMode`, `resolvedDeliveryMode`, and the nullable `isCoordinated`. Storage uses the `IntentType` column and the `headless-intent` header with `Bus = 0` and `Queue = 1`.
 - `Delay` and `ScheduledAt` are mutually exclusive one-shot schedules. Both require storage, so they work on every durable publish, enlisted or not, and `Direct` is rejected before side effects. `ScheduledAt` accepts past instants and normalizes eligibility to UTC microseconds. Dispatch is best-effort after that not-before instant, with no upper latency bound. The relative-delay header travels with the message; transports do not interpret it. Absolute-only schedules omit that header.
 - Keep `PublishReceipt.StorageId` to revoke a schedule through `IMessageRevoker.RevokeAsync` after the publishing transaction commits. Token cancellation cancels the current request; it does not revoke an accepted message. `Revoked` means deletion won before reservation, `NotFound` means no matching row in the configured storage version, and `AttemptReserved` means dispatch, terminal, or retry state prevented deletion. The last outcome is not proof of delivery. Unscheduled rows with initial-dispatch grace are also ineligible. A claim alone does not prevent revocation. Deletion retains no audit record and has no tenant filter; applications must authorize access to handles. Providers without `IMessageRevocationStorage` throw a provider-naming `NotSupportedException`.
@@ -384,7 +411,7 @@ Columns, indexes, and constraints follow the same split: snake_case on PostgreSQ
 ### API and behavior
 
 - `PublishReceipt` carries the resolved wire `MessageId` and nullable durable `StorageId`. Direct delivery returns no storage handle. Middleware suppression before terminal publication returns both values null. A receipt enlisted in the caller's active unit of work remains subject to that unit's completion or rollback and never implies consumer completion.
-- `IConsume<TMessage>` consumer contract. `ConsumeContext.UnitOfWork` is the unit the inbox transaction runner enlisted the attempt in (the `Transactional` inbox tier), or `null` on the non-transactional tier: a consumer's own enlisted writes go through it — `context.UnitOfWork.Outbox.PublishAsync(…)`, `context.UnitOfWork.Jobs.ScheduleAsync(…)` — so a rolled-back attempt discards them with the inbox row; a callback response is published through the same unit. A consumer that also holds the inbox's `DbContext` reaches it as `db.UnitOfWork()`.
+- `IConsume<TMessage>` consumer contract, declared with exactly one of `[BusConsumer(identity)]` (optional `EveryInstance`, `Policy`) or `[QueueConsumer(identity)]` (optional `Policy`); both derive from `MessageConsumerAttribute`, which exposes `Identity` and `Policy`. `IOnSubscriptionEstablished` is the optional reconnect hook for every-instance consumers. `ConsumeContext.UnitOfWork` is the unit the inbox transaction runner enlisted the attempt in (the `Transactional` inbox tier), or `null` on the non-transactional tier: a consumer's own enlisted writes go through it — `context.UnitOfWork.Outbox.PublishAsync(…)`, `context.UnitOfWork.Jobs.ScheduleAsync(…)` — so a rolled-back attempt discards them with the inbox row; a callback response is published through the same unit. A consumer that also holds the inbox's `DbContext` reaches it as `db.UnitOfWork()`.
 - `MessageOptions` base options, including headers, correlation, mutually exclusive `Delay` and `ScheduledAt`, message id, message type, and tenant id.
 - `IMessageRevoker` deletes a scheduled row by `PublishReceipt.StorageId` before its first dispatch reservation. It returns `Revoked`, `NotFound`, or `AttemptReserved`, retains no audit record, and is not tenant-scoped. Use Jobs for keyed, replaceable, tenant-scoped, or transactional deadlines.
 - The enlisted publish contract lives here too: `IUnitOfWorkOutbox`, the `UnitOfWorkOutbox` binding, `OutboxOptions`, and the `unit.Outbox` accessor (an extension property on `IUnitOfWork`, in the `Headless.UnitOfWork` namespace, so holding the unit is enough to reach it). The accessor resolves the singleton `IUnitOfWorkOutbox` feature from the host container and binds it to the handle once per unit, keeping the binding as unit-local state (`GetOrAdd`), so repeated reads allocate nothing and a completed unit refuses the read; the binding owns nothing to dispose. `IUnitOfWorkOutbox` itself is plumbing — hidden from IntelliSense, public only so the unit-of-work packages can hand it out — and application code uses the binding. The implementation ships in `Headless.Messaging.Core` and is registered by `AddHeadlessMessaging`; `unit.Outbox` throws an `InvalidOperationException` naming `AddHeadlessMessaging` when the host registered no messaging.
@@ -407,6 +434,7 @@ dotnet add package Headless.Messaging.Abstractions
 ### Setup and use
 
 ```csharp
+[BusConsumer("orders.projection")]
 public sealed class OrderPlacedConsumer : IConsume<OrderPlaced>
 {
     public ValueTask ConsumeAsync(ConsumeContext<OrderPlaced> context, CancellationToken cancellationToken)
@@ -415,6 +443,8 @@ public sealed class OrderPlacedConsumer : IConsume<OrderPlaced>
     }
 }
 ```
+
+A library that ships consumers references `Headless.Messaging.Core` (for the generator and `ConfigureMessaging`) and exposes an `Add{Module}` entry point that adds its generated module; see [Orientation](#orientation).
 
 ### Configuration
 
@@ -551,14 +581,14 @@ None. This package registers no services.
 ### API and behavior
 
 - `PublishReceipt` carries the resolved wire `MessageId` and nullable durable `StorageId`. Direct delivery returns no storage handle. Middleware suppression before terminal publication returns both values null. A receipt enlisted in the caller's active unit of work remains subject to that unit's completion or rollback and never implies consumer completion.
-- `services.AddHeadlessMessaging(setup => ...)`.
-- `services.ConfigureMessaging(messaging => ...)`: order-independent module contributions through `MessagingContributionBuilder`, which exposes the same `Bus` and `Queue` registration roots as the setup callback.
-- `setup.Bus.ForMessage<TMessage>(...)`, `setup.Queue.ForMessage<TMessage>(...)`, and root-scoped assembly scanning.
-- `Contract(...)`, `CorrelationFrom(...)`, and `Consumer<TConsumer>(...)` inherit the selected root lane.
-- Consumer settings: `Group(...)`, `Concurrency(...)`, `HandlerId(...)`, `WithCircuitBreaker(...)`.
-- Message contract settings: stable `Contract(name, version)` metadata, stamped on every outgoing envelope and checked before durable dispatch.
-- Durable consumer settings: mandatory, nonblank `ConsumerIdentity(...)` of at most 200 characters (`ConsumerMetadata.ConsumerIdentityMaxLength`). Fluent and scanned registration reject longer identities before delivery, matching relational inbox admission. Identity is stable across CLR and topology refactors; changing it intentionally creates a new durable consumer scope. Bus and Queue identities are collision-scoped independently.
-- Publish and consume middleware.
+- `services.AddHeadlessMessaging(setup => ...)`, called once by the host. `MessagingSetupBuilder` configures transport, storage, `Options`, `Instrumentation`, conventions, and host controls: `AddModule<TModule>()`, `Tune(identity, ...)`, `ConsumeOnly(...)`, and `WithMessageNameMapping<T>(name)`. It returns the `MessagingBuilder` that registers middleware.
+- `services.ConfigureMessaging(m => ...)`: a module's contribution through `MessagingContributionBuilder`, before or after `AddHeadlessMessaging`: `AddModule<TModule>()`, `Message<T>(name, version)`, and `Tune(identity, ...)`. The callback runs once, synchronously; contracts are recorded when it returns, so a contract builder used after that throws.
+- `IMessagingModule`: the generated `<AssemblyName>.MessagingModule` of an assembly that declares `[BusConsumer]` or `[QueueConsumer]` classes. See [Headless.Messaging.SourceGenerator](#headlessmessagingsourcegenerator).
+- Message contracts: `Message<T>(name, version = "1")` returns `IMessageContractBuilder<T>` with `CorrelateBy(selector)`, `OnBus(Action<IBusContractBuilder<T>>)`, and `OnQueue(Action<IQueueContractBuilder<T>>)`. Both lane builders expose `RequireRoutingAffinity()` and `WithDeliveryMode(mode)`; provider packages add their message hatches to them. The name and version are stamped on every outgoing envelope and checked before durable dispatch.
+- Consumer tuning: `Tune(identity, Action<ConsumerTuningBuilder>)` with `Concurrency(byte)` (greater than zero), `InboxRetention(TimeSpan)` (positive whole seconds), `CircuitBreaker(Action<ConsumerCircuitBreakerOptions>)`, `FailurePolicy<TPolicy>()`, `UseMiddleware<TMiddleware>()`, and the provider consumer hatches. Tuning cannot declare a consumer or change its identity, lane, or messages.
+- Consumer identity: validated at build time by the generator (HM001) and again at registration against `ConsumerMetadata.ConsumerIdentityMaxLength` (200), matching relational inbox admission. Bus and Queue identities are collision-scoped independently.
+- `IRuntimeSubscriber.SubscribeAsync<T>(handler, options)` attaches a delegate to the Bus lane after startup. `RuntimeSubscriptionOptions` carries `Identity` (the consumer identity and Bus subscription name, derived from `HandlerId` when omitted), `HandlerId` (defaults to `{DeclaringType}|{Method}|{Message}`, required for anonymous delegates), `MessageName`, `Concurrency`, `EveryInstance`, and `DuplicateBehavior` (`Reject` by default). The returned `RuntimeSubscriptionHandle` exposes `Identity`, `HandlerId`, `MessageName`, and `SubscriptionId`.
+- Publish, receive, and consume middleware.
 - Strict publish tenancy via `RequireTenantOnPublish()`.
 - Storage-backed retry/outbox and cleanup processors.
 - Singleton `IMessageRevoker` delegates to optional `IMessageRevocationStorage`. Unsupported providers throw `NotSupportedException` naming the provider.
@@ -574,7 +604,9 @@ None. This package registers no services.
 
 ### Design constraints
 
-Core owns logical metadata and provider-independent correctness. Provider packages own broker-specific values and limits. `CorrelationFrom(...)` is a universal logical knob; partition keys, routing keys, subject shards, and message group ids are provider hatches because their semantics differ.
+Core owns logical metadata and provider-independent correctness. Provider packages own broker-specific values and limits. `CorrelateBy(...)` is a universal logical knob on the contract; partition keys, subject shards, and message group ids are provider hatches on a lane builder because their semantics differ per broker and per lane.
+
+Registration is declarative and frozen. Consumers come only from generated modules, contracts only from `Message<T>`, and host controls only from `Tune`, configuration, and `ConsumeOnly`. Startup merges every contribution into one immutable registry per host, and consumer dispatch reads only that registry. Conflicts that one assembly can see fail the build; conflicts across modules fail startup and name both sources.
 
 Immutable provider descriptors are the authority for transport, storage, coordination, lane, delayed-scheduling, and independent-topology support. Bootstrap freezes and validates them before provider resolution or readiness, and per-call gates run before middleware or side effects. Physical lane separation remains provider-owned and is cross-checked against executable conformance evidence.
 
@@ -584,7 +616,7 @@ Storage providers may also implement `IGracefulLeaseReleaseStorage`. Core detect
 
 The four `IDataStorage` state-transition methods — `ChangePublishStateAsync`, `ChangePublishRetryStateAsync`, `ChangeReceiveStateAsync`, `ChangeReceiveRetryStateAsync` — take a `MessageContentWrite` declaring whether the transition also rewrites the persisted envelope. `MessageContentWrite.Preserve`, the default on the two non-retry methods, skips re-serializing `MediumMessage.Origin` and omits the content column from the update, because a status transition does not change the envelope. `MessageContentWrite.Refresh` re-serializes `Origin`, writes it to the row, and refreshes `MediumMessage.Content` so the caller's copy keeps matching the row. A caller that mutated `Origin` before the write — the failure paths, which stamp the exception type onto the headers — must pass `Refresh`, or the mutation never reaches storage. Implementors owe the invariant `persisted Content == Serialize(Origin)` in both directions: `Preserve` must leave the stored envelope byte-identical even when the caller's copy has since drifted, and a provider that keeps the envelope as anything other than serialized bytes must update every representation of it on `Refresh`.
 
-`IConsumerClientFactory.CreateAsync(ConsumerClientRequest, ...)` receives a request whose `SubscriptionName` is the consumer identity on the Bus lane and the message name on the Queue lane, with its `Concurrency`, `Lane`, subscription `Kind` (`Competing` or `EveryInstance`), and the host's `InstanceId`. See [Every-instance Bus delivery](#every-instance-bus-delivery) for what a transport owes an every-instance request. Transports do not stamp the consumer on received envelopes; Core stamps `headless-msg-consumer-identity` once it routes the delivery. The public consumer startup contracts accept trailing optional cancellation tokens: `IConsumerClientFactory.CreateAsync(...)`, `IConsumerClient.FetchMessageNamesAsync(...)`, and `IConsumerClient.SubscribeAsync(...)`. Core passes the host-stopping token to metadata startup and a linked group token to worker creation and subscription. Implementations must let `OperationCanceledException` escape unchanged.
+`IConsumerClientFactory.CreateAsync(ConsumerClientRequest, ...)` receives a request whose `SubscriptionName` is the consumer identity on the Bus lane and the message name on the Queue lane, with its `Concurrency`, `Lane`, subscription `Kind` (`Competing` or `EveryInstance`), and the host's `InstanceId`. See [Every-instance Bus delivery](#every-instance-bus-delivery) for what a transport owes an every-instance request. Transports do not stamp the consumer on received envelopes; Core stamps `headless-msg-consumer-identity` once it routes the delivery. The public consumer startup contracts accept trailing optional cancellation tokens: `IConsumerClientFactory.CreateAsync(...)`, `IConsumerClient.FetchMessageNamesAsync(...)`, and `IConsumerClient.SubscribeAsync(...)`. Core passes the host-stopping token to metadata startup and a linked token per consumer client to worker creation and subscription. Implementations must let `OperationCanceledException` escape unchanged.
 
 The blessed cross-package SPI (the contracts that storage providers, transports, and dashboards resolve or implement) lives in the public `Headless.Messaging.Runtime` namespace: `IProcessingServer` (implement to attach a long-running unit to the bootstrap sequence) and `IConsumerServiceSelector` / `MethodMatcherCache` (inspect the resolved consumer topology). The `TransportNaming` (`WildcardToRegex`, `Normalize`) and `RuntimeTypeInspection` (`IsComplexType`, `DeclaresFieldOfType`) helpers in the same namespace are `internal` and shared with the first-party transports via `InternalsVisibleTo` — they are not part of the NuGet contract. These types were previously exposed under `Headless.Messaging.Internal`; that namespace now holds only genuine implementation detail. The monitoring status is a typed enum — `StatusName` (in `Headless.Messaging.Monitoring`, next to `MessageView`/`MessageQuery`) — so `MessageView.StatusName` and the `MessageQuery.StatusName` filter are compile-time safe. Storage providers persist and compare the enum member names verbatim as strings, so the SQL column contract is unchanged, and the dashboard serializes the status by name to keep the SPA wire shape stable.
 
@@ -599,20 +631,42 @@ dotnet add package Headless.Messaging.Storage.InMemory
 ### Setup and use
 
 ```csharp
+[BusConsumer("orders.projection")]
+public sealed class OrderPlacedConsumer : IConsume<OrderPlaced>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<OrderPlaced> context, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
+}
+
+[QueueConsumer("orders.fulfil-order")]
+public sealed class FulfilOrder : IConsume<FulfilOrderCommand>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<FulfilOrderCommand> context, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
+}
+
 services.AddHeadlessMessaging(setup =>
 {
     setup.UseInMemory();
     setup.UseInMemoryStorage();
     setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+    setup.AddModule<Orders.MessagingModule>();
+});
 
-    setup.Bus.ForMessage<OrderPlaced>(message =>
-        message
-            .Contract("orders.placed")
-            .CorrelationFrom(order => order.OrderId.ToString())
-            .Consumer<OrderPlacedConsumer>(consumer => consumer
-                .ConsumerIdentity("orders.projection")
-                .Group("orders"))
-    );
+services.ConfigureMessaging(messaging =>
+{
+    messaging.Message<OrderPlaced>("orders.placed").CorrelateBy(order => order.OrderId.ToString());
+    messaging.Message<FulfilOrderCommand>("orders.fulfil");
+});
+```
+
+`IBus.PublishAsync(new OrderPlaced(...))` reaches `OrderPlacedConsumer`, and `IQueue.EnqueueAsync(new FulfilOrderCommand(...))` reaches `FulfilOrder`. Hosts that share modules but split consumption add the same modules to each host and filter with `ConsumeOnly`:
+
+```csharp
+services.AddHeadlessMessaging(setup =>
+{
+    // ... transport + storage ...
+    setup.ConsumeOnly("orders.projection"); // every-instance consumers still run
 });
 ```
 
@@ -657,8 +711,8 @@ Deleting audits removes historical evidence but does not release a surviving gen
 
 The collector obtains one fixed provider-clock history cutoff snapshot per invocation. PostgreSQL and SQL Server use database time; InMemory uses its injected `TimeProvider`. Each round visits published messages, received messages, expired audits, and unreferenced expired receipts, with a maximum batch of 1,000 per category and a one-second pause after each nonzero batch. Rounds repeat until all categories return zero, then wait for `CollectorCleaningInterval`. History deletion creates no replacement history. Practical storage bounds depend on collection throughput keeping up with eligible arrivals; the durations are minimum residence times, not deletion deadlines.
 
-- `MessagingOptions.DefaultGroupName`, `GroupNamePrefix`, `MessageNamePrefix`, and `Version` control naming and isolation. `Version` is validated non-empty and at most 20 characters — the SQL storage providers persist it as a literal into a `VARCHAR(20)`/`nvarchar(20)` column, so an over-long value is rejected at startup instead of failing every outbox insert.
-- `MessagingOptions.DefaultDeliveryMode` defaults to `DeliveryMode.Durable` for both lanes. Null per-call modes inherit the per-type `WithDeliveryMode` policy, then this setting; explicit modes override both. Metadata-only records and fluent callbacks inherit the same way. Invalid global values fail options validation.
+- `MessagingOptions.MessageNamePrefix` and `Version` control naming and isolation. Consumer identities are never prefixed. `Version` is validated non-empty and at most 20 characters — the SQL storage providers persist it as a literal into a `VARCHAR(20)`/`nvarchar(20)` column, so an over-long value is rejected at startup instead of failing every outbox insert.
+- `MessagingOptions.DefaultDeliveryMode` defaults to `DeliveryMode.Durable` for both lanes. Null per-call modes inherit the contract's per-lane `WithDeliveryMode` policy, then this setting; explicit modes override both. Metadata-only records and fluent callbacks inherit the same way. Invalid global values fail options validation.
 - There is no enlistment option. `MessagingOptions.DefaultEnlistment` and the per-type `WithEnlistment(...)` policy were deleted: the receiver decides enlistment, so a host that used `DefaultEnlistment = Required` as a guardrail gets a compile error and should read [Delivery Modes](#delivery-modes) for what replaces it.
 - `MessagingOptions.RequiredInboxCapability` defaults to `MessagingInboxCapabilityTier.Transactional` and sets the minimum inbox guarantee required by durable consumers. The tier order is `ProcessLocal` < `DurableDedupeOnly` < `Transactional`; the configured storage must declare the selected tier or a stronger one. Selecting a weaker requirement is an explicit opt-down and does not change the provider's actual guarantees. Undefined tier values are rejected.
 - `MessagingInstrumentationOptions.IncludeTenantIdInMetricTags` defaults to `false`. Enable it only when the metrics backend and tenant population have an explicit cardinality budget; traces retain their separate tenant-tag policy.
@@ -667,7 +721,24 @@ The collector obtains one fixed provider-clock history cutoff snapshot per invoc
 - `UseStorageLock` coordinates retry processors through a messaging-keyed distributed lock provider.
 - `DeadNodeReconcileInterval` (default 1 minute, `> 0`) sets the always-on dead-owner recovery reconcile cadence (see [Dead-owner recovery](#dead-owner-recovery)). Independent of `UseStorageLock`.
 - `ShutdownTimeout` (default 30 seconds, `> 0`, `<= 5m`) is one end-to-end messaging shutdown bound. Shutdown first quiesces every processor, then concurrently initiates all drains using the remaining portion of one monotonic deadline. Configure the generic host or orchestrator termination grace to exceed this value; an earlier kill intentionally falls back to normal lease-expiry recovery while eventual cleanup remains fault-observed.
-- Register middleware through `MessagingBuilder.AddBusPublishMiddleware<T>()`, `AddReceiveMiddleware<T>()`, `AddBusConsumeMiddleware<T>()`, `AddPublishMiddlewareFor<TMiddleware,TMessage>()`, `AddReceiveMiddlewareFor<TMiddleware,TMessage>(groupName, lane)`, and `AddConsumeMiddlewareFor<TMiddleware,TMessage>(groupName, lane)`.
+- Register middleware through `MessagingBuilder.AddBusPublishMiddleware<T>()`, `AddReceiveMiddleware<T>()`, `AddBusConsumeMiddleware<T>()`, `AddPublishMiddlewareFor<TMiddleware,TMessage>(lane)`, `AddReceiveMiddlewareFor<TMiddleware,TMessage>(lane)`, and `AddConsumeMiddlewareFor<TMiddleware,TMessage>(lane)`. Middleware for one consumer attaches through `Tune(identity, c => c.UseMiddleware<T>())`.
+- Consumer deployment settings bind from `Headless:Messaging:Consumers:{identity}` after every `Tune` call: `Concurrency` (1 to 255), `InboxRetention` (a `TimeSpan` such as `30.00:00:00`), and `CircuitBreaker:Enabled`, `CircuitBreaker:FailureThreshold`, `CircuitBreaker:OpenDuration`. The transient-exception predicate is code-only. An unknown identity, an unknown setting, an invalid value, or an inbox retention or circuit breaker on an every-instance consumer fails startup.
+
+  ```json
+  {
+    "Headless": {
+      "Messaging": {
+        "Consumers": {
+          "orders.projection": {
+            "Concurrency": 8,
+            "InboxRetention": "14.00:00:00",
+            "CircuitBreaker": { "FailureThreshold": 3, "OpenDuration": "00:01:00" }
+          }
+        }
+      }
+    }
+  }
+  ```
 - Runtime subscriptions attach handlers after startup through `IRuntimeSubscriber`.
 
 ### Runtime behavior
@@ -969,6 +1040,9 @@ var messaging = builder.Services.AddHeadlessMessaging(setup => { /* ... */ });
 messaging.AddReceiveMiddleware<SignatureVerificationReceiveMiddleware>();
 messaging.AddBusConsumeMiddleware<AuditConsumeMiddleware>();
 messaging.AddPublishMiddlewareFor<CorrelationPublishMiddleware, OrderPlaced>(MessageLane.Bus);
+
+// One consumer only:
+builder.Services.ConfigureMessaging(m => m.Tune("orders.projection", c => c.UseMiddleware<AuditConsumeMiddleware>()));
 ```
 
 ### Receive Middleware
@@ -991,9 +1065,10 @@ Receive middleware intercepts the raw transport envelope (`ReceiveContext.Header
 - `AddBusPublishMiddleware<T>()` / `AddBusConsumeMiddleware<T>()`: object-typed middleware for every publish or consume.
 - `AddReceiveMiddleware<T>()`: global receive middleware running on both lanes for every resolved consumer.
 - `AddPublishMiddlewareFor<TMiddleware, TMessage>(lane)`: typed publish middleware for one message type and lane.
-- `AddReceiveMiddlewareFor<TMiddleware, TMessage>(group, lane)`: typed receive middleware for one message type, consumer group, and lane.
-- `AddConsumeMiddlewareFor<TMiddleware, TMessage>(group, lane)`: typed consume middleware for one message type and consumer group.
-- Each call returns a registration handle with `.WithPriority(int)`. Lower priority runs first and wraps later middleware. Ties use registration order. Default priority is `0`; first-party tenant propagation uses `-1000`.
+- `AddReceiveMiddlewareFor<TMiddleware, TMessage>(lane)`: typed receive middleware for one message type and lane, for every consumer of that message.
+- `AddConsumeMiddlewareFor<TMiddleware, TMessage>(lane)`: typed consume middleware for one message type and lane, for every consumer of that message.
+- `Tune(identity, c => c.UseMiddleware<TMiddleware>())`: consume middleware for one consumer, on the `AddHeadlessMessaging` setup or `services.ConfigureMessaging(...)`. It implements the untyped `IConsumeMiddleware<ConsumeContext>` because one consumer may handle several messages, runs innermost (inside the global and per-message consume middleware), and is resolved from the delivery scope, registered as scoped when not already registered. Several `Tune` calls accumulate middleware; the same type tuned twice runs once.
+- Each `MessagingBuilder` call returns a registration handle with `.WithPriority(int)`. Lower priority runs first and wraps later middleware. Ties use registration order. Default priority is `0`; first-party tenant propagation uses `-1000`.
 
 **Framework guarantees:**
 
@@ -1033,7 +1108,7 @@ Message ordering guarantees depend on the transport provider and configuration:
 - **Azure Service Bus**: FIFO ordering when sessions are enabled (`EnableSessions = true`)
 - **RabbitMQ**: No ordering guarantees by default; consumers may process messages concurrently
 - **AWS SQS**: FIFO queues provide strict ordering; standard queues do not
-- **Redis Streams**: Ordered within consumer group, but parallel consumers may process out of order
+- **Redis Streams**: Ordered within a stream, but parallel consumers may process out of order
 - **NATS**: Ordering preserved per subject, but concurrent consumers introduce variability
 - **Pulsar**: Ordered within partitions when using partition key
 - **InMemory**: FIFO ordering with single consumer thread
@@ -1084,32 +1159,40 @@ builder.Services.AddHeadlessMessaging(setup =>
 
 ### Per-Consumer Override
 
+Override the host settings for one consumer by its identity. A setting left `null` on `ConsumerCircuitBreakerOptions` falls back to `MessagingOptions.CircuitBreaker`.
+
 ```csharp
 builder.Services.AddHeadlessMessaging(setup =>
 {
     // ... transport + storage registration ...
-    setup.Bus.ForMessage<PaymentProcessed>(message =>
-        message
-            .Contract("payments.process")
-            .Consumer<PaymentHandler>(consumer =>
-                consumer
-                    .ConsumerIdentity("payments.handler")
-                    .WithCircuitBreaker(cb =>
-                    {
-                        cb.FailureThreshold = 3; // more sensitive
-                        cb.OpenDuration = TimeSpan.FromSeconds(60); // longer cooldown
-                    })
-            )
-    );
+    setup.Tune("payments.handler", consumer => consumer.CircuitBreaker(cb =>
+    {
+        cb.FailureThreshold = 3; // more sensitive
+        cb.OpenDuration = TimeSpan.FromSeconds(60); // longer cooldown
+        cb.IsTransientException = ex => ex is PaymentGatewayUnavailableException;
+    }));
 
-    // Disable circuit breaker for a best-effort consumer
-    setup.Bus.ForMessage<MetricsUpdated>(message =>
-        message.Consumer<MetricsHandler>(consumer =>
-            consumer.ConsumerIdentity("metrics.handler").WithCircuitBreaker(cb => cb.Enabled = false)
-        )
-    );
+    // Disable the circuit breaker for a best-effort consumer
+    setup.Tune("metrics.handler", consumer => consumer.CircuitBreaker(cb => cb.Enabled = false));
 });
 ```
+
+The same overrides bind from configuration, applied after every `Tune` call. `IsTransientException` is code-only.
+
+```json
+{
+  "Headless": {
+    "Messaging": {
+      "Consumers": {
+        "payments.handler": { "CircuitBreaker": { "FailureThreshold": 3, "OpenDuration": "00:01:00" } },
+        "metrics.handler": { "CircuitBreaker": { "Enabled": false } }
+      }
+    }
+  }
+}
+```
+
+Overrides for one identity do not merge; unset fields fall back only to the host options. A later `CircuitBreaker(...)` call, or a `CircuitBreaker` configuration section, replaces the earlier override and drops every value it set, including a code-set `IsTransientException`. An every-instance consumer has no circuit breaker, so a circuit-breaker override on one fails startup.
 
 ### Custom Exception Predicate
 
@@ -1360,12 +1443,13 @@ Framework span attributes: `headless.messaging.intent` (`bus`/`queue`), `headles
 - SNS topics for bus publishing.
 - SQS queues for queue delivery.
 - FIFO topic/queue support.
-- Producer hatch: `UseAws(aws => aws.MessageGroupId(message => ...))`.
+- Message hatch on either lane builder: `.OnBus(b => b.UseAws(aws => aws.MessageGroupId(message => ...)))` or `.OnQueue(q => q.UseAws(...))`.
+- Every-instance consumers are not supported: startup fails naming the consumer.
 - Consumer startup honors host cancellation through SNS/SQS provisioning and subscription.
 
 ### Design constraints
 
-`MessageGroupId(...)` is producer-side only because it is stamped while publishing. The provider maps it to native FIFO `MessageGroupId`; it is not a custom message attribute. Values longer than 128 characters are rejected.
+`MessageGroupId(...)` is message-side only because it is stamped while publishing. The provider maps it to native FIFO `MessageGroupId`; it is not a custom message attribute. Values longer than 128 characters are rejected.
 
 Malformed SNS transport envelopes are terminally deleted after sanitized logging. Handler rejection remains a normal visibility-timeout retry and can use an external SQS redrive policy.
 
@@ -1383,14 +1467,18 @@ setup.UseAws(options =>
     options.Region = Amazon.RegionEndpoint.USEast1;
 });
 
-setup.Queue.ForMessage<OrderPlaced>(message =>
-    message
-        .Contract("orders-placed.fifo")
-        .UseAws(aws => aws.MessageGroupId(order => order.CustomerId.ToString()))
-        .Consumer<OrderWorker>(consumer => consumer
-            .ConsumerIdentity("orders.worker")
-            )
+services.ConfigureMessaging(messaging =>
+    messaging
+        .Message<PlaceOrder>("orders-place.fifo")
+        .OnQueue(queue => queue.UseAws(aws => aws.MessageGroupId(order => order.CustomerId.ToString())))
 );
+
+[QueueConsumer("orders.place-order")]
+public sealed class PlaceOrderWorker : IConsume<PlaceOrder>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<PlaceOrder> context, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
+}
 ```
 
 AWS declares immutable Bus and Queue capabilities with independent SNS/SQS topology. Bus uses `bus-{logical-name}` SNS topics and one `bus-{consumer-identity}` SQS queue per consumer identity; Queue sends directly to `queue-{logical-name}`.
@@ -1414,13 +1502,13 @@ Registers SNS/SQS clients, bus/queue transports, and AWS consumer client service
 - `setup.UseAzureServiceBus(...)`.
 - Topic and queue transport support.
 - Session-aware processing.
-- Producer hatch: `UseAzureServiceBus(asb => asb.PartitionKey(message => ...))`.
+- Message hatch on either lane builder: `.OnBus(b => b.UseAzureServiceBus(asb => asb.PartitionKey(message => ...)))` or `.OnQueue(q => q.UseAzureServiceBus(...))`.
 - Consumer startup honors host cancellation through client, topology, and processor setup.
 - Shared connection: bus and queue publishing and consumer processors share one `ServiceBusClient` (one AMQP connection) per namespace with per-destination cached senders and a shared administration client; senders are drained before the client on shutdown, and consumers stop their processors without touching the shared client.
 
 ### Design constraints
 
-`PartitionKey(...)` is producer-side only and limited to 128 characters. When sessions are enabled, Azure Service Bus requires `PartitionKey` to equal `SessionId`; the message builder rejects mismatches.
+`PartitionKey(...)` is message-side only and limited to 128 characters. When sessions are enabled, Azure Service Bus requires `PartitionKey` to equal `SessionId`; the message builder rejects mismatches.
 
 Headless disables Azure SDK auto-complete internally and settles messages explicitly after durable receive storage and handler outcome.
 
@@ -1437,16 +1525,14 @@ dotnet add package Headless.Messaging.AzureServiceBus
 ```csharp
 setup.UseAzureServiceBus(options => options.ConnectionString = connectionString);
 
-setup.Bus.ForMessage<OrderPlaced>(message =>
-    message
-        .UseAzureServiceBus(asb => asb.PartitionKey(order => order.CustomerId.ToString()))
-        .Consumer<OrderProjection>(consumer => consumer
-            .ConsumerIdentity("orders.projection")
-            )
+services.ConfigureMessaging(messaging =>
+    messaging
+        .Message<OrderPlaced>("orders.placed")
+        .OnBus(bus => bus.UseAzureServiceBus(asb => asb.PartitionKey(order => order.CustomerId.ToString())))
 );
 ```
 
-Azure Service Bus declares immutable Bus and Queue capabilities with independent topic/queue topology, so the same contract and logical name may be registered separately on both roots.
+A `[BusConsumer("orders.projection")]` consumer of `OrderPlaced` gets the subscription `orders.projection` on the Bus topic. Azure Service Bus declares immutable Bus and Queue capabilities with independent topic/queue topology, so the same contract and logical name can carry Bus and Queue consumers without cross-delivery.
 
 ### Configuration
 
@@ -1464,7 +1550,7 @@ Registers a shared client pool (one `ServiceBusClient` per namespace, shared by 
 
 - `setup.UseInMemory()`.
 - In-process bus and queue delivery.
-- Bus group fan-out, competing replicas, Queue ownership, and same-name Bus/Queue isolation within the process.
+- Bus fan-out per consumer identity, competing replicas, Queue ownership, every-instance subscriptions, and same-name Bus/Queue isolation within the process.
 - No external broker.
 - Consumer startup implements the same host-cancellable contract as broker-backed providers.
 
@@ -1531,14 +1617,14 @@ Registers in-memory storage and monitoring services. State is lost when the proc
 
 - `setup.UseKafka(...)`.
 - Kafka topic auto-creation support.
-- Producer hatch: `UseKafka(kafka => kafka.PartitionBy(message => ...))`.
-- Consumer hatch: `consumer.UseKafka(kafka => kafka.WithIsolationLevel(IsolationLevel.ReadCommitted))`, or `Tune(identity, c => c.UseKafka(...))` for a declared consumer.
-- A Queue consumer's `group.id` is its message name, so every host consuming that message joins one group.
+- Message hatch on the Queue lane builder only: `.OnQueue(q => q.UseKafka(kafka => kafka.PartitionBy(message => ...)))`.
+- Consumer hatch: `Tune(identity, c => c.UseKafka(kafka => kafka.WithIsolationLevel(IsolationLevel.ReadCommitted)))`.
+- A Queue consumer's Kafka `group.id` is its message name, so every host consuming that message joins one Kafka consumer group.
 - Consumer startup honors host cancellation while creating topics and subscriptions.
 
 ### Design constraints
 
-Kafka supports only the Queue lane in this package. Bus registration is rejected during startup capability validation before provider creation, provisioning, or storage side effects. `PartitionBy(...)` maps to the Kafka key. The framework does not impose a Kafka key length cap; broker/client configuration owns practical limits. Delivery remains at-least-once; consumers must dedupe by business key or message id. A publish succeeds only when Kafka reports `Persisted`; `PossiblyPersisted` is retried and can therefore produce duplicates. When consumer concurrency is greater than one, successful handlers can finish out of order, but Kafka commits advance only to the lowest offset still in flight for that partition; a completed high offset does not commit past lower in-flight offsets. Offsets the broker never hands to the application — transaction control records, aborted batches under `read_committed`, compaction holes, and tombstones — do not hold that watermark back, because ordered per-partition delivery proves they can never arrive later. Rebalances invalidate tracked offsets for revoked or lost partitions so late handlers cannot commit or seek partitions now owned by another consumer. Malformed transport envelopes are terminally logged and their offsets join the same per-partition completion watermark, bounding poison replay without skipping lower in-flight messages.
+Kafka supports only the Queue lane in this package. A `[BusConsumer]` fails startup capability validation before provider creation, provisioning, or storage side effects, and an `IBus` publish fails when attempted. Message contracts are accepted: startup validates contract routes only on the Queue lane. `PartitionBy(...)` maps to the Kafka key. The framework does not impose a Kafka key length cap; broker/client configuration owns practical limits. Delivery remains at-least-once; consumers must dedupe by business key or message id. A publish succeeds only when Kafka reports `Persisted`; `PossiblyPersisted` is retried and can therefore produce duplicates. When consumer concurrency is greater than one, successful handlers can finish out of order, but Kafka commits advance only to the lowest offset still in flight for that partition; a completed high offset does not commit past lower in-flight offsets. Offsets the broker never hands to the application — transaction control records, aborted batches under `read_committed`, compaction holes, and tombstones — do not hold that watermark back, because ordered per-partition delivery proves they can never arrive later. Rebalances invalidate tracked offsets for revoked or lost partitions so late handlers cannot commit or seek partitions now owned by another consumer. Malformed transport envelopes are terminally logged and their offsets join the same per-partition completion watermark, bounding poison replay without skipping lower in-flight messages.
 
 ### Install
 
@@ -1551,16 +1637,27 @@ dotnet add package Headless.Messaging.Kafka
 ```csharp
 setup.UseKafka(options => options.Servers = "localhost:9092");
 
-setup.Queue.ForMessage<OrderPlaced>(message =>
-    message
-        .Contract("orders.placed")
-        .UseKafka(kafka => kafka.PartitionBy(order => order.CustomerId.ToString()))
-        .Consumer<OrderWorker>(consumer =>
-            consumer
-                .ConsumerIdentity("orders.worker")
-                .UseKafka(kafka => kafka.WithIsolationLevel(IsolationLevel.ReadCommitted))
-        )
+setup.Tune(PlaceOrderWorker.Identity, consumer =>
+    consumer.UseKafka(kafka => kafka.WithIsolationLevel(IsolationLevel.ReadCommitted))
 );
+
+// In the Orders module:
+services.ConfigureMessaging(messaging =>
+{
+    messaging.AddModule<Orders.MessagingModule>();
+    messaging
+        .Message<PlaceOrder>("orders.place")
+        .OnQueue(queue => queue.UseKafka(kafka => kafka.PartitionBy(order => order.CustomerId.ToString())));
+});
+
+[QueueConsumer(Identity)]
+public sealed class PlaceOrderWorker : IConsume<PlaceOrder>
+{
+    public const string Identity = "orders.place-order";
+
+    public ValueTask ConsumeAsync(ConsumeContext<PlaceOrder> context, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
+}
 ```
 
 ### Configuration
@@ -1579,15 +1676,15 @@ Registers Kafka transports, connection pool, consumer factory, and provider-spec
 
 - `setup.UseNats(...)`.
 - JetStream stream provisioning modes and durable consumers.
-- Producer hatch: `UseNats(nats => nats.SubjectShard(message => ...))`.
-- Consumer hatch: `consumer.UseNats(nats => nats.Sharded())`.
+- Message hatch on either lane builder: `.OnBus(b => b.UseNats(nats => nats.SubjectShard(message => ...)))` or `.OnQueue(q => q.UseNats(...))`.
+- Consumer hatch: `Tune(identity, c => c.UseNats(nats => nats.Sharded()))`, needed only when the producer shards a message this host declares without `SubjectShard(...)`.
 - Consumer startup honors host cancellation while connecting and provisioning JetStream topology, while preserving configured topology timeouts.
 
 ### Design constraints
 
 `SubjectShard(...)` appends one safe subject token to the logical message name. It rejects `.`, `*`, `>`, whitespace, and control characters so payload values cannot change the subject hierarchy or wildcard behavior.
 
-Shard symmetry is required: when a message uses `SubjectShard(...)` on the producer side, every consumer registered for that message must call `.UseNats(c => c.Sharded())` on its consumer registration. This is validated at startup and throws `InvalidOperationException` if violated. The reason: NATS delivers zero messages with no error when a FilterSubject does not match any shard subject — the asymmetry causes silent data loss that is otherwise very difficult to diagnose.
+Shard coverage follows the contract. A consumer of a message whose contract, declared in this host, uses `SubjectShard(...)` on that lane filters on the `{subject}.>` wildcard automatically. The contract is the only thing the host can see, so when another service shards a message that this host declares without `SubjectShard(...)`, tune the consumer with `.UseNats(n => n.Sharded())`: NATS delivers zero messages with no error to a filter subject that matches no shard subject. Keeping one shared contract declaration for the message in both services avoids the gap.
 
 Connection-specific failures (`NatsConnectionFailedException`, `NatsJSConnectionException`, or a `NatsException` wrapping `SocketException`/`IOException`) terminate the listener instead of retrying in place, so the supervising consumer register's health watchdog can replace the failed client. JetStream protocol, timeout, API, and other consumer errors retry per-subject with backoff. As a backstop, a run of `NatsMessagingOptions.MaxConsecutiveConsumeFailures` (default `10`) consecutive consume-loop failures of any exception type also terminates the listener for a supervised restart — bounding in-place spinning when a permanently dead connection surfaces an error that is not one of the classified connection-failure types (consumer connections set `MaxReconnectRetry = 0` and never reconnect on their own). The streak resets on any forward progress (a successful consumer bind or fetch). Consumer connection faults are owned by the health watchdog, not the per-message circuit breaker, which never observes connection-level failures. `NatsMessagingOptions.ConnectionPoolSize` defaults to `1` — a single connection multiplexes all publishers, so raise it only as a throughput knob. During host shutdown, NATS bounds its in-flight handler drain by the remaining shared `MessagingOptions.ShutdownTimeout` budget instead of starting an independent 30-second drain.
 
@@ -1597,7 +1694,7 @@ Bus publishes to `headless.bus.{logical-name}` with interest-retained streams an
 
 `NatsMessagingOptions.StreamProvisioning` decides what consumer startup does about that stream. `Verify` (the default) creates a missing stream but throws with the divergent fields rather than writing to one that already exists; `Reconcile` updates fields JetStream accepts in place, reports immutable divergence instead of sending an update the server rejects, and `Disabled` neither creates nor modifies. The default changed because the old flag's `true` silently overwrote the storage class, replicas, and limits of a stream provisioned with the NATS CLI, Terraform, or a Kubernetes operator on every startup.
 
-The comparison covers only fields the provider or the `StreamOptions` callback actually asserts — a field neither set is never compared, since the server defaults it and diffing it would report drift against every existing stream. Subjects compare asymmetrically: extra subjects on the live stream (from sibling consumer groups or an earlier deployment) are ignored, while a subject this client requires that the stream does not cover is a divergence, because JetStream delivers zero messages and reports no error to a filter that matches nothing. Deployments where several consumer groups share one normalized stream and each contributes subjects therefore need `Reconcile`, or a stream provisioned with full subject coverage. Divergence on a field JetStream refuses to change on a live stream — storage type is the clearest case — is reported with a recreate-or-migrate remedy instead of a mode-switch suggestion that would fail at the server.
+The comparison covers only fields the provider or the `StreamOptions` callback actually asserts — a field neither set is never compared, since the server defaults it and diffing it would report drift against every existing stream. Subjects compare asymmetrically: extra subjects on the live stream (from other consumers or an earlier deployment) are ignored, while a subject this client requires that the stream does not cover is a divergence, because JetStream delivers zero messages and reports no error to a filter that matches nothing. Deployments where several consumers share one normalized stream and each contributes subjects therefore need `Reconcile`, or a stream provisioned with full subject coverage. Divergence on a field JetStream refuses to change on a live stream — storage type is the clearest case — is reported with a recreate-or-migrate remedy instead of a mode-switch suggestion that would fail at the server.
 ### Install
 
 ```bash
@@ -1609,16 +1706,17 @@ dotnet add package Headless.Messaging.Nats
 ```csharp
 setup.UseNats(options => options.Servers = "nats://localhost:4222");
 
-setup.Bus.ForMessage<OrderPlaced>(message =>
-    message
-        .UseNats(nats => nats.SubjectShard(order => order.CustomerId.ToString()))
-        .Consumer<OrderProjection>(consumer =>
-            consumer.ConsumerIdentity("orders.projection").UseNats(nats => nats.Sharded())
-        )
+services.ConfigureMessaging(messaging =>
+    messaging
+        .Message<OrderPlaced>("orders.placed")
+        .OnBus(bus => bus.UseNats(nats => nats.SubjectShard(order => order.CustomerId.ToString())))
 );
+
+// Only when the producer shards OrderPlaced but this host declares it without SubjectShard:
+setup.Tune("orders.projection", consumer => consumer.UseNats(nats => nats.Sharded()));
 ```
 
-NATS declares independent Bus and Queue topology, so the same contract and logical name can be registered on both roots without cross-delivery. Malformed transport envelopes are terminally double-acknowledged and logged without payload or headers.
+NATS declares independent Bus and Queue topology, so the same contract and logical name can carry Bus and Queue consumers without cross-delivery. Malformed transport envelopes are terminally double-acknowledged and logged without payload or headers.
 
 ### Configuration
 
@@ -1655,14 +1753,12 @@ dotnet add package Headless.Messaging.Pulsar
 ```csharp
 setup.UsePulsar(options => options.ServiceUrl = "pulsar://localhost:6650");
 
-setup.Bus.ForMessage<OrderPlaced>(message =>
-    message
-        .Contract("persistent://public/default/orders.placed")
-        .Consumer<OrderProjection>(consumer => consumer
-            .ConsumerIdentity("orders.projection")
-            )
+services.ConfigureMessaging(messaging =>
+    messaging.Message<OrderPlaced>("persistent://public/default/orders.placed")
 );
 ```
+
+A `[BusConsumer("orders.projection")]` consumer of `OrderPlaced` subscribes as `headless-bus-orders.projection`.
 
 ### Configuration
 
@@ -1680,12 +1776,12 @@ Registers Pulsar connection factory, transports, and consumer client factory.
 
 - `setup.UseRabbitMq(...)`.
 - Bus exchange and queue delivery.
-- Consumer hatch: `consumer.UseRabbitMq(rabbit => rabbit.PrefetchCount(...))`.
+- Consumer hatch: `Tune(identity, c => c.UseRabbitMq(rabbit => rabbit.PrefetchCount(...)))`.
 - Consumer startup threads host cancellation through connection, channel, exchange, queue, and binding operations.
 
 ### Design constraints
 
-RabbitMQ exposes consumer-side QoS through `PrefetchCount(...)`. For base exchange `myapp.events`, Bus uses the `myapp.events.bus` topic exchange, `bus.{logical-name}` routing keys, and `bus.{consumer-identity}` queues; Queue uses the `myapp.events.queue` direct exchange, `queue.{logical-name}` routing keys, and `queue.{logical-name}` queues. When `PublishConfirms` is enabled, publish completion awaits the broker acknowledgement or negative acknowledgement. Malformed transport envelopes are terminally rejected without requeue while ordinary handler rejection remains retryable.
+RabbitMQ exposes consumer-side QoS through `PrefetchCount(...)` on `Tune`; it has no message hatch. For base exchange `myapp.events`, Bus uses the `myapp.events.bus` topic exchange, `bus.{logical-name}` routing keys, and `bus.{consumer-identity}` queues; Queue uses the `myapp.events.queue` direct exchange, `queue.{logical-name}` routing keys, and `queue.{logical-name}` queues. When `PublishConfirms` is enabled, publish completion awaits the broker acknowledgement or negative acknowledgement. Malformed transport envelopes are terminally rejected without requeue while ordinary handler rejection remains retryable.
 
 ### Install
 
@@ -1704,14 +1800,10 @@ setup.UseRabbitMq(options =>
     options.Password = "app_secret"; // required
 });
 
-setup.Bus.ForMessage<OrderPlaced>(message =>
-    message.Consumer<OrderProjection>(consumer =>
-        consumer.ConsumerIdentity("orders.projection").UseRabbitMq(rabbit => rabbit.PrefetchCount(20))
-    )
-);
+setup.Tune("orders.projection", consumer => consumer.UseRabbitMq(rabbit => rabbit.PrefetchCount(20)));
 ```
 
-RabbitMQ declares independent Bus and Queue topology, so the same contract and logical name can be registered on both roots without cross-delivery.
+RabbitMQ declares independent Bus and Queue topology, so the same contract and logical name can carry Bus and Queue consumers without cross-delivery.
 
 ### Configuration
 
@@ -1728,8 +1820,8 @@ Registers RabbitMQ connection/channel pool, bus/queue transport, consumer client
 ### API and behavior
 
 - `setup.UseRedis(...)`.
-- One Bus copy per consumer identity, with replicas of the identity competing inside its consumer group.
-- One Queue copy owned by competing destination replicas.
+- One Bus copy per consumer identity: the Redis consumer group on each Bus stream is named after the identity, and replicas that register the identity compete inside it.
+- One Queue copy per message: the Redis consumer group on the Queue stream is named after the message, and replicas compete inside it.
 - Lane-qualified stream keys, acknowledgements, pending-entry claim, and terminal poison handling.
 - Streams consumer startup honors host cancellation through connection, provisioning, and subscription.
 
@@ -1745,7 +1837,7 @@ dotnet add package Headless.Messaging.Redis
 setup.UseRedis(options => options.Configuration = ConfigurationOptions.Parse("localhost:6379"));
 ```
 
-Redis physical keys are `headless:messaging:bus:{logical-name}` and `headless:messaging:queue:{logical-name}`. Both lanes use retained Streams with explicit consumer-group ownership.
+Redis physical keys are `headless:messaging:bus:{logical-name}` and `headless:messaging:queue:{logical-name}`. Both lanes use retained Streams with explicit Redis consumer-group ownership, which the provider creates on subscribe.
 
 ### Configuration
 
@@ -1773,8 +1865,8 @@ Roslyn incremental source generator that registers `[BusConsumer]` and `[QueueCo
 
 - **Keys**: a consumer is keyed by its lane, identity, message name, and contract version, so one identity can cover several messages. On the Bus lane one identity is one subscription: the host starts one consumer client for it that binds all its messages. On the Queue lane the host starts one client per message.
 - **Cross-module conflicts fail startup and name both sources**: one identity on two consumer classes in the same lane, and a second Queue consumer for one message. An identical declaration contributed twice registers once.
-- **`Tune(identity, c => ...)`** on the `AddHeadlessMessaging` setup or on `services.ConfigureMessaging(...)` changes a registered consumer's deployment settings on this host: `Concurrency(n)`, `FailurePolicy<TPolicy>()`, `UseMiddleware<TMiddleware>()`, and the provider consumer hatches `UseKafka(...)`, `UseNats(...)`, and `UseRabbitMq(...)`. Tuned middleware implements `IConsumeMiddleware<ConsumeContext>`, runs only for that consumer, runs inside the global and per-message middleware, and is resolved from the delivery scope (registered as scoped when it is not already registered). A consumer that handles several messages takes the settings for each of them. An identity that no registered consumer declares fails startup.
-- **Configuration**: `Headless:Messaging:Consumers:{identity}:Concurrency` (1 to 255) applies after every `Tune` call. An unknown identity, an unknown setting, or an invalid value fails startup.
+- **`Tune(identity, c => ...)`** on the `AddHeadlessMessaging` setup or on `services.ConfigureMessaging(...)` changes a registered consumer's deployment settings on this host: `Concurrency(n)` (`0` is rejected), `InboxRetention(TimeSpan)`, `CircuitBreaker(...)`, `FailurePolicy<TPolicy>()`, `UseMiddleware<TMiddleware>()`, and the provider consumer hatches `UseKafka(...)`, `UseNats(...)`, and `UseRabbitMq(...)`. Several `Tune` calls for one identity apply in registration order, so a later value wins and middleware accumulates. `InboxRetention` or `CircuitBreaker` on an every-instance consumer fails startup. Tuned middleware implements `IConsumeMiddleware<ConsumeContext>`, runs only for that consumer, runs inside the global and per-message middleware, and is resolved from the delivery scope (registered as scoped when it is not already registered). A consumer that handles several messages takes the settings for each of them. An identity that no registered consumer declares fails startup.
+- **Configuration**: `Headless:Messaging:Consumers:{identity}` binds `Concurrency` (1 to 255), `InboxRetention` (a `TimeSpan` such as `30.00:00:00`), and `CircuitBreaker:Enabled`, `CircuitBreaker:FailureThreshold`, and `CircuitBreaker:OpenDuration`, and applies after every `Tune` call. An unknown identity, an unknown setting, or an invalid value fails startup.
 - **`ConsumeOnly("orders.*", "billing.invoice-projection")`** on the `AddHeadlessMessaging` setup limits which competing consumers this host starts clients for; every-instance consumers are never filtered and always run. An entry is an exact identity or an `owner.*` pattern that matches the first identity segment. Consumers outside the filter stay registered, so the host still publishes their messages; another host consumes them. The filter also scopes the host's retry processor: its received-retry and inbox-orphan pickup queries never lease a row whose consumer identity is outside the filter, so the host never marks another host's healthy inbox row as an orphan or fails its retry as having no subscriber. A host without the filter picks up rows of every identity, including identities no host registers. An entry that matches no registered consumer, or only every-instance consumers (the filter would not affect them), fails startup.
 
 ### Diagnostics
@@ -1912,12 +2004,12 @@ EF execution-strategy retries are allowed only before handler entry. After entry
 
 - `MessagingTestHarness` records messages at the bus/queue transport layer.
 - `WaitForPublished<T>(...)`, `WaitForConsumed<T>(...)`, `WaitForFaulted<T>(...)`, and `WaitForExhausted<T>(...)` block until a match arrives or the timeout elapses.
-- Registrations use `setup.Bus` / `setup.Queue`; `WaitForPublished<T>(MessageLane.Bus)` / `MessageLane.Queue` distinguishes identical payloads sent through the two lanes.
+- Consumers under test register the same way as in production: attribute-declared classes and `AddModule<…MessagingModule>()`. `WaitForPublished<T>(MessageLane.Bus)` / `MessageLane.Queue` distinguishes identical payloads sent through the two lanes.
 - Predicate overloads for filtering by payload shape.
 - Store-first by default: the harness keeps the production `DeliveryMode.Durable` default, so a plain publish is stored first and dispatched from storage; `RecordedMessage.RequestedDeliveryMode` / `ResolvedDeliveryMode` report what was asked for and what ran.
 - `RunInUnitOfWorkAsync(...)` creates a service scope, begins a resource-less unit of work on it, and hands the delegate **both** that scope's `IServiceProvider` and the `IUnitOfWork` itself — `Func<IServiceProvider, IUnitOfWork, Task>`, plus a `Task<TResult>` overload. Publish through the unit's `Outbox` inside the delegate to exercise an enlisted publish against a live commit or rollback.
 - `ResetAsync()` drains in-flight publish and consume work before clearing a shared harness.
-- `TestConsumer<T>` captures messages without custom handler logic.
+- `TestConsumer<T>` captures consume contexts without custom handler logic. It is generic and carries no consumer attribute, so the generator cannot register it; attach it as a runtime subscription, for example `subscriber.SubscribeAsync<OrderPlaced>((context, _, ct) => testConsumer.ConsumeAsync(context, ct), new RuntimeSubscriptionOptions { HandlerId = "tests.order-placed" })`.
 
 ### Design constraints
 
