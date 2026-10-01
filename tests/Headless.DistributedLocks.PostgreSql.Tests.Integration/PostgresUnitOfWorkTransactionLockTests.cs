@@ -122,6 +122,82 @@ public sealed class PostgresUnitOfWorkTransactionLockTests(PostgreSqlDistributed
     }
 
     [Fact]
+    public async Task should_not_leak_the_lock_timeout_after_a_bounded_acquire_succeeds()
+    {
+        // given
+        await using var provider = _BuildProvider();
+        var factory = provider.GetRequiredService<IUnitOfWorkFactory>();
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await using var unit = await factory.BeginAsync(connection, cancellationToken: AbortToken);
+
+        // when
+        await unit.TransactionLocks.AcquireAsync(_CreateResourceName(), TimeSpan.FromSeconds(5), AbortToken);
+
+        // then — a later statement in the unit runs under the unit's own lock_timeout, not the acquire's
+        (await _CurrentLockTimeoutAsync(connection, unit))
+            .Should()
+            .Be("0");
+    }
+
+    [Fact]
+    public async Task should_leave_the_unit_usable_when_a_bounded_acquire_is_cancelled()
+    {
+        // given
+        await using var provider = _BuildProvider();
+        var factory = provider.GetRequiredService<IUnitOfWorkFactory>();
+        var resource = _CreateResourceName();
+
+        await using var holderConnection = new NpgsqlConnection(fixture.ConnectionString);
+        await using var contenderConnection = new NpgsqlConnection(fixture.ConnectionString);
+
+        await using var holder = await factory.BeginAsync(holderConnection, cancellationToken: AbortToken);
+        await holder.TransactionLocks.AcquireAsync(resource, cancellationToken: AbortToken);
+        await using var contender = await factory.BeginAsync(contenderConnection, cancellationToken: AbortToken);
+
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        cancellation.CancelAfter(TimeSpan.FromMilliseconds(300));
+
+        // when
+        var act = async () =>
+            await contender.TransactionLocks.AcquireAsync(resource, TimeSpan.FromSeconds(30), cancellation.Token);
+
+        // then — the cancelled wait neither aborted the unit's transaction nor left the acquire's timeout behind
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        (await contender.TransactionLocks.TryAcquireAsync(_CreateResourceName(), cancellationToken: AbortToken))
+            .Should()
+            .NotBeNull();
+        (await _CurrentLockTimeoutAsync(contenderConnection, contender)).Should().Be("0");
+        await contender.CompleteAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_succeed_when_the_unit_already_holds_the_lock()
+    {
+        // given
+        await using var provider = _BuildProvider();
+        var factory = provider.GetRequiredService<IUnitOfWorkFactory>();
+        var resource = _CreateResourceName();
+        var key = _KeyFor(resource);
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await using var unit = await factory.BeginAsync(connection, cancellationToken: AbortToken);
+        await unit.TransactionLocks.AcquireAsync(resource, cancellationToken: AbortToken);
+
+        // when — the unit's transaction is the owner, so acquiring again is granted on every wait shape
+        var bounded = await unit.TransactionLocks.AcquireAsync(resource, TimeSpan.FromSeconds(5), AbortToken);
+        var unbounded = await unit.TransactionLocks.AcquireAsync(resource, Timeout.InfiniteTimeSpan, AbortToken);
+        var tryOnce = await unit.TransactionLocks.TryAcquireAsync(resource, cancellationToken: AbortToken);
+
+        // then
+        bounded.Should().Be(new TransactionLockHandle(resource));
+        unbounded.Should().Be(bounded);
+        tryOnce.Should().Be(bounded);
+
+        await unit.CompleteAsync(AbortToken);
+        (await _CountAdvisoryLocksAsync(key)).Should().Be(0);
+    }
+
+    [Fact]
     public async Task should_try_acquire_with_a_bounded_wait_and_succeed_once_released()
     {
         // given
