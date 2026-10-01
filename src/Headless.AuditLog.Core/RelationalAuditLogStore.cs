@@ -1,16 +1,21 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Data.Common;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Npgsql;
 
-namespace Headless.AuditLog.PostgreSql;
+namespace Headless.AuditLog;
 
-internal sealed partial class PostgreSqlAuditLogStore(
-    PostgreSqlAuditLogWriter writer,
+/// <summary>
+/// The relational <see cref="IAuditLogStore"/>: writes audit rows on the saving context's own transaction when its
+/// connection belongs to this provider's driver, and on a separate connection otherwise.
+/// </summary>
+internal sealed partial class RelationalAuditLogStore(
+    RelationalAuditLogWriter writer,
+    RelationalAuditLogTable table,
     IAmbientDbTransactionAccessor? ambientTransactionAccessor = null,
-    ILogger<PostgreSqlAuditLogStore>? logger = null
+    ILogger<RelationalAuditLogStore>? logger = null
 ) : IAuditLogStore
 {
     // Process-wide dedup keyed on the unexpected connection's type name. Logs each distinct
@@ -26,7 +31,7 @@ internal sealed partial class PostgreSqlAuditLogStore(
         StringComparer.Ordinal
     );
 
-    private readonly ILogger<PostgreSqlAuditLogStore> _logger = logger ?? NullLogger<PostgreSqlAuditLogStore>.Instance;
+    private readonly ILogger<RelationalAuditLogStore> _logger = logger ?? NullLogger<RelationalAuditLogStore>.Instance;
 
     public IReadOnlyList<IAuditLogStoreEntry> Save(IReadOnlyList<AuditLogEntryData> entries, object savingContext)
     {
@@ -46,7 +51,7 @@ internal sealed partial class PostgreSqlAuditLogStore(
         return _Entries(entries.Count);
     }
 
-    private (NpgsqlConnection? Connection, NpgsqlTransaction? Transaction) _TryResolveShared(object savingContext)
+    private (DbConnection? Connection, DbTransaction? Transaction) _TryResolveShared(object savingContext)
     {
         if (ambientTransactionAccessor is null)
         {
@@ -64,25 +69,33 @@ internal sealed partial class PostgreSqlAuditLogStore(
             var savingContextTypeName = savingContext.GetType().FullName ?? "(unknown)";
             if (_WarnedMissingTransactionContexts.TryAdd(savingContextTypeName, 0))
             {
-                LogProviderMissingAmbientTransaction(_logger, savingContextTypeName);
+                LogProviderMissingAmbientTransaction(_logger, table.Dialect.DisplayName, savingContextTypeName);
             }
 
             return (null, null);
         }
 
-        if (connection is NpgsqlConnection npgConn && transaction is NpgsqlTransaction npgTx)
+        if (
+            table.Dialect.ConnectionType.IsInstanceOfType(connection)
+            && table.Dialect.TransactionType.IsInstanceOfType(transaction)
+        )
         {
-            return (npgConn, npgTx);
+            return (connection, transaction);
         }
 
-        // Provider mismatch: the consumer's DbContext is using a different driver (e.g. SqlClient).
+        // Provider mismatch: the consumer's DbContext is using another database's driver.
         // Fall back to opening our own connection. Log once per distinct mismatch shape — the store
         // is registered scoped (per-request), so per-instance dedup would flood logs; a flat static
         // flag would silently swallow unrelated misconfigs in multi-tenant or multi-store hosts.
         var connectionTypeName = connection.GetType().FullName ?? "(unknown)";
         if (_WarnedConnectionTypes.TryAdd(connectionTypeName, 0))
         {
-            LogProviderMismatch(_logger, connectionTypeName);
+            LogProviderMismatch(
+                _logger,
+                table.Dialect.DisplayName,
+                connectionTypeName,
+                table.Dialect.ConnectionType.Name
+            );
         }
 
         return (null, null);
@@ -104,19 +117,28 @@ internal sealed partial class PostgreSqlAuditLogStore(
 
     [LoggerMessage(
         EventId = 1,
-        EventName = "PostgreSqlAuditLogProviderMismatch",
+        EventName = "AuditLogProviderMismatch",
         Level = LogLevel.Warning,
-        Message = "PostgreSql audit log store could not enroll in the consumer's ambient transaction because the active connection is {ConnectionType}, not NpgsqlConnection. Audit rows will commit on a separate connection and are NOT atomic with the consumer's SaveChanges. Subsequent occurrences of this exact mismatch are suppressed for the remainder of this process."
+        Message = "{Engine} audit log store could not enroll in the consumer's ambient transaction because the active connection is {ConnectionType}, not {ExpectedConnectionType}. Audit rows will commit on a separate connection and are NOT atomic with the consumer's SaveChanges. Subsequent occurrences of this exact mismatch are suppressed for the remainder of this process."
     )]
     // ReSharper disable once InconsistentNaming
-    private static partial void LogProviderMismatch(ILogger logger, string connectionType);
+    private static partial void LogProviderMismatch(
+        ILogger logger,
+        string engine,
+        string connectionType,
+        string expectedConnectionType
+    );
 
     [LoggerMessage(
         EventId = 2,
-        EventName = "PostgreSqlAuditLogProviderMissingAmbientTransaction",
+        EventName = "AuditLogProviderMissingAmbientTransaction",
         Level = LogLevel.Warning,
-        Message = "PostgreSql audit log store could not enroll in an ambient transaction for saving context {SavingContextType} because the consumer did not open one (e.g. no BeginTransaction call). Audit rows will commit on a separate connection BEFORE the consumer's SaveChanges and are NOT atomic with it — an entity-save failure will leave orphan audit rows. Subsequent occurrences for this saving-context type are suppressed for the remainder of this process."
+        Message = "{Engine} audit log store could not enroll in an ambient transaction for saving context {SavingContextType} because the consumer did not open one (e.g. no BeginTransaction call). Audit rows will commit on a separate connection BEFORE the consumer's SaveChanges and are NOT atomic with it — an entity-save failure will leave orphan audit rows. Subsequent occurrences for this saving-context type are suppressed for the remainder of this process."
     )]
     // ReSharper disable once InconsistentNaming
-    private static partial void LogProviderMissingAmbientTransaction(ILogger logger, string savingContextType);
+    private static partial void LogProviderMissingAmbientTransaction(
+        ILogger logger,
+        string engine,
+        string savingContextType
+    );
 }

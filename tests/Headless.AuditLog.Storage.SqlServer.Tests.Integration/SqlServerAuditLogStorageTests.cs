@@ -211,6 +211,61 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
         }
     }
 
+    [Theory]
+    [InlineData(AuditLogSortDirection.NewestFirst)]
+    [InlineData(AuditLogSortDirection.OldestFirst)]
+    public async Task should_keep_full_precision_in_a_datetime2_created_at_column_across_range_pages(
+        AuditLogSortDirection direction
+    )
+    {
+        // given a datetime2 CreatedAt column and entries a microsecond apart, one on each side of the range
+        await _DropSchemaAsync();
+        using var host = _CreateHost(createdAtColumnType: "datetime2(7)");
+        await host.StartAsync(AbortToken);
+        await using var scope = host.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
+        var reader = scope.ServiceProvider.GetRequiredService<IReadAuditLog<object>>();
+        var t0 = new DateTimeOffset(2026, 5, 24, 12, 0, 0, TimeSpan.Zero);
+        var entries = Enumerable
+            .Range(0, 5)
+            .Select(i => new AuditLogEntryData
+            {
+                Action = "datetime2.test",
+                EntityId = $"e{i}",
+                TenantId = "tenant-datetime2",
+                CreatedAt = t0.AddTicks(i * 10),
+            })
+            .ToArray();
+        await store.SaveAsync(entries, savingContext: new object(), AbortToken);
+
+        // when the range keeps e1..e3 and is read one row per page
+        var walked = new List<AuditLogEntryData>();
+        string? token = null;
+
+        do
+        {
+            var page = await reader.QueryAsync(
+                new()
+                {
+                    TenantId = "tenant-datetime2",
+                    From = entries[1].CreatedAt,
+                    To = entries[4].CreatedAt,
+                    Direction = direction,
+                    Size = 1,
+                    ContinuationToken = token,
+                },
+                cancellationToken: AbortToken
+            );
+            walked.AddRange(page.Items);
+            token = page.ContinuationToken;
+        } while (token is not null && walked.Count < 10);
+
+        // then every bound and continuation position kept its microseconds: no row is lost, repeated, or let in
+        var expected = direction == AuditLogSortDirection.NewestFirst ? new[] { "e3", "e2", "e1" } : ["e1", "e2", "e3"];
+        walked.Select(e => e.EntityId).Should().Equal(expected);
+        walked.Select(e => e.CreatedAt).Should().BeEquivalentTo(entries[1..4].Select(e => e.CreatedAt));
+    }
+
     [Fact]
     public async Task should_filter_by_account_and_correlation_ids()
     {
@@ -284,12 +339,16 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
         page.Items.Should().ContainSingle().Which.Success.Should().BeFalse();
     }
 
-    private IHost _CreateHost()
+    private IHost _CreateHost(string? createdAtColumnType = null)
     {
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddHeadlessAuditLog(setup =>
         {
-            setup.ConfigureStorage(options => options.Schema = _Schema);
+            setup.ConfigureStorage(options =>
+            {
+                options.Schema = _Schema;
+                options.CreatedAtColumnType = createdAtColumnType;
+            });
             setup.UseSqlServer(fixture.ConnectionString);
         });
 

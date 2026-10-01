@@ -17,13 +17,14 @@ internal static class PostgreSqlAuditLogSchemaContribution
 
     public static SchemaContribution Create(
         PostgreSqlAuditLogOptions providerOptions,
+        RelationalAuditLogTable auditLogTable,
         AuditLogStorageOptions storageOptions
     )
     {
-        var tableName = PostgreSqlAuditLogSchema.TableName(storageOptions);
-        var table = PostgreSqlAuditLogSchema.Qualified(storageOptions);
+        var tableName = auditLogTable.Name;
+        var table = auditLogTable.Qualified;
         var primaryKey = HeadlessStorageNaming.PrimaryKeyName(StorageNamingStyle.SnakeCase, tableName);
-        var jsonColumnType = (storageOptions.JsonColumnType ?? AuditLogJsonColumnType.Jsonb).ToSqlFragment();
+        var jsonColumnType = auditLogTable.JsonColumnType;
         var createdAtColumnType = string.IsNullOrWhiteSpace(storageOptions.CreatedAtColumnType)
             ? "timestamp with time zone"
             : storageOptions.CreatedAtColumnType;
@@ -89,8 +90,8 @@ internal static class PostgreSqlAuditLogSchemaContribution
                 )
             ),
             dialect: PostgreSqlSchemaDialect.Instance,
-            createConnection: providerOptions.CreateConnection,
-            schema: storageOptions.Schema,
+            createConnection: () => PostgreSqlDialect.Instance.CreateConnection(providerOptions.ConnectionString),
+            schema: auditLogTable.Schema,
             steps:
             [
                 new SchemaStep(TableStepVersion, "Create the audit log table.", tableSql),

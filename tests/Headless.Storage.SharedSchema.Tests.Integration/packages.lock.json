@@ -845,7 +845,9 @@
           "FluentValidation": "[12.1.1, )",
           "Headless.AuditLog.Abstractions": "[1.0.0, )",
           "Headless.Checks": "[1.0.0, )",
+          "Headless.Core": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Options": "[10.0.12, )"
         }
@@ -853,11 +855,7 @@
       "headless.auditlog.storage.postgresql": {
         "type": "Project",
         "dependencies": {
-          "Headless.AuditLog.Abstractions": "[1.0.0, )",
           "Headless.AuditLog.Core": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Sql.PostgreSql": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"
         }
@@ -865,10 +863,7 @@
       "headless.auditlog.storage.sqlserver": {
         "type": "Project",
         "dependencies": {
-          "Headless.AuditLog.Abstractions": "[1.0.0, )",
           "Headless.AuditLog.Core": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Sql.SqlServer": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )"
         }

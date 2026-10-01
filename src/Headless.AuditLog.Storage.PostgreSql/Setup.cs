@@ -1,17 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FluentValidation;
-using Headless.Abstractions;
 using Headless.AuditLog.PostgreSql;
 using Headless.Checks;
 using Headless.Constants;
-using Headless.MultiTenancy;
-using Headless.Serializer;
 using Headless.Sql;
+using Headless.Sql.PostgreSql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.AuditLog;
@@ -162,51 +157,17 @@ public static class SetupAuditLogPostgreSql
                 );
             }
 
-            services.AddOptions<AuditLogStorageOptions, PostgreSqlAuditLogStorageOptionsValidator>();
-            services.AddHeadlessSchemaContribution(sp =>
-                PostgreSqlAuditLogSchemaContribution.Create(
-                    sp.GetRequiredService<IOptions<PostgreSqlAuditLogOptions>>().Value,
-                    sp.GetRequiredService<IOptions<AuditLogStorageOptions>>().Value
-                )
+            RelationalAuditLogStorage.AddServices<PostgreSqlAuditLogOptions>(
+                services,
+                PostgreSqlDialect.Instance,
+                new RelationalAuditLogProvider(
+                    StorageProvider.PostgreSql,
+                    AuditLogJsonColumnType.Jsonb,
+                    [AuditLogJsonColumnType.Jsonb, AuditLogJsonColumnType.Json],
+                    $"{nameof(AuditLogStorageOptions.JsonColumnType)} must be Jsonb or Json for the PostgreSql audit-log provider."
+                ),
+                PostgreSqlAuditLogSchemaContribution.Create
             );
-            services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
-            services.TryAddSingleton<PostgreSqlAuditLogWriter>();
-            services.TryAddScoped<IAuditLogStore, PostgreSqlAuditLogStore>();
-            services.TryAddSingleton(typeof(IAuditLog<>), typeof(PostgreSqlAuditLog<>));
-            services.TryAddSingleton(typeof(IAuditLogWriter<>), typeof(PostgreSqlAuditLog<>));
-            services.TryAddSingleton(typeof(IReadAuditLog<>), typeof(PostgreSqlReadAuditLog<>));
-            services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<ICurrentTenant, NullCurrentTenant>();
-            services.TryAddSingleton<ICurrentUser, NullCurrentUser>();
-            services.TryAddSingleton<ICorrelationIdProvider, ActivityCorrelationIdProvider>();
-        }
-    }
-
-    private sealed class PostgreSqlAuditLogStorageOptionsValidator : AbstractValidator<AuditLogStorageOptions>
-    {
-        public PostgreSqlAuditLogStorageOptionsValidator()
-        {
-            RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.PostgreSql);
-            RuleFor(x => x.TableName)
-                .IsValidIdentifierFor(StorageProvider.PostgreSql)
-                .FitsDerivedPostgreSqlNames(AuditLogStorageNames.Indexes)
-                .When(x => x.TableName is not null);
-            // PG accepts Jsonb (default) or Json; NvarcharMax is a SqlServer column type.
-            When(
-                x => x.JsonColumnType.HasValue,
-                () =>
-                {
-                    RuleFor(x => x.JsonColumnType!.Value)
-                        .Must(t => t is AuditLogJsonColumnType.Jsonb or AuditLogJsonColumnType.Json)
-                        .WithMessage(
-                            $"{nameof(AuditLogStorageOptions.JsonColumnType)} must be Jsonb or Json for the PostgreSql audit-log provider."
-                        );
-                }
-            );
-            RuleFor(x => x.CreatedAtColumnType!)
-                .MaximumLength(64)
-                .Matches(@"^[A-Za-z][A-Za-z0-9 ]*(\([0-9]+\))?$")
-                .When(x => !string.IsNullOrEmpty(x.CreatedAtColumnType));
         }
     }
 }
