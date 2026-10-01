@@ -29,9 +29,21 @@ Transactions are explicit. `IUnitOfWorkFactory` is a singleton with no `Current`
 
 Use the `make` targets instead of raw `dotnet`. They pin configuration, results directories, and parallelism. `make help` lists every target. The rules below cover what `make help` does not say.
 
+### Work in the affected scope
+
+The solution has ~430 projects. A full build takes a long time, and the integration suites take minutes per module. Build and test only the projects your change affects:
+
+1. The projects you changed.
+2. The projects whose behavior depends on the code you changed. For example, a change to `Headless.Caching.Abstractions` affects every `Headless.Caching.*` provider.
+3. The unit and integration test projects of the projects in 1 and 2.
+
+Use the project-scoped targets: `build-project`, `test-project`, `test-affected`, and `quality-analyzers-affected`. Run a solution-wide target (`build`, `rebuild`, `test`, `test-unit`, `test-integration`, `coverage`, `quality-analyzers`) only when the user asks for it, or when the change touches shared build files such as `Directory.Build.props`, `Directory.Packages.props`, or `eng/`.
+
 ### Scope a run
 
-- **Start with `make test-affected`.** It maps every change against `@{upstream}` (else `origin/main`) to the matching `*.Tests.Unit` projects and runs only those. Uncommitted and untracked files count. It names each change it could not map, so a run that tested nothing does not read as a pass. It skips `*.Tests.Integration`, which needs Docker.
+- **Start with `make test-affected`.** It maps every change against `@{upstream}` (else `origin/main`) to the matching `*.Tests.Unit` projects and runs only those. Uncommitted and untracked files count. It names each change it could not map, so a run that tested nothing does not read as a pass.
+- **`make test-affected` matches by name only.** A change in `src/<X>` selects `tests/<X>.Tests.Unit` and nothing else. It does not select dependent projects, and it skips `*.Tests.Integration` and `*.Tests.Harness`. Run the test projects of dependents yourself with `make test-project TEST_PROJECT=<csproj>`.
+- **Run integration tests per project.** When you change provider behavior, run each affected `tests/<X>.Tests.Integration` project with `make test-project TEST_PROJECT=<csproj>`. These projects need Docker. CI does not run them, so a local run is the only check.
 - **Set `TEST_PROJECT` to scope a filtered run.** `test-class`, `test-method`, `test-namespace`, `test-trait`, and `test-query` choose which tests run. Without `TEST_PROJECT`, they build all ~430 projects and pass the whole solution to the runner, integration modules included. With it, the filter applies inside that one project:
 
   ```sh
@@ -43,7 +55,7 @@ Use the `make` targets instead of raw `dotnet`. They pin configuration, results 
 ### Restore and build
 
 - **`make test-project` asserts restore and does not repeat it.** It runs with `--no-restore`. If `obj/project.assets.json` is missing, or older than `Directory.Packages.props` or the project lock file, it fails and prints the exact `make restore-project` command to run. With warm outputs and no source change, `make test-project-fast` (`--no-build --no-restore`) costs less. A fresh clone or worktree needs `make bootstrap`.
-- **`build-fast` and `build-project-fast` only type-check.** They drop analyzers and MinVer. Alternating them with a normal build recompiles the graph. A later incremental `make build` also skips up-to-date projects without running their analyzers. Only `rebuild`, `quality-analyzers`, and `quality-analyzers-affected` build with `--no-incremental`, so only they re-check analyzers.
+- **`build-fast` and `build-project-fast` only type-check.** They drop analyzers and MinVer. Alternating them with a normal build recompiles the graph, so use one kind of build for the whole session. A later incremental `make build` also skips up-to-date projects without running their analyzers. Only `rebuild`, `quality-analyzers`, and `quality-analyzers-affected` build with `--no-incremental`, so only they re-check analyzers.
 - **The dashboards need Node 22+ on `PATH`.** A build of `Headless.Jobs.Dashboard` or `Headless.Messaging.Dashboard` runs `npm ci` and a Vite build (`eng/DashboardSpa.targets`), then embeds the generated `wwwroot/dist`. That folder is not committed. `make dashboards` rebuilds the SPAs. If `wwwroot/dist` already exists, pass `/p:BuildDashboardSpa=false` to skip the npm build.
 
 ### Gates
@@ -51,14 +63,18 @@ Use the `make` targets instead of raw `dotnet`. They pin configuration, results 
 - **A green test run is not a clean build.** The test SDK's `DisableAnalyzersWhenRunningTests` target turns analyzers off during the MTP build phase, so `make test-project` accepts code that a real build rejects. After a test run, run `make quality-analyzers-affected` or `make build-project PROJECT=<the project you changed>`.
 - **Your builds already treat warnings as errors.** The SDK does this whenever it detects an agent CLI: `SupportDetectLlmContext.props` reads `CLAUDECODE`, `CODEX_CLI`, and similar variables. To see the human posture, pass `HeadlessIsLlmContext=false`.
 - **Locally, only formatting is gated.** The pre-push hook runs a CSharpier check on changed files. It does not compile, run analyzers, or run tests. To compile the solution by hand, run `make hook-build`.
-- **Before you open a PR**, pass the build, test, and format gates. Then run `make quality-analyzers-affected` and fix what it reports. `make quality-analyzers` is the whole-solution version, and CI's `Lint · .NET analyzers` job mirrors it. To narrow a noisy run, set `QUALITY_SEVERITY=warn` or `QUALITY_DIAGNOSTICS=MA0154`.
+- **Run the analyzers last, before you open a PR.** When all work is done and the build, test, and format gates pass, run `make quality-analyzers-affected`. It reports info-level suggestions as well as warnings and errors, and fails on any of them. Resolve every finding:
+  - Fix each valid finding.
+  - Suppress each invalid finding with an inline reason, as the analyzer-suppression convention in [Conventions](#conventions) describes.
+
+  Then run the affected tests again if a fix changed code. `quality-analyzers-affected` checks only the projects you changed. `make quality-analyzers` is the whole-solution version. It is stricter than CI: CI's `Lint · .NET analyzers` job runs only `make rebuild`, so it fails on warnings and errors but not on info-level suggestions. To narrow a noisy run, set `QUALITY_SEVERITY=warn` or `QUALITY_DIAGNOSTICS=MA0154`. To check one dependent project, use `make quality-analyzers-project PROJECT=<csproj>`.
 - **`make quality-fix` refuses to run without a filter.** Pass one rule at a time in `QUALITY_DIAGNOSTICS`, and run `make rebuild` between rules, because four fixers emit code that does not compile. See [dotnet format analyzer fixers](docs/solutions/tooling-decisions/dotnet-format-analyzer-fixers.md).
 
 ### CI
 
 - **CI compiles twice, then runs the unit suite.** The `build` job uses `-p:RunAnalyzers=false`, and the `analyzers` job runs the full analyzer set. Both use `--no-incremental` and treat warnings as errors.
 - **`main` requires only the `CI status` job in `ci.yml`.** A skipped job passes. Add every new CI job to the `needs` list of `CI status`. When you change a trigger on a required workflow, change branch protection in the same change.
-- **CI runs no integration suite.** When you change provider behavior, run the affected `*.Tests.Integration` projects locally.
+- **CI runs no integration suite.** See [Work in the affected scope](#work-in-the-affected-scope).
 - **Some legs run only on a release.** Pack and SBOM, the Africa/Cairo test leg, and the messaging and R2 conformance legs run only for a published release or a `workflow_dispatch` with `release_checks`. Before you tag a change to packaging or time handling, rehearse that path.
 - **Packages publish only from a published GitHub Release.** Release Drafter never publishes.
 
@@ -79,6 +95,23 @@ Derive test classes from `TestBase` (`Headless.Testing.Tests`). Pass its `protec
 To add a second provider-integration project for one feature, extract a shared harness first instead of copying the fixture. See [Tests.Harness extraction](docs/solutions/best-practices/tests-harness-extraction.md).
 
 ## Conventions
+
+### Follow the existing pattern
+
+Consistency across 150+ packages matters more than a local improvement. Before you add code, find the closest existing example and match it: a sibling provider, another feature's Core package, or a test project of the same kind. Match its file layout, naming, registration shape, options class, and test structure.
+
+- **Invent no new convention in a single place.** If no existing pattern covers the case, ask before you choose one.
+- **If you find a better convention, propose it for the whole repository.** Keep the current change consistent with the existing pattern. Then describe the proposed refactor to the user, or in the PR description: the convention, the reason it is better, and the projects it would change.
+
+### Write each capability once
+
+Duplicated logic across packages drifts apart. Before you write code, search for an existing implementation in `src/`, not only in the package you are changing.
+
+- **Reuse an existing implementation** instead of copying it.
+- **Move shared logic down.** If two packages need the same code, put it in the lowest package that both already reference: the feature's Abstractions or Core package, or `Headless.Extensions`. Do not copy it into each package.
+- **Check `Headless.Extensions` first for general-purpose code.** See [Reuse before you write a utility](#reuse-before-you-write-a-utility).
+
+### Code rules
 
 - **File header.** Start every `.cs` file with `// Copyright (c) Mahmoud Shaheen. All rights reserved.`
 - **Argument validation.** Use `Headless.Checks` (`Argument.*`, `Ensure.*`), not `ArgumentNullException.ThrowIfNull`, `ArgumentOutOfRangeException.ThrowIfGreaterThan`, or their siblings.
@@ -119,13 +152,13 @@ Then add the project to [headless-framework.slnx](headless-framework.slnx). Thes
 - **Package READMEs** are small NuGet landing pages. They say why the package exists, how to install it, and link to the root README and the domain guide. Keep setup and API reference out of them. Before you edit the index, a domain guide, or a package README, read [docs/authoring/AUTHORING.md](docs/authoring/AUTHORING.md).
 - **`CONCEPTS.md`** holds the shared domain vocabulary: entities, named processes, and status concepts with a project-specific meaning.
 
-### When a change needs a docs update
+### Update `docs/llms` with every package change
 
-Update the docs when a change under `src/Headless.*` does any of these:
+Consumers and their agents read `docs/llms/`, so a package change is not done until the owning `docs/llms/<domain>.md` describes it. Update the docs in the same change when a change under `src/Headless.*` does any of these:
 
 - Changes the public API.
 - Adds, renames, or removes a package.
 - Changes consumer-visible behavior, such as defaults, ordering, retry, cancellation, or threading.
 - Adds or removes a configuration option.
 
-Internal refactors and perf-only, test-only, or formatting changes need no docs update.
+The "Change routing" table in [docs/authoring/AUTHORING.md](docs/authoring/AUTHORING.md#change-routing) lists every file each kind of change touches. For example, an added package also touches `README.md`, `README.ar.md`, and `eng/expected-packages.txt`. Internal refactors and perf-only, test-only, or formatting changes need no docs update.
