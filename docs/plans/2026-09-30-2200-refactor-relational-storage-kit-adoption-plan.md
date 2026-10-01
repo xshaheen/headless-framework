@@ -60,7 +60,7 @@ Every relational feature ships a PostgreSQL package and a SQL Server package tha
 
 ## Implementation Units
 
-U1 merged as #1040. The schema runner and U2 through U10 ship together in #1037. Follow-ups left open: a delay-based retry contract in Messaging Core for full clock-skew immunity, one shared transient-error classifier for the unit of work and the kit, and the client-timeout race on the PostgreSQL session lock's non-blocking try.
+U1 merged as #1040. The schema runner and U2 through U10 ship together in #1037. The three follow-ups found along the way also ship in #1037: a delay-based retry contract in Messaging storage, one transient-error classifier shared by the unit of work and the kit (retrying only before a commit starts), and cleanup of a PostgreSQL session lock granted to a failed non-blocking try.
 
 | Unit | Scope | Kit additions |
 | --- | --- | --- |
