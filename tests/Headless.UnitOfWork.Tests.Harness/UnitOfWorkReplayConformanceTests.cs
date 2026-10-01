@@ -66,7 +66,7 @@ public abstract class UnitOfWorkReplayConformanceTests(IUnitOfWorkReplayFixture 
         else
         {
             await act.Should().ThrowAsync<ReplayableFaultException>();
-            attempts.Should().HaveCount(1, "this spelling never replays");
+            attempts.Should().ContainSingle("this spelling never replays");
             drains.Should().Be(0);
         }
 
