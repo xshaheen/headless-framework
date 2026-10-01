@@ -2,16 +2,11 @@
 title: "dotnet format fixer behavior behind make quality-fix"
 date: 2026-09-18
 last_updated: 2026-09-18
-category: tooling-decisions
 module: headless-framework
-problem_type: tooling
+problem_type: tooling_decision
 component: build_tooling
 severity: medium
-tags:
-  - dotnet-format
-  - analyzers
-  - csharpier
-  - makefile
+tags: [dotnet-format, analyzers, csharpier, makefile]
 related_components:
   - Makefile
   - quality-fix

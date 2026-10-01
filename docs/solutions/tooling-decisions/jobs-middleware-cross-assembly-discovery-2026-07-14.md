@@ -1,8 +1,7 @@
 ---
 title: Jobs middleware cross-assembly discovery uses assembly metadata
 date: 2026-07-14
-category: tooling-decisions
-module: Jobs
+module: Headless.Jobs.SourceGenerator
 problem_type: tooling_decision
 component: source-generator
 severity: medium

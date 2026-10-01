@@ -1,8 +1,7 @@
 ---
 title: RedLock multi-instance algorithm — explicitly not adopted in Headless.DistributedLocks
 date: 2026-05-19
-category: tooling-decisions
-module: DistributedLocks
+module: Headless.DistributedLocks.Redis
 problem_type: tooling_decision
 component: tooling
 severity: medium

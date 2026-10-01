@@ -463,6 +463,114 @@ services.AddHeadlessMessaging(setup =>
   publish a message through `unit.Outbox` and schedule the job from that message's consumer on the Jobs database.
   The outbox row commits with the unit, and the consumer's inbox and `unit.Jobs` give the job the same guarantee.
 
+## Writing a Transport Provider
+
+A transport package adapts one broker to `Headless.Messaging.Core`. Core already owns serialization, outbox behavior, retries, delayed publishing, consumer invocation, circuit breaking, and diagnostics orchestration, so a transport must not reimplement those policies. A transport package normally owns:
+
+- a setup class exposing `UseMyBroker(...)` on `MessagingSetupBuilder`
+- `MyBrokerOptions` plus a validator
+- an `IBusTransport` and/or `IQueueTransport` implementation
+- `MyBrokerConsumerClientFactory : IConsumerClientFactory`
+- `MyBrokerConsumerClient : IConsumerClient`
+- broker-specific pools, factories, or helpers when connection reuse matters
+
+### Registration shape
+
+Register the broker through `MessagingSetupBuilder.RegisterExtension(...)` with an `IMessagesOptionsExtension` that adds:
+
+- `MessageQueueMarkerService("MyBroker")`
+- validated broker options
+- immutable `MessagingProviderCapabilities` contributions declaring supported lanes and native affinity routes
+- singleton `IBusTransport` and/or `IQueueTransport` for the declared lanes
+- singleton `IConsumerClientFactory`
+- any broker-owned singletons such as connection pools
+
+```csharp
+public static class SetupMessagesMyBroker
+{
+    extension(MessagingSetupBuilder setup)
+    {
+        public MessagingSetupBuilder UseMyBroker(Action<MyBrokerOptions> configure)
+        {
+            setup.RegisterExtension(new MyBrokerOptionsExtension(configure));
+            return setup;
+        }
+    }
+
+    private sealed class MyBrokerOptionsExtension(Action<MyBrokerOptions> configure) : IMessagesOptionsExtension
+    {
+        public void AddServices(IServiceCollection services)
+        {
+            services.AddSingleton(new MessageQueueMarkerService("MyBroker"));
+            services.Configure<MyBrokerOptions, MyBrokerOptionsValidator>(configure);
+            services.AddMessagingProviderCapabilities(MessagingProviderCapabilities.Transport(
+                "MyBroker", [MessageLane.Queue], supportsIndependentLaneTopology: true));
+            services.AddSingleton<IQueueTransport, MyBrokerTransport>();
+            services.AddSingleton<IConsumerClientFactory, MyBrokerConsumerClientFactory>();
+        }
+    }
+}
+```
+
+### Publishing: `ITransport.SendAsync`
+
+`SendAsync(...)` receives a fully prepared `TransportMessage`. The transport publishes `message.Body` as the broker payload, preserves `message.Headers`, returns `OperateResult.Success` on broker success, returns `OperateResult.Failed(new PublisherSentFailedException(...))` on broker failure, and lets `OperationCanceledException` propagate.
+
+`BrokerAddress` feeds diagnostics, OpenTelemetry, and dashboard surfaces. Make it a sanitized operator-facing value, never a raw connection string with credentials.
+
+### Consuming: `IConsumerClientFactory` and `IConsumerClient`
+
+`IConsumerClientFactory.CreateAsync(ConsumerClientRequest, ...)` is called once during startup topology discovery with the host-stopping token, and once for each live consumer client with its linked per-client token. The factory must therefore be safe to call repeatedly, and client construction must not start background receive loops early. The request fields, lane-dependent `SubscriptionName`, and cancellation rules are listed under the design constraints of [Headless.Messaging.Core](#headlessmessagingcore); factories must not wrap shutdown cancellation as `BrokerConnectionException`.
+
+On the Bus lane, derive the broker-legal subscription name from the identity with `BusNameBuilder.Build(identity, rules)` and a provider-specific `BusNameRules` (maximum length, accepted characters, whether names must start and end with a letter or digit). An identity the broker accepts is used unchanged. Any other identity becomes a readable prefix plus `-` and a 12-character SHA-256 hash of the whole identity, so every process derives the same name and distinct identities never collide. Do not hash with `string.GetHashCode()`, which is randomized per process. See [Bus subscription names](#bus-subscription-names) for each provider's rules.
+
+- **`FetchMessageNamesAsync`** is the broker-normalization and provisioning hook: create topics, streams, queues, or subscriptions; translate wildcard topics; map friendly names to broker-native identifiers such as ARNs. If the broker uses topic names as-is, the default pass-through is enough. Pass the host-stopping token through broker connection and topology operations. When a provider SDK operation has no native cancellation parameter, await it through a cancellation-aware wait and retain the provider's existing timeout.
+- **`SubscribeAsync`** binds the client's subscription (the Bus consumer identity's subscription name, or the Queue message's destination) to the names `FetchMessageNamesAsync` resolved. Pass the linked per-client token through subscription and topology operations, with the same cancellation-aware wait rule.
+- **`ListeningAsync`** owns the long-running receive loop. For every delivery, build a `TransportMessage`, leave `Headers.ConsumerIdentity` alone (Core stamps it on receipt and overwrites any value the transport or publisher set), and pass a broker-specific commit token to `OnMessageCallback(message, commitToken)`. Do not swallow `OnMessageCallback` exceptions; Core decides whether to commit, reject, retry, or trip the circuit breaker.
+- **`CommitAsync` and `RejectAsync`** map the callback token back to broker semantics: ack or nack, delete or abandon, commit or seek, complete, dead-letter, or requeue. If the broker cannot reject, make that explicit and implement the best available no-op or requeue behavior.
+- **`PauseAsync` and `ResumeAsync`** serve circuit-breaker backpressure. They must be idempotent, safe to call concurrently, and stop new message pulls once `PauseAsync` returns. In-flight deliveries may complete. Pause and resume keep the long-running listener alive; a provider may cancel an in-flight broker receive to reach its pause gate, but it must install fresh receive state before reopening the gate.
+- **`OnLogCallback`** emits `MqLogType` events for connection failures, broker shutdown, consumer registration and cancellation, and receive-loop errors. Core relies on them to keep transport health and restart behavior accurate.
+- **`DisposeAsync`** disposes only resources owned by that client instance, never shared pools or connections still used elsewhere in the package.
+
+### Header and payload rules
+
+The transport must round-trip at least `Headers.MessageId`, `Headers.MessageName`, `Headers.Type`, `Headers.CorrelationId`, `Headers.CorrelationSequence`, and `Headers.SentTime`. It also preserves optional headers such as `Headers.CallbackName`, `Headers.DelayTime`, `Headers.TenantId`, `Headers.TraceParent`, and custom application headers.
+
+- `Headers.ConsumerIdentity` (`headless-msg-consumer-identity`) is stamped by Core on receipt, not on publish; transports must not set it.
+- `Headers.TenantId` is governed by [Strict Publish Tenancy](#strict-publish-tenancy) in Core; transports round-trip it verbatim and never originate, rewrite, or strip it.
+- Treat the body as raw bytes unless the broker API forces encoding or decoding.
+- Never leak exception details, credentials, or other secrets through headers or `BrokerAddress`.
+
+### Routing-affinity contributions
+
+`TransportMessage.RoutingAffinityKey` reads the reserved `headless-routing-affinity-key` envelope field. Do not accept it through custom application headers or a provider header contribution. Every official storage serializes the envelope, so retries keep the same logical key without a schema column.
+
+A provider contributes immutable `MessagingRoutingAffinityRoute` entries through its `MessagingProviderCapabilities.Transport(...)` contribution. Each entry identifies one registered `(MessageLane, MessageName)` destination and a `MessagingRoutingAffinityMapping` describing the native header adapter, an optional maximum key length, a printable-ASCII restriction, and additional raw headers that must match. An empty list explicitly means no supported native affinity destinations. A contribution may resolve and snapshot inert options and registrations; it must never resolve a broker client, transport, processor, or storage implementation to discover support. The composed Core capability model is the sole runtime authority.
+
+```csharp
+MessagingProviderCapabilities.Transport(
+    "MyBroker",
+    [MessageLane.Queue],
+    supportsIndependentLaneTopology: true,
+    routingAffinityRoutes:
+    [
+        new(MessageLane.Queue, "orders.changed", new MessagingRoutingAffinityMapping("my-native-key")),
+    ]);
+```
+
+Validate raw application headers before evaluating a selector that could overwrite them, and validate the resulting provider contribution again. Transport adapters also validate before renting producers or creating senders, including retry dispatch. Do not guess support from a provider-wide flag or auto-provision a different topology for an unknown keyed destination.
+
+Startup checks establish local declaration consistency only. Broker I/O must separately prove the actual session, FIFO, or partition topology and permissions, so provider conformance binds every route to either a native mapping or deterministic rejection, covers direct publication and outbox dispatch, and preserves keys on broker redelivery.
+
+### What a transport must not do
+
+- reimplement serialization policy already handled by `ISerializer`
+- invent its own retry policy around `OnMessageCallback`
+- commit before Core finishes processing the message
+- hide broker failures by swallowing exceptions and returning success
+- expose raw credentials in logs, exceptions, or `BrokerAddress`
+- couple itself to one application's consumer registration conventions
+
 ## Headless.Messaging.Abstractions
 
 ### API and behavior

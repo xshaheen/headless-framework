@@ -1,7 +1,6 @@
 ---
 title: Shared broker client pool with keyed lazy senders and fault-evicting retry
 date: 2026-07-15
-category: architecture-patterns
 module: Headless.Messaging.AzureServiceBus
 problem_type: architecture_pattern
 component: service_class
@@ -125,6 +124,6 @@ public ServiceBusSender GetSender(string entityPath)
 ## Related
 
 - `docs/solutions/concurrency/circuit-breaker-transport-thread-safety-patterns.md` — the PR-194 concurrency review gate this pattern conforms to (no volatile-bool gates, idempotent concurrent dispose, hold the lock through the dispose sequence); its concurrent double-dispose test shape is reused here.
-- `docs/solutions/guides/messaging-transport-provider-guide.md` — ownership rule the transports follow: dispose only owned resources, never shared pools.
+- [Writing a Transport Provider](../../llms/messaging.md#writing-a-transport-provider) — ownership rule the transports follow: dispose only owned resources, never shared pools.
 - `docs/solutions/architecture-patterns/named-instance-keyed-provider-registration.md` — precedent for container-owned disposable pools with no-op consumer disposal.
 - Issue #348 (the defect), PR #688 (the fix), issue #687 (consumer-side client sharing follow-up).

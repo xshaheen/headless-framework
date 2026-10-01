@@ -2,18 +2,11 @@
 title: "Provider setup classes and the options pattern"
 date: 2026-09-18
 last_updated: 2026-09-29
-category: conventions
 module: headless-framework
-problem_type: design_pattern
+problem_type: convention
 component: dependency_injection
 severity: high
-tags:
-  - dependency-injection
-  - setup-builder
-  - options
-  - fluentvalidation
-  - relational-storage
-  - schema
+tags: [dependency-injection, setup-builder, options, fluentvalidation, relational-storage, schema]
 related_components:
   - provider_packages
   - Headless.Hosting

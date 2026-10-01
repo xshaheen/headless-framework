@@ -1,8 +1,7 @@
 ---
 title: Temporal authority — the framework-wide date/time standard
 date: 2026-07-13
-category: design-patterns
-module: Cross-cutting
+module: headless-framework
 problem_type: design_pattern
 component: framework
 severity: high
@@ -17,14 +16,7 @@ related_components:
   - caching
   - distributed_lock
   - service_class
-tags:
-  - temporal-authority
-  - clock-skew
-  - timeprovider
-  - utc
-  - dst
-  - monotonic-time
-  - serialization
+tags: [temporal-authority, clock-skew, timeprovider, utc, dst, monotonic-time, serialization]
 ---
 
 # Temporal authority — the framework-wide date/time standard

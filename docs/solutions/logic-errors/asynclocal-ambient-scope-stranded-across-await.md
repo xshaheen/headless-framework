@@ -1,8 +1,7 @@
 ---
 title: "AsyncLocal ambient scope stranded across await: coordinator path silently dead"
 date: 2026-06-09
-category: logic-errors
-module: Headless.CommitCoordination
+module: Headless.CommitCoordination.Core
 problem_type: logic_error
 component: service_class
 symptoms:
@@ -110,4 +109,4 @@ The scoped step mirrored precedent cited when the redesign was decided: MassTran
 
 - [Commit coordination architecture (design context)](https://github.com/xshaheen/headless-framework/issues/265) — the design this fix completes.
 - See also: `docs/solutions/architecture-patterns/caching-fail-safe-coordinator-design.md` — sibling coordinator design with related ambient/fail-safe trade-offs.
-- Sibling logic-error in the same outbox path: `docs/solutions/logic-errors/terminal-state-overwrite-on-redelivery-2026-05-16.md`.
+- Sibling logic-error in the same outbox path: `docs/solutions/logic-errors/terminal-state-overwrite-on-redelivery.md`.

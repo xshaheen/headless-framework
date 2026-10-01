@@ -1,8 +1,7 @@
 ---
 title: "SQL Server ANSI_PADDING collapses trailing-space keys that PostgreSQL keeps distinct"
 date: 2026-09-25
-category: database-issues
-module: Headless.Sequences
+module: Headless.Sequences.SqlServer
 problem_type: database_issue
 component: database
 severity: high
@@ -17,15 +16,7 @@ resolution_type: code_fix
 related_components:
   - service_class
   - database
-tags:
-  - sequences
-  - sql-server
-  - ansi-padding
-  - trailing-space
-  - collation
-  - cross-provider
-  - key-validation
-  - provider-parity
+tags: [sequences, sql-server, ansi-padding, trailing-space, collation, cross-provider, key-validation, provider-parity]
 ---
 ## Problem
 
@@ -79,6 +70,6 @@ The rule also refuses leading whitespace and non-space whitespace, even though S
 
 ## Related
 
-- `docs/solutions/guides/jobs-versioned-contracts.md` and `docs/solutions/guides/jobs-keyed-scheduling.md` apply the same rule to Jobs identities (function name, contract version, business key): `COLLATE "C"` / `Latin1_General_100_BIN2` plus refusing edge whitespace.
+- [Jobs contract storage](../../llms/jobs.md#contract-storage) and [keyed scheduling storage](../../llms/jobs.md#keyed-scheduling-storage) apply the same rule to Jobs identities (function name, contract version, business key): `COLLATE "C"` / `Latin1_General_100_BIN2` plus refusing edge whitespace.
 - `docs/solutions/design-patterns/relational-counter-table-over-native-database-sequences.md` covers the Sequences table these keys live in.
 

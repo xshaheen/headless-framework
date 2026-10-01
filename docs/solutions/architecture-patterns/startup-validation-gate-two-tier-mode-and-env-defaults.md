@@ -1,8 +1,7 @@
 ---
 title: "Startup validation gates: two-tier (correctness vs diagnostic) with Off/Warn/Strict mode and environment-aware defaults"
 date: 2026-06-13
-category: architecture-patterns
-module: Hosting / startup validation (cross-cutting)
+module: Headless.Hosting
 problem_type: architecture_pattern
 component: service_class
 severity: medium
@@ -13,15 +12,7 @@ applies_when:
 related_components:
   - background_job
   - testing_framework
-tags:
-  - startup-validation
-  - options-validation
-  - validateonstart
-  - ihostedlifecycleservice
-  - ihostenvironment
-  - fail-fast
-  - diagnostic-probe
-  - hosting
+tags: [startup-validation, options-validation, validateonstart, ihostedlifecycleservice, ihostenvironment, fail-fast, diagnostic-probe, hosting]
 ---
 
 # Startup validation gates: two-tier (correctness vs diagnostic) with Off/Warn/Strict mode and environment-aware defaults

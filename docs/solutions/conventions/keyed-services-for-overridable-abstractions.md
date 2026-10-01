@@ -1,7 +1,6 @@
 ---
 title: "Inject framework abstractions (IGuidGenerator, IJsonSerializer); use keyed DI for feature-scoped overrides"
 date: 2026-06-07
-category: conventions
 module: Headless.Coordination.Core
 problem_type: convention
 component: service_class
@@ -15,15 +14,7 @@ applies_when:
   - "Registering a library service that consumers must be able to swap without duplicate descriptors"
   - "Wiring DI in a Setup{Provider} extension or _Add{Feature}Core helper"
   - "Injecting a backend-specific strategy variant of a shared abstraction"
-tags:
-  - dependency-injection
-  - keyed-services
-  - tryadd
-  - overridable-defaults
-  - from-keyed-services
-  - serialization
-  - guid-generator
-  - di-conventions
+tags: [dependency-injection, keyed-services, tryadd, overridable-defaults, from-keyed-services, serialization, guid-generator, di-conventions]
 ---
 
 # Inject framework abstractions (IGuidGenerator, IJsonSerializer); use keyed DI for feature-scoped overrides
@@ -69,7 +60,7 @@ Injecting the abstraction is what makes the code testable and swappable at all; 
 
 ## Examples
 
-**`IGuidGenerator` — enum-keyed precedent** (`src/Headless.Core/SetupGuidGenerator.cs`). Persisted backends resolve a layout by enum key; backend-agnostic code uses the unkeyed default. Note the key is a `SequentialGuidType` enum, not a string:
+**`IGuidGenerator` — enum-keyed precedent** (`src/Headless.Core/Abstractions/SetupGuidGenerator.cs`). Persisted backends resolve a layout by enum key; backend-agnostic code uses the unkeyed default. Note the key is a `SequentialGuidType` enum, not a string:
 
 ```csharp
 public IServiceCollection AddHeadlessGuidGenerator(SequentialGuidType defaultType = SequentialGuidType.Version7)
@@ -141,6 +132,6 @@ The app-wide `IJsonSerializer` is untouched; only coordination's metadata/endpoi
 
 ## Related
 
-- [Keyed DI isolation for framework-internal services](../architecture-patterns/messaging-keyed-di-lock-isolation-2026-05-19.md) — the keyed-DI shadowing/isolation rationale and `[FromKeyedServices]` mechanics this convention generalizes from the messaging-lock special case to a framework-wide rule.
+- [Keyed DI isolation for framework-internal services](../architecture-patterns/messaging-keyed-di-lock-isolation.md) — the keyed-DI shadowing/isolation rationale and `[FromKeyedServices]` mechanics this convention generalizes from the messaging-lock special case to a framework-wide rule.
 - [Unified provider setup builder pattern](../architecture-patterns/unified-provider-setup-builder-pattern.md) — the `Setup{Provider}` / `TryAdd*` root-registration conventions these registrations live within.
 - PR #416 — introduced the coordination keyed `IJsonSerializer` example documented here.

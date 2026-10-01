@@ -2,7 +2,6 @@
 title: OpenTelemetry Instrumentation Conventions — Native Emission, Naming, and PII
 date: 2026-07-15
 last_updated: 2026-07-15
-category: conventions
 module: headless-framework
 problem_type: convention
 component: tooling
@@ -12,20 +11,12 @@ related_components:
   - messaging
   - distributed-locks
   - jobs
-tags:
-  - opentelemetry
-  - observability
-  - telemetry
-  - instrumentation
-  - naming
-  - metrics
-  - tracing
-  - conventions
+tags: [opentelemetry, observability, telemetry, instrumentation, naming, metrics, tracing, conventions]
 ---
 
 # OpenTelemetry Instrumentation Conventions
 
-How Headless subsystems emit OpenTelemetry metrics and traces: which emission model to use, how to name instruments and attributes, and how to handle sensitive data. Decided while scoping caching OTel (issue #384) and verified against the OpenTelemetry specification. See the fuller rationale in [docs/plans/2026-07-15-001-feat-caching-otel-instrumentation-plan.md](../../plans/2026-07-15-001-feat-caching-otel-instrumentation-plan.md).
+How Headless subsystems emit OpenTelemetry metrics and traces: which emission model to use, how to name instruments and attributes, and how to handle sensitive data. Decided while scoping caching OTel (issue #384) and verified against the OpenTelemetry specification.
 
 ## Context
 
@@ -46,7 +37,7 @@ This is the official .NET **library**-instrumentation guidance: a library should
 
 **Propagation scope (K4).** Cross-process context propagation is active whenever *any* of the subsystem's telemetry is enabled (a span or metric listener attached), not only when tracing is: a metrics-only service — or a sampled-out operation — **relays** the incoming/ambient parent `traceparent` + baggage verbatim onto outgoing carriers instead of dropping them, so downstream trace continuity survives non-tracing hops. A fully unobserved host pays zero cost and forwards nothing, and the framework never fabricates a root context — relay fires only when a parent exists. (Decided for messaging in #696; a new subsystem that propagates context across processes inherits this rule.)
 
-A separate `Headless.<Feature>.OpenTelemetry` package is textbook-justified only when you **cannot** modify the source to emit natively (third-party libraries — the reason `OpenTelemetry.Instrumentation.Http`/`SqlClient` exist). Since Headless owns all its code, that never applies: **no subsystem gets a satellite package**. Messaging's `DiagnosticSource`→span bridge (`Headless.Messaging.OpenTelemetry`) was the one legacy-shaped exception; it has been **migrated to native emission in `Headless.Messaging.Core` and the satellite package deleted** ([docs/plans/2026-07-15-002-refactor-messaging-native-otel-plan.md](../../plans/2026-07-15-002-refactor-messaging-native-otel-plan.md)). Both features once thought to justify it were portable: its cross-process propagation already used the `OpenTelemetry.Api` propagation types (relocated into `Messaging.Core` unchanged now that implementation packages may reference `OpenTelemetry.Api`), and the `IActivityTagEnricher` API needs only the `Activity` + context, so it moved into Core — where running enrichers synchronously at span start also fixed the documented fire-and-forget async-enricher wart.
+A separate `Headless.<Feature>.OpenTelemetry` package is textbook-justified only when you **cannot** modify the source to emit natively (third-party libraries — the reason `OpenTelemetry.Instrumentation.Http`/`SqlClient` exist). Since Headless owns all its code, that never applies: **no subsystem gets a satellite package**. Messaging's `DiagnosticSource`→span bridge (`Headless.Messaging.OpenTelemetry`) was the one legacy-shaped exception; it has been **migrated to native emission in `Headless.Messaging.Core` and the satellite package deleted**. Both features once thought to justify it were portable: its cross-process propagation already used the `OpenTelemetry.Api` propagation types (relocated into `Messaging.Core` unchanged now that implementation packages may reference `OpenTelemetry.Api`), and the `IActivityTagEnricher` API needs only the `Activity` + context, so it moved into Core — where running enrichers synchronously at span start also fixed the documented fire-and-forget async-enricher wart.
 
 ### 2. Naming: follow a semantic convention where one exists; otherwise bespoke `headless.<subsystem>.*`
 
@@ -122,7 +113,6 @@ Attribute namespacing — the fix for the outlier:
 
 ## Related
 
-- [docs/plans/2026-07-15-002-refactor-messaging-native-otel-plan.md](../../plans/2026-07-15-002-refactor-messaging-native-otel-plan.md) — the messaging bridge→native migration this convention schedules.
 - [conventions/cross-package-structure-conventions.md](cross-package-structure-conventions.md) — the `Headless.<Feature>.*` package-naming taxonomy the `.OpenTelemetry` bridge-package name and `headless.<subsystem>.*` scheme extend; keep the two naming rules coherent.
 - [concurrency/circuit-breaker-transport-thread-safety-patterns.md](../concurrency/circuit-breaker-transport-thread-safety-patterns.md) — Pattern 7's OTel metric-cardinality guard (pre-registered instruments, bounded tag sets, no runtime-derived tag values) is the safety companion to these naming rules.
-- [guides/messaging-transport-provider-guide.md](../guides/messaging-transport-provider-guide.md) — `BrokerAddress` sanitization is a concrete instance of "never put credentials/PII on telemetry surfaces."
+- [Writing a Transport Provider](../../llms/messaging.md#writing-a-transport-provider) — `BrokerAddress` sanitization is a concrete instance of "never put credentials/PII on telemetry surfaces."

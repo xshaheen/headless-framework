@@ -1,8 +1,7 @@
 ---
 title: Tenant data placement (schema or database per tenant) — evaluated and not adopted
 date: 2026-09-30
-category: tooling-decisions
-module: MultiTenancy
+module: Headless.MultiTenancy
 problem_type: tooling_decision
 component: tooling
 severity: medium

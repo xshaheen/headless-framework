@@ -2,8 +2,7 @@
 title: Coordination Domains Boundary — Locks vs Membership vs Unit of Work
 date: 2026-06-21
 last_updated: 2026-09-20
-category: architecture-patterns
-module: headless-coordination
+module: headless-framework
 problem_type: architecture_pattern
 component: domain_boundary
 severity: medium
@@ -11,11 +10,7 @@ related_components:
   - distributed_locks
   - coordination
   - unit_of_work
-tags:
-  - distributed-locks
-  - coordination
-  - unit-of-work
-  - domain-boundary
+tags: [distributed-locks, coordination, unit-of-work, domain-boundary]
 ---
 
 # Coordination Domains Boundary
