@@ -23,8 +23,8 @@ internal sealed class MessagingTables
         Received = dialect.Qualify(schema, dialect.Name("MessagingReceived"));
         Receipts = dialect.Qualify(schema, dialect.Name("MessagingInboxOperationReceipts"));
         Audit = dialect.Qualify(schema, dialect.Name("MessagingInboxAudit"));
-        True = dialect.BooleanLiteral(true);
-        False = dialect.BooleanLiteral(false);
+        True = dialect.BooleanLiteral(value: true);
+        False = dialect.BooleanLiteral(value: false);
 
         string column(string pascal) => dialect.Quote(dialect.Name(pascal));
 

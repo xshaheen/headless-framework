@@ -465,7 +465,7 @@ internal sealed partial class RelationalDataStorage
             {
                 // Autocommit: a first delivery is the single insert, and the insert waits out a concurrent insert of
                 // the same identity instead of failing on it.
-                var inserted = await RelationalCommand
+                var (inserted, insertedRow) = await RelationalCommand
                     .ExecuteReaderAsync(
                         connection,
                         transaction: null,
@@ -486,13 +486,13 @@ internal sealed partial class RelationalDataStorage
                     )
                     .ConfigureAwait(false);
 
-                if (inserted.Applied)
+                if (inserted)
                 {
-                    return inserted.Row;
+                    return insertedRow;
                 }
             }
 
-            var rewritten = await SqlAutonomousTransaction
+            var (found, stored) = await SqlAutonomousTransaction
                 .RunAsync(
                     _CreateConnection,
                     async (connection, transaction, ct) =>
@@ -519,7 +519,7 @@ internal sealed partial class RelationalDataStorage
                             return (Found: false, Stored: ((Guid, DateTimeOffset, DateTimeOffset?)?)null);
                         }
 
-                        var transition = await RelationalCommand
+                        var (transitioned, transitionedRow) = await RelationalCommand
                             .ExecuteReaderAsync(
                                 connection,
                                 transaction,
@@ -535,16 +535,16 @@ internal sealed partial class RelationalDataStorage
                             )
                             .ConfigureAwait(false);
 
-                        return (Found: true, Stored: transition.Applied ? transition.Row : null);
+                        return (Found: true, Stored: transitioned ? transitionedRow : null);
                     },
                     _timeProvider,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
 
-            if (rewritten.Found || attempt == _ReceivedStoreAttempts)
+            if (found || attempt == _ReceivedStoreAttempts)
             {
-                return rewritten.Stored;
+                return stored;
             }
         }
     }

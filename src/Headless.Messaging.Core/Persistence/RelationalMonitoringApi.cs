@@ -453,7 +453,7 @@ internal sealed class RelationalMonitoringApi(
         }
 
         var counts = string.Join(
-            ",",
+            ',',
             Enumerable
                 .Range(0, _HourlyBuckets)
                 .Select(i =>

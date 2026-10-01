@@ -369,7 +369,7 @@ internal sealed partial class RelationalDataStorage
         foreach (var chunk in ids.Chunk(_MaxCommandParameters))
         {
             var list = string.Join(
-                ",",
+                ',',
                 Enumerable.Range(0, chunk.Length).Select(static i => "@Id" + i.ToString(CultureInfo.InvariantCulture))
             );
             deleted += await RelationalCommand

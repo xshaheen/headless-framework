@@ -269,7 +269,7 @@ internal sealed partial class RelationalDataStorage
         {
             // Each poison row records its own failure; the inbox generation ends, and its retention starts.
             var exceptions = string.Join(
-                " ",
+                ' ',
                 poisonMessages.Select(
                     (_, index) =>
                         string.Create(CultureInfo.InvariantCulture, $"WHEN @Poison{index} THEN @PoisonInfo{index}")
@@ -406,7 +406,7 @@ internal sealed partial class RelationalDataStorage
                     foreach (var chunk in deadOwners.Chunk(_MaxCommandParameters))
                     {
                         var lockSql = string.Join(
-                            "\n",
+                            '\n',
                             chunk.Select(
                                 (_, i) =>
                                     _dialect.Render(
@@ -717,9 +717,9 @@ internal sealed partial class RelationalDataStorage
 
             var sql = $"""
                 INSERT INTO {_t.Receipts} ({_t.OperationId},{_t.GenerationIncarnationId},{_t.OperationType},{_t.ExpectedStatus},{_t.Actor},{_t.Reason},{_t.Outcome},{_t.StorageId},{_t.CreatedAt})
-                VALUES {string.Join(",", receipts)};
+                VALUES {string.Join(',', receipts)};
                 INSERT INTO {_t.Audit} ({_t.AuditId},{_t.OperationId},{_t.GenerationIncarnationId},{_t.OperationType},{_t.Actor},{_t.Reason},{_t.Outcome},{_t.CreatedAt})
-                VALUES {string.Join(",", audits)};
+                VALUES {string.Join(',', audits)};
                 """;
 
             await RelationalCommand

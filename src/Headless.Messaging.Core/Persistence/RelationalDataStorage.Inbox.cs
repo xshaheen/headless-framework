@@ -350,5 +350,4 @@ internal sealed partial class RelationalDataStorage
     }
 }
 
-#pragma warning restore CA1849, VSTHRD103, AsyncFixer02, MA0042
-#pragma warning restore CA2100
+#pragma warning restore CA1849, VSTHRD103, AsyncFixer02, MA0042, CA2100
