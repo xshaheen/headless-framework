@@ -145,6 +145,22 @@ Rules that change how you operate a database:
 - **`InitializeOnStartup = false`** on a feature keeps its steps out of `Apply` mode. `Verify` mode and `ExportScript` still include them.
 - History rows of features a host does not register are ignored, so hosts with different feature sets can share one schema. A row for a registered feature whose step this host does not know, such as a newer replica's step during a rolling deploy, is logged, not fatal.
 
+#### Schema runner observability
+
+The runner emits traces and metrics under `Headless.SchemaRunner` (`SchemaRunnerDiagnostics.SourceName`, for both the `ActivitySource` and the `Meter`). Subscribe with `tracing.AddSchemaRunnerInstrumentation()` and `metrics.AddSchemaRunnerInstrumentation()` (namespaces `OpenTelemetry.Trace` and `OpenTelemetry.Metrics`, `OpenTelemetry.Api` only), or with `AddSource`/`AddMeter` and the constant. `builder.AddHeadless()` with `OpenTelemetry.Enabled` already subscribes to every `Headless.*` source and meter. Nothing is recorded until something subscribes.
+
+Spans: one `schema_runner.apply` or `schema_runner.verify` span per pass (`ApplyAsync`, `VerifyAsync`, or the startup `RunAsync`, which also covers the fatal-mismatch check), with a `schema_runner.lock_wait` child per database that takes the lock and a `schema_runner.step` child per applied step. A step's own DDL spans from the driver nest under its step span.
+
+| Instrument | Kind | Unit | Attributes | Meaning |
+| --- | --- | --- | --- | --- |
+| `headless.schema_runner.duration` | Histogram | `ms` | `headless.schema_runner.mode` (`apply`, `verify`), `headless.schema_runner.outcome` (`success`, `failure`), `error.type` on failure | One pass, every database it reaches included. A startup refused for a checksum or missing step is a `failure` with `error.type` `Headless.Hosting.Initialization.Schema.SchemaRunnerException`. |
+| `headless.schema_runner.lock.wait.duration` | Histogram | `ms` | `headless.schema_runner.dialect`, `headless.schema_runner.lock.outcome` (`acquired`, `timed_out`, `failed`) | Time a pass waited for another replica's per-database lock; `failed` means the lock query failed or the wait was cancelled. A warm database takes no lock and records nothing. |
+| `headless.schema_runner.steps` | Counter | `{step}` | `headless.schema_runner.dialect`, `headless.schema_runner.feature`, `headless.schema_runner.step.outcome` (`applied`, `skipped`) | Steps an apply pass ran, or skipped because the history already records them. Verify passes record none. |
+| `headless.schema_runner.mismatches` | Counter | `{mismatch}` | `headless.schema_runner.mode`, `headless.schema_runner.dialect`, `headless.schema_runner.feature`, `headless.schema_runner.mismatch.kind` (`missing`, `unknown`, `checksum`) | History disagreements a pass found. Apply passes never report `missing`, since applying it is the point. |
+| `headless.schema_runner.absorbed_races` | Counter | `{race}` | `headless.schema_runner.dialect` | Steps re-run because a creator outside the runner committed the same object first. |
+
+`headless.schema_runner.feature` is the feature name alone (`Sequences`, never `Sequences:counters`), and no signal carries a schema name, SQL text, the database identity, or connection details. Span statuses carry no description, because a driver message can quote object names.
+
 ### Store statement kit (for provider authors)
 
 A relational store is written once against `ISqlDialect` (`Headless.Sql`), with `PostgreSqlDialect.Instance` and `SqlServerDialect.Instance` as the two engines. Application code does not call it; a feature's store does. The dialect renders a small set of statement shapes, and each shape keeps the same locking and clock rules on both engines:
@@ -166,8 +182,33 @@ A relational store is written once against `ISqlDialect` (`Headless.Sql`), with 
 - **Errors.** `Classify` maps a driver exception to `SqlErrorKind`: `UniqueViolation`, `Deadlock`, `SerializationConflict`, `DuplicateObject`, `LockTimeout`, and `TransactionAborted` for a statement that ran on a transaction an earlier error ended or doomed (PostgreSQL `25P02`, SQL Server `3930`). That transaction is lost; roll the unit back rather than retrying inside it.
 - **Autonomous calls.** `SqlAutonomousTransaction.RunAsync` runs one store call on its own READ COMMITTED transaction, at most 3 attempts, each on a fresh connection. It retries a fault only when `RelationalTransientFaults.IsTransient` (`Headless.UnitOfWork`) calls it transient and it was raised before the commit started: by the transaction begin or the store's statements. That set is the unit of work's: a deadlock, a serialization conflict, a lock timeout, a dropped connection, a capacity fault, and on SQL Server EF Core's `EnableRetryOnFailure` error numbers minus the client command timeout. A fault from the commit is never retried, whatever its classification, because the commit may have landed on the server before it failed on the wire; it surfaces unchanged. Nor is a fault observed after the caller's token was cancelled. `Classify` takes no part in the retry. The call never retries inside a caller's transaction.
 - **Custom autonomous loops.** `SqlAutonomousTransaction.RetryAsync` applies the same rule to an attempt that owns its own connection and transaction, such as an EF claim scope. The attempt receives a `SqlAutonomousAttempt` and calls `MarkCommitStarted()` immediately before it commits. An optional `onRetry` callback receives the fault and the number of the attempt about to run.
+- **Autonomous-call telemetry.** Every `RunAsync` and `RetryAsync` call, Jobs claims included, emits under `Headless.Sql` (`SqlDiagnostics.SourceName`); see [Store kit observability](#store-kit-observability).
 - **Portable values.** `SqlPortable.Truncate` truncates a duration to the microsecond every engine keeps. Key text is checked with `Argument.IsPortableKey` (`Headless.Checks`).
 - **Enlistment.** `RelationalEnlistment.RequireLive` and `RequireSameDatabase` (`Headless.UnitOfWork`) are the checks a store runs before writing inside a caller's unit of work.
+
+#### Store kit observability
+
+`SqlAutonomousTransaction` emits traces and metrics under `Headless.Sql` (`SqlDiagnostics.SourceName`, for both the `ActivitySource` and the `Meter`). Subscribe with `tracing.AddSqlInstrumentation()` and `metrics.AddSqlInstrumentation()` (namespaces `OpenTelemetry.Trace` and `OpenTelemetry.Metrics`, `OpenTelemetry.Api` only), or with `AddSource`/`AddMeter` and the constant. `builder.AddHeadless()` with `OpenTelemetry.Enabled` already subscribes to every `Headless.*` source and meter. With nothing subscribed a call takes its original path: no span, clock read, or tag building.
+
+Each call is one `sql.autonomous_transaction` span; the attempts' driver spans nest under it. Each retry adds a `headless.sql.retry` span event carrying `headless.sql.attempt` (the attempt about to run), `error.type`, and `db.response.status_code`. The span ends with `headless.sql.outcome` and `headless.sql.attempts`, and with an error status and `error.type` when the call fails.
+
+| Instrument | Kind | Unit | Attributes | Meaning |
+| --- | --- | --- | --- | --- |
+| `headless.sql.autonomous.duration` | Histogram | `ms` | `headless.sql.outcome`, `error.type` on failure | One call, every attempt and retry delay included. |
+| `headless.sql.autonomous.attempts` | Histogram | `{attempt}` | `headless.sql.outcome`, `error.type` on failure | Attempts the call made, the first one included: 1 to 3. |
+| `headless.sql.autonomous.retries` | Counter | `{retry}` | `error.type`, `db.response.status_code` when the driver reports one | One per retried attempt: a transient fault raised before the commit started. |
+
+`headless.sql.outcome` says why a call ended:
+
+| Value | Meaning |
+| --- | --- |
+| `success` | An attempt returned. |
+| `retries_exhausted` | The last attempt failed with a transient fault before its commit. |
+| `non_transient` | An attempt failed before its commit with a fault `RelationalTransientFaults` does not call transient. |
+| `commit_fault` | An attempt failed after it marked its commit as started; the fault surfaced unchanged and was not retried. Alert on it: the write may or may not have landed. |
+| `canceled` | The caller cancelled before the commit started. |
+
+`error.type` is the full type name of the outermost `DbException` in the fault, else of the thrown exception. `db.response.status_code` is the SQLSTATE (`40P01`, `40001`) or, on SQL Server, the error number (`1205`). Neither the SQL text, parameters, keys, nor connection details are recorded, and span statuses carry no description, because a driver message can quote key values. Jobs keeps its `JobsClaimTransientRetry` log event alongside these signals.
 
 ## Choosing a Provider
 
@@ -239,6 +280,7 @@ Default implementation package for provider-agnostic SQL helpers.
 - Lazily opens one connection per scope and reuses it until disposal.
 - Reopens the underlying connection if it is observed closed.
 - `SqlAutonomousTransaction` and `SqlAutonomousAttempt` — the store kit's autonomous-call retry (see [Store statement kit](#store-statement-kit-for-provider-authors)). They classify faults through `RelationalTransientFaults`, so the package depends on `Headless.UnitOfWork`.
+- `SqlDiagnostics` and the `AddSqlInstrumentation()` extensions on `TracerProviderBuilder` and `MeterProviderBuilder` — the autonomous-call telemetry (see [Store kit observability](#store-kit-observability)).
 
 ### Install
 

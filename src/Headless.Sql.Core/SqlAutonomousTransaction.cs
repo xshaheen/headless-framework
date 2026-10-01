@@ -82,6 +82,24 @@ public static class SqlAutonomousTransaction
         Argument.IsNotNull(attempt);
         Argument.IsNotNull(timeProvider);
 
+        // Unobserved calls keep the plain path: no span, no clock read, no extra async frame.
+        return SqlAutonomousTelemetry.IsEnabled
+            ? SqlAutonomousTelemetry.ObserveAsync(
+                observer => _RetryAsync(attempt, timeProvider, onRetry, observer, cancellationToken),
+                timeProvider,
+                cancellationToken
+            )
+            : _RetryAsync(attempt, timeProvider, onRetry, observer: null, cancellationToken);
+    }
+
+    private static ValueTask<T> _RetryAsync<T>(
+        Func<SqlAutonomousAttempt, CancellationToken, Task<T>> attempt,
+        TimeProvider timeProvider,
+        Action<Exception, int>? onRetry,
+        SqlAutonomousTelemetry.Observer? observer,
+        CancellationToken cancellationToken
+    )
+    {
         // TransientRetry runs attempts one at a time and asks about a failure before starting the next, so the
         // attempt being judged is always the latest one.
         SqlAutonomousAttempt current = null!;
@@ -92,6 +110,7 @@ public static class SqlAutonomousTransaction
             {
                 current = new SqlAutonomousAttempt();
                 attemptNumber++;
+                observer?.AttemptStarted(current);
 
                 return new ValueTask<T>(attempt(current, ct));
             },
@@ -103,6 +122,7 @@ public static class SqlAutonomousTransaction
                 }
 
                 // TransientRetry asks only when another attempt will run, so this reports each retry once.
+                observer?.Retrying(ex, attemptNumber + 1);
                 onRetry?.Invoke(ex, attemptNumber + 1);
 
                 return true;
