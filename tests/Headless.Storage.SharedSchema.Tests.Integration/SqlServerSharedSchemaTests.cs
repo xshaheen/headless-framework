@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.RegularExpressions;
 using Headless.AuditLog;
 using Headless.Coordination;
 using Headless.DistributedLocks;
@@ -28,7 +29,7 @@ public sealed class SqlServerSharedSchemaFixture
         ICollectionFixture<SqlServerSharedSchemaFixture>;
 
 [Collection<SqlServerSharedSchemaFixture>]
-public sealed class SqlServerSharedSchemaTests(SqlServerSharedSchemaFixture fixture) : SharedSchemaTestsBase
+public sealed partial class SqlServerSharedSchemaTests(SqlServerSharedSchemaFixture fixture) : SharedSchemaTestsBase
 {
     protected override string TableType => "U";
 
@@ -194,4 +195,172 @@ public sealed class SqlServerSharedSchemaTests(SqlServerSharedSchemaFixture fixt
 
         return schemas;
     }
+
+    protected override async Task ExecuteAsync(string connectionString, string sql, CancellationToken cancellationToken)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    protected override async Task<IReadOnlyList<string>> QueryLinesAsync(
+        string connectionString,
+        string sql,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        var lines = new List<string>();
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            lines.Add(reader.GetString(0));
+        }
+
+        return lines;
+    }
+
+    // Constraint names the engine generates (an unnamed default or primary key) differ per database, so they are
+    // masked; everything else is compared as the catalog reports it. Catalog columns carry different collations
+    // (names follow the database, descriptions the server's metadata collation), so each is coerced before CONCAT.
+    protected override string SchemaShapeSql =>
+        """
+            SELECT line FROM (
+                SELECT CONCAT('table ', s.name COLLATE DATABASE_DEFAULT, '.', t.name COLLATE DATABASE_DEFAULT) AS line
+                FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id
+                WHERE t.is_ms_shipped = 0
+                UNION ALL
+                SELECT CONCAT(
+                    'column ', s.name COLLATE DATABASE_DEFAULT, '.', o.name COLLATE DATABASE_DEFAULT, '.', c.name COLLATE DATABASE_DEFAULT,
+                    ' type=', ty.name COLLATE DATABASE_DEFAULT, '(', c.max_length, ',', c.precision, ',', c.scale, ')',
+                    IIF(c.is_nullable = 1, ' null', ' not null'), IIF(c.is_identity = 1, ' identity', ''),
+                    ' collation=', c.collation_name COLLATE DATABASE_DEFAULT,
+                    ' default=', dc.definition COLLATE DATABASE_DEFAULT, IIF(dc.is_system_named = 0, ' default-name=' + dc.name COLLATE DATABASE_DEFAULT, ''),
+                    ' computed=', cc.definition COLLATE DATABASE_DEFAULT, ' position=', c.column_id)
+                FROM sys.columns c
+                    JOIN sys.objects o ON o.object_id = c.object_id
+                    JOIN sys.schemas s ON s.schema_id = o.schema_id
+                    JOIN sys.types ty ON ty.user_type_id = c.user_type_id
+                    LEFT JOIN sys.default_constraints dc ON dc.object_id = c.default_object_id
+                    LEFT JOIN sys.computed_columns cc ON cc.object_id = c.object_id AND cc.column_id = c.column_id
+                WHERE o.is_ms_shipped = 0 AND o.type IN ('U', 'V')
+                UNION ALL
+                SELECT CONCAT(
+                    'index ', s.name COLLATE DATABASE_DEFAULT, '.', t.name COLLATE DATABASE_DEFAULT, '.', IIF(kc.is_system_named = 1, '<system>', i.name COLLATE DATABASE_DEFAULT),
+                    ' ', i.type_desc COLLATE DATABASE_DEFAULT, IIF(i.is_unique = 1, ' unique', ''), IIF(i.is_primary_key = 1, ' primary', ''),
+                    IIF(i.is_unique_constraint = 1, ' unique-constraint', ''), ' ignore-dup=', i.ignore_dup_key,
+                    ' keys=', (
+                        SELECT STRING_AGG(CONCAT(col.name COLLATE DATABASE_DEFAULT, IIF(ic.is_descending_key = 1, ' desc', '')), ',')
+                            WITHIN GROUP (ORDER BY ic.key_ordinal)
+                        FROM sys.index_columns ic
+                            JOIN sys.columns col ON col.object_id = ic.object_id AND col.column_id = ic.column_id
+                        WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.key_ordinal > 0
+                    ),
+                    ' include=', (
+                        SELECT STRING_AGG(col.name COLLATE DATABASE_DEFAULT, ',') WITHIN GROUP (ORDER BY col.name COLLATE DATABASE_DEFAULT)
+                        FROM sys.index_columns ic
+                            JOIN sys.columns col ON col.object_id = ic.object_id AND col.column_id = ic.column_id
+                        WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.is_included_column = 1
+                    ),
+                    ' filter=', i.filter_definition COLLATE DATABASE_DEFAULT)
+                FROM sys.indexes i
+                    JOIN sys.tables t ON t.object_id = i.object_id
+                    JOIN sys.schemas s ON s.schema_id = t.schema_id
+                    LEFT JOIN sys.key_constraints kc
+                        ON kc.parent_object_id = i.object_id AND kc.unique_index_id = i.index_id
+                WHERE t.is_ms_shipped = 0 AND i.type > 0
+                UNION ALL
+                SELECT CONCAT(
+                    'check ', s.name COLLATE DATABASE_DEFAULT, '.', OBJECT_NAME(ck.parent_object_id) COLLATE DATABASE_DEFAULT, '.',
+                    IIF(ck.is_system_named = 1, '<system>', ck.name COLLATE DATABASE_DEFAULT), ' ', ck.definition COLLATE DATABASE_DEFAULT)
+                FROM sys.check_constraints ck JOIN sys.schemas s ON s.schema_id = ck.schema_id
+                UNION ALL
+                SELECT CONCAT(
+                    'foreign-key ', s.name COLLATE DATABASE_DEFAULT, '.', OBJECT_NAME(fk.parent_object_id) COLLATE DATABASE_DEFAULT, '.',
+                    IIF(fk.is_system_named = 1, '<system>', fk.name COLLATE DATABASE_DEFAULT), ' -> ',
+                    OBJECT_SCHEMA_NAME(fk.referenced_object_id) COLLATE DATABASE_DEFAULT, '.', OBJECT_NAME(fk.referenced_object_id) COLLATE DATABASE_DEFAULT,
+                    ' delete=', fk.delete_referential_action_desc COLLATE DATABASE_DEFAULT)
+                FROM sys.foreign_keys fk JOIN sys.schemas s ON s.schema_id = fk.schema_id
+                UNION ALL
+                SELECT CONCAT(
+                    'sequence ', s.name COLLATE DATABASE_DEFAULT, '.', sq.name COLLATE DATABASE_DEFAULT, ' type=', TYPE_NAME(sq.user_type_id) COLLATE DATABASE_DEFAULT,
+                    ' start=', CONVERT(nvarchar(64), sq.start_value), ' increment=', CONVERT(nvarchar(64), sq.increment),
+                    ' min=', CONVERT(nvarchar(64), sq.minimum_value), ' max=', CONVERT(nvarchar(64), sq.maximum_value),
+                    ' cycle=', sq.is_cycling, ' cached=', sq.is_cached, ' cache=', sq.cache_size)
+                FROM sys.sequences sq JOIN sys.schemas s ON s.schema_id = sq.schema_id
+                UNION ALL
+                SELECT CONCAT(
+                    'module ', s.name COLLATE DATABASE_DEFAULT, '.', o.name COLLATE DATABASE_DEFAULT, ' ', RTRIM(o.type) COLLATE DATABASE_DEFAULT, ' ',
+                    CONVERT(varchar(64), HASHBYTES('SHA2_256', m.definition), 2))
+                FROM sys.sql_modules m
+                    JOIN sys.objects o ON o.object_id = m.object_id
+                    JOIN sys.schemas s ON s.schema_id = o.schema_id
+                WHERE o.is_ms_shipped = 0
+                UNION ALL
+                SELECT CONCAT(
+                    'table-type ', s.name COLLATE DATABASE_DEFAULT, '.', tt.name COLLATE DATABASE_DEFAULT, '.', c.name COLLATE DATABASE_DEFAULT, ' type=', TYPE_NAME(c.user_type_id) COLLATE DATABASE_DEFAULT,
+                    '(', c.max_length, ',', c.precision, ',', c.scale, ')', IIF(c.is_nullable = 1, ' null', ' not null'),
+                    ' position=', c.column_id)
+                FROM sys.table_types tt
+                    JOIN sys.schemas s ON s.schema_id = tt.schema_id
+                    JOIN sys.columns c ON c.object_id = tt.type_table_object_id
+                WHERE tt.is_user_defined = 1
+            ) shape
+            ORDER BY line COLLATE Latin1_General_100_BIN2;
+            """;
+
+    protected override string HistoryLinesSql(string schema)
+    {
+        return $"""
+            SELECT CONCAT([Feature], '/', [StepVersion], ' ', [Checksum] COLLATE Latin1_General_100_BIN2, ' ', [Description] COLLATE Latin1_General_100_BIN2)
+            FROM [{schema}].[headless_schema_history]
+            ORDER BY [Feature], [StepVersion];
+            """;
+    }
+
+    protected override string DeleteHistoryRowSql(string schema, string feature, string version)
+    {
+        return $"""
+            DELETE FROM [{schema}].[headless_schema_history]
+            WHERE [Feature] = N'{feature}' AND [StepVersion] = N'{version}';
+            """;
+    }
+
+    protected override string SetChecksumSql(string schema, string feature, string version, string checksum)
+    {
+        return $"""
+            UPDATE [{schema}].[headless_schema_history] SET [Checksum] = '{checksum}'
+            WHERE [Feature] = N'{feature}' AND [StepVersion] = N'{version}';
+            """;
+    }
+
+    protected override async Task ExecuteScriptWithPlainClientAsync(
+        string connectionString,
+        string script,
+        CancellationToken cancellationToken
+    )
+    {
+        // sqlcmd's client-side contract: split on lines that hold only GO and send each batch as-is. Azure SQL Edge
+        // ships no sqlcmd, so this reproduces it without any Headless code on the path.
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        foreach (var batch in GoSeparatorRegex.Split(script).Where(b => !string.IsNullOrWhiteSpace(b)))
+        {
+            await using var command = new SqlCommand(batch, connection);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
+    [GeneratedRegex(
+        @"^[ \t]*GO[ \t]*\r?$",
+        RegexOptions.Multiline | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        matchTimeoutMilliseconds: 1000
+    )]
+    private static partial Regex GoSeparatorRegex { get; }
 }
