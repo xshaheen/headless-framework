@@ -58,13 +58,14 @@ QUALITY_BUILD_ARGS = --configuration "$(CONFIGURATION)" --no-restore --no-increm
 TEST_MAX_PARALLEL ?= 3
 TEST_TIMEOUT ?= 15m
 # Inner-loop build flags. Analyzers are over half of the compiler's CPU on this solution (9 analyzer
-# packs, AnalysisMode=All, AnalysisLevel=latest-all, EnforceCodeStyleInBuild, ReportAnalyzer), and
-# MinVer shells out to git once per src project. Neither changes the emitted IL, so a compile-only
-# loop can skip both. Property names verified against Headless.NET.Sdk 0.3.0
-# (SupportMandatoryAnalyzers.targets, SupportGeneral.props) and MinVer 8.0.0 (MinVer.targets).
+# packs, AnalysisMode=All, AnalysisLevel=latest-all, EnforceCodeStyleInBuild), and MinVer shells out
+# to git once per src project. Neither changes the emitted IL, so a compile-only loop can skip both.
+# Headless.NET.Sdk 0.4.0+ already limits ReportAnalyzer to CI, and RunAnalyzers=false makes it moot.
+# Property names verified against Headless.NET.Sdk 0.4.1 (SupportMandatoryAnalyzers.targets) and
+# MinVer 8.0.0 (MinVer.targets).
 # MinVerSkip pins Version to the SDK default, so alternating a fast build with an analyzed one
 # rewrites the generated AssemblyInfo and recompiles the graph; stay on one or the other per session.
-FAST_BUILD_ARGS ?= -p:RunAnalyzers=false -p:ReportAnalyzer=false -p:MinVerSkip=true
+FAST_BUILD_ARGS ?= -p:RunAnalyzers=false -p:MinVerSkip=true
 # Base ref for the affected-scope targets: the branch's upstream, else origin/main. Resolved once
 # per make invocation (a recursive `?=` would re-run git on every reference).
 ifeq ($(origin AFFECTED_BASE),undefined)

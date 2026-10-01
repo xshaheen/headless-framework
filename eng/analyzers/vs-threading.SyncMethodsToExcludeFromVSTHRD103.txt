@@ -1,10 +1,7 @@
-# EF Core DbSet.Add only updates change tracking. AddAsync is reserved for asynchronous
-# value generators and is not the preferred path for ordinary entity insertion.
-[Microsoft.EntityFrameworkCore.DbSet]::Add
-[Microsoft.EntityFrameworkCore.DbSet]::AddRange
-# The DbContext-level overloads resolve to the same change-tracking work.
-[Microsoft.EntityFrameworkCore.DbContext]::Add
-[Microsoft.EntityFrameworkCore.DbContext]::AddRange
+# EF Core Add/AddRange, MemoryStream and similar non-blocking calls are excluded by
+# Headless.NET.Sdk (vs-threading.SyncMethodsToExcludeFromVSTHRD103.Headless.txt); the analyzer
+# merges that list with this one. Keep this file free of backtick characters: newer analyzer
+# versions switch a file to exact metadata-name matching as soon as it contains one.
 # IAuditLogStore.Save only stages entries on the caller's context; SaveAsync wraps the same call
 # in Task.FromResult, so neither overload performs I/O and Save is not a blocking counterpart.
 [Headless.AuditLog.IAuditLogStore]::Save
