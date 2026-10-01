@@ -78,7 +78,7 @@ public interface ISqlCurrentConnection : IAsyncDisposable
 
 ### Shared connection and schema for storage features
 
-The raw PostgreSQL and SQL Server providers of Messaging storage, Coordination, DistributedLocks, AuditLog, Sequences, Features, Permissions, Settings, Fencing, and Idempotency each have a parameterless `UsePostgreSql()` and `UseSqlServer()`. These overloads read the connection string that `AddPostgreSqlSql` or `AddSqlServerSql` registered, so one registration serves every feature:
+The raw PostgreSQL and SQL Server providers of Messaging storage, Coordination, DistributedLocks, AuditLog, Sequences, Features, Permissions, Settings, Fencing, and Idempotency each have a parameterless `UsePostgreSql()` and `UseSqlServer()`, and the SQLite providers of Sequences, Idempotency, Fencing, and Coordination a parameterless `UseSqlite()`. These overloads read the connection string that `AddPostgreSqlSql`, `AddSqlServerSql`, or `AddSqliteSql` registered, so one registration serves every feature:
 
 ```csharp
 builder.Services.AddPostgreSqlSql(builder.Configuration.GetConnectionString("Default")!);
@@ -105,9 +105,9 @@ The EF Core storage variants and Jobs take their connection from the `DbContext`
 
 ### Schema runner: apply, verify, and deploy-time scripts
 
-Every raw PostgreSQL and SQL Server storage feature contributes its DDL to one schema runner (`SchemaRunner`, namespace `Headless.Hosting.Initialization.Schema`) instead of running its own initializer. Registering a feature is enough; the feature adds its contribution and the runner's hosted initializer. The runner:
+Every raw PostgreSQL, SQL Server, and SQLite storage feature contributes its DDL to one schema runner (`SchemaRunner`, namespace `Headless.Hosting.Initialization.Schema`) instead of running its own initializer. Registering a feature is enough; the feature adds its contribution and the runner's hosted initializer. The runner:
 
-- Applies every missing step of every feature that reaches one database in a single pass at host start, under one session lock per database (`pg_try_advisory_lock` or `sp_getapplock`, polled), before any hosted service can use the tables.
+- Applies every missing step of every feature that reaches one database in a single pass at host start, under one session lock per database (`pg_try_advisory_lock` or `sp_getapplock`, polled; on SQLite a leased row in `headless_schema_lock`), before any hosted service can use the tables.
 - Records each applied step, with a SHA-256 checksum of its SQL, in `headless_schema_history` in the feature's schema. A recorded step is never run again, so a warm start is one history read per schema and takes no lock.
 - Absorbs a creator outside the lock, such as your own EF migration committing the same schema or table first: the failed step is re-run once in a fresh transaction.
 
