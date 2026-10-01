@@ -323,14 +323,31 @@ internal sealed partial class RelationalDataStorage
         CancellationToken cancellationToken
     )
     {
-        var sql = _dialect.Render(
-            new SqlFencedTransition(table, [new SqlKeyColumn(_t.Id, "Id")], fence, set, returning)
-        );
+        // The locking read waits out any other writer of the row first, so the transition reads the database clock
+        // after that wait: a lease or due time is never decided on a clock read before it.
+        SqlKeyColumn[] key = [new(_t.Id, "Id")];
+        var sql =
+            _dialect.Render(new SqlLockedRead(table, key, [_t.Id]))
+            + "\n"
+            + _dialect.Render(new SqlFencedTransition(table, key, fence, set, returning));
 
         return _RunAsync(
             transaction,
             (connection, tx, ct) =>
-                RelationalCommand.ExecuteReaderAsync(connection, tx, sql, CommandTimeoutSeconds, bind, read, ct),
+                RelationalCommand.ExecuteReaderAsync(
+                    connection,
+                    tx,
+                    sql,
+                    CommandTimeoutSeconds,
+                    bind,
+                    async (reader, token) =>
+                    {
+                        await RelationalCommand.SkipResultsAsync(reader, 1, token).ConfigureAwait(false);
+
+                        return await read(reader, token).ConfigureAwait(false);
+                    },
+                    ct
+                ),
             cancellationToken
         );
     }

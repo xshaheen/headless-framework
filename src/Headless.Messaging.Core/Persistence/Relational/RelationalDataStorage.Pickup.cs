@@ -389,21 +389,77 @@ internal sealed partial class RelationalDataStorage
 
         // Intentionally version-agnostic: reclaim only shortens leases on rows owned by dead node incarnations, then
         // the normal version-filtered pickup decides what this service version may dispatch. One list parameter keeps
-        // the statement text, and its cached plan, the same whatever the number of dead owners.
+        // the update's text, and its cached plan, the same whatever the number of dead owners.
         var sql = _dialect.Render(
             new SqlClockedStatement(
                 $"UPDATE {table} SET {_t.LockedUntil} = {SqlDialectTokens.Now} WHERE {_t.Owner} IS NOT NULL AND {_dialect.InList(_t.Owner, "DeadOwners", _ownerType)} AND {_t.LockedUntil} > {SqlDialectTokens.Now} AND {_t.IntentType} IN (0, 1) AND {_terminalGuard};"
             )
         );
 
-        await using var connection = _CreateConnection();
-        return await RelationalCommand
-            .ExecuteNonQueryAsync(
-                connection,
-                transaction: null,
-                sql,
-                CommandTimeoutSeconds,
-                command => _dialect.AddListParameter(command, "DeadOwners", _ownerType, deadOwners),
+        return await SqlAutonomousTransaction
+            .RunAsync(
+                _CreateConnection,
+                async (connection, transaction, ct) =>
+                {
+                    // The dead owners' rows are locked first, waiting out any writer that holds one, so the update
+                    // reads the database clock after that wait and decides which leases are still live on it.
+                    foreach (var chunk in deadOwners.Chunk(_MaxCommandParameters))
+                    {
+                        var lockSql = string.Join(
+                            "\n",
+                            chunk.Select(
+                                (_, i) =>
+                                    _dialect.Render(
+                                        new SqlLockedRead(
+                                            table,
+                                            [
+                                                new SqlKeyColumn(
+                                                    _t.Owner,
+                                                    "Owner" + i.ToString(CultureInfo.InvariantCulture)
+                                                ),
+                                            ],
+                                            [_t.Id],
+                                            $"{_t.Owner} IS NOT NULL"
+                                        )
+                                    )
+                            )
+                        );
+
+                        await RelationalCommand
+                            .ExecuteNonQueryAsync(
+                                connection,
+                                transaction,
+                                lockSql,
+                                CommandTimeoutSeconds,
+                                command =>
+                                {
+                                    for (var i = 0; i < chunk.Length; i++)
+                                    {
+                                        _dialect.AddParameter(
+                                            command,
+                                            "Owner" + i.ToString(CultureInfo.InvariantCulture),
+                                            _ownerType,
+                                            chunk[i]
+                                        );
+                                    }
+                                },
+                                ct
+                            )
+                            .ConfigureAwait(false);
+                    }
+
+                    return await RelationalCommand
+                        .ExecuteNonQueryAsync(
+                            connection,
+                            transaction,
+                            sql,
+                            CommandTimeoutSeconds,
+                            command => _dialect.AddListParameter(command, "DeadOwners", _ownerType, deadOwners),
+                            ct
+                        )
+                        .ConfigureAwait(false);
+                },
+                _timeProvider,
                 cancellationToken
             )
             .ConfigureAwait(false);

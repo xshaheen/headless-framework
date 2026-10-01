@@ -230,15 +230,22 @@ internal sealed partial class RelationalDataStorage
                         return (replay, (InboxOperationRow?)null);
                     }
 
-                    var now = await _ReadNowAsync(connection, transaction, ct).ConfigureAwait(false);
+                    // The generation is locked before the clock is read, so whether its claim is live, the hold
+                    // stamp, and a replay's due time are all decided on a clock read after any wait for that lock.
                     var row = await _ReadInboxOperationRowAsync(
                             connection,
                             transaction,
                             request.ExpectedIncarnationId,
-                            now,
                             ct
                         )
                         .ConfigureAwait(false);
+                    var now = await _ReadNowAsync(connection, transaction, ct).ConfigureAwait(false);
+                    row = row is null
+                        ? null
+                        : row with
+                        {
+                            State = row.State with { HasLiveClaim = row.LockedUntil > now },
+                        };
                     var outcome = MessagingOperationEvaluator.Evaluate(
                         operationType,
                         request.ExpectedStatus,
@@ -497,7 +504,6 @@ internal sealed partial class RelationalDataStorage
         DbConnection connection,
         DbTransaction transaction,
         Guid incarnationId,
-        DateTimeOffset now,
         CancellationToken cancellationToken
     )
     {
@@ -555,8 +561,7 @@ internal sealed partial class RelationalDataStorage
                             reader.GetBoolean(3),
                             reader.GetBoolean(4),
                             generation,
-                            reader.GetBoolean(8),
-                            lockedUntil > now
+                            reader.GetBoolean(8)
                         ),
                         lane,
                         reader.GetString(7),
@@ -570,7 +575,8 @@ internal sealed partial class RelationalDataStorage
                             reader.GetString(7),
                             generation
                         ),
-                        reader.GetGuid(15)
+                        reader.GetGuid(15),
+                        lockedUntil
                     );
                 },
                 cancellationToken
@@ -752,14 +758,18 @@ internal sealed partial class RelationalDataStorage
             .ConfigureAwait(false);
     }
 
-    /// <summary>An inbox generation as an operator operation reads it, locked for the operation's transaction.</summary>
+    /// <summary>
+    /// An inbox generation as an operator operation reads it, locked for the operation's transaction. Whether its claim
+    /// is live is decided once the clock is read, after the lock.
+    /// </summary>
     private sealed record InboxOperationRow(
         Guid StorageId,
         InboxOperationState State,
         MessageLane Lane,
         string ConsumerIdentity,
         InboxRootKey Key,
-        Guid LifecycleId
+        Guid LifecycleId,
+        DateTimeOffset? LockedUntil
     );
 }
 

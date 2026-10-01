@@ -265,9 +265,17 @@ internal sealed partial class RelationalDataStorage
                         return (replay, (ScheduledOperationRow?)null);
                     }
 
-                    var now = await _ReadNowAsync(connection, transaction, ct).ConfigureAwait(false);
-                    var row = await _ReadScheduledOperationRowAsync(connection, transaction, request.StorageId, now, ct)
+                    // The row is locked before the clock is read, so whether a dispatch lease is live and the new due
+                    // time are decided on a clock read after any wait for that lock.
+                    var row = await _ReadScheduledOperationRowAsync(connection, transaction, request.StorageId, ct)
                         .ConfigureAwait(false);
+                    var now = await _ReadNowAsync(connection, transaction, ct).ConfigureAwait(false);
+                    row = row is null
+                        ? null
+                        : row with
+                        {
+                            State = row.State with { HasLiveLease = row.LockedUntil > now },
+                        };
                     var outcome = MessagingOperationEvaluator.Evaluate(
                         operationType,
                         request.ExpectedDueAt,
@@ -284,11 +292,7 @@ internal sealed partial class RelationalDataStorage
                                     ? $"DELETE FROM {_publishedTable} WHERE {_t.Id}=@StorageId AND {_t.Version}=@Version AND {_t.ExpiresAt}=@ExpectedDueAt AND {ScheduledEligibility};"
                                     // Due now: the delayed claim picks the row up on its next pass. A live lease
                                     // means a dispatch already started, so the row is left to it.
-                                    : _dialect.Render(
-                                        new SqlClockedStatement(
-                                            $"UPDATE {_publishedTable} SET {_t.StatusName}='{nameof(StatusName.Delayed)}',{_t.ExpiresAt}=@Instant,{_t.LockedUntil}=NULL,{_t.Owner}=NULL WHERE {_t.Id}=@StorageId AND {_t.Version}=@Version AND {_t.ExpiresAt}=@ExpectedDueAt AND ({_t.LockedUntil} IS NULL OR {_t.LockedUntil} <= {SqlDialectTokens.Now}) AND {ScheduledEligibility};"
-                                        )
-                                    ),
+                                    : $"UPDATE {_publishedTable} SET {_t.StatusName}='{nameof(StatusName.Delayed)}',{_t.ExpiresAt}=@Instant,{_t.LockedUntil}=NULL,{_t.Owner}=NULL WHERE {_t.Id}=@StorageId AND {_t.Version}=@Version AND {_t.ExpiresAt}=@ExpectedDueAt AND ({_t.LockedUntil} IS NULL OR {_t.LockedUntil} <= @Instant) AND {ScheduledEligibility};",
                                 CommandTimeoutSeconds,
                                 command =>
                                 {
@@ -432,18 +436,22 @@ internal sealed partial class RelationalDataStorage
             );
     }
 
+    /// <summary>
+    /// A scheduled publish as an operator operation reads it, locked for the operation's transaction. Whether a dispatch
+    /// lease is live is decided once the clock is read, after the lock.
+    /// </summary>
     private sealed record ScheduledOperationRow(
         ScheduledDeliveryOperationState State,
         string MessageName,
         string MessageId,
-        MessageLane Lane
+        MessageLane Lane,
+        DateTimeOffset? LockedUntil
     );
 
     private async Task<ScheduledOperationRow?> _ReadScheduledOperationRowAsync(
         DbConnection connection,
         DbTransaction transaction,
         Guid storageId,
-        DateTimeOffset now,
         CancellationToken cancellationToken
     )
     {
@@ -490,14 +498,15 @@ internal sealed partial class RelationalDataStorage
                             reader.GetInt32(2),
                             reader.GetInt32(3),
                             reader.IsDBNull(4) ? null : reader.GetFieldValue<DateTimeOffset>(4),
-                            lockedUntil > now,
+                            HasLiveLease: false,
                             Options.Version,
                             reader.GetString(0),
                             reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6)
                         ),
                         reader.GetString(7),
                         reader.GetString(8),
-                        MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(9))
+                        MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(9)),
+                        lockedUntil
                     );
                 },
                 cancellationToken
