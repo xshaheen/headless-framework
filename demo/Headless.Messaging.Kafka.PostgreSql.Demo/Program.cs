@@ -14,7 +14,6 @@ builder.Services.AddDbContext<AppDbContext>(opt => opt.UseNpgsql(AppConstants.Db
 builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.AddModule<Headless.Messaging.Kafka.PostgreSql.Demo.MessagingModule>();
-    setup.WithMessageNameMapping<KafkaMessage>("sample.kafka.postgrsql");
 
     //setup.UseEntityFramework<AppDbContext>();
     //docker run --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=mysecretpassword -d postgres
@@ -43,6 +42,8 @@ builder.Services.AddHeadlessMessaging(setup =>
     setup.UseKafka("127.0.0.1:9092");
     setup.UseDashboard(d => d.WithNoAuth());
 });
+
+builder.Services.ConfigureMessaging(messaging => messaging.Message<KafkaMessage>("sample.kafka.postgrsql"));
 
 // Declares the two unit-of-work providers this demo enlists through: the Npgsql helpers
 // (BeginAsync(connection), Enlist(connection, transaction), RunAsync(connection, …)) for the raw-ADO capability,

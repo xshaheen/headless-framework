@@ -38,16 +38,6 @@ public sealed class MessagingConventionsTests : TestBase
     }
 
     [Fact]
-    public void should_have_null_default_group()
-    {
-        // when
-        var conventions = new MessagingConventions();
-
-        // then
-        conventions.DefaultGroup.Should().BeNull();
-    }
-
-    [Fact]
     public void should_allow_custom_prefix()
     {
         // given
@@ -65,16 +55,6 @@ public sealed class MessagingConventionsTests : TestBase
 
         // then
         conventions.MessageNameSuffix.Should().Be(".v1");
-    }
-
-    [Fact]
-    public void should_allow_custom_default_group()
-    {
-        // given
-        var conventions = new MessagingConventions { DefaultGroup = "my-consumer-group" };
-
-        // then
-        conventions.DefaultGroup.Should().Be("my-consumer-group");
     }
 
     [Fact]

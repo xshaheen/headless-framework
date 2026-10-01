@@ -35,7 +35,7 @@ public sealed class MessagingConventionsExtensionsTests
     }
 
     [Fact]
-    public void should_mutate_only_the_targeted_properties_when_topic_prefix_suffix_and_default_group()
+    public void should_mutate_only_the_targeted_properties_when_topic_prefix_and_suffix()
     {
         // given
         var conventions = new MessagingConventions
@@ -43,17 +43,15 @@ public sealed class MessagingConventionsExtensionsTests
             MessageNaming = MessageNamingConvention.TypeName,
             MessageNamePrefix = "before.",
             MessageNameSuffix = ".old",
-            DefaultGroup = "before-group",
         };
 
         // when
-        conventions.WithMessageNamePrefix("after.").WithMessageNameSuffix(".new").WithDefaultGroup("after-group");
+        conventions.WithMessageNamePrefix("after.").WithMessageNameSuffix(".new");
 
         // then
         conventions.MessageNaming.Should().Be(MessageNamingConvention.TypeName);
         conventions.MessageNamePrefix.Should().Be("after.");
         conventions.MessageNameSuffix.Should().Be(".new");
-        conventions.DefaultGroup.Should().Be("after-group");
     }
 
     [Fact]
@@ -66,14 +64,12 @@ public sealed class MessagingConventionsExtensionsTests
         var result = conventions
             .UseKebabCaseMessageNames()
             .WithMessageNamePrefix("orders.")
-            .WithMessageNameSuffix(".v1")
-            .WithDefaultGroup("billing");
+            .WithMessageNameSuffix(".v1");
 
         // then
         result.Should().BeSameAs(conventions);
         conventions.MessageNaming.Should().Be(MessageNamingConvention.KebabCase);
         conventions.MessageNamePrefix.Should().Be("orders.");
         conventions.MessageNameSuffix.Should().Be(".v1");
-        conventions.DefaultGroup.Should().Be("billing");
     }
 }

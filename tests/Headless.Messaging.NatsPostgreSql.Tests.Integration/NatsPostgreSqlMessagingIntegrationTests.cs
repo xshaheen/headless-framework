@@ -228,7 +228,7 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
             new RuntimeSubscriptionOptions
             {
                 MessageName = "runtime-message",
-                Group = "runtime-subscriber",
+                Identity = "runtime-subscriber",
                 HandlerId = "nats-postgresql-runtime-subscriber",
             },
             AbortToken

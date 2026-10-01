@@ -4,7 +4,9 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Exceptions;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Nats;
+using Headless.Messaging.Registration;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -1122,6 +1124,76 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_filter_on_the_shard_wildcard_when_the_host_contract_shards_the_subject()
+    {
+        // given: the host's own contract shards orders.created, and the consumer declares nothing about shards
+        var contract = new MessageContractBuilder<ShardedOrder>("orders.created", "v1");
+        contract.OnBus(bus => bus.UseNats(nats => nats.SubjectShard(static order => order.TenantId)));
+        var metadata = Substitute.For<IMessageMetadataRegistry>();
+        metadata
+            .GetAll()
+            .Returns([
+                new MessageMetadata(
+                    new MessageRouteKey(typeof(ShardedOrder), "orders.created", MessageLane.Bus),
+                    typeof(ShardedOrder),
+                    "v1",
+                    CorrelationSelector: null,
+                    contract.Build().Bus.ProviderConfigs
+                ),
+            ]);
+        await using var services = new ServiceCollection().AddSingleton(metadata).BuildServiceProvider();
+
+        var consumer = Substitute.For<INatsJSConsumer>();
+        consumer
+            .NextAsync(
+                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
+                Arg.Any<NatsJSNextOpts?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(async call =>
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, call.Arg<CancellationToken>());
+                return null;
+            });
+        var filters = new ConcurrentQueue<string>();
+
+        await using var client = new NatsConsumerClient(
+            "test-group",
+            1,
+            _options,
+            services,
+            (_, config, _) =>
+            {
+                filters.Enqueue(config.FilterSubject!);
+                return Task.FromResult(consumer);
+            }
+        );
+        await client.SubscribeAsync(["orders.created", "orders.updated"], AbortToken);
+
+        using var cts = new CancellationTokenSource();
+
+        // when
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
+        try
+        {
+            await _WaitUntilAsync(() => filters.Count >= 3, TimeSpan.FromSeconds(5));
+
+            // then: the sharded message is filtered on its exact subject and every shard beneath it
+            filters
+                .Should()
+                .BeEquivalentTo(
+                    "headless.bus.orders.created",
+                    "headless.bus.orders.created.>",
+                    "headless.bus.orders.updated"
+                );
+        }
+        finally
+        {
+            await _StopListeningAsync(listeningTask, cts);
+        }
+    }
+
+    [Fact]
     public void build_stream_subjects_and_build_consumer_subjects_agree_for_duplicate_sharded_names()
     {
         // A sharded message name appearing more than once (e.g. two consumers of the same type) must
@@ -1556,4 +1628,6 @@ public sealed class NatsConsumerClientTests : TestBase
             TaskScheduler.Default
         );
     }
+
+    private sealed record ShardedOrder(string TenantId);
 }

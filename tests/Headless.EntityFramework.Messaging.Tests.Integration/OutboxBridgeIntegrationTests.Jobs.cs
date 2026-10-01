@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using System.Reflection;
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;
@@ -225,30 +224,7 @@ public sealed partial class OutboxBridgeIntegrationTests
         where TMessage : class
         where TConsumer : IConsume<TMessage>
     {
-        var method = typeof(IConsume<TMessage>).GetMethod(
-            nameof(IConsume<>.ConsumeAsync),
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            [typeof(ConsumeContext<TMessage>), typeof(CancellationToken)]
-        )!;
-        var descriptor = new ConsumerExecutorDescriptor
-        {
-            ServiceTypeInfo = typeof(TConsumer).GetTypeInfo(),
-            ImplTypeInfo = typeof(TConsumer).GetTypeInfo(),
-            MethodInfo = method,
-            MessageName = message.Headers[Headers.MessageName]!,
-            SubscriptionName = "bridge-test",
-            Lane = MessageLane.Bus,
-            MessageContractVersion = message.Headers[Headers.ContractVersion]!,
-            Parameters = method
-                .GetParameters()
-                .Select(parameter => new ParameterDescriptor
-                {
-                    Name = parameter.Name!,
-                    ParameterType = parameter.ParameterType,
-                    IsFromMessaging = parameter.ParameterType == typeof(CancellationToken),
-                })
-                .ToArray(),
-        };
+        var descriptor = _GetDescriptor<TConsumer>(provider);
         var medium = new MediumMessage
         {
             StorageId = Guid.NewGuid(),
@@ -261,12 +237,12 @@ public sealed partial class OutboxBridgeIntegrationTests
             .InvokeAsync(new ConsumerContext(descriptor, medium), AbortToken);
     }
 
-    private sealed class DeadlineReceipt
+    internal sealed class DeadlineReceipt
     {
         public required string Id { get; init; }
     }
 
-    private sealed class DeadlineEvidence
+    internal sealed class DeadlineEvidence
     {
         public bool FailAfterWrite { get; set; }
         public DateTimeOffset Due { get; } = new(2026, 10, 1, 0, 0, 0, TimeSpan.Zero);
@@ -275,7 +251,8 @@ public sealed partial class OutboxBridgeIntegrationTests
 
     private sealed class DeadlineWriteFailureException : Exception;
 
-    private sealed class DeadlineConsumer(
+    [BusConsumer("tests.bridge.deadline")]
+    internal sealed class DeadlineConsumer(
         BridgeTestDbContext db,
         IUnitOfWorkFactory unitOfWorkFactory,
         DeadlineEvidence evidence
