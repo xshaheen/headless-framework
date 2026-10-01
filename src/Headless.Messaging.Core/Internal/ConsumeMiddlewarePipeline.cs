@@ -123,7 +123,7 @@ internal sealed class ConsumeMiddlewarePipeline(
             {
                 // Zero-middleware fast path: with no ring to wrap there is no delegate chain to build and
                 // no completion flag to track — that flag only feeds the middleware error filters below.
-                await _InvokeInnerAsync(descriptor, consumeContext, provider, messageType).ConfigureAwait(false);
+                await _InvokeInnerAsync(descriptor, consumeContext, provider).ConfigureAwait(false);
                 consumeContext.MarkCompleted();
             }
             else
@@ -134,7 +134,7 @@ internal sealed class ConsumeMiddlewarePipeline(
 
                 Func<ValueTask> next = async () =>
                 {
-                    await _InvokeInnerAsync(descriptor, consumeContext, provider, messageType).ConfigureAwait(false);
+                    await _InvokeInnerAsync(descriptor, consumeContext, provider).ConfigureAwait(false);
 
                     innerRingCompleted.Value = true;
                     consumeContext.MarkCompleted();
@@ -182,8 +182,7 @@ internal sealed class ConsumeMiddlewarePipeline(
     private async ValueTask _InvokeInnerAsync(
         ConsumerExecutorDescriptor descriptor,
         ConsumeContext consumeContext,
-        IServiceProvider provider,
-        Type messageType
+        IServiceProvider provider
     )
     {
         // An attribute-declared consumer runs its generated dispatch, which builds the class and calls the typed

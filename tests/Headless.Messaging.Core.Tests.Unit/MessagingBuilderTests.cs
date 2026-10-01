@@ -12,11 +12,6 @@ namespace Tests;
 
 public sealed class MessagingBuilderTests
 {
-    private static string _CircuitKey(MessageLane lane, string group)
-    {
-        return $"{lane:D}:{group}";
-    }
-
     [Fact]
     public void should_use_message_type_name_as_default_topic()
     {

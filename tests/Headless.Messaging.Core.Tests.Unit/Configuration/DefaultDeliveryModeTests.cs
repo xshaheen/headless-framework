@@ -236,9 +236,6 @@ public sealed class DefaultDeliveryModeTests : TestBase
         return _CreateProvider(services, mode, registrations: null);
     }
 
-    private static ServiceProvider _CreateProvider(DeliveryMode mode, Action<MessagingSetupBuilder> registrations) =>
-        _CreateProvider(new ServiceCollection(), mode, registrations);
-
     private static ServiceProvider _CreateProvider(
         ServiceCollection services,
         DeliveryMode mode,

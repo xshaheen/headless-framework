@@ -272,7 +272,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
             Lane = MessageLane.Bus,
             ConsumerType = typeof(ConsumeMiddlewarePipelineMigratedTests),
             MessageType = typeof(MigratedConsumeMessage),
-            Dispatch = static (services, context, cancellationToken) =>
+            Dispatch = static (services, _, cancellationToken) =>
                 services.GetRequiredService<MigratedConsumeDispatcher>().DispatchAsync(cancellationToken),
             MessageName = "orders",
             SubscriptionName = "checkout",

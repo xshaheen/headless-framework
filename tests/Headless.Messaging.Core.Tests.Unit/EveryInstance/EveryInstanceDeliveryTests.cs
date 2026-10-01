@@ -208,9 +208,10 @@ public sealed class EveryInstanceDeliveryTests : TestBase
         handle.Identity.Should().Be("tests.shared-price");
         factory
             .Requests.Where(x => x.Kind is ConsumerSubscriptionKind.EveryInstance)
+            .Select(x => x.SubscriptionName)
+            .Distinct(StringComparer.Ordinal)
             .Should()
-            .NotBeEmpty()
-            .And.OnlyContain(x => x.SubscriptionName == "tests.shared-price");
+            .Equal("tests.shared-price");
     }
 
     [Fact]

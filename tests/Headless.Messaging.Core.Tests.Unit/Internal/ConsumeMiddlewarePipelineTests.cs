@@ -178,8 +178,8 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
             Lane = MessageLane.Bus,
             ConsumerType = typeof(ConsumeMiddlewarePipelineTests),
             MessageType = typeof(MiddlewarePayload),
-            Dispatch = static (services, context, cancellationToken) =>
-                services.GetRequiredService<RecordingMiddlewareDispatcher>().DispatchAsync(context, cancellationToken),
+            Dispatch = static (services, _, cancellationToken) =>
+                services.GetRequiredService<RecordingMiddlewareDispatcher>().DispatchAsync(cancellationToken),
             MessageName = "test.messageName",
             SubscriptionName = "test-group",
         };
@@ -283,7 +283,7 @@ internal sealed class SwallowingOuterCancellationConsumeMiddleware(CancellationT
 
 internal sealed class RecordingMiddlewareDispatcher(MiddlewareCallRecorder recorder)
 {
-    public ValueTask DispatchAsync(ConsumeContext context, CancellationToken cancellationToken)
+    public ValueTask DispatchAsync(CancellationToken cancellationToken)
     {
         if (cancellationToken.IsCancellationRequested)
         {

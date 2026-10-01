@@ -940,9 +940,9 @@ public sealed class ConsumerRegistryTests : TestBase
     public void same_durable_identity_and_contract_version_are_independent_across_lanes()
     {
         var registry = new ConsumerRegistry();
-        registry.Register(_DurableMetadata(MessageLane.Bus, "orders.bus", "bus-group"));
+        registry.Register(_DurableMetadata(MessageLane.Bus, "orders.bus"));
 
-        var act = () => registry.Register(_DurableMetadata(MessageLane.Queue, "orders.queue", "queue-group"));
+        var act = () => registry.Register(_DurableMetadata(MessageLane.Queue, "orders.queue"));
 
         act.Should().NotThrow();
     }
@@ -951,9 +951,9 @@ public sealed class ConsumerRegistryTests : TestBase
     public void same_lane_identity_message_and_contract_version_collide_independent_of_group()
     {
         var registry = new ConsumerRegistry();
-        registry.Register(_DurableMetadata(MessageLane.Bus, "orders.created", "group-a"));
+        registry.Register(_DurableMetadata(MessageLane.Bus, "orders.created"));
 
-        var act = () => registry.Register(_DurableMetadata(MessageLane.Bus, "Orders.Created", "group-b"));
+        var act = () => registry.Register(_DurableMetadata(MessageLane.Bus, "Orders.Created"));
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -964,9 +964,9 @@ public sealed class ConsumerRegistryTests : TestBase
     public void one_identity_may_cover_several_messages_of_one_consumer_class()
     {
         var registry = new ConsumerRegistry();
-        registry.Register(_DurableMetadata(MessageLane.Bus, "orders.created", "group-a"));
+        registry.Register(_DurableMetadata(MessageLane.Bus, "orders.created"));
 
-        var act = () => registry.Register(_DurableMetadata(MessageLane.Bus, "orders.renamed", "group-a"));
+        var act = () => registry.Register(_DurableMetadata(MessageLane.Bus, "orders.renamed"));
 
         act.Should().NotThrow();
         registry.GetAll().Select(static x => x.MessageName).Should().Equal("orders.created", "orders.renamed");
@@ -977,7 +977,7 @@ public sealed class ConsumerRegistryTests : TestBase
     {
         var registry = new ConsumerRegistry();
         registry.Register(
-            _DurableMetadata(MessageLane.Bus, "orders.created", "group-a") with
+            _DurableMetadata(MessageLane.Bus, "orders.created") with
             {
                 DeclaringModule = "Orders.MessagingModule",
             }
@@ -985,7 +985,7 @@ public sealed class ConsumerRegistryTests : TestBase
 
         var act = () =>
             registry.Register(
-                _DurableMetadata(MessageLane.Bus, "orders.shipped", "group-a") with
+                _DurableMetadata(MessageLane.Bus, "orders.shipped") with
                 {
                     ConsumerType = typeof(OtherMessageConsumer),
                     DeclaringModule = "Billing.MessagingModule",
@@ -1004,11 +1004,11 @@ public sealed class ConsumerRegistryTests : TestBase
     public void one_identity_on_two_consumer_classes_is_independent_across_lanes()
     {
         var registry = new ConsumerRegistry();
-        registry.Register(_DurableMetadata(MessageLane.Bus, "orders.created", "group-a"));
+        registry.Register(_DurableMetadata(MessageLane.Bus, "orders.created"));
 
         var act = () =>
             registry.Register(
-                _DurableMetadata(MessageLane.Queue, "orders.shipped", "group-a") with
+                _DurableMetadata(MessageLane.Queue, "orders.shipped") with
                 {
                     ConsumerType = typeof(OtherMessageConsumer),
                 }
@@ -1065,10 +1065,9 @@ public sealed class ConsumerRegistryTests : TestBase
     public void same_lane_durable_identity_is_independent_across_contract_versions()
     {
         var registry = new ConsumerRegistry();
-        registry.Register(_DurableMetadata(MessageLane.Bus, "orders.v1", "group-v1"));
+        registry.Register(_DurableMetadata(MessageLane.Bus, "orders.v1"));
 
-        var act = () =>
-            registry.Register(_DurableMetadata(MessageLane.Bus, "orders.v2", "group-v2", contractVersion: "v2"));
+        var act = () => registry.Register(_DurableMetadata(MessageLane.Bus, "orders.v2", contractVersion: "v2"));
 
         act.Should().NotThrow();
     }
@@ -1112,7 +1111,7 @@ public sealed class ConsumerRegistryTests : TestBase
     )
     {
         var registry = new ConsumerRegistry();
-        registry.Register(_DurableMetadata(MessageLane.Bus, "orders.original", "original"));
+        registry.Register(_DurableMetadata(MessageLane.Bus, "orders.original"));
         var metadata = new ConsumerMetadata(
             typeof(TestMessage),
             typeof(TestConsumer),
@@ -1131,7 +1130,6 @@ public sealed class ConsumerRegistryTests : TestBase
     private static ConsumerMetadata _DurableMetadata(
         MessageLane lane,
         string messageName,
-        string group,
         string contractVersion = "v1"
     )
     {

@@ -233,8 +233,6 @@ internal sealed record MessageContractLaneSettings(
     IReadOnlyDictionary<Type, object> ProviderConfigs
 )
 {
-    public static MessageContractLaneSettings Default { get; } = new(false, null, new Dictionary<Type, object>());
-
     // Provider configs compare by value: the provider config types define equality over the selectors they hold, so two
     // declarations from one shared contract method match and two different selectors conflict.
     public bool Equals(MessageContractLaneSettings? other)
