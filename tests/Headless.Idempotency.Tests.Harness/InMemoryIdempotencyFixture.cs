@@ -8,16 +8,11 @@ using Headless.UnitOfWork;
 namespace Tests;
 
 /// <summary>
-/// In-memory leaf fixture for the idempotency conformance suite. Every host it configures shares one record table,
-/// the way hosts built by a relational fixture share one database, and units are resource-less. Tests run serially
-/// because the blocking scenarios measure how long a call waits.
+/// The in-memory provider as a fixture: the conformance suite's in-memory leaf, and the model the differential oracle
+/// runs every history against. Every host it configures shares one record table, the way hosts built by a relational
+/// fixture share one database, and units are resource-less.
 /// </summary>
-[UsedImplicitly]
-[CollectionDefinition(DisableParallelization = true)]
-public sealed class InMemoryIdempotencyFixture
-    : ICollectionFixture<InMemoryIdempotencyFixture>,
-        IIdempotencyFixture,
-        IDisposable
+public class InMemoryIdempotencyFixture : IIdempotencyFixture, IDisposable
 {
     private readonly InMemoryIdempotencyStorage _storage = new();
 
@@ -92,6 +87,15 @@ public sealed class InMemoryIdempotencyFixture
 
     public void Dispose()
     {
-        _storage.Dispose();
+        Dispose(disposing: true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _storage.Dispose();
+        }
     }
 }
