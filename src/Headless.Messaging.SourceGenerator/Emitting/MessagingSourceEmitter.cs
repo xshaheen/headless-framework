@@ -82,8 +82,7 @@ internal static class MessagingSourceEmitter
 
     /// <summary>
     /// Emits the typed dispatcher of one consumer class: it builds the class from the delivery's scope, so constructor
-    /// dependencies resolve like any scoped service, runs the lifecycle hooks around the delivery the same way the
-    /// runtime does for any consumer, calls <c>ConsumeAsync</c> through the interface that matches the context's message
+    /// dependencies resolve like any scoped service, runs the <c>IConsumerLifecycle</c> hooks around the delivery, calls <c>ConsumeAsync</c> through the interface that matches the context's message
     /// type so explicit implementations work too, and releases the instance it created.
     /// </summary>
     private static void _WriteDispatcher(SourceCodeBuilder writer, ConsumerRegistrationModel registration)
@@ -126,8 +125,8 @@ internal static class MessagingSourceEmitter
         writer.OpenBracket();
         writer.AppendLine($"await (({_Lifecycle})consumer).OnStoppingAsync(cancellationToken).ConfigureAwait(false);");
         writer.CloseBracket();
-        // Consumer projects often run ErrorProne.NET, which analyzes generated code too; the swallow is deliberate, as in
-        // the runtime's own dispatcher, so the pragma keeps it from failing their build.
+        // Consumer projects often run ErrorProne.NET, which analyzes generated code too; the swallow is deliberate, so the
+        // pragma keeps it from failing their build.
         writer.AppendLine(
             "#pragma warning disable ERP022 // A failing stop hook must not mask the delivery's outcome; the hook logs its own failures."
         );
