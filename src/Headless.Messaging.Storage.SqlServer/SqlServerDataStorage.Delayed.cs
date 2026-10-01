@@ -55,7 +55,7 @@ internal sealed partial class SqlServerDataStorage
 
         object[] sqlParams =
         [
-            new SqlParameter("@Version", messagingOptions.Value.Version),
+            _VersionParameter(),
             new SqlParameter("@DelayedStatusName", nameof(StatusName.Delayed)),
             new SqlParameter("@QueuedStatusName", nameof(StatusName.Queued)),
             new SqlParameter("@TwoMinutesLater", timeProvider.GetUtcNow().Add(_DelayedMessageLookahead)),
@@ -183,7 +183,7 @@ internal sealed partial class SqlServerDataStorage
         object[] sqlParams =
         [
             new SqlParameter("@BatchSize", messagingOptions.Value.SchedulerBatchSize),
-            new SqlParameter("@Version", messagingOptions.Value.Version),
+            _VersionParameter(),
             new SqlParameter("@DelayedStatusName", nameof(StatusName.Delayed)),
             new SqlParameter("@QueuedStatusName", nameof(StatusName.Queued)),
             new SqlParameter("@TwoMinutesLater", SqlDbType.DateTimeOffset)

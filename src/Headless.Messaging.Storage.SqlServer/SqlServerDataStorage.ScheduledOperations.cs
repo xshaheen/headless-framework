@@ -206,9 +206,7 @@ internal sealed partial class SqlServerDataStorage
 
     private void _AddScheduledQueryParameters(SqlCommand command, ScheduledDeliveryQuery query)
     {
-        command.Parameters.Add(
-            new SqlParameter("@Version", SqlDbType.NVarChar, 20) { Value = messagingOptions.Value.Version }
-        );
+        command.Parameters.Add(_VersionParameter());
 
         if (!string.IsNullOrWhiteSpace(query.MessageName))
         {
@@ -388,9 +386,7 @@ internal sealed partial class SqlServerDataStorage
         command.Parameters.Add(
             new SqlParameter("@StorageId", SqlDbType.UniqueIdentifier) { Value = request.StorageId }
         );
-        command.Parameters.Add(
-            new SqlParameter("@Version", SqlDbType.NVarChar, 20) { Value = messagingOptions.Value.Version }
-        );
+        command.Parameters.Add(_VersionParameter());
         command.Parameters.Add(
             new SqlParameter("@ExpectedDueAt", SqlDbType.DateTimeOffset) { Value = request.ExpectedDueAt, Scale = 7 }
         );
@@ -419,9 +415,7 @@ internal sealed partial class SqlServerDataStorage
         command.Parameters.Add(
             new SqlParameter("@StorageId", SqlDbType.UniqueIdentifier) { Value = request.StorageId }
         );
-        command.Parameters.Add(
-            new SqlParameter("@Version", SqlDbType.NVarChar, 20) { Value = messagingOptions.Value.Version }
-        );
+        command.Parameters.Add(_VersionParameter());
         command.Parameters.Add(
             new SqlParameter("@ExpectedDueAt", SqlDbType.DateTimeOffset) { Value = request.ExpectedDueAt, Scale = 7 }
         );

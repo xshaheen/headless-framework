@@ -39,11 +39,7 @@ internal sealed partial class SqlServerDataStorage : IMessageRevocationStorage
                     return (MessageRevocationResult)reader.GetInt32(0);
                 },
                 commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams:
-                [
-                    new SqlParameter("@Id", storageId),
-                    new SqlParameter("@Version", messagingOptions.Value.Version),
-                ],
+                sqlParams: [new SqlParameter("@Id", storageId), _VersionParameter()],
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);

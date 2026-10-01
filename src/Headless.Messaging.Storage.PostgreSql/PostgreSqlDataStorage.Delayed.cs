@@ -30,7 +30,7 @@ internal sealed partial class PostgreSqlDataStorage
 
         var sqlParams = new object[]
         {
-            new NpgsqlParameter("@Version", messagingOptions.Value.Version),
+            _VersionParameter(),
             new NpgsqlParameter("@TwoMinutesLater", timeProvider.GetUtcNow().Add(_DelayedMessageLookahead)),
             new NpgsqlParameter("@OneMinutesAgo", timeProvider.GetUtcNow().Subtract(_QueuedMessageLookback)),
             new NpgsqlParameter("@BatchSize", messagingOptions.Value.SchedulerBatchSize),
@@ -145,7 +145,7 @@ internal sealed partial class PostgreSqlDataStorage
 
         object[] sqlParams =
         [
-            new NpgsqlParameter("@Version", messagingOptions.Value.Version),
+            _VersionParameter(),
             new NpgsqlParameter("@DelayedStatusName", nameof(StatusName.Delayed)),
             new NpgsqlParameter("@QueuedStatusName", nameof(StatusName.Queued)),
             new NpgsqlParameter("@TwoMinutesLater", scheduleNow.Add(_DelayedMessageLookahead)),

@@ -104,7 +104,7 @@ internal sealed partial class PostgreSqlDataStorage
         object[] parameters =
         [
             new NpgsqlParameter("@Id", storageId),
-            new NpgsqlParameter("@Version", messagingOptions.Value.Version),
+            _VersionParameter(),
             new NpgsqlParameter("@Name", name),
             new NpgsqlParameter("@Group", NpgsqlDbType.Varchar) { Value = group ?? (object)DBNull.Value },
             new NpgsqlParameter("@Content", content),

@@ -128,7 +128,7 @@ internal sealed partial class SqlServerDataStorage
         object[] parameters =
         [
             new SqlParameter("@Id", storageId),
-            new SqlParameter("@Version", SqlDbType.NVarChar, 20) { Value = messagingOptions.Value.Version },
+            _VersionParameter(),
             new SqlParameter("@Name", SqlDbType.NVarChar, 200) { Value = name },
             new SqlParameter("@Group", SqlDbType.NVarChar, 200) { Value = group ?? (object)DBNull.Value },
             new SqlParameter("@Content", SqlDbType.NVarChar, -1) { Value = content },

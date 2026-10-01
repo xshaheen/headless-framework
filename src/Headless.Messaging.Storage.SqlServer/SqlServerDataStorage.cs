@@ -555,7 +555,7 @@ internal sealed partial class SqlServerDataStorage(
     {
         var sql =
             $"INSERT INTO {_publishedTable} ([Id],[Version],[Name],[Content],[IntentType],[Retries],[InlineAttempts],[Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[Owner],[StatusName],[MessageId])"
-            + $"VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId);";
+            + "VALUES(@Id,@Version,@Name,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId);";
 
         var added = timeProvider.GetUtcNow();
         var statusName =
@@ -580,6 +580,7 @@ internal sealed partial class SqlServerDataStorage(
         object[] sqlParams =
         [
             new SqlParameter("@Id", stored.StorageId),
+            _VersionParameter(),
             new SqlParameter("@Name", name),
             new SqlParameter("@Content", stored.Content),
             new SqlParameter("@IntentType", SqlDbType.SmallInt)
@@ -738,7 +739,7 @@ internal sealed partial class SqlServerDataStorage(
             _OwnerParameter("@Owner", lockedUntil: null),
             new SqlParameter("@StatusName", nameof(StatusName.Failed)),
             new SqlParameter("@MessageId", message.Origin.Id),
-            new SqlParameter("@Version", messagingOptions.Value.Version),
+            _VersionParameter(),
             new SqlParameter("@ExceptionInfo", exceptionInfo ?? (object)DBNull.Value),
         ];
 
@@ -803,7 +804,7 @@ internal sealed partial class SqlServerDataStorage(
             _OwnerParameter("@Owner", mediumMessage.LockedUntil),
             new SqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new SqlParameter("@MessageId", message.Origin.Id),
-            new SqlParameter("@Version", messagingOptions.Value.Version),
+            _VersionParameter(),
             new SqlParameter("@ExceptionInfo", DBNull.Value),
         ];
 
@@ -1915,7 +1916,7 @@ internal sealed partial class SqlServerDataStorage(
                 orphaned ? messagingOptions.Value.OrphanProbeBatchSize : messagingOptions.Value.RetryBatchSize
             ),
             new SqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
-            new SqlParameter("@Version", messagingOptions.Value.Version),
+            _VersionParameter(),
             new SqlParameter("@IntentType", SqlDbType.SmallInt) { Value = intentValue },
             new SqlParameter("@Now", SqlDbType.DateTimeOffset) { Value = timeProvider.GetUtcNow() },
             new SqlParameter("@LeaseWholeSeconds", SqlDbType.Int) { Value = leaseWholeSeconds },
@@ -2202,6 +2203,15 @@ internal sealed partial class SqlServerDataStorage(
             TypeName = $"[{storageOptions.Value.Schema}].[HeadlessMessagingOwnerList]",
             Value = ownersTable,
         };
+    }
+
+    /// <summary>
+    /// Binds <see cref="MessagingOptions.Version"/> as data. Its validator bounds only its length, so the value may
+    /// carry quotes and must never be spliced into SQL text.
+    /// </summary>
+    private SqlParameter _VersionParameter()
+    {
+        return new("@Version", SqlDbType.NVarChar, 20) { Value = messagingOptions.Value.Version };
     }
 
     private SqlParameter _OwnerParameter(string name, DateTimeOffset? lockedUntil)

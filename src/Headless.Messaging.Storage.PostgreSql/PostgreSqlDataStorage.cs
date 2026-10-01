@@ -579,7 +579,7 @@ internal sealed partial class PostgreSqlDataStorage(
     {
         var sql =
             $"INSERT INTO {_publishedTable} (\"id\",\"version\",\"name\",\"content\",\"intent_type\",\"retries\",\"inline_attempts\",\"added\",\"expires_at\",\"next_retry_at\",\"locked_until\",\"owner\",\"status_name\",\"message_id\")"
-            + $"VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId);";
+            + "VALUES(@Id,@Version,@Name,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId);";
 
         var added = timeProvider.GetUtcNow();
         var statusName =
@@ -604,6 +604,7 @@ internal sealed partial class PostgreSqlDataStorage(
         object[] sqlParams =
         [
             new NpgsqlParameter("@Id", stored.StorageId),
+            _VersionParameter(),
             new NpgsqlParameter("@Name", name),
             new NpgsqlParameter("@Content", stored.Content),
             new NpgsqlParameter("@IntentType", MessageLaneCompatibility.ToPersistedValue(stored.Lane)),
@@ -726,6 +727,7 @@ internal sealed partial class PostgreSqlDataStorage(
         object[] sqlParams =
         [
             new NpgsqlParameter("@Id", guidGenerator.Create()),
+            _VersionParameter(),
             new NpgsqlParameter("@Name", name),
             new NpgsqlParameter("@Group", NpgsqlDbType.Varchar) { Value = (object?)group ?? DBNull.Value },
             new NpgsqlParameter(
@@ -785,6 +787,7 @@ internal sealed partial class PostgreSqlDataStorage(
         object[] sqlParams =
         [
             new NpgsqlParameter("@Id", mediumMessage.StorageId),
+            _VersionParameter(),
             new NpgsqlParameter("@Name", name),
             new NpgsqlParameter("@Group", NpgsqlDbType.Varchar) { Value = (object?)group ?? DBNull.Value },
             new NpgsqlParameter("@Content", mediumMessage.Content),
@@ -1558,6 +1561,15 @@ internal sealed partial class PostgreSqlDataStorage(
     }
 
     /// <summary>
+    /// Binds <see cref="MessagingOptions.Version"/> as data. Its validator bounds only its length, so the value may
+    /// carry quotes and must never be spliced into SQL text.
+    /// </summary>
+    private NpgsqlParameter _VersionParameter()
+    {
+        return new("@Version", NpgsqlDbType.Varchar, 20) { Value = messagingOptions.Value.Version };
+    }
+
+    /// <summary>
     /// Re-serializes a mutated envelope and re-establishes the <c>Content == Serialize(Origin)</c> invariant on
     /// the caller's in-memory copy, so a later retry pickup that reads the row sees what this write persisted.
     /// </summary>
@@ -1609,7 +1621,7 @@ internal sealed partial class PostgreSqlDataStorage(
         // Mirrors the matching guard in SqlServerDataStorage._StoreReceivedMessage.
         var sql = $"""
             INSERT INTO {_receivedTable}("id","version","name","group","content","intent_type","retries","inline_attempts","added","expires_at","next_retry_at","locked_until","owner","status_name","message_id","exception_info")
-            VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Group,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId,@ExceptionInfo)
+            VALUES(@Id,@Version,@Name,@Group,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId,@ExceptionInfo)
             ON CONFLICT ("version", "message_id", (COALESCE("group", '')), "intent_type")
             WHERE NOT "is_inbox_record"
             DO UPDATE SET
@@ -1825,7 +1837,7 @@ internal sealed partial class PostgreSqlDataStorage(
                 orphaned ? messagingOptions.Value.OrphanProbeBatchSize : messagingOptions.Value.RetryBatchSize
             ),
             new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
-            new NpgsqlParameter("@Version", messagingOptions.Value.Version),
+            _VersionParameter(),
             new NpgsqlParameter("@IntentType", NpgsqlDbType.Smallint) { Value = intentValue },
             new NpgsqlParameter("@Now", timeProvider.GetUtcNow()),
             new NpgsqlParameter("@LeaseSeconds", messagingOptions.Value.RetryPolicy.DispatchTimeout.TotalSeconds),

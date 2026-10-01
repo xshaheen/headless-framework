@@ -659,6 +659,12 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     }
 
     [Fact]
+    public override Task should_store_and_find_rows_under_a_version_containing_sql_metacharacters()
+    {
+        return base.should_store_and_find_rows_under_a_version_containing_sql_metacharacters();
+    }
+
+    [Fact]
     public override Task should_claim_delayed_messages_atomically_when_capability_supported()
     {
         return base.should_claim_delayed_messages_atomically_when_capability_supported();

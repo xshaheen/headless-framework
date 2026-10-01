@@ -40,11 +40,7 @@ internal sealed partial class PostgreSqlDataStorage : IMessageRevocationStorage
                     return (MessageRevocationResult)reader.GetInt32(0);
                 },
                 commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams:
-                [
-                    new NpgsqlParameter("@Id", storageId),
-                    new NpgsqlParameter("@Version", messagingOptions.Value.Version),
-                ],
+                sqlParams: [new NpgsqlParameter("@Id", storageId), _VersionParameter()],
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);

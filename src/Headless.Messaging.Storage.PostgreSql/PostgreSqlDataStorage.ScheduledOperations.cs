@@ -193,7 +193,7 @@ internal sealed partial class PostgreSqlDataStorage
 
     private void _AddScheduledQueryParameters(NpgsqlCommand command, ScheduledDeliveryQuery query)
     {
-        command.Parameters.AddWithValue("@Version", messagingOptions.Value.Version);
+        command.Parameters.Add(_VersionParameter());
         if (!string.IsNullOrWhiteSpace(query.MessageName))
         {
             command.Parameters.AddWithValue("@Name", query.MessageName);
@@ -368,7 +368,7 @@ internal sealed partial class PostgreSqlDataStorage
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@StorageId", request.StorageId);
-        command.Parameters.AddWithValue("@Version", messagingOptions.Value.Version);
+        command.Parameters.Add(_VersionParameter());
         command.Parameters.Add(
             new NpgsqlParameter("@ExpectedDueAt", NpgsqlDbType.TimestampTz) { Value = request.ExpectedDueAt }
         );
@@ -395,7 +395,7 @@ internal sealed partial class PostgreSqlDataStorage
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@StorageId", request.StorageId);
-        command.Parameters.AddWithValue("@Version", messagingOptions.Value.Version);
+        command.Parameters.Add(_VersionParameter());
         command.Parameters.Add(
             new NpgsqlParameter("@ExpectedDueAt", NpgsqlDbType.TimestampTz) { Value = request.ExpectedDueAt }
         );
