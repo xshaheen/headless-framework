@@ -7,15 +7,13 @@ using Headless.Sql.SqlServer;
 namespace Headless.Settings.SqlServer;
 
 /// <summary>
-/// The Settings feature's schema contribution for SQL Server: the definition and value tables, their unique indexes,
-/// and the table-valued parameter types the repositories query through, as three idempotent steps the Headless schema
-/// runner applies.
+/// The Settings feature's schema contribution for SQL Server: the definition and value tables and their unique indexes,
+/// as two idempotent steps the Headless schema runner applies.
 /// </summary>
 internal static class SqlServerSettingsSchemaContribution
 {
     public const string TablesStepVersion = "1";
     public const string IndexesStepVersion = "2";
-    public const string TvpTypesStepVersion = "3";
 
     public static SchemaContribution Create(
         SqlServerSettingsOptions providerOptions,
@@ -73,17 +71,6 @@ internal static class SqlServerSettingsSchemaContribution
                 CREATE UNIQUE NONCLUSTERED INDEX [IX_{valuesName}_Name_ProviderName_NullProviderKey] ON {valuesTable} ([Name] ASC, [ProviderName] ASC) WHERE [ProviderKey] IS NULL;
             """;
 
-        // Table-valued parameter types for batched id/name queries (single cached plan, no 2100-parameter ceiling,
-        // portable to older engines). The name type is a heap (no PK) so trailing-space / collation duplicate names
-        // cannot raise a PK violation the dynamic IN-list never had.
-        var tvpTypesSql = $"""
-            IF TYPE_ID(N'{schema}.HeadlessSettingsIdList') IS NULL
-                CREATE TYPE [{schema}].[HeadlessSettingsIdList] AS TABLE ([Id] uniqueidentifier NOT NULL PRIMARY KEY);
-
-            IF TYPE_ID(N'{schema}.HeadlessSettingsNameList') IS NULL
-                CREATE TYPE [{schema}].[HeadlessSettingsNameList] AS TABLE ([Name] nvarchar({SettingValueRecordConstants.NameMaxLength}) NOT NULL);
-            """;
-
         return new SchemaContribution(
             feature: SchemaContribution.FeatureId(
                 "Settings",
@@ -100,11 +87,6 @@ internal static class SqlServerSettingsSchemaContribution
                     IndexesStepVersion,
                     "Create the setting definition and value unique indexes.",
                     indexesSql
-                ),
-                new SchemaStep(
-                    TvpTypesStepVersion,
-                    "Create the id and name list table-valued parameter types.",
-                    tvpTypesSql
                 ),
             ],
             applyOnStartup: storageOptions.InitializeOnStartup

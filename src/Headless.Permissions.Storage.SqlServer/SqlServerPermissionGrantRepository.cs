@@ -6,6 +6,8 @@ using Headless.Abstractions;
 using Headless.MultiTenancy;
 using Headless.Permissions.Entities;
 using Headless.Permissions.Repositories;
+using Headless.Sql;
+using Headless.Sql.SqlServer;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -82,15 +84,14 @@ internal sealed class SqlServerPermissionGrantRepository(
             return Task.FromResult(new List<PermissionGrantRecord>());
         }
 
-        // Pass the names through the HeadlessPermissionsNameList TVP: one cached plan regardless of count
-        // and no 2100-parameter ceiling, portable to older engines (no OPENJSON / compatibility level 130).
+        // One list parameter: one cached plan whatever the count, and no 2100-parameter ceiling.
         var sql =
-            $"SELECT {_GrantColumns} FROM {SqlServerPermissionsSchema.GrantsTable(storageOptions.Value)} WHERE [Name] IN (SELECT [Name] FROM @Names) AND [ProviderName]=@ProviderName AND [ProviderKey]=@ProviderKey AND {_TenantFilter};";
+            $"SELECT {_GrantColumns} FROM {SqlServerPermissionsSchema.GrantsTable(storageOptions.Value)} WHERE {_NamesFilter} AND [ProviderName]=@ProviderName AND [ProviderKey]=@ProviderKey AND {_TenantFilter};";
 
         return _ReadAsync(
             sql,
             cancellationToken,
-            _BuildNameListTvpParameter(names),
+            _ListParameter("Names", _NameElement, names),
             _Param("ProviderName", providerName),
             _Param("ProviderKey", providerKey),
             _TenantParam()
@@ -158,15 +159,18 @@ internal sealed class SqlServerPermissionGrantRepository(
             return;
         }
 
-        // Pass ids through the HeadlessPermissionsIdList TVP: one cached plan regardless of count, no
-        // 2100-parameter ceiling, portable to older engines (no OPENJSON / compatibility level 130).
+        // One list parameter: one cached plan whatever the count, and no 2100-parameter ceiling.
         var sql =
-            $"DELETE FROM {SqlServerPermissionsSchema.GrantsTable(storageOptions.Value)} WHERE [Id] IN (SELECT [Id] FROM @Ids) AND {_TenantFilter};";
+            $"DELETE FROM {SqlServerPermissionsSchema.GrantsTable(storageOptions.Value)} WHERE {_IdsFilter} AND {_TenantFilter};";
 
         await _ExecuteAsync(
                 sql,
                 cancellationToken,
-                _BuildIdListTvpParameter(permissionGrants.Select(permissionGrant => permissionGrant.Id)),
+                _ListParameter(
+                    "Ids",
+                    SqlColumnType.Guid,
+                    permissionGrants.Select(permissionGrant => permissionGrant.Id).ToList()
+                ),
                 _TenantParam()
             )
             .ConfigureAwait(false);
@@ -225,38 +229,6 @@ internal sealed class SqlServerPermissionGrantRepository(
     private int _CommandTimeout()
     {
         return (int)providerOptions.Value.CommandTimeout.TotalSeconds;
-    }
-
-    private SqlParameter _BuildIdListTvpParameter(IEnumerable<Guid> ids)
-    {
-        var idsTable = new DataTable();
-        idsTable.Columns.Add("Id", typeof(Guid));
-        foreach (var id in ids)
-        {
-            idsTable.Rows.Add(id);
-        }
-
-        return new SqlParameter("@Ids", SqlDbType.Structured)
-        {
-            TypeName = $"[{storageOptions.Value.Schema}].[HeadlessPermissionsIdList]",
-            Value = idsTable,
-        };
-    }
-
-    private SqlParameter _BuildNameListTvpParameter(IEnumerable<string> names)
-    {
-        var namesTable = new DataTable();
-        namesTable.Columns.Add("Name", typeof(string));
-        foreach (var name in names)
-        {
-            namesTable.Rows.Add(name);
-        }
-
-        return new SqlParameter("@Names", SqlDbType.Structured)
-        {
-            TypeName = $"[{storageOptions.Value.Schema}].[HeadlessPermissionsNameList]",
-            Value = namesTable,
-        };
     }
 
     private SqlParameter[] _Parameters(PermissionGrantRecord permissionGrant)
@@ -345,5 +317,18 @@ internal sealed class SqlServerPermissionGrantRepository(
     private static SqlParameter _Param(string name, object? value)
     {
         return new($"@{name}", value ?? DBNull.Value);
+    }
+
+    private static readonly SqlColumnType _NameElement = SqlColumnType.KeyText(
+        PermissionGrantRecordConstants.NameMaxLength
+    );
+
+    private static readonly string _NamesFilter = SqlServerDialect.Instance.InList("[Name]", "Names", _NameElement);
+
+    private static readonly string _IdsFilter = SqlServerDialect.Instance.InList("[Id]", "Ids", SqlColumnType.Guid);
+
+    private static SqlParameter _ListParameter<T>(string name, SqlColumnType elementType, IReadOnlyCollection<T> values)
+    {
+        return (SqlParameter)SqlServerDialect.Instance.CreateListParameter(name, elementType, values);
     }
 }

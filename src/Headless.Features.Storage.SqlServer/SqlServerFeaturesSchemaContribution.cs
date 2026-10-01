@@ -9,7 +9,7 @@ namespace Headless.Features.SqlServer;
 
 /// <summary>
 /// The Features feature's schema contribution for SQL Server: the value, definition, and group tables, their indexes,
-/// and the table-valued parameter types, as one idempotent step the Headless schema runner applies.
+/// as one idempotent step the Headless schema runner applies.
 /// </summary>
 internal static class SqlServerFeaturesSchemaContribution
 {
@@ -31,9 +31,6 @@ internal static class SqlServerFeaturesSchemaContribution
         var definitionsObject = $"{schema}.{definitionsName}";
         var groupsObject = $"{schema}.{groupsName}";
 
-        // HeadlessFeaturesIdList and HeadlessFeaturesNameList are the table-valued parameter types of the batched
-        // id and name queries. The name type is a heap (no primary key) so names that collide under trailing-space or
-        // collation rules cannot raise a key violation.
         var sql = $"""
             IF OBJECT_ID(N'{groupsObject}', N'U') IS NULL
                 CREATE TABLE {groupsTable} (
@@ -90,11 +87,7 @@ internal static class SqlServerFeaturesSchemaContribution
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{valuesName}_Name_ProviderName_NullProviderKey' AND object_id = OBJECT_ID(N'{valuesObject}'))
                 CREATE UNIQUE NONCLUSTERED INDEX [IX_{valuesName}_Name_ProviderName_NullProviderKey] ON {valuesTable} ([Name] ASC, [ProviderName] ASC) WHERE [ProviderKey] IS NULL;
 
-            IF TYPE_ID(N'{schema}.HeadlessFeaturesIdList') IS NULL
-                CREATE TYPE [{schema}].[HeadlessFeaturesIdList] AS TABLE ([Id] uniqueidentifier NOT NULL PRIMARY KEY);
 
-            IF TYPE_ID(N'{schema}.HeadlessFeaturesNameList') IS NULL
-                CREATE TYPE [{schema}].[HeadlessFeaturesNameList] AS TABLE ([Name] nvarchar({FeatureValueRecordConstants.NameMaxLength}) NOT NULL);
             """;
 
         return new SchemaContribution(
