@@ -25,9 +25,7 @@ internal static class SqlServerAuditLogSchemaContribution
         var objectName = SqlServerAuditLogSchema.ObjectName(storageOptions);
         var primaryKey = HeadlessStorageNaming.PrimaryKeyName(StorageNamingStyle.PascalCase, tableName);
         var jsonColumnType = (storageOptions.JsonColumnType ?? AuditLogJsonColumnType.NvarcharMax).ToSqlFragment();
-        var createdAtColumnType = string.IsNullOrWhiteSpace(storageOptions.CreatedAtColumnType)
-            ? "datetime2"
-            : storageOptions.CreatedAtColumnType;
+        var createdAtColumnType = SqlServerAuditLogSchema.CreatedAtColumnType(storageOptions);
 
         var tableSql = $"""
             IF OBJECT_ID(N'{objectName}', N'U') IS NULL

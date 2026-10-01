@@ -3,6 +3,8 @@
 using System.Data;
 using Headless.Settings.Entities;
 using Headless.Settings.Repositories;
+using Headless.Sql;
+using Headless.Sql.SqlServer;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 
@@ -11,7 +13,8 @@ namespace Headless.Settings.SqlServer;
 /// <summary>
 /// SQL Server implementation of <see cref="ISettingValueRecordRepository"/> that stores
 /// setting value records directly via <c>Microsoft.Data.SqlClient</c> without an ORM.
-/// Uses table-valued parameters (TVPs) for batched operations to avoid the 2100-parameter limit.
+/// Batched operations pass the whole list as one JSON parameter read through <c>OPENJSON</c>, so no table type has
+/// to exist and no 2100-parameter limit applies.
 /// </summary>
 internal sealed class SqlServerSettingValueRecordRepository(
     IOptions<SqlServerSettingsOptions> providerOptions,
@@ -89,15 +92,14 @@ internal sealed class SqlServerSettingValueRecordRepository(
             return Task.FromResult(new List<SettingValueRecord>());
         }
 
-        // Pass the names through the HeadlessSettingsNameList TVP: one cached plan regardless of count and
-        // no 2100-parameter ceiling, portable to older engines (no OPENJSON / compatibility level 130).
+        // One list parameter: one cached plan whatever the count, and no 2100-parameter ceiling.
         var sql =
-            $"SELECT {_ValueColumns} FROM {SqlServerSettingsSchema.ValuesTable(storageOptions.Value)} WHERE [Name] IN (SELECT [Name] FROM @Names) AND [ProviderName]=@ProviderName AND (([ProviderKey] IS NULL AND @ProviderKey IS NULL) OR [ProviderKey]=@ProviderKey);";
+            $"SELECT {_ValueColumns} FROM {SqlServerSettingsSchema.ValuesTable(storageOptions.Value)} WHERE {_NamesFilter} AND [ProviderName]=@ProviderName AND (([ProviderKey] IS NULL AND @ProviderKey IS NULL) OR [ProviderKey]=@ProviderKey);";
 
         return _ReadValuesAsync(
             sql,
             cancellationToken,
-            _BuildNameListTvpParameter(names),
+            _ListParameter("Names", _NameElement, names),
             _Param("ProviderName", providerName),
             _Param("ProviderKey", providerKey)
         );
@@ -242,12 +244,10 @@ internal sealed class SqlServerSettingValueRecordRepository(
 
     private (string Sql, SqlParameter[] Parameters) _DeleteStatement(IReadOnlyCollection<SettingValueRecord> settings)
     {
-        // Pass ids through the HeadlessSettingsIdList TVP: one cached plan regardless of count, no
-        // 2100-parameter ceiling, portable to older engines (no OPENJSON / compatibility level 130).
-        var sql =
-            $"DELETE FROM {SqlServerSettingsSchema.ValuesTable(storageOptions.Value)} WHERE [Id] IN (SELECT [Id] FROM @Ids);";
+        // One list parameter: one cached plan whatever the count, and no 2100-parameter ceiling.
+        var sql = $"DELETE FROM {SqlServerSettingsSchema.ValuesTable(storageOptions.Value)} WHERE {_IdsFilter};";
 
-        return (sql, [_BuildIdListTvpParameter(settings.Select(setting => setting.Id))]);
+        return (sql, [_ListParameter("Ids", SqlColumnType.Guid, settings.Select(setting => setting.Id).ToList())]);
     }
 
     /// <summary>Opens a new connection, executes <paramref name="sql"/> with <paramref name="parameters"/>, and maps each row to a <see cref="SettingValueRecord"/>.</summary>
@@ -303,43 +303,22 @@ internal sealed class SqlServerSettingValueRecordRepository(
         return (int)providerOptions.Value.CommandTimeout.TotalSeconds;
     }
 
-    /// <summary>Builds a structured <c>@Ids</c> TVP parameter containing the supplied <paramref name="ids"/>, typed as <c>HeadlessSettingsIdList</c>.</summary>
-    private SqlParameter _BuildIdListTvpParameter(IEnumerable<Guid> ids)
-    {
-        var idsTable = new DataTable();
-        idsTable.Columns.Add("Id", typeof(Guid));
-        foreach (var id in ids)
-        {
-            idsTable.Rows.Add(id);
-        }
-
-        return new SqlParameter("@Ids", SqlDbType.Structured)
-        {
-            TypeName = $"[{storageOptions.Value.Schema}].[HeadlessSettingsIdList]",
-            Value = idsTable,
-        };
-    }
-
-    /// <summary>Builds a structured <c>@Names</c> TVP parameter containing the supplied <paramref name="names"/>, typed as <c>HeadlessSettingsNameList</c>.</summary>
-    private SqlParameter _BuildNameListTvpParameter(IEnumerable<string> names)
-    {
-        var namesTable = new DataTable();
-        namesTable.Columns.Add("Name", typeof(string));
-        foreach (var name in names)
-        {
-            namesTable.Rows.Add(name);
-        }
-
-        return new SqlParameter("@Names", SqlDbType.Structured)
-        {
-            TypeName = $"[{storageOptions.Value.Schema}].[HeadlessSettingsNameList]",
-            Value = namesTable,
-        };
-    }
-
     /// <summary>Creates a <see cref="SqlParameter"/> prefixed with <c>@</c> named <paramref name="name"/> with <paramref name="value"/>, substituting <see cref="DBNull.Value"/> for <see langword="null"/>.</summary>
     private static SqlParameter _Param(string name, object? value)
     {
         return new($"@{name}", value ?? DBNull.Value);
+    }
+
+    private static readonly SqlColumnType _NameElement = SqlColumnType.KeyText(
+        SettingValueRecordConstants.NameMaxLength
+    );
+
+    private static readonly string _NamesFilter = SqlServerDialect.Instance.InList("[Name]", "Names", _NameElement);
+
+    private static readonly string _IdsFilter = SqlServerDialect.Instance.InList("[Id]", "Ids", SqlColumnType.Guid);
+
+    private static SqlParameter _ListParameter<T>(string name, SqlColumnType elementType, IReadOnlyCollection<T> values)
+    {
+        return (SqlParameter)SqlServerDialect.Instance.CreateListParameter(name, elementType, values);
     }
 }

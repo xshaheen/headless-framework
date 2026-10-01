@@ -3,6 +3,8 @@
 using System.Data;
 using Headless.Features.Entities;
 using Headless.Features.Repositories;
+using Headless.Sql;
+using Headless.Sql.SqlServer;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 
@@ -10,8 +12,8 @@ namespace Headless.Features.SqlServer;
 
 /// <summary>
 /// SQL Server implementation of <see cref="IFeatureValueRecordRepository"/> that reads and
-/// writes feature value records using raw ADO.NET. Bulk deletes and by-name reads use table-valued parameters
-/// (<c>HeadlessFeaturesIdList</c>, <c>HeadlessFeaturesNameList</c>) to avoid the 2100-parameter ceiling.
+/// writes feature value records using raw ADO.NET. Bulk deletes and by-name reads pass the whole list as one JSON
+/// parameter read through <c>OPENJSON</c>, so no table type has to exist and no 2100-parameter ceiling applies.
 /// </summary>
 internal sealed class SqlServerFeatureValueRecordRepository(
     IOptions<SqlServerFeaturesOptions> providerOptions,
@@ -89,15 +91,14 @@ internal sealed class SqlServerFeatureValueRecordRepository(
             return Task.FromResult(new List<FeatureValueRecord>());
         }
 
-        // Pass the names through the HeadlessFeaturesNameList TVP: one cached plan regardless of count and
-        // no 2100-parameter ceiling, portable to older engines (no OPENJSON / compatibility level 130).
+        // One list parameter: one cached plan whatever the count, and no 2100-parameter ceiling.
         var sql =
-            $"SELECT {_ValueColumns} FROM {SqlServerFeaturesSchema.ValuesTable(storageOptions.Value)} WHERE [Name] IN (SELECT [Name] FROM @Names) AND [ProviderName]=@ProviderName AND (([ProviderKey] IS NULL AND @ProviderKey IS NULL) OR [ProviderKey]=@ProviderKey);";
+            $"SELECT {_ValueColumns} FROM {SqlServerFeaturesSchema.ValuesTable(storageOptions.Value)} WHERE {_NamesFilter} AND [ProviderName]=@ProviderName AND (([ProviderKey] IS NULL AND @ProviderKey IS NULL) OR [ProviderKey]=@ProviderKey);";
 
         return _ReadValuesAsync(
             sql,
             cancellationToken,
-            _BuildNameListTvpParameter(names),
+            _ListParameter("Names", _NameElement, names),
             _Param("ProviderName", providerName),
             _Param("ProviderKey", providerKey)
         );
@@ -242,12 +243,10 @@ internal sealed class SqlServerFeatureValueRecordRepository(
 
     private (string Sql, SqlParameter[] Parameters) _DeleteStatement(IReadOnlyCollection<FeatureValueRecord> features)
     {
-        // Pass ids through the HeadlessFeaturesIdList TVP: one cached plan regardless of count, no
-        // 2100-parameter ceiling, portable to older engines (no OPENJSON / compatibility level 130).
-        var sql =
-            $"DELETE FROM {SqlServerFeaturesSchema.ValuesTable(storageOptions.Value)} WHERE [Id] IN (SELECT [Id] FROM @Ids);";
+        // One list parameter: one cached plan whatever the count, and no 2100-parameter ceiling.
+        var sql = $"DELETE FROM {SqlServerFeaturesSchema.ValuesTable(storageOptions.Value)} WHERE {_IdsFilter};";
 
-        return (sql, [_BuildIdListTvpParameter(features.Select(feature => feature.Id))]);
+        return (sql, [_ListParameter("Ids", SqlColumnType.Guid, features.Select(feature => feature.Id).ToList())]);
     }
 
     private async Task<List<FeatureValueRecord>> _ReadValuesAsync(
@@ -299,40 +298,21 @@ internal sealed class SqlServerFeatureValueRecordRepository(
         return (int)providerOptions.Value.CommandTimeout.TotalSeconds;
     }
 
-    private SqlParameter _BuildIdListTvpParameter(IEnumerable<Guid> ids)
-    {
-        var idsTable = new DataTable();
-        idsTable.Columns.Add("Id", typeof(Guid));
-        foreach (var id in ids)
-        {
-            idsTable.Rows.Add(id);
-        }
-
-        return new SqlParameter("@Ids", SqlDbType.Structured)
-        {
-            TypeName = $"[{storageOptions.Value.Schema}].[HeadlessFeaturesIdList]",
-            Value = idsTable,
-        };
-    }
-
-    private SqlParameter _BuildNameListTvpParameter(IEnumerable<string> names)
-    {
-        var namesTable = new DataTable();
-        namesTable.Columns.Add("Name", typeof(string));
-        foreach (var name in names)
-        {
-            namesTable.Rows.Add(name);
-        }
-
-        return new SqlParameter("@Names", SqlDbType.Structured)
-        {
-            TypeName = $"[{storageOptions.Value.Schema}].[HeadlessFeaturesNameList]",
-            Value = namesTable,
-        };
-    }
-
     private static SqlParameter _Param(string name, object? value)
     {
         return new($"@{name}", value ?? DBNull.Value);
+    }
+
+    private static readonly SqlColumnType _NameElement = SqlColumnType.KeyText(
+        FeatureValueRecordConstants.NameMaxLength
+    );
+
+    private static readonly string _NamesFilter = SqlServerDialect.Instance.InList("[Name]", "Names", _NameElement);
+
+    private static readonly string _IdsFilter = SqlServerDialect.Instance.InList("[Id]", "Ids", SqlColumnType.Guid);
+
+    private static SqlParameter _ListParameter<T>(string name, SqlColumnType elementType, IReadOnlyCollection<T> values)
+    {
+        return (SqlParameter)SqlServerDialect.Instance.CreateListParameter(name, elementType, values);
     }
 }

@@ -185,13 +185,12 @@ internal sealed class SqlServerAuditLogWriter(
         for (var i = 0; i < rowCount; i++)
         {
             var entry = entries[offset + i];
-            // Typed explicitly: an untyped DateTime binds as legacy datetime and rounds the stored value to ~3 ms,
-            // collapsing distinct timestamps in a datetime2 column that read paging orders by.
             parameters.Add(
-                new SqlParameter(string.Create(CultureInfo.InvariantCulture, $"@CreatedAt_{i}"), SqlDbType.DateTime2)
-                {
-                    Value = entry.CreatedAt.UtcDateTime,
-                }
+                SqlServerAuditLogSchema.CreatedAtParameter(
+                    storageOptions.Value,
+                    string.Create(CultureInfo.InvariantCulture, $"@CreatedAt_{i}"),
+                    entry.CreatedAt
+                )
             );
             parameters.Add(
                 _Param(

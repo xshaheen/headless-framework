@@ -9,7 +9,7 @@ namespace Headless.Permissions.SqlServer;
 
 /// <summary>
 /// The Permissions feature's schema contribution for SQL Server: the grant, definition, and group tables, their
-/// indexes, and the table-valued parameter types, as one idempotent step the Headless schema runner applies.
+/// and indexes, as one idempotent step the Headless schema runner applies.
 /// </summary>
 internal static class SqlServerPermissionsSchemaContribution
 {
@@ -92,11 +92,7 @@ internal static class SqlServerPermissionsSchemaContribution
             -- Table-valued parameter types for batched id/name queries (single cached plan, no 2100-parameter
             -- ceiling, portable to older engines). The name type is a heap (no PK) so trailing-space / collation
             -- duplicate names cannot raise a PK violation the dynamic IN-list never had.
-            IF TYPE_ID(N'{schema}.HeadlessPermissionsIdList') IS NULL
-                CREATE TYPE [{schema}].[HeadlessPermissionsIdList] AS TABLE ([Id] uniqueidentifier NOT NULL PRIMARY KEY);
 
-            IF TYPE_ID(N'{schema}.HeadlessPermissionsNameList') IS NULL
-                CREATE TYPE [{schema}].[HeadlessPermissionsNameList] AS TABLE ([Name] nvarchar({PermissionGrantRecordConstants.NameMaxLength}) NOT NULL);
             """;
 
         return new SchemaContribution(
