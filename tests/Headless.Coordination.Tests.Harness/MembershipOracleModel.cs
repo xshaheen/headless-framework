@@ -97,7 +97,8 @@ public sealed class MembershipOracleModel(MembershipOracleScope scope) : IMember
         {
             MembershipOracleOp.Allocate a => _Allocate(a.Node),
             MembershipOracleOp.Register r => _Register(scope.Identity(r.Node, r.Slot), r.Descriptor),
-            MembershipOracleOp.Heartbeat h => "heartbeat:" + _Heartbeat(scope.Identity(h.Node, h.Slot)),
+            MembershipOracleOp.Heartbeat h => "heartbeat:"
+                + _Heartbeat(scope.Identity(h.Node, h.Slot)).ToString(CultureInfo.InvariantCulture),
             MembershipOracleOp.Leave l => _Leave(scope.Identity(l.Node, l.Slot)),
             MembershipOracleOp.ReadSnapshot => "snapshot:[" + scope.Describe(_Snapshot()) + "]",
             MembershipOracleOp.ReadNode n => "read:"

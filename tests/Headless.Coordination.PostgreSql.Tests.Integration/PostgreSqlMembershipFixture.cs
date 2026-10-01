@@ -60,7 +60,9 @@ public sealed class PostgreSqlMembershipFixture
         );
         command.Parameters.AddWithValue("cluster", clusterName);
         command.Parameters.AddWithValue("node", nodeId);
-        command.Parameters.Add(new NpgsqlParameter<TimeSpan>("delta", NpgsqlDbType.Interval) { TypedValue = delta });
+        command.Parameters.Add(
+            new NpgsqlParameter<TimeSpan>(nameof(delta), NpgsqlDbType.Interval) { TypedValue = delta }
+        );
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

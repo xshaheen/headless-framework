@@ -71,9 +71,11 @@ public sealed class MembershipOracleSession : IMembershipOracleTarget
                 MembershipOracleOp.Allocate a => await _AllocateAsync(a.Node, cancellationToken).ConfigureAwait(false),
                 MembershipOracleOp.Register r => await _RegisterAsync(r, cancellationToken).ConfigureAwait(false),
                 MembershipOracleOp.Heartbeat h => "heartbeat:"
-                    + await _store
-                        .HeartbeatAsync(_scope.Identity(h.Node, h.Slot), cancellationToken)
-                        .ConfigureAwait(false),
+                    + (
+                        await _store
+                            .HeartbeatAsync(_scope.Identity(h.Node, h.Slot), cancellationToken)
+                            .ConfigureAwait(false)
+                    ).ToString(CultureInfo.InvariantCulture),
                 MembershipOracleOp.Leave l => await _LeaveAsync(l, cancellationToken).ConfigureAwait(false),
                 MembershipOracleOp.ReadSnapshot => "snapshot:["
                     + _scope.Describe(await _store.ReadLivenessAsync(cancellationToken).ConfigureAwait(false))
