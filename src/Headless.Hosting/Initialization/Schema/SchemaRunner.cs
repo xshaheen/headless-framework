@@ -597,7 +597,16 @@ public sealed partial class SchemaRunner(
         {
             if (!registered.TryGetValue((row.Feature, row.Version), out var expected))
             {
-                mismatches.Add(new(schema, row.Feature, row.Version, SchemaMismatchKind.Unknown, null, row.Checksum));
+                mismatches.Add(
+                    new(
+                        schema,
+                        row.Feature,
+                        row.Version,
+                        SchemaMismatchKind.Unknown,
+                        ExpectedChecksum: null,
+                        row.Checksum
+                    )
+                );
             }
             else if (!string.Equals(expected, row.Checksum, StringComparison.Ordinal))
             {
@@ -613,7 +622,9 @@ public sealed partial class SchemaRunner(
         {
             if (!recorded.Contains((feature, version)))
             {
-                mismatches.Add(new(schema, feature, version, SchemaMismatchKind.Missing, expected, null));
+                mismatches.Add(
+                    new(schema, feature, version, SchemaMismatchKind.Missing, expected, ActualChecksum: null)
+                );
             }
         }
 
