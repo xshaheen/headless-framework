@@ -135,13 +135,27 @@ public sealed class HeadlessCorsOptionsValidatorTests : TestBase
     }
 
     [Fact]
-    public void should_reject_a_non_positive_max_age()
+    public void should_reject_a_negative_max_age()
+    {
+        var options = new HeadlessCorsOptions
+        {
+            AllowedOrigins = ["https://app.example.com"],
+            MaxAge = TimeSpan.FromSeconds(-1),
+        };
+
+        var result = _sut.TestValidate(options);
+
+        result.ShouldHaveValidationErrorFor(x => x.MaxAge);
+    }
+
+    [Fact]
+    public void should_accept_a_zero_max_age_that_turns_preflight_caching_off()
     {
         var options = new HeadlessCorsOptions { AllowedOrigins = ["https://app.example.com"], MaxAge = TimeSpan.Zero };
 
         var result = _sut.TestValidate(options);
 
-        result.ShouldHaveValidationErrorFor(x => x.MaxAge);
+        result.ShouldNotHaveAnyValidationErrors();
     }
 
     [Fact]
