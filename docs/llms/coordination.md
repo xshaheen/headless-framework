@@ -179,7 +179,7 @@ Registers `TimeProvider.System`, framework GUID generator defaults, `IHostIdenti
 - A heartbeat is one fenced liveness update: current incarnation, not left, and beat younger than `DeadThreshold`, decided in its `WHERE`. It writes the later of the stored beat and the database clock, so a database clock that steps back never moves a beat backwards. Registering the current incarnation again revives its liveness the same way.
 - `LeaveAsync` stamps the leave once; leaving an incarnation that already left is a no-op.
 - Every comparison runs on the database clock with exact durations; the application clock never classifies a node.
-- Every call runs on its own READ COMMITTED transaction and retries deadlocks and serialization conflicts, at most 3 attempts.
+- Every call runs on its own READ COMMITTED transaction and retries a transient fault raised before its commit (a deadlock, a serialization conflict, a lock timeout, a dropped connection), at most 3 attempts. A fault from the commit is never retried. See the kit's [retry rule](sql.md#store-statement-kit-for-provider-authors).
 - `ReadLivenessAsync` prunes retention-expired liveness rows, then orphaned descriptors, in a transaction of its own first. A prune that still fails after its retries is logged as a warning and retried by the next read; the read itself still returns.
 
 ### Design constraints

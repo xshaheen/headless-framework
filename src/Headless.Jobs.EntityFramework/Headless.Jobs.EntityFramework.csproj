@@ -24,5 +24,6 @@
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\Headless.Jobs.Abstractions\Headless.Jobs.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Jobs.Core\Headless.Jobs.Core.csproj" />
+    <ProjectReference Include="..\Headless.Sql.Core\Headless.Sql.Core.csproj" />
   </ItemGroup>
 </Project>

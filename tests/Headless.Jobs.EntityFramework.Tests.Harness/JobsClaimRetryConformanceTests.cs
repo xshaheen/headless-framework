@@ -21,13 +21,14 @@ namespace Tests;
 #pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
 
 /// <summary>
-/// Native claim scopes retry a deadlock or serialization failure as a whole, in a fresh transaction, on every engine.
-/// Each provider supplies the exception its driver raises for a deadlock victim.
+/// Native claim scopes retry a transient fault raised before their commit as a whole, in a fresh transaction, on every
+/// engine, and never retry a fault raised by the commit. Each provider supplies the exception its driver raises for a
+/// deadlock victim.
 /// </summary>
 public abstract class JobsClaimRetryConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : class, IJobsCoordinationFixture
 {
-    private const string _ClaimRetryEventName = "JobsClaimDeadlockRetry";
+    private const string _ClaimRetryEventName = "JobsClaimTransientRetry";
 
     /// <summary>Creates the exception the provider's driver raises when the database picks a deadlock victim.</summary>
     protected abstract Exception CreateTransientClaimFailure();
@@ -35,11 +36,11 @@ public abstract class JobsClaimRetryConformanceTests<TFixture>(TFixture fixture)
     /// <summary>Returns whether <paramref name="exception" /> is the failure <see cref="CreateTransientClaimFailure" /> made.</summary>
     protected abstract bool IsInjectedFailure(Exception exception);
 
-    public virtual async Task deadlocked_claim_scope_is_retried_and_commits_correct_durable_state()
+    public virtual async Task transient_fault_before_commit_is_retried_and_commits_correct_durable_state()
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        var fault = new ClaimCommitFaultInterceptor(failuresToInject: 1, CreateTransientClaimFailure);
+        var fault = new ClaimFaultInterceptor(ClaimFaultPoint.Begin, failuresToInject: 1, CreateTransientClaimFailure);
         using var logs = new CapturingLoggerProvider();
         using var host = _BuildNativeClaimHost("deadlock-retry-a", fault, logs);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
@@ -59,9 +60,9 @@ public abstract class JobsClaimRetryConformanceTests<TFixture>(TFixture fixture)
 
             var claimed = await persistence.QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct);
 
-            // The retry path really ran: the first scope was victimized, the second committed.
+            // The retry path really ran: the first scope failed, the second committed.
             fault.InjectedFailureCount.Should().Be(1);
-            fault.CommitAttemptCount.Should().Be(2);
+            fault.AttemptCount.Should().Be(2);
             logs.CountOf(_ClaimRetryEventName).Should().Be(1);
             claimed.Should().ContainSingle().Which.Id.Should().Be(job.Id);
             claimed[0].OwnerId.Should().NotBeNullOrWhiteSpace();
@@ -76,11 +77,15 @@ public abstract class JobsClaimRetryConformanceTests<TFixture>(TFixture fixture)
         }
     }
 
-    public virtual async Task deadlock_retries_are_bounded_and_the_driver_exception_propagates()
+    public virtual async Task transient_retries_are_bounded_and_the_driver_exception_propagates()
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        var fault = new ClaimCommitFaultInterceptor(failuresToInject: int.MaxValue, CreateTransientClaimFailure);
+        var fault = new ClaimFaultInterceptor(
+            ClaimFaultPoint.Begin,
+            failuresToInject: int.MaxValue,
+            CreateTransientClaimFailure
+        );
         using var logs = new CapturingLoggerProvider();
         using var host = _BuildNativeClaimHost("deadlock-retry-b", fault, logs);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
@@ -104,6 +109,51 @@ public abstract class JobsClaimRetryConformanceTests<TFixture>(TFixture fixture)
             // One initial attempt plus the strategy's two retries — the budget is bounded, not infinite.
             fault.InjectedFailureCount.Should().Be(3);
             logs.CountOf(_ClaimRetryEventName).Should().Be(2);
+            var (status, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(job.Id, ct);
+            status.Should().Be((int)JobStatus.Idle);
+            ownerId.Should().BeNull();
+            lockedUntil.Should().BeNull();
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task transient_fault_from_the_commit_is_not_retried_and_the_driver_exception_propagates()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        var fault = new ClaimFaultInterceptor(
+            ClaimFaultPoint.Commit,
+            failuresToInject: int.MaxValue,
+            CreateTransientClaimFailure
+        );
+        using var logs = new CapturingLoggerProvider();
+        using var host = _BuildNativeClaimHost("commit-fault", fault, logs);
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var job = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "commit-fault",
+                ExecutionTime = DateTime.UtcNow.AddMinutes(-1),
+            };
+            await persistence.AddTimeJobsAsync([job], ct);
+            fault.Arm();
+
+            var claim = async () => await persistence.QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct);
+
+            // A commit fault may come from a claim the database already made durable, so it is never retried, even
+            // when the driver calls it transient.
+            IsInjectedFailure((await claim.Should().ThrowAsync<Exception>()).Which).Should().BeTrue();
+            fault.InjectedFailureCount.Should().Be(1);
+            logs.CountOf(_ClaimRetryEventName).Should().Be(0);
+            // The injected fault fires before the real commit, so the claim rolled back.
             var (status, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(job.Id, ct);
             status.Should().Be((int)JobStatus.Idle);
             ownerId.Should().BeNull();
@@ -159,14 +209,24 @@ public abstract class JobsClaimRetryConformanceTests<TFixture>(TFixture fixture)
     }
 }
 
+/// <summary>Where <see cref="ClaimFaultInterceptor" /> fails the claim scope.</summary>
+public enum ClaimFaultPoint
+{
+    /// <summary>The claim transaction's begin: before the commit, so the scope is retried.</summary>
+    Begin = 0,
+
+    /// <summary>The claim transaction's commit: the scope is never retried.</summary>
+    Commit = 1,
+}
+
 /// <summary>
-/// Fails the claim scope the way the database fails a deadlock victim, with the provider's own transient exception.
-/// The injection point is the EF transaction commit rather than a <c>DbCommandInterceptor</c> because the
-/// native claim statements are raw ADO commands built off the underlying connection and never reach EF's command
-/// interception pipeline; committing is the last EF-observable step inside the retried scope, so a failure there
-/// discards the whole attempt exactly as a real victimization does.
+/// Fails the claim scope with the provider's own transient exception, at the EF transaction begin or commit rather
+/// than in a <c>DbCommandInterceptor</c>, because the native claim statements are raw ADO commands built off the
+/// underlying connection and never reach EF's command interception pipeline. The begin and the commit are the first
+/// and last EF-observable steps inside the retried scope, so a failure at the begin discards the attempt the way a
+/// fault in its statements does.
 /// </summary>
-public sealed class ClaimCommitFaultInterceptor(int failuresToInject, Func<Exception> createFailure)
+public sealed class ClaimFaultInterceptor(ClaimFaultPoint point, int failuresToInject, Func<Exception> createFailure)
     : DbCommandInterceptor,
         IDbTransactionInterceptor
 {
@@ -176,17 +236,37 @@ public sealed class ClaimCommitFaultInterceptor(int failuresToInject, Func<Excep
     // reuses one transaction object per pooled connection, so the mark is cleared whenever a transaction starts.
     private readonly ConcurrentDictionary<DbTransaction, byte> _efTouchedTransactions = new();
     private int _armed;
-    private int _commitAttempts;
+    private int _attempts;
     private int _injectedFailures;
 
-    /// <summary>Claim-scope commits observed after <see cref="Arm" />, including the ones that were failed.</summary>
-    public int CommitAttemptCount => Volatile.Read(ref _commitAttempts);
+    /// <summary>
+    /// Claim-scope begins or commits (per <see cref="ClaimFaultPoint" />) observed after <see cref="Arm" />,
+    /// including the ones that were failed.
+    /// </summary>
+    public int AttemptCount => Volatile.Read(ref _attempts);
 
     /// <summary>Injected failures actually thrown — proves the retry path was exercised, not skipped.</summary>
     public int InjectedFailureCount => Volatile.Read(ref _injectedFailures);
 
     /// <summary>Starts faulting; called after seeding so setup writes commit normally.</summary>
     public void Arm() => Interlocked.Exchange(ref _armed, 1);
+
+    public ValueTask<InterceptionResult<DbTransaction>> TransactionStartingAsync(
+        DbConnection connection,
+        TransactionStartingEventData eventData,
+        InterceptionResult<DbTransaction> result,
+        CancellationToken cancellationToken = default
+    )
+    {
+        // Only the claim scope begins an EF transaction once the test arms the interceptor: the other EF work the
+        // host runs is single-statement and implicit-transaction.
+        if (point == ClaimFaultPoint.Begin)
+        {
+            _InjectIfArmed();
+        }
+
+        return ValueTask.FromResult(result);
+    }
 
     public DbTransaction TransactionStarted(
         DbConnection connection,
@@ -218,18 +298,22 @@ public sealed class ClaimCommitFaultInterceptor(int failuresToInject, Func<Excep
         CancellationToken cancellationToken = default
     )
     {
-        if (
-            Volatile.Read(ref _armed) == 1
-            && !_efTouchedTransactions.ContainsKey(transaction)
-            && Interlocked.Increment(ref _commitAttempts) <= failuresToInject
-        )
+        if (point == ClaimFaultPoint.Commit && !_efTouchedTransactions.ContainsKey(transaction))
+        {
+            _InjectIfArmed();
+        }
+
+        return ValueTask.FromResult(result);
+    }
+
+    private void _InjectIfArmed()
+    {
+        if (Volatile.Read(ref _armed) == 1 && Interlocked.Increment(ref _attempts) <= failuresToInject)
         {
             Interlocked.Increment(ref _injectedFailures);
 
             throw createFailure();
         }
-
-        return ValueTask.FromResult(result);
     }
 
     public override InterceptionResult<DbDataReader> ReaderExecuting(

@@ -186,7 +186,6 @@ internal sealed partial class SqlServerDataStorage
 
         var claimed = await SqlAutonomousTransaction
             .RunAsync(
-                _Dialect,
                 () => new SqlConnection(options.Value.ConnectionString),
                 async (connection, transaction, ct) =>
                 {

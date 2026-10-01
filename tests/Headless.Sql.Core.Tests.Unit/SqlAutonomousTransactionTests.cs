@@ -5,20 +5,18 @@ using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using Headless.Sql;
 using Headless.Testing.Tests;
+using Headless.Threading;
 
 namespace Tests;
 
 public sealed class SqlAutonomousTransactionTests : TestBase
 {
-    private static readonly ISqlDialect _Dialect = _ClassifyingDialect();
-
     [Fact]
     public async Task should_commit_the_attempt_and_return_its_result()
     {
         var connections = new List<FakeConnection>();
 
         var result = await SqlAutonomousTransaction.RunAsync(
-            _Dialect,
             () => _Track(connections),
             static (_, _, _) => Task.FromResult(42),
             TimeProvider.System,
@@ -32,65 +30,130 @@ public sealed class SqlAutonomousTransactionTests : TestBase
         connections[0].WasDisposed.Should().BeTrue();
     }
 
+    public static TheoryData<string> TransientFaults => ["driver-flag", "40001", "40P01"];
+
     [Theory]
-    [InlineData(SqlErrorKind.Deadlock)]
-    [InlineData(SqlErrorKind.SerializationConflict)]
-    public async Task should_retry_a_transient_conflict_on_a_new_connection(SqlErrorKind kind)
+    [MemberData(nameof(TransientFaults))]
+    public async Task should_retry_a_transient_fault_from_the_body_on_a_new_connection(string fault)
     {
         var connections = new List<FakeConnection>();
         var attempts = 0;
 
         var result = await SqlAutonomousTransaction.RunAsync(
-            _Dialect,
             () => _Track(connections),
-            (_, _, _) => ++attempts == 1 ? throw new ClassifiedException(kind) : Task.FromResult(attempts),
+            (_, _, _) => ++attempts == 1 ? throw _Transient(fault) : Task.FromResult(attempts),
             TimeProvider.System,
             AbortToken
         );
 
         result.Should().Be(2);
-        connections.Should().HaveCount(2, "a victim's transaction is gone, so the retry starts on a fresh connection");
+        connections
+            .Should()
+            .HaveCount(2, "a failed attempt's transaction is gone, so the retry starts on a fresh connection");
         connections[0].Transactions[0].Committed.Should().BeFalse();
+        connections[0].WasDisposed.Should().BeTrue();
         connections[1].Transactions[0].Committed.Should().BeTrue();
     }
 
-    [Theory]
-    [InlineData(SqlErrorKind.None)]
-    [InlineData(SqlErrorKind.UniqueViolation)]
-    [InlineData(SqlErrorKind.LockTimeout)]
-    public async Task should_not_retry_any_other_failure(SqlErrorKind kind)
+    [Fact]
+    public async Task should_retry_a_transient_fault_from_the_transaction_begin()
     {
         var connections = new List<FakeConnection>();
 
+        var result = await SqlAutonomousTransaction.RunAsync(
+            () => _Track(connections, beginFault: connections.Count == 0 ? _Transient("driver-flag") : null),
+            static (_, _, _) => Task.FromResult(7),
+            TimeProvider.System,
+            AbortToken
+        );
+
+        result.Should().Be(7);
+        connections.Should().HaveCount(2);
+        connections[0].Transactions.Should().BeEmpty();
+        connections[1].Transactions[0].Committed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_not_retry_a_transient_fault_from_the_commit_and_surface_it_unchanged()
+    {
+        var connections = new List<FakeConnection>();
+        var commitFault = _Transient("40001");
+        var bodyRuns = 0;
+
         var act = async () =>
-            await SqlAutonomousTransaction.RunAsync<int>(
-                _Dialect,
-                () => _Track(connections),
-                (_, _, _) => throw new ClassifiedException(kind),
+            await SqlAutonomousTransaction.RunAsync(
+                () => _Track(connections, commitFault: commitFault),
+                (_, _, _) => Task.FromResult(++bodyRuns),
                 TimeProvider.System,
                 AbortToken
             );
 
-        await act.Should().ThrowAsync<ClassifiedException>();
+        (await act.Should().ThrowAsync<FakeDbException>()).Which.Should().BeSameAs(commitFault);
+        bodyRuns.Should().Be(1, "the commit may have landed on the server, so a retry could apply the call twice");
+        connections.Should().ContainSingle();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_not_retry_a_non_transient_fault(bool isDatabaseFault)
+    {
+        var connections = new List<FakeConnection>();
+        Exception fault = isDatabaseFault
+            ? new FakeDbException(isTransient: false, sqlState: "23505")
+            : new InvalidOperationException("not a database fault");
+
+        var act = async () =>
+            await SqlAutonomousTransaction.RunAsync<int>(
+                () => _Track(connections),
+                (_, _, _) => throw fault,
+                TimeProvider.System,
+                AbortToken
+            );
+
+        (await act.Should().ThrowAsync<Exception>()).Which.Should().BeSameAs(fault);
         connections.Should().ContainSingle();
     }
 
     [Fact]
-    public async Task should_give_up_after_the_last_attempt_and_surface_the_conflict()
+    public async Task should_not_retry_a_transient_fault_observed_after_the_caller_cancelled()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var connections = new List<FakeConnection>();
+        var fault = _Transient("driver-flag");
+
+        var act = async () =>
+            await SqlAutonomousTransaction.RunAsync<int>(
+                () => _Track(connections),
+                async (_, _, _) =>
+                {
+                    await cancellation.CancelAsync();
+
+                    throw fault;
+                },
+                TimeProvider.System,
+                cancellation.Token
+            );
+
+        (await act.Should().ThrowAsync<FakeDbException>()).Which.Should().BeSameAs(fault);
+        connections.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task should_give_up_after_the_last_attempt_and_surface_the_fault()
     {
         var connections = new List<FakeConnection>();
 
         var act = async () =>
             await SqlAutonomousTransaction.RunAsync<int>(
-                _Dialect,
                 () => _Track(connections),
-                (_, _, _) => throw new ClassifiedException(SqlErrorKind.Deadlock),
+                (_, _, _) => throw _Transient("40P01"),
                 TimeProvider.System,
                 AbortToken
             );
 
-        await act.Should().ThrowAsync<ClassifiedException>();
-        connections.Should().HaveCount(3);
+        await act.Should().ThrowAsync<FakeDbException>();
+        connections.Should().HaveCount(TransientRetry.MaxAttempts);
     }
 
     [Fact]
@@ -100,7 +163,6 @@ public sealed class SqlAutonomousTransactionTests : TestBase
         var connections = new List<FakeConnection>();
 
         var result = await SqlAutonomousTransaction.RunAsync(
-            _Dialect,
             () => _Track(connections),
             async (_, _, _) =>
             {
@@ -117,30 +179,95 @@ public sealed class SqlAutonomousTransactionTests : TestBase
         connections[0].Transactions[0].Committed.Should().BeTrue();
     }
 
-    private static FakeConnection _Track(List<FakeConnection> connections)
+    [Fact]
+    public async Task should_report_each_retry_with_the_number_of_the_attempt_about_to_run()
     {
-        var connection = new FakeConnection();
+        var retries = new List<(Exception Fault, int AttemptNumber)>();
+        var fault = _Transient("40001");
+
+        var act = async () =>
+            await SqlAutonomousTransaction.RetryAsync<int>(
+                (_, _) => throw fault,
+                TimeProvider.System,
+                (ex, attemptNumber) => retries.Add((ex, attemptNumber)),
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<FakeDbException>();
+        retries.Should().Equal((fault, 2), (fault, 3));
+    }
+
+    [Fact]
+    public async Task should_give_each_attempt_its_own_commit_marker()
+    {
+        var attempts = new List<SqlAutonomousAttempt>();
+
+        var result = await SqlAutonomousTransaction.RetryAsync(
+            (attempt, _) =>
+            {
+                attempts.Add(attempt);
+
+                return attempts.Count == 1 ? throw _Transient("40P01") : Task.FromResult(attempt.CommitStarted);
+            },
+            TimeProvider.System,
+            cancellationToken: AbortToken
+        );
+
+        result.Should().BeFalse("a retry starts before its own commit, whatever the previous attempt reached");
+        attempts.Should().HaveCount(2).And.OnlyHaveUniqueItems();
+    }
+
+    [Fact]
+    public async Task should_not_retry_a_transient_fault_once_the_attempt_marked_its_commit()
+    {
+        var runs = 0;
+        var fault = _Transient("driver-flag");
+
+        var act = async () =>
+            await SqlAutonomousTransaction.RetryAsync<int>(
+                (attempt, _) =>
+                {
+                    runs++;
+                    attempt.MarkCommitStarted();
+
+                    throw fault;
+                },
+                TimeProvider.System,
+                cancellationToken: AbortToken
+            );
+
+        (await act.Should().ThrowAsync<FakeDbException>()).Which.Should().BeSameAs(fault);
+        runs.Should().Be(1);
+    }
+
+    private static FakeDbException _Transient(string fault)
+    {
+        // "driver-flag" is a fault the driver marks transient; anything else is a SQLSTATE the classifier knows.
+        return string.Equals(fault, "driver-flag", StringComparison.Ordinal)
+            ? new FakeDbException(isTransient: true)
+            : new FakeDbException(isTransient: false, sqlState: fault);
+    }
+
+    private static FakeConnection _Track(
+        List<FakeConnection> connections,
+        Exception? beginFault = null,
+        Exception? commitFault = null
+    )
+    {
+        var connection = new FakeConnection(beginFault, commitFault);
         connections.Add(connection);
 
         return connection;
     }
 
-    private static ISqlDialect _ClassifyingDialect()
+    private sealed class FakeDbException(bool isTransient, string? sqlState = null) : DbException("database fault")
     {
-        var dialect = Substitute.For<ISqlDialect>();
-        dialect
-            .Classify(Arg.Any<Exception>())
-            .Returns(call => call.Arg<Exception>() is ClassifiedException e ? e.Kind : SqlErrorKind.None);
+        public override bool IsTransient { get; } = isTransient;
 
-        return dialect;
+        public override string? SqlState { get; } = sqlState;
     }
 
-    private sealed class ClassifiedException(SqlErrorKind kind) : Exception(kind.ToString())
-    {
-        public SqlErrorKind Kind { get; } = kind;
-    }
-
-    private sealed class FakeConnection : DbConnection
+    private sealed class FakeConnection(Exception? beginFault, Exception? commitFault) : DbConnection
     {
         private ConnectionState _state = ConnectionState.Closed;
 
@@ -174,7 +301,12 @@ public sealed class SqlAutonomousTransactionTests : TestBase
 
         protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
         {
-            var transaction = new FakeTransaction(this, isolationLevel);
+            if (beginFault is not null)
+            {
+                throw beginFault;
+            }
+
+            var transaction = new FakeTransaction(this, isolationLevel, commitFault);
             Transactions.Add(transaction);
 
             return transaction;
@@ -183,7 +315,8 @@ public sealed class SqlAutonomousTransactionTests : TestBase
         protected override DbCommand CreateDbCommand() => throw new NotSupportedException();
     }
 
-    private sealed class FakeTransaction(DbConnection connection, IsolationLevel isolationLevel) : DbTransaction
+    private sealed class FakeTransaction(DbConnection connection, IsolationLevel isolationLevel, Exception? commitFault)
+        : DbTransaction
     {
         public bool Committed { get; private set; }
 
@@ -191,7 +324,15 @@ public sealed class SqlAutonomousTransactionTests : TestBase
 
         protected override DbConnection DbConnection { get; } = connection;
 
-        public override void Commit() => Committed = true;
+        public override void Commit()
+        {
+            if (commitFault is not null)
+            {
+                throw commitFault;
+            }
+
+            Committed = true;
+        }
 
         public override void Rollback() { }
     }

@@ -6,6 +6,7 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Infrastructure;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
+using Headless.Sql;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -230,7 +231,13 @@ public sealed class PostgreSqlClaimStrategyTests(PostgreSqlJobsCoordinationFixtu
             var factory = host.Services.GetRequiredService<IDbContextFactory<JobsDbContext>>();
             using var cancellation = new CancellationTokenSource();
 
-            await using (var claimTransaction = await JobsClaimTransaction<JobsDbContext>.CreateAsync(factory, ct))
+            await using (
+                var claimTransaction = await JobsClaimTransaction<JobsDbContext>.CreateAsync(
+                    factory,
+                    new SqlAutonomousAttempt(),
+                    ct
+                )
+            )
             {
                 await using var command = claimTransaction.DbContext.Database.GetDbConnection().CreateCommand();
                 command.Transaction = claimTransaction.Transaction.GetDbTransaction();
@@ -306,12 +313,16 @@ public sealed class PostgreSqlClaimRetryConformanceTests(PostgreSqlJobsCoordinat
     : JobsClaimRetryConformanceTests<PostgreSqlJobsCoordinationFixture>(fixture)
 {
     [Fact]
-    public override Task deadlocked_claim_scope_is_retried_and_commits_correct_durable_state() =>
-        base.deadlocked_claim_scope_is_retried_and_commits_correct_durable_state();
+    public override Task transient_fault_before_commit_is_retried_and_commits_correct_durable_state() =>
+        base.transient_fault_before_commit_is_retried_and_commits_correct_durable_state();
 
     [Fact]
-    public override Task deadlock_retries_are_bounded_and_the_driver_exception_propagates() =>
-        base.deadlock_retries_are_bounded_and_the_driver_exception_propagates();
+    public override Task transient_retries_are_bounded_and_the_driver_exception_propagates() =>
+        base.transient_retries_are_bounded_and_the_driver_exception_propagates();
+
+    [Fact]
+    public override Task transient_fault_from_the_commit_is_not_retried_and_the_driver_exception_propagates() =>
+        base.transient_fault_from_the_commit_is_not_retried_and_the_driver_exception_propagates();
 
     protected override Exception CreateTransientClaimFailure() =>
         new PostgresException("deadlock detected", "ERROR", "ERROR", PostgresErrorCodes.DeadlockDetected);

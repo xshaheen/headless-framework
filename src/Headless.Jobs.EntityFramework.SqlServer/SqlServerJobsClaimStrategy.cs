@@ -53,11 +53,12 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             yield break;
         }
 
-        var (claim, leasedDescendantIds) = await _ExecuteWithDeadlockRetryAsync(
-                async ct =>
+        var (claim, leasedDescendantIds) = await _ExecuteWithRetryAsync(
+                async (attempt, ct) =>
                 {
                     await using var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
                         dbContextFactory,
+                        attempt,
                         ct
                     );
                     var dbContext = claimTransaction.DbContext;
@@ -131,11 +132,12 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         }
 
         TimeJobEntity[] claimed;
-        var (claim, leasedDescendantIds) = await _ExecuteWithDeadlockRetryAsync(
-                async ct =>
+        var (claim, leasedDescendantIds) = await _ExecuteWithRetryAsync(
+                async (attempt, ct) =>
                 {
                     await using var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
                         dbContextFactory,
+                        attempt,
                         ct
                     );
                     var dbContext = claimTransaction.DbContext;
@@ -246,12 +248,13 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             yield break;
         }
 
-        var claimed = await _ExecuteWithDeadlockRetryAsync(
-                async ct =>
+        var claimed = await _ExecuteWithRetryAsync(
+                async (attempt, ct) =>
                 {
                     CronJobOccurrenceEntity<TCronJob>[] attemptClaimed = [];
                     await using var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
                         dbContextFactory,
+                        attempt,
                         ct
                     );
                     var dbContext = claimTransaction.DbContext;
@@ -398,11 +401,12 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         }
 
         CronJobOccurrenceEntity<TCronJob>[] claimed;
-        var wonIds = await _ExecuteWithDeadlockRetryAsync(
-                async ct =>
+        var wonIds = await _ExecuteWithRetryAsync(
+                async (attempt, ct) =>
                 {
                     await using var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
                         dbContextFactory,
+                        attempt,
                         ct
                     );
                     var dbContext = claimTransaction.DbContext;
@@ -841,19 +845,12 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         return [.. leasedIds];
     }
 
-    private Task<TResult> _ExecuteWithDeadlockRetryAsync<TResult>(
-        Func<CancellationToken, Task<TResult>> action,
+    private Task<TResult> _ExecuteWithRetryAsync<TResult>(
+        Func<SqlAutonomousAttempt, CancellationToken, Task<TResult>> action,
         CancellationToken cancellationToken
     )
     {
-        // SQL Server has rolled the victim transaction back before surfacing 1205.
-        return JobsClaimRetry.RunAsync(
-            action,
-            static ex => SqlAutonomousTransaction.IsTransient(SqlServerDialect.Instance, ex),
-            timeProvider,
-            logger,
-            cancellationToken
-        );
+        return JobsClaimRetry.RunAsync(action, timeProvider, logger, cancellationToken);
     }
 
     private readonly record struct ClaimResult(Guid[] Ids, DateTimeOffset ClaimedAt);

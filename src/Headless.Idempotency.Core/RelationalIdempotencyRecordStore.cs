@@ -28,7 +28,7 @@ namespace Headless.Idempotency;
 /// </para>
 /// <para>
 /// Autonomous verbs (renew, peek, purge) open their own connection at READ COMMITTED, commit before returning, and
-/// retry only deadlocks and serialization conflicts. Enlisted verbs run on the unit's connection and transaction, never
+/// retry a transient fault raised before the commit (<see cref="SqlAutonomousTransaction" />). Enlisted verbs run on the unit's connection and transaction, never
 /// commit, and never retry: the failure has already rolled back the caller's transaction, so only the unit's owner can
 /// run it again.
 /// </para>
@@ -640,13 +640,7 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
         CancellationToken cancellationToken
     )
     {
-        return SqlAutonomousTransaction.RunAsync(
-            _dialect,
-            _storage.CreateConnection,
-            body,
-            _timeProvider,
-            cancellationToken
-        );
+        return SqlAutonomousTransaction.RunAsync(_storage.CreateConnection, body, _timeProvider, cancellationToken);
     }
 
     private DbCommand _Command(
