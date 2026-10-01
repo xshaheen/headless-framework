@@ -6,6 +6,7 @@ using Headless.Hosting.Initialization;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
+using Headless.Jobs.Infrastructure;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
 using Headless.Testing.Tests;
@@ -1439,6 +1440,115 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
 
             var (_, lockedUntil) = await fixture.ReadCronOccurrenceClaimAsync(claimed[0].Id, ct);
             lockedUntil.Should().Be(claimed[0].LockedUntil);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// A full candidate page (the claim strategy's 1,000-job ceiling) is bound as one list of (id, UpdatedAt) rows, not
+    /// two parameters per job, so it stays far from SQL Server's 2,100-parameter limit. Each claim takes one batch;
+    /// repeating it over the still-idle rows claims every job exactly once.
+    /// </summary>
+    public virtual async Task direct_claim_of_a_full_candidate_page_claims_every_job_once()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("page-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var jobs = Enumerable
+                .Range(0, JobsClaimStrategyDefaults.MaxCandidatePageSize)
+                .Select(i => new TimeJobEntity { Id = Guid.NewGuid(), Function = $"page-{i}" })
+                .ToArray();
+            await persistence.AddTimeJobsAsync(jobs, ct);
+            var ids = jobs.Select(x => x.Id).ToHashSet();
+
+            var claimedIds = new List<Guid>();
+            var firstClaim = true;
+            while (claimedIds.Count < jobs.Length)
+            {
+                var candidates = await persistence.GetTimeJobsAsync(
+                    x => ids.Contains(x.Id) && x.Status == JobStatus.Idle,
+                    ct
+                );
+                if (firstClaim)
+                {
+                    candidates.Should().HaveCount(JobsClaimStrategyDefaults.MaxCandidatePageSize);
+                    firstClaim = false;
+                }
+
+                var claimed = await persistence.QueueTimeJobsAsync(candidates, ct).ToArrayAsync(ct);
+                claimed.Should().HaveCount(Math.Min(JobsClaimStrategyDefaults.MaxClaimBatchSize, candidates.Length));
+                claimedIds.AddRange(claimed.Select(x => x.Id));
+            }
+
+            claimedIds.Should().OnlyHaveUniqueItems().And.BeEquivalentTo(ids);
+            var stored = await persistence.GetTimeJobsAsync(x => ids.Contains(x.Id), ct);
+            stored.Should().OnlyContain(x => x.Status == JobStatus.Queued && x.OwnerId != null);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// The direct claim matches each job's id and expected UpdatedAt as one row. Two candidates carrying each other's
+    /// stamps must both be refused: every id and every stored stamp appears in the request, which is all two
+    /// independent lists (ids, stamps) would check, but never in the same row.
+    /// </summary>
+    public virtual async Task direct_claim_does_not_match_a_stamp_from_another_candidate()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("pairs-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            Guid[] ids = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+            // Whole-second stamps, so every engine stores them unchanged and each row carries its own.
+            var stampBase = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+            await persistence.AddTimeJobsAsync(
+                [
+                    .. ids.Select(
+                        (id, i) =>
+                            new TimeJobEntity
+                            {
+                                Id = id,
+                                Function = "pairs",
+                                UpdatedAt = stampBase.AddSeconds(i),
+                            }
+                    ),
+                ],
+                ct
+            );
+
+            var first = (await persistence.GetTimeJobsAsync(x => x.Id == ids[0], ct)).Single();
+            var second = (await persistence.GetTimeJobsAsync(x => x.Id == ids[1], ct)).Single();
+            var matching = (await persistence.GetTimeJobsAsync(x => x.Id == ids[2], ct)).Single();
+            first.UpdatedAt.Should().NotBe(second.UpdatedAt);
+            (first.UpdatedAt, second.UpdatedAt) = (second.UpdatedAt, first.UpdatedAt);
+
+            var claimed = await persistence.QueueTimeJobsAsync([first, second, matching], ct).ToArrayAsync(ct);
+
+            claimed.Select(x => x.Id).Should().Equal(matching.Id);
+            foreach (var refused in new[] { ids[0], ids[1] })
+            {
+                var (status, ownerId, lockedUntil, _, _) = await fixture.ReadTimeJobDetailAsync(refused, ct);
+                status.Should().Be((int)JobStatus.Idle);
+                ownerId.Should().BeNull();
+                lockedUntil.Should().BeNull();
+            }
         }
         finally
         {

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using System.Runtime.CompilerServices;
 using Headless.Abstractions;
 using Headless.Jobs.Entities;
@@ -30,6 +31,9 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
+#pragma warning disable RCS1158 // Static member in generic type should use a type parameter
+    private static readonly SqlColumnType[] _DirectCandidateTypes = [SqlColumnType.Guid, SqlColumnType.Timestamp];
+#pragma warning restore RCS1158
     private readonly TimeSpan _leaseDuration = optionsBuilder.LeaseDuration;
 
     // The maximum number of nodes on a root-to-leaf path the tree claim leases (root = depth 1). A timed
@@ -67,22 +71,13 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                     dbContext,
                     transaction,
                     mapping,
-                    _BuildDirectCandidateFilter(batch, mapping),
+                    _DirectCandidateFilter(mapping),
                     // Unscheduled roots first, as the CAS path visits them; PostgreSQL sorts NULL last by default.
                     [$"{mapping.ExecutionTime} NULLS FIRST", mapping.Id],
                     owner,
                     _leaseDuration,
                     cancellationToken,
-                    [
-                        .. batch.SelectMany(
-                            (job, index) =>
-                                new NpgsqlParameter[]
-                                {
-                                    new(_ParameterName("id", index), job.Id),
-                                    new(_ParameterName("updatedAt", index), job.UpdatedAt),
-                                }
-                        ),
-                    ]
+                    _DirectCandidateParameters(batch)
                 )
                 .ConfigureAwait(false);
 
@@ -672,22 +667,24 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         return [.. ids];
     }
 
-    // Hand-written rather than one list parameter: the CAS pairs each id with its own expected UpdatedAt, and a
-    // single-column list cannot keep the pairs together (two lists would also match an id against another job's
-    // stamp). MaxCandidatePageSize bounds the parameter count.
-    private static string _BuildDirectCandidateFilter(TimeJobEntity[] timeJobs, TimeJobRelationalMapping mapping)
+    // The CAS pairs each id with its own expected UpdatedAt, so the pairs are matched as whole rows: two separate
+    // lists would also match an id against another job's stamp. One list parameter carries every pair, so the
+    // candidate page size no longer approaches the engine's parameter limit.
+    private static string _DirectCandidateFilter(TimeJobRelationalMapping mapping)
     {
-        var values = string.Join(
-            ", ",
-            timeJobs.Select((_, index) => $"(@{_ParameterName("id", index)}, @{_ParameterName("updatedAt", index)})")
-        );
-        return $"""
-            EXISTS (
-                SELECT 1
-                FROM (VALUES {values}) AS requested(requested_id, requested_updated_at)
-                WHERE requested.requested_id = {mapping.Id} AND requested.requested_updated_at = {mapping.UpdatedAt}
-            )
-            """;
+        return PostgreSqlDialect.Instance.InTuples([mapping.Id, mapping.UpdatedAt], "requested", _DirectCandidateTypes);
+    }
+
+    private static DbParameter[] _DirectCandidateParameters(TimeJobEntity[] timeJobs)
+    {
+        return
+        [
+            .. PostgreSqlDialect.Instance.CreateTupleListParameters(
+                "requested",
+                _DirectCandidateTypes,
+                [.. timeJobs.Select(static job => (IReadOnlyList<object>)[job.Id, job.UpdatedAt])]
+            ),
+        ];
     }
 
     private static async Task<ClaimResult> _ClaimRootsAsync(
@@ -699,7 +696,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         string owner,
         TimeSpan leaseDuration,
         CancellationToken cancellationToken,
-        params NpgsqlParameter[] filterParameters
+        params DbParameter[] filterParameters
     )
     {
         var dialect = PostgreSqlDialect.Instance;
@@ -831,10 +828,5 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     private static NpgsqlParameter<int> _BatchSizeParameter()
     {
         return new NpgsqlParameter<int>("batchSize", JobsClaimStrategyDefaults.MaxClaimBatchSize);
-    }
-
-    private static string _ParameterName(string prefix, int index)
-    {
-        return string.Create(CultureInfo.InvariantCulture, $"{prefix}{index}");
     }
 }
