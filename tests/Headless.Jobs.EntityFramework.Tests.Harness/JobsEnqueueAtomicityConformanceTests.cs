@@ -255,6 +255,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
             (await fixture.CountTimeJobsAsync(ct)).Should().Be(2);
             (await fixture.CountProbeRowsAsync(ct)).Should().Be(1);
+            await sideEffectsProbe.WaitForPostCommitSignalsAsync(restarts: 2, notifications: 2, ct);
             sideEffectsProbe.RestartCount.Should().Be(2);
             sideEffectsProbe.NotificationIds.Should().HaveCount(2).And.Contain(scheduledId);
 

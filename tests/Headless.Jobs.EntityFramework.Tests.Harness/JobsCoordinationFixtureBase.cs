@@ -1229,6 +1229,33 @@ internal sealed class JobsSideEffectsProbe : IJobsHostScheduler, IJobsNotificati
 
     public Guid[] NotificationIds => [.. _notificationIds];
 
+    /// <summary>
+    /// Waits until the post-commit worker has delivered at least <paramref name="restarts" /> scheduler wake-ups and
+    /// <paramref name="notifications" /> notifications. A commit only enqueues its signal; the worker delivers it
+    /// asynchronously, so reading the counts right after the commit races it.
+    /// </summary>
+    public async Task WaitForPostCommitSignalsAsync(
+        int restarts,
+        int notifications,
+        CancellationToken cancellationToken
+    )
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+
+        try
+        {
+            while (RestartCount < restarts || _notificationIds.Count < notifications)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(10), timeout.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // Fall through: the caller's assertions then report the counts that did arrive.
+        }
+    }
+
     Task IJobsHostScheduler.StartAsync(CancellationToken cancellationToken)
     {
         return Task.CompletedTask;
