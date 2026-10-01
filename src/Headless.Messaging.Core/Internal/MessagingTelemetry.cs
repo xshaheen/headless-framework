@@ -3,6 +3,7 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using Headless.Messaging.Messages;
+using Headless.MultiTenancy;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry;
 using OpenTelemetry.Context.Propagation;
@@ -16,12 +17,22 @@ namespace Headless.Messaging.Internal;
 /// message headers. Registered as a singleton by <c>AddHeadlessMessaging</c> with the enricher snapshot built
 /// from <see cref="MessagingInstrumentationOptions"/>.
 /// </summary>
-internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogger<MessagingTelemetry>? logger = null)
+internal sealed class MessagingTelemetry(
+    IActivityTagEnricher[] enrichers,
+    ILogger<MessagingTelemetry>? logger = null,
+    TenantTelemetryOptions? tenantTelemetry = null
+)
 {
-    private readonly bool _hasEnrichers = enrichers.Length > 0;
+    private readonly TenantTelemetryOptions _tenantTelemetry = tenantTelemetry ?? new TenantTelemetryOptions();
+
+    // The tenant attribute is written here rather than by an enricher because its name comes from
+    // TenantTelemetryOptions, which is only resolvable from the container, while the enricher snapshot is built at
+    // registration time.
+    private readonly bool _hasEnrichers = enrichers.Length > 0 || (tenantTelemetry?.EnrichTraces ?? true);
 
     /// <summary>
-    /// Shared fallback instance carrying the default built-in enrichers (tenant-id, intent, retry-count). Used
+    /// Shared fallback instance carrying the default tenant attribute and built-in enrichers (lane, delivery mode,
+    /// retry-count). Used
     /// when an emission site is constructed outside the DI container (for example in unit tests) and no configured
     /// <see cref="MessagingTelemetry"/> is available. Production wiring always injects the DI singleton built from
     /// <see cref="MessagingInstrumentationOptions"/>.
@@ -567,6 +578,12 @@ internal sealed class MessagingTelemetry(IActivityTagEnricher[] enrichers, ILogg
 
     private void _CallEnrichers(Activity activity, in MessagingEnrichmentContext context)
     {
+        // Runs before every enricher so a custom enricher can still read or override the attribute.
+        if (!string.IsNullOrWhiteSpace(context.TenantId))
+        {
+            TenantTelemetry.TagActivity(activity, _tenantTelemetry, context.TenantId);
+        }
+
         for (var i = 0; i < enrichers.Length; i++)
         {
             var enricher = enrichers[i];

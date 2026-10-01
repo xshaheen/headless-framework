@@ -43,7 +43,7 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
             MetadataReference.CreateFromFile(typeof(MessageOptions).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(IBus).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(IQueue).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(TransactionEnlistment).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(IUnitOfWork).Assembly.Location),
         ]
     );
 
@@ -288,7 +288,7 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
             _ConfigurationSource(
                 """
                 JobsOptionsBuilder<TimeJobEntity, CronJobEntity> result = jobs
-                    .ConfigureDefaults(p => p.WithRetries(3).WithEnlistment(TransactionEnlistment.Required))
+                    .ConfigureDefaults(p => p.WithRetries(3))
                     .ConfigureJob<Request>(p => p.WithNodeDeathPolicy(Headless.Jobs.Enums.NodeDeathPolicy.MarkFailed))
                     .Tune("orders.ship", job => job.Options(p => p.WithRetryIntervals(2, 5)))
                     .ConfigureDefaults(new JobOptions { Retries = 3 })

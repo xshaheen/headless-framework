@@ -71,32 +71,6 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
     }
 
     [Fact]
-    public async Task required_atomic_time_job_rejects_missing_capability_before_schedule_effects()
-    {
-        var middlewareCalls = 0;
-        using var dispatch = _ReplaceScheduleDispatch(
-            (_, next, cancellationToken) =>
-            {
-                middlewareCalls++;
-                return next(cancellationToken);
-            }
-        );
-        var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
-        var candidate = _FutureTimeJob();
-        candidate.Enlistment = TransactionEnlistment.Required;
-
-        var schedule = () => sut.Time.AddAsync(candidate, AbortToken);
-
-        await schedule.Should().ThrowAsync<InvalidOperationException>().WithMessage("*requires a unit of work*");
-        middlewareCalls.Should().Be(0);
-        await sut
-            .Persistence.DidNotReceive()
-            .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
-        sut.Scheduler.DidNotReceiveWithAnyArgs().RestartIfNeeded(default);
-        await sut.Notification.DidNotReceiveWithAnyArgs().AddTimeJobNotifyAsync(default);
-    }
-
-    [Fact]
     public async Task immediate_dispatch_threads_the_persisted_tenant_into_the_dispatched_state()
     {
         // #278: the immediate-dispatch branch builds JobExecutionState from the ACQUIRED row via
@@ -298,7 +272,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
 
         var act = () => sut.Time.AddAsync(_FutureTimeJob(), AbortToken);
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage(_RefusalFor(nonRelational: true));
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage(_NoRelationalResourceRefusal);
         await sut
             .Persistence.DidNotReceive()
             .AddTimeJobsAsync(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
@@ -1272,10 +1246,9 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             .Be(ServiceLifetime.Singleton);
     }
 
-    // The refusal the receiver raises for a write that must enlist: the autonomous facade names the Required knob,
-    // the enlisted one over a resource-less unit names the missing relational resource.
-    private static string _RefusalFor(bool nonRelational) =>
-        nonRelational ? "*requires the unit of work to carry a live relational resource*" : "*requires a unit of work*";
+    // The refusal the enlisted receiver raises over a resource-less unit: it names the missing relational resource.
+    private const string _NoRelationalResourceRefusal =
+        "*requires the unit of work to carry a live relational resource*";
 
     private static TimeJobEntity _FutureTimeJob()
     {
@@ -1386,7 +1359,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         LiveRelational,
 
         // An owned unit of work whose resource's connection reports Closed — the "incompatible/dead resource"
-        // case, which the guarantee matrix says throws regardless of TransactionEnlistment.
+        // case, which the enlisted receiver refuses.
         DeadRelational,
 
         // An observed-mode unit of work over a live transaction someone else commits — the shape the EF save
@@ -1461,7 +1434,6 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
                 _AwaitSync(
                     unitOfWorkFactory.BeginAsync(
                         _ => ValueTask.FromResult<IUnitOfWorkResource>(new FakeRelationalResource(_LiveTransaction())),
-                        options: null,
                         cancellationToken: default
                     )
                 )
@@ -1478,7 +1450,6 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
                     unitOfWorkFactory.BeginAsync(
                         _ =>
                             ValueTask.FromResult<IUnitOfWorkResource>(new FakeRelationalResource(_ClosedTransaction())),
-                        options: null,
                         cancellationToken: default
                     )
                 )
@@ -1701,7 +1672,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
     }
 
     // The "incompatible/dead resource" case: a connection that reports Closed, which
-    // CapturedRelationalResource.Validate() rejects regardless of TransactionEnlistment (except Never).
+    // CapturedRelationalResource.Validate() rejects.
     private static DbTransaction _ClosedTransaction()
     {
         var connection = Substitute.For<DbConnection>();

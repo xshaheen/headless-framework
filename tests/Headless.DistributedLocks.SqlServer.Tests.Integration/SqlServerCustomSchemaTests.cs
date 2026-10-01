@@ -83,7 +83,7 @@ public sealed class SqlServerCustomSchemaTests(SqlServerDistributedLockFixture f
 
         // then
         first.FencingToken.Should().NotBeNull();
-        second.FencingToken.Should().BeGreaterThan(first.FencingToken!.Value);
+        second.FencingToken!.Value.Should().BeGreaterThan(first.FencingToken!.Value);
     }
 
     private ServiceProvider _BuildProvider(

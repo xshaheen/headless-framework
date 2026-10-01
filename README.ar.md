@@ -352,6 +352,7 @@ Interface واحدة لتخزين الملفات، وproviders لكل cloud وpr
 | [Headless.Blobs.Azure](src/Headless.Blobs.Azure/README.md) | Provider لـ Azure Blob Storage |
 | [Headless.Blobs.CloudflareR2](src/Headless.Blobs.CloudflareR2/README.md) | Provider لـ Cloudflare R2 (متوافق مع S3) |
 | [Headless.Blobs.FileSystem](src/Headless.Blobs.FileSystem/README.md) | تخزين على الـ file system المحلي |
+| [Headless.Blobs.MultiTenancy](src/Headless.Blobs.MultiTenancy/README.md) | عزل الـ blob stores حسب الـ tenant |
 | [Headless.Blobs.Redis](src/Headless.Blobs.Redis/README.md) | تخزين جوه Redis |
 | [Headless.Blobs.SshNet](src/Headless.Blobs.SshNet/README.md) | Provider لـ SFTP |
 
@@ -632,7 +633,7 @@ Unit of work صريح: تبدأه من singleton factory في السطر الل�
 
 | Package | الوصف |
 |---------|-------|
-| [Headless.UnitOfWork.Abstractions](src/Headless.UnitOfWork.Abstractions/README.md) | الـ contracts بتاعة الـ unit of work: `IUnitOfWorkFactory` (singleton)، `IUnitOfWork`، `IUnitOfWorkResource`، `IUnitOfWorkFeature`، `TransactionEnlistment` (من غير dependencies) |
+| [Headless.UnitOfWork.Abstractions](src/Headless.UnitOfWork.Abstractions/README.md) | الـ contracts بتاعة الـ unit of work: `IUnitOfWorkFactory` (singleton)، `IUnitOfWork`، `IUnitOfWorkResource`، `IUnitOfWorkFeature` (من غير dependencies) |
 | [Headless.UnitOfWork](src/Headless.UnitOfWork/README.md) | الـ singleton factory والـ engine وتسجيل `AddUnitOfWork()` |
 | [Headless.UnitOfWork.EntityFramework](src/Headless.UnitOfWork.EntityFramework/README.md) | Provider للـ EF Core: `BeginAsync(db)` / `Enlist(db, tx)` / `RunAsync(db, ...)` |
 | [Headless.UnitOfWork.PostgreSql](src/Headless.UnitOfWork.PostgreSql/README.md) | Provider لـ `NpgsqlConnection` بالـ ADO الخام، بنفس الشكل |
@@ -720,6 +721,7 @@ Base classes وbuilders وfixtures وتكامل Testcontainers لـ integration 
 | [Headless.Generator.Primitives](src/Headless.Generator.Primitives/README.md) | Source generator للـ primitive types |
 | [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | الـ abstractions بتاعة الـ generator |
 | [Headless.Hosting](src/Headless.Hosting/README.md) | أدوات للـ .NET hosting |
+| [Headless.Http.Resilience](src/Headless.Http.Resilience/README.md) | الـ side-effect classes المعلنة للـ outbound HTTP calls |
 | [Headless.NetTopologySuite](src/Headless.NetTopologySuite/README.md) | أدوات geospatial |
 | [Headless.Primitives](src/Headless.Primitives/README.md) | Value objects، والـ result pattern، وpaging models، وdomain primitives |
 | [Headless.Redis](src/Headless.Redis/README.md) | أدوات لـ Redis |

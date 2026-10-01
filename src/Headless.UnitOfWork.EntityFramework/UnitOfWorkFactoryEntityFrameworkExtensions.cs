@@ -1,13 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using System.Runtime.ExceptionServices;
 using Headless.Checks;
 using Headless.UnitOfWork;
 using Headless.UnitOfWork.Internal;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.Logging;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 
@@ -184,8 +182,9 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
                 async ct =>
                 {
                     // An owning begin on a context (or connection) that already carries a live unit is refused:
-                    // RunAsync is the join, and a second transaction on the same context is never the answer.
-                    DbContextUnitOfWorkBinding.ThrowIfBound(db);
+                    // RunAsync is the join, and a second transaction on the same context is never the answer. A
+                    // stale unit is abandoned inline, so its transaction is gone before the begin below.
+                    await DbContextUnitOfWorkBinding.ThrowIfBoundAsync(db).ConfigureAwait(false);
 
                     if (db.Database.CurrentTransaction is not null)
                     {
@@ -210,7 +209,6 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
 
                     return new EfUnitOfWorkResource(db, transaction, owned: true);
                 },
-                options: null,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
@@ -220,7 +218,7 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
         return unit;
     }
 
-    private static async Task<TResult> _RunCoreAsync<TResult>(
+    private static Task<TResult> _RunCoreAsync<TResult>(
         IUnitOfWorkFactory factory,
         DbContext db,
         Func<IUnitOfWork, CancellationToken, Task<TResult>> operation,
@@ -230,109 +228,31 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
     {
         Argument.IsNotNull(db);
 
-        // A joined block belongs to the owner's unit and the owner's execution strategy: it runs inline, a fault
-        // propagates to the owner's block, which is what unwinds the unit, and a block that ends the unit itself
-        // is refused once it returns.
-        if (DbContextUnitOfWorkBinding.TryGet(db, out var joined))
-        {
-            return await UnitOfWorkRunner.RunJoinedAsync(joined, operation, cancellationToken).ConfigureAwait(false);
-        }
-
-        // Refused here, before the strategy, so the caller sees the EF-specific remedy: the connection-owned unit
-        // is a raw-ADO one, and an EF block cannot join it (the context would begin a second transaction on the
-        // connection the ADO unit already owns).
-        DbContextUnitOfWorkBinding.ThrowIfConnectionBound(db);
-
-        var logger = UnitOfWorkRunner.LoggerFor(factory);
-        var state = (Factory: factory, Operation: operation, Isolation: isolation, Context: db, Logger: logger);
-
-        var (result, error) = await db
-            .Database.CreateExecutionStrategy()
-            .ExecuteAsync(
-                state,
-                async (state, ct) =>
+        return UnitOfWorkRunner.RunAsync(
+            async () =>
+            {
+                // A context (or the connection beneath it) that already carries a live unit joins it: the block
+                // runs inline inside the owner's unit, outside any strategy of its own, and a block that ends
+                // the unit is refused once it returns.
+                if (await DbContextUnitOfWorkBinding.TryGetAsync(db).ConfigureAwait(false) is { } joined)
                 {
-                    var unitOfWork = default(IUnitOfWork);
-                    var commitStarted = false;
-                    var result = default(TResult)!;
+                    return joined;
+                }
 
-                    try
-                    {
-                        // Retries are legal here: this begin runs inside the strategy, so the retrying check
-                        // is suppressed and a transient failure replays with a fresh unit and transaction.
-                        unitOfWork = await _BeginAsync(
-                                state.Factory,
-                                state.Context,
-                                state.Isolation,
-                                rejectRetryingStrategy: false,
-                                ct
-                            )
-                            .ConfigureAwait(false);
+                // Refused here, before the strategy, so the caller sees the EF-specific remedy: the connection-owned
+                // unit came from a raw-ADO begin, which an EF block can neither own nor join (the context would
+                // begin a second transaction on the connection the ADO unit already owns).
+                await DbContextUnitOfWorkBinding.ThrowIfConnectionBoundAsync(db).ConfigureAwait(false);
 
-                        result = await state.Operation(unitOfWork, ct).ConfigureAwait(false);
-                        commitStarted = true;
-
-                        try
-                        {
-                            await unitOfWork.CompleteAsync(ct).ConfigureAwait(false);
-                        }
-                        catch (Exception ex) when (unitOfWork.State == UnitOfWorkState.Completed)
-                        {
-                            // The transaction is ALREADY durably committed; only the drain faulted. Same policy as
-                            // the Npgsql/SqlClient RunAsync: log and return the committed result, because surfacing
-                            // it would invite a retry that double-applies a committed block.
-                            UnitOfWorkRunner.LogPostCommitDrainFaulted(state.Logger, ex);
-                        }
-
-                        return (Result: result, Error: null!);
-                    }
-                    catch (Exception ex)
-                    {
-                        // Once the commit has started (it may have committed before the fault) or the block
-                        // marked itself non-replayable, the fault must NOT reach the strategy's retry loop:
-                        // it is captured and rethrown after ExecuteAsync returns, outside the strategy.
-                        if (commitStarted || unitOfWork?.IsRetryPrevented == true)
-                        {
-                            await _DisposeQuietlyAsync(unitOfWork, state.Logger).ConfigureAwait(false);
-
-                            return (Result: result, Error: ExceptionDispatchInfo.Capture(ex));
-                        }
-
-                        // A pre-commit failure replays: unwind this attempt's unit first — its rollback must
-                        // finish before the strategy re-runs, or the replay's BeginAsync meets a still-open
-                        // transaction on the same context.
-                        await _DisposeQuietlyAsync(unitOfWork, state.Logger).ConfigureAwait(false);
-
-                        throw;
-                    }
-                },
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        error?.Throw();
-
-        return result;
-    }
-
-    private static async ValueTask _DisposeQuietlyAsync(IUnitOfWork? unitOfWork, ILogger logger)
-    {
-        if (unitOfWork is null)
-        {
-            return;
-        }
-
-        // Terminal units (a completed or already-failed commit) make this a no-op; an active unit is
-        // abandoned, which rolls its transaction back and drops its registrations.
-        try
-        {
-            await unitOfWork.DisposeAsync().ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            // The captured/rethrown fault is the caller's outcome; a dispose fault must not mask it, but it is
-            // still a real secondary failure, so it is logged rather than dropped.
-            UnitOfWorkRunner.LogAttemptDisposeFaulted(logger, ex);
-        }
+                return null;
+            },
+            // Retries are legal here: this begin runs inside the strategy, so the retrying check is suppressed and
+            // a transient failure replays with a fresh unit and transaction.
+            ct => _BeginAsync(factory, db, isolation, rejectRetryingStrategy: false, ct),
+            operation,
+            new EfUnitOfWorkExecutionStrategy(db.Database.CreateExecutionStrategy()),
+            UnitOfWorkRunner.LoggerFor(factory),
+            cancellationToken
+        );
     }
 }

@@ -1,6 +1,6 @@
 ---
 domain: Utilities
-packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstractions, Hosting, NetTopologySuite, Redis, Sitemaps, Slugs
+packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstractions, Hosting, Http.Resilience, NetTopologySuite, Redis, Sitemaps, Slugs
 ---
 
 # Utilities
@@ -13,6 +13,7 @@ Install individually as needed -- these packages are independent of each other:
 
 - **Generator.Primitives + Generator.Primitives.Abstractions** -- Roslyn source generator for strongly-typed domain primitives (IDs, value types). Install both together. Define types implementing `IPrimitive<T>` and get auto-generated equality, JSON converters, EF Core value converters, Dapper handlers, and TypeConverters.
 - **FluentValidation** -- Enterprise validators on top of FluentValidation: phone numbers (`InternationalPhoneNumber()`, `MobilePhoneNumber()`), national IDs, collections, geo, pagination, URLs, IP addresses, string formats (slug/username/hex color/Base64/…), relative date/time (`InThePast()`/`MinimumAge()`, `TimeProvider`-based), enum names, and markup rejection (`NoScripts()`). Use `ErrorDescriptor` for structured API errors.
+- **Http.Resilience** -- declare an outbound provider client's side-effect class (`OutboundEffect.Safe | Idempotent | Unsafe`) and derive its HttpClient resilience pipeline from it with `AddEffectResilienceHandler`. Used by the SMS and Paymob packages.
 - **Hosting** -- DI extensions (`AddIf`, `AddOrReplace*`, `Unregister<T>`), options validation with FluentValidation (`AddOptionsWithFluentValidation<T,V>`), database seeder infrastructure (`ISeeder`).
 - **NetTopologySuite** -- Geometry precision, permissive operations, SQL Server geography sanitization (`SanitizeForSqlGeography()`), polygon simplification.
 - **Redis** -- definition-first Lua script loading/execution with StackExchange.Redis.
@@ -455,6 +456,25 @@ No configuration required.
 None directly. Utilities for managing service registration.
 
 `Headless.Hosting` declares `IsAotCompatible`. The helpers that construct a type argument (`AddOrReplace*`, `Decorate`, `AddOptions<TOptions, TValidator>`, `Configure<TOption, TOptionValidator>`, `AddSeeder`, `AddStartupValidator`) annotate it with `DynamicallyAccessedMembers`, so trimming keeps the constructor the container calls. The helpers that bind an `IConfiguration` (`GetOptions`, `GetRequired`, and the `Configure*` overloads that take one) or validate with data annotations are marked `[RequiresUnreferencedCode]`, and the binding ones also `[RequiresDynamicCode]`, so a trimmed or native AOT app gets a warning at the call site instead of a failure at startup. In such an app, configure options through the `Action<TOptions>` overloads with FluentValidation.
+---
+## Headless.Http.Resilience
+
+Declared side-effect classes for outbound HTTP calls, from which the HttpClient resilience pipeline is derived.
+
+### API and behavior
+
+- `OutboundEffect` -- `Safe` (reads; the pipeline retries every method), `Idempotent` (retries, with one stable key per logical call in the provider's deduplication header, reused across that call's retries, and a caller-set header is kept), `Unsafe` (no automatic retry for POST, PUT, PATCH, DELETE, or CONNECT; reads stay retryable).
+- `EffectResilience.AddEffectResilienceHandler(this IHttpClientBuilder, OutboundEffect, string? idempotencyHeader, Action<HttpStandardResilienceOptions>? configureResilience)` -- derives the pipeline. It first removes resilience handlers already on the builder (`RemoveAllResilienceHandlers`), so a host-wide handler added through `ConfigureHttpClientDefaults` (for example by `AddHeadless()` service defaults) cannot stack as an outer pipeline and retry a declared-unsafe call. `configureResilience` runs after the derived defaults; setting `Retry.ShouldHandle` there is the explicit opt-in to retrying unsafe methods.
+
+### Configuration
+
+None. The provider's setup states its effect at the one place the named client is built: `httpClientBuilder.AddEffectResilienceHandler(OutboundEffect.Unsafe, configureResilience: configureResilience)`.
+
+### Runtime behavior
+
+- The effect is declared per client, not per operation. A client whose reads are also unsafe must not rely on `Unsafe`, because `Unsafe` keeps reads retryable.
+- `RemoveAllResilienceHandlers` is marked experimental (`EXTEXP0001`) in `Microsoft.Extensions.Http.Resilience` 10.10.0; the package suppresses it at the one call site.
+
 ---
 ## Headless.NetTopologySuite
 

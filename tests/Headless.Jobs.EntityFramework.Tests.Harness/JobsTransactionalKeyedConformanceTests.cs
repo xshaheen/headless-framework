@@ -80,17 +80,12 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                                 new JobKeyScope(JobsCoordinationFixtureExtensions.CoordinatedFacadeFunctionName),
                                 key,
                                 2,
-                                enlistment: TransactionEnlistment.Required,
                                 ct
                             )
                         )
                             .Disposition.Should()
                             .Be(JobScheduleDisposition.Cancelled);
-                        await scheduler.EnqueueAsync(
-                            new CoordinatedFacadeRequest(Guid.Empty, "ordinary"),
-                            new JobOptions { Enlistment = TransactionEnlistment.Required },
-                            ct
-                        );
+                        await scheduler.EnqueueAsync(new CoordinatedFacadeRequest(Guid.Empty, "ordinary"), ct);
                         // Conflict is an ordinary disposition: subsequent caller SQL must still succeed.
                         await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, ct);
                         if (!commit)
@@ -117,7 +112,6 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                     key,
                     "first",
                     AbortToken,
-                    required: false,
                     policy: originalPolicy
                 );
                 observed.IsProvisional.Should().BeFalse();
@@ -180,7 +174,6 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                     key,
                     "first",
                     AbortToken,
-                    required: false,
                     policy: originalPolicy
                 );
                 var store = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
@@ -252,8 +245,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                             host.Services.GetRequiredService<IJobScheduler>(),
                             new JobKey("commit-fault"),
                             "first",
-                            AbortToken,
-                            required: false
+                            AbortToken
                         )
                     )
                         .Disposition.Should()
@@ -301,8 +293,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                 host.Services.GetRequiredService<IJobScheduler>(),
                 new JobKey("known-retry"),
                 "first",
-                AbortToken,
-                required: false
+                AbortToken
             );
             observed.Generation.Should().Be(1);
             observed.Disposition.Should().Be(JobScheduleDisposition.Existing);
@@ -346,8 +337,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                     host.Services.GetRequiredService<IJobScheduler>(),
                     key,
                     "first",
-                    AbortToken,
-                    required: false
+                    AbortToken
                 );
                 var operation = () =>
                     fixture.RunCoordinatedTransactionAsync(
@@ -437,16 +427,12 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
         string payload,
         CancellationToken ct,
         long? generation = null,
-        bool required = true,
         DateTimeOffset? due = null,
         JobOptions? policy = null
     )
     {
         var request = new CoordinatedFacadeRequest(Guid.Empty, payload);
-        var options = (policy ?? new JobOptions()) with
-        {
-            Enlistment = required ? TransactionEnlistment.Required : TransactionEnlistment.Optional,
-        };
+        var options = policy ?? new JobOptions();
         return generation is { } observed
             ? scheduler.ReplaceKeyedAsync(key, observed, request, due ?? _Due, options, ct)
             : scheduler.ScheduleKeyedAsync(key, request, due ?? _Due, options, ct);

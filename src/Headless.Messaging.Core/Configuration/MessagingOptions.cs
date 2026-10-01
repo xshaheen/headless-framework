@@ -43,7 +43,7 @@ public sealed class MessagingOptions
     /// <see cref="Version"/> also acts as the cross-process isolation key for the messaging
     /// distributed-lock resources. The two retry-pickup loops acquire locks named
     /// <c>messaging.publish-retry-{Version}</c> and <c>messaging.receive-retry-{Version}</c>
-    /// (see <see cref="Headless.Messaging.Internal.MessagingKeys.PublishRetryResource"/> and
+    /// (see <see cref="Headless.Messaging.Internal.MessagingKeys.PublishRetryResource(string, MessageLane)"/> and
     /// <see cref="Headless.Messaging.Internal.MessagingKeys.ReceiveRetryResource"/>).
     /// </para>
     /// <para>

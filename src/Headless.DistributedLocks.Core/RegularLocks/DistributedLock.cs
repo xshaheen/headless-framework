@@ -448,7 +448,7 @@ public sealed class DistributedLock(
     private DisposableDistributedLock _CreateLockHandle(
         string resource,
         string leaseId,
-        long? fencingToken,
+        LockFencingToken? fencingToken,
         TimeSpan leaseDuration,
         TimeSpan timeWaitedForLock,
         bool releaseOnDispose,

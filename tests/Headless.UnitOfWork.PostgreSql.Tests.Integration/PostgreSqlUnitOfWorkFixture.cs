@@ -173,6 +173,41 @@ public sealed class PostgreSqlUnitOfWorkFixture
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Ends the backend <paramref name="processId" /> from another connection and waits until it is gone, so the
+    /// next command its client sends meets a dropped session. <c>pg_terminate_backend</c> only signals the backend.
+    /// </summary>
+    public static async Task TerminateSessionAsync(
+        string connectionString,
+        int processId,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var admin = new NpgsqlConnection(connectionString);
+        await admin.OpenAsync(cancellationToken);
+
+        await using (var terminate = new NpgsqlCommand("SELECT pg_terminate_backend(@pid)", admin))
+        {
+            terminate.Parameters.AddWithValue("pid", processId);
+            await terminate.ExecuteScalarAsync(cancellationToken);
+        }
+
+        await using var alive = new NpgsqlCommand("SELECT count(*) FROM pg_stat_activity WHERE pid = @pid", admin);
+        alive.Parameters.AddWithValue("pid", processId);
+
+        for (var attempt = 0; attempt < 200; attempt++)
+        {
+            if (Convert.ToInt32(await alive.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture) == 0)
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(25), cancellationToken);
+        }
+
+        throw new TimeoutException($"Backend {processId} was still alive 5 seconds after pg_terminate_backend.");
+    }
+
     public static ServiceProvider BuildProvider(CapturingLoggerProvider? logs = null)
     {
         var services = new ServiceCollection();

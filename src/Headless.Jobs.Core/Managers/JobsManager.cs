@@ -195,7 +195,6 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         // and the unit of work is already retry-prevented.
         var coordinated = _TryCaptureCoordinatedContext(
             unitOfWork,
-            JobAtomicity.IsRequired([entity]) ? TransactionEnlistment.Required : entity.Enlistment,
             entity.Function,
             requireSavepoints: idempotency is not null
         );
@@ -359,12 +358,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken
     )
     {
-        var coordinated = _TryCaptureCoordinatedContext(
-            unitOfWork,
-            entity.Enlistment,
-            entity.Function,
-            requireSavepoints: false
-        );
+        var coordinated = _TryCaptureCoordinatedContext(unitOfWork, entity.Function, requireSavepoints: false);
         var now = timeProvider.GetUtcNow();
         _StampJob(entity, now, assignId: true);
 
@@ -406,7 +400,6 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return entity;
         }
 
-        _RejectDirectCronPersistence([entity]);
         var seed = await persistenceProvider
             .InsertCronJobsAsync([entity], _SeedCronSchedulePosition, cancellationToken)
             .ConfigureAwait(false);
@@ -416,14 +409,6 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         await notificationHubSender.AddCronJobNotifyAsync(entity).ConfigureAwait(false);
 
         return entity;
-    }
-
-    // Capture already throws when a required definition has no compatible live transaction, so this is unreachable
-    // today. It is kept as the invariant guard mirroring JobAtomicity.RejectDirect for time jobs: a future routing
-    // change must not let a required recurring definition fall back to a non-coordinated insert silently.
-    private static void _RejectDirectCronPersistence(IEnumerable<TCronJob> entities)
-    {
-        JobAtomicity.RejectDirect(entities.Any(entity => entity.Enlistment == TransactionEnlistment.Required));
     }
 
     /// <summary>
@@ -930,7 +915,6 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         var coordinated = _TryCaptureCoordinatedContext(
             unitOfWork,
-            JobAtomicity.IsRequired(entities) ? TransactionEnlistment.Required : TransactionEnlistment.Optional,
             $"time-job batch ({entities.Count})",
             requireSavepoints: false
         );
@@ -1094,12 +1078,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        // One required definition makes the whole batch atomic-or-nothing, mirroring JobAtomicity.IsRequired.
         var coordinated = _TryCaptureCoordinatedContext(
             unitOfWork,
-            entities.Exists(entity => entity.Enlistment == TransactionEnlistment.Required)
-                ? TransactionEnlistment.Required
-                : TransactionEnlistment.Optional,
             $"cron-job batch ({entities.Count})",
             requireSavepoints: false
         );
@@ -1195,7 +1175,6 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return validEntities;
         }
 
-        _RejectDirectCronPersistence(validEntities);
         var seed = await persistenceProvider
             .InsertCronJobsAsync([.. validEntities], _SeedCronSchedulePosition, cancellationToken)
             .ConfigureAwait(false);

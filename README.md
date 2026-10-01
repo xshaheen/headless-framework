@@ -313,6 +313,7 @@ One blob storage interface with providers for every major cloud and protocol.
 | [Headless.Blobs.Azure](src/Headless.Blobs.Azure/README.md) | Azure Blob storage |
 | [Headless.Blobs.CloudflareR2](src/Headless.Blobs.CloudflareR2/README.md) | Cloudflare R2 (S3-compatible) blob storage |
 | [Headless.Blobs.FileSystem](src/Headless.Blobs.FileSystem/README.md) | Local filesystem storage |
+| [Headless.Blobs.MultiTenancy](src/Headless.Blobs.MultiTenancy/README.md) | Tenant scoping for blob stores |
 | [Headless.Blobs.Redis](src/Headless.Blobs.Redis/README.md) | Redis blob storage |
 | [Headless.Blobs.SignedUrlEndpoint](src/Headless.Blobs.SignedUrlEndpoint/README.md) | Signed download and upload URLs for blob stores without native presign |
 | [Headless.Blobs.SshNet](src/Headless.Blobs.SshNet/README.md) | SFTP blob storage |
@@ -596,7 +597,7 @@ Explicit unit of work: begin it on the line you choose from a singleton factory,
 
 | Package | Description |
 |---------|-------------|
-| [Headless.UnitOfWork.Abstractions](src/Headless.UnitOfWork.Abstractions/README.md) | Unit-of-work contracts: `IUnitOfWorkFactory`, `IUnitOfWork`, `IUnitOfWorkResource`, `IUnitOfWorkFeature`, `TransactionEnlistment` (zero dependencies) |
+| [Headless.UnitOfWork.Abstractions](src/Headless.UnitOfWork.Abstractions/README.md) | Unit-of-work contracts: `IUnitOfWorkFactory`, `IUnitOfWork`, `IUnitOfWorkResource`, `IUnitOfWorkFeature` (zero dependencies) |
 | [Headless.UnitOfWork](src/Headless.UnitOfWork/README.md) | The singleton factory, engine, and `AddUnitOfWork()` registration |
 | [Headless.UnitOfWork.EntityFramework](src/Headless.UnitOfWork.EntityFramework/README.md) | EF Core provider: `BeginAsync(db)` / `Enlist(db, tx)` / `RunAsync(db, ...)` |
 | [Headless.UnitOfWork.PostgreSql](src/Headless.UnitOfWork.PostgreSql/README.md) | Raw-ADO `NpgsqlConnection` provider with the same shape |
@@ -685,6 +686,7 @@ Cross-cutting utilities that belong to no single domain.
 | [Headless.Generator.Primitives](src/Headless.Generator.Primitives/README.md) | Primitive types source generator |
 | [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | Generator abstractions |
 | [Headless.Hosting](src/Headless.Hosting/README.md) | .NET hosting utilities |
+| [Headless.Http.Resilience](src/Headless.Http.Resilience/README.md) | Declared side-effect classes for outbound HTTP calls |
 | [Headless.NetTopologySuite](src/Headless.NetTopologySuite/README.md) | Geospatial utilities |
 | [Headless.Primitives](src/Headless.Primitives/README.md) | Value objects, result pattern, paging models, and domain primitives |
 | [Headless.Redis](src/Headless.Redis/README.md) | Redis utilities |

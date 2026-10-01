@@ -5,6 +5,7 @@ using System.Data.Common;
 using Headless.Checks;
 using Headless.UnitOfWork.Internal;
 using Microsoft.Data.SqlClient;
+using Polly.Retry;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.UnitOfWork;
@@ -12,16 +13,22 @@ namespace Headless.UnitOfWork;
 /// <summary>
 /// SqlClient entry points for the unit of work: <c>BeginAsync(connection)</c> (owned mode — the unit
 /// begins the transaction eagerly and owns commit), <c>Enlist(connection, transaction)</c> (observed mode — the
-/// caller commits, then calls <c>CompleteAsync</c>), and <c>RunAsync(connection, …)</c> (begin → operation →
-/// complete in one call).
+/// caller commits, then calls <c>CompleteAsync</c>), <c>RunAsync(connection, …)</c> (begin → operation → complete
+/// in one call, never replayed), and <c>RunAsync(connectionFactory, …)</c> (the same on a connection of its own per
+/// attempt, replayable).
 /// </summary>
 /// <remarks>
 /// SqlClient exposes no commit edge to observe, so observed mode is explicit: after committing the transaction
 /// the caller calls <see cref="IUnitOfWork.CompleteAsync" />, after rolling it back <see cref="IUnitOfWork.RollbackAsync" />.
 /// A unit disposed without either after its transaction completed is logged by the factory as a forgotten
-/// completion. There is no execution-strategy retry for raw ADO (an EF Core concept); a throwing operation rolls
-/// the unit back and discards the enlisted work. A closed connection is opened for the unit's duration and closed
-/// again afterwards; an already-open connection is left open.
+/// completion. A throwing operation rolls the unit back and discards the enlisted work. A closed connection is
+/// opened for the unit's duration and closed again afterwards; an already-open connection is left open.
+/// <para>
+/// Only <c>RunAsync(connectionFactory, …)</c> replays, under <see cref="UnitOfWorkRetryOptions" /> or the call's own
+/// <see cref="RetryStrategyOptions" />: each attempt takes a new connection from the factory, so a replay never runs
+/// on the connection that just failed. SqlClient ships no <c>DbDataSource</c>, hence the factory delegate.
+/// <c>RunAsync(connection, …)</c> takes a connection the caller owns, so it never replays.
+/// </para>
 /// <para>
 /// Begin and enlist bind the unit to the connection (<see cref="HeadlessDbConnectionUnitOfWorkExtensions.UnitOfWork" />), and
 /// <c>RunAsync(connection, …)</c> on a connection that already carries a live unit joins it: the block runs
@@ -89,7 +96,9 @@ public static class UnitOfWorkFactorySqlServerExtensions
         /// begin → operation → <c>CompleteAsync</c>. A throwing operation rolls the unit back and rethrows; a
         /// drain fault after a durable commit is logged, never surfaced. When the connection already carries a
         /// live unit, the block joins it instead: it receives that unit, and commit or rollback stay with its
-        /// owner; a block that ends the unit itself is refused once it returns.
+        /// owner; a block that ends the unit itself is refused once it returns. Never replays: the caller owns the
+        /// connection, and replaying on a connection that just failed is pointless. Use
+        /// <c>RunAsync(Func&lt;CancellationToken, ValueTask&lt;SqlConnection&gt;&gt;, …)</c> for a replayable block.
         /// </summary>
         /// <param name="connection">The connection to operate on; opened when closed.</param>
         /// <param name="operation">The block receiving the unit and the caller's cancellation token.</param>
@@ -111,7 +120,7 @@ public static class UnitOfWorkFactorySqlServerExtensions
             Argument.IsNotNull(operation);
 
             return UnitOfWorkRunner.RunAsync(
-                connection.UnitOfWork(),
+                () => DbConnectionUnitOfWorkBinding.TryGetAsync(connection),
                 ct =>
                     BoundConnectionUnitOfWork.BeginAsync(
                         factory,
@@ -125,6 +134,7 @@ public static class UnitOfWorkFactorySqlServerExtensions
 
                     return true;
                 },
+                NoReplayUnitOfWorkExecutionStrategy.Instance,
                 UnitOfWorkRunner.LoggerFor(factory),
                 cancellationToken
             );
@@ -132,7 +142,7 @@ public static class UnitOfWorkFactorySqlServerExtensions
 
         /// <summary>
         /// Runs <paramref name="operation" /> as an owned unit of work on <paramref name="connection" /> and returns
-        /// its result, with the same semantics as the result-less <c>RunAsync</c> overload.
+        /// its result, with the same semantics as the result-less <c>RunAsync</c> overload. Never replays.
         /// </summary>
         /// <typeparam name="TResult">Type of the value returned by <paramref name="operation" />.</typeparam>
         /// <param name="connection">The connection to operate on; opened when closed.</param>
@@ -156,7 +166,7 @@ public static class UnitOfWorkFactorySqlServerExtensions
             Argument.IsNotNull(operation);
 
             return UnitOfWorkRunner.RunAsync(
-                connection.UnitOfWork(),
+                () => DbConnectionUnitOfWorkBinding.TryGetAsync(connection),
                 ct =>
                     BoundConnectionUnitOfWork.BeginAsync(
                         factory,
@@ -165,10 +175,158 @@ public static class UnitOfWorkFactorySqlServerExtensions
                         ct
                     ),
                 operation,
+                NoReplayUnitOfWorkExecutionStrategy.Instance,
                 UnitOfWorkRunner.LoggerFor(factory),
                 cancellationToken
             );
         }
+
+        /// <summary>
+        /// Runs <paramref name="operation" /> as an owned unit of work on a connection taken from
+        /// <paramref name="connectionFactory" /> for this call: connect → begin → operation → <c>CompleteAsync</c> →
+        /// dispose the connection. A fault before the commit starts that the replay policy classifies as transient
+        /// replays the whole block on a fresh connection, transaction, and unit; a fault once the commit has started,
+        /// or after <see cref="IUnitOfWork.PreventRetry" />, is never replayed and surfaces to the caller. A drain
+        /// fault after a durable commit is logged, never surfaced.
+        /// </summary>
+        /// <param name="connectionFactory">
+        /// Returns a NEW connection for each attempt, open or closed; a closed one is opened. The attempt owns and
+        /// disposes it, so never return a shared or pooled-by-hand instance.
+        /// </param>
+        /// <param name="operation">
+        /// The block receiving the attempt's unit, the attempt's open connection, and the caller's cancellation
+        /// token. Issue every command on that connection, inside the unit's transaction. Do not keep the connection
+        /// beyond the block: it is disposed when the attempt ends.
+        /// </param>
+        /// <param name="isolation">Transaction isolation level for every attempt. Defaults to <see cref="IsolationLevel.ReadCommitted" />.</param>
+        /// <param name="retry">
+        /// This call's replay policy; <see langword="null" /> uses the host's
+        /// <see cref="UnitOfWorkRetryOptions.RetryStrategy" />, and replay is off when both are <see langword="null" />.
+        /// </param>
+        /// <param name="cancellationToken">Cancellation token forwarded to connect, begin, the operation, commit, and replay delays.</param>
+        /// <exception cref="InvalidOperationException"><paramref name="connectionFactory" /> returned <see langword="null" />.</exception>
+        public Task RunAsync(
+            Func<CancellationToken, ValueTask<SqlConnection>> connectionFactory,
+            Func<IUnitOfWork, SqlConnection, CancellationToken, Task> operation,
+            IsolationLevel isolation = IsolationLevel.ReadCommitted,
+            RetryStrategyOptions? retry = null,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Argument.IsNotNull(factory);
+            Argument.IsNotNull(connectionFactory);
+            Argument.IsNotNull(operation);
+
+            return _RunPerAttemptConnectionAsync(
+                factory,
+                connectionFactory,
+                async (unitOfWork, connection, ct) =>
+                {
+                    await operation(unitOfWork, connection, ct).ConfigureAwait(false);
+
+                    return true;
+                },
+                isolation,
+                retry,
+                cancellationToken
+            );
+        }
+
+        /// <summary>
+        /// Runs <paramref name="operation" /> as an owned unit of work on a connection taken from
+        /// <paramref name="connectionFactory" /> and returns its result, with the same replay semantics as the
+        /// result-less <c>RunAsync(Func&lt;CancellationToken, ValueTask&lt;SqlConnection&gt;&gt;, …)</c> overload.
+        /// </summary>
+        /// <typeparam name="TResult">Type of the value returned by <paramref name="operation" />.</typeparam>
+        /// <param name="connectionFactory">Returns a NEW connection for each attempt, open or closed; a closed one is opened.</param>
+        /// <param name="operation">
+        /// The block receiving the attempt's unit, the attempt's open connection, and the caller's cancellation
+        /// token, returning a result. Do not keep the connection beyond the block.
+        /// </param>
+        /// <param name="isolation">Transaction isolation level for every attempt. Defaults to <see cref="IsolationLevel.ReadCommitted" />.</param>
+        /// <param name="retry">
+        /// This call's replay policy; <see langword="null" /> uses the host's
+        /// <see cref="UnitOfWorkRetryOptions.RetryStrategy" />, and replay is off when both are <see langword="null" />.
+        /// </param>
+        /// <param name="cancellationToken">Cancellation token forwarded to connect, begin, the operation, commit, and replay delays.</param>
+        /// <returns>The result produced by the attempt that committed.</returns>
+        /// <exception cref="InvalidOperationException"><paramref name="connectionFactory" /> returned <see langword="null" />.</exception>
+        public Task<TResult> RunAsync<TResult>(
+            Func<CancellationToken, ValueTask<SqlConnection>> connectionFactory,
+            Func<IUnitOfWork, SqlConnection, CancellationToken, Task<TResult>> operation,
+            IsolationLevel isolation = IsolationLevel.ReadCommitted,
+            RetryStrategyOptions? retry = null,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Argument.IsNotNull(factory);
+            Argument.IsNotNull(connectionFactory);
+            Argument.IsNotNull(operation);
+
+            return _RunPerAttemptConnectionAsync(
+                factory,
+                connectionFactory,
+                operation,
+                isolation,
+                retry,
+                cancellationToken
+            );
+        }
+    }
+
+    private static Task<TResult> _RunPerAttemptConnectionAsync<TResult>(
+        IUnitOfWorkFactory factory,
+        Func<CancellationToken, ValueTask<SqlConnection>> connectionFactory,
+        Func<IUnitOfWork, SqlConnection, CancellationToken, Task<TResult>> operation,
+        IsolationLevel isolation,
+        RetryStrategyOptions? retry,
+        CancellationToken cancellationToken
+    )
+    {
+        return UnitOfWorkRunner.RunPerAttemptConnectionAsync(
+            factory,
+            ct => _OpenAttemptConnectionAsync(connectionFactory, ct),
+            (connection, ct) =>
+                BoundConnectionUnitOfWork.BeginAsync(
+                    factory,
+                    connection,
+                    beginCt => _BeginOwnedAsync(connection, isolation, beginCt),
+                    ct
+                ),
+            operation,
+            retry,
+            cancellationToken
+        );
+    }
+
+    private static async ValueTask<SqlConnection> _OpenAttemptConnectionAsync(
+        Func<CancellationToken, ValueTask<SqlConnection>> connectionFactory,
+        CancellationToken cancellationToken
+    )
+    {
+        var connection =
+            await connectionFactory(cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException(
+                "The SqlConnection factory passed to RunAsync returned null. Return a new connection for each attempt."
+            );
+
+        if (connection.State != ConnectionState.Closed)
+        {
+            return connection;
+        }
+
+        try
+        {
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            await connection.DisposeAsync().ConfigureAwait(false);
+
+            throw;
+        }
+
+        return connection;
     }
 
     private static async ValueTask<IUnitOfWorkResource> _BeginOwnedAsync(

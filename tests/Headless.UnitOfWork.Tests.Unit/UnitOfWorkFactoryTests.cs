@@ -30,12 +30,10 @@ public sealed class UnitOfWorkFactoryTests : TestBase
 
         await using var one = await factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(first),
-            options: null,
             AbortToken
         );
         await using var two = await factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(second),
-            options: null,
             AbortToken
         );
 
@@ -62,7 +60,6 @@ public sealed class UnitOfWorkFactoryTests : TestBase
                     factory
                         .BeginAsync(
                             static _ => ValueTask.FromResult<IUnitOfWorkResource>(new FakeUnitOfWorkResource()),
-                            options: null,
                             CancellationToken.None
                         )
                         .AsTask()
@@ -87,7 +84,6 @@ public sealed class UnitOfWorkFactoryTests : TestBase
             factory
                 .BeginAsync(
                     static _ => ValueTask.FromException<IUnitOfWorkResource>(new InvalidOperationException("boom")),
-                    options: null,
                     AbortToken
                 )
                 .AsTask();
@@ -104,7 +100,6 @@ public sealed class UnitOfWorkFactoryTests : TestBase
             var resource = new FakeUnitOfWorkResource();
             var unitOfWork = await factory.BeginAsync(
                 _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-                options: null,
                 cancellationToken: AbortToken
             );
 
@@ -181,11 +176,7 @@ public sealed class UnitOfWorkFactoryTests : TestBase
     {
         var (factory, logger) = Create();
         var resource = new FakeUnitOfWorkResource { RollbackFault = new InvalidOperationException("rollback down") };
-        var unitOfWork = await factory.BeginAsync(
-            _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
-            AbortToken
-        );
+        var unitOfWork = await factory.BeginAsync(_ => ValueTask.FromResult<IUnitOfWorkResource>(resource), AbortToken);
         UnitOfWorkFailure? observed = null;
         unitOfWork.OnFailed(failure =>
         {
@@ -210,7 +201,6 @@ public sealed class UnitOfWorkFactoryTests : TestBase
         var resource = new FakeUnitOfWorkResource { RollbackFault = new InvalidOperationException("rollback down") };
         await using var unitOfWork = await factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
             AbortToken
         );
         UnitOfWorkFailure? observed = null;
@@ -245,8 +235,6 @@ public sealed class UnitOfWorkFactoryTests : TestBase
         }
             .Should()
             .Equal(0, 1, 2, 3);
-
-        new[] { (int)TransactionEnlistment.Optional, (int)TransactionEnlistment.Required }.Should().Equal(0, 1);
     }
 
     [Fact]

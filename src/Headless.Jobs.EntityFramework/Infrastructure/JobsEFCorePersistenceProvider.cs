@@ -247,7 +247,6 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
 
     public async Task<int> AddTimeJobsAsync(TTimeJob[] jobs, CancellationToken cancellationToken = default)
     {
-        JobAtomicity.RejectDirect(jobs);
         foreach (var job in jobs)
         {
             JobIntentFingerprint.RejectOrdinaryMutation(job);
@@ -292,7 +291,6 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
 
     public async Task<int> UpdateTimeJobsAsync(TTimeJob[] timeJobs, CancellationToken cancellationToken = default)
     {
-        JobAtomicity.RejectDirect(timeJobs);
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);

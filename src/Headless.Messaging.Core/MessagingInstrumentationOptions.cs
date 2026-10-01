@@ -18,19 +18,6 @@ public sealed class MessagingInstrumentationOptions
     private readonly List<IActivityTagEnricher> _enrichers = [];
 
     /// <summary>
-    /// When <see langword="true"/>, the built-in <c>headless.messaging.tenant_id</c> tag enricher
-    /// is not registered, so tenant identifiers are not written to messaging activity spans.
-    /// Default: <see langword="false"/>.
-    /// </summary>
-    /// <remarks>
-    /// In shared multi-tenant trace backends, the <c>headless.messaging.tenant_id</c> tag becomes
-    /// visible across tenants — any operator with access to the trace store sees every tenant's
-    /// IDs. Set this to <see langword="true"/> to opt out of tenant-ID tagging, or pair the
-    /// framework with a tenant-scoped trace exporter so each tenant only sees its own spans.
-    /// </remarks>
-    public bool SuppressTenantIdTag { get; set; }
-
-    /// <summary>
     /// When <see langword="true"/>, the built-in <c>headless.messaging.retry_count</c> tag enricher
     /// is not registered, so retry counts are not written to subscriber-invoke activity spans.
     /// Default: <see langword="false"/>.
@@ -54,7 +41,11 @@ public sealed class MessagingInstrumentationOptions
     /// Includes tenant identity on inbox metric measurements. Disabled by default because tenant identifiers are an
     /// application-controlled, potentially unbounded metric dimension.
     /// </summary>
-    /// <remarks>Trace enrichment is configured separately by <see cref="SuppressTenantIdTag"/>.</remarks>
+    /// <remarks>
+    /// The tag uses <see cref="Headless.MultiTenancy.TenantTelemetryOptions.AttributeName"/> (default <c>tenant.id</c>).
+    /// The tenant attribute on messaging spans is controlled by
+    /// <see cref="Headless.MultiTenancy.TenantTelemetryOptions.EnrichTraces"/>.
+    /// </remarks>
     public bool IncludeTenantIdInMetricTags { get; set; }
 
     /// <summary>
@@ -63,9 +54,10 @@ public sealed class MessagingInstrumentationOptions
     /// (<c>AddHeadlessMessaging</c>); changes after registration are ignored.
     /// </summary>
     /// <remarks>
-    /// Built-in enrichers run first, in the following order:
+    /// The tenant attribute (<see cref="Headless.MultiTenancy.TenantTelemetryOptions.AttributeName"/>, when
+    /// <see cref="Headless.MultiTenancy.TenantTelemetryOptions.EnrichTraces"/> is on and the message carries a tenant) is
+    /// written before any enricher runs. Built-in enrichers run next, in the following order:
     /// <list type="number">
-    /// <item><description><c>TenantIdTagEnricher</c> (unless <see cref="SuppressTenantIdTag"/> is <see langword="true"/>).</description></item>
     /// <item><description><c>LaneTagEnricher</c> (unless <see cref="SuppressLaneTags"/> is <see langword="true"/>).</description></item>
     /// <item><description><c>DeliveryModeTagEnricher</c> (unless <see cref="SuppressDeliveryModeTags"/> is <see langword="true"/>).</description></item>
     /// <item><description><c>RetryCountTagEnricher</c> (unless <see cref="SuppressRetryCountTag"/> is <see langword="true"/>).</description></item>
@@ -89,7 +81,7 @@ public sealed class MessagingInstrumentationOptions
 
     /// <summary>
     /// Builds the snapshot of enrichers to register for the current options state. Returns the built-in
-    /// enrichers (gated by <see cref="SuppressTenantIdTag"/>, <see cref="SuppressLaneTags"/>,
+    /// enrichers (gated by <see cref="SuppressLaneTags"/>,
     /// <see cref="SuppressDeliveryModeTags"/>, and <see cref="SuppressRetryCountTag"/>) followed by any custom enrichers added via
     /// <see cref="AddEnricher"/>, in registration order.
     /// </summary>
@@ -102,11 +94,6 @@ public sealed class MessagingInstrumentationOptions
     public IActivityTagEnricher[] BuildEnrichers()
     {
         var list = new List<IActivityTagEnricher>();
-
-        if (!SuppressTenantIdTag)
-        {
-            list.Add(new TenantIdTagEnricher());
-        }
 
         if (!SuppressLaneTags)
         {

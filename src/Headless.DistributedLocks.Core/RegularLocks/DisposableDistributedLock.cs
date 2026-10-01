@@ -33,7 +33,7 @@ internal sealed class DisposableDistributedLock : DistributedLockHandleBase
     internal DisposableDistributedLock(
         string resource,
         string leaseId,
-        long? fencingToken,
+        LockFencingToken? fencingToken,
         TimeSpan leaseDuration,
         TimeSpan timeWaitedForLock,
         IDistributedLock lockProvider,

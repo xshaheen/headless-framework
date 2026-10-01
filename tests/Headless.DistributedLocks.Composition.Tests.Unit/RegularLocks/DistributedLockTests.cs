@@ -174,7 +174,7 @@ public sealed class DistributedLockTests : TestBase
         result.Should().NotBeNull();
         result!.Resource.Should().Be(resource);
         result.LeaseId.Should().Be("00112233445566778899aabbccddeeff");
-        result.FencingToken.Should().Be(1);
+        result.FencingToken.Should().Be(new LockFencingToken(1));
     }
 
     [Fact]
@@ -191,8 +191,8 @@ public sealed class DistributedLockTests : TestBase
         await using var second = await provider.AcquireAsync(resource, cancellationToken: AbortToken);
 
         // then
-        firstToken.Should().Be(1);
-        second.FencingToken.Should().Be(2);
+        firstToken.Should().Be(new LockFencingToken(1));
+        second.FencingToken.Should().Be(new LockFencingToken(2));
     }
 
     [Fact]
@@ -235,7 +235,7 @@ public sealed class DistributedLockTests : TestBase
 
         // then
         renewed.Should().BeTrue();
-        handle.FencingToken.Should().Be(1);
+        handle.FencingToken.Should().Be(new LockFencingToken(1));
     }
 
     [Fact]
@@ -441,7 +441,7 @@ public sealed class DistributedLockTests : TestBase
                 // Succeed on 3rd attempt
                 return ValueTask.FromResult(
                     callCount >= 3
-                        ? new DistributedLockAcquireResult(Acquired: true, FencingToken: 1)
+                        ? new DistributedLockAcquireResult(Acquired: true, FencingToken: new LockFencingToken(1))
                         : DistributedLockAcquireResult.Failed
                 );
             });
@@ -1118,7 +1118,7 @@ public sealed class DistributedLockTests : TestBase
         var storage = Substitute.For<IDistributedLockStorage>();
         storage
             .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(new DistributedLockAcquireResult(Acquired: true, FencingToken: 1));
+            .Returns(new DistributedLockAcquireResult(Acquired: true, FencingToken: new LockFencingToken(1)));
         storage
             .RemoveIfEqualAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns<ValueTask<bool>>(_ => throw new InvalidOperationException("release failed"));
@@ -1625,9 +1625,9 @@ public sealed class DistributedLockTests : TestBase
 
     private sealed class FencedProtectedResource
     {
-        private long _lastSeenFence;
+        private LockFencingToken? _lastSeenFence;
 
-        public bool TryWrite(long? fencingToken)
+        public bool TryWrite(LockFencingToken? fencingToken)
         {
             if (fencingToken is not { } token || token < _lastSeenFence)
             {

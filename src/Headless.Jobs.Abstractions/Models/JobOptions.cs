@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Jobs.Enums;
-using Headless.UnitOfWork;
 
 namespace Headless.Jobs.Models;
 
@@ -10,18 +9,12 @@ namespace Headless.Jobs.Models;
 /// Priority is generated from <c>[Job]</c> metadata and is intentionally not a per-enqueue option.
 /// Keyed scheduling captures resolved retries, intervals, and node-death policy when a generation is created.
 /// These fields, including explicit overrides, do not change keyed intent or update a matching existing generation.
-/// Generation-fenced replacement captures the replacement call's resolved policy. Options validation and the
-/// resolved <see cref="Enlistment"/> still apply to every call, including observation of an existing key.
+/// Generation-fenced replacement captures the replacement call's resolved policy. Options validation still applies
+/// to every call, including observation of an existing key.
 /// </remarks>
 [PublicAPI]
 public sealed record JobOptions
 {
-    /// <summary>
-    /// How eagerly this job enlists in the active unit of work. See <see cref="TransactionEnlistment"/> for the
-    /// guarantee matrix; the effective value is the strictest across call, function policy, and host default.
-    /// </summary>
-    public TransactionEnlistment Enlistment { get; init; }
-
     /// <summary>Root business correlation; defaults to the executing parent's correlation or the new row ID.</summary>
     public string? CorrelationId { get; init; }
 

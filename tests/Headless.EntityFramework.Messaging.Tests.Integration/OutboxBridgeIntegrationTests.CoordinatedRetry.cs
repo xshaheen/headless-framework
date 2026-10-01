@@ -112,7 +112,6 @@ public sealed partial class OutboxBridgeIntegrationTests
             await unitOfWork.Jobs.ScheduleKeyedAsync<DeadlineJob>(
                 new JobKey(evidence.Key),
                 evidence.Due,
-                new JobOptions { Enlistment = TransactionEnlistment.Required },
                 cancellationToken
             );
             evidence.Writes++;

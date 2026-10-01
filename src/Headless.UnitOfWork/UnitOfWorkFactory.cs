@@ -23,20 +23,33 @@ namespace Headless.UnitOfWork;
 /// The registration lifetimes <c>AddUnitOfWork()</c> captured, which refuse a non-singleton feature before it
 /// resolves; <see langword="null" /> for a factory constructed by hand, which then trusts the provider.
 /// </param>
+/// <param name="retryOptions">
+/// The host's default replay policy for the per-attempt-connection <c>RunAsync</c> overloads;
+/// <see langword="null" /> disables replay unless a call passes its own.
+/// </param>
 internal sealed partial class UnitOfWorkFactory(
     ILogger<UnitOfWorkFactory>? logger = null,
     IServiceProvider? services = null,
-    UnitOfWorkFeatureLifetimes? featureLifetimes = null
+    UnitOfWorkFeatureLifetimes? featureLifetimes = null,
+    UnitOfWorkRetryOptions? retryOptions = null
 ) : IUnitOfWorkFactory
 {
+    // Built on first use rather than in the constructor, so an invalid strategy fails the first replaying
+    // RunAsync with Polly's validation message instead of failing every resolve of the factory.
+    private readonly Lazy<IUnitOfWorkExecutionStrategy> _defaultReplayStrategy = new(() =>
+        retryOptions?.RetryStrategy is { } retryStrategy
+            ? ResiliencePipelineUnitOfWorkExecutionStrategy.Create(retryStrategy)
+            : NoReplayUnitOfWorkExecutionStrategy.Instance
+    );
+
     /// <summary>The factory's logger, shared with the provider runners so post-commit drain faults land in one category.</summary>
     internal ILogger Logger { get; } = logger ?? NullLogger<UnitOfWorkFactory>.Instance;
 
+    /// <summary>The host's replay strategy for a per-attempt-connection <c>RunAsync</c> that passes none of its own.</summary>
+    internal IUnitOfWorkExecutionStrategy DefaultReplayStrategy => _defaultReplayStrategy.Value;
+
     /// <inheritdoc />
-    public ValueTask<IUnitOfWork> BeginAsync(
-        UnitOfWorkOptions? options = null,
-        CancellationToken cancellationToken = default
-    )
+    public ValueTask<IUnitOfWork> BeginAsync(CancellationToken cancellationToken = default)
     {
 #pragma warning disable CA2000 // The handle is the value being handed out; the caller completes or disposes it.
         return ValueTask.FromResult<IUnitOfWork>(_Open(resource: null));
@@ -46,7 +59,6 @@ internal sealed partial class UnitOfWorkFactory(
     /// <inheritdoc />
     public async ValueTask<IUnitOfWork> BeginAsync(
         Func<CancellationToken, ValueTask<IUnitOfWorkResource>> beginResource,
-        UnitOfWorkOptions? options,
         CancellationToken cancellationToken
     )
     {
@@ -58,7 +70,7 @@ internal sealed partial class UnitOfWorkFactory(
     }
 
     /// <inheritdoc />
-    public IUnitOfWork Enlist(IUnitOfWorkResource resource, UnitOfWorkOptions? options = null)
+    public IUnitOfWork Enlist(IUnitOfWorkResource resource)
     {
         Argument.IsNotNull(resource);
 
@@ -99,23 +111,44 @@ internal sealed partial class UnitOfWorkFactory(
 
         if (unit.Resource is { IsOwned: true } resource)
         {
+            var cancelledBeforeCommit = cancellationToken.IsCancellationRequested;
+
             try
             {
                 await resource.CommitAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                // The commit faulted: the unit transitions to Failed before the exception propagates, so a
-                // second CompleteAsync throws the "already failed" message rather than re-committing.
-                var failure = new UnitOfWorkFailure(UnitOfWorkFailureReason.Faulted, ex);
+                // A commit that may have reached the database is reported as in-doubt, with its own exception type,
+                // because a caller that treats it as a certain rollback and retries can apply the operation twice.
+                var inDoubt = InDoubtCommitFaults.IsInDoubt(ex, cancelledBeforeCommit)
+                    ? new UnitOfWorkInDoubtException(ex)
+                    : null;
+                var failure = inDoubt is null
+                    ? new UnitOfWorkFailure(UnitOfWorkFailureReason.Faulted, ex)
+                    : new UnitOfWorkFailure(UnitOfWorkFailureReason.InDoubt, inDoubt);
 
+                // The unit transitions to Failed before the exception propagates, so a second CompleteAsync throws
+                // the "already failed" message rather than re-committing.
                 unit.TransitionCompletedToFailed(failure);
+
+                if (inDoubt is not null)
+                {
+                    LogCommitInDoubt(Logger, ex);
+                }
+
                 // The owned transaction is still open when the commit never reached the database (an interceptor
                 // or a network fault before the commit) and would otherwise hold its locks until the connection
                 // dies; roll it back best-effort. A resource whose commit did land reports the transaction as
                 // finished and treats this as a dispose.
                 await _RollbackAfterCommitFaultAsync(resource).ConfigureAwait(false);
                 await _DrainFailedQuietlyAsync(claim, failure).ConfigureAwait(false);
+
+                if (inDoubt is not null)
+                {
+                    throw inDoubt;
+                }
+
                 ExceptionDispatchInfo.Capture(ex).Throw();
             }
         }
@@ -293,6 +326,14 @@ internal sealed partial class UnitOfWorkFactory(
     )]
     // ReSharper disable once InconsistentNaming
     private static partial void LogBackgroundDrainFaulted(ILogger logger, Exception? exception);
+
+    [LoggerMessage(
+        EventId = 7,
+        Level = LogLevel.Warning,
+        Message = "A unit of work's commit may have reached the database before its connection failed, so the transaction may or may not have committed; its OnCompleted work did not run. Before retrying the business operation, check its durable idempotency key (IIdempotentOperations.PeekAsync) instead of retrying blind. Enlisted outbox and job rows are delivered by the relay if the commit landed."
+    )]
+    // ReSharper disable once InconsistentNaming
+    private static partial void LogCommitInDoubt(ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 5,

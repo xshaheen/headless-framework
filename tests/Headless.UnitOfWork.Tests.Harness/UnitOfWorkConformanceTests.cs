@@ -322,7 +322,6 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
 
         await using var unitOfWork = await session.Factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
             cancellationToken: AbortToken
         );
 
@@ -350,7 +349,6 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         await using (
             var inner = await session.Factory.BeginAsync(
                 _ => ValueTask.FromResult<IUnitOfWorkResource>(new StubRelationalUnitOfWorkResource()),
-                options: null,
                 cancellationToken: AbortToken
             )
         )
@@ -387,12 +385,10 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
 
         await using var first = await session.Factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
             cancellationToken: AbortToken
         );
         await using var second = await session.Factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
             cancellationToken: AbortToken
         );
 
@@ -430,7 +426,6 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
                 .Factory.BeginAsync(
                     static _ =>
                         ValueTask.FromException<IUnitOfWorkResource>(new InvalidOperationException("begin fault")),
-                    options: null,
                     cancellationToken: AbortToken
                 )
                 .AsTask();
@@ -439,7 +434,6 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
 
         await using var second = await session.Factory.BeginAsync(
             static _ => ValueTask.FromResult<IUnitOfWorkResource>(new FakeUnitOfWorkResource()),
-            options: null,
             cancellationToken: AbortToken
         );
 
@@ -454,7 +448,6 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
 
         await using var unitOfWork = await session.Factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
             cancellationToken: AbortToken
         );
 
@@ -471,7 +464,6 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         var resource = new FakeUnitOfWorkResource();
         var unitOfWork = await session.Factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
             cancellationToken: AbortToken
         );
 
@@ -482,7 +474,6 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
         var second = new FakeUnitOfWorkResource();
         var secondUnit = await session.Factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(second),
-            options: null,
             cancellationToken: AbortToken
         );
 
@@ -499,7 +490,6 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
 
         await using var unitOfWork = await session.Factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
             cancellationToken: AbortToken
         );
 
@@ -516,7 +506,6 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
 
         var unitOfWork = await session.Factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
             cancellationToken: AbortToken
         );
 
@@ -535,7 +524,6 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
 
         var unitOfWork = await session.Factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
             cancellationToken: AbortToken
         );
 
@@ -553,7 +541,6 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
 
         await using var unitOfWork = await session.Factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
             cancellationToken: AbortToken
         );
         UnitOfWorkFailure? failure = null;
@@ -597,7 +584,6 @@ public abstract class UnitOfWorkConformanceTests<TFixture>(TFixture fixture) : T
 
         await using var unitOfWork = await session.Factory.BeginAsync(
             _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
-            options: null,
             cancellationToken: AbortToken
         );
 

@@ -20,13 +20,14 @@ public interface IDistributedLease : IAsyncDisposable
     /// one sequence shared by all resources), so the protected resource must store the highest token it has accepted
     /// and reject any write whose token is less than or equal to it, never compare for equality. This is distinct from
     /// <see cref="LeaseId"/>, which remains the opaque ownership token used for release and renew equality checks.
+    /// Never compare it with a <c>Headless.Fencing</c> lease generation; see <see cref="LockFencingToken"/>.
     /// Returns <see langword="null"/> when the backend or lock type does not issue fencing tokens.
     /// </summary>
     /// <remarks>
     /// The lock tells this process it may run; only the fencing check at the protected resource stops a write made
     /// after the lease was lost without this process noticing (a pause, a partition, or clock skew).
     /// </remarks>
-    long? FencingToken { get; }
+    LockFencingToken? FencingToken { get; }
 
     /// <summary>A name that uniquely identifies the leased resource.</summary>
     string Resource { get; }

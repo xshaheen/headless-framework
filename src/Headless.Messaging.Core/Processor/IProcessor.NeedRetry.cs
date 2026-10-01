@@ -58,7 +58,8 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         MethodMatcherCache? consumerResolver = null,
         IMessagingCapabilityModel? capabilityModel = null,
         InboxMetricPolicy? inboxMetricPolicy = null,
-        ConsumerRegistry? consumerRegistry = null
+        ConsumerRegistry? consumerRegistry = null,
+        MessagingOutboxes? outboxes = null
     )
     {
         _options = options;
@@ -70,19 +71,30 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         _circuitBreakerStateManager = circuitBreakerStateManager;
         _consumerResolver = consumerResolver;
         _capabilityModel = capabilityModel;
-        _inboxMetricPolicy = inboxMetricPolicy ?? new InboxMetricPolicy(IncludeTenantId: false);
+        _inboxMetricPolicy = inboxMetricPolicy ?? new InboxMetricPolicy(TenantTagName: null);
         _consumerRegistry = consumerRegistry;
 
         _adaptivePolling = retryOptions.Value.AdaptivePolling;
         _maxInterval = retryOptions.Value.MaxPollingInterval;
         _circuitOpenRateThreshold = retryOptions.Value.CircuitOpenRateThreshold;
 
+        // Each additional outbox relays through its own publish quadrants: its own lock, pickup-failure count, and
+        // backoff, run as its own task, so an unreachable database backs off alone while the others keep relaying.
+        var secondaries = outboxes?.Secondaries ?? [];
         _quadrantStates =
         [
             _CreateState(MessageType.Publish, MessageLane.Bus),
             _CreateState(MessageType.Publish, MessageLane.Queue),
             _CreateState(MessageType.Subscribe, MessageLane.Bus),
             _CreateState(MessageType.Subscribe, MessageLane.Queue),
+            .. secondaries.SelectMany(
+                (outbox, index) =>
+                    new[]
+                    {
+                        _CreateOutboxState(outbox, index + 1, MessageLane.Bus),
+                        _CreateOutboxState(outbox, index + 1, MessageLane.Queue),
+                    }
+            ),
         ];
         _quadrants = _quadrantStates.ToDictionary(state => state.Key);
     }
@@ -113,23 +125,28 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         return _GetState(direction, lane).CurrentInterval;
     }
 
-    internal int GetPickupFailureCountForTest(MessageType direction, MessageLane lane)
+    internal int GetPickupFailureCountForTest(MessageType direction, MessageLane lane, int outbox = 0)
     {
-        return Volatile.Read(ref _GetState(direction, lane)._consecutivePickupFailures);
+        return Volatile.Read(ref _GetState(direction, lane, outbox)._consecutivePickupFailures);
     }
 
-    internal async Task WaitForQuadrantIdleForTestAsync(MessageType direction, MessageLane lane)
+    internal string GetLockResourceForTest(MessageType direction, MessageLane lane, int outbox = 0)
     {
-        var state = _GetState(direction, lane);
+        return _GetState(direction, lane, outbox).LockResource;
+    }
+
+    internal async Task WaitForQuadrantIdleForTestAsync(MessageType direction, MessageLane lane, int outbox = 0)
+    {
+        var state = _GetState(direction, lane, outbox);
         while (state.ActiveTask is { } task)
         {
             await task.ConfigureAwait(false);
         }
     }
 
-    internal void MarkQuadrantDueForTest(MessageType direction, MessageLane lane)
+    internal void MarkQuadrantDueForTest(MessageType direction, MessageLane lane, int outbox = 0)
     {
-        _GetState(direction, lane).MarkDue();
+        _GetState(direction, lane, outbox).MarkDue();
     }
 
     internal TimeSpan GetQuadrantDelayForTest(MessageType direction, MessageLane lane, DateTimeOffset now)
@@ -243,6 +260,14 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
 
                 startedThisTurn.Add(state.Key);
                 state.ScheduleNext(now);
+
+                // An outbox not initialized since startup is only rechecked, not polled: its initialization retry
+                // already reports the outage, and the schema it polls may not exist yet.
+                if (state.Outbox is { IsInitialized: false })
+                {
+                    continue;
+                }
+
                 var task = Task
                     .Factory.StartNew(
                         () => _ProcessQuadrantAsync(state, storage, context),
@@ -285,6 +310,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
     )
     {
         context.ThrowIfStopping();
+        connection = state.Outbox?.Storage ?? connection;
 
         if (!_options.Value.UseStorageLock)
         {
@@ -422,6 +448,8 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                         $"Retry pickup for lane '{state.Key.Lane}' returned persisted lane '{persistedLane}'."
                     );
                 }
+
+                message.OutboxStorage = state.Outbox?.Storage;
 
                 if (_dispatcher is IRetryDispatcher retryDispatcher)
                 {
@@ -687,7 +715,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
             tier,
             storageCapability.Provider,
             message.Origin.Headers.TryGetValue(Headers.TenantId, out var tenantId) ? tenantId : null,
-            _inboxMetricPolicy.IncludeTenantId
+            _inboxMetricPolicy.TenantTagName
         );
     }
 
@@ -921,9 +949,21 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         return new RetryQuadrantState(new RetryQuadrantKey(direction, lane), resource, _baseInterval);
     }
 
-    private RetryQuadrantState _GetState(MessageType direction, MessageLane lane)
+    private RetryQuadrantState _CreateOutboxState(MessagingOutbox outbox, int ordinal, MessageLane lane)
     {
-        var key = new RetryQuadrantKey(direction, lane);
+        var resource = MessagingKeys.PublishRetryResource(_options.Value.Version, lane, outbox.LockKey);
+
+        return new RetryQuadrantState(
+            new RetryQuadrantKey(MessageType.Publish, lane, ordinal),
+            resource,
+            _baseInterval,
+            outbox
+        );
+    }
+
+    private RetryQuadrantState _GetState(MessageType direction, MessageLane lane, int outbox = 0)
+    {
+        var key = new RetryQuadrantKey(direction, lane, outbox);
         return _quadrants.TryGetValue(key, out var state)
             ? state
             : throw new InvalidOperationException(
@@ -931,10 +971,16 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
             );
     }
 
-    private sealed record RetryQuadrantKey(MessageType Direction, MessageLane Lane);
+    // Outbox 0 is the primary storage; additional outboxes are numbered from 1 in registration order.
+    private sealed record RetryQuadrantKey(MessageType Direction, MessageLane Lane, int Outbox = 0);
 
 #pragma warning disable IDE1006, IDE0032 // Atomic state fields follow the processor's private-field convention.
-    private sealed class RetryQuadrantState(RetryQuadrantKey key, string lockResource, TimeSpan baseInterval)
+    private sealed class RetryQuadrantState(
+        RetryQuadrantKey key,
+        string lockResource,
+        TimeSpan baseInterval,
+        MessagingOutbox? outbox = null
+    )
     {
         private long _nextPollUtcTicks;
         private Task? _activeTask;
@@ -947,7 +993,12 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
 
         public RetryQuadrantKey Key { get; } = key;
         public string LockResource { get; } = lockResource;
-        public string DisplayName => $"{Key.Direction}-{Key.Lane}";
+
+        /// <summary>The additional outbox this quadrant relays, or <see langword="null" /> for the primary storage.</summary>
+        public MessagingOutbox? Outbox { get; } = outbox;
+
+        public string DisplayName =>
+            Outbox is null ? $"{Key.Direction}-{Key.Lane}" : $"{Key.Direction}-{Key.Lane} ({Outbox.Name})";
         public TimeSpan CurrentInterval => TimeSpan.FromTicks(Interlocked.Read(ref _currentIntervalTicks));
 
         public Task? ActiveTask
