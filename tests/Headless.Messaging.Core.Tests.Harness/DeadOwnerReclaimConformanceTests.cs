@@ -276,7 +276,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
         await storage.ChangePublishStateAsync(
             published,
             StatusName.Failed,
-            nextRetryAt: _Now().AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
         (await storage.LeasePublishAsync(published, leaseDuration, AbortToken))
@@ -292,7 +292,7 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
         await storage.ChangeReceiveStateAsync(
             received,
             StatusName.Failed,
-            nextRetryAt: _Now().AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
         (await storage.LeaseReceiveAsync(received, leaseDuration, AbortToken))
@@ -328,11 +328,6 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
             : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
 
         return retriable.Any(message => message.StorageId == storageId);
-    }
-
-    private static DateTimeOffset _Now()
-    {
-        return TimeProvider.System.GetUtcNow();
     }
 
     private static TimeSpan _FutureLease()

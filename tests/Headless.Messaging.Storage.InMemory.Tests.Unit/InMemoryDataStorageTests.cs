@@ -597,6 +597,14 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         return base.should_change_publish_state();
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task should_keep_a_later_due_time_only_when_the_retry_delay_asks_to(bool published)
+    {
+        return base.should_keep_a_later_due_time_only_when_the_retry_delay_asks_to(published);
+    }
+
     [Fact]
     public override Task should_change_receive_state()
     {
@@ -872,7 +880,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: now.AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 
@@ -1045,7 +1053,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
             message,
             StatusName.Failed,
             MessageContentWrite.Refresh,
-            nextRetryAt: DateTimeOffset.UtcNow,
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             lockedUntil: null,
             originalRetries: 0,
             originalInlineAttempts: 0,
@@ -1075,7 +1083,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
             message,
             StatusName.Failed,
             MessageContentWrite.Refresh,
-            nextRetryAt: DateTimeOffset.UtcNow,
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             lockedUntil: null,
             originalRetries: 0,
             originalInlineAttempts: 0,
@@ -1101,11 +1109,11 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         );
 
         // given — a row that is due for retry, claimed the way the retry processor claims it
-        var dueAt = _fakeTimeProvider!.GetUtcNow().AddSeconds(-1);
+        var dueNow = RetryDelay.Exactly(TimeSpan.Zero);
         await storage.ChangeReceiveStateAsync(
             stored,
             StatusName.Failed,
-            nextRetryAt: dueAt,
+            retryDelay: dueNow,
             cancellationToken: AbortToken
         );
 
@@ -1119,7 +1127,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
             picked,
             StatusName.Failed,
             MessageContentWrite.Refresh,
-            nextRetryAt: dueAt,
+            retryDelay: dueNow,
             cancellationToken: AbortToken
         );
 
@@ -1267,7 +1275,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
                 message,
                 StatusName.Failed,
                 MessageContentWrite.Refresh,
-                _fakeTimeProvider!.GetUtcNow(),
+                RetryDelay.Exactly(TimeSpan.Zero),
                 null,
                 originalRetries: 0,
                 originalInlineAttempts: 1,
@@ -1338,7 +1346,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         await storage.ChangeReceiveStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: now.AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 
@@ -1499,7 +1507,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
             await storage.ChangePublishStateAsync(
                 stored,
                 StatusName.Failed,
-                nextRetryAt: now.AddSeconds(-1),
+                retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
                 cancellationToken: AbortToken
             );
             messages.Add(stored);
@@ -1544,7 +1552,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
                 first.Message,
                 StatusName.Succeeded,
                 MessageContentWrite.Preserve,
-                nextRetryAt: null,
+                retryDelay: null,
                 lockedUntil: null,
                 originalRetries: 0,
                 originalInlineAttempts: 1,
@@ -1614,7 +1622,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
                 winner,
                 StatusName.Succeeded,
                 MessageContentWrite.Preserve,
-                nextRetryAt: null,
+                retryDelay: null,
                 lockedUntil: null,
                 originalRetries: 0,
                 originalInlineAttempts: 1,
@@ -1629,7 +1637,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
                 recovered,
                 StatusName.Failed,
                 MessageContentWrite.Preserve,
-                nextRetryAt: _fakeTimeProvider.GetUtcNow(),
+                retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
                 lockedUntil: null,
                 originalRetries: 0,
                 originalInlineAttempts: 1,
@@ -1725,7 +1733,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
                 admitted.Message,
                 StatusName.Failed,
                 MessageContentWrite.Preserve,
-                nextRetryAt: null,
+                retryDelay: null,
                 lockedUntil: null,
                 originalRetries: 0,
                 originalInlineAttempts: 1,

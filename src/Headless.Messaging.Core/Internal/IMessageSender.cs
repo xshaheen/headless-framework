@@ -310,7 +310,7 @@ internal sealed class MessageSender : IMessageSender
                 // The envelope is untouched on this path: the failure is a configuration fault detected
                 // before any transport attempt, so no exception is stamped onto Origin.
                 MessageContentWrite.Preserve,
-                nextRetryAt: null,
+                retryDelay: null,
                 lockedUntil,
                 originalRetries: message.Retries,
                 originalInlineAttempts,
@@ -337,7 +337,7 @@ internal sealed class MessageSender : IMessageSender
                 // A successful publish never mutates Origin, so the stored envelope is already
                 // byte-identical — re-serializing it would be a wasted write on the hottest path.
                 MessageContentWrite.Preserve,
-                nextRetryAt: null,
+                retryDelay: null,
                 lockedUntil,
                 originalRetries: message.Retries,
                 originalInlineAttempts: message.InlineAttempts,
@@ -439,15 +439,7 @@ internal sealed class MessageSender : IMessageSender
         // leaves the row picked up by the polling query on restart (Failed/NULL is filtered out).
         // Only transition to Failed on terminal decisions (Stop, Exhausted) or when persisting
         // for the persisted-retry processor (Continue with inline budget exhausted, NextRetryAt set).
-        // Pass the message's current NextRetryAt so ResolveNextState can preserve InitialDispatchGrace
-        // on inline-in-flight transitions and pad the schedule against polling races.
-        var state = RetryHelper.ResolveNextState(
-            decision,
-            inlineRetries,
-            _retryPolicy,
-            _timeProvider,
-            currentNextRetryAt: message.NextRetryAt
-        );
+        var state = RetryHelper.ResolveNextState(decision, inlineRetries, _retryPolicy);
 
         // Persist transition: inline budget consumed AND decision Continue means the call site
         // owns the Retries++ . The helper is pure with respect to MediumMessage; this is the only
@@ -510,7 +502,7 @@ internal sealed class MessageSender : IMessageSender
                 // _SetFailedState stamped the exception onto Origin, so the persisted envelope is stale
                 // until this write refreshes it.
                 MessageContentWrite.Refresh,
-                state.NextRetryAt,
+                state.NextRetry,
                 lockedUntil,
                 originalRetries,
                 originalInlineAttempts,

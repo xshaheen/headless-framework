@@ -4,6 +4,7 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
+using Headless.Messaging.Persistence;
 using Headless.Messaging.Retry;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,12 +20,11 @@ public sealed class RetryHelperTests : TestBase
     public void should_null_out_next_retry_at_for_stop_when_resolve_next_state()
     {
         var policy = _Policy(maxRetryAttempts: 2);
-        var provider = new FixedTimeProvider(new DateTimeOffset(2026, 5, 16, 12, 0, 0, TimeSpan.Zero));
 
-        var state = RetryHelper.ResolveNextState(MessagingRetryDecision.Stop, inlineRetries: 0, policy, provider);
+        var state = RetryHelper.ResolveNextState(MessagingRetryDecision.Stop, inlineRetries: 0, policy);
 
         state.IsInlineRetryInFlight.Should().BeFalse();
-        state.NextRetryAt.Should().BeNull();
+        state.NextRetry.Should().BeNull();
         state.NextStatus.Should().Be(StatusName.Failed);
     }
 
@@ -32,12 +32,11 @@ public sealed class RetryHelperTests : TestBase
     public void should_null_out_next_retry_at_for_exhausted_when_resolve_next_state()
     {
         var policy = _Policy(maxRetryAttempts: 2);
-        var provider = new FixedTimeProvider(new DateTimeOffset(2026, 5, 16, 12, 0, 0, TimeSpan.Zero));
 
-        var state = RetryHelper.ResolveNextState(MessagingRetryDecision.Exhausted, inlineRetries: 0, policy, provider);
+        var state = RetryHelper.ResolveNextState(MessagingRetryDecision.Exhausted, inlineRetries: 0, policy);
 
         state.IsInlineRetryInFlight.Should().BeFalse();
-        state.NextRetryAt.Should().BeNull();
+        state.NextRetry.Should().BeNull();
         state.NextStatus.Should().Be(StatusName.Failed);
     }
 
@@ -45,38 +44,35 @@ public sealed class RetryHelperTests : TestBase
     public void should_use_strategy_delay_exactly_for_persisted_transition_when_resolve_next_state()
     {
         // inline budget consumed (inlineRetries >= MaxRetryAttempts) — Continue routes through
-        // persistence; NextRetryAt MUST equal now+delay (no padding) because the retry processor
-        // drives pickup from this timestamp.
+        // persistence; the row MUST fall due exactly the strategy's delay after the store's clock
+        // (no padding, no preservation) because the retry processor drives pickup from it.
         var policy = _Policy(maxRetryAttempts: 2);
         policy.InitialDispatchGrace = TimeSpan.FromSeconds(30);
-        var now = new DateTimeOffset(2026, 5, 16, 12, 0, 0, TimeSpan.Zero);
-        var provider = new FixedTimeProvider(now);
         var decision = MessagingRetryDecision.Continue(TimeSpan.FromMinutes(5));
 
-        var state = RetryHelper.ResolveNextState(decision, inlineRetries: 2, policy, provider);
+        var state = RetryHelper.ResolveNextState(decision, inlineRetries: 2, policy);
 
         state.IsInlineRetryInFlight.Should().BeFalse();
         state.NextStatus.Should().Be(StatusName.Failed);
-        state.NextRetryAt.Should().Be(now.AddMinutes(5));
+        state.NextRetry.Should().Be(RetryDelay.Exactly(TimeSpan.FromMinutes(5)));
     }
 
     [Fact]
     public void should_pad_resume_by_initial_dispatch_grace_when_resolve_next_state_inline_in_flight()
     {
-        // Inline budget still has slots; status stays Scheduled and NextRetryAt is padded past
+        // Inline budget still has slots; status stays Scheduled and the due time is padded past
         // the inline-retry resume point by InitialDispatchGrace so the polling cycle does not race
-        // the inline path mid-sleep.
+        // the inline path mid-sleep. AtLeast lets the store keep a later schedule already on the row
+        // (InitialDispatchGrace from initial store must not be lowered by a smaller inline delay).
         var policy = _Policy(maxRetryAttempts: 2);
         policy.InitialDispatchGrace = TimeSpan.FromSeconds(30);
-        var now = new DateTimeOffset(2026, 5, 16, 12, 0, 0, TimeSpan.Zero);
-        var provider = new FixedTimeProvider(now);
         var decision = MessagingRetryDecision.Continue(TimeSpan.FromSeconds(2));
 
-        var state = RetryHelper.ResolveNextState(decision, inlineRetries: 0, policy, provider);
+        var state = RetryHelper.ResolveNextState(decision, inlineRetries: 0, policy);
 
         state.IsInlineRetryInFlight.Should().BeTrue();
         state.NextStatus.Should().Be(StatusName.Scheduled);
-        state.NextRetryAt.Should().Be(now.AddSeconds(2).AddSeconds(30));
+        state.NextRetry.Should().Be(RetryDelay.AtLeast(TimeSpan.FromSeconds(32)));
     }
 
     [Fact]
@@ -90,14 +86,12 @@ public sealed class RetryHelperTests : TestBase
         var policy = _Policy(maxRetryAttempts: 5);
         policy.InitialDispatchGrace = TimeSpan.FromSeconds(30);
         policy.DispatchTimeout = TimeSpan.FromMinutes(5);
-        var now = new DateTimeOffset(2026, 5, 16, 12, 0, 0, TimeSpan.Zero);
-        var provider = new FixedTimeProvider(now);
         // Delay equal to DispatchTimeout — would oversleep the lease.
         var decision = MessagingRetryDecision.Continue(policy.DispatchTimeout);
 
         // inlineRetries=0 with MaxRetryAttempts=5 normally yields IsInlineRetryInFlight=true.
         // The DispatchTimeout guard must override that.
-        var state = RetryHelper.ResolveNextState(decision, inlineRetries: 0, policy, provider);
+        var state = RetryHelper.ResolveNextState(decision, inlineRetries: 0, policy);
 
         state
             .IsInlineRetryInFlight.Should()
@@ -105,32 +99,7 @@ public sealed class RetryHelperTests : TestBase
                 "Delay >= DispatchTimeout traps the message in inline-in-flight without consuming the persisted budget"
             );
         state.NextStatus.Should().Be(StatusName.Failed);
-        state.NextRetryAt.Should().Be(now.Add(policy.DispatchTimeout));
-    }
-
-    [Fact]
-    public void should_preserve_existing_later_schedule_when_resolve_next_state_inline_in_flight()
-    {
-        // When currentNextRetryAt is later than (now + delay + grace), keep it — InitialDispatchGrace
-        // from initial store must not be lowered by a smaller inline delay.
-        var policy = _Policy(maxRetryAttempts: 2);
-        policy.InitialDispatchGrace = TimeSpan.FromSeconds(5);
-        var now = new DateTimeOffset(2026, 5, 16, 12, 0, 0, TimeSpan.Zero);
-        var provider = new FixedTimeProvider(now);
-        var decision = MessagingRetryDecision.Continue(TimeSpan.FromSeconds(2));
-        var existing = now.AddMinutes(10);
-
-        var state = RetryHelper.ResolveNextState(
-            decision,
-            inlineRetries: 0,
-            policy,
-            provider,
-            currentNextRetryAt: existing
-        );
-
-        state.IsInlineRetryInFlight.Should().BeTrue();
-        state.NextStatus.Should().Be(StatusName.Scheduled);
-        state.NextRetryAt.Should().Be(existing, "existing schedule was later than padded resume — must be preserved");
+        state.NextRetry.Should().Be(RetryDelay.Exactly(policy.DispatchTimeout));
     }
 
     // ─── DetectCrashRecoveredReservation: shared publish/consume crash-recovery sentinel ──────
@@ -433,13 +402,5 @@ public sealed class RetryHelperTests : TestBase
     private static Guid _Guid(byte penultimate, byte last)
     {
         return new(0, 0, 0, 0, 0, 0, 0, 0, 0, penultimate, last);
-    }
-
-    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow()
-        {
-            return now;
-        }
     }
 }

@@ -211,7 +211,7 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
             await storage.ChangeReceiveStateAsync(
                 message,
                 StatusName.Failed,
-                nextRetryAt: message.LockedUntil!.Value.AddHours(1),
+                retryDelay: RetryDelay.Exactly(TimeSpan.FromHours(1)),
                 cancellationToken: AbortToken
             )
         )

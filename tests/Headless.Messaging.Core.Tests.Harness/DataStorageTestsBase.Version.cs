@@ -58,13 +58,13 @@ public abstract partial class DataStorageTestsBase
         await storage.ChangePublishStateAsync(
             published,
             StatusName.Failed,
-            nextRetryAt: _Now().AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
         await storage.ChangeReceiveStateAsync(
             received,
             StatusName.Failed,
-            nextRetryAt: _Now().AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 

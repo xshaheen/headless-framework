@@ -502,6 +502,14 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         return base.should_change_publish_state();
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task should_keep_a_later_due_time_only_when_the_retry_delay_asks_to(bool published)
+    {
+        return base.should_keep_a_later_due_time_only_when_the_retry_delay_asks_to(published);
+    }
+
     [Fact]
     public override Task should_change_receive_state()
     {
@@ -806,6 +814,22 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     }
 
     [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public override Task should_make_core_scheduled_retry_due_after_its_delay_on_database_clock(
+        bool published,
+        bool applicationClockAhead
+    )
+    {
+        return base.should_make_core_scheduled_retry_due_after_its_delay_on_database_clock(
+            published,
+            applicationClockAhead
+        );
+    }
+
+    [Theory]
     [InlineData(true)]
     [InlineData(false)]
     public override Task should_stamp_initial_dispatch_grace_from_database_clock(bool published)
@@ -833,7 +857,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 
