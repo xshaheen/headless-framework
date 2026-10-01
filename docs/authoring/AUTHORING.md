@@ -45,6 +45,18 @@ Use exact public names. Keep examples compilable and version-free. State observa
 
 Long guides are acceptable when the domain is intrinsically complex, but keep branches discoverable through descriptive H2/H3 headings. Split a guide only when tasks can load the new file independently through an explicit pointer.
 
+### Compiled examples
+
+`tests/Headless.Docs.Examples.Tests.Unit` compiles every ```` ```csharp ```` block of `docs/llms/messaging.md` and `docs/llms/jobs.md` as part of the unit suite, one test case per block, with the Messaging and Jobs source generators running. A failure names the guide and line, such as `docs/llms/jobs.md:556: CS1026: ) expected`. Run it with `make test-project TEST_PROJECT=tests/Headless.Docs.Examples.Tests.Unit/Headless.Docs.Examples.Tests.Unit.csproj`.
+
+- **Each block compiles alone.** Blocks never share declarations, so two blocks may declare the same type. Write using directives, assembly attributes, types, class members, and statements in the order a reader needs them; the harness moves statements and loose members into a method and class of their own.
+- **Ambient names need no declaration.** A block may use the host objects and placeholder types its guide's prelude declares: `builder`, `services`, `app`, `configuration`, `provider`, `cancellationToken`/`ct`, plus per-guide names such as `setup` (inside `AddHeadlessMessaging`), `options` (inside `AddHeadlessJobs`), `scheduler`, and application types such as `OrderPlaced` or `AppDbContext`. The preludes live in the test project's `Preludes/` folder; add a name there rather than declaring setup the reader does not need. A block that declares a name itself uses its own.
+- **Usings.** The prelude imports what an ASP.NET Core project imports implicitly and the namespaces of the guide's Headless packages. Write every other namespace in the block (`Microsoft.EntityFrameworkCore`, `Polly`, `OpenTelemetry.Trace`, a broker client), because a reader copying the block needs it.
+- **`AddModule<X.MessagingModule>()` and `AddModule<X.JobsModule>()`.** The first module a block names sets the compilation's assembly name, so the generator emits that module from the block's own consumers or jobs. Any other module the block names comes from an assembly it does not show and compiles against a stub.
+- **Opting out.** Mark a block that cannot be a valid standalone fragment with ```` ```csharp no-compile ````, the only recognized marker. Use it for pseudo-code, a deliberately wrong example, or a fragment that depends on something the harness cannot supply, such as another assembly or a third-party source generator. Never use it to silence a block that is wrong. The test reports each marked block as skipped.
+
+To compile another guide, add it to the test project's `None` items and to the guide table in `DocExamplesCompileTests`, with a prelude for its ambient names.
+
 ### Domain guide template
 
 Copy this block into `docs/llms/<domain>.md`, then remove sections the domain does not need.

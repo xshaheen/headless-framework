@@ -14,6 +14,8 @@ Use `Headless.Messaging.Core` as the composition package, then add exactly one t
 Registration has three parts. A consumer class declares itself with `[BusConsumer(identity)]` or `[QueueConsumer(identity)]` and implements `IConsume<T>` for each message it handles. The Messaging source generator emits one `MessagingModule` per assembly, and the module that owns the consumers contributes it, together with its message contracts, through `services.ConfigureMessaging(...)`. The host calls `AddHeadlessMessaging(...)` once for transport, storage, and options, and tunes consumers by identity.
 
 ```csharp
+using Microsoft.EntityFrameworkCore;
+
 // Orders assembly: message, consumer, and the module entry point.
 public sealed record OrderPlaced(Guid OrderId);
 
@@ -865,7 +867,7 @@ var info = new FailedInfo
 {
     ServiceProvider = scope.ServiceProvider, // live dispatch scope, NOT the root provider
     MessageType = MessageType.Subscribe, // or MessageType.Publish
-    Message = message,
+    Message = mediumMessage.Origin, // the message envelope, not the payload
     Lane = MessageLane.Bus, // or MessageLane.Queue
     Exception = ex, // the exhausting exception
     StorageId = mediumMessage.StorageId, // storage row identifier for DLQ correlation
@@ -1459,6 +1461,9 @@ Spans and metrics for messaging publish, persist, consume, and subscriber-invoke
 ### Setup and use
 
 ```csharp
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
+
 // 1. Register enrichers / suppression on the messaging setup builder (optional).
 builder.Services.AddHeadlessMessaging(setup =>
 {
@@ -1694,6 +1699,8 @@ dotnet add package Headless.Messaging.Kafka
 ### Setup and use
 
 ```csharp
+using Confluent.Kafka;
+
 setup.UseKafka(options => options.Servers = "localhost:9092");
 
 setup.Tune(PlaceOrderWorker.Identity, consumer =>
@@ -1893,6 +1900,8 @@ dotnet add package Headless.Messaging.Redis
 ### Setup and use
 
 ```csharp
+using StackExchange.Redis;
+
 setup.UseRedis(options => options.Configuration = ConfigurationOptions.Parse("localhost:6379"));
 ```
 
@@ -2086,6 +2095,8 @@ dotnet add package Headless.Messaging.Testing
 ### Setup and use
 
 ```csharp
+using AwesomeAssertions;
+
 services.AddMessagingTestHarness();
 
 var harness = provider.GetRequiredService<MessagingTestHarness>();
@@ -2098,7 +2109,7 @@ await harness.ResetAsync();
 // a throwing delegate rolls it back and nothing is recorded.
 await harness.RunInUnitOfWorkAsync(async (sp, unit) =>
 {
-    await unit.Outbox.PublishAsync(new OrderPlaced("ORD-1"));
+    await unit.Outbox.PublishAsync(new OrderPlaced(Guid.NewGuid()));
 });
 
 var recorded = await harness.WaitForPublished<OrderPlaced>(TimeSpan.FromSeconds(5));
