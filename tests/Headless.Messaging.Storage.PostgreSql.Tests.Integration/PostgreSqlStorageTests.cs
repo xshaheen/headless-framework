@@ -891,15 +891,29 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     }
 
     [Fact]
-    public override Task should_use_application_clock_when_scheduling_published_retry()
+    public override Task should_decide_published_retry_due_on_database_clock()
     {
-        return base.should_use_application_clock_when_scheduling_published_retry();
+        return base.should_decide_published_retry_due_on_database_clock();
     }
 
     [Fact]
-    public override Task should_use_application_clock_when_scheduling_received_retry()
+    public override Task should_decide_received_retry_due_on_database_clock()
     {
-        return base.should_use_application_clock_when_scheduling_received_retry();
+        return base.should_decide_received_retry_due_on_database_clock();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task should_stamp_initial_dispatch_grace_from_database_clock(bool published)
+    {
+        return base.should_stamp_initial_dispatch_grace_from_database_clock(published);
+    }
+
+    [Fact]
+    public override Task should_decide_delayed_message_due_on_database_clock()
+    {
+        return base.should_decide_delayed_message_due_on_database_clock();
     }
 
     [Fact]
@@ -1485,7 +1499,9 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         var serializer = GetSerializer();
         var poisonId = Guid.NewGuid();
         var healthyId = Guid.NewGuid();
-        var now = TimeProvider.GetUtcNow();
+        // A day back, so the rows sort ahead of every due row the rest of the suite leaves in the shared table and
+        // fall inside one claim batch.
+        var now = TimeProvider.GetUtcNow().AddDays(-1);
 
         await using (var connection = new NpgsqlConnection(fixture.ConnectionString))
         {

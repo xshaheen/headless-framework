@@ -1,7 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using System.Data;
 using System.Data.Common;
+using System.Text;
+using System.Text.Json;
 using Headless.Abstractions;
 using Headless.Coordination;
 using Headless.Messaging.Configuration;
@@ -10,6 +13,8 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
+using Headless.Sql;
+using Headless.Sql.SqlServer;
 using Headless.UnitOfWork;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -73,6 +78,9 @@ internal sealed partial class SqlServerDataStorage(
     /// </summary>
     private static readonly TimeSpan _QueuedMessageLookback = TimeSpan.FromMinutes(1);
 
+    private static readonly ISqlDialect _Dialect = SqlServerDialect.Instance;
+    private static readonly string _IdsFilter = _Dialect.InList("[Id]", "Ids", SqlColumnType.Guid);
+
     private readonly string _publishedTable = tableNames.GetPublishedTableName();
     private readonly string _receivedTable = tableNames.GetReceivedTableName();
 
@@ -124,7 +132,7 @@ internal sealed partial class SqlServerDataStorage(
             return;
         }
 
-        var tvpParam = _BuildIdListTvpParameter(storageIds);
+        var idsParam = _IdListParameter(storageIds);
         var statusParam = new SqlParameter("@StatusName", nameof(StatusName.Delayed));
 
         // Clear the ownership lease alongside the status flip: the only caller is the graceful-shutdown flush,
@@ -132,7 +140,7 @@ internal sealed partial class SqlServerDataStorage(
         // stale LockedUntil/Owner would fence the row from re-claim until the lease expires (delayed message
         // delivered up to DispatchTimeout late after restart).
         var sql =
-            $"UPDATE {_publishedTable} SET [StatusName]=@StatusName, [LockedUntil]=NULL, [Owner]=NULL WHERE [Id] IN (SELECT [Id] FROM @Ids) AND {_TerminalRowGuardSimple};";
+            $"UPDATE {_publishedTable} SET [StatusName]=@StatusName, [LockedUntil]=NULL, [Owner]=NULL WHERE {_IdsFilter} AND {_TerminalRowGuardSimple};";
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
 
@@ -140,7 +148,7 @@ internal sealed partial class SqlServerDataStorage(
             .ExecuteNonQueryAsync(
                 sql,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams: [tvpParam, statusParam],
+                sqlParams: [idsParam, statusParam],
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
@@ -553,24 +561,33 @@ internal sealed partial class SqlServerDataStorage(
         CancellationToken cancellationToken
     )
     {
-        var sql =
-            $"INSERT INTO {_publishedTable} ([Id],[Version],[Name],[Content],[IntentType],[Retries],[InlineAttempts],[Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[Owner],[StatusName],[MessageId])"
-            + "VALUES(@Id,@Version,@Name,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId);";
+        // The database clock stamps Added and decides when the row falls due, the same clock the retry pickup and
+        // the delayed claim compare against, so a replica whose clock is skewed cannot make a row due early or late.
+        var sql = _Dialect.Render(
+            new SqlClockedStatement(
+                $"""
+                INSERT INTO {_publishedTable} ([Id],[Version],[Name],[Content],[IntentType],[Retries],[InlineAttempts],[Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[Owner],[StatusName],[MessageId])
+                OUTPUT inserted.[Added], inserted.[NextRetryAt]
+                VALUES (@Id,@Version,@Name,@Content,@IntentType,0,0,{SqlDialectTokens.Now},@ExpiresAt,
+                    CASE WHEN @ExpiresAt IS NULL THEN {_Dialect.ShiftByDuration(SqlDialectTokens.Now, "Grace")} END,
+                    NULL,NULL,
+                    CASE WHEN @ExpiresAt IS NULL THEN N'{nameof(StatusName.Scheduled)}'
+                         WHEN @ExpiresAt <= DATEADD(minute, 1, {SqlDialectTokens.Now}) THEN N'{nameof(
+                    StatusName.Queued
+                )}'
+                         ELSE N'{nameof(StatusName.Delayed)}' END,
+                    @MessageId);
+                """
+            )
+        );
 
-        var added = timeProvider.GetUtcNow();
-        var statusName =
-            publishAt is null ? StatusName.Scheduled
-            : publishAt <= added.AddMinutes(1) ? StatusName.Queued
-            : StatusName.Delayed;
         var stored = new MediumMessage
         {
             StorageId = guidGenerator.Create(),
             Origin = message.Origin,
             Content = serializer.Serialize(message.Origin),
             Lane = message.Lane,
-            Added = added,
             ExpiresAt = publishAt,
-            NextRetryAt = publishAt is null ? added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace) : null,
             LockedUntil = null,
             Owner = null,
             Retries = 0,
@@ -587,58 +604,55 @@ internal sealed partial class SqlServerDataStorage(
             {
                 Value = MessageLaneCompatibility.ToPersistedValue(stored.Lane),
             },
-            new SqlParameter("@Retries", stored.Retries),
-            new SqlParameter("@InlineAttempts", stored.InlineAttempts),
-            new SqlParameter("@Added", stored.Added),
-            new SqlParameter("@ExpiresAt", SqlDbType.DateTimeOffset)
-            {
-                Value = stored.ExpiresAt.HasValue ? stored.ExpiresAt.Value : DBNull.Value,
-            },
-            new SqlParameter("@NextRetryAt", SqlDbType.DateTimeOffset)
-            {
-                Value = stored.NextRetryAt.ToUtcParameterValue(),
-            },
-            new SqlParameter("@LockedUntil", SqlDbType.DateTimeOffset)
-            {
-                Value = stored.LockedUntil.ToUtcParameterValue(),
-            },
-            _OwnerParameter("@Owner", stored.LockedUntil),
-            new SqlParameter("@StatusName", statusName.ToString("G")),
+            new SqlParameter("@ExpiresAt", SqlDbType.DateTimeOffset) { Value = publishAt.ToUtcParameterValue() },
+            .. _Duration("Grace", messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
             new SqlParameter("@MessageId", message.Origin.Id),
         ];
 
-        if (transaction == null)
-        {
-            await using var connection = new SqlConnection(options.Value.ConnectionString);
-            await connection
-                .ExecuteNonQueryAsync(
-                    sql,
-                    commandTimeout: messagingOptions.Value.CommandTimeout,
-                    sqlParams: sqlParams,
-                    cancellationToken: cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
-        else
-        {
-            var connection =
-                transaction.Connection
-                ?? throw new InvalidOperationException(
-                    "The supplied DbTransaction has no active Connection — it may have already been committed or rolled back."
-                );
+        await using var ownedConnection = transaction is null
+            ? new SqlConnection(options.Value.ConnectionString)
+            : null;
+        var connection =
+            transaction?.Connection
+            ?? ownedConnection
+            ?? throw new InvalidOperationException(
+                "The supplied DbTransaction has no active Connection — it may have already been committed or rolled back."
+            );
 
-            await connection
-                .ExecuteNonQueryAsync(
-                    sql,
-                    transaction,
-                    commandTimeout: messagingOptions.Value.CommandTimeout,
-                    sqlParams: sqlParams,
-                    cancellationToken: cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
+        var (added, nextRetryAt) = await connection
+            .ExecuteReaderAsync(
+                sql,
+                _ReadStoredTimesAsync,
+                transaction,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        stored.Added = added;
+        stored.NextRetryAt = nextRetryAt;
 
         return stored;
+    }
+
+    /// <summary>Reads the <c>Added</c> and <c>NextRetryAt</c> the database stamped on the row a write output.</summary>
+    private static async Task<(DateTimeOffset Added, DateTimeOffset? NextRetryAt)> _ReadStoredTimesAsync(
+        DbDataReader reader,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("The message insert returned no row.");
+        }
+
+        return (
+            await reader.GetFieldValueAsync<DateTimeOffset>(0, cancellationToken).ConfigureAwait(false),
+            await reader.IsDBNullAsync(1, cancellationToken).ConfigureAwait(false)
+                ? null
+                : await reader.GetFieldValueAsync<DateTimeOffset>(1, cancellationToken).ConfigureAwait(false)
+        );
     }
 
     /// <summary>
@@ -727,24 +741,21 @@ internal sealed partial class SqlServerDataStorage(
             },
             new SqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new SqlParameter("@InlineAttempts", message.InlineAttempts),
-            new SqlParameter("@Added", timeProvider.GetUtcNow()),
-            new SqlParameter("@ExpiresAt", SqlDbType.DateTimeOffset)
-            {
-                Value = timeProvider
-                    .GetUtcNow()
-                    .UtcDateTime.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter),
-            },
-            new SqlParameter("@NextRetryAt", SqlDbType.DateTimeOffset) { Value = DBNull.Value },
-            new SqlParameter("@LockedUntil", SqlDbType.DateTimeOffset) { Value = DBNull.Value },
-            _OwnerParameter("@Owner", lockedUntil: null),
+            .. _Duration("ExpiresAfter", TimeSpan.FromSeconds(messagingOptions.Value.FailedMessageExpiredAfter)),
             new SqlParameter("@StatusName", nameof(StatusName.Failed)),
             new SqlParameter("@MessageId", message.Origin.Id),
             _VersionParameter(),
             new SqlParameter("@ExceptionInfo", exceptionInfo ?? (object)DBNull.Value),
         ];
 
-        var rowId = await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
-        return rowId is not null;
+        var stored = await _StoreReceivedMessage(
+                sqlParams,
+                expiresAt: _Dialect.ShiftByDuration(SqlDialectTokens.Now, "ExpiresAfter"),
+                nextRetryAt: "NULL",
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        return stored is not null;
     }
 
     /// <summary>
@@ -760,6 +771,8 @@ internal sealed partial class SqlServerDataStorage(
         CancellationToken cancellationToken = default
     )
     {
+        // A guard-blocked redelivery writes nothing, so its snapshot keeps these application-clock values; the
+        // stored row's own times are adopted below whenever the upsert wrote it.
         var added = timeProvider.GetUtcNow();
         var mediumMessage = new MediumMessage
         {
@@ -788,20 +801,7 @@ internal sealed partial class SqlServerDataStorage(
             },
             new SqlParameter("@Retries", mediumMessage.Retries),
             new SqlParameter("@InlineAttempts", mediumMessage.InlineAttempts),
-            new SqlParameter("@Added", mediumMessage.Added),
-            new SqlParameter("@ExpiresAt", SqlDbType.DateTimeOffset)
-            {
-                Value = mediumMessage.ExpiresAt.HasValue ? mediumMessage.ExpiresAt.Value : DBNull.Value,
-            },
-            new SqlParameter("@NextRetryAt", SqlDbType.DateTimeOffset)
-            {
-                Value = mediumMessage.NextRetryAt.ToUtcParameterValue(),
-            },
-            new SqlParameter("@LockedUntil", SqlDbType.DateTimeOffset)
-            {
-                Value = mediumMessage.LockedUntil.ToUtcParameterValue(),
-            },
-            _OwnerParameter("@Owner", mediumMessage.LockedUntil),
+            .. _Duration("Grace", messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
             new SqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new SqlParameter("@MessageId", message.Origin.Id),
             _VersionParameter(),
@@ -811,10 +811,18 @@ internal sealed partial class SqlServerDataStorage(
         // #5 — adopt the authoritative persisted row id (see _StoreReceivedMessage); on the MERGE UPDATE
         // branch the row keeps its original [Id], so the freshly-generated StorageId would be stale and the
         // caller's later ChangeReceiveStateAsync (WHERE Id=@Id) would silently no-op.
-        var rowId = await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
-        if (rowId is { } id)
+        var stored = await _StoreReceivedMessage(
+                sqlParams,
+                expiresAt: "NULL",
+                nextRetryAt: _Dialect.ShiftByDuration(SqlDialectTokens.Now, "Grace"),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        if (stored is { } row)
         {
-            mediumMessage.StorageId = id;
+            mediumMessage.StorageId = row.Id;
+            mediumMessage.Added = row.Added;
+            mediumMessage.NextRetryAt = row.NextRetryAt;
         }
 
         return mediumMessage;
@@ -859,10 +867,9 @@ internal sealed partial class SqlServerDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        await using var connection = new SqlConnection(options.Value.ConnectionString);
-
         if (string.Equals(table, _receivedTable, StringComparison.Ordinal))
         {
+            await using var connection = new SqlConnection(options.Value.ConnectionString);
             var (deletedCount, inboxRows) = await connection
                 .ExecuteReaderAsync(
                     $"""
@@ -940,24 +947,32 @@ internal sealed partial class SqlServerDataStorage(
             return deletedCount;
         }
 
-        return await connection
-            .ExecuteNonQueryAsync(
-                $"""
-                DELETE FROM {table}
-                 WHERE IntentType IN (0, 1)
-                 AND Id IN (
-                     SELECT TOP (@batchCount) Id
-                     FROM {table} WITH (READPAST, READCOMMITTEDLOCK)
-                     WHERE ExpiresAt < @timeout
-                     AND StatusName IN('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}')
-                     AND NextRetryAt IS NULL
-                     AND IntentType IN (0, 1)
-                 );
-                """,
-                transaction: null,
-                commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams: [new SqlParameter("@timeout", timeout), new SqlParameter("@batchCount", batchCount)],
-                cancellationToken: cancellationToken
+        // The cutoff is the caller's retention decision, so it stays a parameter rather than the database clock. The
+        // purge skips locked rows, which SQL Server allows only at READ COMMITTED, and a pooled session may still carry
+        // inbox admission's SERIALIZABLE, so it runs in a transaction that sets the level itself.
+        var purgeSql = _Dialect.Render(
+            new SqlDeleteBatch(
+                table,
+                ["[Id]"],
+                $"IntentType IN (0, 1) AND ExpiresAt < @timeout AND StatusName IN (N'{nameof(StatusName.Succeeded)}',N'{nameof(StatusName.Failed)}') AND NextRetryAt IS NULL",
+                "batchCount"
+            )
+        );
+
+        return await SqlAutonomousTransaction
+            .RunAsync(
+                _Dialect,
+                () => new SqlConnection(options.Value.ConnectionString),
+                (purgeConnection, transaction, ct) =>
+                    purgeConnection.ExecuteNonQueryAsync(
+                        purgeSql,
+                        transaction,
+                        commandTimeout: messagingOptions.Value.CommandTimeout,
+                        sqlParams: [new SqlParameter("@timeout", timeout), new SqlParameter("@batchCount", batchCount)],
+                        cancellationToken: ct
+                    ),
+                timeProvider,
+                cancellationToken
             )
             .ConfigureAwait(false);
     }
@@ -1396,9 +1411,9 @@ internal sealed partial class SqlServerDataStorage(
             return 0;
         }
 
-        var sqlParams = new object[] { _BuildIdListTvpParameter(ids) };
+        var sqlParams = new object[] { _IdListParameter(ids) };
 
-        var sql = $"DELETE FROM {_receivedTable} WHERE Id IN (SELECT Id FROM @Ids)";
+        var sql = $"DELETE FROM {_receivedTable} WHERE {_IdsFilter}";
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         return await connection
@@ -1423,9 +1438,9 @@ internal sealed partial class SqlServerDataStorage(
             return 0;
         }
 
-        var sqlParams = new object[] { _BuildIdListTvpParameter(ids) };
+        var sqlParams = new object[] { _IdListParameter(ids) };
 
-        var sql = $"DELETE FROM {_publishedTable} WHERE Id IN (SELECT Id FROM @Ids)";
+        var sql = $"DELETE FROM {_publishedTable} WHERE {_IdsFilter}";
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         return await connection
@@ -1439,25 +1454,24 @@ internal sealed partial class SqlServerDataStorage(
     }
 
     /// <summary>
-    /// Builds the <c>@Ids</c> table-valued parameter backed by the <c>HeadlessMessagingIdList</c> type
-    /// (provisioned by the messaging schema contribution). Using a TVP keeps the SQL text and parameter shape
-    /// constant regardless of id count, so SQL Server reuses a single cached query plan — and it stays
-    /// portable to older engines (table types need no OPENJSON / compatibility level 130).
+    /// Binds the <c>@Ids</c> list that <see cref="_IdsFilter"/> reads: one JSON parameter, so the statement text and
+    /// its cached plan do not change with the count and no table type has to exist first.
     /// </summary>
-    private SqlParameter _BuildIdListTvpParameter(IReadOnlyList<Guid> ids)
+    private static DbParameter _IdListParameter(IReadOnlyCollection<Guid> ids)
     {
-        var idsTable = new DataTable();
-        idsTable.Columns.Add("Id", typeof(Guid));
-        foreach (var id in ids)
-        {
-            idsTable.Rows.Add(id);
-        }
+        return _Dialect.CreateListParameter("Ids", SqlColumnType.Guid, ids);
+    }
 
-        return new SqlParameter("@Ids", SqlDbType.Structured)
-        {
-            TypeName = $"[{storageOptions.Value.Schema}].[HeadlessMessagingIdList]",
-            Value = idsTable,
-        };
+    /// <summary>Binds a duration for <see cref="ISqlDialect.ShiftByDuration"/> under <paramref name="parameter"/>.</summary>
+    private static DbParameter[] _Duration(string parameter, TimeSpan duration)
+    {
+        using var command = new SqlCommand();
+        _Dialect.AddDuration(command, parameter, duration);
+        var parameters = command.Parameters.Cast<DbParameter>().ToArray();
+        // A parameter belongs to one collection at a time; detach them so the caller's command can take them.
+        command.Parameters.Clear();
+
+        return parameters;
     }
 
     /// <summary>
@@ -1465,14 +1479,7 @@ internal sealed partial class SqlServerDataStorage(
     /// </summary>
     public IMonitoringApi GetMonitoringApi()
     {
-        return new SqlServerMonitoringApi(
-            options,
-            storageOptions,
-            messagingOptions,
-            tableNames,
-            serializer,
-            timeProvider
-        );
+        return new SqlServerMonitoringApi(options, messagingOptions, tableNames, serializer, timeProvider);
     }
 
     public IInboxOperationsApi GetInboxOperationsApi() => this;
@@ -1494,7 +1501,7 @@ internal sealed partial class SqlServerDataStorage(
             ? " AND (IsInboxRecord=0 OR (IntentType=@InboxIntentType AND Generation=@InboxGeneration AND GenerationIncarnationId=@InboxGenerationIncarnationId AND AttemptId=@InboxAttemptId AND Id=@InboxStorageId AND (Owner=@InboxOwner OR (Owner IS NULL AND @InboxOwner IS NULL)) AND LockedUntil=@InboxLockedUntil))"
             : string.Empty;
         var sql =
-            $"DECLARE @LeaseNow datetime2(7) = SYSUTCDATETIME(); UPDATE {tableName} SET InlineAttempts=@InlineAttempts WHERE Id=@Id AND {_TerminalRowGuardWithRetries} AND ((LockedUntil IS NULL AND @LockedUntil IS NULL) OR LockedUntil=@LockedUntil) AND ((Owner IS NULL AND @CurrentOwner IS NULL) OR Owner=@CurrentOwner) AND LockedUntil>@LeaseNow{inboxGuard}";
+            $"DECLARE @LeaseNow datetimeoffset(7) = SYSUTCDATETIME(); UPDATE {tableName} SET InlineAttempts=@InlineAttempts WHERE Id=@Id AND {_TerminalRowGuardWithRetries} AND ((LockedUntil IS NULL AND @LockedUntil IS NULL) OR LockedUntil=@LockedUntil) AND ((Owner IS NULL AND @CurrentOwner IS NULL) OR Owner=@CurrentOwner) AND LockedUntil>@LeaseNow{inboxGuard}";
         var inboxFence = message.InboxAttemptFence;
         object[] sqlParams =
         [
@@ -1567,7 +1574,7 @@ internal sealed partial class SqlServerDataStorage(
         var refreshContent = contentWrite is MessageContentWrite.Refresh;
         var contentAssignment = refreshContent ? "Content=@Content, " : "";
         var sql =
-            $"DECLARE @LeaseNow datetime2(7) = SYSUTCDATETIME(); UPDATE {tableName} SET {contentAssignment}Retries=@Retries,InlineAttempts=@InlineAttempts,ExpiresAt=@ExpiresAt,NextRetryAt=@NextRetryAt,LockedUntil=@LockedUntil,Owner=@Owner,StatusName=@StatusName WHERE Id=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (((LockedUntil IS NULL AND @OriginalLockedUntil IS NULL) OR LockedUntil=@OriginalLockedUntil) AND ((Owner IS NULL AND @OriginalOwner IS NULL) OR Owner=@OriginalOwner) AND LockedUntil>@LeaseNow))";
+            $"DECLARE @LeaseNow datetimeoffset(7) = SYSUTCDATETIME(); UPDATE {tableName} SET {contentAssignment}Retries=@Retries,InlineAttempts=@InlineAttempts,ExpiresAt=@ExpiresAt,NextRetryAt=@NextRetryAt,LockedUntil=@LockedUntil,Owner=@Owner,StatusName=@StatusName WHERE Id=@Id AND {_TerminalRowGuardWithRetries} AND (@OriginalInlineAttempts IS NULL OR (((LockedUntil IS NULL AND @OriginalLockedUntil IS NULL) OR LockedUntil=@OriginalLockedUntil) AND ((Owner IS NULL AND @OriginalOwner IS NULL) OR Owner=@OriginalOwner) AND LockedUntil>@LeaseNow))";
 
         object[] stateParams =
         [
@@ -1648,11 +1655,23 @@ internal sealed partial class SqlServerDataStorage(
         return content;
     }
 
-    private async ValueTask<Guid?> _StoreReceivedMessage(
+    /// <summary>Inserts a received message, or rewrites its redelivered non-terminal, unleased row.</summary>
+    /// <param name="sqlParams">The row's values, and the durations <paramref name="expiresAt"/> and <paramref name="nextRetryAt"/> shift by.</param>
+    /// <param name="expiresAt">The <c>ExpiresAt</c> expression, over <see cref="SqlDialectTokens.Now"/>.</param>
+    /// <param name="nextRetryAt">The <c>NextRetryAt</c> expression, over <see cref="SqlDialectTokens.Now"/>.</param>
+    /// <param name="cancellationToken">Token used to cancel the statement.</param>
+    /// <returns>The written row's id and database-stamped times, or <see langword="null"/> when a guard refused it.</returns>
+    private async ValueTask<(Guid Id, DateTimeOffset Added, DateTimeOffset? NextRetryAt)?> _StoreReceivedMessage(
         object[] sqlParams,
-        CancellationToken cancellationToken = default
+        string expiresAt,
+        string nextRetryAt,
+        CancellationToken cancellationToken
     )
     {
+        // Not the kit's SqlUpsert: the identity is (Version, MessageId, Group, IntentType) over the partial unique index
+        // of non-inbox rows, with a NULL group matching a NULL group. The upsert's key is plain column equality on the
+        // primary key or a full unique index, so it would miss NULL groups and could not target the partial index.
+        //
         // The WHEN MATCHED predicate skips terminal Succeeded/Failed rows that have no scheduled
         // retry. Without the guard, a broker-redelivered message whose payload again fails to
         // deserialize would overwrite a previously-Succeeded row's status to Failed, firing
@@ -1669,32 +1688,45 @@ internal sealed partial class SqlServerDataStorage(
         // #5 — OUTPUT inserted.[Id] returns the authoritative persisted row id (insert or update branch).
         // On the UPDATE branch the existing row keeps its original [Id], which differs from the freshly
         // generated @Id, so the caller adopts the returned value; a guard-blocked no-op returns no row.
-        var sql = $"""
-            DECLARE @LeaseNow datetime2(7) = SYSUTCDATETIME();
-
-            MERGE {_receivedTable} WITH (HOLDLOCK) AS target
-            USING (SELECT @Version AS Version, @MessageId AS MessageId, @Group AS [Group], @IntentType AS IntentType) AS source
-            ON target.IsInboxRecord = 0 AND target.Version = source.Version AND target.MessageId = source.MessageId AND (target.[Group] = source.[Group] OR (target.[Group] IS NULL AND source.[Group] IS NULL)) AND target.IntentType = source.IntentType
-            WHEN MATCHED
-                AND NOT (target.StatusName IN ('{nameof(StatusName.Succeeded)}','{nameof(
-                    StatusName.Failed
-                )}') AND target.NextRetryAt IS NULL)
-                AND (target.LockedUntil IS NULL OR target.LockedUntil <= @LeaseNow)
-            THEN
-                UPDATE SET StatusName = @StatusName, ExpiresAt = @ExpiresAt, NextRetryAt = @NextRetryAt, LockedUntil = @LockedUntil, Owner = @Owner, Content = @Content, ExceptionInfo = @ExceptionInfo
-            WHEN NOT MATCHED THEN
-                INSERT ([Id],[Version],[Name],[Group],[Content],[IntentType],[Retries],[InlineAttempts],[Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[Owner],[StatusName],[MessageId],[ExceptionInfo])
-                VALUES (@Id,@Version,@Name,@Group,@Content,@IntentType,@Retries,@InlineAttempts,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId,@ExceptionInfo)
-            OUTPUT inserted.[Id];
-            """;
+        //
+        // The database clock stamps Added and derives ExpiresAt and NextRetryAt, the clock every due-time and expiry
+        // comparison reads.
+        var sql = _Dialect.Render(
+            new SqlClockedStatement(
+                $"""
+                MERGE {_receivedTable} WITH (HOLDLOCK) AS target
+                USING (SELECT @Version AS Version, @MessageId AS MessageId, @Group AS [Group], @IntentType AS IntentType) AS source
+                ON target.IsInboxRecord = 0 AND target.Version = source.Version AND target.MessageId = source.MessageId AND (target.[Group] = source.[Group] OR (target.[Group] IS NULL AND source.[Group] IS NULL)) AND target.IntentType = source.IntentType
+                WHEN MATCHED
+                    AND NOT (target.StatusName IN ('{nameof(StatusName.Succeeded)}','{nameof(
+                        StatusName.Failed
+                    )}') AND target.NextRetryAt IS NULL)
+                    AND (target.LockedUntil IS NULL OR target.LockedUntil <= {SqlDialectTokens.Now})
+                THEN
+                    UPDATE SET StatusName = @StatusName, ExpiresAt = {expiresAt}, NextRetryAt = {nextRetryAt}, LockedUntil = NULL, Owner = NULL, Content = @Content, ExceptionInfo = @ExceptionInfo
+                WHEN NOT MATCHED THEN
+                    INSERT ([Id],[Version],[Name],[Group],[Content],[IntentType],[Retries],[InlineAttempts],[Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[Owner],[StatusName],[MessageId],[ExceptionInfo])
+                    VALUES (@Id,@Version,@Name,@Group,@Content,@IntentType,@Retries,@InlineAttempts,{SqlDialectTokens.Now},{expiresAt},{nextRetryAt},NULL,NULL,@StatusName,@MessageId,@ExceptionInfo)
+                OUTPUT inserted.[Id], inserted.[Added], inserted.[NextRetryAt];
+                """
+            )
+        );
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
 
         return await connection
-            .ExecuteReaderAsync<Guid?>(
+            .ExecuteReaderAsync<(Guid, DateTimeOffset, DateTimeOffset?)?>(
                 sql,
                 static async (reader, token) =>
-                    await reader.ReadAsync(token).ConfigureAwait(false) ? reader.GetGuid(0) : null,
+                    await reader.ReadAsync(token).ConfigureAwait(false)
+                        ? (
+                            reader.GetGuid(0),
+                            await reader.GetFieldValueAsync<DateTimeOffset>(1, token).ConfigureAwait(false),
+                            await reader.IsDBNullAsync(2, token).ConfigureAwait(false)
+                                ? null
+                                : await reader.GetFieldValueAsync<DateTimeOffset>(2, token).ConfigureAwait(false)
+                        )
+                        : null,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
@@ -1857,176 +1889,186 @@ internal sealed partial class SqlServerDataStorage(
             ? (orphaned ? "AND IsInboxOrphaned=1" : "AND IsInboxOrphaned=0")
             : string.Empty;
         var attemptAssignment = isReceivedTable
-            ? ",\n                AttemptId = CASE WHEN target.IsInboxRecord=1 THEN NEWID() ELSE NULL END"
+            ? ", AttemptId = CASE WHEN IsInboxRecord=1 THEN NEWID() ELSE NULL END"
             : string.Empty;
-        var inboxProjection = isReceivedTable
-            ? "inserted.IsInboxRecord, inserted.TenantPresent, inserted.TenantId, inserted.MessageId, inserted.ContractIdentity, inserted.ContractVersion, inserted.ConsumerIdentity,\n                inserted.Generation, inserted.GenerationIncarnationId, inserted.AttemptId, inserted.IsInboxOrphaned"
-            : "CAST(0 AS bit)";
-        // Atomic claim-and-return: an ordered TOP (N) candidate CTE followed by UPDATE ... OUTPUT
-        // atomically leases and returns rows in the requested recognized lane. Unknown lanes are
-        // excluded inside the candidate selection, so they neither consume capacity nor get mutated.
-        // This replaces the previous two-step SELECT-UPDLOCK-then-Lease pattern, which committed the SELECT transaction
-        // before _LeaseAsync wrote LockedUntil. In between, a concurrent replica could pass the
-        // same "LockedUntil IS NULL" filter and lease the same row — double-dispatch.
+        string[] returning = isReceivedTable ? [.. _RetryClaimColumns, .. _InboxClaimColumns] : _RetryClaimColumns;
+        // One claim statement selects the due rows in the requested recognized lane, skipping rows another
+        // replica holds, and leases them as it returns them, so no second replica can pass the same filter
+        // between a read and a lease. Unknown lanes are excluded inside the filter, so they neither consume
+        // capacity nor get mutated.
         //
-        // READCOMMITTEDLOCK keeps READPAST lock-based when READ_COMMITTED_SNAPSHOT is enabled;
-        // without it SQL Server rejects this claim shape under RCSI. UPDLOCK + READPAST + ROWLOCK
-        // preserves the "skip rows another replica is mid-claim on" behaviour in both supported
-        // database modes. The UPDATE assigns database time + DispatchTimeout so subsequent pickup
-        // polls (anywhere) see the row as leased until the dispatch attempt completes (or the lease expires).
-        //
-        // NextRetryAt is scheduling state written from the injected TimeProvider, so its due
-        // predicate uses that same authority. Lease expiry and stamping remain on one command-
-        // local database snapshot, keeping every replica on one ownership authority without a
-        // clock query.
-        var sql = $"""
-            SET NOCOUNT ON;
-            DECLARE @ClaimNow datetimeoffset(7) = SYSUTCDATETIME();
-
-            WITH Candidates AS (
-                SELECT TOP (@BatchSize) Id
-                FROM {tableName} WITH (UPDLOCK, READPAST, READCOMMITTEDLOCK, ROWLOCK)
-                WHERE Retries <= @Retries
-                  AND Version = @Version
-                  AND IntentType = @IntentType
-                  AND NextRetryAt IS NOT NULL AND NextRetryAt <= @Now
-                  AND (LockedUntil IS NULL OR LockedUntil <= @ClaimNow)
-                  {orphanFilter}
-                  AND {_TerminalRowGuardSimple}
-                ORDER BY NextRetryAt, Id
+        // Due time and lease are both the database's: NextRetryAt is compared against the same clock that stamps
+        // the lease, so a replica whose clock is skewed neither picks a row up early nor leaves it waiting.
+        var sql = _Dialect.Render(
+            new SqlClaimNext(
+                tableName,
+                ["[Id]"],
+                $"Retries <= @Retries AND Version = @Version AND IntentType = @IntentType AND NextRetryAt IS NOT NULL AND NextRetryAt <= {SqlDialectTokens.Now} AND (LockedUntil IS NULL OR LockedUntil <= {SqlDialectTokens.Now}) {orphanFilter} AND {_TerminalRowGuardSimple}",
+                ["[NextRetryAt]", "[Id]"],
+                $"LockedUntil = {_Dialect.ShiftByDuration(SqlDialectTokens.Now, "Lease")}, Owner = @Owner{attemptAssignment}",
+                returning,
+                BatchSizeParameter: "BatchSize"
             )
-            UPDATE target
-            SET LockedUntil = DATEADD(nanosecond, @LeaseNanoseconds, DATEADD(second, @LeaseWholeSeconds, @ClaimNow)),
-                Owner = @Owner{attemptAssignment}
-            OUTPUT inserted.Id, inserted.Content, inserted.IntentType, inserted.Retries, inserted.InlineAttempts, inserted.Added, inserted.NextRetryAt, inserted.LockedUntil, inserted.Owner,
-                {inboxProjection}
-            FROM {tableName} AS target
-            INNER JOIN Candidates ON target.Id = Candidates.Id
-            WHERE target.IntentType = @IntentType;
-            """;
-
-        var (leaseWholeSeconds, leaseNanoseconds) = _SplitLeaseDuration(
-            messagingOptions.Value.RetryPolicy.DispatchTimeout
         );
 
-        object[] sqlParams =
-        [
-            new SqlParameter(
-                "@BatchSize",
-                orphaned ? messagingOptions.Value.OrphanProbeBatchSize : messagingOptions.Value.RetryBatchSize
-            ),
-            new SqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
-            _VersionParameter(),
-            new SqlParameter("@IntentType", SqlDbType.SmallInt) { Value = intentValue },
-            new SqlParameter("@Now", SqlDbType.DateTimeOffset) { Value = timeProvider.GetUtcNow() },
-            new SqlParameter("@LeaseWholeSeconds", SqlDbType.Int) { Value = leaseWholeSeconds },
-            new SqlParameter("@LeaseNanoseconds", SqlDbType.Int) { Value = leaseNanoseconds },
-            _OwnerParameter("@Owner", hasLease: true),
-        ];
-
-        await using var connection = new SqlConnection(options.Value.ConnectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-
-        var poisonMessages = new List<PoisonMessage>();
-        var result = await connection
-            .ExecuteReaderAsync(
-                sql,
-                async (reader, ct) =>
+        return await SqlAutonomousTransaction
+            .RunAsync(
+                _Dialect,
+                () => new SqlConnection(options.Value.ConnectionString),
+                async (connection, transaction, ct) =>
                 {
-                    var messages = new List<MediumMessage>();
-                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
-                    {
-                        var storageId = reader.GetGuid(0);
-                        var content = reader.GetString(1);
-                        var persistedLane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2));
-                        if (persistedLane != lane)
-                        {
-                            throw new InvalidOperationException(
-                                $"Retry pickup for lane '{lane}' returned persisted lane '{persistedLane}'."
-                            );
-                        }
+                    object[] sqlParams =
+                    [
+                        new SqlParameter(
+                            "@BatchSize",
+                            orphaned
+                                ? messagingOptions.Value.OrphanProbeBatchSize
+                                : messagingOptions.Value.RetryBatchSize
+                        ),
+                        new SqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
+                        _VersionParameter(),
+                        new SqlParameter("@IntentType", SqlDbType.SmallInt) { Value = intentValue },
+                        .. _Duration("Lease", messagingOptions.Value.RetryPolicy.DispatchTimeout),
+                        _OwnerParameter("@Owner", hasLease: true),
+                    ];
+                    var poisonMessages = new List<PoisonMessage>();
+                    var claimed = await connection
+                        .ExecuteReaderAsync(
+                            sql,
+                            (reader, token) =>
+                                _ReadRetryClaimAsync(reader, tableName, lane, isReceivedTable, poisonMessages, token),
+                            transaction: transaction,
+                            commandTimeout: messagingOptions.Value.CommandTimeout,
+                            sqlParams: sqlParams,
+                            cancellationToken: ct
+                        )
+                        .ConfigureAwait(false);
 
-                        MediumMessage mediumMessage;
-                        try
-                        {
-                            mediumMessage = new MediumMessage
-                            {
-                                StorageId = storageId,
-                                Origin = serializer.Deserialize(content)!,
-                                Content = content,
-                                Lane = persistedLane,
-                                Retries = reader.GetInt32(3),
-                                InlineAttempts = reader.GetInt32(4),
-#pragma warning disable CA1849, VSTHRD103, AsyncFixer02, MA0042 // the GetString(1) above already pulls
-                                // the large Content column synchronously, so these remaining small columns
-                                // cannot add blocking this row has not already paid for.
-                                Added = reader.GetFieldValue<DateTimeOffset>(5),
-                                NextRetryAt = reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
-                                LockedUntil = reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
-                                Owner = reader.IsDBNull(8) ? null : reader.GetString(8),
-#pragma warning restore CA1849, VSTHRD103, AsyncFixer02, MA0042
-                            };
+                    await _MarkPoisonMessagesTerminalAsync(connection, transaction, tableName, poisonMessages, ct)
+                        .ConfigureAwait(false);
 
-                            if (reader.GetBoolean(9))
-                            {
-                                var generation = reader.GetInt64(16);
-                                var incarnationId = reader.GetGuid(17);
-                                var lockedUntil =
-                                    mediumMessage.LockedUntil
-                                    ?? throw new InvalidOperationException(
-                                        "Claimed inbox row has no durable lease deadline."
-                                    );
-                                var attemptId = reader.GetGuid(18);
-                                mediumMessage.InboxKey = new InboxKey(
-                                    reader.GetBoolean(10) ? reader.GetString(11) : null,
-                                    reader.GetString(12),
-                                    persistedLane,
-                                    reader.GetString(13),
-                                    reader.GetString(14),
-                                    reader.GetString(15),
-                                    generation
-                                );
-                                mediumMessage.InboxGeneration = new InboxGeneration(generation, incarnationId);
-                                mediumMessage.InboxAttemptFence = new InboxAttemptFence(
-                                    storageId,
-                                    persistedLane,
-                                    generation,
-                                    incarnationId,
-                                    attemptId,
-                                    mediumMessage.Owner,
-                                    lockedUntil
-                                );
-                                mediumMessage.IsInboxOrphaned = reader.GetBoolean(19);
-                            }
-                        }
-#pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort/starve the batch (#3)
-                        catch (Exception ex)
-#pragma warning restore CA1031
-                        {
-                            logger.LogPoisonMessageSkipped(storageId, tableName, ex);
-                            poisonMessages.Add(_CreatePoisonMessage(storageId, ex));
-                            continue;
-                        }
-
-                        messages.Add(mediumMessage);
-                    }
-
-                    return messages;
+                    return (IEnumerable<MediumMessage>)claimed;
                 },
-                transaction: transaction,
-                commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams: sqlParams,
-                cancellationToken: cancellationToken
+                timeProvider,
+                cancellationToken
             )
             .ConfigureAwait(false);
+    }
 
-        await _MarkPoisonMessagesTerminalAsync(connection, transaction, tableName, poisonMessages, cancellationToken)
-            .ConfigureAwait(false);
+    private static readonly string[] _RetryClaimColumns =
+    [
+        "[Id]",
+        "[Content]",
+        "[IntentType]",
+        "[Retries]",
+        "[InlineAttempts]",
+        "[Added]",
+        "[NextRetryAt]",
+        "[LockedUntil]",
+        "[Owner]",
+    ];
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    private static readonly string[] _InboxClaimColumns =
+    [
+        "[IsInboxRecord]",
+        "[TenantPresent]",
+        "[TenantId]",
+        "[MessageId]",
+        "[ContractIdentity]",
+        "[ContractVersion]",
+        "[ConsumerIdentity]",
+        "[Generation]",
+        "[GenerationIncarnationId]",
+        "[AttemptId]",
+        "[IsInboxOrphaned]",
+    ];
 
-        return result;
+    private async Task<List<MediumMessage>> _ReadRetryClaimAsync(
+        DbDataReader reader,
+        string tableName,
+        MessageLane lane,
+        bool isReceivedTable,
+        List<PoisonMessage> poisonMessages,
+        CancellationToken cancellationToken
+    )
+    {
+        var messages = new List<MediumMessage>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var storageId = reader.GetGuid(0);
+            var content = reader.GetString(1);
+            var persistedLane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2));
+            if (persistedLane != lane)
+            {
+                throw new InvalidOperationException(
+                    $"Retry pickup for lane '{lane}' returned persisted lane '{persistedLane}'."
+                );
+            }
+
+            MediumMessage mediumMessage;
+            try
+            {
+                mediumMessage = new MediumMessage
+                {
+                    StorageId = storageId,
+                    Origin = serializer.Deserialize(content)!,
+                    Content = content,
+                    Lane = persistedLane,
+                    Retries = reader.GetInt32(3),
+                    InlineAttempts = reader.GetInt32(4),
+#pragma warning disable CA1849, VSTHRD103, AsyncFixer02, MA0042 // the GetString(1) above already pulls
+                    // the large Content column synchronously, so these remaining small columns
+                    // cannot add blocking this row has not already paid for.
+                    Added = reader.GetFieldValue<DateTimeOffset>(5),
+                    NextRetryAt = reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
+                    LockedUntil = reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
+                    Owner = reader.IsDBNull(8) ? null : reader.GetString(8),
+#pragma warning restore CA1849, VSTHRD103, AsyncFixer02, MA0042
+                };
+
+                if (isReceivedTable && reader.GetBoolean(9))
+                {
+                    var generation = reader.GetInt64(16);
+                    var incarnationId = reader.GetGuid(17);
+                    var lockedUntil =
+                        mediumMessage.LockedUntil
+                        ?? throw new InvalidOperationException("Claimed inbox row has no durable lease deadline.");
+                    var attemptId = reader.GetGuid(18);
+                    mediumMessage.InboxKey = new InboxKey(
+                        reader.GetBoolean(10) ? reader.GetString(11) : null,
+                        reader.GetString(12),
+                        persistedLane,
+                        reader.GetString(13),
+                        reader.GetString(14),
+                        reader.GetString(15),
+                        generation
+                    );
+                    mediumMessage.InboxGeneration = new InboxGeneration(generation, incarnationId);
+                    mediumMessage.InboxAttemptFence = new InboxAttemptFence(
+                        storageId,
+                        persistedLane,
+                        generation,
+                        incarnationId,
+                        attemptId,
+                        mediumMessage.Owner,
+                        lockedUntil
+                    );
+                    mediumMessage.IsInboxOrphaned = reader.GetBoolean(19);
+                }
+            }
+#pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort/starve the batch (#3)
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                logger.LogPoisonMessageSkipped(storageId, tableName, ex);
+                poisonMessages.Add(_CreatePoisonMessage(storageId, ex));
+                continue;
+            }
+
+            messages.Add(mediumMessage);
+        }
+
+        return messages;
     }
 
     private async ValueTask _MarkPoisonMessagesTerminalAsync(
@@ -2042,37 +2084,43 @@ internal sealed partial class SqlServerDataStorage(
             return;
         }
 
-        var expiresAt = timeProvider
-            .GetUtcNow()
-            .UtcDateTime.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter);
+        // Expiry is decided against the database clock by the purge, so the database clock also stamps it.
         var isReceivedTable = string.Equals(tableName, _receivedTable, StringComparison.Ordinal);
-        var sql = isReceivedTable
-            ? $"""
-                DECLARE @PoisonTerminalAt datetimeoffset(7) = SYSUTCDATETIME();
-                UPDATE target
-                SET StatusName=@StatusName, NextRetryAt=NULL, LockedUntil=NULL, Owner=NULL,
-                    ExpiresAt=@ExpiresAt, ExceptionInfo=poison.ExceptionInfo,
-                    AttemptId=CASE WHEN target.IsInboxRecord=1 THEN NULL ELSE target.AttemptId END,
-                    TerminalAt=CASE WHEN target.IsInboxRecord=1 THEN @PoisonTerminalAt ELSE target.TerminalAt END,
-                    EffectiveExpiresAt=CASE WHEN target.IsInboxRecord=1
-                        THEN DATEADD(second,CONVERT(int,target.InboxRetentionSeconds),@PoisonTerminalAt)
-                        ELSE target.EffectiveExpiresAt END
-                FROM {tableName} AS target
-                INNER JOIN @PoisonMessages AS poison ON target.Id=poison.Id
-                WHERE {_TerminalRowGuardSimple};
-                """
-            : $"""
-                UPDATE {tableName}
-                SET StatusName=@StatusName, NextRetryAt=NULL, LockedUntil=NULL, Owner=NULL, ExpiresAt=@ExpiresAt
-                WHERE Id IN (SELECT Id FROM @Ids) AND {_TerminalRowGuardSimple};
-                """;
+        var sql = _Dialect.Render(
+            new SqlClockedStatement(
+                isReceivedTable
+                    ? $"""
+                    UPDATE target
+                    SET StatusName=@StatusName, NextRetryAt=NULL, LockedUntil=NULL, Owner=NULL,
+                        ExpiresAt={_Dialect.ShiftByDuration(
+                        SqlDialectTokens.Now,
+                        "ExpiresAfter"
+                    )}, ExceptionInfo=poison.ExceptionInfo,
+                        AttemptId=CASE WHEN target.IsInboxRecord=1 THEN NULL ELSE target.AttemptId END,
+                        TerminalAt=CASE WHEN target.IsInboxRecord=1 THEN {SqlDialectTokens.Now} ELSE target.TerminalAt END,
+                        EffectiveExpiresAt=CASE WHEN target.IsInboxRecord=1
+                            THEN DATEADD(second,CONVERT(int,target.InboxRetentionSeconds),{SqlDialectTokens.Now})
+                            ELSE target.EffectiveExpiresAt END
+                    FROM {tableName} AS target
+                    INNER JOIN OPENJSON(@PoisonMessages) WITH ([Id] uniqueidentifier '$.Id', [ExceptionInfo] nvarchar(max) '$.ExceptionInfo') AS poison
+                        ON target.Id=poison.Id
+                    WHERE {_TerminalRowGuardSimple};
+                    """
+                    : $"""
+                    UPDATE {tableName}
+                    SET StatusName=@StatusName, NextRetryAt=NULL, LockedUntil=NULL, Owner=NULL,
+                        ExpiresAt={_Dialect.ShiftByDuration(SqlDialectTokens.Now, "ExpiresAfter")}
+                    WHERE {_IdsFilter} AND {_TerminalRowGuardSimple};
+                    """
+            )
+        );
         object[] sqlParams =
         [
             new SqlParameter("@StatusName", nameof(StatusName.Failed)),
-            new SqlParameter("@ExpiresAt", SqlDbType.DateTimeOffset) { Value = expiresAt },
+            .. _Duration("ExpiresAfter", TimeSpan.FromSeconds(messagingOptions.Value.FailedMessageExpiredAfter)),
             isReceivedTable
-                ? _BuildPoisonMessageListTvpParameter(poisonMessages)
-                : _BuildIdListTvpParameter(poisonMessages.Select(message => message.StorageId).ToArray()),
+                ? _PoisonMessageListParameter(poisonMessages)
+                : _IdListParameter(poisonMessages.Select(message => message.StorageId).ToArray()),
         ];
 
         // One savepoint isolates the batched terminal mark from the shared claim transaction. If it fails,
@@ -2123,20 +2171,30 @@ internal sealed partial class SqlServerDataStorage(
         }
     }
 
-    private SqlParameter _BuildPoisonMessageListTvpParameter(IReadOnlyList<PoisonMessage> poisonMessages)
+    /// <summary>
+    /// Binds the poison rows as one JSON array of <c>{"Id", "ExceptionInfo"}</c> objects that the terminal mark reads
+    /// with <c>OPENJSON</c>. The kit's list parameter carries single values, not pairs, so the pairs are written here.
+    /// </summary>
+    private static SqlParameter _PoisonMessageListParameter(IReadOnlyList<PoisonMessage> poisonMessages)
     {
-        var messagesTable = new DataTable();
-        messagesTable.Columns.Add("Id", typeof(Guid));
-        messagesTable.Columns.Add("ExceptionInfo", typeof(string));
-        foreach (var poisonMessage in poisonMessages)
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
         {
-            messagesTable.Rows.Add(poisonMessage.StorageId, poisonMessage.ExceptionInfo);
+            writer.WriteStartArray();
+            foreach (var poisonMessage in poisonMessages)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("Id", poisonMessage.StorageId);
+                writer.WriteString("ExceptionInfo", poisonMessage.ExceptionInfo);
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
         }
 
-        return new SqlParameter("@PoisonMessages", SqlDbType.Structured)
+        return new SqlParameter("@PoisonMessages", SqlDbType.NVarChar, -1)
         {
-            TypeName = $"[{storageOptions.Value.Schema}].[HeadlessMessagingPoisonMessageList]",
-            Value = messagesTable,
+            Value = Encoding.UTF8.GetString(buffer.WrittenSpan),
         };
     }
 
@@ -2153,6 +2211,7 @@ internal sealed partial class SqlServerDataStorage(
             return 0;
         }
 
+        var ownerElement = SqlColumnType.Text(options.Value.OwnerColumnMaxLength);
         var sql = $"""
             DECLARE @ReclaimNow datetimeoffset(7) = SYSUTCDATETIME();
 
@@ -2160,15 +2219,15 @@ internal sealed partial class SqlServerDataStorage(
             SET LockedUntil = @ReclaimNow
             FROM {tableName} AS target
             WHERE target.Owner IS NOT NULL
-              AND target.Owner IN (SELECT [Owner] FROM @DeadOwners)
+              AND {_Dialect.InList("target.Owner", "DeadOwners", ownerElement)}
               AND target.LockedUntil > @ReclaimNow
               AND target.IntentType IN (0, 1)
               AND {_TerminalRowGuardSimple};
             """;
 
-        // A TVP keeps the SQL text and parameter shape constant regardless of owner count, so SQL Server reuses
-        // a single cached plan even when a mass-node-loss reconcile batches many dead owners into one UPDATE.
-        var sqlParams = new object[] { _BuildOwnerListTvpParameter(deadOwners) };
+        // One list parameter keeps the SQL text constant whatever the owner count, so SQL Server reuses a single
+        // cached plan even when a mass-node-loss reconcile batches many dead owners into one UPDATE.
+        var sqlParams = new object[] { _Dialect.CreateListParameter("DeadOwners", ownerElement, deadOwners) };
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         return await connection
@@ -2179,30 +2238,6 @@ internal sealed partial class SqlServerDataStorage(
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Builds the <c>@DeadOwners</c> table-valued parameter backed by the <c>HeadlessMessagingOwnerList</c> type
-    /// (provisioned by the messaging schema contribution). The TVP keeps the reclaim plan stable across owner counts.
-    /// </summary>
-    private SqlParameter _BuildOwnerListTvpParameter(IReadOnlyCollection<string> deadOwners)
-    {
-        var ownersTable = new DataTable();
-        ownersTable.Columns.Add("Owner", typeof(string));
-
-        // Defensive de-dup: ReclaimDead* is a public IDataStorage contract method, so a direct caller may pass
-        // duplicate owner tags (the bridge already de-dups its reclaimed set). The TVP's Owner column is the PK,
-        // so duplicates would otherwise violate it.
-        foreach (var owner in deadOwners.Distinct(StringComparer.Ordinal))
-        {
-            ownersTable.Rows.Add(owner);
-        }
-
-        return new SqlParameter("@DeadOwners", SqlDbType.Structured)
-        {
-            TypeName = $"[{storageOptions.Value.Schema}].[HeadlessMessagingOwnerList]",
-            Value = ownersTable,
-        };
     }
 
     /// <summary>

@@ -5,6 +5,7 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
+using Headless.Sql;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -24,15 +25,35 @@ internal sealed partial class PostgreSqlDataStorage
         CancellationToken cancellationToken = default
     )
     {
-        var sql =
-            $"SELECT \"id\",\"content\",\"intent_type\",\"retries\",\"inline_attempts\",\"added\",\"expires_at\" FROM {_publishedTable} WHERE \"version\"=@Version "
-            + $"AND \"intent_type\" IN (0, 1) AND ((\"expires_at\"< @TwoMinutesLater AND \"status_name\" = '{nameof(StatusName.Delayed)}') OR (\"expires_at\"< @OneMinutesAgo AND \"status_name\" = '{nameof(StatusName.Queued)}')) FOR UPDATE SKIP LOCKED LIMIT @BatchSize;";
+        // Due time is the database's: the windows are measured from the database clock, the clock every other due
+        // decision reads, so a replica whose clock is skewed neither schedules a message early nor holds it back.
+        var sql = _Dialect.Render(
+            new SqlClockedStatement(
+                $"""
+                SELECT "id","content","intent_type","retries","inline_attempts","added","expires_at"
+                FROM {_publishedTable}
+                WHERE "version"=@Version
+                  AND "intent_type" IN (0, 1)
+                  AND (("expires_at" < {_Dialect.ShiftByDuration(
+                    SqlDialectTokens.Now,
+                    "Lookahead"
+                )} AND "status_name" = '{nameof(StatusName.Delayed)}')
+                    OR ("expires_at" < {_Dialect.ShiftByDuration(
+                    SqlDialectTokens.Now,
+                    "Lookback",
+                    subtract: true
+                )} AND "status_name" = '{nameof(StatusName.Queued)}'))
+                FOR UPDATE SKIP LOCKED
+                LIMIT @BatchSize;
+                """
+            )
+        );
 
         var sqlParams = new object[]
         {
             _VersionParameter(),
-            new NpgsqlParameter("@TwoMinutesLater", timeProvider.GetUtcNow().Add(_DelayedMessageLookahead)),
-            new NpgsqlParameter("@OneMinutesAgo", timeProvider.GetUtcNow().Subtract(_QueuedMessageLookback)),
+            _Duration("Lookahead", _DelayedMessageLookahead),
+            _Duration("Lookback", _QueuedMessageLookback),
             new NpgsqlParameter("@BatchSize", messagingOptions.Value.SchedulerBatchSize),
         };
 
@@ -110,125 +131,92 @@ internal sealed partial class PostgreSqlDataStorage
         CancellationToken cancellationToken = default
     )
     {
-        var scheduleNow = timeProvider.GetUtcNow();
-        var sql = $"""
-            WITH claim_clock AS MATERIALIZED (
-                SELECT clock_timestamp() AS now
-            ),
-            candidates AS MATERIALIZED (
-                SELECT message."id"
-                FROM {_publishedTable} AS message, claim_clock
-                WHERE message."version"=@Version
-                  AND message."intent_type" IN (0, 1)
-                  AND (message."locked_until" IS NULL OR message."locked_until" <= claim_clock.now)
-                  AND (
-                      (message."status_name"=@DelayedStatusName AND message."expires_at" < @TwoMinutesLater)
-                      OR (message."status_name"=@QueuedStatusName AND message."expires_at" < @OneMinuteAgo)
-                  )
-                ORDER BY message."expires_at", message."id"
-                LIMIT @BatchSize
-                FOR UPDATE OF message SKIP LOCKED
+        // One claim statement moves due delayed (and stale queued) rows to Queued and leases them past their due
+        // time, skipping rows another replica holds. Due time and lease are both the database's clock.
+        var sql = _Dialect.Render(
+            new SqlClaimNext(
+                _publishedTable,
+                ["\"id\""],
+                $"""
+                "version"=@Version
+                AND "intent_type" IN (0, 1)
+                AND ("locked_until" IS NULL OR "locked_until" <= {SqlDialectTokens.Now})
+                AND (
+                    ("status_name"=@DelayedStatusName AND "expires_at" < {_Dialect.ShiftByDuration(
+                    SqlDialectTokens.Now,
+                    "Lookahead"
+                )})
+                    OR ("status_name"=@QueuedStatusName AND "expires_at" < {_Dialect.ShiftByDuration(
+                    SqlDialectTokens.Now,
+                    "Lookback",
+                    subtract: true
+                )})
+                )
+                AND {_TerminalRowGuardSimple}
+                """,
+                ["\"expires_at\"", "\"id\""],
+                $"\"status_name\"=@QueuedStatusName, \"locked_until\"={_Dialect.ShiftByDuration($"GREATEST({SqlDialectTokens.Now}, \"expires_at\")", "Lease")}, \"owner\"=@Owner",
+                [
+                    "\"id\"",
+                    "\"content\"",
+                    "\"intent_type\"",
+                    "\"retries\"",
+                    "\"inline_attempts\"",
+                    "\"added\"",
+                    "\"expires_at\"",
+                    "\"locked_until\"",
+                    "\"owner\"",
+                ],
+                BatchSizeParameter: "BatchSize"
             )
-            UPDATE {_publishedTable} AS message
-            SET "status_name"=@QueuedStatusName,
-                "locked_until"=GREATEST(claim_clock.now, message."expires_at")
-                    + (@LeaseSeconds * INTERVAL '1 second'),
-                "owner"=@Owner
-            FROM candidates, claim_clock
-            WHERE message."id"=candidates."id"
-              AND (message."locked_until" IS NULL OR message."locked_until" <= claim_clock.now)
-              AND {_TerminalRowGuardSimple}
-            RETURNING message."id",message."content",message."intent_type",message."retries",
-                      message."inline_attempts",message."added",message."expires_at",
-                      message."locked_until",message."owner";
-            """;
+        );
 
-        object[] sqlParams =
-        [
-            _VersionParameter(),
-            new NpgsqlParameter("@DelayedStatusName", nameof(StatusName.Delayed)),
-            new NpgsqlParameter("@QueuedStatusName", nameof(StatusName.Queued)),
-            new NpgsqlParameter("@TwoMinutesLater", scheduleNow.Add(_DelayedMessageLookahead)),
-            new NpgsqlParameter("@OneMinuteAgo", scheduleNow.Subtract(_QueuedMessageLookback)),
-            new NpgsqlParameter("@BatchSize", messagingOptions.Value.SchedulerBatchSize),
-            new NpgsqlParameter("@LeaseSeconds", messagingOptions.Value.RetryPolicy.DispatchTimeout.TotalSeconds),
-            new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
-            {
-                Value = nodeMembership.GetOwnerTag() ?? (object)DBNull.Value,
-            },
-        ];
-
-        await using var connection = postgreSqlOptions.Value.CreateConnection();
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        var poisonMessages = new List<PoisonMessage>();
-        var claimed = await connection
-            .ExecuteReaderAsync(
-                sql,
-                async (reader, token) =>
+        // The transaction commits without the caller's token: PostgreSQL may commit after accepting COMMIT even when
+        // the client then observes cancellation, and the claim must not lose winners it already leased.
+        var claimed = await SqlAutonomousTransaction
+            .RunAsync(
+                _Dialect,
+                () => postgreSqlOptions.Value.CreateConnection(),
+                async (connection, transaction, ct) =>
                 {
-                    var messages = new List<MediumMessage>();
-                    while (await reader.ReadAsync(token).ConfigureAwait(false))
-                    {
-                        var storageId = reader.GetGuid(0);
-                        var content = reader.GetString(1);
-                        try
+                    object[] sqlParams =
+                    [
+                        _VersionParameter(),
+                        new NpgsqlParameter("@DelayedStatusName", nameof(StatusName.Delayed)),
+                        new NpgsqlParameter("@QueuedStatusName", nameof(StatusName.Queued)),
+                        _Duration("Lookahead", _DelayedMessageLookahead),
+                        _Duration("Lookback", _QueuedMessageLookback),
+                        new NpgsqlParameter("@BatchSize", messagingOptions.Value.SchedulerBatchSize),
+                        _Duration("Lease", messagingOptions.Value.RetryPolicy.DispatchTimeout),
+                        new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
                         {
-                            messages.Add(
-                                new MediumMessage
-                                {
-                                    StorageId = storageId,
-                                    Origin = serializer.Deserialize(content)!,
-                                    Content = content,
-                                    Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2)),
-                                    Retries = reader.GetInt32(3),
-                                    InlineAttempts = reader.GetInt32(4),
-                                    Added = await reader
-                                        .GetFieldValueAsync<DateTimeOffset>(5, token)
-                                        .ConfigureAwait(false),
-                                    ExpiresAt = await reader
-                                        .GetFieldValueAsync<DateTimeOffset>(6, token)
-                                        .ConfigureAwait(false),
-                                    LockedUntil = await reader
-                                        .GetFieldValueAsync<DateTimeOffset>(7, token)
-                                        .ConfigureAwait(false),
-                                    Owner = await reader.IsDBNullAsync(8, token).ConfigureAwait(false)
-                                        ? null
-                                        : reader.GetString(8),
-                                }
-                            );
-                        }
-#pragma warning disable CA1031 // one un-deserializable row must not abort or starve the batch
-                        catch (Exception ex)
-#pragma warning restore CA1031
-                        {
-                            logger.LogPoisonMessageSkipped(storageId, _publishedTable, ex);
-                            poisonMessages.Add(_CreatePoisonMessage(storageId, ex));
-                        }
-                    }
+                            Value = nodeMembership.GetOwnerTag() ?? (object)DBNull.Value,
+                        },
+                    ];
+                    var poisonMessages = new List<PoisonMessage>();
+                    var messages = await connection
+                        .ExecuteReaderAsync(
+                            sql,
+                            (reader, token) => _ReadDelayedClaimAsync(reader, poisonMessages, token),
+                            transaction: transaction,
+                            commandTimeout: messagingOptions.Value.CommandTimeout,
+                            sqlParams: sqlParams,
+                            cancellationToken: ct
+                        )
+                        .ConfigureAwait(false);
+
+                    await _MarkPoisonMessagesTerminalAsync(connection, transaction, _publishedTable, poisonMessages, ct)
+                        .ConfigureAwait(false);
+                    ct.ThrowIfCancellationRequested();
 
                     return messages;
                 },
-                transaction: transaction,
-                commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams: sqlParams,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        await _MarkPoisonMessagesTerminalAsync(
-                connection,
-                transaction,
-                _publishedTable,
-                poisonMessages,
+                timeProvider,
                 cancellationToken
             )
             .ConfigureAwait(false);
-        cancellationToken.ThrowIfCancellationRequested();
-        // PostgreSQL may commit after accepting COMMIT even when the client subsequently observes cancellation.
-        // Once commit starts, observe its definitive outcome so callers never lose committed claim winners.
-        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
 
+        // The claim reports rows in no particular order; callers dispatch in due order.
         claimed.Sort(
             static (left, right) =>
             {
@@ -237,5 +225,54 @@ internal sealed partial class PostgreSqlDataStorage
             }
         );
         return claimed;
+    }
+
+    private async Task<List<MediumMessage>> _ReadDelayedClaimAsync(
+        DbDataReader reader,
+        List<PoisonMessage> poisonMessages,
+        CancellationToken cancellationToken
+    )
+    {
+        var messages = new List<MediumMessage>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var storageId = reader.GetGuid(0);
+            var content = reader.GetString(1);
+            try
+            {
+                messages.Add(
+                    new MediumMessage
+                    {
+                        StorageId = storageId,
+                        Origin = serializer.Deserialize(content)!,
+                        Content = content,
+                        Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(2)),
+                        Retries = reader.GetInt32(3),
+                        InlineAttempts = reader.GetInt32(4),
+                        Added = await reader
+                            .GetFieldValueAsync<DateTimeOffset>(5, cancellationToken)
+                            .ConfigureAwait(false),
+                        ExpiresAt = await reader
+                            .GetFieldValueAsync<DateTimeOffset>(6, cancellationToken)
+                            .ConfigureAwait(false),
+                        LockedUntil = await reader
+                            .GetFieldValueAsync<DateTimeOffset>(7, cancellationToken)
+                            .ConfigureAwait(false),
+                        Owner = await reader.IsDBNullAsync(8, cancellationToken).ConfigureAwait(false)
+                            ? null
+                            : reader.GetString(8),
+                    }
+                );
+            }
+#pragma warning disable CA1031 // one un-deserializable row must not abort or starve the batch
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                logger.LogPoisonMessageSkipped(storageId, _publishedTable, ex);
+                poisonMessages.Add(_CreatePoisonMessage(storageId, ex));
+            }
+        }
+
+        return messages;
     }
 }

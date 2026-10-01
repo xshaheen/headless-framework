@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Security.Claims;
 using System.Text.Json;
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
@@ -2310,57 +2311,162 @@ public abstract partial class DataStorageTestsBase : TestBase
         claimed.LockedUntil.Should().BeAfter(DateTimeOffset.UtcNow).And.BeBefore(DateTimeOffset.UtcNow.AddMinutes(10));
     }
 
-    public virtual async Task should_use_application_clock_when_scheduling_published_retry()
+    public virtual async Task should_decide_published_retry_due_on_database_clock()
     {
-        var (storage, schedulingClock) = _CreateRelationalSchedulingClockStorage();
-        var storedMessage = await storage.StoreMessageAsync(
-            "application-clock-published-retry",
+        // The application clocks are an hour off the database's in both directions; only the database clock decides.
+        var lateClockStorage = _CreateRelationalSchedulingClockStorage().Storage;
+        var fastClockStorage = _CreateRelationalClockSkewStorage();
+        var storage = GetStorage();
+        var due = await storage.StoreMessageAsync(
+            "db-clock-due-published",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+        var notDue = await storage.StoreMessageAsync(
+            "db-clock-not-due-published",
             CreateMessage(),
             cancellationToken: AbortToken
         );
         await storage.ChangePublishStateAsync(
-            storedMessage,
+            due,
             StatusName.Failed,
-            nextRetryAt: schedulingClock.GetUtcNow().AddMinutes(1),
+            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(-1),
+            cancellationToken: AbortToken
+        );
+        await storage.ChangePublishStateAsync(
+            notDue,
+            StatusName.Failed,
+            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(30),
             cancellationToken: AbortToken
         );
 
-        (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+        // The behind clock claims first: a claim leases what it returns, so the other would take the due row.
+        (await lateClockStorage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
-            .NotContain(m => m.StorageId == storedMessage.StorageId);
-
-        schedulingClock.Advance(TimeSpan.FromMinutes(2));
-
-        (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+            .Contain(m => m.StorageId == due.StorageId, "an application clock running behind must not hold it back");
+        (await fastClockStorage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
-            .ContainSingle(m => m.StorageId == storedMessage.StorageId);
+            .NotContain(
+                m => m.StorageId == notDue.StorageId,
+                "an application clock running ahead must not make it due"
+            );
     }
 
-    public virtual async Task should_use_application_clock_when_scheduling_received_retry()
+    public virtual async Task should_decide_received_retry_due_on_database_clock()
     {
-        var (storage, schedulingClock) = _CreateRelationalSchedulingClockStorage();
-        var storedMessage = await storage.StoreReceivedMessageAsync(
-            "application-clock-received-retry",
-            "application-clock-group",
+        var lateClockStorage = _CreateRelationalSchedulingClockStorage().Storage;
+        var fastClockStorage = _CreateRelationalClockSkewStorage();
+        var storage = GetStorage();
+        var due = await storage.StoreReceivedMessageAsync(
+            "db-clock-due-received",
+            "db-clock-group",
+            CreateMessage(),
+            AbortToken
+        );
+        var notDue = await storage.StoreReceivedMessageAsync(
+            "db-clock-not-due-received",
+            "db-clock-group",
             CreateMessage(),
             AbortToken
         );
         await storage.ChangeReceiveStateAsync(
-            storedMessage,
+            due,
             StatusName.Failed,
-            nextRetryAt: schedulingClock.GetUtcNow().AddMinutes(1),
+            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(-1),
+            cancellationToken: AbortToken
+        );
+        await storage.ChangeReceiveStateAsync(
+            notDue,
+            StatusName.Failed,
+            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(30),
             cancellationToken: AbortToken
         );
 
-        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+        // The behind clock claims first: a claim leases what it returns, so the other would take the due row.
+        (await lateClockStorage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
-            .NotContain(m => m.StorageId == storedMessage.StorageId);
-
-        schedulingClock.Advance(TimeSpan.FromMinutes(2));
-
-        (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
+            .Contain(m => m.StorageId == due.StorageId, "an application clock running behind must not hold it back");
+        (await fastClockStorage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
-            .ContainSingle(m => m.StorageId == storedMessage.StorageId);
+            .NotContain(
+                m => m.StorageId == notDue.StorageId,
+                "an application clock running ahead must not make it due"
+            );
+    }
+
+    public virtual async Task should_stamp_initial_dispatch_grace_from_database_clock(bool published)
+    {
+        var lateClockStorage = _CreateRelationalSchedulingClockStorage().Storage;
+        var before = DateTimeOffset.UtcNow;
+
+        var stored = published
+            ? await lateClockStorage.StoreMessageAsync("db-clock-grace", CreateMessage(), cancellationToken: AbortToken)
+            : await lateClockStorage.StoreReceivedMessageAsync(
+                "db-clock-grace",
+                "db-clock-grace-group",
+                CreateMessage(),
+                AbortToken
+            );
+
+        // The container clock and the test host clock agree to well within a minute; the skew is an hour.
+        stored.Added.Should().BeCloseTo(before, TimeSpan.FromMinutes(1));
+        stored.NextRetryAt.Should().NotBeNull();
+        (stored.NextRetryAt!.Value - stored.Added).Should().Be(new MessagingOptions().RetryPolicy.InitialDispatchGrace);
+        var pickedUp = published
+            ? await lateClockStorage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)
+            : await lateClockStorage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
+        pickedUp.Should().NotContain(m => m.StorageId == stored.StorageId, "the grace has not elapsed on the database");
+    }
+
+    public virtual async Task should_decide_delayed_message_due_on_database_clock()
+    {
+        var lateClockStorage = _CreateRelationalSchedulingClockStorage().Storage;
+        var fastClockStorage = _CreateRelationalClockSkewStorage();
+        if (
+            lateClockStorage is not IDelayedMessageClaimStorage lateClaimer
+            || fastClockStorage is not IDelayedMessageClaimStorage fastClaimer
+        )
+        {
+            Assert.Skip("Storage does not support atomic delayed-message claiming");
+            return;
+        }
+
+        var notDue = await fastClockStorage.StoreScheduledMessageAsync(
+            "db-clock-delayed-not-due",
+            _CreateScheduledEnvelope(),
+            DateTimeOffset.UtcNow.AddMinutes(30),
+            cancellationToken: AbortToken
+        );
+        // Ninety seconds out: past the one-minute window that stores a message as Queued for its publisher, inside
+        // the two-minute window the delayed claim looks ahead.
+        var due = await lateClockStorage.StoreScheduledMessageAsync(
+            "db-clock-delayed-due",
+            _CreateScheduledEnvelope(),
+            DateTimeOffset.UtcNow.AddSeconds(90),
+            cancellationToken: AbortToken
+        );
+
+        // The behind clock claims first: a claim leases what it returns, so the other would take the due row.
+        (await lateClaimer.ClaimDelayedMessagesAsync(AbortToken))
+            .Should()
+            .Contain(m => m.StorageId == due.StorageId, "an application clock running behind must not hold it back");
+        (await fastClaimer.ClaimDelayedMessagesAsync(AbortToken))
+            .Should()
+            .NotContain(
+                m => m.StorageId == notDue.StorageId,
+                "an application clock running ahead must not make it due"
+            );
+    }
+
+    private MediumMessage _CreateScheduledEnvelope()
+    {
+        return new MediumMessage
+        {
+            StorageId = Guid.Empty,
+            Origin = CreateMessage(),
+            Content = string.Empty,
+            Lane = MessageLane.Bus,
+        };
     }
 
     public virtual async Task should_return_unstored_snapshot_when_redelivery_hits_active_receive_lease()

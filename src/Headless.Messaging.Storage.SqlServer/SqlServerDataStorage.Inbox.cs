@@ -8,6 +8,7 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
+using Headless.Sql;
 using Microsoft.Data.SqlClient;
 
 #pragma warning disable CA1849, VSTHRD103, AsyncFixer02, MA0042 // Once a row is buffered, these small typed reads cannot add blocking I/O.
@@ -231,25 +232,33 @@ internal sealed partial class SqlServerDataStorage
             return false;
         }
 
-        var nextRetryAt = timeProvider.GetUtcNow().Add(messagingOptions.Value.OrphanProbeInterval);
-        var sql = $"""
-            UPDATE {_receivedTable}
-            SET [IsInboxOrphaned]=@IsInboxOrphaned,
-                [NextRetryAt]=CASE WHEN @IsInboxOrphaned=1 THEN @NextRetryAt ELSE [NextRetryAt] END,
-                [Owner]=CASE WHEN @IsInboxOrphaned=1 THEN NULL ELSE [Owner] END,
-                [LockedUntil]=CASE WHEN @IsInboxOrphaned=1 THEN NULL ELSE [LockedUntil] END
-            WHERE [Id]=@Id
-              AND [IntentType]=@IntentType
-              AND [Generation]=@Generation
-              AND [GenerationIncarnationId]=@GenerationIncarnationId
-              AND [AttemptId]=@AttemptId
-              AND ([Owner]=@Owner OR ([Owner] IS NULL AND @Owner IS NULL))
-              AND [LockedUntil]=@LockedUntil
-              AND [LockedUntil]>SYSUTCDATETIME();
-            """;
+        // The next orphan probe falls due on the database clock, the clock the retry pickup compares it against.
+        var sql = _Dialect.Render(
+            new SqlClockedStatement(
+                $"""
+                UPDATE {_receivedTable}
+                SET [IsInboxOrphaned]=@IsInboxOrphaned,
+                    [NextRetryAt]=CASE WHEN @IsInboxOrphaned=1 THEN {_Dialect.ShiftByDuration(
+                    SqlDialectTokens.Now,
+                    "ProbeInterval"
+                )} ELSE [NextRetryAt] END,
+                    [Owner]=CASE WHEN @IsInboxOrphaned=1 THEN NULL ELSE [Owner] END,
+                    [LockedUntil]=CASE WHEN @IsInboxOrphaned=1 THEN NULL ELSE [LockedUntil] END
+                OUTPUT inserted.[NextRetryAt]
+                WHERE [Id]=@Id
+                  AND [IntentType]=@IntentType
+                  AND [Generation]=@Generation
+                  AND [GenerationIncarnationId]=@GenerationIncarnationId
+                  AND [AttemptId]=@AttemptId
+                  AND ([Owner]=@Owner OR ([Owner] IS NULL AND @Owner IS NULL))
+                  AND [LockedUntil]=@LockedUntil
+                  AND [LockedUntil]>{SqlDialectTokens.Now};
+                """
+            )
+        );
         object[] parameters =
         [
-            new SqlParameter("@NextRetryAt", SqlDbType.DateTimeOffset) { Value = nextRetryAt },
+            .. _Duration("ProbeInterval", messagingOptions.Value.OrphanProbeInterval),
             new SqlParameter("@IsInboxOrphaned", SqlDbType.Bit) { Value = orphaned },
             new SqlParameter("@Id", fence.StorageId),
             new SqlParameter("@IntentType", SqlDbType.SmallInt)
@@ -267,15 +276,24 @@ internal sealed partial class SqlServerDataStorage
         ];
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
-        var changed = await connection
-            .ExecuteNonQueryAsync(
+        var (changed, nextRetryAt) = await connection
+            .ExecuteReaderAsync(
                 sql,
+                static async (reader, token) =>
+                    await reader.ReadAsync(token).ConfigureAwait(false)
+                        ? (
+                            true,
+                            await reader.IsDBNullAsync(0, token).ConfigureAwait(false)
+                                ? (DateTimeOffset?)null
+                                : await reader.GetFieldValueAsync<DateTimeOffset>(0, token).ConfigureAwait(false)
+                        )
+                        : (false, null),
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: parameters,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
-        if (changed == 1)
+        if (changed)
         {
             message.IsInboxOrphaned = orphaned;
             if (orphaned)
@@ -286,7 +304,7 @@ internal sealed partial class SqlServerDataStorage
             }
         }
 
-        return changed == 1;
+        return changed;
     }
 
     private static byte[] _CreateInboxKeyHash(
