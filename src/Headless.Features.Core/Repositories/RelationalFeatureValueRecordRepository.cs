@@ -18,15 +18,6 @@ internal sealed class RelationalFeatureValueRecordRepository(
     TimeProvider timeProvider
 ) : IFeatureValueRecordRepository
 {
-    // Filters are sized to their columns, so the plan is reused and the comparison keeps the column's collation.
-    private static readonly SqlColumnType _NameFilter = SqlColumnType.Text(FeatureValueRecordConstants.NameMaxLength);
-    private static readonly SqlColumnType _ProviderNameFilter = SqlColumnType.Text(
-        FeatureValueRecordConstants.ProviderNameMaxLength
-    );
-    private static readonly SqlColumnType _ProviderKeyFilter = SqlColumnType.Text(
-        FeatureValueRecordConstants.ProviderKeyMaxLength
-    );
-
     // Written text is unbounded: a parameter sized to the column would silently truncate an over-long value, where the
     // column must reject it.
     private static readonly SqlColumnType _Written = SqlColumnType.Text(-1);
@@ -59,9 +50,14 @@ internal sealed class RelationalFeatureValueRecordRepository(
                 sql,
                 command =>
                 {
-                    _dialect.AddParameter(command, "Name", _NameFilter, name);
-                    _dialect.AddParameter(command, "ProviderName", _ProviderNameFilter, providerName);
-                    _dialect.AddParameter(command, "ProviderKey", _ProviderKeyFilter, providerKey);
+                    _AddFilter(command, "Name", FeatureValueRecordConstants.NameMaxLength, name);
+                    _AddFilter(
+                        command,
+                        "ProviderName",
+                        FeatureValueRecordConstants.ProviderNameMaxLength,
+                        providerName
+                    );
+                    _AddFilter(command, "ProviderKey", FeatureValueRecordConstants.ProviderKeyMaxLength, providerKey);
                 },
                 cancellationToken
             )
@@ -96,16 +92,21 @@ internal sealed class RelationalFeatureValueRecordRepository(
             sql,
             command =>
             {
-                _dialect.AddParameter(command, "Name", _NameFilter, name);
+                _AddFilter(command, "Name", FeatureValueRecordConstants.NameMaxLength, name);
 
                 if (providerName is not null)
                 {
-                    _dialect.AddParameter(command, "ProviderName", _ProviderNameFilter, providerName);
+                    _AddFilter(
+                        command,
+                        "ProviderName",
+                        FeatureValueRecordConstants.ProviderNameMaxLength,
+                        providerName
+                    );
                 }
 
                 if (providerKey is not null)
                 {
-                    _dialect.AddParameter(command, "ProviderKey", _ProviderKeyFilter, providerKey);
+                    _AddFilter(command, "ProviderKey", FeatureValueRecordConstants.ProviderKeyMaxLength, providerKey);
                 }
             },
             cancellationToken
@@ -125,13 +126,15 @@ internal sealed class RelationalFeatureValueRecordRepository(
             return Task.FromResult(new List<FeatureValueRecord>());
         }
 
-        var sql = $"{_select} WHERE {_dialect.InList(_name, "Names", _NameFilter)} AND {_byScope};";
+        var nameList = _ListElement(names, FeatureValueRecordConstants.NameMaxLength);
+
+        var sql = $"{_select} WHERE {_dialect.InList(_name, "Names", nameList)} AND {_byScope};";
 
         return _ReadAsync(
             sql,
             command =>
             {
-                _dialect.AddListParameter(command, "Names", _NameFilter, names);
+                _dialect.AddListParameter(command, "Names", nameList, names);
                 _AddScope(command, providerName, providerKey);
             },
             cancellationToken
@@ -255,8 +258,8 @@ internal sealed class RelationalFeatureValueRecordRepository(
 
     private void _AddScope(DbCommand command, string providerName, string? providerKey)
     {
-        _dialect.AddParameter(command, "ProviderName", _ProviderNameFilter, providerName);
-        _dialect.AddParameter(command, "ProviderKey", _ProviderKeyFilter, providerKey);
+        _AddFilter(command, "ProviderName", FeatureValueRecordConstants.ProviderNameMaxLength, providerName);
+        _AddFilter(command, "ProviderKey", FeatureValueRecordConstants.ProviderKeyMaxLength, providerKey);
     }
 
     private async Task<List<FeatureValueRecord>> _ReadAsync(
@@ -290,6 +293,24 @@ internal sealed class RelationalFeatureValueRecordRepository(
         }
 
         return result;
+    }
+
+    // Sized to the column, so the plan is reused and the comparison keeps the column's collation. A longer value is
+    // bound unsized: a sized SQL Server parameter would truncate it and match the rows that store its prefix.
+    private void _AddFilter(DbCommand command, string parameter, int maxLength, string? value)
+    {
+        _dialect.AddParameter(
+            command,
+            parameter,
+            SqlColumnType.Text(value?.Length > maxLength ? -1 : maxLength),
+            value
+        );
+    }
+
+    // A list binds each element the way _AddFilter binds one value: sized, unless an element is longer than the column.
+    private static SqlColumnType _ListElement(IEnumerable<string> values, int maxLength)
+    {
+        return SqlColumnType.Text(values.Any(value => value.Length > maxLength) ? -1 : maxLength);
     }
 
     private DbCommand _CreateCommand(DbConnection connection, DbTransaction? transaction, string sql)
