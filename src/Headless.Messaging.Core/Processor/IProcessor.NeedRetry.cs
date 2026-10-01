@@ -35,6 +35,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
     private readonly IMessagingCapabilityModel? _capabilityModel;
     private readonly InboxMetricPolicy _inboxMetricPolicy;
     private readonly ConsumerRegistry? _consumerRegistry;
+    private readonly IRuntimeConsumerRegistry _runtimeConsumerRegistry;
     private readonly bool _adaptivePolling;
     private readonly double _circuitOpenRateThreshold;
     private readonly Dictionary<RetryQuadrantKey, RetryQuadrantState> _quadrants;
@@ -59,7 +60,8 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         IMessagingCapabilityModel? capabilityModel = null,
         InboxMetricPolicy? inboxMetricPolicy = null,
         ConsumerRegistry? consumerRegistry = null,
-        MessagingOutboxes? outboxes = null
+        MessagingOutboxes? outboxes = null,
+        IRuntimeConsumerRegistry? runtimeConsumerRegistry = null
     )
     {
         _options = options;
@@ -73,6 +75,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         _capabilityModel = capabilityModel;
         _inboxMetricPolicy = inboxMetricPolicy ?? new InboxMetricPolicy(TenantTagName: null);
         _consumerRegistry = consumerRegistry;
+        _runtimeConsumerRegistry = runtimeConsumerRegistry ?? EmptyRuntimeConsumerRegistry.Instance;
 
         _adaptivePolling = retryOptions.Value.AdaptivePolling;
         _maxInterval = retryOptions.Value.MaxPollingInterval;
@@ -477,15 +480,50 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         }
     }
 
+    /// <summary>
+    /// The consumer identities whose received rows this host retries, or <see langword="null"/> on an unfiltered host.
+    /// </summary>
+    /// <remarks>
+    /// Read per cycle rather than in the constructor: ConsumeOnly resolves when registrations drain, which the
+    /// bootstrapper completes before this processor runs but after the container builds it, and runtime subscriptions
+    /// attach and detach while the host runs. ConsumeOnly never filters a runtime subscription, and a competing one
+    /// stores its rows under its resolved identity, so a filtered host adds the identities of the subscriptions
+    /// attached to it; leaving them out would strand their failed rows, since no other host owns the delegate.
+    /// Every-instance subscriptions store no rows, so they add nothing.
+    /// </remarks>
+    private IReadOnlyCollection<string>? _GetPickupConsumerIdentities()
+    {
+        var consumed = _consumerRegistry?.ConsumeFilter.ConsumedIdentities;
+        if (consumed is null)
+        {
+            return null;
+        }
+
+        HashSet<string>? identities = null;
+        foreach (var descriptor in _runtimeConsumerRegistry.GetDescriptors())
+        {
+            if (descriptor.EveryInstance)
+            {
+                continue;
+            }
+
+            identities ??= new HashSet<string>(consumed, StringComparer.Ordinal);
+            identities.Add(descriptor.ResolvedConsumerIdentity);
+        }
+
+        // Keep the filter's ordinal order so a provider that binds the set as a query parameter sees a stable value.
+        return identities is null || identities.Count == consumed.Count
+            ? consumed
+            : [.. identities.Order(StringComparer.Ordinal)];
+    }
+
     private async Task _ExecuteReceivedWorkAsync(
         RetryQuadrantState state,
         IDataStorage connection,
         ProcessingContext context
     )
     {
-        // Read per cycle rather than in the constructor: ConsumeOnly resolves when registrations drain, which the
-        // bootstrapper completes before this processor runs but after the container builds it.
-        var consumerIdentities = _consumerRegistry?.ConsumeFilter.ConsumedIdentities;
+        var consumerIdentities = _GetPickupConsumerIdentities();
         var pickup = await _GetSafelyAsync(
                 token => connection.GetReceivedMessagesOfNeedRetryAsync(state.Key.Lane, consumerIdentities, token),
                 state,

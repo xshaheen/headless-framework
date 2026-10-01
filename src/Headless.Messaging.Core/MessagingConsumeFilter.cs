@@ -10,8 +10,9 @@ namespace Headless.Messaging;
 /// Every-instance consumers are never filtered: each process owns a subscription for per-process state such as a
 /// local cache, so a host that skipped one would silently keep stale state. They also never store rows, so they are
 /// absent from <see cref="ConsumedIdentities"/> and the retry pickup is unaffected.
-/// The retry processor passes <see cref="ConsumedIdentities"/> to every received-row pickup, so a filtered host never
-/// leases a retry or orphan probe for a consumer it has no executor for. Without that, the host would mark another
+/// The retry processor passes <see cref="ConsumedIdentities"/>, plus the identities of the competing runtime
+/// subscriptions attached to the host, to every received-row pickup, so a filtered host never leases a retry or orphan
+/// probe for a consumer it has no executor for. Without that, the host would mark another
 /// host's healthy inbox row as an orphan, or fail a non-inbox row terminally as having no subscriber.
 /// </remarks>
 internal sealed class MessagingConsumeFilter

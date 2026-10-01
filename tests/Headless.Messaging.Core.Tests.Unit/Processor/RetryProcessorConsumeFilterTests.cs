@@ -112,10 +112,84 @@ public sealed class RetryProcessorConsumeFilterTests : TestBase
             .EnqueueToExecute(Arg.Is<MediumMessage>(x => x.StorageId == ordersRow), null, Arg.Any<CancellationToken>());
     }
 
-    private static Host _BuildHost(string? consumeOnly, IDataStorage? sharedStorage = null)
+    [Fact]
+    public async Task should_retry_an_attached_runtime_subscriptions_failed_row_on_a_consume_only_host()
+    {
+        // given - ConsumeOnly never filters a runtime subscription, and only the host holding the delegate can run it
+        await using var host = _BuildHost(TestConsumers.Shipment);
+        var subscription = host.AttachRuntimeSubscription(_LiveInvoices);
+        var storageId = await _SeedDueNonInboxRowAsync(host.Storage, subscription);
+
+        // when
+        await host.RunReceivedRetryCycleAsync();
+
+        // then
+        await host
+            .Dispatcher.Received(1)
+            .EnqueueToExecute(Arg.Is<MediumMessage>(x => x.StorageId == storageId), null, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_bind_attached_competing_runtime_subscriptions_to_both_received_pickups()
+    {
+        // given - a competing runtime subscription stores rows under its identity; an every-instance one stores none
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .GetReceivedMessagesOfNeedRetryAsync(
+                Arg.Any<MessageLane>(),
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+        storage
+            .GetReceivedInboxOrphansOfNeedRetryAsync(
+                Arg.Any<MessageLane>(),
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+        var runtime = Substitute.For<IRuntimeConsumerRegistry>();
+        runtime
+            .GetDescriptors()
+            .Returns([
+                _RuntimeDescriptor(_LiveInvoices, everyInstance: false),
+                _RuntimeDescriptor("billing-live.prices", everyInstance: true),
+            ]);
+        await using var host = _BuildHost(TestConsumers.Shipment, storage, runtime);
+
+        // when
+        await host.RunReceivedRetryCycleAsync();
+
+        // then
+        string[] expected = [_LiveInvoices, TestConsumers.Shipment];
+        await storage
+            .Received(1)
+            .GetReceivedMessagesOfNeedRetryAsync(
+                MessageLane.Bus,
+                Arg.Is<IReadOnlyCollection<string>?>(x => x != null && x.SequenceEqual(expected)),
+                Arg.Any<CancellationToken>()
+            );
+        await storage
+            .Received(1)
+            .GetReceivedInboxOrphansOfNeedRetryAsync(
+                MessageLane.Bus,
+                Arg.Is<IReadOnlyCollection<string>?>(x => x != null && x.SequenceEqual(expected)),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    // A competing runtime subscription to a message no ConsumeOnly-selected consumer handles.
+    private const string _LiveInvoices = "billing-live.invoices";
+
+    private static Host _BuildHost(
+        string? consumeOnly,
+        IDataStorage? sharedStorage = null,
+        IRuntimeConsumerRegistry? runtimeRegistry = null
+    )
     {
         var services = new ServiceCollection();
         services.AddLogging();
+
         services.AddSingleton<HostControlProbe>();
         services.ConfigureMessaging(messaging =>
         {
@@ -136,6 +210,11 @@ public sealed class RetryProcessorConsumeFilterTests : TestBase
             services.AddSingleton(sharedStorage);
         }
 
+        if (runtimeRegistry is not null)
+        {
+            services.AddSingleton(runtimeRegistry);
+        }
+
         var provider = services.BuildServiceProvider();
         var registry = provider.GetDrainedConsumerRegistry();
         var dispatcher = Substitute.For<IDispatcher>();
@@ -146,7 +225,8 @@ public sealed class RetryProcessorConsumeFilterTests : TestBase
             dispatcher,
             Substitute.For<IDistributedLock>(),
             consumerResolver: provider.GetRequiredService<MethodMatcherCache>(),
-            consumerRegistry: registry
+            consumerRegistry: registry,
+            runtimeConsumerRegistry: provider.GetRequiredService<IRuntimeConsumerRegistry>()
         );
 
         return new Host(provider, processor, dispatcher);
@@ -158,7 +238,7 @@ public sealed class RetryProcessorConsumeFilterTests : TestBase
         var message = (
             await storage.AdmitReceivedMessageAsync(
                 descriptor.MessageName,
-                descriptor.ConsumerIdentity,
+                descriptor.ResolvedConsumerIdentity,
                 descriptor.MessageContractVersion,
                 _Envelope(descriptor),
                 cancellationToken: AbortToken
@@ -194,7 +274,7 @@ public sealed class RetryProcessorConsumeFilterTests : TestBase
     {
         var stored = await storage.StoreReceivedMessageAsync(
             descriptor.MessageName,
-            descriptor.ConsumerIdentity,
+            descriptor.ResolvedConsumerIdentity,
             _Envelope(descriptor),
             AbortToken
         );
@@ -212,6 +292,16 @@ public sealed class RetryProcessorConsumeFilterTests : TestBase
         return stored.StorageId;
     }
 
+    private static ConsumerExecutorDescriptor _RuntimeDescriptor(string identity, bool everyInstance) =>
+        new()
+        {
+            ConsumerType = typeof(RetryProcessorConsumeFilterTests),
+            MessageName = "billing.invoice-issued",
+            SubscriptionName = identity,
+            Lane = MessageLane.Bus,
+            EveryInstance = everyInstance,
+        };
+
     private static MediumMessage _Envelope(ConsumerExecutorDescriptor descriptor) =>
         new()
         {
@@ -223,7 +313,7 @@ public sealed class RetryProcessorConsumeFilterTests : TestBase
                 {
                     [Headers.MessageId] = Guid.NewGuid().ToString(),
                     [Headers.MessageName] = descriptor.MessageName,
-                    [Headers.ConsumerIdentity] = descriptor.ConsumerIdentity,
+                    [Headers.ConsumerIdentity] = descriptor.ResolvedConsumerIdentity,
                 },
                 "payload"
             ),
@@ -243,6 +333,21 @@ public sealed class RetryProcessorConsumeFilterTests : TestBase
                 .SelectCandidates()
                 .SingleOrDefault(x => string.Equals(x.ConsumerIdentity, identity, StringComparison.Ordinal))
             ?? throw new InvalidOperationException($"Host does not run consumer '{identity}'.");
+
+        public ConsumerExecutorDescriptor AttachRuntimeSubscription(string identity)
+        {
+            var runtime = provider.GetRequiredService<IRuntimeConsumerRegistry>();
+            runtime.Register<InvoiceIssued>(
+                static (_, _, _) => ValueTask.CompletedTask,
+                new RuntimeSubscriptionOptions { Identity = identity, HandlerId = identity }
+            );
+            // The subscriber invalidates the executor cache on attach; registering directly must do the same.
+            provider.GetRequiredService<MethodMatcherCache>().Invalidate();
+
+            return runtime
+                .GetDescriptors()
+                .Single(x => string.Equals(x.ResolvedConsumerIdentity, identity, StringComparison.Ordinal));
+        }
 
         public async Task RunReceivedRetryCycleAsync()
         {
