@@ -203,13 +203,18 @@ internal sealed class ConsumerRegister(
         }
     }
 
+    /// <summary>
+    /// Applies a runtime subscription change. Only the subscription groups whose shape changed are rebuilt: an added
+    /// group starts its clients, a removed one stops them, and a changed one does both. Every other group keeps its
+    /// clients, so an unrelated every-instance consumer is not re-established and its hook does not run.
+    /// </summary>
     public async ValueTask OnTopologyChangedAsync(CancellationToken cancellationToken = default)
     {
         var current = (LifecycleState)Volatile.Read(ref _state);
 
         if (current == LifecycleState.Running)
         {
-            await ReStartAsync(force: true, cancellationToken).ConfigureAwait(false);
+            await _RefreshTopologyAsync(cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -225,9 +230,141 @@ internal sealed class ConsumerRegister(
                 && Interlocked.CompareExchange(ref _pendingTopologyRefresh, 0, 1) == 1
             )
             {
-                await ReStartAsync(force: true, cancellationToken).ConfigureAwait(false);
+                await _RefreshTopologyAsync(cancellationToken).ConfigureAwait(false);
             }
         }
+    }
+
+    private async ValueTask _RefreshTopologyAsync(CancellationToken cancellationToken)
+    {
+        if ((LifecycleState)Volatile.Read(ref _state) is LifecycleState.Disposing or LifecycleState.Disposed)
+        {
+            return;
+        }
+
+        await _restartGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _ApplyTopologyChangeAsync().ConfigureAwait(false);
+            await _DrainPendingTopologyRefreshesAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            try
+            {
+                _restartGate.Release();
+            }
+            catch (ObjectDisposedException) { }
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds the subscription groups whose shape differs from the running ones, under the restart gate. A group's
+    /// shape is its concurrency and its consumers, so it changes when a runtime subscription joins or leaves it.
+    /// </summary>
+    private async ValueTask _ApplyTopologyChangeAsync()
+    {
+        if ((LifecycleState)Volatile.Read(ref _state) != LifecycleState.Running)
+        {
+            return;
+        }
+
+        var desired = _selector
+            .GetCandidatesBySubscription()
+            .ToDictionary(
+                group => _CreateHandleName(group.Key),
+                group => (Group: group, Shape: _GetGroupShape(group.Key, group.Value)),
+                StringComparer.Ordinal
+            );
+
+        var stale = _subscriptionHandles
+            .Where(handle =>
+                !desired.TryGetValue(handle.Key, out var wanted)
+                || !string.Equals(wanted.Shape, handle.Value.Shape, StringComparison.Ordinal)
+            )
+            .ToArray();
+        var added = desired
+            .Where(wanted =>
+                !_subscriptionHandles.TryGetValue(wanted.Key, out var handle)
+                || !string.Equals(wanted.Value.Shape, handle.Shape, StringComparison.Ordinal)
+            )
+            .Select(static wanted => wanted.Value.Group)
+            .ToArray();
+
+        if (stale.Length == 0 && added.Length == 0)
+        {
+            return;
+        }
+
+        // Circuit state outlives the clients, as it does on a full rebuild: a consumer that returns keeps its history.
+        if (
+            !await _RetireHandlesAsync([.. stale.Select(static x => x.Value)], _RestartShutdownTimeout)
+                .ConfigureAwait(false)
+        )
+        {
+            _isHealthy = false;
+            _logger.ProcessorStopFailed(
+                new TimeoutException("The changed subscriptions did not stop before the topology deadline."),
+                nameof(ConsumerRegister)
+            );
+            return;
+        }
+
+        foreach (var handle in stale)
+        {
+            _subscriptionHandles.TryRemove(handle);
+        }
+
+        _RegisterKnownCircuits(desired.Values.Select(static x => x.Group));
+
+        try
+        {
+            // Nothing waits for the establishment hooks under the restart gate, for the reason a rebuild gives.
+            _ = await _StartSubscriptionsAsync(added).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+            when ((LifecycleState)Volatile.Read(ref _state) is LifecycleState.Disposing or LifecycleState.Disposed)
+        {
+            // Final shutdown owns the handles that were published before it won.
+        }
+        catch
+        {
+            // A group that failed to start leaves the host short of a subscription; the health watchdog's full
+            // rebuild recovers it.
+            _isHealthy = false;
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// The shape of one subscription group, compared ordinally to decide whether a topology change touches it: the
+    /// concurrency its clients run with and every consumer they deliver to.
+    /// </summary>
+    private string _GetGroupShape(
+        ConsumerSubscriptionKey subscriptionKey,
+        IReadOnlyList<ConsumerExecutorDescriptor> descriptors
+    )
+    {
+        var consumers = descriptors
+            .Select(static x =>
+                string.Join(
+                    '\u001f',
+                    x.MessageName,
+                    x.ResolvedConsumerIdentity,
+                    x.HandlerId,
+                    x.ConsumerType?.AssemblyQualifiedName,
+                    x.MessageType?.AssemblyQualifiedName,
+                    x.MessageContractVersion
+                )
+            )
+            .Order(StringComparer.Ordinal);
+
+        return string.Join(
+            '\u001e',
+            consumers.Prepend(
+                _selector.GetSubscriptionConcurrentLimit(subscriptionKey).ToString(CultureInfo.InvariantCulture)
+            )
+        );
     }
 
     public void Dispose()
@@ -445,17 +582,49 @@ internal sealed class ConsumerRegister(
         var shutdownStarted = _timeProvider.GetTimestamp();
         var handles = _subscriptionHandles.Values.ToArray();
 
-        // Signal every subscription concurrently so one slow cancellation callback cannot delay the others.
-        if (handles.Length > 0)
+        if (!await _RetireHandlesAsync(handles, shutdownTimeout, shutdownStarted).ConfigureAwait(false))
         {
-            var cancellationTask = Task.WhenAll(handles.Select(handle => handle.CancelAsync().AsTask()));
-            if (
-                !await _WaitWithinShutdownBudgetAsync(cancellationTask, shutdownStarted, shutdownTimeout)
-                    .ConfigureAwait(false)
-            )
-            {
-                return false;
-            }
+            return false;
+        }
+
+        var finalizationTask = _FinalizePulseAsync(handles, removeCircuitState, _stoppingCtsRegistration, _stoppingCts);
+        if (
+            !await _WaitWithinShutdownBudgetAsync(finalizationTask, shutdownStarted, shutdownTimeout)
+                .ConfigureAwait(false)
+        )
+        {
+            return false;
+        }
+
+        _subscriptionHandles.Clear();
+        return true;
+    }
+
+    /// <summary>
+    /// Stops the clients of <paramref name="handles"/> within one budget: cancels every subscription concurrently,
+    /// waits for their consumer tasks, then disposes them. Returns <see langword="false"/> when the budget expires.
+    /// </summary>
+    private async Task<bool> _RetireHandlesAsync(
+        IReadOnlyCollection<SubscriptionHandle> handles,
+        TimeSpan shutdownTimeout,
+        long? started = null
+    )
+    {
+        if (handles.Count == 0)
+        {
+            return true;
+        }
+
+        var shutdownStarted = started ?? _timeProvider.GetTimestamp();
+
+        // Signal every subscription concurrently so one slow cancellation callback cannot delay the others.
+        var cancellationTask = Task.WhenAll(handles.Select(handle => handle.CancelAsync().AsTask()));
+        if (
+            !await _WaitWithinShutdownBudgetAsync(cancellationTask, shutdownStarted, shutdownTimeout)
+                .ConfigureAwait(false)
+        )
+        {
+            return false;
         }
 
         // Wait for all consumer tasks to complete
@@ -480,32 +649,11 @@ internal sealed class ConsumerRegister(
 #pragma warning restore ERP022, RCS1075
         }
 
-        // Dispose all handles; only remove circuit state on final teardown,
-        // not on transport restarts where state must survive broker reconnects.
-        if (handles.Length > 0)
-        {
-            var remaining = _GetRemainingTimeout(shutdownStarted, shutdownTimeout);
-            var disposalTask = Task.WhenAll(handles.Select(handle => handle.DisposeAsync(remaining).AsTask()));
-            if (
-                !await _WaitWithinShutdownBudgetAsync(disposalTask, shutdownStarted, shutdownTimeout)
-                    .ConfigureAwait(false)
-            )
-            {
-                return false;
-            }
-        }
-
-        var finalizationTask = _FinalizePulseAsync(handles, removeCircuitState, _stoppingCtsRegistration, _stoppingCts);
-        if (
-            !await _WaitWithinShutdownBudgetAsync(finalizationTask, shutdownStarted, shutdownTimeout)
-                .ConfigureAwait(false)
-        )
-        {
-            return false;
-        }
-
-        _subscriptionHandles.Clear();
-        return true;
+        // Circuit state is not touched here: only final teardown removes it, because it must survive a rebuild.
+        var remaining = _GetRemainingTimeout(shutdownStarted, shutdownTimeout);
+        var disposalTask = Task.WhenAll(handles.Select(handle => handle.DisposeAsync(remaining).AsTask()));
+        return await _WaitWithinShutdownBudgetAsync(disposalTask, shutdownStarted, shutdownTimeout)
+            .ConfigureAwait(false);
     }
 
     private async Task _FinalizePulseAsync(
@@ -571,23 +719,44 @@ internal sealed class ConsumerRegister(
     /// Starts a client generation for every subscription and returns once each client receives, with the establishment
     /// hooks that generation raised. The hooks run on their own and never fault; host startup waits for them.
     /// </summary>
-    private async ValueTask<IReadOnlyCollection<Task>> _StartSubscriptionsAsync()
+    private ValueTask<IReadOnlyCollection<Task>> _StartSubscriptionsAsync()
     {
         var subscriptions = _selector.GetCandidatesBySubscription();
-        List<Task>? startupTasks = null;
-        var establishments = new ConcurrentQueue<Task>();
+        _RegisterKnownCircuits(subscriptions);
+        return _StartSubscriptionsAsync([.. subscriptions]);
+    }
 
-        // Circuits belong to consumer identities, not to the subscriptions their clients consume, so an identity whose
-        // messages arrive through several clients trips once and pauses all of them. Arming the known set also stops
-        // unrecognized keys from reaching the OTel cardinality. Every-instance consumers have no circuit: their
-        // deliveries are at most once, so there is no retry backlog for a breaker to protect.
+    /// <summary>
+    /// Circuits belong to consumer identities, not to the subscriptions their clients consume, so an identity whose
+    /// messages arrive through several clients trips once and pauses all of them. Arming the known set also stops
+    /// unrecognized keys from reaching the OTel cardinality. Every-instance consumers have no circuit: their deliveries
+    /// are at most once, so there is no retry backlog for a breaker to protect.
+    /// </summary>
+    private void _RegisterKnownCircuits(
+        IEnumerable<KeyValuePair<ConsumerSubscriptionKey, IReadOnlyList<ConsumerExecutorDescriptor>>> subscriptions
+    )
+    {
         _circuitBreakerStateManager?.RegisterKnownConsumers(
             subscriptions
-                .Values.SelectMany(static x => x)
+                .SelectMany(static x => x.Value)
                 .Where(static x => !x.EveryInstance)
                 .Select(CircuitBreakerKeys.For)
                 .Distinct(StringComparer.Ordinal)
         );
+    }
+
+    /// <summary>
+    /// Starts a client generation for each of <paramref name="subscriptions"/> and returns once each client receives,
+    /// with the establishment hooks that generation raised.
+    /// </summary>
+    private async ValueTask<IReadOnlyCollection<Task>> _StartSubscriptionsAsync(
+        IReadOnlyCollection<
+            KeyValuePair<ConsumerSubscriptionKey, IReadOnlyList<ConsumerExecutorDescriptor>>
+        > subscriptions
+    )
+    {
+        List<Task>? startupTasks = null;
+        var establishments = new ConcurrentQueue<Task>();
 
         foreach (var match in subscriptions)
         {
@@ -620,6 +789,7 @@ internal sealed class ConsumerRegister(
                 Logger = _logger,
                 Cts = groupCts,
                 SubscriptionName = handleName,
+                Shape = _GetGroupShape(subscriptionKey, descriptors),
                 CircuitKeys = everyInstance
                     ? []
                     : match.Value.Select(CircuitBreakerKeys.For).ToFrozenSet(StringComparer.Ordinal),
@@ -1000,7 +1170,7 @@ internal sealed class ConsumerRegister(
     {
         while (Interlocked.Exchange(ref _pendingTopologyRefresh, 0) == 1)
         {
-            await _RestartCoreAsync().ConfigureAwait(false);
+            await _ApplyTopologyChangeAsync().ConfigureAwait(false);
         }
     }
 
@@ -2405,6 +2575,9 @@ internal sealed class ConsumerRegister(
         public required ILogger Logger { get; init; }
         public required CancellationTokenSource Cts { get; init; }
         public required string SubscriptionName { get; init; }
+
+        /// <summary>The group shape the clients were started for; a topology change rebuilds the handle when it differs.</summary>
+        public required string Shape { get; init; }
 
         /// <summary>The lane-qualified circuit keys of the consumer identities this handle's clients deliver to.</summary>
         public FrozenSet<string> CircuitKeys { get; init; } = [];

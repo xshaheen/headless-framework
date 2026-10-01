@@ -205,20 +205,77 @@ public sealed class EveryInstanceDeliveryTests : TestBase
         var probe = provider.GetRequiredService<EveryInstanceProbe>();
         var registry = provider.GetRequiredService<IRuntimeConsumerRegistry>();
 
-        // when: a runtime subscription rebuilds the clients, and the rebuilt subscription's hook attaches another
+        // when: the core rebuilds its clients, as after a broker failure, and the rebuilt subscription's hook attaches
+        // a runtime subscription while the rebuild still holds the restart gate
+        await provider
+            .GetRequiredService<IConsumerRegister>()
+            .ReStartAsync(force: true, AbortToken)
+            .AsTask()
+            .WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        // then: the attachment starts its own client, and the subscription whose hook made it is not rebuilt again
+        await _WaitUntilAsync(() =>
+            registry.GetDescriptors() is [var attached] && factory.SubscribedClients(attached.SubscriptionName) == 1
+        );
+        probe.Established.Select(x => x.Generation).Should().Equal(1, 2);
+    }
+
+    [Fact]
+    public async Task should_not_reestablish_an_unrelated_every_instance_consumer_when_a_runtime_subscription_attaches()
+    {
+        // given
+        var factory = new RecordingFactory();
+        await using var provider = _BuildHost(
+            factory,
+            configure: services => services.ConfigureMessaging(m => m.AddModule<PriceCacheModule>())
+        );
+        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+        var probe = provider.GetRequiredService<EveryInstanceProbe>();
+        var priceCacheClients = factory.Requests.Count(x => x.SubscriptionName == PriceCache.Identity);
+
+        // when
         await using var handle = await provider
             .GetRequiredService<IRuntimeSubscriber>()
             .SubscribeAsync<PriceChanged>(
                 (_, _, _) => ValueTask.CompletedTask,
                 new RuntimeSubscriptionOptions { HandlerId = "tests.runtime-price", EveryInstance = true },
                 AbortToken
-            )
-            .AsTask()
-            .WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+            );
+
+        // then: only the attached subscription got a client; the price cache kept its clients, so its hook (and a
+        // local cache it would flush) never ran again
+        factory.SubscribedClients(handle.Identity).Should().Be(1);
+        factory.Requests.Count(x => x.SubscriptionName == PriceCache.Identity).Should().Be(priceCacheClients);
+        factory.ShutDownClients(PriceCache.Identity).Should().Be(0);
+        probe.Established.Should().ContainSingle().Which.Generation.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_stop_only_the_clients_of_a_detached_runtime_subscription()
+    {
+        // given
+        var factory = new RecordingFactory();
+        await using var provider = _BuildHost(
+            factory,
+            configure: services => services.ConfigureMessaging(m => m.AddModule<PriceCacheModule>())
+        );
+        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+        var probe = provider.GetRequiredService<EveryInstanceProbe>();
+        var handle = await provider
+            .GetRequiredService<IRuntimeSubscriber>()
+            .SubscribeAsync<PriceChanged>(
+                (_, _, _) => ValueTask.CompletedTask,
+                new RuntimeSubscriptionOptions { HandlerId = "tests.runtime-price", EveryInstance = true },
+                AbortToken
+            );
+
+        // when
+        await handle.DisposeAsync();
 
         // then
-        await _WaitUntilAsync(() => registry.GetDescriptors().Count == 2 && probe.Established.Count >= 3);
-        probe.Established.Select(x => x.Generation).Should().StartWith([1, 2, 3]);
+        factory.ShutDownClients(handle.Identity).Should().Be(1);
+        factory.ShutDownClients(PriceCache.Identity).Should().Be(0);
+        probe.Established.Should().ContainSingle();
     }
 
     [Fact]
@@ -549,6 +606,9 @@ public sealed class EveryInstanceDeliveryTests : TestBase
                 x.Subscribed && string.Equals(x.Request.SubscriptionName, subscriptionName, StringComparison.Ordinal)
             );
 
+        /// <summary>The subscribed clients of a subscription that the core has since shut down.</summary>
+        public int ShutDownClients(string subscriptionName) => _For(subscriptionName).Count(x => x.ShutDown);
+
         public int Commits(string subscriptionName) => _For(subscriptionName).Sum(x => x.CommitCount);
 
         public int Rejects(string subscriptionName) => _For(subscriptionName).Sum(x => x.RejectCount);
@@ -588,6 +648,8 @@ public sealed class EveryInstanceDeliveryTests : TestBase
 
         public bool Subscribed { get; private set; }
 
+        public bool ShutDown { get; private set; }
+
         public int CommitCount => Volatile.Read(ref _commits);
 
         public int RejectCount => Volatile.Read(ref _rejects);
@@ -606,8 +668,11 @@ public sealed class EveryInstanceDeliveryTests : TestBase
                 cancellationToken
             );
 
-        public ValueTask ShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default) =>
-            inner.ShutdownAsync(timeout, cancellationToken);
+        public ValueTask ShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+        {
+            ShutDown = true;
+            return inner.ShutdownAsync(timeout, cancellationToken);
+        }
 
         public ValueTask<ICollection<string>> FetchMessageNamesAsync(
             IEnumerable<string> messageNames,
