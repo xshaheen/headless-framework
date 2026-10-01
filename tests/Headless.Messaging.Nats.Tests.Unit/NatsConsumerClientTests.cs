@@ -164,7 +164,7 @@ public sealed class NatsConsumerClientTests : TestBase
     [Fact]
     public void should_subscribe_every_instance_client_to_the_bus_subjects_of_its_message_names()
     {
-        NatsConsumerClient
+        NatsEveryInstanceListener
             .BuildEveryInstanceSubjects(
                 ["payments.captured", "orders"],
                 names => new HashSet<string>(
@@ -180,7 +180,7 @@ public sealed class NatsConsumerClientTests : TestBase
     public void should_drop_every_instance_subjects_a_sharded_wildcard_already_covers()
     {
         // given - a sharded "orders" subscribes "orders.>", which also matches every "orders.created" publish
-        NatsConsumerClient
+        NatsEveryInstanceListener
             .BuildEveryInstanceSubjects(["orders", "orders.created"], names => names.ToHashSet(StringComparer.Ordinal))
             .Should()
             .Equal("headless.bus.orders", "headless.bus.orders.>");

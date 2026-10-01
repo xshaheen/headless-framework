@@ -201,7 +201,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
             }
 
             await connection.PingAsync(AbortToken);
-            await Task.Delay(NatsConsumerClient.DropSignalCoalesceWindow * 3, AbortToken);
+            await Task.Delay(NatsEveryInstanceListener.DropSignalCoalesceWindow * 3, AbortToken);
 
             // then - every drop is counted and the burst is reported to the consumer once
             Volatile.Read(ref dropped).Should().BePositive();
