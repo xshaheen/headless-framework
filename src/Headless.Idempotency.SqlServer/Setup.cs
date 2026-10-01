@@ -1,13 +1,19 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless.Checks;
 using Headless.Idempotency.SqlServer;
 using Headless.Sql;
+using Headless.Sql.SqlServer;
 using Headless.UnitOfWork;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Options;
+using Extension = Headless.Idempotency.RelationalIdempotencyProviderExtension<
+    Headless.Idempotency.SqlServer.SqlServerIdempotencyOptions,
+    Headless.Idempotency.SqlServer.SqlServerIdempotencyOptionsValidator,
+    Headless.Idempotency.SqlServer.SqlServerIdempotencyStorageOptionsValidator
+>;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Idempotency;
@@ -41,7 +47,7 @@ public static class SetupIdempotencySqlServer
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The record table is created at host startup unless
-        /// <see cref="SqlServerIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
+        /// <see cref="RelationalIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
         /// call is accepted only on a unit whose SqlClient connection reaches this same database.
         /// </remarks>
         /// <exception cref="ArgumentException"><paramref name="connectionString" /> is <see langword="null" /> or whitespace.</exception>
@@ -60,7 +66,7 @@ public static class SetupIdempotencySqlServer
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The record table is created at host startup unless
-        /// <see cref="SqlServerIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
+        /// <see cref="RelationalIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
         /// call is accepted only on a unit whose SqlClient connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configuration" /> is <see langword="null" />.</exception>
@@ -68,7 +74,7 @@ public static class SetupIdempotencySqlServer
         {
             Argument.IsNotNull(configuration);
 
-            setup.RegisterExtension(new SqlServerIdempotencyOptionsExtension(configuration));
+            setup.RegisterExtension(new Extension(_Provider, configuration));
 
             return setup;
         }
@@ -78,7 +84,7 @@ public static class SetupIdempotencySqlServer
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The record table is created at host startup unless
-        /// <see cref="SqlServerIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
+        /// <see cref="RelationalIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
         /// call is accepted only on a unit whose SqlClient connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
@@ -86,7 +92,7 @@ public static class SetupIdempotencySqlServer
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new SqlServerIdempotencyOptionsExtension(configure));
+            setup.RegisterExtension(new Extension(_Provider, configure));
 
             return setup;
         }
@@ -99,7 +105,7 @@ public static class SetupIdempotencySqlServer
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The record table is created at host startup unless
-        /// <see cref="SqlServerIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
+        /// <see cref="RelationalIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
         /// call is accepted only on a unit whose SqlClient connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
@@ -109,66 +115,18 @@ public static class SetupIdempotencySqlServer
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new SqlServerIdempotencyOptionsExtension(configure));
+            setup.RegisterExtension(new Extension(_Provider, configure));
 
             return setup;
         }
     }
 
-    private sealed class SqlServerIdempotencyOptionsExtension : IIdempotencyProviderOptionsExtension
-    {
-        private readonly IConfiguration? _configuration;
-        private readonly Action<SqlServerIdempotencyOptions>? _configure;
-        private readonly Action<SqlServerIdempotencyOptions, IServiceProvider>? _configureWithServices;
-
-        public SqlServerIdempotencyOptionsExtension(IConfiguration configuration)
-        {
-            _configuration = configuration;
-        }
-
-        public SqlServerIdempotencyOptionsExtension(Action<SqlServerIdempotencyOptions> configure)
-        {
-            _configure = configure;
-        }
-
-        public SqlServerIdempotencyOptionsExtension(Action<SqlServerIdempotencyOptions, IServiceProvider> configure)
-        {
-            _configureWithServices = configure;
-        }
-
-        public void AddServices(IServiceCollection services)
-        {
-            if (_configuration is not null)
-            {
-                services.Configure<SqlServerIdempotencyOptions, SqlServerIdempotencyOptionsValidator>(_configuration);
-            }
-            else if (_configure is not null)
-            {
-                services.Configure<SqlServerIdempotencyOptions, SqlServerIdempotencyOptionsValidator>(_configure);
-            }
-            else
-            {
-                services.Configure<SqlServerIdempotencyOptions, SqlServerIdempotencyOptionsValidator>(
-                    _configureWithServices
-                );
-            }
-
-            services.AddOptions<IdempotencyStorageOptions, SqlServerIdempotencyStorageOptionsValidator>();
-
-            // Autonomous calls begin owned units through the unit-of-work factory, and enlisted calls reach the store
-            // through unit.Idempotency, so the factory must exist whether or not the host registered it.
-            services.AddSqlServerUnitOfWork();
-
-            // The contribution factory reads options at first resolution, so InitializeOnStartup keeps its
-            // contract: false means the runner never creates the record table (a migration tool owns it), while
-            // the initializer promise still completes for dependents.
-            services.AddHeadlessSchemaContribution(sp =>
-                SqlServerIdempotencySchemaContribution.Create(
-                    sp.GetRequiredService<IOptions<SqlServerIdempotencyOptions>>().Value,
-                    sp.GetRequiredService<IOptions<IdempotencyStorageOptions>>().Value
-                )
-            );
-            services.TryAddSingleton<IIdempotencyRecordStore, SqlServerIdempotencyRecordStore>();
-        }
-    }
+    private static readonly RelationalIdempotencyProvider _Provider = new(
+        SqlServerDialect.Instance,
+        "Headless.Idempotency.SqlServer",
+        static (factory, connection, cancellationToken) =>
+            factory.BeginAsync((SqlConnection)connection, IsolationLevel.ReadCommitted, cancellationToken),
+        static services => services.AddSqlServerUnitOfWork(),
+        SqlServerIdempotencySchemaContribution.Create
+    );
 }

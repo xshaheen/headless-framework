@@ -1,13 +1,19 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless.Checks;
 using Headless.Idempotency.PostgreSql;
 using Headless.Sql;
+using Headless.Sql.PostgreSql;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Options;
+using Npgsql;
+using Extension = Headless.Idempotency.RelationalIdempotencyProviderExtension<
+    Headless.Idempotency.PostgreSql.PostgreSqlIdempotencyOptions,
+    Headless.Idempotency.PostgreSql.PostgreSqlIdempotencyOptionsValidator,
+    Headless.Idempotency.PostgreSql.PostgreSqlIdempotencyStorageOptionsValidator
+>;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Idempotency;
@@ -41,7 +47,7 @@ public static class SetupIdempotencyPostgreSql
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The record table is created at host startup unless
-        /// <see cref="PostgreSqlIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
+        /// <see cref="RelationalIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
         /// call is accepted only on a unit whose Npgsql connection reaches this same database.
         /// </remarks>
         /// <exception cref="ArgumentException"><paramref name="connectionString" /> is <see langword="null" /> or whitespace.</exception>
@@ -60,7 +66,7 @@ public static class SetupIdempotencyPostgreSql
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The record table is created at host startup unless
-        /// <see cref="PostgreSqlIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
+        /// <see cref="RelationalIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
         /// call is accepted only on a unit whose Npgsql connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configuration" /> is <see langword="null" />.</exception>
@@ -68,7 +74,7 @@ public static class SetupIdempotencyPostgreSql
         {
             Argument.IsNotNull(configuration);
 
-            setup.RegisterExtension(new PostgreSqlIdempotencyOptionsExtension(configuration));
+            setup.RegisterExtension(new Extension(_Provider, configuration));
 
             return setup;
         }
@@ -78,7 +84,7 @@ public static class SetupIdempotencyPostgreSql
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The record table is created at host startup unless
-        /// <see cref="PostgreSqlIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
+        /// <see cref="RelationalIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
         /// call is accepted only on a unit whose Npgsql connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
@@ -86,7 +92,7 @@ public static class SetupIdempotencyPostgreSql
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new PostgreSqlIdempotencyOptionsExtension(configure));
+            setup.RegisterExtension(new Extension(_Provider, configure));
 
             return setup;
         }
@@ -99,7 +105,7 @@ public static class SetupIdempotencyPostgreSql
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The record table is created at host startup unless
-        /// <see cref="PostgreSqlIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
+        /// <see cref="RelationalIdempotencyOptions.InitializeOnStartup" /> is <see langword="false" />. An enlisted
         /// call is accepted only on a unit whose Npgsql connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
@@ -109,66 +115,18 @@ public static class SetupIdempotencyPostgreSql
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new PostgreSqlIdempotencyOptionsExtension(configure));
+            setup.RegisterExtension(new Extension(_Provider, configure));
 
             return setup;
         }
     }
 
-    private sealed class PostgreSqlIdempotencyOptionsExtension : IIdempotencyProviderOptionsExtension
-    {
-        private readonly IConfiguration? _configuration;
-        private readonly Action<PostgreSqlIdempotencyOptions>? _configure;
-        private readonly Action<PostgreSqlIdempotencyOptions, IServiceProvider>? _configureWithServices;
-
-        public PostgreSqlIdempotencyOptionsExtension(IConfiguration configuration)
-        {
-            _configuration = configuration;
-        }
-
-        public PostgreSqlIdempotencyOptionsExtension(Action<PostgreSqlIdempotencyOptions> configure)
-        {
-            _configure = configure;
-        }
-
-        public PostgreSqlIdempotencyOptionsExtension(Action<PostgreSqlIdempotencyOptions, IServiceProvider> configure)
-        {
-            _configureWithServices = configure;
-        }
-
-        public void AddServices(IServiceCollection services)
-        {
-            if (_configuration is not null)
-            {
-                services.Configure<PostgreSqlIdempotencyOptions, PostgreSqlIdempotencyOptionsValidator>(_configuration);
-            }
-            else if (_configure is not null)
-            {
-                services.Configure<PostgreSqlIdempotencyOptions, PostgreSqlIdempotencyOptionsValidator>(_configure);
-            }
-            else
-            {
-                services.Configure<PostgreSqlIdempotencyOptions, PostgreSqlIdempotencyOptionsValidator>(
-                    _configureWithServices
-                );
-            }
-
-            services.AddOptions<IdempotencyStorageOptions, PostgreSqlIdempotencyStorageOptionsValidator>();
-
-            // Autonomous calls begin owned units through the unit-of-work factory, and enlisted calls reach the store
-            // through unit.Idempotency, so the factory must exist whether or not the host registered it.
-            services.AddPostgreSqlUnitOfWork();
-
-            // The contribution factory reads options at first resolution, so InitializeOnStartup keeps its
-            // contract: false means the runner never creates the record table (a migration tool owns it), while
-            // the initializer promise still completes for dependents.
-            services.AddHeadlessSchemaContribution(sp =>
-                PostgreSqlIdempotencySchemaContribution.Create(
-                    sp.GetRequiredService<IOptions<PostgreSqlIdempotencyOptions>>().Value,
-                    sp.GetRequiredService<IOptions<IdempotencyStorageOptions>>().Value
-                )
-            );
-            services.TryAddSingleton<IIdempotencyRecordStore, PostgreSqlIdempotencyRecordStore>();
-        }
-    }
+    private static readonly RelationalIdempotencyProvider _Provider = new(
+        PostgreSqlDialect.Instance,
+        "Headless.Idempotency.PostgreSql",
+        static (factory, connection, cancellationToken) =>
+            factory.BeginAsync((NpgsqlConnection)connection, IsolationLevel.ReadCommitted, cancellationToken),
+        static services => services.AddPostgreSqlUnitOfWork(),
+        PostgreSqlIdempotencySchemaContribution.Create
+    );
 }
